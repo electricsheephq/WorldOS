@@ -87,7 +87,12 @@
         "She is the one who pulled the big goblin off Dorn — she didn't want the boy hurt."
       ],
       "attitude_shift": "Begins hostile (snarling, cornered). A successful Persuasion/Insight/Animal Handling check OR offering food/freedom shifts her to wary, then helpful: she'll reveal the twist, beg for her crew's lives, and offer to lead the party to the sump and re-seal the drain. Cruelty or threats lock her at hostile and she'll only scream for Grett.",
-      "stat_block": "Goblin (AC 15, HP 7, CR 1/4). Quill will NOT fight the party if befriended; if hostile she uses Nimble Escape to flee toward the sump and raise the alarm."
+      "stat_block": "Goblin (AC 15, HP 7, CR 1/4). Quill will NOT fight the party if befriended; if hostile she uses Nimble Escape to flee toward the sump and raise the alarm.",
+      "max_hp": 7,
+      "armor_class": 15,
+      "hit_dice": "2d6",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 8, "dexterity": 14, "constitution": 10, "intelligence": 10, "wisdom": 8, "charisma": 8 }
     },
     {
       "id": "grett",
@@ -101,7 +106,12 @@
         "Everything Quill knows, and that he has lost two of his crew to the deep water.",
         "That sealing the drain traps the Long Thing below — which is exactly what he wants too, if he can get his people out first."
       ],
-      "stat_block": "Goblin (AC 15, HP 7, CR 1/4). Reflavor the scimitar as a barbed driftwood club (same stats). Grett is the toughest goblin in the final fight; run him last."
+      "stat_block": "Goblin Boss (AC 17, HP 21, CR 1). Reflavor the scimitar as a barbed driftwood club (same stats). Grett is the toughest goblin in the final fight; run him last.",
+      "max_hp": 21,
+      "armor_class": 17,
+      "hit_dice": "6d6",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 10, "dexterity": 14, "constitution": 10, "intelligence": 10, "wisdom": 8, "charisma": 10 }
     }
   ],
   "locations": [

@@ -63,13 +63,26 @@ def seed_campaign(adv: dict) -> Campaign:
         c.locations[first_loc].visited = True  # the party starts here
 
     for npc in _as_list(adv, "npcs"):
-        ch = Character(
-            name=npc.get("name", "NPC"),
-            kind="npc",
-            voice_id=npc.get("voice_id", "npc-male-1"),
-            personality=npc.get("personality", ""),
-            attitude=npc.get("attitude", ""),
-        )
+        data = {
+            "name": npc.get("name", "NPC"),
+            "kind": "npc",
+            "voice_id": npc.get("voice_id", "npc-male-1"),
+            "personality": npc.get("personality", ""),
+            "attitude": npc.get("attitude", ""),
+        }
+        # Optional combat stats: a fightable NPC (a villain, a guard) is seeded
+        # battle-ready so the DM uses THIS record in combat rather than spawning a
+        # duplicate monster — which is what left two records of the same character.
+        for k in (
+            "max_hp", "armor_class", "hit_dice", "proficiency_bonus", "abilities",
+            "damage_resistances", "damage_immunities", "damage_vulnerabilities",
+            "condition_immunities",
+        ):
+            if k in npc:
+                data[k] = npc[k]
+        ch = Character(**data)
+        if "max_hp" in npc:
+            ch.current_hp = ch.max_hp  # a stat-blocked NPC starts at full health
         if npc.get("id"):
             if npc["id"] in c.characters:
                 raise ValueError(f"duplicate npc id {npc['id']!r} in adventure")

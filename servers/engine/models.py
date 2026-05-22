@@ -179,6 +179,14 @@ class Character(_StrictModel):
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves
 
+    # damage modifiers — free-text damage types ("fire", "bludgeoning") and, for
+    # condition_immunities, condition names ("poisoned"). Usually set when spawning
+    # a monster from the bestiary; honored by combat.apply_damage.
+    damage_resistances: list[str] = Field(default_factory=list)
+    damage_immunities: list[str] = Field(default_factory=list)
+    damage_vulnerabilities: list[str] = Field(default_factory=list)
+    condition_immunities: list[str] = Field(default_factory=list)
+
     # resources
     inventory: list[Item] = Field(default_factory=list)
     currency: Currency = Field(default_factory=Currency)

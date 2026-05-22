@@ -15,6 +15,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+import bestiary
 import combat
 import companion
 import content as content_mod
@@ -369,6 +370,67 @@ def create_character(
     return {"id": ch.id, "name": ch.name, "kind": ch.kind}
 
 
+_SHORT_TO_FULL_AB = {
+    "str": "strength", "dex": "dexterity", "con": "constitution",
+    "int": "intelligence", "wis": "wisdom", "cha": "charisma",
+}
+
+
+@mcp.tool()
+def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
+    """Spawn combat-ready monster(s) from the bundled SRD bestiary by name.
+
+    Looks the creature up (case-insensitive) in the ~330-creature SRD data and
+    creates Character(kind="monster") records with HP, AC, abilities, proficiency
+    and initiative bonuses, and damage resistances/immunities/vulnerabilities all
+    pre-filled — so you never hand-transcribe a stat block (and never leave a
+    duplicate NPC record). The creature's actions/attacks are stored on the
+    monster's `notes` (with the to-hit/damage text) for you to drive `attack`.
+    count>1 spawns numbered copies. Unknown name -> {"error", "suggestions"} from a
+    fuzzy search (try e.g. 'Goblin Warrior', 'Wolf'). Returns the spawned ids + a
+    stat summary incl. xp_each (the encounter reward); pass the ids to start_combat."""
+    sb = bestiary.stat_block(name)
+    if sb is None:
+        return {"error": f"no creature named {name!r} in the bestiary", "suggestions": bestiary.find(name)}
+    n = max(1, min(int(count), 20))
+    scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
+    actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
+    summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        spawned = []
+        for i in range(n):
+            label = f"{sb['name']} {i + 1}" if n > 1 else sb["name"]
+            ch = Character(
+                name=label,
+                kind="monster",
+                abilities=scores,
+                max_hp=sb["hp"],
+                current_hp=sb["hp"],
+                armor_class=sb["ac"],
+                hit_dice=sb["hit_dice"],
+                proficiency_bonus=sb["proficiency_bonus"],
+                initiative_bonus=sb["initiative_bonus"] or scores.modifier(Ability.DEX),
+                damage_resistances=sb["damage_resistances"],
+                damage_immunities=sb["damage_immunities"],
+                damage_vulnerabilities=sb["damage_vulnerabilities"],
+                condition_immunities=sb["condition_immunities"],
+                notes=summary,
+            )
+            c.characters[ch.id] = ch
+            spawned.append({"id": ch.id, "name": ch.name})
+        save_campaign(c)
+    return {
+        "spawned": spawned,
+        "name": sb["name"],
+        "ac": sb["ac"],
+        "hp": sb["hp"],
+        "cr": sb["cr"],
+        "xp_each": sb["xp"],
+        "actions": sb["actions"],
+    }
+
+
 @mcp.tool()
 def get_character(campaign_id: str, character_id: str) -> dict:
     """Return a character's full sheet."""
@@ -577,7 +639,7 @@ def attack(
         if hit:
             expr = combat.double_dice(damage_dice) if is_crit else damage_dice
             dmg = dice_mod.roll(expr)
-            outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit)
+            outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
             save_campaign(c)
             result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             result["target_state"] = outcome
@@ -592,10 +654,12 @@ def apply_damage(
     massive damage causes instant death; dropping to 0 makes the target unconscious
     and dying; a hit while already down adds a death-save failure (two on a crit).
     Set half=True for a successful save vs a 'half on save' spell (halves the amount).
-    Returns the new state, including any concentration_dc to roll."""
+    `damage_type` (e.g. 'fire', 'slashing') applies the target's resistance (half),
+    immunity (none), or vulnerability (double). Returns the new state, including
+    any concentration_dc to roll."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        out = combat.apply_damage(_char(c, target_id), amount, crit=crit, half=half)
+        out = combat.apply_damage(_char(c, target_id), amount, crit=crit, half=half, damage_type=damage_type)
         save_campaign(c)
         return out
 

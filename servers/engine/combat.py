@@ -101,15 +101,32 @@ def status(ch: Character) -> dict:
     }
 
 
-def apply_damage(ch: Character, amount: int, crit: bool = False, half: bool = False) -> dict:
-    """Apply damage with full SRD order: temp HP absorb -> floor at 0 -> massive-
-    damage instant death -> dying transition -> death-save failure if hit while
-    already down -> concentration-check DC. If half=True (a successful save vs a
-    'half on save' spell), the incoming amount is halved (rounded down) first.
-    Mutates ch."""
+def _damage_type_matches(dt: str, entries: list[str]) -> bool:
+    """A damage type matches a creature's resistance/immunity entry if it appears
+    in the entry text (entries may be phrases like 'piercing from nonmagical attacks')."""
+    return bool(dt) and any(dt in e.lower() for e in entries)
+
+
+def apply_damage(
+    ch: Character, amount: int, crit: bool = False, half: bool = False, damage_type: str = ""
+) -> dict:
+    """Apply damage with full SRD order: halve-on-save -> apply the target's
+    resistance/immunity/vulnerability for `damage_type` -> temp HP absorb -> floor
+    at 0 -> massive-damage instant death -> dying transition -> death-save failure
+    if hit while already down -> concentration-check DC. If half=True (a successful
+    save vs a 'half on save' spell), the incoming amount is halved (rounded down)
+    first; per SRD, resistance/vulnerability apply after other modifiers. Mutates ch."""
     amount = max(0, amount)
     if half:
         amount //= 2
+    dt = damage_type.strip().lower()
+    if amount > 0 and dt:
+        if _damage_type_matches(dt, ch.damage_immunities):
+            amount = 0
+        elif _damage_type_matches(dt, ch.damage_vulnerabilities):
+            amount *= 2
+        elif _damage_type_matches(dt, ch.damage_resistances):
+            amount //= 2
     if ch.dead:
         return {"absorbed": 0, "damage_to_hp": 0, "concentration_dc": None, **status(ch)}
 
