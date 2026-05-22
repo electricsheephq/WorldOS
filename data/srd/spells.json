@@ -1,0 +1,57 @@
+[
+  {
+    "name": "Fire Bolt",
+    "level": 0,
+    "school": "Evocation",
+    "casting_time": "1 action",
+    "range": "120 feet",
+    "components": "V, S",
+    "duration": "Instantaneous",
+    "classes": ["Sorcerer", "Wizard"],
+    "description": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried. The damage increases by 1d10 at levels 5 (2d10), 11 (3d10), and 17 (4d10)."
+  },
+  {
+    "name": "Magic Missile",
+    "level": 1,
+    "school": "Evocation",
+    "casting_time": "1 action",
+    "range": "120 feet",
+    "components": "V, S",
+    "duration": "Instantaneous",
+    "classes": ["Sorcerer", "Wizard"],
+    "description": "You create three glowing darts of magical force. Each dart hits a creature of your choice that you can see within range, dealing 1d4+1 force damage. The darts all strike simultaneously, and you can direct them to hit one creature or several. Casting at a higher level creates one additional dart per slot level above 1st."
+  },
+  {
+    "name": "Cure Wounds",
+    "level": 1,
+    "school": "Evocation",
+    "casting_time": "1 action",
+    "range": "Touch",
+    "components": "V, S",
+    "duration": "Instantaneous",
+    "classes": ["Bard", "Cleric", "Druid", "Paladin", "Ranger"],
+    "description": "A creature you touch regains hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs. Casting at a higher level heals an additional 1d8 per slot level above 1st."
+  },
+  {
+    "name": "Mage Armor",
+    "level": 1,
+    "school": "Abjuration",
+    "casting_time": "1 action",
+    "range": "Touch",
+    "components": "V, S, M",
+    "duration": "8 hours",
+    "classes": ["Sorcerer", "Wizard"],
+    "description": "You touch a willing creature who isn't wearing armor, and a protective magical force surrounds it until the spell ends. The target's base AC becomes 13 + its Dexterity modifier. The spell ends if the target dons armor or if you dismiss it as an action."
+  },
+  {
+    "name": "Healing Word",
+    "level": 1,
+    "school": "Evocation",
+    "casting_time": "1 bonus action",
+    "range": "60 feet",
+    "components": "V",
+    "duration": "Instantaneous",
+    "classes": ["Bard", "Cleric", "Druid"],
+    "description": "A creature of your choice that you can see within range regains hit points equal to 1d4 + your spellcasting ability modifier. This spell has no effect on undead or constructs. Casting at a higher level heals an additional 1d4 per slot level above 1st."
+  }
+]

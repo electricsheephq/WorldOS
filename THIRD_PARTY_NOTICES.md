@@ -13,34 +13,35 @@ the licensing decisions behind them.
 - CC-BY-4.0 permits commercial use and is irrevocable. We treat the SRD as the
   canonical, shippable rules source.
 
-## Adapted source (permissive — code may be reused with attribution)
+## Runtime dependencies (permissive, installed from PyPI via uv)
 
-### study-flamingo/gamemaster-mcp
-- **License:** MIT
-- **Used for:** the campaign/party/character/combat state model is *adapted*
-  from this project's schema. Reimplemented in `servers/engine/models.py`.
+ClawDnD's MCP servers depend on these packages:
+- **mcp** (MIT) — the Model Context Protocol SDK / FastMCP.
+- **pydantic** (MIT) — state-model validation.
+- **rapidfuzz** (MIT) — fuzzy matching for rules lookups.
+- **httpx** (BSD-3-Clause) — HTTP client for the dnd5eapi.co fallback.
+- **kokoro** (Apache-2.0) — local text-to-speech (added with the voice backend).
 
-### procload/dnd-mcp
-- **License:** MIT
-- **Used for:** the 5e-API lookup + fuzzy/synonym-matching *pattern* informs
-  `servers/rules`.
+## Structural references — learn-from only (NO code copied)
 
-### Kokoro-82M / kokoro (PyPI) and mberg/kokoro-tts-mcp
-- **License:** Apache-2.0
-- **Used for:** the default local text-to-speech backend
-  (`servers/voice/adapters/kokoro.py`). Integration pattern referenced from
-  kokoro-tts-mcp.
+These projects informed ClawDnD's design. After verifying their licensing
+(2026-05-22), we copy **no code** from any of them; ClawDnD's engine, rules, and
+voice code is a clean-room implementation from the SRD and our own D&D 5e
+knowledge.
 
-## Learn-from-only (NOT copied — incompatible or unclear licensing)
-
-These projects informed our design, but **no code is copied** from them:
-
-- **Sstobo/Claude-Code-Game-Master** — CC-BY-NC-SA-4.0. The NonCommercial +
-  ShareAlike terms are incompatible with ClawDnD's permissive MIT licensing, so
-  we studied its architecture only and reimplemented clean.
-- **heffrey78/dnd-mcp** — no declared license (all rights reserved). Its
-  encounter / CR-difficulty logic is referenced as a reference only and
-  reimplemented from the SRD.
+- **study-flamingo/gamemaster-mcp** — declares MIT in `pyproject.toml` + README,
+  **but the referenced `LICENSE.md` is absent from the repo** (verified
+  2026-05-22), so no license is auto-detectable. Used only as a structural
+  reference for the entity layout (Campaign / Party / Character / Combat / NPC /
+  Quest / Location).
+- **procload/dnd-mcp** — **no detectable license** (effectively all rights
+  reserved). The idea of fuzzy rules lookup over the 5e API is referenced; code
+  is not.
+- **heffrey78/dnd-mcp** — no declared license. Encounter / CR-difficulty logic
+  referenced only; reimplemented from the SRD.
+- **Sstobo/Claude-Code-Game-Master** — CC-BY-NC-SA-4.0 (NonCommercial +
+  ShareAlike), incompatible with ClawDnD's MIT licensing. Architecture studied;
+  not copied.
 - **PinchOfData/claude-dungeon-master** — no declared license. DM persona/tone
   studied; not copied.
 

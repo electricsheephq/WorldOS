@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Advantage and Disadvantage",
+    "description": "When you have advantage on a roll, roll a second d20 and use the higher of the two. With disadvantage, use the lower. If circumstances grant both advantage and disadvantage, they cancel and you roll a single d20. Advantage and disadvantage don't stack."
+  },
+  {
+    "name": "Cover",
+    "description": "Half cover grants +2 to AC and Dexterity saving throws. Three-quarters cover grants +5. A target with total cover can't be targeted directly by an attack or spell."
+  },
+  {
+    "name": "Resting",
+    "description": "A short rest is a period of at least 1 hour during which a creature can spend Hit Dice to regain hit points. A long rest is at least 8 hours; a creature regains all lost hit points and recovers spent Hit Dice up to half its total."
+  },
+  {
+    "name": "Death Saving Throws",
+    "description": "When you start your turn at 0 hit points, roll a d20. 10 or higher is a success; 9 or lower is a failure. Three successes stabilize you; three failures mean death. A natural 20 restores 1 hit point; a natural 1 counts as two failures. Taking damage at 0 HP is one failure (a critical hit is two)."
+  },
+  {
+    "name": "Exhaustion",
+    "description": "Exhaustion is measured in six levels: 1 disadvantage on ability checks; 2 speed halved; 3 disadvantage on attack rolls and saving throws; 4 hit point maximum halved; 5 speed reduced to 0; 6 death. A long rest reduces exhaustion by one level (with food and drink)."
+  }
+]

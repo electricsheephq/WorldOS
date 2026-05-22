@@ -1,0 +1,67 @@
+[
+  {
+    "name": "Goblin",
+    "size": "Small",
+    "type": "humanoid (goblinoid)",
+    "alignment": "neutral evil",
+    "ac": 15,
+    "ac_note": "leather armor, shield",
+    "hp": 7,
+    "hit_dice": "2d6",
+    "speed": "30 ft.",
+    "abilities": {"str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8},
+    "skills": "Stealth +6",
+    "senses": "darkvision 60 ft., passive Perception 9",
+    "cr": "1/4",
+    "xp": 50,
+    "traits": [
+      {"name": "Nimble Escape", "description": "The goblin can take the Disengage or Hide action as a bonus action on each of its turns."}
+    ],
+    "actions": [
+      {"name": "Scimitar", "description": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage."},
+      {"name": "Shortbow", "description": "Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage."}
+    ]
+  },
+  {
+    "name": "Wolf",
+    "size": "Medium",
+    "type": "beast",
+    "alignment": "unaligned",
+    "ac": 13,
+    "ac_note": "natural armor",
+    "hp": 11,
+    "hit_dice": "2d8 + 2",
+    "speed": "40 ft.",
+    "abilities": {"str": 12, "dex": 15, "con": 12, "int": 3, "wis": 12, "cha": 6},
+    "skills": "Perception +3, Stealth +4",
+    "senses": "passive Perception 13",
+    "cr": "1/4",
+    "xp": 50,
+    "traits": [
+      {"name": "Keen Hearing and Smell", "description": "The wolf has advantage on Wisdom (Perception) checks that rely on hearing or smell."},
+      {"name": "Pack Tactics", "description": "The wolf has advantage on an attack roll against a creature if at least one of the wolf's allies is within 5 feet of the creature and the ally isn't incapacitated."}
+    ],
+    "actions": [
+      {"name": "Bite", "description": "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 7 (2d4 + 2) piercing damage. If the target is a creature, it must succeed on a DC 11 Strength saving throw or be knocked prone."}
+    ]
+  },
+  {
+    "name": "Bandit",
+    "size": "Medium",
+    "type": "humanoid",
+    "alignment": "any non-lawful",
+    "ac": 12,
+    "ac_note": "leather armor",
+    "hp": 11,
+    "hit_dice": "2d8 + 2",
+    "speed": "30 ft.",
+    "abilities": {"str": 11, "dex": 12, "con": 12, "int": 10, "wis": 10, "cha": 10},
+    "senses": "passive Perception 10",
+    "cr": "1/8",
+    "xp": 25,
+    "actions": [
+      {"name": "Scimitar", "description": "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) slashing damage."},
+      {"name": "Light Crossbow", "description": "Ranged Weapon Attack: +3 to hit, range 80/320 ft., one target. Hit: 5 (1d8 + 1) piercing damage."}
+    ]
+  }
+]
