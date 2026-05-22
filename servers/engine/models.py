@@ -176,6 +176,8 @@ class Character(_StrictModel):
     exhaustion: int = 0  # 0-6
     concentration: Optional[str] = None  # spell currently concentrated on
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
+    dead: bool = False
+    stable: bool = False  # stabilized at 0 HP; no longer rolling death saves
 
     # resources
     inventory: list[Item] = Field(default_factory=list)

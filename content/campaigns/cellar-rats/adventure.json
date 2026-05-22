@@ -1,0 +1,315 @@
+{
+  "id": "cellar-rats",
+  "title": "Cellar Rats",
+  "ruleset": "SRD 5.2",
+  "level_range": [1, 2],
+  "session_length_minutes": 60,
+  "premise": "The Sodden Crown is the only inn for a day's walk, and something has moved into its flooded cellar. The owner blames rats. The scratching in the walls is far too big for rats. Beneath the taproom, a crew of goblin scavengers has tunneled up out of the drowned undercity below — but they aren't raiders. They're fleeing something, and they brought the smell of it with them.",
+  "hook": "A storm has stranded the party at the Sodden Crown for the night. Over a bowl of stew, the innkeeper Brakka admits her cellar has been 'rat-troubled' for a week — three barrels of ale fouled, a stable-hand bitten, and a sound at night like something dragging chains through water. She'll knock the whole night's lodging off the bill, and throw in coin, for anyone willing to go down and clear it before dawn.",
+  "themes": ["grounded low-level dungeon crawl", "a twist of unexpected mercy", "a monster you never quite see"],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "The party's AI companion adventurer.",
+    "npc-elder": "Brakka Holt, the innkeeper.",
+    "npc-rogue": "Quill, a goblin scavenger taken prisoner.",
+    "npc-male-1": "Dorn, a frightened stable-hand sheltering in the taproom.",
+    "npc-female-1": "Reserved for any improvised patron or voice the DM needs."
+  },
+  "npcs": [
+    {
+      "id": "brakka",
+      "name": "Brakka Holt",
+      "personality": "Sixty, broad-shouldered, an ex-caravan-guard who bought the inn to retire and refuses to admit she's frightened. Gruff, practical, fiercely proud of the Crown. Counts coins twice and trusts no one she hasn't fed first. Soft underneath, but you have to earn it.",
+      "voice_id": "npc-elder",
+      "attitude": "guarded",
+      "role": "quest-giver",
+      "wants": "The cellar cleared before her morning regulars arrive and word spreads that the Crown is overrun. She does NOT want the inn burned down to do it.",
+      "knows": [
+        "The trouble started after the river rose a week ago and the cellar flooded ankle-deep.",
+        "Her stable-hand Dorn was bitten three nights past and won't go below anymore.",
+        "There is an old bricked-up drain in the cellar floor that her late husband sealed decades ago. She has forgotten it is there unless reminded.",
+        "She keeps the cellar key on a cord around her neck."
+      ],
+      "secret": "She suspects the noises are worse than rats and is terrified the Crown will be condemned. She'll downplay everything until someone earns her honesty.",
+      "stat_block": "Use the bundled Bandit stat block if Brakka ever fights (AC 12, HP 11). She will only fight to defend her inn or a guest, and prefers a crossbow from the top of the stairs."
+    },
+    {
+      "id": "dorn",
+      "name": "Dorn",
+      "personality": "A jumpy stable-hand of about seventeen with a bandaged forearm and a bad case of nerves. Talks too fast when scared, which is always. Means well; saw more than he can explain and nobody believes him.",
+      "voice_id": "npc-male-1",
+      "attitude": "anxious",
+      "role": "witness",
+      "wants": "To be believed, and to never go in the cellar again.",
+      "knows": [
+        "The thing that bit him 'wasn't a rat, it had a face' — he saw a goblin in the dark and panicked.",
+        "He heard them whispering, and one of the voices was 'small and scared, like a kid.' (This is Quill.)",
+        "There is more standing water at the far end of the cellar than there should be, 'like the floor's gone soft.'"
+      ],
+      "secret": "He didn't run from the goblin — he froze, and the small frightened voice (Quill) actually pulled the bigger goblin off him. He's ashamed he ran after, and hasn't told anyone a goblin saved his arm.",
+      "stat_block": "Noncombatant. If forced, treat as Bandit but he will flee at the first opportunity."
+    },
+    {
+      "id": "quill",
+      "name": "Quill",
+      "personality": "A small goblin scavenger, ribs showing, one ear notched. Quick-eyed and quicker-tongued, equal parts terrified and defiant. Speaks broken Common in a rush. Not cruel — desperate. Will bargain, beg, lie, and (if treated as a person) tell the truth.",
+      "voice_id": "npc-rogue",
+      "attitude": "hostile",
+      "role": "turncoat / twist-bearer",
+      "wants": "To not be killed, and to get her crew out of the drowned dark below before 'the Long Thing' finds them.",
+      "knows": [
+        "Her crew didn't come to raid — they fled UP through the old drain from the flooded undercity when their warren collapsed.",
+        "Something they call 'the Long Thing' moves in the deep water below and took two of their number. It is what they are running from.",
+        "The bricked drain in the cellar floor is the way down. They widened it. It can be re-sealed.",
+        "Where her crew-leader Grett keeps the scavenged loot, in the old sump pit.",
+        "She is the one who pulled the big goblin off Dorn — she didn't want the boy hurt."
+      ],
+      "attitude_shift": "Begins hostile (snarling, cornered). A successful Persuasion/Insight/Animal Handling check OR offering food/freedom shifts her to wary, then helpful: she'll reveal the twist, beg for her crew's lives, and offer to lead the party to the sump and re-seal the drain. Cruelty or threats lock her at hostile and she'll only scream for Grett.",
+      "stat_block": "Goblin (AC 15, HP 7, CR 1/4). Quill will NOT fight the party if befriended; if hostile she uses Nimble Escape to flee toward the sump and raise the alarm."
+    },
+    {
+      "id": "grett",
+      "name": "Grett One-Eye",
+      "personality": "The scavenger crew's leader: a scarred goblin with a driftwood club and a refugee's hard pragmatism. Not a villain so much as a frightened survivor who has decided the surface folk are just another threat to keep his people alive against. Will parley if his crew's lives are guaranteed; fights to the death if cornered with no way out.",
+      "voice_id": "npc-rogue",
+      "attitude": "hostile",
+      "role": "antagonist (redeemable)",
+      "wants": "To keep his surviving crew alive and as far from 'the Long Thing' as possible. The inn's dry cellar is, to him, the first safe ground in days.",
+      "knows": [
+        "Everything Quill knows, and that he has lost two of his crew to the deep water.",
+        "That sealing the drain traps the Long Thing below — which is exactly what he wants too, if he can get his people out first."
+      ],
+      "stat_block": "Goblin (AC 15, HP 7, CR 1/4). Reflavor the scimitar as a barbed driftwood club (same stats). Grett is the toughest goblin in the final fight; run him last."
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-taproom",
+      "name": "The Sodden Crown — Taproom",
+      "description": "A low-beamed common room that smells of woodsmoke, wet wool, and old ale. Rain hammers the shutters. A peat fire keeps the dark at bay. The cellar trapdoor sits behind the bar, bolted, with a faint dragging-water sound rising through the boards when the room goes quiet.",
+      "connections": ["loc-cellar-stairs"],
+      "notes": "Safe zone. Brakka and Dorn are here. The party can short rest, gear up, and gather information before descending. Returning here at the end is the natural place to resolve the adventure."
+    },
+    {
+      "id": "loc-cellar-stairs",
+      "name": "The Cellar Stairs",
+      "description": "A steep run of damp stone steps descending into cold dark. Ale barrels are stacked along a brick landing halfway down. The lowest three steps vanish under standing black water. A taut cord, strung ankle-high across the landing and hung with bent tin cups, waits to announce anyone careless.",
+      "connections": ["loc-taproom", "loc-rat-run", "loc-crawlspace"],
+      "notes": "The EXPLORATION beat lives here: a Perception check to spot the goblin alarm-cord (trip-trap), and a navigation choice between the narrow flooded main passage (loc-rat-run) and a cramped dry crawlspace (loc-crawlspace)."
+    },
+    {
+      "id": "loc-rat-run",
+      "name": "The Rat-Run",
+      "description": "A flooded storage passage. Shelves of ruined preserves loom out of knee-deep water; jars float and clink. Things move beneath the surface — and along the rafters, lean shapes with wet eyes track the intruders. The water tugs faintly, all of it draining toward a deeper dark at the far end.",
+      "connections": ["loc-cellar-stairs", "loc-sump"],
+      "notes": "First COMBAT beat. The 'rats' Brakka complained of are real vermin swarming underfoot (atmosphere/hazard) plus the goblins' two scavenger-hounds — reflavored Wolves that den in the rafters. Difficult terrain (water) matters here."
+    },
+    {
+      "id": "loc-crawlspace",
+      "name": "The Dry Crawlspace",
+      "description": "A cramped side-tunnel the goblins clawed open through a collapsed wall, just tall enough to stoop in. It is dry, close, and reeks of frightened goblin. A single scavenger has been left here as a lookout — small, cornered, and far more scared of what's below than of the party.",
+      "connections": ["loc-cellar-stairs", "loc-sump"],
+      "notes": "The SOCIAL beat. Quill is here. This is the 'mercy' path: befriend her and the twist opens up, and the final fight can be turned into a parley. Players who skip the Rat-Run via the alarm-cord choice can arrive here first."
+    },
+    {
+      "id": "loc-sump",
+      "name": "The Sump",
+      "description": "The cellar's flooded bottom: a brick pit that was once a drain, now clawed wide into a black throat of water. The goblin crew's salvage is heaped on the few dry stones — bolts of cloth, a strongbox, a child's wooden horse. The water here is deep and very still, and something far below makes it shiver in slow, wrong rings.",
+      "connections": ["loc-rat-run", "loc-crawlspace"],
+      "notes": "Climax COMBAT beat AND the twist payoff. Grett and his crew make their stand here. The widened drain can be re-sealed (a STR/skill check or improvised barricade) to trap 'the Long Thing' below — the real resolution. The Long Thing is never fully seen: a tentacle, a ripple, a dragged chain. Do NOT stat it; it is the threat the goblins fled, not a fight to win."
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-1-hook",
+      "name": "Stew and a Bargain",
+      "type": "social",
+      "location_id": "loc-taproom",
+      "read_aloud": "Rain comes down the chimney in spits and hisses on the fire. The Sodden Crown is warm, and dry, and the only roof for a day in any direction — which is the only reason its keeper still has guests. Brakka Holt sets a bowl of barley-and-mutton in front of you, then doesn't leave. She wipes the same clean spot on the bar three times. 'Stew's on the house,' she says at last, not looking up. 'The room could be too. If you've a strong stomach and you're not squeamish about... rats.' Behind the bar, a bolted trapdoor breathes a slow, dragging, watery sound up through the floorboards.",
+      "dm_notes": "Open warm, then let the dread leak in. Brakka is GUARDED — she'll undersell the danger ('just rats, big ones') to avoid scaring off custom or admitting the Crown might be condemned. The party's job is to get the real story and accept the job. Dorn (npc-male-1) is hunched in the corner with a bandaged arm and will blurt the truth if drawn out — 'It weren't no rat, it had a FACE.' Play him jumpy and over-fast. The companion (companion-default) should jump in here: razz the party about hazard pay, sniff the air at the trapdoor, or gently coax Dorn's story out. Reward roleplay: a player who buys Dorn a drink or treats Brakka with respect should get the Insight/Persuasion result for free.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 12,
+          "success": "You read past Brakka's gruffness: she's not annoyed, she's frightened. She admits the cellar flooded a week ago, the 'rats' fouled three barrels and bit Dorn, and at night there's 'a sound like chains through water.' Her honesty shifts her attitude from guarded to grateful — she adds 25 gp to the offer and presses the cellar key into the party's hands.",
+          "failure": "Brakka stays buttoned-up and gruff. She'll still offer the job — free lodging plus 10 gp — but volunteers nothing more. The party goes down underinformed (and may walk straight onto the alarm-cord)."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "Brakka decides you're worth trusting. Same reward bump as the Insight success, and she remembers the bricked-over drain her late husband sealed 'down the far end, years back' — a crucial clue for the finale.",
+          "failure": "No penalty beyond a curt 'It's rats. Clear the rats.' The drain stays forgotten until the party finds it themselves."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party accepts and unbolts the trapdoor, move to scene-2 at loc-cellar-stairs."
+    },
+    {
+      "id": "scene-2-descent",
+      "name": "Down the Cellar Stairs",
+      "type": "exploration",
+      "location_id": "loc-cellar-stairs",
+      "read_aloud": "The trapdoor lifts on a breath of cold, river-smelling air. Stone steps drop away into dark, slick with damp, and somewhere below, water moves where no water should be. Halfway down, ale barrels are stacked along a brick landing. The lowest steps simply vanish beneath a skin of black, still water. It is very quiet down here — the kind of quiet that is listening back.",
+      "dm_notes": "This is the EXPLORATION beat: a trap to spot and a fork to choose. The goblins strung a crude alarm — an ankle-high cord hung with bent tin cups across the landing. Spotting it is a Perception check; disarming it is a clean Dexterity (Sleight of Hand) or just stepping over it once seen. If it's tripped, the cellar erupts in a tinny clatter and EVERY enemy ahead (the wolves in scene-3 and the goblins in scene-5) is alert — wolves get a surprise-free fight and Grett's crew is ready and waiting (no surprise round for the party at the sump). From the landing the passage forks: the flooded main run (loc-rat-run, left) or a cramped dry crawlspace clawed through the wall (loc-crawlspace, right). Let the party choose; both reach the sump. The companion can offer to scout, take the check, or argue for the quiet route.",
+      "checks": [
+        {
+          "skill": "Perception",
+          "dc": 13,
+          "success": "You catch the glint of a taut cord strung ankle-high across the landing, strung with bent tin cups — a crude alarm. Stepping over it (or a DC 11 Sleight of Hand to cut it silent) leaves the way ahead unaware of you.",
+          "failure": "A boot catches the cord. Tin cups clatter down the steps like a dropped tray of cutlery, and the sound carries into the dark ahead. Every enemy in the cellar is now ALERT — no surprise for the party in the fights to come, and the goblins at the sump are ready for a fight."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 12,
+          "success": "Studying the landing, you notice fresh small handprints in the silt and drag-marks leading BOTH ways from the fork — and that the dry crawlspace stinks of living goblin while the flooded run smells of animal musk and wet fur. Useful intel for choosing a route: people that way, beasts the other.",
+          "failure": "Both passages just look like dark, wet holes. The party picks blind."
+        }
+      ],
+      "encounter": null,
+      "navigation_choice": {
+        "prompt": "From the landing the cellar forks: the flooded main passage (left) or the cramped dry crawlspace (right).",
+        "options": [
+          {"to": "loc-rat-run", "label": "The flooded main passage — wider, but something is moving in the water and the rafters.", "leads_to_scene": "scene-3-ratrun"},
+          {"to": "loc-crawlspace", "label": "The dry crawlspace — tight and stinking of goblin, but quiet.", "leads_to_scene": "scene-4-quill"}
+        ],
+        "note": "Both routes converge on loc-sump (scene-5). The order the party meets the wolves vs. Quill simply flips based on this choice. Either way, scenes 3, 4, and 5 should all happen before the conclusion."
+      },
+      "transitions": "Left -> scene-3-ratrun. Right -> scene-4-quill."
+    },
+    {
+      "id": "scene-3-ratrun",
+      "name": "The Rat-Run",
+      "type": "combat",
+      "location_id": "loc-rat-run",
+      "read_aloud": "Knee-deep water swallows your shins, cold as a grave. Shelves of ruined preserves lean out of the dark, jars bobbing and clinking against each other. Beneath the surface, things brush past your legs — small, fast, many. Then, up among the rafters, two pairs of wet eyes open and catch your light. Lean shapes uncoil from the beams, lips peeling back from teeth, and drop toward the water with a snarl.",
+      "dm_notes": "First COMBAT. The actual 'rats' are a hazard/atmosphere swarm underfoot — describe them, but they're harmless vermin (the goblins' leavings drew them). The real threat is the goblins' two scavenger-hounds, reflavored WOLVES that den in the dry rafters. Use the bundled Wolf stat block as-is (AC 13, HP 11, Bite +4, 2d4+2, DC 11 STR save or knocked prone; Pack Tactics; Keen Hearing & Smell). The standing water is DIFFICULT TERRAIN for the party but not the wolves (they leap beam to beam and only close to bite) — this makes positioning matter and gives casters a reason to use Fire Bolt / Magic Missile across the water rather than melee through it. If the alarm-cord was tripped in scene-2, the wolves act on the first round with the party surprised; otherwise roll initiative normally. A downed PC triggers the companion's Healing Word / Cure Wounds moment. Two wolves is a tuned fight for a level 1-2 party of 3-4; drop to one wolf for a smaller/squishier party, or add the vermin as a token swarm (treat as light obscurement + a DC 10 STR save or be Grappled at 0 damage) if the party is steamrolling.",
+      "checks": [
+        {
+          "skill": "Athletics",
+          "dc": 11,
+          "success": "You slog or vault to dry footing (a shelf, a stair, the brick rim), shedding the difficult terrain and the prone-risk for the rest of the fight.",
+          "failure": "You stay mired in the water — movement is halved and you have no special footing if a wolf knocks you prone."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Wolf", "count": 2, "reflavor": "Scavenger-hounds: lean, half-feral curs the goblins keep, denning in the dry rafters above the flood."}
+        ],
+        "tactics": "The wolves use Pack Tactics — both pile onto a single target to gain advantage, aiming to knock a PC prone (DC 11 STR save on a hit) and then gang the prone target. They will not stand and trade in the open water; they dart in from the rafters, bite, and a wounded wolf retreats to a beam to be re-flanked. If one wolf drops, the survivor may flee toward the sump and join Grett's stand in scene-5. Vermin underfoot are flavor only unless the DM needs to dial difficulty up.",
+        "scaling": "Party of 1-2 or all-squishy: 1 Wolf. Party of 4+ or running hot: 2 Wolves + a vermin swarm hazard.",
+        "xp": 100
+      },
+      "transitions": "After the fight, the water pulls toward the deeper dark at the far end — on to loc-sump (scene-5). If the party came this way first, they have not yet met Quill; the crawlspace (scene-4) opens off the sump's edge, so they can still encounter her before or during the climax."
+    },
+    {
+      "id": "scene-4-quill",
+      "name": "Quill in the Crawlspace",
+      "type": "social",
+      "location_id": "loc-crawlspace",
+      "read_aloud": "The crawlspace is dry, close, and rank with the smell of frightened goblin. Your light finds her pressed into the dead-end: small, ribs showing, one ear notched, a rusted shiv shaking in her fist. She bares her teeth — but her eyes are wet, and they keep darting past you, back toward the deep water, as if you are not the thing she's truly afraid of. 'Stay back!' she hisses in cracked Common. 'You — you go back up. Is not safe down. Not for you, not for nobody.'",
+      "dm_notes": "The SOCIAL beat and the heart of the twist. Quill (npc-rogue) is a Goblin (AC 15, HP 7) left as a lookout — cornered, starving, and far more scared of what's below than of the party. She BEGINS HOSTILE. Players have a clear choice: kill a frightened prisoner, or treat her as a person. If they lower weapons, offer food, or speak gently, give them the check at advantage. The twist she carries: her crew aren't raiders — they FLED UP through the old drain from the drowned undercity when their warren collapsed, running from something they call 'the Long Thing' that took two of them. The dry cellar is the first safe ground they've had in days. She also reveals the bricked drain is the way down and CAN be re-sealed, and (if she warms fully) admits she's the one who pulled the big goblin off Dorn — she didn't want the boy hurt. A befriended Quill will lead the party to the sump and beg them to spare her crew and seal the drain instead of slaughtering everyone. This converts the scene-5 combat into an optional parley. The companion should advocate here — lean toward mercy or at least curiosity, and react with real surprise to the twist. NOTE: this is the small twist — the 'monster infestation' is a refugee camp, and the actual monster is the one nobody's seen yet, still down in the water.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 12,
+          "success": "Your calm gets through the panic. Quill lowers the shiv, attitude shifting from hostile to wary. She talks — fast, broken, terrified — and the truth spills out: 'We not raiders! We RUN. Up, away from — from the Long Thing. It in the water. It take Skib. It take Mott. We just want safe, dry, away.' She'll guide you to the sump and beg you to spare the crew.",
+          "failure": "She doesn't buy it. She stays hostile and, on her turn, uses Nimble Escape to bolt for the sump and shriek a warning to Grett — alerting the final encounter (no surprise for the party in scene-5)."
+        },
+        {
+          "skill": "Animal Handling",
+          "dc": 11,
+          "success": "Treating her like a frightened creature rather than a monster — slow movements, an offered ration — works where words might not. Same outcome as the Persuasion success: she calms, talks, and becomes a guide.",
+          "failure": "She flinches away, still cornered and hostile, and looks for a chance to flee to the sump."
+        },
+        {
+          "skill": "Insight",
+          "dc": 10,
+          "success": "Even before she says a word, you read her body language: that is not the posture of a predator guarding a kill. She is a cornered thing protecting its back from the dark behind her. She's more scared of the water than of you. (Knowing this makes the social approach obvious — narrate it as a nudge toward mercy.)",
+          "failure": "She just reads as a hostile goblin with a knife."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Goblin", "count": 1, "reflavor": "Quill — a starving goblin lookout, more refugee than raider. Only fights if cornered with no mercy offered."}
+        ],
+        "tactics": "Quill does NOT want to fight. If threatened or attacked she uses Nimble Escape (Disengage/Hide as a bonus action) to flee toward the sump and raise the alarm rather than trade blows. If befriended she sheathes the shiv entirely and becomes a non-combatant guide. Killing her is trivially easy (HP 7) and is meant to feel like a moral choice, not a challenge.",
+        "xp": 50,
+        "xp_note": "Award the 50 XP for resolving Quill whether the party fights, captures, or befriends her — the encounter is overcome either way. Befriending her additionally unlocks the peaceful resolution and a story-reward in the conclusion."
+      },
+      "transitions": "On to loc-sump (scene-5). If befriended, Quill leads the way and the climax can open as a parley; if she fled, the goblins at the sump are forewarned and ready."
+    },
+    {
+      "id": "scene-5-sump",
+      "name": "The Sump",
+      "type": "combat",
+      "location_id": "loc-sump",
+      "read_aloud": "The passage opens into the cellar's drowned heart — a brick pit clawed wide into a black throat of water. On the few dry stones, a goblin's whole world is heaped: bolts of river-stained cloth, a dented strongbox, a child's wooden horse. Three goblins crouch among the salvage, driftwood clubs ready, and the scarred one in front — one eye gone milky — plants himself between you and his people. 'No closer,' he growls. And behind him, out in the deep still water, something vast and unseen turns over, and the whole pool shivers in slow, wrong rings.",
+      "dm_notes": "The climax — both the second COMBAT beat and the twist payoff. Grett One-Eye (npc-rogue) and his crew (Goblins, AC 15, HP 7 each) make their stand. Use the bundled Goblin stat block; reflavor scimitars as barbed driftwood clubs (identical stats), shortbows as sling-stones if you want ranged. Run Grett last — he's the toughest-feeling of the three. TWO PATHS: (1) COMBAT — if the party came in hostile or Quill fled, roll initiative. Three goblins is a meaningful but winnable climax for level 1-2; Nimble Escape makes them slippery skirmishers who dart between the dry stones and use the salvage as cover. A surviving wolf from scene-3 joins here if it fled. (2) PARLEY — if Quill was befriended (or the party leads with diplomacy and a DC 13 Persuasion / Charisma check), Grett can be talked down: he wants the same thing the party should want — get his people out and SEAL the drain so the Long Thing can't follow. This trades the fight for a tense alliance. THE LONG THING is never seen and never fought — it is a presence: a ripple, a dragged chain, a tentacle glimpsed and gone, the reason everyone down here is afraid. Do not stat it. Its purpose is to make sealing the drain the real victory. The companion shines here: covering fire / Magic Missile in a fight, or brokering the parley and helping heave the drain shut. If a PC drops, this is the dramatic Healing Word beat.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "You convince Grett you're not here to exterminate his crew — you're here to end the threat. He lowers the club. 'Then help us SEAL it,' he rasps, nodding at the clawed-open drain. 'Get my people up, brick the throat, and the Long Thing stays down in the dark where it belongs.' The fight becomes an alliance. (Auto-success if Quill was befriended and speaks for the party.)",
+          "failure": "Grett doesn't believe surface folk would spare goblins. He attacks to protect his crew — roll initiative."
+        },
+        {
+          "skill": "Strength (Athletics)",
+          "dc": 13,
+          "success": "Working the heavy bricks and a fallen shelf back over the clawed-open drain, you re-seal the throat. The slow wrong rings in the water stop. Whatever was rising sinks back into the dark, sealed below. THIS is the win — the cellar is safe.",
+          "failure": "The bricks won't hold alone. It takes a second pair of hands (the companion, a turned goblin, or a second PC's action) — or improvised mortar from the ruined preserves and rubble — to finish the seal. Narrate the water shivering harder the longer the drain stays open."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Goblin", "count": 3, "reflavor": "Grett One-Eye and two scavengers. Driftwood clubs (reflavored scimitars). Refugees making a desperate last stand, not gleeful raiders."}
+        ],
+        "tactics": "Grett holds the front, body-blocking the path to the salvage and his crew. The two scavengers use Nimble Escape to dart between the dry stones, throw sling-stones or stab, then Disengage as a bonus action and reposition behind cover — slippery, not suicidal. They fight hardest when cornered and will try to surrender or flee once two of the three are down (a perfect window to flip the fight into the parley/seal resolution mid-combat). A wolf that fled scene-3 joins on round 2. The Long Thing in the water is NOT a combatant — but the DM can spend it as escalating dread: each round the drain stays open, the rings widen, until on the round it's left open too long a chain-thick tendril breaks the surface and drags a goblin (never a PC) screaming under, hammering home WHY the drain must be sealed now.",
+        "scaling": "Party of 1-2 or all-squishy: 2 Goblins (Grett + 1). Party of 4+ or running hot: 3 Goblins + the fled Wolf. Either way the real objective is the drain, not a body count.",
+        "xp": 150,
+        "xp_note": "Award full XP for resolving the encounter whether by combat, parley, or a mix — overcoming it diplomatically counts."
+      },
+      "transitions": "Once the goblins are dealt with (defeated, fled, or allied) and the drain is sealed, the immediate threat is over — return to loc-taproom for the conclusion."
+    }
+  ],
+  "rewards": {
+    "xp": 300,
+    "xp_breakdown": {
+      "rat-run-wolves": 100,
+      "quill": 50,
+      "sump-goblins": 150,
+      "note": "Total 300 XP. Split among the party (and companion), this comfortably carries a fresh level-1 party of 3-4 toward level 2 in one session, per SRD milestone/encounter guidance. Award encounter XP for diplomatic resolutions too — overcoming a challenge by talking counts as overcoming it."
+    },
+    "currency": {
+      "gp": 35,
+      "note": "Brakka pays 10 gp flat, or 35 gp if her attitude was won over in scene-1. Free lodging for the night regardless. Add the strongbox find below to the haul."
+    },
+    "loot": [
+      {"item": "Goblin scavenger strongbox", "contents": "23 sp, 14 cp, a tarnished silver locket (10 gp), and a waterlogged but legible river-trade ledger.", "note": "Found on the dry stones in the sump."},
+      {"item": "Potion of Healing", "rarity": "common", "note": "One vial, stoppered with wax, among the salvage — the goblins scavenged it from the drowned undercity and couldn't read the label. 2d4+2 HP."},
+      {"item": "A child's wooden horse", "value": "0 gp", "note": "Worthless, but Brakka recognizes it — it belonged to a family lost when the river rose. Returning it is a quiet roleplay beat and earns the party a permanent free welcome at the Crown."},
+      {"item": "Bundle of river-stained cloth (3 bolts)", "value": "6 gp", "note": "Sellable salvage if the party hauls it up."}
+    ],
+    "story_rewards": [
+      "If Quill and/or Grett's crew were spared and led to safety, the goblins owe the party a life-debt — a future-hook ally living rough on the town's edge.",
+      "Returning the wooden horse to Brakka earns 'the Crown is always open to you' — a reliable safe haven and rumor-hub for later adventures.",
+      "Sealing rather than ignoring the drain means the Long Thing is contained, not killed — a deliberate dangling thread for a later, higher-level descent into the drowned undercity."
+    ]
+  },
+  "conclusion": "Back in the taproom, the dragging-water sound is gone. Brakka bolts the trapdoor with hands that finally stop shaking and pours a round on the house. How the night is remembered is up to the party: as the night they exterminated a nest of vermin, or the night they spared a band of desperate refugees and sealed something far worse beneath the floor. Either way the Sodden Crown is safe by dawn — but the bricked drain only holds back the dark; it doesn't end it. Somewhere below the floorboards, in the drowned undercity, the Long Thing settles back into the deep and waits. (Hook for a future, higher-level descent.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-2-descent — Perception/Investigation checks + the alarm-cord trip-trap + the flooded-passage vs. dry-crawlspace navigation choice.",
+      "social": "scene-1-hook (Brakka's attitude guarded->grateful on Insight/Persuasion) and scene-4-quill (Quill's attitude hostile->helpful on Persuasion/Animal Handling/Insight — the required attitude-shift NPC).",
+      "combat_1": "scene-3-ratrun — 2x Wolf (bundled).",
+      "combat_2": "scene-5-sump — 3x Goblin incl. Grett (bundled)."
+    },
+    "bundled_assets_used": {
+      "monsters": ["Wolf (x2, scene-3, reflavored scavenger-hounds)", "Goblin (x1 Quill scene-4; x3 Grett+crew scene-5)"],
+      "monsters_optional": ["Bandit (only if Brakka/Dorn are ever forced to fight)"],
+      "spells_in_play": ["Healing Word / Cure Wounds (companion stabilizing a downed PC)", "Fire Bolt / Magic Missile (ranged options across the flooded Rat-Run)", "Mage Armor (a wizard/sorcerer PC pre-buff before descending)"],
+      "conditions_in_play": ["Prone (Wolf knockdown, DC 11 STR)", "Grappled (optional vermin-swarm hazard)", "Frightened (DM may apply via the Long Thing's presence as a narrative dread, optional)"]
+    },
+    "pacing_for_one_hour": "Scene 1 ~10 min (hook + bargain), Scene 2 ~10 min (descent + trap + fork), Scene 3 ~12 min (wolf fight), Scene 4 ~10 min (Quill + twist), Scene 5 ~15 min (climax + seal), Conclusion ~3 min. Trim the optional vermin swarm and run Grett's crew at 2 goblins to stay inside the hour for a smaller party.",
+    "originality_note": "This adventure is 100% original prose written for ClawDnD and is shippable under CC-BY. It uses only SRD 5.2 mechanics and the bundled Goblin/Wolf/Bandit stat blocks. No published or copyrighted adventure text is reproduced."
+  }
+}

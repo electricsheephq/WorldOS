@@ -15,8 +15,9 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+import combat
 import dice as dice_mod
-from models import Ability, AbilityScores, Campaign, Character, ClassLevel, Condition
+from models import Ability, AbilityScores, Campaign, Character, ClassLevel, Combat, Combatant, Condition
 from store import campaign_lock
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
@@ -36,6 +37,26 @@ def _char(c: Campaign, character_id: str) -> Character:
     if ch is None:
         raise ValueError(f"no character {character_id!r} in campaign")
     return ch
+
+
+def _combat_view(c: Campaign) -> dict:
+    order = []
+    for cb in c.combat.order:
+        ch = c.characters.get(cb.character_id)
+        order.append(
+            {
+                "character_id": cb.character_id,
+                "name": ch.name if ch else "?",
+                "initiative": cb.initiative,
+            }
+        )
+    return {
+        "active": c.combat.active,
+        "round": c.combat.round,
+        "turn_index": c.combat.turn_index,
+        "current": c.combat.current_combatant_id,
+        "order": order,
+    }
 
 
 def _deep_update(base: dict, patch: dict) -> dict:
@@ -224,6 +245,8 @@ def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
         ch = _char(c, character_id)
         if cond not in ch.conditions:
             ch.conditions.append(cond)
+        if cond in combat.INCAPACITATING:
+            ch.concentration = None  # SRD: incapacitation breaks concentration
         save_campaign(c)
         return ch.model_dump(mode="json")
 
@@ -256,6 +279,182 @@ def set_hp(
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")
+
+
+@mcp.tool()
+def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
+    """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
+    and build the turn order (desc, ties broken by DEX modifier then input order).
+    Pass the character ids of everyone in the fight."""
+    if not combatant_ids:
+        raise ValueError("combatant_ids must be non-empty")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if c.combat.active:
+            raise ValueError("combat already active; call end_combat first")
+        rolled = []
+        for cid in combatant_ids:
+            ch = _char(c, cid)
+            r = dice_mod.roll(f"1d20+{ch.initiative_bonus}")
+            rolled.append((cid, r.total, ch.ability_modifier(Ability.DEX)))
+        indexed = sorted(enumerate(rolled), key=lambda t: (-t[1][1], -t[1][2], t[0]))
+        c.combat = Combat(
+            active=True,
+            round=1,
+            turn_index=0,
+            order=[Combatant(character_id=o[0], initiative=o[1]) for _, o in indexed],
+        )
+        save_campaign(c)
+        return _combat_view(c)
+
+
+@mcp.tool()
+def next_turn(campaign_id: str) -> dict:
+    """Advance to the next combatant's turn (round increments on wrap). Returns
+    whose turn it is and whether they owe a death save (downed and unstable)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active or not c.combat.order:
+            raise ValueError("no active combat")
+        c.combat.turn_index += 1
+        if c.combat.turn_index % len(c.combat.order) == 0:
+            c.combat.round += 1
+        save_campaign(c)
+        cur_id = c.combat.current_combatant_id
+        cur = c.characters.get(cur_id) if cur_id else None
+        view = _combat_view(c)
+        view["current_name"] = cur.name if cur else None
+        view["death_save_due"] = bool(
+            cur and cur.current_hp == 0 and not cur.dead and not cur.stable
+        )
+        return view
+
+
+@mcp.tool()
+def attack(
+    campaign_id: str,
+    attacker_id: str,
+    target_id: str,
+    attack_bonus: int,
+    damage_dice: str,
+    damage_type: str = "",
+    advantage: bool = False,
+    disadvantage: bool = False,
+) -> dict:
+    """Resolve an attack. The DM supplies attack_bonus and damage_dice (e.g.
+    '1d8+3'); the engine rolls 1d20+bonus vs the target's AC, auto-hits on a
+    natural 20 and auto-misses on a natural 1, doubles damage dice on a crit, and
+    applies the damage. Condition-based advantage/disadvantage is detected and
+    combined with the explicit flags (they cancel if both apply)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        attacker = _char(c, attacker_id)
+        target = _char(c, target_id)
+        cadv, cdis = combat.attack_modifiers(attacker, target)
+        atk = dice_mod.roll(
+            f"1d20+{attack_bonus}", advantage=advantage or cadv, disadvantage=disadvantage or cdis
+        )
+        hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
+        result = {
+            "attacker": attacker.name,
+            "target": target.name,
+            "attack_roll": {"total": atk.total, "natural": atk.natural, "detail": atk.detail},
+            "crit": atk.crit,
+            "hit": hit,
+            "target_ac": target.armor_class,
+            "damage": None,
+        }
+        if hit:
+            expr = combat.double_dice(damage_dice) if atk.crit else damage_dice
+            dmg = dice_mod.roll(expr)
+            outcome = combat.apply_damage(target, max(0, dmg.total), crit=atk.crit)
+            save_campaign(c)
+            result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
+            result["target_state"] = outcome
+        return result
+
+
+@mcp.tool()
+def apply_damage(campaign_id: str, target_id: str, amount: int, damage_type: str = "", crit: bool = False) -> dict:
+    """Apply damage to a character. Temp HP is absorbed first; HP floors at 0;
+    massive damage causes instant death; dropping to 0 makes the target unconscious
+    and dying; a hit while already down adds a death-save failure (two on a crit).
+    Returns the new state, including any concentration_dc to roll."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        out = combat.apply_damage(_char(c, target_id), amount, crit=crit)
+        save_campaign(c)
+        return out
+
+
+@mcp.tool()
+def apply_healing(campaign_id: str, target_id: str, amount: int) -> dict:
+    """Heal a character (up to max HP). Healing above 0 HP ends the dying state
+    and resets death saves. Cannot revive the dead."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        out = combat.apply_healing(_char(c, target_id), amount)
+        save_campaign(c)
+        return out
+
+
+@mcp.tool()
+def set_temp_hp(campaign_id: str, target_id: str, amount: int) -> dict:
+    """Grant temporary HP. Temp HP does NOT stack — keeps the higher of current
+    and new (SRD rule)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, target_id)
+        ch.temp_hp = max(ch.temp_hp, max(0, amount))
+        save_campaign(c)
+        return {"temp_hp": ch.temp_hp, "hp": f"{ch.current_hp}/{ch.max_hp}"}
+
+
+@mcp.tool()
+def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
+    """Roll a concentration saving throw (CON save) at the given DC (usually
+    max(10, damage//2) from apply_damage). On failure, concentration is lost."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
+        maintained = r.total >= dc
+        if not maintained:
+            ch.concentration = None
+        save_campaign(c)
+        return {
+            "roll": r.total,
+            "natural": r.natural,
+            "dc": dc,
+            "maintained": maintained,
+            "concentration": ch.concentration,
+        }
+
+
+@mcp.tool()
+def roll_death_save(campaign_id: str, character_id: str) -> dict:
+    """Roll a death saving throw for a downed character (must be at 0 HP, not dead
+    or stable). 10+ success, <10 failure; nat 20 -> regain 1 HP; nat 1 -> two
+    failures; 3 successes stabilize; 3 failures die."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        if ch.current_hp != 0 or ch.dead or ch.stable:
+            raise ValueError("death saves apply only to a downed (0 HP), unstable, living character")
+        out = combat.resolve_death_save(ch, dice_mod.roll("1d20"))
+        save_campaign(c)
+        return out
+
+
+@mcp.tool()
+def end_combat(campaign_id: str) -> dict:
+    """End combat (clears initiative, round, and turn order). Character HP and
+    conditions persist past the encounter."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.combat = Combat()
+        save_campaign(c)
+        return {"active": False}
 
 
 if __name__ == "__main__":
