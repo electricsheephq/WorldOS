@@ -88,9 +88,14 @@ def test_spawn_monster_count_numbered(cid):
     ]
 
 
-def test_spawn_monster_unknown_suggests(cid):
-    out = server.spawn_monster(cid, "Goblin")  # plain 'Goblin' was renamed in srd-2024
-    assert "error" in out and any("Goblin" in s for s in out["suggestions"])
+def test_spawn_monster_fuzzy_resolves_to_warrior(cid):
+    out = server.spawn_monster(cid, "Goblin")  # 2024 SRD baseline -> 'Goblin Warrior'
+    assert "spawned" in out and out["name"] == "Goblin Warrior"
+
+
+def test_spawn_monster_truly_unknown_suggests(cid):
+    out = server.spawn_monster(cid, "Florble the Nonexistent")
+    assert "error" in out
 
 
 def test_adventure_npcs_seeded_battle_ready(cid):

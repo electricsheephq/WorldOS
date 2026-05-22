@@ -389,7 +389,8 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     count>1 spawns numbered copies. Unknown name -> {"error", "suggestions"} from a
     fuzzy search (try e.g. 'Goblin Warrior', 'Wolf'). Returns the spawned ids + a
     stat summary incl. xp_each (the encounter reward); pass the ids to start_combat."""
-    sb = bestiary.stat_block(name)
+    canonical = bestiary.resolve(name)
+    sb = bestiary.stat_block(canonical) if canonical else None
     if sb is None:
         return {"error": f"no creature named {name!r} in the bestiary", "suggestions": bestiary.find(name)}
     n = max(1, min(int(count), 20))

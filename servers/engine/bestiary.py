@@ -127,5 +127,23 @@ def find(query: str, limit: int = 10) -> list[str]:
     return [n for n in names if q in n.lower()][:limit]
 
 
+def resolve(name: str) -> Optional[str]:
+    """Resolve a loose creature name to a canonical bestiary name, or None.
+
+    Tries exact match, then ``<name> Warrior`` (the 2024 SRD's baseline statblock
+    for many humanoids — e.g. 'Goblin' -> 'Goblin Warrior'), then a unique
+    substring match. Returns None when ambiguous or absent (the caller should then
+    offer ``find()`` suggestions)."""
+    key = name.strip().lower()
+    idx = _index()
+    if key in idx:
+        return idx[key]["fields"]["name"]
+    warrior = f"{key} warrior"
+    if warrior in idx:
+        return idx[warrior]["fields"]["name"]
+    matches = find(name)
+    return matches[0] if len(matches) == 1 else None
+
+
 def count() -> int:
     return len(_index())
