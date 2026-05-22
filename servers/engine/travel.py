@@ -64,7 +64,7 @@ def advance_clock(campaign: Campaign, steps: int = 1) -> tuple[int, str]:
     return campaign.day, campaign.time_of_day
 
 
-def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = True) -> dict:
+def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = False) -> dict:
     """Move the party to `destination_id` (mutates campaign).
 
     Rules:
@@ -77,8 +77,10 @@ def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = True
       * with no current location set, this is initial placement: any known
         location is allowed.
 
-    Marks the destination visited and, unless `advance_time` is False, advances
-    the clock by one phase. Returns a result dict the DM can narrate from:
+    Marks the destination visited. The clock advances only when `advance_time` is
+    True — short moves within a site (room to room in a dungeon) should leave it
+    False so a brief crawl doesn't burn a whole day; pass True for a long or
+    overland journey. Returns a result dict the DM can narrate from:
     ``{from, to, to_name, first_visit, day, time_of_day, reachable}``.
     """
     dest = campaign.locations.get(destination_id)

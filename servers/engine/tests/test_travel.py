@@ -97,10 +97,16 @@ def test_advance_time_false_keeps_clock():
     assert (c.day, c.time_of_day) == (day0, tod0)
 
 
-def test_travel_advances_one_phase():
+def test_travel_advances_one_phase_when_opted_in():
     c = _camp("a")  # starts day 1, morning
-    out = travel.travel_to(c, "b")
+    out = travel.travel_to(c, "b", advance_time=True)
     assert out["time_of_day"] == "afternoon" and out["day"] == 1
+
+
+def test_travel_default_does_not_advance_clock():
+    c = _camp("a")  # short moves (room to room) shouldn't burn time by default
+    out = travel.travel_to(c, "b")
+    assert out["time_of_day"] == "morning" and out["day"] == 1
 
 
 def test_failed_travel_is_atomic():

@@ -283,15 +283,17 @@ def look_around(campaign_id: str) -> dict:
 
 
 @mcp.tool()
-def travel_to(campaign_id: str, destination_id: str, advance_time: bool = True) -> dict:
+def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False) -> dict:
     """Move the party to a connected location along the map graph.
 
     The destination must be reachable from the current location (listed in its
     connections); travel to an unconnected or unknown location is rejected with
-    the reachable exits. Marks the destination visited and, unless advance_time
-    is False, advances the clock by one time-of-day phase. Returns
-    ``{from, to, to_name, first_visit, day, time_of_day, reachable}`` so the DM
-    knows whether to read first-visit boxed text.
+    the reachable exits. Marks the destination visited. The clock advances a
+    time-of-day phase only when advance_time=True — leave it False for short
+    moves within a site (room to room) so a quick crawl doesn't burn a day; pass
+    True for a long or overland journey. Returns ``{from, to, to_name,
+    first_visit, day, time_of_day, reachable}`` so the DM knows whether to read
+    first-visit boxed text.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
