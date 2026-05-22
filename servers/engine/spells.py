@@ -26,6 +26,30 @@ def spell_data(name: str) -> dict:
     return s
 
 
+_SRD524_SPELLS_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "srd" / "srd524" / "Spell.json"
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _srd524() -> dict:
+    rows = json.loads(_SRD524_SPELLS_PATH.read_text(encoding="utf-8"))
+    return {
+        r["fields"]["name"].lower(): r["fields"]
+        for r in rows
+        if r.get("fields", {}).get("name")
+    }
+
+
+def srd_spell(name: str):
+    """The structured SRD record for any spell (the full ~339-spell srd524 dump),
+    or None. Unlike spell_data (the hand-authored spells with full damage/heal
+    automation), this returns level / concentration / save ability / damage_roll /
+    attack_roll / upcast text for ALL SRD spells — enough for cast_spell to spend
+    the right slot, set concentration, and hand the DM the values to resolve with."""
+    return _srd524().get(name.strip().lower())
+
+
 def _parse_dice(expr: str) -> tuple[int, int]:
     """Parse the dice part of 'NdM(+K)' -> (N, M), ignoring any flat modifier."""
     body = expr.lower().split("+")[0].split("-")[0]

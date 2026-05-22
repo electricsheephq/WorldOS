@@ -921,22 +921,36 @@ def spell_save_dc(campaign_id: str, character_id: str) -> dict:
 def cast_spell(
     campaign_id: str, character_id: str, spell_name: str, slot_level: Optional[int] = None
 ) -> dict:
-    """Cast a spell. Consumes a spell slot (cantrips use none); upcasts when
-    slot_level exceeds the spell's level; sets concentration if the spell
-    concentrates (breaking any prior concentration). If spells_known/prepared are
-    set, the spell must be among them (skipped leniently when both are empty).
-    Returns the resolved effect (damage/heal after upcasting + cantrip scaling),
-    the spell save DC, and the spell attack bonus. The DM then applies the effect:
-    attack spells via attack(); auto/heal via apply_damage/apply_healing; save
-    spells via saving_throw(target) then apply_damage(half=<save succeeded>)."""
-    spell = spells.spell_data(spell_name)
-    spell_level = spell.get("level", 0)
+    """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
+    (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
+    concentration if the spell concentrates (breaking any prior). If spells_known/
+    prepared are set, the spell must be among them (skipped leniently when empty).
+
+    For the hand-authored spells the engine fully resolves the effect (returns
+    `automated:true` + `effect` with upcast/cantrip-scaled damage/heal). For every
+    other SRD spell it DEGRADES GRACEFULLY (returns `automated:false`): the slot is
+    spent and concentration set, and it hands you the structured values to resolve
+    by hand — `save_ability`, `attack_roll`, `base_damage`, `upcast`, plus the
+    `spell_save_dc`/`spell_attack_bonus`. It never errors on an un-modeled spell.
+    Resolve: attack-roll spells via attack(); save spells via saving_throw + then
+    apply_damage(half=<save succeeded>); heals via apply_healing."""
+    curated = None
+    try:
+        curated = spells.spell_data(spell_name)
+    except ValueError:
+        curated = None
+    srd = spells.srd_spell(spell_name)
+    if curated is None and srd is None:
+        raise ValueError(f"unknown spell {spell_name!r}")
+    canonical = (curated or srd).get("name", spell_name)
+    spell_level = int((curated.get("level", 0) if curated else srd.get("level", 0)) or 0)
+    concentrates = bool(curated.get("concentration") if curated else srd.get("concentration"))
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         known = set(ch.spells_known) | set(ch.spells_prepared)
-        if known and spell["name"] not in known:
-            raise ValueError(f"{ch.name} doesn't know or have {spell['name']!r} prepared")
+        if known and canonical not in known:
+            raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
         slot_used = None
         if spell_level > 0:
             lvl = spell_level if slot_level is None else slot_level
@@ -947,26 +961,47 @@ def cast_spell(
                 raise ValueError(f"no level-{lvl} spell slot available")
             slot.used += 1
             slot_used = lvl
-        if spell.get("concentration"):
-            ch.concentration = spell["name"]  # replaces (breaks) any prior concentration
+        if concentrates:
+            ch.concentration = canonical  # replaces (breaks) any prior concentration
         mod = _casting_mod(ch)
-        effect = spells.resolve_effect(spell, slot_used or spell_level, ch.total_level, mod)
         prof = ch.proficiency_bonus
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         updated = c.characters[character_id]
-        return {
-            "spell": spell["name"],
+        result = {
+            "spell": canonical,
             "level": spell_level,
             "slot_used": slot_used,
             "concentration": updated.concentration,
             "spell_save_dc": 8 + prof + mod,
             "spell_attack_bonus": prof + mod,
-            "effect": effect,
             "slots_remaining": {
                 str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
             },
         }
+        if curated is not None:
+            result["automated"] = True
+            result["effect"] = spells.resolve_effect(
+                curated, slot_used or spell_level, ch.total_level, mod
+            )
+        else:
+            result["automated"] = False
+            result["school"] = srd.get("school")
+            result["save_ability"] = srd.get("saving_throw_ability") or None
+            result["attack_roll"] = bool(srd.get("attack_roll"))
+            result["base_damage"] = srd.get("damage_roll") or None
+            result["damage_types"] = srd.get("damage_types") or None
+            result["upcast"] = srd.get("higher_level") or None
+            result["casting_time"] = srd.get("casting_time")
+            result["range"] = srd.get("range_text")
+            result["note"] = (
+                "Slot spent + concentration set. Effect not auto-rolled — resolve with "
+                "the values above: attack-roll spells via attack(attack_bonus="
+                "spell_attack_bonus); save spells via saving_throw(save_ability vs "
+                "spell_save_dc) then apply_damage(base_damage, damage_types, "
+                "half=<save succeeded>); healing via apply_healing."
+            )
+        return result
 
 
 @mcp.tool()
