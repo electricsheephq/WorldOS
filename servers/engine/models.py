@@ -116,8 +116,8 @@ class ClassLevel(_StrictModel):
 
 class Item(_StrictModel):
     name: str
-    quantity: int = 1
-    weight: float = 0.0  # lbs per item
+    quantity: int = Field(1, ge=0)
+    weight: float = Field(0.0, ge=0)  # lbs per item
     equipped: bool = False
     requires_attunement: bool = False
     attuned: bool = False

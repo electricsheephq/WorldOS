@@ -2,12 +2,14 @@
 engine tools wrap them with the campaign lock + persistence.
 
 Currency is normalized through copper for spending/earning so paying 5 gp from a
-purse of silver "makes change" correctly. Encumbrance uses the SRD variant
-thresholds (STR x5 encumbered, x10 heavily encumbered) plus the standard STR x15
-carrying capacity.
+purse of silver "makes change" correctly (Decimal keeps 2-decimal gp exact).
+Encumbrance uses the SRD variant thresholds (STR x5 encumbered, x10 heavily
+encumbered) plus the standard STR x15 carrying capacity.
 """
 
 from __future__ import annotations
+
+from decimal import Decimal
 
 from models import Character, Currency, Item
 
@@ -19,21 +21,25 @@ def total_copper(cur: Currency) -> int:
     return cur.cp + cur.sp * 10 + cur.ep * 50 + cur.gp * 100 + cur.pp * 1000
 
 
+def _gp_to_cp(gp: float) -> int:
+    # Exact for 2-decimal gp (avoids float/banker's-rounding drift).
+    return int((Decimal(str(gp)) * 100).to_integral_value())
+
+
 def _from_copper(total: int) -> Currency:
-    # Canonical change in gp/sp/cp (value-preserving); rare pp/ep fold into gp/sp
-    # on a transaction, which keeps purses readable for players.
+    # Canonical change in gp/sp/cp (value-preserving); rare pp/ep fold into gp/sp.
     gp, rem = divmod(total, 100)
     sp, cp = divmod(rem, 10)
     return Currency(cp=cp, sp=sp, gp=gp)
 
 
 def pay(ch: Character, gp_amount: float) -> Currency:
-    """Spend gp_amount (converted via total copper, making change). Raises if the
-    character can't afford it."""
-    cost = int(round(gp_amount * 100))
-    have = total_copper(ch.currency)
-    if cost < 0:
+    """Spend gp_amount (via total copper, making change). Raises on negative or
+    insufficient funds."""
+    if gp_amount < 0:
         raise ValueError("cannot pay a negative amount")
+    cost = _gp_to_cp(gp_amount)
+    have = total_copper(ch.currency)
     if have < cost:
         raise ValueError("insufficient funds")
     ch.currency = _from_copper(have - cost)
@@ -41,7 +47,9 @@ def pay(ch: Character, gp_amount: float) -> Currency:
 
 
 def gain(ch: Character, gp_amount: float) -> Currency:
-    ch.currency = _from_copper(total_copper(ch.currency) + int(round(gp_amount * 100)))
+    if gp_amount < 0:
+        raise ValueError("cannot gain a negative amount")
+    ch.currency = _from_copper(total_copper(ch.currency) + _gp_to_cp(gp_amount))
     return ch.currency
 
 
@@ -87,16 +95,43 @@ def encumbrance(ch: Character) -> dict:
     }
 
 
-def _find(ch: Character, name: str) -> Item:
-    for it in ch.inventory:
-        if it.name.lower() == name.lower():
-            return it
-    raise ValueError(f"no item named {name!r}")
+def _find(ch: Character, name: str, predicate=None) -> Item:
+    matches = [it for it in ch.inventory if it.name.lower() == name.lower()]
+    if not matches:
+        raise ValueError(f"no item named {name!r}")
+    if predicate:
+        for it in matches:
+            if predicate(it):
+                return it
+    return matches[0]
+
+
+def _split_one(ch: Character, item: Item) -> Item:
+    """Split a single unit off a stack so it can be individually equipped/attuned.
+    Returns the original if quantity is already 1."""
+    if item.quantity <= 1:
+        return item
+    item.quantity -= 1
+    clone = Item(
+        name=item.name, quantity=1, weight=item.weight,
+        requires_attunement=item.requires_attunement, description=item.description,
+    )
+    ch.inventory.append(clone)
+    return clone
 
 
 def add_item(ch: Character, name, quantity=1, weight=0.0, requires_attunement=False, description="") -> Item:
-    for it in ch.inventory:  # stack identical, unequipped, non-attuned items
-        if it.name.lower() == name.lower() and not it.equipped and not it.attuned:
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
+    for it in ch.inventory:  # only stack a fully-identical, unequipped, non-attuned item
+        if (
+            it.name.lower() == name.lower()
+            and not it.equipped
+            and not it.attuned
+            and it.weight == weight
+            and it.requires_attunement == requires_attunement
+            and it.description == description
+        ):
             it.quantity += quantity
             return it
     item = Item(
@@ -108,25 +143,37 @@ def add_item(ch: Character, name, quantity=1, weight=0.0, requires_attunement=Fa
 
 
 def remove_item(ch: Character, name, quantity=1) -> None:
-    it = _find(ch, name)
-    if it.quantity <= quantity:
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
+    it = _find(ch, name, predicate=lambda i: not i.equipped and not i.attuned)
+    if quantity > it.quantity:
+        raise ValueError(f"only {it.quantity} of {name!r} held (tried to remove {quantity})")
+    if quantity == it.quantity:
         ch.inventory.remove(it)
     else:
         it.quantity -= quantity
 
 
 def set_equipped(ch: Character, name, equipped) -> Item:
-    it = _find(ch, name)
-    it.equipped = equipped
+    if equipped:
+        it = _split_one(ch, _find(ch, name, predicate=lambda i: not i.equipped))
+        it.equipped = True
+    else:
+        it = _find(ch, name, predicate=lambda i: i.equipped)
+        it.equipped = False
     return it
 
 
 def set_attuned(ch: Character, name, attuned) -> Item:
-    it = _find(ch, name)
     if attuned:
+        it = _find(ch, name, predicate=lambda i: not i.attuned)
         if not it.requires_attunement:
             raise ValueError(f"{name} does not require attunement")
-        if not it.attuned and sum(1 for i in ch.inventory if i.attuned) >= ATTUNEMENT_LIMIT:
+        if sum(1 for i in ch.inventory if i.attuned) >= ATTUNEMENT_LIMIT:
             raise ValueError(f"already attuned to {ATTUNEMENT_LIMIT} items")
-    it.attuned = attuned
+        it = _split_one(ch, it)
+        it.attuned = True
+    else:
+        it = _find(ch, name, predicate=lambda i: i.attuned)
+        it.attuned = False
     return it
