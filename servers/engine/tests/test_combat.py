@@ -138,3 +138,66 @@ def test_combat_flow_end_to_end(tmp_path, monkeypatch):
     assert nt["round"] >= 1
     server.end_combat(cid)
     assert server.get_state(cid)["in_combat"] is False
+
+
+# --- hardening regressions (from adversarial review) ---
+def test_death_save_guard_on_stable():  # C1
+    ch = mk(max_hp=10, current_hp=0, stable=True)
+    out = combat.resolve_death_save(ch, _ds(5, 5))
+    assert out["result"] == "not_dying"
+    assert ch.death_saves.failures == 0 and ch.stable is True
+
+
+def test_death_save_guard_not_at_zero():  # C1
+    ch = mk(max_hp=10, current_hp=10)
+    out = combat.resolve_death_save(ch, _ds(5, 5))
+    assert out["result"] == "not_dying" and ch.death_saves.failures == 0
+
+
+def test_concentration_ends_when_downed():  # H3
+    ch = mk(max_hp=10, current_hp=6, concentration="Bless")
+    out = combat.apply_damage(ch, 6)  # to exactly 0
+    assert ch.concentration is None and out["concentration_dc"] is None
+
+
+def test_concentration_dc_when_surviving():  # H3
+    ch = mk(max_hp=30, current_hp=30, concentration="Bless")
+    out = combat.apply_damage(ch, 10)
+    assert ch.concentration == "Bless" and out["concentration_dc"] == 10
+
+
+def test_prone_ranged_vs_melee():  # M6
+    adv_m, dis_m = combat.attack_modifiers(mk(), mk(conditions=[Condition.PRONE]), is_ranged=False)
+    assert adv_m and not dis_m
+    adv_r, dis_r = combat.attack_modifiers(mk(), mk(conditions=[Condition.PRONE]), is_ranged=True)
+    assert dis_r and not adv_r
+
+
+def test_next_turn_skips_dead(tmp_path, monkeypatch):  # H2
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("turns")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+    d = server.create_character(cid, "Doomed", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [a, b, d])
+    server.apply_damage(cid, d, 100)  # d is dead
+    seen = set()
+    for _ in range(6):  # two laps
+        v = server.next_turn(cid)
+        if v["current"]:
+            seen.add(v["current"])
+    assert d not in seen
+
+
+def test_remove_combatant(tmp_path, monkeypatch):  # H2
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("rm")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [a, b])
+    view = server.remove_combatant(cid, b)
+    assert all(cb["character_id"] != b for cb in view["order"])

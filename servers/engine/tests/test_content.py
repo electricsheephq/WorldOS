@@ -1,3 +1,5 @@
+import pytest
+
 import content
 from models import Campaign
 
@@ -38,3 +40,18 @@ def test_load_real_cellar_rats():
     assert "loc-taproom" in c.locations
     assert c.current_location_id is not None
     assert len(c.quests) == 1
+
+
+def test_duplicate_location_id_raises():
+    with pytest.raises(ValueError):
+        content.seed_campaign({"title": "X", "locations": [{"id": "dup", "name": "A"}, {"id": "dup", "name": "B"}]})
+
+
+def test_duplicate_npc_id_raises():
+    with pytest.raises(ValueError):
+        content.seed_campaign({"title": "X", "npcs": [{"id": "n", "name": "A"}, {"id": "n", "name": "B"}]})
+
+
+def test_malformed_shape_raises():
+    with pytest.raises(ValueError):
+        content.seed_campaign({"title": "X", "locations": "not a list"})

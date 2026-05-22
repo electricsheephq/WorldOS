@@ -24,28 +24,43 @@ def load_adventure_data(adventure_id: str) -> dict:
     path = _content_dir() / "campaigns" / adventure_id / "adventure.json"
     if not path.exists():
         raise ValueError(f"no adventure named {adventure_id!r} (looked at {path})")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"adventure {adventure_id!r} has malformed JSON: {exc}") from exc
+
+
+def _as_list(adv: dict, key: str) -> list:
+    val = adv.get(key, [])
+    if not isinstance(val, list):
+        raise ValueError(f"malformed adventure: '{key}' must be a list, got {type(val).__name__}")
+    return val
 
 
 def seed_campaign(adv: dict) -> Campaign:
-    """Build a Campaign from an adventure dict. Tolerant of optional fields."""
+    """Build a Campaign from an adventure dict. Tolerant of optional fields, but
+    rejects malformed shapes and duplicate ids rather than silently dropping data."""
+    if not isinstance(adv, dict):
+        raise ValueError("adventure data must be a JSON object")
     c = Campaign(title=adv.get("title", "Untitled Adventure"), summary=adv.get("premise", ""))
 
     first_loc = None
-    for loc in adv.get("locations", []):
+    for loc in _as_list(adv, "locations"):
         location = Location(
             name=loc.get("name", "?"),
             description=loc.get("description", ""),
             connections=loc.get("connections", []),
         )
         if loc.get("id"):
+            if loc["id"] in c.locations:
+                raise ValueError(f"duplicate location id {loc['id']!r} in adventure")
             location.id = loc["id"]
         c.locations[location.id] = location
         if first_loc is None:
             first_loc = location.id
     c.current_location_id = first_loc
 
-    for npc in adv.get("npcs", []):
+    for npc in _as_list(adv, "npcs"):
         ch = Character(
             name=npc.get("name", "NPC"),
             kind="npc",
@@ -54,6 +69,8 @@ def seed_campaign(adv: dict) -> Campaign:
             attitude=npc.get("attitude", ""),
         )
         if npc.get("id"):
+            if npc["id"] in c.characters:
+                raise ValueError(f"duplicate npc id {npc['id']!r} in adventure")
             ch.id = npc["id"]
         c.characters[ch.id] = ch
 

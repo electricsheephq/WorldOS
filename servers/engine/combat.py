@@ -36,7 +36,6 @@ _TARGET_GIVES_ADV = {
     Condition.RESTRAINED,
     Condition.STUNNED,
     Condition.UNCONSCIOUS,
-    Condition.PRONE,  # melee assumption (engine has no positioning)
 }
 
 
@@ -48,9 +47,10 @@ def double_dice(expr: str) -> str:
     return _DICE.sub(lambda m: f"{(int(m.group(1) or 1)) * 2}d{m.group(2)}", expr)
 
 
-def attack_modifiers(attacker: Character, target: Character) -> tuple[bool, bool]:
-    """(advantage, disadvantage) implied by the combatants' conditions. The
-    caller combines these with any explicit flags; dice.roll cancels adv+disadv."""
+def attack_modifiers(attacker: Character, target: Character, is_ranged: bool = False) -> tuple[bool, bool]:
+    """(advantage, disadvantage) implied by the combatants' conditions. The caller
+    combines these with any explicit flags; dice.roll cancels adv+disadv. A prone
+    target grants advantage to melee attackers and disadvantage to ranged ones."""
     adv = disadv = False
     ac = set(attacker.conditions)
     tc = set(target.conditions)
@@ -62,6 +62,9 @@ def attack_modifiers(attacker: Character, target: Character) -> tuple[bool, bool
         adv = True
     if Condition.INVISIBLE in tc:
         disadv = True
+    if Condition.PRONE in tc:
+        adv = adv or (not is_ranged)
+        disadv = disadv or is_ranged
     return adv, disadv
 
 
@@ -120,7 +123,9 @@ def apply_damage(ch: Character, amount: int, crit: bool = False) -> dict:
                 ch.dead = True
 
     conc_dc = None
-    if to_hp > 0 and ch.concentration and not ch.dead:
+    if ch.current_hp == 0:
+        ch.concentration = None  # unconsciousness or death ends concentration (no save)
+    elif to_hp > 0 and ch.concentration:
         conc_dc = max(10, to_hp // 2)
     return {"absorbed": absorbed, "damage_to_hp": to_hp, "concentration_dc": conc_dc, **status(ch)}
 
@@ -146,6 +151,8 @@ def resolve_death_save(ch: Character, roll) -> dict:
     3 failures die. Mutates ch."""
     if ch.dead:
         return {"result": "dead", **status(ch)}
+    if ch.stable or ch.current_hp != 0:
+        return {"result": "not_dying", **status(ch)}  # death saves only while at 0 and unstable
     if roll.crit:  # natural 20
         ch.current_hp = 1
         ch.death_saves = DeathSaves()

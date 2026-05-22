@@ -413,24 +413,51 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
 
 @mcp.tool()
 def next_turn(campaign_id: str) -> dict:
-    """Advance to the next combatant's turn (round increments on wrap). Returns
-    whose turn it is and whether they owe a death save (downed and unstable)."""
+    """Advance to the next LIVING combatant's turn (round increments on wrap;
+    dead or removed combatants are skipped). Returns whose turn it is and whether
+    they owe a death save (downed and unstable)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        if not c.combat.active or not c.combat.order:
+        order = c.combat.order
+        if not c.combat.active or not order:
             raise ValueError("no active combat")
-        c.combat.turn_index += 1
-        if c.combat.turn_index % len(c.combat.order) == 0:
-            c.combat.round += 1
+        n = len(order)
+        cur = None
+        for _ in range(n):  # at most one full lap; skip dead/removed combatants
+            c.combat.turn_index += 1
+            if c.combat.turn_index % n == 0:
+                c.combat.round += 1
+            candidate = c.characters.get(c.combat.current_combatant_id)
+            if candidate is not None and not candidate.dead:
+                cur = candidate
+                break
         save_campaign(c)
-        cur_id = c.combat.current_combatant_id
-        cur = c.characters.get(cur_id) if cur_id else None
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
-        view["death_save_due"] = bool(
-            cur and cur.current_hp == 0 and not cur.dead and not cur.stable
-        )
+        view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
         return view
+
+
+@mcp.tool()
+def remove_combatant(campaign_id: str, character_id: str) -> dict:
+    """Remove a combatant from the initiative order (a slain monster, or one that
+    fled). Adjusts the turn pointer so the order stays consistent; ends combat if
+    it was the last combatant."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        order = c.combat.order
+        idx = next((i for i, cb in enumerate(order) if cb.character_id == character_id), None)
+        if idx is None:
+            raise ValueError(f"{character_id!r} is not in the combat order")
+        order.pop(idx)
+        if not order:
+            c.combat = Combat()
+        else:
+            if idx < c.combat.turn_index:
+                c.combat.turn_index -= 1
+            c.combat.turn_index %= len(order)
+        save_campaign(c)
+        return _combat_view(c)
 
 
 @mcp.tool()
@@ -443,25 +470,29 @@ def attack(
     damage_type: str = "",
     advantage: bool = False,
     disadvantage: bool = False,
+    is_ranged: bool = False,
 ) -> dict:
     """Resolve an attack. The DM supplies attack_bonus and damage_dice (e.g.
     '1d8+3'); the engine rolls 1d20+bonus vs the target's AC, auto-hits on a
     natural 20 and auto-misses on a natural 1, doubles damage dice on a crit, and
-    applies the damage. Condition-based advantage/disadvantage is detected and
+    applies the damage. Condition-based advantage/disadvantage is detected (set
+    is_ranged=True so a prone target gives disadvantage rather than advantage) and
     combined with the explicit flags (they cancel if both apply)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
         target = _char(c, target_id)
-        cadv, cdis = combat.attack_modifiers(attacker, target)
-        atk = dice_mod.roll(
-            f"1d20+{attack_bonus}", advantage=advantage or cadv, disadvantage=disadvantage or cdis
-        )
+        cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
+        adv = advantage or cadv
+        dis = disadvantage or cdis
+        atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
         hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
         result = {
             "attacker": attacker.name,
             "target": target.name,
             "attack_roll": {"total": atk.total, "natural": atk.natural, "detail": atk.detail},
+            "advantage": adv,
+            "disadvantage": dis,
             "crit": atk.crit,
             "hit": hit,
             "target_ac": target.armor_class,
