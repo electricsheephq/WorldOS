@@ -1,6 +1,14 @@
 # Runtime campaign state — local saves, never committed
 /state/
 
+# QA harness runtime artifacts — sandboxed playtest state, transcripts, logs.
+# The harness scripts/rubric/config (qa/*.sh, qa/*.py, qa/*.json, qa/*.txt, qa/*.md)
+# ARE committed; only these run outputs are ignored.
+/qa/state/
+/qa/transcripts/
+/qa/*.err
+/qa/smoke*.json
+
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/

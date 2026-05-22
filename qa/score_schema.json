@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scores", "overall", "defects", "highlights", "verdict"],
+  "properties": {
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_sourced",
+        "rules_correctness",
+        "state_integrity",
+        "companion_agency",
+        "exploration",
+        "narrative_pacing",
+        "robustness"
+      ],
+      "properties": {
+        "tool_sourced": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "rules_correctness": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "state_integrity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "companion_agency": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "exploration": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "narrative_pacing": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "robustness": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "overall": { "type": "number", "minimum": 1, "maximum": 5 },
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "area", "evidence", "suggested_fix"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "area": { "type": "string" },
+          "evidence": { "type": "string" },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    },
+    "highlights": { "type": "array", "items": { "type": "string" } },
+    "verdict": { "type": "string" }
+  }
+}
