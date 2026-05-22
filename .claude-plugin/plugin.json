@@ -1,6 +1,6 @@
 {
   "name": "clawdnd",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Play full D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion — deterministic 5e rules, persistent campaigns, fully voice-acted.",
   "author": {
     "name": "100yenadmin"
