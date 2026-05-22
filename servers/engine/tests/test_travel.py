@@ -103,6 +103,18 @@ def test_travel_advances_one_phase():
     assert out["time_of_day"] == "afternoon" and out["day"] == 1
 
 
+def test_failed_travel_is_atomic():
+    """A rejected travel must not advance the clock or mark the target visited
+    (guards against a refactor that moves the writes above the guards)."""
+    c = _camp("a")
+    d0, t0 = c.day, c.time_of_day
+    with pytest.raises(ValueError):
+        travel.travel_to(c, "d")  # known but unconnected
+    assert (c.day, c.time_of_day) == (d0, t0)
+    assert c.locations["d"].visited is False
+    assert c.current_location_id == "a"
+
+
 # --- advance_clock ---------------------------------------------------------
 
 
@@ -164,6 +176,14 @@ def test_seed_marks_start_location_visited():
     assert c.current_location_id == "start"
     assert c.locations["start"].visited is True
     assert c.locations["yard"].visited is False
+
+
+def test_seed_rejects_non_list_connections():
+    """Malformed per-location connections fail loudly at seed time rather than
+    being silently coerced (the start location stays safe to load)."""
+    adv = {"title": "T", "locations": [{"id": "a", "name": "A", "connections": "bcd"}]}
+    with pytest.raises(Exception):
+        content.seed_campaign(adv)
 
 
 # --- server tool integration (real Cellar Rats graph) ----------------------
