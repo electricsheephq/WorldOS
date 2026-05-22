@@ -19,10 +19,12 @@ import combat
 import content as content_mod
 import dice as dice_mod
 import inventory
+import npc as npc_mod
 import rests
 import spells
 import srd_tables
 from models import (
+    SKILL_ABILITIES,
     Ability,
     AbilityScores,
     Campaign,
@@ -959,6 +961,73 @@ def prepare_spells(campaign_id: str, character_id: str, spells_list: list) -> di
         ch.spells_prepared = list(spells_list)
         save_campaign(c)
         return {"spells_prepared": ch.spells_prepared}
+
+
+@mcp.tool()
+def set_attitude(campaign_id: str, character_id: str, attitude: str) -> dict:
+    """Set an NPC's attitude (free text, e.g. 'guarded', or a track value:
+    hostile / wary / indifferent / friendly / helpful)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.attitude = attitude
+        save_campaign(c)
+        return {"id": ch.id, "name": ch.name, "attitude": ch.attitude}
+
+
+@mcp.tool()
+def remember(campaign_id: str, character_id: str, fact: str) -> dict:
+    """Append a fact to a character's (usually an NPC's) persistent memory, so it
+    is recalled in later sessions."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.memory.append(fact)
+        save_campaign(c)
+        return {"id": ch.id, "name": ch.name, "memory": ch.memory}
+
+
+@mcp.tool()
+def forget(campaign_id: str, character_id: str, fact: str) -> dict:
+    """Remove a remembered fact (exact match) from a character's memory."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        if fact not in ch.memory:
+            raise ValueError(f"{ch.name} does not remember that")
+        ch.memory.remove(fact)
+        save_campaign(c)
+        return {"id": ch.id, "name": ch.name, "memory": ch.memory}
+
+
+@mcp.tool()
+def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int) -> dict:
+    """The actor makes a social skill check (e.g. persuasion / deception /
+    intimidation / insight) against a DC. On success the NPC's attitude improves
+    one step on the track (hostile -> wary -> indifferent -> friendly -> helpful);
+    on failure it worsens one step."""
+    if skill.lower() not in SKILL_ABILITIES:
+        raise ValueError(f"unknown skill {skill!r}")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        actor = _char(c, actor_id)
+        the_npc = _char(c, npc_id)
+        r = dice_mod.roll(f"1d20+{actor.skill_bonus(skill.lower())}")
+        success = r.total >= dc
+        old = the_npc.attitude
+        the_npc.attitude = npc_mod.shift_attitude(the_npc.attitude, 1 if success else -1)
+        save_campaign(c)
+        return {
+            "actor": actor.name,
+            "npc": the_npc.name,
+            "skill": skill.lower(),
+            "roll": r.total,
+            "natural": r.natural,
+            "dc": dc,
+            "success": success,
+            "old_attitude": old,
+            "new_attitude": the_npc.attitude,
+        }
 
 
 if __name__ == "__main__":
