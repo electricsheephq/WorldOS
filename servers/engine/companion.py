@@ -33,6 +33,24 @@ from models import Character, Combat
 ALLY_KINDS = frozenset({"player", "companion"})
 ENEMY_KINDS = frozenset({"npc", "monster"})
 
+# Spells the heuristic recognizes as restoring HP, and the fraction of max HP at
+# or below which a still-standing ally is "critical" enough to heal over attacking.
+HEAL_SPELLS = frozenset(
+    {"cure wounds", "healing word", "mass cure wounds", "mass healing word",
+     "prayer of healing", "heal"}
+)
+HEAL_THRESHOLD = 0.25
+
+
+def _can_heal(companion: Character) -> bool:
+    """True if the companion has a healing spell known/prepared and a slot free."""
+    spells = {
+        s.lower() for s in (set(companion.spells_prepared) | set(companion.spells_known))
+    }
+    if not (spells & HEAL_SPELLS):
+        return False
+    return any(slot.used < slot.maximum for slot in companion.spell_slots.values())
+
 
 def suggest_action(
     companion: Character,
@@ -47,6 +65,10 @@ def suggest_action(
     1. ``aid_downed`` — an ally (kind in :data:`ALLY_KINDS`), other or self, is at
        ``current_hp == 0``. Targets that downed ally. A downed friend is the most
        urgent thing on the field, so this beats attacking.
+    1.5 ``heal`` — a still-standing ally is at or below :data:`HEAL_THRESHOLD` of
+       max HP and the companion ``_can_heal`` (a healing spell known/prepared with
+       a slot free). Targets the most-wounded such ally. A near-death ally beats
+       chipping an enemy.
     2. ``attack`` — a living enemy (kind in :data:`ENEMY_KINDS`, ``current_hp > 0``)
        is present. Targets the living enemy with the LOWEST ``current_hp`` — focus
        fire to remove a combatant from the fight as fast as possible.
@@ -78,6 +100,29 @@ def suggest_action(
                 "reason": (
                     f"{ch.name} is down at 0 HP; stabilizing or reviving "
                     f"{who} comes before anything else."
+                ),
+            }
+
+    # 1.5) A critically wounded (still-standing) ally + the companion can heal ->
+    # heal before trading blows. An ally one hit from death beats chipping an enemy.
+    if _can_heal(companion):
+        wounded = [
+            ch
+            for ch in in_combat
+            if ch.kind in ALLY_KINDS
+            and not ch.dead
+            and 0 < ch.current_hp <= HEAL_THRESHOLD * ch.max_hp
+        ]
+        if wounded:
+            target = min(wounded, key=lambda ch: ch.current_hp / ch.max_hp)
+            who = "themselves" if target.id == companion.id else target.name
+            return {
+                "action": "heal",
+                "target_id": target.id,
+                "reason": (
+                    f"{target.name} is critically wounded "
+                    f"({target.current_hp}/{target.max_hp} HP); healing {who} now "
+                    f"beats trading blows."
                 ),
             }
 

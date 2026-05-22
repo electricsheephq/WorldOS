@@ -322,8 +322,9 @@ def create_character(
     `abilities` is an optional dict like {"strength": 15, "dexterity": 14, ...}.
     If `apply_srd_defaults=True` and `class_name` is a known SRD class, the engine
     sets saving-throw proficiencies, proficiency bonus, hit dice, level-1 HP
-    (max hit die + CON), and spell slots from that class; otherwise the explicit
-    max_hp/armor_class are used as-is. Returns the new character id.
+    (max hit die + CON), spell slots, and a class-appropriate AC (only when
+    armor_class is left at the unarmored default of 10) from that class; otherwise
+    the explicit max_hp/armor_class are used as-is. Returns the new character id.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -354,6 +355,8 @@ def create_character(
                     ch.max_hp = max(1, die + scores.modifier(Ability.CON))
                     ch.current_hp = ch.max_hp
                 ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
+                if armor_class == 10:  # caller left AC unarmored -> class baseline
+                    ch.armor_class = srd_tables.class_base_ac(cname)
                 _recompute_spellcasting(ch)
             except ValueError:
                 pass  # unknown class -> keep the explicit values

@@ -10,9 +10,10 @@ import json
 from pathlib import Path
 
 import combat
+import companion
 import content
 import server
-from models import Character, Condition
+from models import Character, Combat, Combatant, Condition
 
 _ADV = (
     Path(__file__).resolve().parents[3]
@@ -161,3 +162,54 @@ def test_attack_flags_off_turn_action(tmp_path, monkeypatch):
     assert "off_turn_warning" in server.attack(cid, off, tgt_off, attack_bonus=0, damage_dice="1d4")
     tgt_cur = next(x for x in ids if x != cur)
     assert "off_turn_warning" not in server.attack(cid, cur, tgt_cur, attack_bonus=0, damage_dice="1d4")
+
+
+# --- iteration 4: class baseline AC + companion heal triage ----------------
+
+
+def test_apply_srd_defaults_sets_class_ac(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    fid = server.create_character(
+        cid, "Mira", kind="player", class_name="Fighter",
+        apply_srd_defaults=True, abilities={"constitution": 14},
+    )["id"]
+    assert server.get_character(cid, fid)["armor_class"] == 16  # chain-mail baseline
+
+
+def test_apply_srd_defaults_respects_explicit_ac(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    fid = server.create_character(
+        cid, "Mage", kind="player", class_name="Wizard",
+        armor_class=15, apply_srd_defaults=True,
+    )["id"]
+    assert server.get_character(cid, fid)["armor_class"] == 15  # explicit AC kept
+
+
+def _heal_scene(slots_used: int):
+    healer = Character(
+        name="Vesper", kind="companion", max_hp=10, current_hp=10,
+        spells_prepared=["Healing Word"],
+        spell_slots={1: {"maximum": 2, "used": slots_used}},
+    )
+    hurt = Character(name="Hero", kind="player", max_hp=12, current_hp=1)  # 8% max
+    gob = Character(name="Goblin", kind="monster", max_hp=7, current_hp=7)
+    chars = {healer.id: healer, hurt.id: hurt, gob.id: gob}
+    cbt = Combat(
+        active=True, round=1, turn_index=0,
+        order=[Combatant(character_id=i) for i in (healer.id, hurt.id, gob.id)],
+    )
+    return healer, hurt, gob, chars, cbt
+
+
+def test_companion_heals_critically_wounded_ally():
+    healer, hurt, _gob, chars, cbt = _heal_scene(slots_used=0)
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "heal" and out["target_id"] == hurt.id
+
+
+def test_companion_attacks_when_no_heal_available():
+    healer, _hurt, gob, chars, cbt = _heal_scene(slots_used=2)  # slots exhausted
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "attack" and out["target_id"] == gob.id

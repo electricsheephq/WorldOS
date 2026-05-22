@@ -31,6 +31,7 @@ This is the whole point: the player can trust the world is consistent and fair.
 - `start_combat` rolls initiative and sets the turn to the **first** combatant — that combatant acts *immediately*. Do **not** call `next_turn` before the first turn.
 - After a combatant finishes its action, call `next_turn` once to advance. The engine skips dead/removed combatants for you — never double-advance to "skip" someone.
 - Each `attack` / `cast_spell` / `saving_throw` is for the **current** turn-holder (see `get_state.current_turn`). Acting for someone else mid-combat is a reaction; the engine returns an `off_turn_warning` — heed it so the initiative order doesn't desync.
+- `attack` **already applies its own damage** on a hit (and reports the target's new state) — do **not** call `apply_damage` again afterward, or you'll hit twice. Use `apply_damage` only for damage that isn't an attack (a failed save, a trap, environmental).
 - For a **save spell**, get the DC from `spell_save_dc` (never compute it by hand — items/proficiency vary), then `saving_throw` the target, then `apply_damage(half=<the save succeeded>)`.
 
 ## Tone

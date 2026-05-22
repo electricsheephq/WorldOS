@@ -71,6 +71,21 @@ def class_skills(name: str) -> dict:
     return class_data(name)["skills"]
 
 
+# Typical level-1 AC from a class's standard starting gear. A heuristic baseline
+# (not raw SRD data) so apply_srd_defaults doesn't leave a martial PC unarmored
+# at AC 10; the DM can always pass an explicit armor_class to override.
+_BASE_AC = {
+    "barbarian": 14, "bard": 14, "cleric": 16, "druid": 14, "fighter": 16,
+    "monk": 13, "paladin": 16, "ranger": 14, "rogue": 14, "sorcerer": 12,
+    "warlock": 13, "wizard": 12,
+}
+
+
+def class_base_ac(name: str) -> int:
+    """A sensible level-1 AC for a class's typical starting gear (default 10)."""
+    return _BASE_AC.get(name.lower(), 10)
+
+
 def caster_type(name: str) -> str:
     return class_data(name)["caster_type"]
 
