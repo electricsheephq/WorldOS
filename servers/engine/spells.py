@@ -81,8 +81,8 @@ def resolve_effect(spell: dict, slot_level: int, caster_level: int, casting_mod:
             uc, _ = _parse_dice(up)
             count += extra * uc
         expr = f"{count}d{sides}"
-        if m.get("add_casting_mod"):
-            expr += f"+{casting_mod}" if casting_mod >= 0 else str(casting_mod)
+        if m.get("add_casting_mod") and casting_mod:
+            expr += f"+{casting_mod}" if casting_mod > 0 else str(casting_mod)
         return {"kind": "heal", "heal": expr}
 
     if kind == "save":

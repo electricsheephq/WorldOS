@@ -89,5 +89,18 @@
     "concentration": false,
     "mechanics": {"kind": "save", "save_ability": "dex", "damage": "3d6", "damage_type": "fire", "on_save": "half", "upcast_dice": "1d6"},
     "description": "A thin sheet of flames shoots from your fingertips. Each creature in a 15-foot cone makes a Dexterity saving throw, taking 3d6 fire damage on a failed save, or half as much on a success. Casting at a higher level deals an extra 1d6 per slot level above 1st."
+  },
+  {
+    "name": "Shield of Faith",
+    "level": 1,
+    "school": "Abjuration",
+    "casting_time": "1 bonus action",
+    "range": "60 feet",
+    "components": "V, S, M",
+    "duration": "Concentration, up to 10 minutes",
+    "classes": ["Cleric", "Paladin"],
+    "concentration": true,
+    "mechanics": {"kind": "buff", "effect": "a creature gains a +2 bonus to AC for the duration"},
+    "description": "A shimmering field surrounds a creature of your choice within range, granting it a +2 bonus to AC for the duration. Requires concentration."
   }
 ]

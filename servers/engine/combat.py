@@ -90,11 +90,15 @@ def status(ch: Character) -> dict:
     }
 
 
-def apply_damage(ch: Character, amount: int, crit: bool = False) -> dict:
+def apply_damage(ch: Character, amount: int, crit: bool = False, half: bool = False) -> dict:
     """Apply damage with full SRD order: temp HP absorb -> floor at 0 -> massive-
     damage instant death -> dying transition -> death-save failure if hit while
-    already down -> concentration-check DC. Mutates ch."""
+    already down -> concentration-check DC. If half=True (a successful save vs a
+    'half on save' spell), the incoming amount is halved (rounded down) first.
+    Mutates ch."""
     amount = max(0, amount)
+    if half:
+        amount //= 2
     if ch.dead:
         return {"absorbed": 0, "damage_to_hp": 0, "concentration_dc": None, **status(ch)}
 

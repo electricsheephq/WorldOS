@@ -31,6 +31,8 @@ def test_cure_wounds_upcast_and_mod():
     cw = spells.spell_data("Cure Wounds")
     assert spells.resolve_effect(cw, 1, 1, 3)["heal"] == "1d8+3"
     assert spells.resolve_effect(cw, 3, 1, 3)["heal"] == "3d8+3"
+    assert spells.resolve_effect(cw, 1, 1, 0)["heal"] == "1d8"  # M3: no "+0"
+    assert spells.resolve_effect(cw, 1, 1, -1)["heal"] == "1d8-1"
 
 
 def test_burning_hands_save_and_upcast():
@@ -106,3 +108,49 @@ def test_unknown_spell_raises():
     w = server.create_character(cid, "Gale", kind="player", class_name="Wizard", apply_srd_defaults=True)["id"]
     with pytest.raises(Exception):
         server.cast_spell(cid, w, "Wish")  # not bundled
+
+
+# --- hardening regressions (from adversarial review) ---
+def test_half_on_save_damage():  # C1
+    cid = server.create_campaign("S")["id"]
+    g = server.create_character(cid, "Goblin", kind="monster", max_hp=20)["id"]
+    out = server.apply_damage(cid, g, 11, half=True)  # 11 // 2 = 5
+    assert out["current_hp"] == 15
+
+
+def test_non_caster_cannot_cast():  # H1
+    cid = server.create_campaign("S")["id"]
+    f = server.create_character(cid, "Grunt", kind="player", class_name="Fighter",
+                                apply_srd_defaults=True, abilities={"strength": 16})["id"]
+    with pytest.raises(Exception):
+        server.cast_spell(cid, f, "Fire Bolt")
+    with pytest.raises(Exception):
+        server.spell_save_dc(cid, f)
+
+
+def test_known_prepared_enforced():  # H2
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Magic Missile"])
+    server.cast_spell(cid, w, "Magic Missile")  # known -> ok
+    with pytest.raises(Exception):
+        server.cast_spell(cid, w, "Cure Wounds")  # not known
+
+
+def test_zero_or_downcast_slot_rejected():  # M1
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    with pytest.raises(Exception):
+        server.cast_spell(cid, w, "Magic Missile", slot_level=0)
+
+
+def test_concentration_replacement():  # M2
+    cid = server.create_campaign("S")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     apply_srd_defaults=True, abilities={"wisdom": 16})["id"]
+    server.cast_spell(cid, cleric, "Bless")
+    assert server.get_character(cid, cleric)["concentration"] == "Bless"
+    server.cast_spell(cid, cleric, "Shield of Faith")  # 2nd concentration spell drops Bless
+    assert server.get_character(cid, cleric)["concentration"] == "Shield of Faith"

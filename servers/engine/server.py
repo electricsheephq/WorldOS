@@ -124,12 +124,15 @@ def _recompute_spellcasting(ch: Character) -> None:
 
 
 def _casting_mod(ch: Character) -> int:
-    """Casting-ability modifier from the character's first caster class; for an
-    unclassed caster (NPC/monster) fall back to the best of INT/WIS/CHA."""
+    """Casting-ability modifier from the character's first caster class. A
+    character with classes but none that cast has no spellcasting (raises); a
+    truly unclassed caster (NPC/monster) falls back to its best mental stat."""
     for cl in ch.classes:
         ability = srd_tables.casting_ability(cl.name)
         if ability:
             return ch.ability_modifier(Ability(ability))
+    if ch.classes:
+        raise ValueError(f"{ch.name} has no spellcasting class")
     return max(
         ch.ability_modifier(Ability.INT),
         ch.ability_modifier(Ability.WIS),
@@ -524,14 +527,17 @@ def attack(
 
 
 @mcp.tool()
-def apply_damage(campaign_id: str, target_id: str, amount: int, damage_type: str = "", crit: bool = False) -> dict:
+def apply_damage(
+    campaign_id: str, target_id: str, amount: int, damage_type: str = "", crit: bool = False, half: bool = False
+) -> dict:
     """Apply damage to a character. Temp HP is absorbed first; HP floors at 0;
     massive damage causes instant death; dropping to 0 makes the target unconscious
     and dying; a hit while already down adds a death-save failure (two on a crit).
+    Set half=True for a successful save vs a 'half on save' spell (halves the amount).
     Returns the new state, including any concentration_dc to roll."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        out = combat.apply_damage(_char(c, target_id), amount, crit=crit)
+        out = combat.apply_damage(_char(c, target_id), amount, crit=crit, half=half)
         save_campaign(c)
         return out
 
@@ -750,18 +756,23 @@ def cast_spell(
 ) -> dict:
     """Cast a spell. Consumes a spell slot (cantrips use none); upcasts when
     slot_level exceeds the spell's level; sets concentration if the spell
-    concentrates (breaking any prior concentration). Returns the resolved effect
-    (damage/heal expression after upcasting + cantrip scaling), the spell save DC,
-    and the spell attack bonus. The DM applies the effect via attack /
-    apply_damage / apply_healing / saving_throw."""
+    concentrates (breaking any prior concentration). If spells_known/prepared are
+    set, the spell must be among them (skipped leniently when both are empty).
+    Returns the resolved effect (damage/heal after upcasting + cantrip scaling),
+    the spell save DC, and the spell attack bonus. The DM then applies the effect:
+    attack spells via attack(); auto/heal via apply_damage/apply_healing; save
+    spells via saving_throw(target) then apply_damage(half=<save succeeded>)."""
     spell = spells.spell_data(spell_name)
     spell_level = spell.get("level", 0)
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        known = set(ch.spells_known) | set(ch.spells_prepared)
+        if known and spell["name"] not in known:
+            raise ValueError(f"{ch.name} doesn't know or have {spell['name']!r} prepared")
         slot_used = None
         if spell_level > 0:
-            lvl = slot_level or spell_level
+            lvl = spell_level if slot_level is None else slot_level
             if lvl < spell_level:
                 raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
             slot = ch.spell_slots.get(lvl)
