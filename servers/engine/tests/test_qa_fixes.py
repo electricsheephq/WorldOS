@@ -142,3 +142,22 @@ def test_award_party_xp_splits_evenly(tmp_path, monkeypatch):
     assert out["split_between"] == 2  # Vesper + Hero
     assert all(g["granted"] == 75 for g in out["grants"])
     assert sum(g["granted"] for g in out["grants"]) == 150
+
+
+# --- iteration 3: off-turn attack warning ----------------------------------
+
+
+def test_attack_flags_off_turn_action(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    ids = [
+        server.create_character(cid, n, kind=k, max_hp=10, armor_class=30)["id"]
+        for n, k in (("A", "player"), ("B", "player"), ("Goblin", "monster"))
+    ]
+    server.start_combat(cid, ids)
+    cur = server.get_state(cid)["current_turn"]
+    off = next(x for x in ids if x != cur)
+    tgt_off = next(x for x in ids if x != off)
+    assert "off_turn_warning" in server.attack(cid, off, tgt_off, attack_bonus=0, damage_dice="1d4")
+    tgt_cur = next(x for x in ids if x != cur)
+    assert "off_turn_warning" not in server.attack(cid, cur, tgt_cur, attack_bonus=0, damage_dice="1d4")

@@ -560,6 +560,15 @@ def attack(
             "target_ac": target.armor_class,
             "damage": None,
         }
+        # Non-breaking turn-order signal: off-turn attacks are legal (reactions),
+        # but an unintended one desyncs the tracker — surface it so the DM can tell.
+        if c.combat.active and c.combat.current_combatant_id not in (None, attacker_id):
+            cur = c.characters.get(c.combat.current_combatant_id)
+            result["off_turn_warning"] = (
+                f"{attacker.name} is acting, but it is "
+                f"{cur.name if cur else c.combat.current_combatant_id}'s turn — "
+                f"a reaction? Otherwise advance with next_turn so the order stays in sync."
+            )
         if hit:
             expr = combat.double_dice(damage_dice) if is_crit else damage_dice
             dmg = dice_mod.roll(expr)
