@@ -65,19 +65,42 @@ def test_long_rest_restores_everything():
     assert ch.spell_slots[1].used == 0 and ch.spell_slots[2].used == 0
 
 
-def test_long_rest_clears_dying():
+def test_rest_requires_positive_hp():  # C1: a 0-HP creature can't benefit from a rest
     ch = mk(max_hp=10, current_hp=0, conditions=[Condition.UNCONSCIOUS])
-    ch.death_saves.failures = 2
-    rests.long_rest(ch)
-    assert ch.current_hp == 10
-    assert "unconscious" not in [c.value for c in ch.conditions]
-    assert ch.death_saves.failures == 0 and ch.stable is False
+    with pytest.raises(ValueError):
+        rests.long_rest(ch)
+    with pytest.raises(ValueError):
+        rests.short_rest(ch, 1, fixed_roll(5))
 
 
 def test_long_rest_dead_raises():
-    ch = mk(max_hp=10, current_hp=0, dead=True)
+    ch = mk(max_hp=10, current_hp=10, dead=True)
     with pytest.raises(ValueError):
         rests.long_rest(ch)
+
+
+def test_short_rest_warlock_resets_only_pact_slot():  # H1
+    ch = mk(max_hp=10, current_hp=10, hit_dice="1d8", hit_dice_remaining=1,
+            classes=[{"name": "Warlock", "level": 3}],
+            spell_slots={2: {"maximum": 2, "used": 2}, 5: {"maximum": 1, "used": 1}})
+    rests.short_rest(ch, 0, fixed_roll(1))
+    assert ch.spell_slots[2].used == 0  # pact level (Warlock 3 -> slot level 2)
+    assert ch.spell_slots[5].used == 1  # stray non-pact entry untouched
+
+
+def test_short_rest_negative_con_floors_at_zero():
+    ch = mk(max_hp=20, current_hp=5, hit_dice="2d8", hit_dice_remaining=2,
+            abilities={"constitution": 8})  # CON mod -1
+    out = rests.short_rest(ch, 2, fixed_roll(1))  # each die: 1 + (-1) = 0, floored
+    assert out["hp_restored"] == 0 and ch.hit_dice_remaining == 0
+
+
+def test_long_rest_hit_dice_cap_and_exhaustion_floor():
+    ch = mk(max_hp=20, current_hp=20, hit_dice="4d8", hit_dice_remaining=4, exhaustion=0,
+            classes=[{"name": "Fighter", "level": 4}])
+    rests.long_rest(ch)
+    assert ch.hit_dice_remaining == 4  # already at total; capped
+    assert ch.exhaustion == 0  # floored at 0
 
 
 # --- tools persist ---

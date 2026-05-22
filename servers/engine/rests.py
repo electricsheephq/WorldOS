@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 
+import srd_tables
 from models import Ability, Character, Condition, DeathSaves
 
 _HIT_DIE = re.compile(r"\d*d(\d+)")
@@ -22,8 +23,12 @@ def _is_single_class_warlock(ch: Character) -> bool:
 
 def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
     """Spend up to dice_to_spend Hit Dice to heal (each: 1d{hit die} + CON mod,
-    floored at 0 per die). A single-class Warlock recovers all (pact) spell slots.
-    Mutates ch."""
+    floored at 0 per die). A single-class Warlock recovers its (pact) spell slots
+    (multiclass Warlock pact recovery is not modeled). Requires >=1 HP (SRD: a
+    creature at 0 HP can't benefit from a rest). Multiclass mixed hit dice collapse
+    to the single stored die size (model limitation). Mutates ch."""
+    if ch.current_hp < 1:
+        raise ValueError("must have at least 1 HP to benefit from a rest")
     die = _hit_die_size(ch)
     con = ch.ability_modifier(Ability.CON)
     spend = max(0, min(dice_to_spend, ch.hit_dice_remaining))
@@ -39,9 +44,10 @@ def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
 
     pact_recovered = False
     if _is_single_class_warlock(ch):
-        for slot in ch.spell_slots.values():
-            slot.used = 0
-        pact_recovered = True
+        pact = srd_tables.warlock_pact_slots(ch.classes[0].level)
+        if pact and pact["level"] in ch.spell_slots:
+            ch.spell_slots[pact["level"]].used = 0  # restore only the pact slot
+            pact_recovered = True
 
     return {
         "dice_spent": spend,
@@ -54,11 +60,14 @@ def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
 
 
 def long_rest(ch: Character) -> dict:
-    """A full long rest: HP to max, recover half total Hit Dice (min 1), reset all
-    spell slots, reduce exhaustion by 1, and end the dying state. Cannot rest while
-    dead. Mutates ch."""
+    """A full long rest: HP to max, recover half total Hit Dice (min 1; RAW is
+    floor(total/2) — the min-1 is a deliberate house rule), reset all spell slots,
+    reduce exhaustion by 1, and end the dying state. Requires >=1 HP and not dead
+    (SRD: a creature at 0 HP can't benefit from a rest). Mutates ch."""
     if ch.dead:
         raise ValueError("cannot take a long rest while dead")
+    if ch.current_hp < 1:
+        raise ValueError("must have at least 1 HP to benefit from a long rest")
     total_hd = ch.total_level
     recovered = max(1, total_hd // 2)
     ch.hit_dice_remaining = min(total_hd, ch.hit_dice_remaining + recovered)
