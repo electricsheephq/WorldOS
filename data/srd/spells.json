@@ -8,7 +8,9 @@
     "components": "V, S",
     "duration": "Instantaneous",
     "classes": ["Sorcerer", "Wizard"],
-    "description": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. A flammable object hit by this spell ignites if it isn't being worn or carried. The damage increases by 1d10 at levels 5 (2d10), 11 (3d10), and 17 (4d10)."
+    "concentration": false,
+    "mechanics": {"kind": "attack", "damage": "1d10", "damage_type": "fire", "cantrip_scaling": {"5": "2d10", "11": "3d10", "17": "4d10"}},
+    "description": "You hurl a mote of fire at a creature or object within range. Make a ranged spell attack against the target. On a hit, the target takes 1d10 fire damage. The damage increases by 1d10 at levels 5 (2d10), 11 (3d10), and 17 (4d10)."
   },
   {
     "name": "Magic Missile",
@@ -19,7 +21,9 @@
     "components": "V, S",
     "duration": "Instantaneous",
     "classes": ["Sorcerer", "Wizard"],
-    "description": "You create three glowing darts of magical force. Each dart hits a creature of your choice that you can see within range, dealing 1d4+1 force damage. The darts all strike simultaneously, and you can direct them to hit one creature or several. Casting at a higher level creates one additional dart per slot level above 1st."
+    "concentration": false,
+    "mechanics": {"kind": "auto", "darts": 3, "per_dart": "1d4+1", "upcast_darts_per_level": 1, "damage_type": "force"},
+    "description": "You create three glowing darts of magical force. Each dart hits a creature you can see within range, dealing 1d4+1 force damage. Casting at a higher level creates one additional dart per slot level above 1st."
   },
   {
     "name": "Cure Wounds",
@@ -30,7 +34,9 @@
     "components": "V, S",
     "duration": "Instantaneous",
     "classes": ["Bard", "Cleric", "Druid", "Paladin", "Ranger"],
-    "description": "A creature you touch regains hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs. Casting at a higher level heals an additional 1d8 per slot level above 1st."
+    "concentration": false,
+    "mechanics": {"kind": "heal", "heal": "1d8", "add_casting_mod": true, "upcast_dice": "1d8"},
+    "description": "A creature you touch regains hit points equal to 1d8 + your spellcasting ability modifier. Casting at a higher level heals an additional 1d8 per slot level above 1st."
   },
   {
     "name": "Mage Armor",
@@ -41,7 +47,9 @@
     "components": "V, S, M",
     "duration": "8 hours",
     "classes": ["Sorcerer", "Wizard"],
-    "description": "You touch a willing creature who isn't wearing armor, and a protective magical force surrounds it until the spell ends. The target's base AC becomes 13 + its Dexterity modifier. The spell ends if the target dons armor or if you dismiss it as an action."
+    "concentration": false,
+    "mechanics": {"kind": "utility", "effect": "target's base AC becomes 13 + its Dexterity modifier for 8 hours"},
+    "description": "You touch a willing creature who isn't wearing armor. Until the spell ends, the target's base AC becomes 13 + its Dexterity modifier."
   },
   {
     "name": "Healing Word",
@@ -52,6 +60,34 @@
     "components": "V",
     "duration": "Instantaneous",
     "classes": ["Bard", "Cleric", "Druid"],
-    "description": "A creature of your choice that you can see within range regains hit points equal to 1d4 + your spellcasting ability modifier. This spell has no effect on undead or constructs. Casting at a higher level heals an additional 1d4 per slot level above 1st."
+    "concentration": false,
+    "mechanics": {"kind": "heal", "heal": "1d4", "add_casting_mod": true, "upcast_dice": "1d4"},
+    "description": "A creature of your choice that you can see within range regains hit points equal to 1d4 + your spellcasting ability modifier. Casting at a higher level heals an additional 1d4 per slot level above 1st."
+  },
+  {
+    "name": "Bless",
+    "level": 1,
+    "school": "Enchantment",
+    "casting_time": "1 action",
+    "range": "30 feet",
+    "components": "V, S, M",
+    "duration": "Concentration, up to 1 minute",
+    "classes": ["Cleric", "Paladin"],
+    "concentration": true,
+    "mechanics": {"kind": "buff", "effect": "up to three creatures add 1d4 to attack rolls and saving throws", "upcast_targets_per_level": 1},
+    "description": "You bless up to three creatures. Whenever a target makes an attack roll or a saving throw before the spell ends, it adds 1d4 to the roll. Casting at a higher level targets one additional creature per slot level above 1st. Requires concentration."
+  },
+  {
+    "name": "Burning Hands",
+    "level": 1,
+    "school": "Evocation",
+    "casting_time": "1 action",
+    "range": "Self (15-foot cone)",
+    "components": "V, S",
+    "duration": "Instantaneous",
+    "classes": ["Sorcerer", "Wizard"],
+    "concentration": false,
+    "mechanics": {"kind": "save", "save_ability": "dex", "damage": "3d6", "damage_type": "fire", "on_save": "half", "upcast_dice": "1d6"},
+    "description": "A thin sheet of flames shoots from your fingertips. Each creature in a 15-foot cone makes a Dexterity saving throw, taking 3d6 fire damage on a failed save, or half as much on a success. Casting at a higher level deals an extra 1d6 per slot level above 1st."
   }
 ]

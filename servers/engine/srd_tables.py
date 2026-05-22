@@ -79,6 +79,23 @@ def multiclass_prereq(name: str) -> list[dict]:
     return class_data(name)["multiclass_prereq"]
 
 
+_CASTING_ABILITY = {
+    "bard": "cha",
+    "cleric": "wis",
+    "druid": "wis",
+    "paladin": "cha",
+    "ranger": "wis",
+    "sorcerer": "cha",
+    "warlock": "cha",
+    "wizard": "int",
+}
+
+
+def casting_ability(name: str) -> str | None:
+    """The spellcasting ability for a class (None for non-casters)."""
+    return _CASTING_ABILITY.get(name.lower())
+
+
 def is_asi_level(class_name: str, class_level: int) -> bool:
     table = progression()["asi_levels"]
     return class_level in table.get(class_name.lower(), table["default"])

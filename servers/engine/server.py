@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 import combat
 import content as content_mod
 import dice as dice_mod
+import spells
 import srd_tables
 from models import (
     Ability,
@@ -120,6 +121,20 @@ def _recompute_spellcasting(ch: Character) -> None:
         if pact:
             new_slots[pact["level"]] = SpellSlotLevel(maximum=pact["slots"], used=0)
     ch.spell_slots = new_slots
+
+
+def _casting_mod(ch: Character) -> int:
+    """Casting-ability modifier from the character's first caster class; for an
+    unclassed caster (NPC/monster) fall back to the best of INT/WIS/CHA."""
+    for cl in ch.classes:
+        ability = srd_tables.casting_ability(cl.name)
+        if ability:
+            return ch.ability_modifier(Ability(ability))
+    return max(
+        ch.ability_modifier(Ability.INT),
+        ch.ability_modifier(Ability.WIS),
+        ch.ability_modifier(Ability.CHA),
+    )
 
 
 @mcp.tool()
@@ -717,6 +732,96 @@ def level_up(
         sheet["_hp_gained"] = gain
         sheet["_asi_applied"] = applied
         return sheet
+
+
+@mcp.tool()
+def spell_save_dc(campaign_id: str, character_id: str) -> dict:
+    """Return a caster's spell save DC (8 + proficiency + casting modifier) and
+    spell attack bonus (proficiency + casting modifier)."""
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    mod = _casting_mod(ch)
+    return {"spell_save_dc": 8 + ch.proficiency_bonus + mod, "spell_attack_bonus": ch.proficiency_bonus + mod}
+
+
+@mcp.tool()
+def cast_spell(
+    campaign_id: str, character_id: str, spell_name: str, slot_level: Optional[int] = None
+) -> dict:
+    """Cast a spell. Consumes a spell slot (cantrips use none); upcasts when
+    slot_level exceeds the spell's level; sets concentration if the spell
+    concentrates (breaking any prior concentration). Returns the resolved effect
+    (damage/heal expression after upcasting + cantrip scaling), the spell save DC,
+    and the spell attack bonus. The DM applies the effect via attack /
+    apply_damage / apply_healing / saving_throw."""
+    spell = spells.spell_data(spell_name)
+    spell_level = spell.get("level", 0)
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        slot_used = None
+        if spell_level > 0:
+            lvl = slot_level or spell_level
+            if lvl < spell_level:
+                raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
+            slot = ch.spell_slots.get(lvl)
+            if slot is None or slot.used >= slot.maximum:
+                raise ValueError(f"no level-{lvl} spell slot available")
+            slot.used += 1
+            slot_used = lvl
+        if spell.get("concentration"):
+            ch.concentration = spell["name"]  # replaces (breaks) any prior concentration
+        mod = _casting_mod(ch)
+        effect = spells.resolve_effect(spell, slot_used or spell_level, ch.total_level, mod)
+        prof = ch.proficiency_bonus
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        updated = c.characters[character_id]
+        return {
+            "spell": spell["name"],
+            "level": spell_level,
+            "slot_used": slot_used,
+            "concentration": updated.concentration,
+            "spell_save_dc": 8 + prof + mod,
+            "spell_attack_bonus": prof + mod,
+            "effect": effect,
+            "slots_remaining": {
+                str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
+            },
+        }
+
+
+@mcp.tool()
+def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> dict:
+    """Roll a saving throw for a character against a DC. ability is one of
+    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded."""
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    ab = Ability(ability.lower())
+    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}")
+    return {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc, "success": r.total >= dc}
+
+
+@mcp.tool()
+def learn_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
+    """Set a character's known spells (replaces the list)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.spells_known = list(spells_list)
+        save_campaign(c)
+        return {"spells_known": ch.spells_known}
+
+
+@mcp.tool()
+def prepare_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
+    """Set a character's prepared spells (replaces the list)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.spells_prepared = list(spells_list)
+        save_campaign(c)
+        return {"spells_prepared": ch.spells_prepared}
 
 
 if __name__ == "__main__":
