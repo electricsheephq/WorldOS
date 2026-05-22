@@ -16,6 +16,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 import combat
+import content as content_mod
 import dice as dice_mod
 from models import Ability, AbilityScores, Campaign, Character, ClassLevel, Combat, Combatant, Condition
 from store import campaign_lock
@@ -115,6 +116,32 @@ def create_campaign(title: str, summary: str = "") -> dict:
 def list_campaigns() -> list[dict]:
     """List all saved campaigns (id, title, last-updated time)."""
     return _list_campaigns()
+
+
+@mcp.tool()
+def start_adventure(adventure_id: str) -> dict:
+    """Seed a NEW campaign from a bundled adventure module
+    (content/campaigns/<adventure_id>/adventure.json): world summary, locations,
+    NPCs as voiced Characters, and the opening quest. Returns the campaign id and
+    a summary. The DM then reads the scenes (adventure.md) and runs play, creating
+    the player + companion with create_character."""
+    adv = content_mod.load_adventure_data(adventure_id)
+    c = content_mod.seed_campaign(adv)
+    save_campaign(c)
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    return {
+        "campaign_id": c.id,
+        "title": c.title,
+        "summary": c.summary,
+        "level_range": adv.get("level_range"),
+        "current_location": loc.name if loc else None,
+        "npcs": [
+            {"id": ch.id, "name": ch.name, "voice_id": ch.voice_id}
+            for ch in c.characters.values()
+            if ch.kind == "npc"
+        ],
+        "scene_count": len(adv.get("scenes", [])),
+    }
 
 
 @mcp.tool()
