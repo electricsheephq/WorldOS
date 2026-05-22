@@ -982,7 +982,8 @@ def remember(campaign_id: str, character_id: str, fact: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.memory.append(fact)
+        if fact not in ch.memory:  # de-dupe identical facts
+            ch.memory.append(fact)
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "memory": ch.memory}
 
@@ -993,9 +994,10 @@ def forget(campaign_id: str, character_id: str, fact: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        if fact not in ch.memory:
+        match = next((m for m in ch.memory if m.lower() == fact.lower()), None)
+        if match is None:
             raise ValueError(f"{ch.name} does not remember that")
-        ch.memory.remove(fact)
+        ch.memory.remove(match)
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "memory": ch.memory}
 
@@ -1008,10 +1010,14 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
     on failure it worsens one step."""
     if skill.lower() not in SKILL_ABILITIES:
         raise ValueError(f"unknown skill {skill!r}")
+    if actor_id == npc_id:
+        raise ValueError("actor and npc must be different characters")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         actor = _char(c, actor_id)
         the_npc = _char(c, npc_id)
+        if the_npc.kind not in ("npc", "monster"):
+            raise ValueError("social_check target must be an NPC or monster")
         r = dice_mod.roll(f"1d20+{actor.skill_bonus(skill.lower())}")
         success = r.total >= dc
         old = the_npc.attitude

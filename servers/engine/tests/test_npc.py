@@ -9,8 +9,9 @@ def test_shift_attitude():
     assert npc_mod.shift_attitude("indifferent", -1) == "wary"
     assert npc_mod.shift_attitude("hostile", -1) == "hostile"  # floored
     assert npc_mod.shift_attitude("helpful", 1) == "helpful"  # capped
-    assert npc_mod.shift_attitude("guarded", 1) == "friendly"  # unknown -> indifferent -> +1
-    assert npc_mod.shift_attitude("", 1) == "friendly"
+    assert npc_mod.shift_attitude("guarded", 1) == "indifferent"  # guarded -> wary -> +1
+    assert npc_mod.shift_attitude("guarded", -1) == "hostile"  # wary -> -1
+    assert npc_mod.shift_attitude("", 1) == "friendly"  # blank -> indifferent -> +1
 
 
 @pytest.fixture
@@ -54,3 +55,26 @@ def test_social_check_unknown_skill_raises(campaign):
     npc_id = server.create_character(campaign, "NPC", kind="npc")["id"]
     with pytest.raises(Exception):
         server.social_check(campaign, pc, npc_id, "flossing", dc=10)
+
+
+def test_social_check_self_or_pc_target_raises(campaign):
+    pc = server.create_character(campaign, "PC", kind="player", abilities={"charisma": 14})["id"]
+    with pytest.raises(Exception):
+        server.social_check(campaign, pc, pc, "persuasion", dc=10)  # actor == target
+    pc2 = server.create_character(campaign, "PC2", kind="player")["id"]
+    with pytest.raises(Exception):
+        server.social_check(campaign, pc, pc2, "persuasion", dc=10)  # target is a PC
+
+
+def test_remember_dedupes(campaign):
+    npc_id = server.create_character(campaign, "NPC", kind="npc")["id"]
+    server.remember(campaign, npc_id, "owes the party")
+    out = server.remember(campaign, npc_id, "owes the party")  # duplicate
+    assert out["memory"].count("owes the party") == 1
+
+
+def test_forget_case_insensitive(campaign):
+    npc_id = server.create_character(campaign, "NPC", kind="npc")["id"]
+    server.remember(campaign, npc_id, "The Party Helped")
+    server.forget(campaign, npc_id, "the party helped")  # different case
+    assert server.get_character(campaign, npc_id)["memory"] == []
