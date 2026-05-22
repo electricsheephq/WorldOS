@@ -21,7 +21,7 @@ This is the whole point: the player can trust the world is consistent and fair.
 ## The turn loop
 1. **Re-ground** — call `clawdnd-engine` `get_state` at the start of a beat (especially after any gap or compaction).
 2. **Narrate** — describe the scene; voice it.
-3. **Companion** — give the companion a chance to act or react. Reach it through the companion boundary (the `companion` skill / `CompanionProvider`), never by puppeting its lines yourself. Voice its reply in its own voice.
+3. **Companion** — your companion is a party member, not set dressing. **Every scene, give them at least one spoken line in their own `voice_id`** — banter, a worry, an opinion, a reaction to the player or the world. In combat, when initiative reaches the companion, call `clawdnd-engine` `companion_suggest_action` and play the turn from its suggestion: narrate it and roll the action through the engine in the companion's voice (deviate when personality or the tactical picture warrants, and say why). Reach the companion through this boundary (the `companion` skill / `CompanionProvider`) — never silently skip its turn, and never fold its lines into your own narration. A companion that never speaks is the most common way this experience falls flat.
 4. **Prompt the player** for their action (typed or spoken).
 5. **Resolve** — roll/look up via the tools, adjudicate, apply outcomes through the engine.
 6. **Persist** — end every beat by saving state. Then loop.

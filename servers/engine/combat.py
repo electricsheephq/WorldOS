@@ -72,6 +72,17 @@ def clears_concentration(conditions) -> bool:
     return bool(INCAPACITATING & set(conditions))
 
 
+# A melee hit within 5 ft of an Unconscious or Paralyzed creature is automatically
+# a Critical Hit (SRD). We have no distance model, so a non-ranged attack is
+# treated as being within 5 ft.
+_AUTO_CRIT_TARGET = {Condition.UNCONSCIOUS, Condition.PARALYZED}
+
+
+def melee_auto_crit(target: Character, is_ranged: bool = False) -> bool:
+    """True if a landing melee attack against ``target`` is automatically a crit."""
+    return (not is_ranged) and bool(_AUTO_CRIT_TARGET & set(target.conditions))
+
+
 def _ensure_unconscious(ch: Character) -> None:
     if Condition.UNCONSCIOUS not in ch.conditions:
         ch.conditions.append(Condition.UNCONSCIOUS)
@@ -122,9 +133,12 @@ def apply_damage(ch: Character, amount: int, crit: bool = False, half: bool = Fa
         else:  # already at 0 (dying or stable) and took a hit
             ch.stable = False
             _ensure_unconscious(ch)
-            ch.death_saves.failures += 2 if crit else 1
-            if ch.death_saves.failures >= 3:
+            if to_hp >= ch.max_hp:  # SRD: damage >= HP max while at 0 -> instant death
                 ch.dead = True
+            else:
+                ch.death_saves.failures += 2 if crit else 1
+                if ch.death_saves.failures >= 3:
+                    ch.dead = True
 
     conc_dc = None
     if ch.current_hp == 0:

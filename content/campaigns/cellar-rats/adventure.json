@@ -15,6 +15,28 @@
     "npc-male-1": "Dorn, a frightened stable-hand sheltering in the taproom.",
     "npc-female-1": "Reserved for any improvised patron or voice the DM needs."
   },
+  "companions": [
+    {
+      "id": "companion-vesper",
+      "name": "Vesper",
+      "voice_id": "companion-default",
+      "race": "Half-Elf",
+      "background": "Acolyte",
+      "classes": [{ "name": "Cleric", "level": 1 }],
+      "abilities": { "strength": 12, "dexterity": 12, "constitution": 14, "intelligence": 10, "wisdom": 16, "charisma": 11 },
+      "proficiency_bonus": 2,
+      "armor_class": 16,
+      "max_hp": 10,
+      "hit_dice": "1d8",
+      "hit_dice_remaining": 1,
+      "skill_proficiencies": ["Insight", "Medicine", "Religion", "Persuasion"],
+      "spells_known": ["Sacred Flame", "Guidance", "Cure Wounds", "Guiding Bolt", "Healing Word", "Bless"],
+      "spells_prepared": ["Cure Wounds", "Healing Word", "Guiding Bolt", "Bless"],
+      "spell_slots": { "1": { "maximum": 2, "used": 0 } },
+      "personality": "A warm, quick-witted field medic who joined for the road and stayed for the people. Vesper fusses over everyone's scrapes, jokes about hazard pay, and keeps her chin up even when scared — and she IS scared, often, she just refuses to let it win. She argues for mercy and curiosity over the blade (she'll be the first to wonder aloud whether the 'monsters' are something sadder), patches the party up mid-fight with Healing Word, and will say so out loud when she thinks the player's plan is reckless — then back the play anyway, because that's what partners do.",
+      "notes": "Healer/support. In combat she favors Healing Word on a downed ally, Guiding Bolt or Sacred Flame otherwise. The DM should give Vesper her own voiced line every scene and reach her combat decisions through companion_suggest_action."
+    }
+  ],
   "npcs": [
     {
       "id": "brakka",

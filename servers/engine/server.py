@@ -547,21 +547,23 @@ def attack(
         dis = disadvantage or cdis
         atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
         hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
+        # SRD: a melee hit against an unconscious/paralyzed creature auto-crits.
+        is_crit = atk.crit or (hit and combat.melee_auto_crit(target, is_ranged))
         result = {
             "attacker": attacker.name,
             "target": target.name,
             "attack_roll": {"total": atk.total, "natural": atk.natural, "detail": atk.detail},
             "advantage": adv,
             "disadvantage": dis,
-            "crit": atk.crit,
+            "crit": is_crit,
             "hit": hit,
             "target_ac": target.armor_class,
             "damage": None,
         }
         if hit:
-            expr = combat.double_dice(damage_dice) if atk.crit else damage_dice
+            expr = combat.double_dice(damage_dice) if is_crit else damage_dice
             dmg = dice_mod.roll(expr)
-            outcome = combat.apply_damage(target, max(0, dmg.total), crit=atk.crit)
+            outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit)
             save_campaign(c)
             result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             result["target_state"] = outcome

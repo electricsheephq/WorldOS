@@ -28,16 +28,16 @@ def test_cellar_rats_full_playthrough():
     assert start["scene_count"] == 5
     assert any(n["id"] == "quill" for n in start["npcs"])
 
-    # 2. Create the player hero and the voiced AI companion
+    # 2. The companion (Vesper) is auto-seeded into the party by start_adventure;
+    #    create the player hero alongside her.
+    party0 = server.get_state(cid)["party"]
+    comp = next(p["id"] for p in party0 if p["kind"] == "companion")
+    assert any(p["name"] == "Vesper" for p in party0)
     hero = server.create_character(
         cid, "Aldric", kind="player", class_name="Fighter", max_hp=12, armor_class=16,
         voice_id="narrator-dm", abilities={"strength": 16, "dexterity": 14, "constitution": 14},
     )["id"]
-    comp = server.create_character(
-        cid, "Sister Wren", kind="companion", class_name="Cleric", max_hp=10, armor_class=14,
-        voice_id="companion-default", abilities={"wisdom": 16, "constitution": 12},
-    )["id"]
-    assert len(server.get_state(cid)["party"]) == 2
+    assert len(server.get_state(cid)["party"]) == 2  # Vesper + the hero
 
     # 3. EXPLORATION: a Perception check for the goblin alarm-cord (deterministic via tool)
     perception = server.roll("1d20+2", reason="Perception vs alarm-cord (DC 13)")

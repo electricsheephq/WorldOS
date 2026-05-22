@@ -76,6 +76,26 @@ def seed_campaign(adv: dict) -> Campaign:
             ch.id = npc["id"]
         c.characters[ch.id] = ch
 
+    # Companions are full party members (their own sheet + voice), seeded into
+    # the party so the player starts the adventure WITH a companion at their side.
+    # The companion dict mirrors Character's fields (Pydantic coerces the nested
+    # abilities / classes / spell_slots); unknown keys are rejected.
+    for comp in _as_list(adv, "companions"):
+        data = dict(comp)
+        comp_id = data.pop("id", None)
+        data["kind"] = "companion"
+        data.setdefault("voice_id", "companion-default")
+        ch = Character(**data)
+        if comp_id:
+            if comp_id in c.characters:
+                raise ValueError(f"duplicate character id {comp_id!r} in adventure")
+            ch.id = comp_id
+        ch.current_hp = ch.max_hp  # a fresh companion joins at full health
+        if not ch.hit_dice_remaining:
+            ch.hit_dice_remaining = ch.total_level
+        c.characters[ch.id] = ch
+        c.party.append(ch.id)
+
     if adv.get("hook"):
         quest = Quest(title=adv.get("title", "Adventure"), description=adv["hook"])
         c.quests[quest.id] = quest
