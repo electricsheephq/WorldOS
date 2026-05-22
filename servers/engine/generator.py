@@ -82,6 +82,15 @@ def validate_adventure(adv: dict) -> list[str]:
                 label = loc_id if _is_nonempty_str(loc_id) else where
                 problems.append(f"location {label!r} is missing a non-empty 'name'")
 
+        # connections (when present) must reference existing location ids
+        for loc in locations:
+            if isinstance(loc, dict):
+                for conn in loc.get("connections", []) or []:
+                    if conn not in location_ids:
+                        problems.append(
+                            f"location {loc.get('id', '?')!r} connects to unknown location id {conn!r}"
+                        )
+
     # --- npcs --------------------------------------------------------------
     npc_ids: set[str] = set()
     npcs = adv.get("npcs", [])

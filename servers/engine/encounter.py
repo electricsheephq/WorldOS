@@ -62,6 +62,8 @@ def xp_thresholds(party_levels: list[int]) -> dict:
     Returns a dict with "easy"/"medium"/"hard"/"deadly" keys. Levels are clamped
     to the 1-20 table range.
     """
+    if not party_levels:
+        raise ValueError("party_levels must be non-empty")
     by_level = _tables()["xp_thresholds_by_level"]
     totals = {d: 0 for d in DIFFICULTIES}
     for level in party_levels:

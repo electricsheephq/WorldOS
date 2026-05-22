@@ -286,7 +286,7 @@ class HouseRules(_StrictModel):
     """Campaign-level rule toggles the DM honors when adjudicating. Most are
     advisory (the DM applies them); a few may be wired into the engine over time."""
 
-    difficulty: str = "standard"  # easy | standard | hard
+    difficulty: Literal["easy", "standard", "hard"] = "standard"
     critical_max_damage: bool = False  # crits add max die value instead of doubling dice
     flanking_advantage: bool = False  # flanking grants advantage
     slow_natural_healing: bool = False  # long rest restores no HP without spending Hit Dice

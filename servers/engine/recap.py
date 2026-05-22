@@ -20,13 +20,19 @@ _INTRO = "Previously on your adventure..."
 _EMPTY = "This is the start of a new adventure. The story has yet to be written."
 
 
+def _clean(s: str) -> str:
+    """Collapse whitespace/newlines and neutralize embedded double-quotes so a log
+    entry can't break the recap's quoting or inject spurious narration."""
+    return " ".join(s.split()).replace('"', "'")
+
+
 def _beat(entry: SessionLogEntry) -> str:
     """Render a single log entry as one recap line."""
-    text = (entry.text or "").strip()
+    text = _clean(entry.text or "")
     if not text:
         return ""
     if entry.kind == "dialogue":
-        speaker = (entry.speaker or "").strip()
+        speaker = _clean(entry.speaker or "")
         if speaker:
             return f'{speaker} said, "{text}"'
         return f'A voice said, "{text}"'

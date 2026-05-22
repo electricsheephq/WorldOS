@@ -67,9 +67,10 @@ def suggest_action(
         if ch is not None:
             in_combat.append(ch)
 
-    # 1) A downed ally (other or self) — the most urgent priority on the field.
+    # 1) A downed-but-savable ally (other or self) — the most urgent priority.
+    # A dead ally can't be aided here, and a stable one is no longer in danger.
     for ch in in_combat:
-        if ch.kind in ALLY_KINDS and ch.current_hp == 0:
+        if ch.kind in ALLY_KINDS and ch.current_hp == 0 and not ch.dead and not ch.stable:
             who = "themselves" if ch.id == companion.id else ch.name
             return {
                 "action": "aid_downed",
@@ -96,15 +97,15 @@ def suggest_action(
             ),
         }
 
-    # 3) Out of combat — the companion's move is to roleplay, not to swing.
-    if not combat.active:
+    # 3) Genuinely out of combat (inactive and no initiative order) — roleplay.
+    if not combat.active and not combat.order:
         return {
             "action": "roleplay",
             "target_id": None,
             "reason": "No combat is underway; speak up, banter, or act in the scene.",
         }
 
-    # 4) Combat is active but nothing to aid and no living enemy left — brace.
+    # 4) In combat (or a lingering order) with nothing to aid and no living enemy — brace.
     return {
         "action": "defend",
         "target_id": None,
