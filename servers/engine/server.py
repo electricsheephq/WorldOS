@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 import combat
 import content as content_mod
 import dice as dice_mod
+import inventory
 import rests
 import spells
 import srd_tables
@@ -812,6 +813,103 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     ab = Ability(ability.lower())
     r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}")
     return {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc, "success": r.total >= dc}
+
+
+@mcp.tool()
+def add_item(
+    campaign_id: str, character_id: str, name: str, quantity: int = 1, weight: float = 0.0,
+    requires_attunement: bool = False, description: str = "",
+) -> dict:
+    """Add an item to a character's inventory (stacks with an identical unequipped,
+    non-attuned item)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        inventory.add_item(ch, name, quantity, weight, requires_attunement, description)
+        save_campaign(c)
+        return {"inventory": [i.model_dump() for i in ch.inventory]}
+
+
+@mcp.tool()
+def remove_item(campaign_id: str, character_id: str, name: str, quantity: int = 1) -> dict:
+    """Remove a quantity of an item (removes the whole stack if quantity >= held)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        inventory.remove_item(ch, name, quantity)
+        save_campaign(c)
+        return {"inventory": [i.model_dump() for i in ch.inventory]}
+
+
+@mcp.tool()
+def equip_item(campaign_id: str, character_id: str, name: str, equipped: bool = True) -> dict:
+    """Equip an item (or unequip with equipped=False)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        it = inventory.set_equipped(ch, name, equipped)
+        save_campaign(c)
+        return it.model_dump()
+
+
+@mcp.tool()
+def attune_item(campaign_id: str, character_id: str, name: str, attuned: bool = True) -> dict:
+    """Attune to a magic item (or end attunement with attuned=False). Max 3 attuned."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        it = inventory.set_attuned(ch, name, attuned)
+        save_campaign(c)
+        return it.model_dump()
+
+
+@mcp.tool()
+def adjust_currency(
+    campaign_id: str, character_id: str, cp: int = 0, sp: int = 0, ep: int = 0, gp: int = 0, pp: int = 0
+) -> dict:
+    """Add or subtract specific coin denominations. Raises if any would go negative."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        cur = inventory.adjust_currency(ch, cp, sp, ep, gp, pp)
+        save_campaign(c)
+        return cur.model_dump()
+
+
+@mcp.tool()
+def buy_item(
+    campaign_id: str, character_id: str, name: str, cost_gp: float, quantity: int = 1,
+    weight: float = 0.0, requires_attunement: bool = False, description: str = "",
+) -> dict:
+    """Buy an item: pay cost_gp (making change from the purse) and add it to inventory.
+    Raises if the character can't afford it."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        inventory.pay(ch, cost_gp)
+        inventory.add_item(ch, name, quantity, weight, requires_attunement, description)
+        save_campaign(c)
+        return {"currency": ch.currency.model_dump(), "inventory": [i.model_dump() for i in ch.inventory]}
+
+
+@mcp.tool()
+def sell_item(campaign_id: str, character_id: str, name: str, price_gp: float, quantity: int = 1) -> dict:
+    """Sell an item: remove it and add price_gp to the purse."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        inventory.remove_item(ch, name, quantity)
+        inventory.gain(ch, price_gp)
+        save_campaign(c)
+        return {"currency": ch.currency.model_dump(), "inventory": [i.model_dump() for i in ch.inventory]}
+
+
+@mcp.tool()
+def encumbrance_status(campaign_id: str, character_id: str) -> dict:
+    """Carried weight vs capacity and encumbrance status (SRD variant thresholds:
+    STR x5 encumbered, x10 heavily encumbered, x15 max)."""
+    c = _require(campaign_id)
+    return inventory.encumbrance(_char(c, character_id))
 
 
 @mcp.tool()
