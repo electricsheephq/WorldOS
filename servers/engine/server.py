@@ -16,10 +16,14 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 import combat
+import companion
 import content as content_mod
 import dice as dice_mod
+import encounter
+import generator
 import inventory
 import npc as npc_mod
+import recap
 import rests
 import spells
 import srd_tables
@@ -33,6 +37,8 @@ from models import (
     Combat,
     Combatant,
     Condition,
+    HouseRules,
+    SessionLogEntry,
     SpellSlotLevel,
 )
 
@@ -44,7 +50,7 @@ _AB3_TO_FULL = {
     "wis": "wisdom",
     "cha": "charisma",
 }
-from store import campaign_lock
+from store import append_log, campaign_lock
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
 
@@ -1034,6 +1040,96 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
             "old_attitude": old,
             "new_attitude": the_npc.attitude,
         }
+
+
+@mcp.tool()
+def companion_suggest_action(campaign_id: str, companion_id: str) -> dict:
+    """Suggest a tactical action for the companion (or any character) given the
+    current combat — a deterministic aid the companion persona may follow or
+    override. Returns {action, target_id, reason}."""
+    c = _require(campaign_id)
+    return companion.suggest_action(_char(c, companion_id), c.combat, c.characters)
+
+
+@mcp.tool()
+def log_event(campaign_id: str, kind: str, text: str, speaker: str = "") -> dict:
+    """Record a story beat in the current session log (kind: narration | dialogue
+    | roll | system | combat). Powers recaps and post-compaction recovery."""
+    import uuid
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.active_session_id:
+            c.active_session_id = f"session-{uuid.uuid4().hex[:8]}"
+            save_campaign(c)
+        entry = SessionLogEntry(kind=kind, text=text, speaker=speaker or None)
+        append_log(campaign_id, c.active_session_id, entry)
+        return {"session_id": c.active_session_id, "logged": entry.model_dump()}
+
+
+@mcp.tool()
+def session_recap(campaign_id: str) -> dict:
+    """Return a 'previously on...' recap of the current session's logged events."""
+    c = _require(campaign_id)
+    if not c.active_session_id:
+        return {"recap": recap.format_recap([])}
+    return {"recap": recap.recap_from_store(campaign_id, c.active_session_id)}
+
+
+@mcp.tool()
+def xp_for_cr(cr: str) -> dict:
+    """The XP value of a monster's Challenge Rating (e.g. '1/4', '5')."""
+    return {"cr": cr, "xp": encounter.xp_for_cr(cr)}
+
+
+@mcp.tool()
+def party_xp_budget(party_levels: list[int]) -> dict:
+    """Encounter XP thresholds (easy/medium/hard/deadly) for a party of these levels."""
+    return encounter.xp_thresholds(party_levels)
+
+
+@mcp.tool()
+def encounter_difficulty(party_levels: list[int], monster_xps: list[int]) -> dict:
+    """Classify an encounter (trivial/easy/medium/hard/deadly) for a party against
+    the given monster XP values (applies the SRD encounter-size multiplier)."""
+    return {
+        "difficulty": encounter.encounter_difficulty(party_levels, monster_xps),
+        "thresholds": encounter.xp_thresholds(party_levels),
+    }
+
+
+@mcp.tool()
+def validate_adventure(adventure_id: str) -> dict:
+    """Validate a bundled adventure module (content/campaigns/<id>/adventure.json)
+    against the loader schema. Returns the list of problems (empty == valid)."""
+    adv = content_mod.load_adventure_data(adventure_id)
+    return {"adventure_id": adventure_id, "problems": generator.validate_adventure(adv)}
+
+
+@mcp.tool()
+def scaffold_adventure(title: str, premise: str = "", min_level: int = 1, max_level: int = 2) -> dict:
+    """Return a schema-correct skeleton adventure module for the DM to fill in."""
+    return generator.scaffold_adventure(title, premise, (min_level, max_level))
+
+
+@mcp.tool()
+def get_house_rules(campaign_id: str) -> dict:
+    """Return the campaign's house-rule configuration."""
+    return _require(campaign_id).house_rules.model_dump()
+
+
+@mcp.tool()
+def set_house_rules(campaign_id: str, patch: dict) -> dict:
+    """Update house rules (partial merge). Keys: difficulty, critical_max_damage,
+    flanking_advantage, slow_natural_healing, feats_allowed, multiclass_allowed,
+    dm_can_fudge. Unknown keys are rejected."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        data = c.house_rules.model_dump()
+        _deep_update(data, patch)
+        c.house_rules = HouseRules.model_validate(data)
+        save_campaign(c)
+        return c.house_rules.model_dump()
 
 
 if __name__ == "__main__":

@@ -282,6 +282,19 @@ class SessionLogEntry(_StrictModel):
     speaker: Optional[str] = None  # character id or name
 
 
+class HouseRules(_StrictModel):
+    """Campaign-level rule toggles the DM honors when adjudicating. Most are
+    advisory (the DM applies them); a few may be wired into the engine over time."""
+
+    difficulty: str = "standard"  # easy | standard | hard
+    critical_max_damage: bool = False  # crits add max die value instead of doubling dice
+    flanking_advantage: bool = False  # flanking grants advantage
+    slow_natural_healing: bool = False  # long rest restores no HP without spending Hit Dice
+    feats_allowed: bool = True
+    multiclass_allowed: bool = True
+    dm_can_fudge: bool = False  # allow DM dice fudging (off by default)
+
+
 class Campaign(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("camp"))
     title: str
@@ -300,5 +313,6 @@ class Campaign(_StrictModel):
     locations: dict[str, Location] = Field(default_factory=dict)
     factions: dict[str, Faction] = Field(default_factory=dict)
     combat: Combat = Field(default_factory=Combat)
+    house_rules: HouseRules = Field(default_factory=HouseRules)
 
     active_session_id: Optional[str] = None

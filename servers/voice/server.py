@@ -1,12 +1,16 @@
 """ClawDnD voice MCP server.
 
-A swappable text-to-speech layer. The DM and companion call one tool —
-speak(text, voice_id) — and a backend (selected by CLAWDND_TTS_BACKEND)
-synthesizes and plays the audio. Each character/NPC carries a logical voice_id;
-the registry resolves it to the active backend's real voice, so switching
-Kokoro -> ElevenLabs never touches character data.
+A swappable voice layer with two directions:
 
-Backends: kokoro (default, local), elevenlabs (placeholder), null (silent/CI).
+  - text-to-speech: speak(text, voice_id) -> a backend selected by
+    CLAWDND_TTS_BACKEND synthesizes and plays audio. Each character/NPC carries
+    a logical voice_id; the registry resolves it to the active backend's real
+    voice, so switching Kokoro -> ElevenLabs never touches character data.
+  - speech-to-text: transcribe(audio_path) -> a backend selected by
+    CLAWDND_STT_BACKEND turns a recorded audio file into text.
+
+TTS backends: kokoro (default, local), elevenlabs (placeholder), null (silent/CI).
+STT backends: null (default, placeholder/CI), macos / whisper (stubs). See stt.py.
 """
 
 from __future__ import annotations
@@ -16,10 +20,12 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 import registry
+import stt
 from interface import SpeakResult
 
 mcp = FastMCP("clawdnd-voice")
 _backends: dict[str, object] = {}
+_stt_backend: stt.SttBackend | None = None
 
 
 def _backend_name() -> str:
@@ -44,10 +50,25 @@ def _get_backend():
     return _backends[name]
 
 
+def _get_stt_backend() -> stt.SttBackend:
+    """The active STT backend, rebuilt if CLAWDND_STT_BACKEND changed.
+
+    Construction is cheap (heavy deps are imported lazily inside transcribe), so
+    re-selecting on a name change is free and lets the env var drive selection at
+    runtime — consistent with how the TTS selector re-reads its env var.
+    """
+    global _stt_backend
+    if _stt_backend is None or _stt_backend.name != stt.backend_name():
+        _stt_backend = stt.select_backend()
+    return _stt_backend
+
+
 @mcp.tool()
 def ping() -> str:
-    """Health check. Returns ok and the active TTS backend name."""
-    return f"clawdnd-voice: ok (v0.0.1, backend={_backend_name()})"
+    """Health check. Returns ok and the active TTS + STT backend names."""
+    return (
+        f"clawdnd-voice: ok (v0.0.1, tts={_backend_name()}, stt={stt.backend_name()})"
+    )
 
 
 @mcp.tool()
@@ -77,6 +98,20 @@ def speak(text: str, voice_id: str = "narrator-dm", speed: float = 1.0, play: bo
         "played": res.played,
         "detail": res.detail,
     }
+
+
+@mcp.tool()
+def transcribe(audio_path: str) -> dict:
+    """Transcribe a recorded audio file to text (speech-to-text).
+
+    Uses the STT backend selected by CLAWDND_STT_BACKEND (default 'null', which
+    returns a placeholder for CI/headless). Real backends (macos, whisper) decode
+    on-device; if their optional deps or the audio file are missing they return a
+    clear "not configured" message in `text` rather than crashing.
+    """
+    backend = _get_stt_backend()
+    text = backend.transcribe(audio_path)
+    return {"text": text, "backend": backend.name}
 
 
 if __name__ == "__main__":
