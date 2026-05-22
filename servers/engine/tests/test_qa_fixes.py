@@ -11,6 +11,7 @@ from pathlib import Path
 
 import combat
 import content
+import server
 from models import Character, Condition
 
 _ADV = (
@@ -20,8 +21,9 @@ _ADV = (
 
 
 def _downed(max_hp: int = 7) -> Character:
-    """A creature at 0 HP and unstable (dying)."""
-    return Character(name="Goblin", kind="monster", max_hp=max_hp, current_hp=0)
+    """A player character at 0 HP and unstable (dying). Death-save accrual is a
+    player/companion mechanic — monsters die outright at 0 (see the monster tests)."""
+    return Character(name="Hero", kind="player", max_hp=max_hp, current_hp=0)
 
 
 # --- finding 2: instant death when damage >= HP max while already at 0 ------
@@ -100,3 +102,43 @@ def test_cellar_rats_ships_a_companion_in_party():
     comps = [c.characters[i] for i in c.party if c.characters[i].kind == "companion"]
     assert len(comps) == 1 and comps[0].name == "Vesper"
     assert comps[0].current_hp == comps[0].max_hp  # full health at start
+
+
+# --- iteration 2: monsters/NPCs die at 0; PCs/companions still get death saves
+
+
+def test_monster_dies_instantly_at_zero_hp():
+    m = Character(name="Goblin", kind="monster", max_hp=7, current_hp=7)
+    out = combat.apply_damage(m, 7)  # exactly lethal (not massive) -> still dead
+    assert m.dead is True and out["dead"] is True and out["dying"] is False
+
+
+def test_npc_dies_instantly_at_zero_hp():
+    n = Character(name="Thug", kind="npc", max_hp=11, current_hp=5)
+    combat.apply_damage(n, 5)
+    assert n.dead is True
+
+
+def test_player_still_gets_death_saves_at_zero():
+    p = Character(name="Hero", kind="player", max_hp=12, current_hp=4)
+    out = combat.apply_damage(p, 4)  # to 0, not massive -> dying, not dead
+    assert p.dead is False and out["dying"] is True
+
+
+def test_companion_still_gets_death_saves_at_zero():
+    comp = Character(name="Ally", kind="companion", max_hp=10, current_hp=3)
+    out = combat.apply_damage(comp, 3)
+    assert comp.dead is False and out["dying"] is True
+
+
+# --- iteration 2: party-XP split -------------------------------------------
+
+
+def test_award_party_xp_splits_evenly(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]  # seeds Vesper
+    server.create_character(cid, "Hero", kind="player", max_hp=10)
+    out = server.award_party_xp(cid, 150, reason="cleared the cellar")
+    assert out["split_between"] == 2  # Vesper + Hero
+    assert all(g["granted"] == 75 for g in out["grants"])
+    assert sum(g["granted"] for g in out["grants"]) == 150

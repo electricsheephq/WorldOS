@@ -51,11 +51,12 @@ SCORER_INPUT="$(printf '%s\n\n# ===== OUTPUT FORMAT =====\nRespond with ONLY a s
 
 claude -p "$SCORER_INPUT" \
   --model sonnet --permission-mode bypassPermissions \
-  --json-schema "$(cat qa/score_schema.json)" \
-  --max-budget-usd 1.00 \
+  --max-budget-usd 1.50 \
   --output-format json 2> "$T/$RUN.score.err" \
   | jq -r '.result' \
   | sed -E '/^```/d' > "$T/$RUN.score.json" 2>/dev/null   # strip any code fences
+# NB: the scorer relies on the JSON-only instruction embedded in the prompt; the
+# CLI's --json-schema flag was found to suppress the result text, so it's omitted.
 
 echo "[qa] ===== scorecard ($RUN) ====="
 jq -r '

@@ -120,7 +120,12 @@ def apply_damage(ch: Character, amount: int, crit: bool = False, half: bool = Fa
     ch.current_hp = max(0, hp_before - to_hp)
 
     if ch.current_hp == 0:
-        if hp_before > 0:
+        if ch.kind in ("monster", "npc"):
+            # Monsters and NPCs die outright at 0 HP — death saves are a
+            # player-character (and companion) mechanic in the SRD.
+            ch.dead = True
+            ch.stable = False
+        elif hp_before > 0:
             overkill = to_hp - hp_before  # damage remaining after reaching 0
             if overkill >= ch.max_hp:  # massive damage -> instant death
                 ch.dead = True

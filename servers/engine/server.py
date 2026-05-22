@@ -715,6 +715,51 @@ def award_xp(campaign_id: str, character_id: str, amount: int, reason: str = "")
 
 
 @mcp.tool()
+def award_party_xp(
+    campaign_id: str, amount: int, reason: str = "", include_companions: bool = True
+) -> dict:
+    """Award one encounter's XP to the whole party, split evenly. Divides `amount`
+    across the player characters (and companions, unless include_companions=False),
+    giving any remainder to the first recipient. Returns the per-character grants
+    and whether anyone can now level up — use this instead of computing the split
+    by hand and calling award_xp repeatedly."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        kinds = {"player", "companion"} if include_companions else {"player"}
+        recipients = [
+            cid
+            for cid in c.party
+            if (m := c.characters.get(cid)) and m.kind in kinds and not m.dead
+        ]
+        if not recipients:
+            raise ValueError("no eligible party members to award XP to")
+        each, extra = divmod(max(0, amount), len(recipients))
+        grants = []
+        for i, cid in enumerate(recipients):
+            ch = c.characters[cid]
+            share = each + (extra if i == 0 else 0)
+            ch.xp = max(0, ch.xp + share)
+            available = srd_tables.level_for_xp(ch.xp)
+            grants.append(
+                {
+                    "id": ch.id,
+                    "name": ch.name,
+                    "granted": share,
+                    "xp": ch.xp,
+                    "current_level": ch.total_level,
+                    "can_level_up": available > ch.total_level,
+                }
+            )
+        save_campaign(c)
+        return {
+            "total": amount,
+            "split_between": len(recipients),
+            "grants": grants,
+            "reason": reason,
+        }
+
+
+@mcp.tool()
 def level_up(
     campaign_id: str,
     character_id: str,
