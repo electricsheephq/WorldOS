@@ -1,0 +1,78 @@
+"""Short/long rest mechanics (SRD 5.2). Pure helpers operating on a Character;
+the engine's rest tools wrap them with the campaign lock + persistence.
+"""
+
+from __future__ import annotations
+
+import re
+
+from models import Ability, Character, Condition, DeathSaves
+
+_HIT_DIE = re.compile(r"\d*d(\d+)")
+
+
+def _hit_die_size(ch: Character) -> int:
+    m = _HIT_DIE.search(ch.hit_dice or "")
+    return int(m.group(1)) if m else 8  # sensible default if unset
+
+
+def _is_single_class_warlock(ch: Character) -> bool:
+    return len(ch.classes) == 1 and ch.classes[0].name.lower() == "warlock"
+
+
+def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
+    """Spend up to dice_to_spend Hit Dice to heal (each: 1d{hit die} + CON mod,
+    floored at 0 per die). A single-class Warlock recovers all (pact) spell slots.
+    Mutates ch."""
+    die = _hit_die_size(ch)
+    con = ch.ability_modifier(Ability.CON)
+    spend = max(0, min(dice_to_spend, ch.hit_dice_remaining))
+    rolls: list[int] = []
+    healed = 0
+    for _ in range(spend):
+        r = roll_fn(f"1d{die}")
+        rolls.append(r.total)
+        healed += max(0, r.total + con)
+    ch.hit_dice_remaining -= spend
+    before = ch.current_hp
+    ch.current_hp = min(ch.max_hp, ch.current_hp + healed)
+
+    pact_recovered = False
+    if _is_single_class_warlock(ch):
+        for slot in ch.spell_slots.values():
+            slot.used = 0
+        pact_recovered = True
+
+    return {
+        "dice_spent": spend,
+        "rolls": rolls,
+        "hp_restored": ch.current_hp - before,
+        "hp": f"{ch.current_hp}/{ch.max_hp}",
+        "hit_dice_remaining": ch.hit_dice_remaining,
+        "pact_slots_recovered": pact_recovered,
+    }
+
+
+def long_rest(ch: Character) -> dict:
+    """A full long rest: HP to max, recover half total Hit Dice (min 1), reset all
+    spell slots, reduce exhaustion by 1, and end the dying state. Cannot rest while
+    dead. Mutates ch."""
+    if ch.dead:
+        raise ValueError("cannot take a long rest while dead")
+    total_hd = ch.total_level
+    recovered = max(1, total_hd // 2)
+    ch.hit_dice_remaining = min(total_hd, ch.hit_dice_remaining + recovered)
+    ch.current_hp = ch.max_hp
+    ch.exhaustion = max(0, ch.exhaustion - 1)
+    for slot in ch.spell_slots.values():
+        slot.used = 0
+    ch.conditions = [c for c in ch.conditions if c != Condition.UNCONSCIOUS]
+    ch.death_saves = DeathSaves()
+    ch.stable = False
+    return {
+        "hp": f"{ch.current_hp}/{ch.max_hp}",
+        "hit_dice_recovered": recovered,
+        "hit_dice_remaining": ch.hit_dice_remaining,
+        "exhaustion": ch.exhaustion,
+        "spell_slots_restored": True,
+    }

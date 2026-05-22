@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 import combat
 import content as content_mod
 import dice as dice_mod
+import rests
 import spells
 import srd_tables
 from models import (
@@ -811,6 +812,33 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     ab = Ability(ability.lower())
     r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}")
     return {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc, "success": r.total >= dc}
+
+
+@mcp.tool()
+def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) -> dict:
+    """Take a short rest: optionally spend Hit Dice to heal (1d{hit die} + CON
+    each); a single-class Warlock recovers all (pact) spell slots."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        out = rests.short_rest(ch, hit_dice_to_spend, dice_mod.roll)
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        return out
+
+
+@mcp.tool()
+def long_rest(campaign_id: str, character_id: str) -> dict:
+    """Take a long rest: restore all HP, recover half total Hit Dice (min 1), reset
+    all spell slots, reduce exhaustion by 1, and end the dying state. The DM should
+    call this for each party member. Cannot rest while dead."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        out = rests.long_rest(ch)
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        return out
 
 
 @mcp.tool()
