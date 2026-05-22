@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def _new_id(prefix: str) -> str:
@@ -86,7 +86,14 @@ class Condition(str, Enum):
 CharacterKind = Literal["player", "companion", "npc", "monster"]
 
 
-class AbilityScores(BaseModel):
+class _StrictModel(BaseModel):
+    """Base for all state models: reject unknown fields so a typo'd update
+    (e.g. {"max_hpp": 99}) raises instead of silently vanishing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AbilityScores(_StrictModel):
     strength: int = 10
     dexterity: int = 10
     constitution: int = 10
@@ -101,13 +108,13 @@ class AbilityScores(BaseModel):
         return (self.score(ability) - 10) // 2
 
 
-class ClassLevel(BaseModel):
+class ClassLevel(_StrictModel):
     name: str
     level: int = 1
     subclass: Optional[str] = None
 
 
-class Item(BaseModel):
+class Item(_StrictModel):
     name: str
     quantity: int = 1
     weight: float = 0.0  # lbs per item
@@ -117,7 +124,7 @@ class Item(BaseModel):
     description: str = ""
 
 
-class Currency(BaseModel):
+class Currency(_StrictModel):
     cp: int = 0
     sp: int = 0
     ep: int = 0
@@ -125,17 +132,17 @@ class Currency(BaseModel):
     pp: int = 0
 
 
-class SpellSlotLevel(BaseModel):
+class SpellSlotLevel(_StrictModel):
     maximum: int = 0
     used: int = 0
 
 
-class DeathSaves(BaseModel):
+class DeathSaves(_StrictModel):
     successes: int = 0
     failures: int = 0
 
 
-class Character(BaseModel):
+class Character(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("char"))
     name: str
     kind: CharacterKind = "player"
@@ -186,6 +193,18 @@ class Character(BaseModel):
     memory: list[str] = Field(default_factory=list)  # facts the npc/companion remembers
     notes: str = ""
 
+    @model_validator(mode="after")
+    def _clamp_vitals(self) -> "Character":
+        # The engine is the authority; keep vitals within valid 5e ranges.
+        self.max_hp = max(1, self.max_hp)
+        self.current_hp = max(0, min(self.current_hp, self.max_hp))
+        self.temp_hp = max(0, self.temp_hp)
+        self.exhaustion = max(0, min(self.exhaustion, 6))
+        for slot in self.spell_slots.values():
+            slot.maximum = max(0, slot.maximum)
+            slot.used = max(0, min(slot.used, slot.maximum))
+        return self
+
     @property
     def total_level(self) -> int:
         return sum(c.level for c in self.classes) or 1
@@ -212,7 +231,7 @@ class Character(BaseModel):
 QuestStatus = Literal["active", "completed", "failed"]
 
 
-class Quest(BaseModel):
+class Quest(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("quest"))
     title: str
     description: str = ""
@@ -221,7 +240,7 @@ class Quest(BaseModel):
     completed_objectives: list[str] = Field(default_factory=list)
 
 
-class Location(BaseModel):
+class Location(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("loc"))
     name: str
     description: str = ""
@@ -229,19 +248,19 @@ class Location(BaseModel):
     notes: str = ""
 
 
-class Faction(BaseModel):
+class Faction(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("fac"))
     name: str
     description: str = ""
     reputation: int = 0  # -100..100
 
 
-class Combatant(BaseModel):
+class Combatant(_StrictModel):
     character_id: str
     initiative: int = 0
 
 
-class Combat(BaseModel):
+class Combat(_StrictModel):
     active: bool = False
     round: int = 0
     turn_index: int = 0
@@ -254,14 +273,14 @@ class Combat(BaseModel):
         return self.order[self.turn_index % len(self.order)].character_id
 
 
-class SessionLogEntry(BaseModel):
+class SessionLogEntry(_StrictModel):
     t: float = Field(default_factory=_now)
     kind: str = "narration"  # narration | dialogue | roll | system | combat
     text: str
     speaker: Optional[str] = None  # character id or name
 
 
-class Campaign(BaseModel):
+class Campaign(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("camp"))
     title: str
     ruleset: str = "SRD 5.2"

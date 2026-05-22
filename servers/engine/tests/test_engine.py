@@ -1,7 +1,8 @@
 import pytest
+from pydantic import ValidationError
 
 import store
-from models import Ability, Campaign, Character
+from models import Ability, Campaign, Character, Condition
 
 
 @pytest.fixture(autouse=True)
@@ -74,3 +75,50 @@ def test_total_level():
         classes=[{"name": "Fighter", "level": 3}, {"name": "Wizard", "level": 2}],
     )
     assert ch2.total_level == 5
+
+
+def test_extra_field_rejected():
+    # H2 regression: a typo'd field must raise, not silently vanish.
+    with pytest.raises(ValidationError):
+        Character.model_validate({"name": "Typo", "max_hpp": 99})
+
+
+def test_hp_clamped_to_max():
+    assert Character(name="C", max_hp=10, current_hp=99).current_hp == 10
+
+
+def test_hp_floored_at_zero():
+    assert Character(name="C", max_hp=10, current_hp=-5).current_hp == 0
+
+
+def test_exhaustion_clamped():
+    assert Character(name="C", exhaustion=9).exhaustion == 6
+
+
+def test_condition_enum_validates():
+    assert Condition("prone") == Condition.PRONE
+    with pytest.raises(ValueError):
+        Condition("bogus")
+
+
+def test_engine_tools_end_to_end():
+    # Exercises the MCP tools through the locked load->mutate->save path.
+    import server
+
+    cid = server.create_campaign("Tools Test")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=20)
+    char_id = hero["id"]
+
+    server.set_hp(cid, char_id, 5)
+    server.add_condition(cid, char_id, "prone")
+    server.add_condition(cid, char_id, "prone")  # idempotent
+
+    sheet = server.get_character(cid, char_id)
+    assert sheet["current_hp"] == 5
+    assert sheet["conditions"].count("prone") == 1
+
+    server.remove_condition(cid, char_id, "prone")
+    assert "prone" not in server.get_character(cid, char_id)["conditions"]
+
+    with pytest.raises(Exception):
+        server.update_character(cid, char_id, {"max_hpp": 99})  # typo rejected

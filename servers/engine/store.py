@@ -12,6 +12,8 @@ the server's working directory.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import time
 from pathlib import Path
@@ -27,6 +29,22 @@ def state_dir() -> Path:
 
 def _campaign_dir(campaign_id: str) -> Path:
     return state_dir() / "campaigns" / campaign_id
+
+
+@contextlib.contextmanager
+def campaign_lock(campaign_id: str):
+    """Exclusive advisory lock around a campaign's load -> mutate -> save
+    critical section, so concurrent tool calls (including a future Tier-2
+    companion sub-session) can't lost-update each other. POSIX flock; released
+    on exit."""
+    d = _campaign_dir(campaign_id)
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / ".lock", "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def _atomic_write(path: Path, data: str) -> None:

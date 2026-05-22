@@ -16,7 +16,8 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 import dice as dice_mod
-from models import Ability, AbilityScores, Campaign, Character, ClassLevel
+from models import Ability, AbilityScores, Campaign, Character, ClassLevel, Condition
+from store import campaign_lock
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
 
@@ -28,6 +29,13 @@ def _require(campaign_id: str) -> Campaign:
     if c is None:
         raise ValueError(f"no campaign with id {campaign_id!r}")
     return c
+
+
+def _char(c: Campaign, character_id: str) -> Character:
+    ch = c.characters.get(character_id)
+    if ch is None:
+        raise ValueError(f"no character {character_id!r} in campaign")
+    return ch
 
 
 def _deep_update(base: dict, patch: dict) -> dict:
@@ -150,24 +158,25 @@ def create_character(
     `abilities` is an optional dict like {"strength": 15, "dexterity": 14, ...}.
     Returns the new character id.
     """
-    c = _require(campaign_id)
-    scores = AbilityScores(**(abilities or {}))
-    ch = Character(
-        name=name,
-        kind=kind,  # type: ignore[arg-type]
-        race=race,
-        voice_id=voice_id,
-        classes=[ClassLevel(name=class_name, level=level)] if class_name else [],
-        abilities=scores,
-        max_hp=max_hp,
-        current_hp=max_hp,
-        armor_class=armor_class,
-        initiative_bonus=scores.modifier(Ability.DEX),
-    )
-    c.characters[ch.id] = ch
-    if add_to_party and kind in ("player", "companion"):
-        c.party.append(ch.id)
-    save_campaign(c)
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        scores = AbilityScores(**(abilities or {}))
+        ch = Character(
+            name=name,
+            kind=kind,  # type: ignore[arg-type]
+            race=race,
+            voice_id=voice_id,
+            classes=[ClassLevel(name=class_name, level=level)] if class_name else [],
+            abilities=scores,
+            max_hp=max_hp,
+            current_hp=max_hp,
+            armor_class=armor_class,
+            initiative_bonus=scores.modifier(Ability.DEX),
+        )
+        c.characters[ch.id] = ch
+        if add_to_party and kind in ("player", "companion"):
+            c.party.append(ch.id)
+        save_campaign(c)
     return {"id": ch.id, "name": ch.name, "kind": ch.kind}
 
 
@@ -185,19 +194,68 @@ def get_character(campaign_id: str, character_id: str) -> dict:
 def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
     """Apply a partial update to a character and persist it.
 
-    `patch` is a dict of fields to change (deep-merged), e.g.
-    {"current_hp": 12, "conditions": ["prone"]}. The result is re-validated
-    against the schema, so invalid changes are rejected.
+    `patch` is a dict of fields to change (deep-merged for nested objects), e.g.
+    {"current_hp": 12, "armor_class": 15}. Unknown field names are REJECTED.
+
+    WARNING: list fields (conditions, inventory, spells_known, classes) are
+    REPLACED wholesale by the patch, not merged. To change a single condition
+    use add_condition / remove_condition; for HP use set_hp. Vitals are clamped
+    to valid ranges (current_hp to 0..max_hp, exhaustion to 0..6).
     """
-    c = _require(campaign_id)
-    ch = c.characters.get(character_id)
-    if ch is None:
-        raise ValueError(f"no character {character_id!r} in campaign")
-    data = ch.model_dump(mode="json")
-    _deep_update(data, patch)
-    c.characters[character_id] = Character.model_validate(data)
-    save_campaign(c)
-    return c.characters[character_id].model_dump(mode="json")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        data = ch.model_dump(mode="json")
+        _deep_update(data, patch)
+        c.characters[character_id] = Character.model_validate(data)
+        save_campaign(c)
+        return c.characters[character_id].model_dump(mode="json")
+
+
+@mcp.tool()
+def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
+    """Add a 5e condition to a character (idempotent). Prefer this over patching
+    the whole conditions list. Valid values: blinded, charmed, deafened,
+    frightened, grappled, incapacitated, invisible, paralyzed, petrified,
+    poisoned, prone, restrained, stunned, unconscious."""
+    cond = Condition(condition.lower())
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        if cond not in ch.conditions:
+            ch.conditions.append(cond)
+        save_campaign(c)
+        return ch.model_dump(mode="json")
+
+
+@mcp.tool()
+def remove_condition(campaign_id: str, character_id: str, condition: str) -> dict:
+    """Remove a 5e condition from a character (no-op if not present)."""
+    cond = Condition(condition.lower())
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.conditions = [x for x in ch.conditions if x != cond]
+        save_campaign(c)
+        return ch.model_dump(mode="json")
+
+
+@mcp.tool()
+def set_hp(
+    campaign_id: str, character_id: str, current_hp: int, temp_hp: Optional[int] = None
+) -> dict:
+    """Set a character's current HP (and optionally temporary HP). Values are
+    clamped to valid ranges by the engine (current_hp to 0..max_hp, temp_hp >= 0)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.current_hp = current_hp
+        if temp_hp is not None:
+            ch.temp_hp = temp_hp
+        # Re-validate so the clamp invariants apply.
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        return c.characters[character_id].model_dump(mode="json")
 
 
 if __name__ == "__main__":

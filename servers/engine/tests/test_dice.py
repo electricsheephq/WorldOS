@@ -81,3 +81,40 @@ def test_empty_raises():
     except ValueError:
         return
     raise AssertionError("expected ValueError for empty expression")
+
+
+def test_advantage_applies_to_only_first_d20():
+    # C1 regression: with two d20 terms, advantage must affect ONLY the first.
+    r = dice.roll("1d20+1d20", advantage=True, seed=5)
+    assert len(r.dropped) == 1
+
+
+def test_crit_comes_from_the_test_die_only():
+    # C2 regression: a natural 20 on a non-test d20 must NOT count as a crit.
+    for s in range(3000):
+        r = dice.roll("1d20+1d20", seed=s)
+        if r.is_d20 and r.natural != 20 and 20 in r.rolls:
+            assert not r.crit
+            return
+    raise AssertionError("did not find a second-die-20 case to verify")
+
+
+def test_percentile_shorthand():
+    r = dice.roll("d%", seed=1)
+    assert 1 <= r.total <= 100
+
+
+def test_zero_dice_raises():
+    try:
+        dice.roll("0d6")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for 0d6")
+
+
+def test_keep_more_than_rolled_raises():
+    try:
+        dice.roll("2d6kh3")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError when keeping more dice than rolled")
