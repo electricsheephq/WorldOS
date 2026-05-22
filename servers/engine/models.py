@@ -325,3 +325,4 @@ class Campaign(_StrictModel):
     house_rules: HouseRules = Field(default_factory=HouseRules)
 
     active_session_id: Optional[str] = None
+    session_ids: list[str] = Field(default_factory=list)  # play sessions in order

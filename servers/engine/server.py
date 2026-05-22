@@ -1244,29 +1244,90 @@ def companion_suggest_action(campaign_id: str, companion_id: str) -> dict:
     return companion.suggest_action(_char(c, companion_id), c.combat, c.characters)
 
 
-@mcp.tool()
-def log_event(campaign_id: str, kind: str, text: str, speaker: str = "") -> dict:
-    """Record a story beat in the current session log (kind: narration | dialogue
-    | roll | system | combat). Powers recaps and post-compaction recovery."""
+def _new_session_id() -> str:
     import uuid
 
+    return f"session-{uuid.uuid4().hex[:8]}"
+
+
+def _ensure_session(c) -> str:
+    """Return the active session id, auto-starting + tracking one if none is active."""
+    if not c.active_session_id:
+        sid = _new_session_id()
+        c.active_session_id = sid
+        c.session_ids.append(sid)
+    return c.active_session_id
+
+
+@mcp.tool()
+def start_session(campaign_id: str, title: str = "") -> dict:
+    """Begin a new play session. Rolls over to a fresh session log and returns a
+    'previously on...' recap of the PRIOR session — so reloading and calling this
+    resumes the campaign with a recap that spans sessions. Pair with end_session
+    when the player stops. (Use this at the top of /session-start.)"""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        prior = c.session_ids[-1] if c.session_ids else None
+        previously = (
+            recap.recap_from_store(campaign_id, prior) if prior else recap.format_recap([])
+        )
+        sid = _new_session_id()
+        c.session_ids.append(sid)
+        c.active_session_id = sid
+        append_log(
+            campaign_id,
+            sid,
+            SessionLogEntry(
+                kind="system",
+                text=f"Session {len(c.session_ids)} began" + (f": {title}" if title else ""),
+            ),
+        )
+        save_campaign(c)
+        return {"session_id": sid, "number": len(c.session_ids), "previously_on": previously}
+
+
+@mcp.tool()
+def end_session(campaign_id: str, summary: str = "") -> dict:
+    """End the active play session (logs a closing marker + optional summary, then
+    clears the active session so the next start_session recaps this one)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.active_session_id:
-            c.active_session_id = f"session-{uuid.uuid4().hex[:8]}"
-            save_campaign(c)
+            return {"ended": None, "note": "no active session"}
+        sid = c.active_session_id
+        append_log(
+            campaign_id,
+            sid,
+            SessionLogEntry(kind="system", text="Session ended." + (f" {summary}" if summary else "")),
+        )
+        c.active_session_id = None
+        save_campaign(c)
+        return {"ended": sid, "number": len(c.session_ids)}
+
+
+@mcp.tool()
+def log_event(campaign_id: str, kind: str, text: str, speaker: str = "") -> dict:
+    """Record a story beat in the current session log (kind: narration | dialogue
+    | roll | system | combat). Auto-starts a session if none is active. Powers
+    recaps and post-compaction recovery."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        sid = _ensure_session(c)
+        save_campaign(c)
         entry = SessionLogEntry(kind=kind, text=text, speaker=speaker or None)
-        append_log(campaign_id, c.active_session_id, entry)
-        return {"session_id": c.active_session_id, "logged": entry.model_dump()}
+        append_log(campaign_id, sid, entry)
+        return {"session_id": sid, "logged": entry.model_dump()}
 
 
 @mcp.tool()
 def session_recap(campaign_id: str) -> dict:
-    """Return a 'previously on...' recap of the current session's logged events."""
+    """Return a 'previously on...' recap of the current session, or the most recent
+    one if none is active (e.g. right after a reload, before start_session)."""
     c = _require(campaign_id)
-    if not c.active_session_id:
+    sid = c.active_session_id or (c.session_ids[-1] if c.session_ids else None)
+    if not sid:
         return {"recap": recap.format_recap([])}
-    return {"recap": recap.recap_from_store(campaign_id, c.active_session_id)}
+    return {"recap": recap.recap_from_store(campaign_id, sid)}
 
 
 @mcp.tool()
