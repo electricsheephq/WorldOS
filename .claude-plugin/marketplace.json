@@ -1,0 +1,18 @@
+{
+  "name": "clawdnd",
+  "owner": {
+    "name": "100yenadmin"
+  },
+  "metadata": {
+    "description": "ClawDnD — voice-acted D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion.",
+    "homepage": "https://github.com/100yenadmin/ClawDnD"
+  },
+  "plugins": [
+    {
+      "name": "clawdnd",
+      "version": "0.0.1",
+      "source": "./",
+      "description": "Play full D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion."
+    }
+  ]
+}

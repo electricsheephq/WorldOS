@@ -1,0 +1,27 @@
+# Runtime campaign state — local saves, never committed
+/state/
+
+# Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
+# Only original / CC-licensed content belongs under content/campaigns/.
+/content/campaigns/_imported/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+*.egg-info/
+
+# TTS models / audio caches (large, regenerated locally)
+*.onnx
+*.pt
+*.bin
+.cache/
+/state/audio/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,25 @@
+{
+  "name": "clawdnd",
+  "version": "0.0.1",
+  "description": "Play full D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion — deterministic 5e rules, persistent campaigns, fully voice-acted.",
+  "author": {
+    "name": "100yenadmin"
+  },
+  "repository": "https://github.com/100yenadmin/ClawDnD",
+  "license": "MIT",
+  "keywords": [
+    "dnd",
+    "dungeons-and-dragons",
+    "ttrpg",
+    "rpg",
+    "dungeon-master",
+    "5e",
+    "voice",
+    "tts",
+    "kokoro",
+    "game",
+    "claude-code",
+    "mcp"
+  ],
+  "homepage": "https://github.com/100yenadmin/ClawDnD#readme"
+}

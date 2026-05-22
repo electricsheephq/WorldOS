@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "clawdnd-engine": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/engine", "server.py"]
+    },
+    "clawdnd-rules": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/rules", "server.py"]
+    },
+    "clawdnd-voice": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/voice", "server.py"],
+      "env": {
+        "CLAWDND_TTS_BACKEND": "kokoro"
+      }
+    }
+  }
+}

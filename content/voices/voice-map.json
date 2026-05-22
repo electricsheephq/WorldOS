@@ -1,0 +1,15 @@
+{
+  "_comment": "Logical voice_id -> backend-specific voice. Switching TTS backends only re-points this map; character/NPC data is unchanged. Kokoro voice names: first letter a=American/b=British, second letter f=female/m=male.",
+  "default_backend": "kokoro",
+  "backends": {
+    "kokoro": {
+      "narrator-dm": "am_michael",
+      "companion-default": "af_heart",
+      "npc-male-1": "am_adam",
+      "npc-female-1": "af_bella",
+      "npc-elder": "bm_george",
+      "npc-rogue": "bf_emma"
+    },
+    "elevenlabs": {}
+  }
+}
