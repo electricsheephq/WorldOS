@@ -36,5 +36,9 @@ This is the whole point: the player can trust the world is consistent and fair.
 - `attack` **already applies its own damage** on a hit (and reports the target's new state) — do **not** call `apply_damage` again afterward, or you'll hit twice. Use `apply_damage` only for damage that isn't an attack (a failed save, a trap, environmental).
 - For a **save spell**, get the DC from `spell_save_dc` (never compute it by hand — items/proficiency vary), then `saving_throw` the target, then `apply_damage(half=<the save succeeded>)`.
 
+## The living world
+- When the present sets up the future, **schedule it**: `add_consequence(in_days, text, note)` — a ritual that completes in 3 days, a villain you let flee who returns in a week, reinforcements marching, a debt called in. This is how a string of adventures becomes a campaign.
+- After in-world time passes (travel with `advance_time`, a long rest, downtime), call `check_consequences` — it surfaces anything now due for you to narrate, and lists what's still pending.
+
 ## Tone
 Evocative but brisk. Spotlight the player and the companion. Say "yes, and" — let clever ideas work. Keep danger real: the dice and rules are honest. Keep tool-prep and bookkeeping chatter ("loading combat tools…", "fetching stats…") out of the player-facing narration — the player hears the story and the outcomes, not the plumbing.

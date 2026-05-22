@@ -291,6 +291,18 @@ class SessionLogEntry(_StrictModel):
     speaker: Optional[str] = None  # character id or name
 
 
+class Consequence(_StrictModel):
+    """A time-deferred world event: something that comes due on a future in-world
+    day (a ritual completes, a rival acts, reinforcements arrive). Makes a series
+    of adventures feel like a living campaign rather than disconnected dungeons."""
+
+    id: str = Field(default_factory=lambda: _new_id("conseq"))
+    trigger_day: int  # the in-world day this comes due (Campaign.day)
+    text: str  # what happens, for the DM to narrate
+    note: str = ""  # why / source (e.g. "the player let the cultist escape")
+    fired: bool = False
+
+
 class HouseRules(_StrictModel):
     """Campaign-level rule toggles the DM honors when adjudicating. Most are
     advisory (the DM applies them); a few may be wired into the engine over time."""
@@ -326,3 +338,4 @@ class Campaign(_StrictModel):
 
     active_session_id: Optional[str] = None
     session_ids: list[str] = Field(default_factory=list)  # play sessions in order
+    consequences: list[Consequence] = Field(default_factory=list)  # time-deferred world events

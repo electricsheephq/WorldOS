@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 import bestiary
 import combat
 import companion
+import consequences as consequences_mod
 import content as content_mod
 import dice as dice_mod
 import encounter
@@ -1328,6 +1329,48 @@ def session_recap(campaign_id: str) -> dict:
     if not sid:
         return {"recap": recap.format_recap([])}
     return {"recap": recap.recap_from_store(campaign_id, sid)}
+
+
+@mcp.tool()
+def add_consequence(campaign_id: str, in_days: int, text: str, note: str = "") -> dict:
+    """Schedule a time-deferred world event to come due `in_days` from now (the
+    in-world Campaign.day). Use it whenever the present sets up the future — a
+    ritual that completes in 3 days, a spared villain who returns in a week, a
+    siege that arrives, a debt called in. `check_consequences` surfaces them when
+    the day arrives. This is how the world keeps moving between adventures."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        conseq = consequences_mod.schedule(c, in_days, text, note)
+        save_campaign(c)
+        return {
+            "id": conseq.id,
+            "trigger_day": conseq.trigger_day,
+            "current_day": c.day,
+            "text": conseq.text,
+        }
+
+
+@mcp.tool()
+def check_consequences(campaign_id: str) -> dict:
+    """Return (and mark fired) any scheduled consequences that have come due as of
+    the current in-world day, plus the still-pending ones. Call this after time
+    passes (travel with advance_time, a long rest, downtime) so the world's
+    deferred events surface for the DM to narrate."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        fired = consequences_mod.due(c)
+        save_campaign(c)
+        return {
+            "current_day": c.day,
+            "due": [
+                {"id": x.id, "text": x.text, "note": x.note, "trigger_day": x.trigger_day}
+                for x in fired
+            ],
+            "pending": [
+                {"id": x.id, "text": x.text, "trigger_day": x.trigger_day}
+                for x in consequences_mod.pending(c)
+            ],
+        }
 
 
 @mcp.tool()
