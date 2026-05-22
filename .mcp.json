@@ -13,7 +13,7 @@
     "clawdnd-voice": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/voice", "server.py"],
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/voice", "--group", "kokoro", "server.py"],
       "env": {
         "CLAWDND_TTS_BACKEND": "kokoro"
       }

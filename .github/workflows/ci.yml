@@ -17,6 +17,8 @@ jobs:
         env:
           CLAWDND_RULES_OFFLINE: "1"
         run: uv run --directory servers/rules --group dev pytest -q
+      - name: Voice tests (torch-free; null backend + static metadata)
+        run: uv run --directory servers/voice --group dev pytest -q
 
   license-check:
     runs-on: ubuntu-latest
