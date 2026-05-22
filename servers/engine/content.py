@@ -59,6 +59,8 @@ def seed_campaign(adv: dict) -> Campaign:
         if first_loc is None:
             first_loc = location.id
     c.current_location_id = first_loc
+    if first_loc is not None:
+        c.locations[first_loc].visited = True  # the party starts here
 
     for npc in _as_list(adv, "npcs"):
         ch = Character(

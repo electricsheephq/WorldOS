@@ -248,6 +248,7 @@ class Location(_StrictModel):
     description: str = ""
     connections: list[str] = Field(default_factory=list)  # location ids
     notes: str = ""
+    visited: bool = False
 
 
 class Faction(_StrictModel):

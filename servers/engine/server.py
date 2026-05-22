@@ -27,6 +27,7 @@ import recap
 import rests
 import spells
 import srd_tables
+import travel
 from models import (
     SKILL_ABILITIES,
     Ability,
@@ -266,6 +267,37 @@ def get_state(campaign_id: str) -> dict:
         "current_turn": c.combat.current_combatant_id,
         "npc_count": sum(1 for x in c.characters.values() if x.kind == "npc"),
     }
+
+
+@mcp.tool()
+def look_around(campaign_id: str) -> dict:
+    """Describe the party's current location and the exits they can take.
+
+    Read-only. Returns the current location (name, description, notes, visited)
+    plus each reachable exit with whether it's been visited, and the in-world
+    day / time-of-day. Use this to ground exploration before narrating or
+    prompting the player to move.
+    """
+    c = _require(campaign_id)
+    return travel.look_around(c)
+
+
+@mcp.tool()
+def travel_to(campaign_id: str, destination_id: str, advance_time: bool = True) -> dict:
+    """Move the party to a connected location along the map graph.
+
+    The destination must be reachable from the current location (listed in its
+    connections); travel to an unconnected or unknown location is rejected with
+    the reachable exits. Marks the destination visited and, unless advance_time
+    is False, advances the clock by one time-of-day phase. Returns
+    ``{from, to, to_name, first_visit, day, time_of_day, reachable}`` so the DM
+    knows whether to read first-visit boxed text.
+    """
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        result = travel.travel_to(c, destination_id, advance_time=advance_time)
+        save_campaign(c)
+        return result
 
 
 @mcp.tool()
