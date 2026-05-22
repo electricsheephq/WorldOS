@@ -18,7 +18,27 @@ from mcp.server.fastmcp import FastMCP
 import combat
 import content as content_mod
 import dice as dice_mod
-from models import Ability, AbilityScores, Campaign, Character, ClassLevel, Combat, Combatant, Condition
+import srd_tables
+from models import (
+    Ability,
+    AbilityScores,
+    Campaign,
+    Character,
+    ClassLevel,
+    Combat,
+    Combatant,
+    Condition,
+    SpellSlotLevel,
+)
+
+_AB3_TO_FULL = {
+    "str": "strength",
+    "dex": "dexterity",
+    "con": "constitution",
+    "int": "intelligence",
+    "wis": "wisdom",
+    "cha": "charisma",
+}
 from store import campaign_lock
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
@@ -67,6 +87,39 @@ def _deep_update(base: dict, patch: dict) -> dict:
         else:
             base[k] = v
     return base
+
+
+def _safe_caster_type(name: str) -> str:
+    try:
+        return srd_tables.caster_type(name)
+    except ValueError:
+        return "none"
+
+
+def _meets_prereq(ch: Character, class_name: str) -> bool:
+    for option in srd_tables.multiclass_prereq(class_name):
+        if all(getattr(ch.abilities, _AB3_TO_FULL[ab]) >= minv for ab, minv in option.items()):
+            return True
+    return False
+
+
+def _recompute_spellcasting(ch: Character) -> None:
+    """Recompute spell-slot maximums from class levels, preserving used slots.
+    Single-class Warlock uses Pact Magic; multiclass Warlock merging is deferred."""
+    class_levels = [(cl.name, cl.level) for cl in ch.classes]
+    casters = [(n, l) for (n, l) in class_levels if _safe_caster_type(n) in ("full", "half", "third")]
+    new_slots: dict[int, SpellSlotLevel] = {}
+    if casters:
+        for lvl, maximum in srd_tables.multiclass_slots(casters).items():
+            prev = ch.spell_slots.get(lvl)
+            used = min(prev.used, maximum) if prev else 0
+            new_slots[lvl] = SpellSlotLevel(maximum=maximum, used=used)
+    warlocks = [(n, l) for (n, l) in class_levels if _safe_caster_type(n) == "pact"]
+    if warlocks and len(class_levels) == 1:
+        pact = srd_tables.warlock_pact_slots(warlocks[0][1])
+        if pact:
+            new_slots[pact["level"]] = SpellSlotLevel(maximum=pact["slots"], used=0)
+    ch.spell_slots = new_slots
 
 
 @mcp.tool()
@@ -199,12 +252,18 @@ def create_character(
     armor_class: int = 10,
     voice_id: str = "narrator-dm",
     abilities: Optional[dict] = None,
+    background: str = "",
+    subclass: Optional[str] = None,
+    apply_srd_defaults: bool = False,
     add_to_party: bool = True,
 ) -> dict:
     """Create a character (player, companion, npc, or monster) and persist it.
 
     `abilities` is an optional dict like {"strength": 15, "dexterity": 14, ...}.
-    Returns the new character id.
+    If `apply_srd_defaults=True` and `class_name` is a known SRD class, the engine
+    sets saving-throw proficiencies, proficiency bonus, hit dice, level-1 HP
+    (max hit die + CON), and spell slots from that class; otherwise the explicit
+    max_hp/armor_class are used as-is. Returns the new character id.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -213,14 +272,31 @@ def create_character(
             name=name,
             kind=kind,  # type: ignore[arg-type]
             race=race,
+            background=background,
             voice_id=voice_id,
-            classes=[ClassLevel(name=class_name, level=level)] if class_name else [],
+            classes=[ClassLevel(name=class_name.capitalize(), level=level, subclass=subclass)]
+            if class_name
+            else [],
             abilities=scores,
             max_hp=max_hp,
             current_hp=max_hp,
             armor_class=armor_class,
             initiative_bonus=scores.modifier(Ability.DEX),
         )
+        if apply_srd_defaults and class_name:
+            try:
+                cname = class_name.lower()
+                ch.saving_throw_proficiencies = [Ability(s) for s in srd_tables.class_saves(cname)]
+                die = srd_tables.hit_die(cname)
+                ch.hit_dice = f"{level}d{die}"
+                ch.hit_dice_remaining = level
+                if level == 1:
+                    ch.max_hp = max(1, die + scores.modifier(Ability.CON))
+                    ch.current_hp = ch.max_hp
+                ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
+                _recompute_spellcasting(ch)
+            except ValueError:
+                pass  # unknown class -> keep the explicit values
         c.characters[ch.id] = ch
         if add_to_party and kind in ("player", "companion"):
             c.party.append(ch.id)
@@ -482,6 +558,134 @@ def end_combat(campaign_id: str) -> dict:
         c.combat = Combat()
         save_campaign(c)
         return {"active": False}
+
+
+@mcp.tool()
+def generate_ability_scores(
+    method: str = "standard_array", point_buy: Optional[dict] = None, seed: Optional[int] = None
+) -> dict:
+    """Generate ability scores. method:
+    - 'standard_array' -> returns [15,14,13,12,10,8] to assign;
+    - 'point_buy' -> validate a {ability: score} dict against the 27-point SRD
+      budget (scores 8-15), returning points spent/remaining;
+    - 'roll' -> six 4d6-drop-lowest rolls.
+    Pure helper — does not write campaign state."""
+    m = method.lower()
+    if m == "standard_array":
+        return {"method": "standard_array", "array": srd_tables.standard_array()}
+    if m == "point_buy":
+        if not point_buy:
+            raise ValueError("point_buy requires a {ability: score} mapping")
+        cost = srd_tables.point_buy_cost()
+        total = 0
+        for ability, score in point_buy.items():
+            if str(score) not in cost:
+                raise ValueError(f"score {score} for {ability} is out of point-buy range 8-15")
+            total += cost[str(score)]
+        if total > 27:
+            raise ValueError(f"point-buy total {total} exceeds the 27-point budget")
+        return {
+            "method": "point_buy",
+            "scores": point_buy,
+            "points_spent": total,
+            "points_remaining": 27 - total,
+        }
+    if m == "roll":
+        rolls = []
+        for i in range(6):
+            r = dice_mod.roll("4d6kh3", seed=(seed + i) if seed is not None else None)
+            rolls.append({"total": r.total, "kept": r.rolls, "dropped": r.dropped})
+        return {"method": "roll", "rolls": rolls, "totals": [x["total"] for x in rolls]}
+    raise ValueError(f"unknown method {method!r} (use standard_array | point_buy | roll)")
+
+
+@mcp.tool()
+def award_xp(campaign_id: str, character_id: str, amount: int, reason: str = "") -> dict:
+    """Award (or deduct) XP. Reports whether a new level is available — leveling
+    is a deliberate choice via level_up, never automatic."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        ch.xp = max(0, ch.xp + amount)
+        save_campaign(c)
+        available = srd_tables.level_for_xp(ch.xp)
+        return {
+            "xp": ch.xp,
+            "current_level": ch.total_level,
+            "level_available": available,
+            "can_level_up": available > ch.total_level,
+            "reason": reason,
+        }
+
+
+@mcp.tool()
+def level_up(
+    campaign_id: str,
+    character_id: str,
+    class_name: str,
+    hp_method: str = "average",
+    hp_roll: Optional[int] = None,
+    subclass: Optional[str] = None,
+    asi: Optional[dict] = None,
+    feat: Optional[str] = None,
+    seed: Optional[int] = None,
+) -> dict:
+    """Level a character up in a class (multiclass if new — SRD prerequisites are
+    enforced). Adds HP (average, or rolled with hp_method='roll'), applies an ASI
+    or feat at ASI levels, and recomputes proficiency bonus, initiative, and spell
+    slots. `asi` is e.g. {"strength": 2} or {"strength": 1, "dexterity": 1}."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        cname = class_name.lower()
+        srd_tables.class_data(cname)  # validate the class exists
+        existing = next((cl for cl in ch.classes if cl.name.lower() == cname), None)
+        if existing is None and ch.classes and not _meets_prereq(ch, cname):
+            raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
+
+        die = srd_tables.hit_die(cname)
+        con = ch.ability_modifier(Ability.CON)
+        if hp_method == "roll":
+            base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
+        else:
+            base = srd_tables.average_hp(die)
+        gain = max(1, base + con)
+
+        if existing:
+            existing.level += 1
+            if subclass:
+                existing.subclass = subclass
+            new_class_level = existing.level
+        else:
+            ch.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
+            new_class_level = 1
+
+        ch.max_hp += gain
+        ch.current_hp += gain
+        ch.hit_dice_remaining += 1
+
+        applied = None
+        if srd_tables.is_asi_level(cname, new_class_level):
+            if asi:
+                for ability, inc in asi.items():
+                    if ability not in _AB3_TO_FULL.values():
+                        raise ValueError(f"unknown ability {ability!r} in asi")
+                    setattr(ch.abilities, ability, min(20, getattr(ch.abilities, ability) + inc))
+                applied = {"asi": asi}
+            elif feat:
+                applied = {"feat": feat}
+                ch.notes = (ch.notes + f" | feat: {feat}").strip(" |")
+
+        ch.proficiency_bonus = srd_tables.proficiency_bonus(ch.total_level)
+        ch.initiative_bonus = ch.ability_modifier(Ability.DEX)
+        _recompute_spellcasting(ch)
+
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        sheet = c.characters[character_id].model_dump(mode="json")
+        sheet["_hp_gained"] = gain
+        sheet["_asi_applied"] = applied
+        return sheet
 
 
 if __name__ == "__main__":

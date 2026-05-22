@@ -131,8 +131,8 @@ def test_combat_flow_end_to_end(tmp_path, monkeypatch):
     res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
     assert isinstance(res["hit"], bool) and "attack_roll" in res
 
-    out = server.apply_damage(cid, gob, 100)  # deterministic kill
-    assert out["dead"] is True
+    out = server.apply_damage(cid, gob, 100)  # heavy hit -> defeated (0 HP)
+    assert out["current_hp"] == 0
 
     nt = server.next_turn(cid)
     assert nt["round"] >= 1

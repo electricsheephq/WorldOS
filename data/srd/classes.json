@@ -1,0 +1,15 @@
+{
+  "_attribution": "Derived from the SRD 5.2.1 (CC-BY-4.0). See data/srd/ATTRIBUTION.md. multiclass_prereq is a list of OPTIONs; each option is a dict of ability->minimum that must ALL be met (AND); meeting ANY option (OR) satisfies the prerequisite.",
+  "barbarian": {"hit_die": 12, "saves": ["str", "con"], "caster_type": "none", "multiclass_prereq": [{"str": 13}], "skills": {"count": 2, "from": ["animal_handling", "athletics", "intimidation", "nature", "perception", "survival"]}},
+  "bard": {"hit_die": 8, "saves": ["dex", "cha"], "caster_type": "full", "multiclass_prereq": [{"cha": 13}], "skills": {"count": 3, "from": ["any"]}},
+  "cleric": {"hit_die": 8, "saves": ["wis", "cha"], "caster_type": "full", "multiclass_prereq": [{"wis": 13}], "skills": {"count": 2, "from": ["history", "insight", "medicine", "persuasion", "religion"]}},
+  "druid": {"hit_die": 8, "saves": ["int", "wis"], "caster_type": "full", "multiclass_prereq": [{"wis": 13}], "skills": {"count": 2, "from": ["arcana", "animal_handling", "insight", "medicine", "nature", "perception", "religion", "survival"]}},
+  "fighter": {"hit_die": 10, "saves": ["str", "con"], "caster_type": "none", "multiclass_prereq": [{"str": 13}, {"dex": 13}], "skills": {"count": 2, "from": ["acrobatics", "animal_handling", "athletics", "history", "insight", "intimidation", "perception", "survival"]}},
+  "monk": {"hit_die": 8, "saves": ["str", "dex"], "caster_type": "none", "multiclass_prereq": [{"dex": 13, "wis": 13}], "skills": {"count": 2, "from": ["acrobatics", "athletics", "history", "insight", "religion", "stealth"]}},
+  "paladin": {"hit_die": 10, "saves": ["wis", "cha"], "caster_type": "half", "multiclass_prereq": [{"str": 13, "cha": 13}], "skills": {"count": 2, "from": ["athletics", "insight", "intimidation", "medicine", "persuasion", "religion"]}},
+  "ranger": {"hit_die": 10, "saves": ["str", "dex"], "caster_type": "half", "multiclass_prereq": [{"dex": 13, "wis": 13}], "skills": {"count": 3, "from": ["animal_handling", "athletics", "insight", "investigation", "nature", "perception", "stealth", "survival"]}},
+  "rogue": {"hit_die": 8, "saves": ["dex", "int"], "caster_type": "none", "multiclass_prereq": [{"dex": 13}], "skills": {"count": 4, "from": ["acrobatics", "athletics", "deception", "insight", "intimidation", "investigation", "perception", "performance", "persuasion", "sleight_of_hand", "stealth"]}},
+  "sorcerer": {"hit_die": 6, "saves": ["con", "cha"], "caster_type": "full", "multiclass_prereq": [{"cha": 13}], "skills": {"count": 2, "from": ["arcana", "deception", "insight", "intimidation", "persuasion", "religion"]}},
+  "warlock": {"hit_die": 8, "saves": ["wis", "cha"], "caster_type": "pact", "multiclass_prereq": [{"cha": 13}], "skills": {"count": 2, "from": ["arcana", "deception", "history", "intimidation", "investigation", "nature", "religion"]}},
+  "wizard": {"hit_die": 6, "saves": ["int", "wis"], "caster_type": "full", "multiclass_prereq": [{"int": 13}], "skills": {"count": 2, "from": ["arcana", "history", "insight", "investigation", "medicine", "religion"]}}
+}

@@ -56,9 +56,12 @@ def test_cellar_rats_full_playthrough():
     assert view["active"] and len(view["order"]) == 4 and view["round"] == 1
     atk = server.attack(cid, hero, w1, attack_bonus=5, damage_dice="1d8+3", damage_type="slashing")
     assert isinstance(atk["hit"], bool)
+    # the party fells both hounds; "defeated" = dropped to 0 HP (dead or downed,
+    # depending on whether the prior attack already bloodied w1 — both end at 0)
     server.apply_damage(cid, w1, 100)
     server.apply_damage(cid, w2, 100)
-    assert server.get_character(cid, w1)["dead"] and server.get_character(cid, w2)["dead"]
+    assert server.get_character(cid, w1)["current_hp"] == 0
+    assert server.get_character(cid, w2)["current_hp"] == 0
 
     # downed-and-healed beat: hero drops to exactly 0 (dying, not dead), companion revives
     downed = server.apply_damage(cid, hero, 12)
@@ -80,7 +83,7 @@ def test_cellar_rats_full_playthrough():
     server.start_combat(cid, [hero, comp] + goblins)
     for g in goblins:
         server.apply_damage(cid, g, 50)
-    assert all(server.get_character(cid, g)["dead"] for g in goblins)
+    assert all(server.get_character(cid, g)["current_hp"] == 0 for g in goblins)
     server.end_combat(cid)
 
     # 8. LOOT: reward gp + a Potion of Healing
