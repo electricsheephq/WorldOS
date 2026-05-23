@@ -274,6 +274,7 @@ class Faction(_StrictModel):
 class Combatant(_StrictModel):
     character_id: str
     initiative: int = 0
+    reaction_used: bool = False  # one reaction per round; refreshes at turn start
 
 
 class Combat(_StrictModel):
@@ -281,6 +282,8 @@ class Combat(_StrictModel):
     round: int = 0
     turn_index: int = 0
     order: list[Combatant] = Field(default_factory=list)  # sorted desc by initiative
+    action_used: bool = False  # current turn's action economy
+    bonus_action_used: bool = False
 
     @property
     def current_combatant_id(self) -> Optional[str]:

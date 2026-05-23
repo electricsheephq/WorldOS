@@ -568,11 +568,71 @@ def next_turn(campaign_id: str) -> dict:
             if candidate is not None and not candidate.dead:
                 cur = candidate
                 break
+        # Fresh action economy for the new turn; the current combatant's reaction
+        # recharges at the start of their turn.
+        c.combat.action_used = False
+        c.combat.bonus_action_used = False
+        if cur is not None:
+            for cb in order:
+                if cb.character_id == cur.id:
+                    cb.reaction_used = False
+                    break
         save_campaign(c)
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
         return view
+
+
+@mcp.tool()
+def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dict:
+    """Track a combatant's action economy. kind: action | bonus | reaction | free.
+    `action`/`bonus` are legal only on the creature's OWN turn and only once each
+    per turn; `reaction` is legal any time but once per round (it refreshes at the
+    start of the creature's turn via next_turn); `free`/movement isn't rate-limited.
+    Returns {ok, reason, action_available, bonus_available, reaction_available} so
+    you can flag an illegal double-action. NOTE: multiattack (Extra Attack) is ONE
+    action — declare a single `action`, then make several attack() calls under it."""
+    kind = kind.lower()
+    if kind not in ("action", "bonus", "reaction", "free", "movement"):
+        raise ValueError("kind must be action | bonus | reaction | free")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat")
+        ch = _char(c, character_id)
+        combatant = next(
+            (cb for cb in c.combat.order if cb.character_id == character_id), None
+        )
+        if combatant is None:
+            raise ValueError(f"{ch.name} is not in the initiative order")
+        is_current = c.combat.current_combatant_id == character_id
+        ok, reason = True, ""
+        if kind in ("action", "bonus"):
+            if not is_current:
+                ok, reason = False, f"it is not {ch.name}'s turn (only a reaction acts off-turn)"
+            elif kind == "action" and c.combat.action_used:
+                ok, reason = False, "action already used this turn"
+            elif kind == "bonus" and c.combat.bonus_action_used:
+                ok, reason = False, "bonus action already used this turn"
+            elif kind == "action":
+                c.combat.action_used = True
+            else:
+                c.combat.bonus_action_used = True
+        elif kind == "reaction":
+            if combatant.reaction_used:
+                ok, reason = False, f"{ch.name} has already used a reaction this round"
+            else:
+                combatant.reaction_used = True
+        save_campaign(c)
+        return {
+            "ok": ok,
+            "kind": kind,
+            "reason": reason,
+            "action_available": not c.combat.action_used,
+            "bonus_available": not c.combat.bonus_action_used,
+            "reaction_available": not combatant.reaction_used,
+        }
 
 
 @mcp.tool()
