@@ -227,3 +227,20 @@ def test_aid_downed_suggestion_names_the_concrete_spell():
     out = companion.suggest_action(healer, cbt, chars)
     assert out["action"] == "aid_downed" and out["target_id"] == hurt.id
     assert out["spell"] == "Healing Word"
+
+
+def test_aid_downed_without_slots_recommends_stabilize_not_a_heal():
+    # Embergloom-QA fix: don't tell the DM to cast a heal with no slots left.
+    healer, hurt, _gob, chars, cbt = _heal_scene(slots_used=2)  # slots exhausted
+    hurt.current_hp = 0
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "aid_downed" and out["spell"] is None
+    assert "stabilize" in out["reason"].lower()
+
+
+def test_bonus_action_heal_suggests_followup_attack():
+    # Healing Word is a bonus action -> the companion's action is still free.
+    healer, _hurt, gob, chars, cbt = _heal_scene(slots_used=0)
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "heal" and out["bonus_action"] is True
+    assert out["then_attack_target_id"] == gob.id

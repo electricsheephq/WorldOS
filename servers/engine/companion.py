@@ -53,18 +53,31 @@ def _can_heal(companion: Character) -> bool:
 
 
 # Healing spells in priority order — Healing Word first (a bonus action that can
-# revive a downed ally at range).
+# revive a downed ally at range). The first two are bonus-action casts.
 _HEAL_PRIORITY = (
     "Healing Word", "Cure Wounds", "Mass Healing Word", "Mass Cure Wounds",
     "Prayer of Healing", "Heal",
 )
+_BONUS_ACTION_HEALS = frozenset({"Healing Word", "Mass Healing Word"})
+
+
+def _has_slot(companion: Character) -> bool:
+    return any(slot.used < slot.maximum for slot in companion.spell_slots.values())
 
 
 def _best_heal_spell(companion: Character) -> Optional[str]:
-    """The companion's best available healing spell name (or None) — the concrete
-    spell to cast on an aid_downed / heal suggestion."""
+    """The companion's best healing spell it can ACTUALLY cast right now — None if
+    it knows/prepares none OR has no spell slot free (so the suggestion never tells
+    the DM to cast a heal the companion can't afford; stabilize another way)."""
+    if not _has_slot(companion):
+        return None
     have = set(companion.spells_prepared) | set(companion.spells_known)
     return next((name for name in _HEAL_PRIORITY if name in have), None)
+
+
+def _weakest_living_enemy(in_combat: list) -> Optional[Character]:
+    living = [ch for ch in in_combat if ch.kind in ENEMY_KINDS and ch.current_hp > 0]
+    return min(living, key=lambda ch: ch.current_hp) if living else None
 
 
 def suggest_action(
@@ -109,15 +122,26 @@ def suggest_action(
     for ch in in_combat:
         if ch.kind in ALLY_KINDS and ch.current_hp == 0 and not ch.dead and not ch.stable:
             who = "themselves" if ch.id == companion.id else ch.name
-            return {
+            spell = _best_heal_spell(companion)  # None if no slot/heal -> stabilize instead
+            result = {
                 "action": "aid_downed",
                 "target_id": ch.id,
-                "spell": _best_heal_spell(companion),  # cast this to revive; None -> stabilize
-                "reason": (
-                    f"{ch.name} is down at 0 HP; stabilizing or reviving "
-                    f"{who} comes before anything else."
-                ),
+                "spell": spell,
+                "bonus_action": spell in _BONUS_ACTION_HEALS,
             }
+            if spell:
+                result["reason"] = f"{ch.name} is down at 0 HP — cast {spell} to revive {who} now."
+            else:
+                result["reason"] = (
+                    f"{ch.name} is down at 0 HP and there's no spell slot to heal — "
+                    f"stabilize {who} (Spare the Dying, or a Medicine check)."
+                )
+            if result["bonus_action"]:  # a bonus-action heal leaves the action free
+                foe = _weakest_living_enemy(in_combat)
+                if foe is not None:
+                    result["then_attack_target_id"] = foe.id
+                    result["reason"] += f" {spell} is a bonus action — then attack {foe.name}."
+            return result
 
     # 1.5) A critically wounded (still-standing) ally + the companion can heal ->
     # heal before trading blows. An ally one hit from death beats chipping an enemy.
@@ -132,16 +156,24 @@ def suggest_action(
         if wounded:
             target = min(wounded, key=lambda ch: ch.current_hp / ch.max_hp)
             who = "themselves" if target.id == companion.id else target.name
-            return {
+            spell = _best_heal_spell(companion)
+            result = {
                 "action": "heal",
                 "target_id": target.id,
-                "spell": _best_heal_spell(companion),
+                "spell": spell,
+                "bonus_action": spell in _BONUS_ACTION_HEALS,
                 "reason": (
                     f"{target.name} is critically wounded "
-                    f"({target.current_hp}/{target.max_hp} HP); healing {who} now "
-                    f"beats trading blows."
+                    f"({target.current_hp}/{target.max_hp} HP); cast {spell} on {who} "
+                    f"before trading blows."
                 ),
             }
+            if result["bonus_action"]:  # bonus-action heal -> still attack with the action
+                foe = _weakest_living_enemy(in_combat)
+                if foe is not None:
+                    result["then_attack_target_id"] = foe.id
+                    result["reason"] += f" {spell} is a bonus action — then attack {foe.name}."
+            return result
 
     # 2) A living enemy — focus the weakest to drop it fastest.
     living_enemies = [
