@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClawDnD — Adventure</title>
+<style>
+  /* Clean-room dark-fantasy dashboard (original styling; fables-class layout). */
+  :root { color-scheme: dark; --bg:#100d0a; --panel:#19140f; --panel2:#1f1912; --line:#352c20;
+    --ink:#ece4d6; --dim:#a99d86; --faint:#6f6657; --gold:#e8c98a; --gold2:#caa15e;
+    --player:#8fce8f; --companion:#8fbfe0; --npc:#e0c98a; --monster:#e08f8f; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; }
+  body { font:14px/1.55 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink);
+    display:grid; grid-template-columns:184px 1.55fr 1fr; height:100vh; overflow:hidden; }
+  a,button { color:inherit; font:inherit; }
+  .soon { font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:#caa15e;
+    background:#2a2114; border:1px solid #4a3c22; border-radius:8px; padding:1px 6px; margin-left:6px; }
+
+  /* ---- left rail ---- */
+  nav { background:#15110c; border-right:1px solid var(--line); padding:14px 10px; display:flex; flex-direction:column; gap:3px; }
+  .brand { font-size:17px; font-weight:800; color:var(--gold); letter-spacing:.02em; padding:6px 10px 14px; }
+  .brand small { display:block; font-size:10px; font-weight:600; color:var(--faint); letter-spacing:.18em; text-transform:uppercase; }
+  .nav-i { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--dim); cursor:default; }
+  .nav-i .ic { width:16px; text-align:center; opacity:.85; }
+  .nav-i.active { background:#2a1d0e; color:var(--gold); }
+  .nav-i.ph { opacity:.5; }
+  nav .foot { margin-top:auto; font-size:11px; color:var(--faint); padding:10px; border-top:1px solid var(--line); }
+  nav .foot b { color:var(--dim); }
+
+  /* ---- center: the adventure ---- */
+  main { display:flex; flex-direction:column; min-width:0; border-right:1px solid var(--line); }
+  .topbar { padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel);
+    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  .topbar h1 { margin:0; font-size:16px; color:var(--gold); }
+  .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#bcd4ec; background:#16222e; border:1px solid #2e4456; border-radius:10px; padding:2px 9px; }
+  .topbar .meta { color:var(--dim); font-size:13px; }
+  #feed { flex:1; overflow:auto; padding:18px 20px; display:flex; flex-direction:column; gap:14px; }
+  .msg { max-width:780px; }
+  .msg .hd { display:flex; align-items:center; gap:9px; margin-bottom:5px; }
+  .msg .nm { font-weight:700; color:var(--gold); font-size:13px; }
+  .msg .nm.dialogue { color:#9fc0e0; } .msg .nm.combat { color:#e0a0a0; }
+  .msg .bd { color:#ddd3c2; white-space:pre-wrap; }
+  .msg.system .bd { color:var(--faint); font-size:12.5px; font-style:italic; }
+  .msg.combat .bd { color:#e9c9c0; }
+  .av { width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:800;color:#14110e;background:var(--gold2); }
+  .composer { border-top:1px solid var(--line); padding:12px 18px; background:var(--panel); display:flex; gap:10px; align-items:center; }
+  .composer .box { flex:1; background:#0d0b08; border:1px solid var(--line); border-radius:22px; padding:10px 16px; color:var(--faint); }
+  .composer button { background:#241a0d; border:1px solid #4a3c22; border-radius:18px; padding:8px 14px; color:var(--gold); opacity:.6; cursor:default; }
+
+  /* ---- right: scene / party / world ---- */
+  aside { overflow:auto; padding:14px; display:flex; flex-direction:column; gap:14px; background:#120f0b; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .card h2 { margin:0 0 9px; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:#9c8e74; display:flex; align-items:center; }
+  .loc-d { color:#c4b89f; font-style:italic; font-size:12.5px; margin:-3px 0 10px; }
+  svg { width:100%; height:210px; display:block; }
+  .edge { stroke:#4a3e2c; stroke-width:2; } .node circle { fill:#241d14; stroke:#6b5a3e; stroke-width:2; }
+  .node.cur circle { fill:#5a3d1e; stroke:var(--gold); stroke-width:3; } .node.visited circle { stroke:#8a7c5a; }
+  .node text { fill:#d8ccb2; font-size:9px; text-anchor:middle; }
+  .row { display:flex; align-items:center; gap:9px; padding:5px 0; }
+  .avatar { width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#14110e;background:#6b5a3e;border:2px solid #0003; }
+  .avatar.player{background:var(--player);} .avatar.companion{background:var(--companion);} .avatar.npc{background:var(--npc);} .avatar.monster{background:var(--monster);}
+  .row .nm { flex:1; } .row .sub { color:var(--faint); font-size:11px; }
+  .hpbar { height:6px; width:84px; background:#3a2f22; border-radius:3px; overflow:hidden; flex:none; }
+  .hpbar > i { display:block; height:100%; background:var(--player); } .hpbar.low > i { background:var(--monster); }
+  .quest { padding:5px 0; border-bottom:1px solid #241d14; } .quest .g { color:var(--faint); font-size:11px; }
+  .fac { display:flex; justify-content:space-between; padding:3px 0; } .fac .rep { color:var(--dim); }
+  .empty { color:var(--faint); font-style:italic; }
+  /* director / agent-activity (our differentiator) */
+  #director { background:#0e1410; border-color:#274030; }
+  #director h2 { color:#8fbf8f; }
+  #live { font-size:9px;letter-spacing:.07em;padding:1px 6px;border-radius:8px;margin-left:auto; }
+  #live.on{background:#214a21;color:#9fdf9f;} #live.off{background:#33291c;color:#a99d86;}
+  #activity { display:flex; flex-direction:column; gap:4px; max-height:260px; overflow:auto; font-size:12.5px; }
+  .act { padding:3px 7px; border-radius:5px; background:#141a14; border-left:3px solid #3a5a34; }
+  .act.tool { font-family:ui-monospace,monospace; font-size:11px; color:#8fb98f; } .act.tool b{color:#b6e0a6;}
+  .act.narration { border-left-color:#caa15e; color:#cabfa6; background:#171309; }
+</style>
+</head>
+<body>
+  <nav>
+    <div class="brand">ClawDnD<small>Living World</small></div>
+    <div class="nav-i active"><span class="ic">▶</span> Play</div>
+    <div class="nav-i ph"><span class="ic">▣</span> Character <span class="soon">soon</span></div>
+    <div class="nav-i"><span class="ic">⚇</span> Party</div>
+    <div class="nav-i"><span class="ic">✦</span> Quests</div>
+    <div class="nav-i"><span class="ic">◈</span> World</div>
+    <div class="nav-i ph"><span class="ic">❂</span> Memories <span class="soon">soon</span></div>
+    <div class="nav-i ph"><span class="ic">⚙</span> Settings <span class="soon">soon</span></div>
+    <div class="foot">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
+  </nav>
+
+  <main>
+    <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge">Adventure Mode</span>
+      <span class="meta" id="when"></span><span class="meta" id="where"></span></div>
+    <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
+    <div class="composer">
+      <div class="box" id="composer-hint">The party acts through Claude Code…</div>
+      <button>🎲 <span class="soon">soon</span></button>
+      <button>🔊 <span class="soon">soon</span></button>
+      <button>Continue »</button>
+    </div>
+  </main>
+
+  <aside>
+    <div class="card" id="mapcard"><h2>Map <span class="soon">painterly soon</span></h2>
+      <div class="loc-d" id="loc"></div><svg id="svg"></svg></div>
+    <div class="card"><h2>Party</h2><div id="party"></div></div>
+    <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
+    <div class="card"><h2>Quests</h2><div id="quests"></div>
+      <h2 style="margin-top:12px">Factions</h2><div id="factions"></div></div>
+    <div class="card" id="director"><h2>Agent activity <span id="live" class="off">idle</span></h2><div id="activity"></div></div>
+  </aside>
+
+<script>
+let evCursor = 0, actCursor = 0;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
+const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
+const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
+
+function renderState(s) {
+  $("title").textContent = s.title || "ClawDnD";
+  $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
+  const curId = s.current_location_id, locs = s.locations||{}, cur = locs[curId];
+  $("where").textContent = cur ? `· ${cur.name}` : "";
+  $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b> — ${esc(cur.description||"")}` : "";
+
+  const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
+  if (party[0]) $("composer-hint").textContent = `${party[0].name} acts through Claude Code…`;
+  $("party").innerHTML = party.map(c => { const h=hp(c); return `
+    <div class="row">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
+    <span class="hpbar ${h.low?"low":""}" title="${h.txt}"><i style="width:${h.pct}%"></i></span></div>`; }).join("")
+    || `<div class="empty">No party yet.</div>`;
+
+  const combatIds = new Set(((s.combat||{}).order||[]).map(o=>o.character_id));
+  const scene = Object.values(s.characters||{}).filter(c =>
+    (c.kind==="npc"||c.kind==="monster") && (c.location_id===curId || combatIds.has(c.id)));
+  $("scene").innerHTML = scene.map(c =>
+    `<div class="row">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}</span><span class="sub">${esc(c.attitude||"")}</span></div>`).join("")
+    || `<div class="empty">Just the party here.</div>`;
+
+  const quests = Object.values(s.quests||{}).filter(q=>q.status==="active");
+  $("quests").innerHTML = quests.map(q=>`<div class="quest">${esc(q.title)}${q.giver_id?`<div class="g">from ${esc(q.giver_id)}</div>`:""}</div>`).join("")
+    || `<div class="empty">No active quests.</div>`;
+  const fac = Object.values(s.factions||{});
+  $("factions").innerHTML = fac.map(f=>`<div class="fac"><span>${esc(f.name)}</span><span class="rep">${f.reputation>0?"+":""}${f.reputation}</span></div>`).join("")
+    || `<div class="empty">—</div>`;
+  drawMap(locs, curId, s.map_kind);
+}
+
+function drawMap(locs, curId, kind) {
+  const ids = Object.keys(locs), svg = $("svg"), W = svg.clientWidth||420, H = 210, pos = {};
+  if (kind==="hex" && ids.some(id=>locs[id].hex)) {
+    const SZ=26; ids.forEach(id=>{const h=locs[id].hex; if(h) pos[id]=[W/2+h[0]*1.5*SZ, H/2+(h[1]+h[0]/2)*Math.sqrt(3)*SZ];});
+  } else ids.forEach((id,i)=>{const a=2*Math.PI*i/Math.max(1,ids.length); pos[id]=[W/2+0.36*W*Math.cos(a), H/2+0.34*H*Math.sin(a)];});
+  let e="",n="";
+  ids.forEach(id=>(locs[id].connections||[]).forEach(c=>{ if(pos[id]&&pos[c]) e+=`<line class="edge" x1="${pos[id][0]}" y1="${pos[id][1]}" x2="${pos[c][0]}" y2="${pos[c][1]}"/>`; }));
+  ids.forEach(id=>{const p=pos[id]||[W/2,H/2]; const cls=(id===curId?"cur ":"")+(locs[id].visited?"visited":"");
+    n+=`<g class="node ${cls}" transform="translate(${p[0]},${p[1]})"><circle r="13"/><text y="24">${esc(locs[id].name).slice(0,15)}</text></g>`;});
+  svg.innerHTML = e+n;
+}
+
+async function poll() {
+  try {
+    renderState(await (await fetch("/state")).json());
+    const ev = await (await fetch("/events?since="+evCursor)).json();
+    const feed = $("feed"); if (evCursor===0) feed.innerHTML = "";
+    (ev.entries||[]).forEach(e=>{
+      if (!["narration","dialogue","combat","system"].includes(e.kind)) return;
+      const d = document.createElement("div"); d.className = "msg "+e.kind;
+      const who = e.speaker || (e.kind==="system"?"":"Dungeon Master");
+      d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}">${esc(who)}</span></div>`:"")
+        + `<div class="bd">${esc(e.text)}</div>`;
+      feed.appendChild(d);
+    });
+    if ((ev.entries||[]).length) feed.scrollTop = feed.scrollHeight;
+    evCursor = ev.next ?? evCursor;
+
+    const act = await (await fetch("/activity?since="+actCursor)).json();
+    const lv = $("live"); lv.textContent = act.live?"live":"idle"; lv.className = act.live?"on":"off";
+    const ac = $("activity");
+    if (actCursor===0) ac.innerHTML = act.live ? "" : `<div class="empty">Open via clawdnd-dashboard.command to watch a run's agents.</div>`;
+    (act.items||[]).forEach(it=>{
+      const d=document.createElement("div"); d.className="act "+it.kind;
+      d.innerHTML = it.kind==="tool" ? `▸ <b>${esc(it.label)}</b> ${esc(it.detail)}` : `${esc(it.detail)}`;
+      ac.appendChild(d);
+    });
+    if ((act.items||[]).length) ac.scrollTop = ac.scrollHeight;
+    actCursor = act.next ?? actCursor;
+  } catch (e) { /* mid-write / restart — retry next tick */ }
+}
+poll(); setInterval(poll, 1500);
+</script>
+</body>
+</html>

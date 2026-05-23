@@ -162,6 +162,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route in ("/", "/index.html"):
             html = (_HERE / "index.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
+        elif route in ("/dashboard", "/dashboard.html"):
+            html = (_HERE / "dashboard.html").read_bytes()
+            self._send(200, html, "text/html; charset=utf-8")
         elif route == "/state":
             self._json(_read_snapshot(self.campaign_id))
         elif route == "/events":
