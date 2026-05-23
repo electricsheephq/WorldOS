@@ -44,6 +44,13 @@ def seed_campaign(adv: dict) -> Campaign:
         raise ValueError("adventure data must be a JSON object")
     c = Campaign(title=adv.get("title", "Untitled Adventure"), summary=adv.get("premise", ""))
 
+    # Persist the authored scenes verbatim so the DM can read them at play time via
+    # get_scene (read_aloud prose, dm_notes staging beats, check DCs). Without this
+    # the rich per-scene authoring is dropped at seed and the DM plays blind.
+    scenes = adv.get("scenes", [])
+    if isinstance(scenes, list):
+        c.scenes = [s for s in scenes if isinstance(s, dict)]
+
     first_loc = None
     for loc in _as_list(adv, "locations"):
         location = Location(

@@ -368,3 +368,4 @@ class Campaign(_StrictModel):
     session_ids: list[str] = Field(default_factory=list)  # play sessions in order
     consequences: list[Consequence] = Field(default_factory=list)  # time-deferred world events
     decisions: list[Decision] = Field(default_factory=list)  # party choices, for callbacks
+    scenes: list[dict] = Field(default_factory=list)  # authored scene guidance (read_aloud, dm_notes, checks) the DM reads via get_scene — inert content, never computed on

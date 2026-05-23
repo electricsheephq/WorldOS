@@ -289,6 +289,32 @@ def look_around(campaign_id: str) -> dict:
 
 
 @mcp.tool()
+def get_scene(campaign_id: str, location_id: str = "") -> dict:
+    """Read the AUTHORED scene guidance for a location — your beat sheet for running
+    the adventure as written instead of improvising blind.
+
+    Call this on ARRIVAL at a new location/beat. Returns each authored scene whose
+    `location_id` matches (defaults to the party's current location): its
+    `read_aloud` boxed text to set the scene, `dm_notes` (what to STAGE — which NPCs
+    to put on screen, the emotional turn, the villain beat, the menace to show),
+    any `checks` with their DCs, and the scene `name`/`summary`. The DM should voice
+    the read_aloud in its own words and play the dm_notes beats — the heartbreak
+    line, the antagonist's warmth, the felt threat — rather than leaving them buried.
+    Returns an empty list if the adventure shipped no scene for this location (then
+    improvise from get_state / look_around). Read-only.
+    """
+    c = _require(campaign_id)
+    loc_id = location_id or c.current_location_id or ""
+    scenes = [s for s in c.scenes if s.get("location_id") == loc_id] if loc_id else []
+    return {
+        "location_id": loc_id,
+        "count": len(scenes),
+        "scenes": scenes,
+        "all_scene_location_ids": sorted({s.get("location_id", "") for s in c.scenes if s.get("location_id")}),
+    }
+
+
+@mcp.tool()
 def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False) -> dict:
     """Move the party to a connected location along the map graph.
 

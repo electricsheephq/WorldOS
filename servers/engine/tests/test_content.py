@@ -1,6 +1,7 @@
 import pytest
 
 import content
+import server
 from models import Campaign
 
 SYNTH = {
@@ -55,3 +56,24 @@ def test_duplicate_npc_id_raises():
 def test_malformed_shape_raises():
     with pytest.raises(ValueError):
         content.seed_campaign({"title": "X", "locations": "not a list"})
+
+
+def test_scenes_persisted_on_seed():
+    # authored scenes must survive seeding so the DM can read them at play time
+    c = content.seed_campaign(SYNTH)
+    assert len(c.scenes) == 1 and c.scenes[0]["name"] == "Arrival"
+    # non-dict scene entries are dropped defensively, not crashed on
+    c2 = content.seed_campaign({"title": "X", "scenes": [{"id": "ok"}, "garbage", 5]})
+    assert len(c2.scenes) == 1 and c2.scenes[0]["id"] == "ok"
+
+
+def test_get_scene_surfaces_authored_guidance(tmp_path, monkeypatch):
+    # The DM was playing blind: scenes (read_aloud/dm_notes) were dropped at seed.
+    # get_scene now surfaces them — incl. the previously-buried Maerith heartbreak cue.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("embergloom-pact")["campaign_id"]
+    out = server.get_scene(cid)  # defaults to the current (hub) location
+    assert out["count"] >= 1
+    assert out["scenes"][0].get("read_aloud") and out["scenes"][0].get("dm_notes")
+    assert "Maerith" in " ".join(s.get("dm_notes", "") for s in out["scenes"])
+    assert server.get_scene(cid, "loc-nonexistent")["count"] == 0
