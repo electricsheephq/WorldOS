@@ -103,6 +103,26 @@ def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
         content.seed_world(w, start_at="loc-nope")
 
 
+def test_start_world_resume_continues_instead_of_orphaning(tmp_path, monkeypatch):
+    # adversarial review #4: re-running start_world must not silently orphan a live world.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    first = server.start_world("sundered-reach")
+    cid = first["campaign_id"]
+    server.add_location(cid, "A Generated Hamlet", connections=[first["starting_at"]["id"]])
+    # a fresh start warns that a campaign already exists in this world
+    second = server.start_world("sundered-reach")
+    assert second["campaign_id"] != cid
+    assert any(e["id"] == cid for e in second.get("existing_campaigns", []))
+    assert "resume_hint" in second
+    # resume returns the SAME campaign with its grown state (the hamlet persists)
+    resumed = server.start_world("sundered-reach", resume=cid)
+    assert resumed["campaign_id"] == cid and resumed.get("resumed") is True
+    assert any(r["name"] == "A Generated Hamlet" for r in resumed["regions"])
+    # a bogus resume id falls through to a fresh start, no crash
+    fresh = server.start_world("sundered-reach", resume="camp_nonexistent")
+    assert fresh["campaign_id"] != cid and "resumed" not in fresh
+
+
 def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
     # the DM's on-demand "wiki": lookup_lore pulls ranked canon from the world's
     # lore corpus + reports the chronology (era), and is empty/safe off-world.

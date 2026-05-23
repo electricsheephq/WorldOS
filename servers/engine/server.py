@@ -60,7 +60,7 @@ _AB3_TO_FULL = {
     "wis": "wisdom",
     "cha": "charisma",
 }
-from store import append_log, campaign_lock
+from store import append_log, campaign_lock, campaigns_for_world
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
 
@@ -236,7 +236,7 @@ def start_adventure(adventure_id: str) -> dict:
 
 
 @mcp.tool()
-def start_world(world_id: str, start_at: str = "") -> dict:
+def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
     """Seed a NEW campaign from a persistent WORLD bible
     (content/worlds/<world_id>/world.json) — a living setting you GENERATE WITHIN,
     not a fixed plot.
@@ -247,14 +247,40 @@ def start_world(world_id: str, start_at: str = "") -> dict:
     party at `start_at` (a region id) or the world's first starting option. Then YOU
     run a LIVING SANDBOX: generate the specific scene on arrival and PERSIST it
     (add_location / create_character / remember / add_quest) so the world grows and is
-    carried across sessions. Returns the world's premise, tone, DM guidance, standing
-    threads, story seeds, and the seeded regions / factions / NPC roster — your bible
-    for running it (recall the lore mid-play to stay consistent)."""
+    carried across sessions.
+
+    Pass `resume`=<campaign_id> to CONTINUE an existing campaign in this world rather
+    than starting fresh — re-running start_world otherwise mints a NEW campaign and
+    orphans the old living world. If campaigns already exist for this world, the result
+    lists them under `existing_campaigns` with a `resume_hint`. Returns the world's
+    premise, tone, DM guidance, threads, seeds, and the seeded regions/factions/roster."""
     world = content_mod.load_world_data(world_id)
+
+    # Resume an existing campaign in this world instead of abandoning it.
+    if resume:
+        prior = load_campaign(resume)
+        if prior is not None and prior.world_id == world_id:
+            ploc = prior.locations.get(prior.current_location_id) if prior.current_location_id else None
+            return {
+                "campaign_id": prior.id,
+                "world": prior.title,
+                "resumed": True,
+                "premise": prior.summary,
+                "era": prior.era,
+                "day": prior.day,
+                "time_of_day": prior.time_of_day,
+                "dm_guidance": world.get("dm_guidance", ""),
+                "lore_corpus_pages": lorebook.page_count(prior.world_id),
+                "current_location": {"id": ploc.id, "name": ploc.name} if ploc else None,
+                "regions": [{"id": l.id, "name": l.name} for l in prior.locations.values()],
+                "note": "Resumed an existing campaign. Call session_recap / get_state to re-ground, then start_session.",
+            }
+        # invalid/mismatched resume id -> fall through to a fresh start
+
     c = content_mod.seed_world(world, start_at=start_at)
     save_campaign(c)
     loc = c.locations.get(c.current_location_id) if c.current_location_id else None
-    return {
+    result = {
         "campaign_id": c.id,
         "world": c.title,
         "premise": c.summary,
@@ -276,6 +302,14 @@ def start_world(world_id: str, start_at: str = "") -> dict:
         "lore_count": len(c.lore),
         "map_kind": c.map_kind,
     }
+    others = [x for x in campaigns_for_world(world_id) if x["id"] != c.id]
+    if others:
+        result["existing_campaigns"] = others
+        result["resume_hint"] = (
+            "Other campaigns already exist in this world — to CONTINUE one instead of "
+            "this fresh start, call start_world(world_id, resume=<campaign_id>)."
+        )
+    return result
 
 
 @mcp.tool()

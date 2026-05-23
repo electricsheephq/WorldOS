@@ -88,6 +88,26 @@ def list_campaigns() -> list[dict]:
     return out
 
 
+def campaigns_for_world(world_id: str) -> list[dict]:
+    """Saved campaigns started from a given world seed — for resume / orphan warnings
+    (re-running start_world otherwise mints a fresh campaign and abandons the old one)."""
+    out: list[dict] = []
+    root = state_dir() / "campaigns"
+    if not world_id or not root.exists():
+        return out
+    for d in sorted(root.iterdir()):
+        snap = d / "snapshot.json"
+        if not snap.exists():
+            continue
+        try:
+            c = Campaign.model_validate_json(snap.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if c.world_id == world_id:
+            out.append({"id": c.id, "title": c.title, "day": c.day, "updated_at": c.updated_at})
+    return out
+
+
 def append_log(campaign_id: str, session_id: str, entry: SessionLogEntry) -> None:
     path = _campaign_dir(campaign_id) / "sessions" / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
