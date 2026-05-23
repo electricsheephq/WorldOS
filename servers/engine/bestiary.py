@@ -23,34 +23,59 @@ from typing import Optional
 
 import encounter
 
-_DIR = Path(__file__).resolve().parents[2] / "data" / "srd" / "srd524"
+_ROOT = Path(__file__).resolve().parents[2] / "data" / "srd"
+_PRIMARY = _ROOT / "srd524"  # canonical SRD 5.2 — always wins a name collision
 
 _ABILITIES = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
 
 
-@functools.lru_cache(maxsize=None)
-def _raw_creatures() -> list[dict]:
-    return json.loads((_DIR / "Creature.json").read_text(encoding="utf-8"))
+def _dirs() -> list:
+    """Creature-data dirs in PRECEDENCE order: srd524 first (canonical), then any
+    additional packs under data/srd/ (e.g. an ingested ``bfrpg/``). Each later pack
+    only fills gaps — it never overrides an SRD creature of the same name (first-wins).
+    Only dirs that actually carry a ``Creature.json`` are included."""
+    dirs = [_PRIMARY]
+    if _ROOT.is_dir():
+        for sub in sorted(_ROOT.iterdir()):
+            if sub.is_dir() and sub != _PRIMARY and (sub / "Creature.json").exists():
+                dirs.append(sub)
+    return [d for d in dirs if (d / "Creature.json").exists()]
 
 
 @functools.lru_cache(maxsize=None)
-def _actions_by_parent() -> dict[str, list[dict]]:
-    out: dict[str, list[dict]] = {}
-    for row in json.loads((_DIR / "CreatureAction.json").read_text(encoding="utf-8")):
-        f = row.get("fields", {})
-        parent = f.get("parent")
-        if parent:
-            out.setdefault(parent, []).append(
-                {"name": f.get("name", ""), "desc": f.get("desc", ""),
-                 "action_type": f.get("action_type", "ACTION")}
-            )
+def _actions_by_source_parent() -> dict:
+    """(source_dir_name, parent_pk) -> [actions]. Keyed by SOURCE as well as pk so two
+    packs that happen to reuse the same fixture pk never cross-attribute their actions."""
+    out: dict = {}
+    for d in _dirs():
+        caf = d / "CreatureAction.json"
+        if not caf.exists():
+            continue
+        for row in json.loads(caf.read_text(encoding="utf-8")):
+            f = row.get("fields", {})
+            parent = f.get("parent")
+            if parent:
+                out.setdefault((d.name, parent), []).append(
+                    {"name": f.get("name", ""), "desc": f.get("desc", ""),
+                     "action_type": f.get("action_type", "ACTION")}
+                )
     return out
 
 
 @functools.lru_cache(maxsize=None)
 def _index() -> dict[str, dict]:
-    """name (lowercased) -> the raw creature row (fields + pk)."""
-    return {c["fields"]["name"].lower(): c for c in _raw_creatures() if c.get("fields", {}).get("name")}
+    """name (lowercased) -> ``{"src": dir_name, "row": creature row}``. FIRST-WINS
+    across dirs in precedence order (srd524 first): a later pack whose creature name is
+    already present is skipped, so SRD creatures are never silently overwritten."""
+    out: dict[str, dict] = {}
+    for d in _dirs():
+        for c in json.loads((d / "Creature.json").read_text(encoding="utf-8")):
+            name = c.get("fields", {}).get("name")
+            if name:
+                key = name.lower()
+                if key not in out:  # FIRST-WINS — earlier dir (srd524) takes precedence
+                    out[key] = {"src": d.name, "row": c}
+    return out
 
 
 def _norm_cr(cr) -> str:
@@ -82,9 +107,10 @@ def stat_block(name: str) -> Optional[dict]:
     or None if unknown. Includes abilities, AC, HP, CR/XP, the damage
     resistance/immunity/vulnerability + condition-immunity lists, and the creature's
     actions/traits as text."""
-    row = _index().get(name.strip().lower())
-    if row is None:
+    entry = _index().get(name.strip().lower())
+    if entry is None:
         return None
+    row = entry["row"]
     f = row["fields"]
     abilities = {
         short: int(f.get(f"ability_score_{full}") or 10)
@@ -114,14 +140,15 @@ def stat_block(name: str) -> Optional[dict]:
         "damage_immunities": _as_list(f.get("damage_immunities")),
         "damage_vulnerabilities": _as_list(f.get("damage_vulnerabilities")),
         "condition_immunities": _as_list(f.get("condition_immunities")),
-        "actions": _actions_by_parent().get(row.get("pk"), []),
+        "actions": _actions_by_source_parent().get((entry["src"], row.get("pk")), []),
     }
 
 
 def find(query: str, limit: int = 10) -> list[str]:
-    """Creature names matching `query` (substring, case-insensitive), sorted."""
+    """Creature names matching `query` (substring, case-insensitive), sorted. Deduped
+    against the index (first-wins), so a pack's same-named creature never appears twice."""
     q = query.strip().lower()
-    names = sorted(c["fields"]["name"] for c in _raw_creatures() if c.get("fields", {}).get("name"))
+    names = sorted(e["row"]["fields"]["name"] for e in _index().values())
     if not q:
         return names[:limit]
     return [n for n in names if q in n.lower()][:limit]
@@ -137,10 +164,10 @@ def resolve(name: str) -> Optional[str]:
     key = name.strip().lower()
     idx = _index()
     if key in idx:
-        return idx[key]["fields"]["name"]
+        return idx[key]["row"]["fields"]["name"]
     warrior = f"{key} warrior"
     if warrior in idx:
-        return idx[warrior]["fields"]["name"]
+        return idx[warrior]["row"]["fields"]["name"]
     matches = find(name)
     return matches[0] if len(matches) == 1 else None
 

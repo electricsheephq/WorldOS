@@ -32,6 +32,42 @@ def test_find_substring():
     assert "Goblin Warrior" in bestiary.find("goblin")
 
 
+def test_pack_precedence_srd_wins_and_pack_adds(tmp_path, monkeypatch):
+    """A content pack (e.g. ingested BFRPG) never overrides an SRD creature of the
+    same name — srd524 is first-wins — but it DOES contribute its own new creatures,
+    with actions pk-namespaced so a colliding fixture pk can't cross-attribute."""
+    import json as _json
+    pack = tmp_path / "fakepack"
+    pack.mkdir()
+    (pack / "Creature.json").write_text(_json.dumps([
+        # COLLISION: a bogus Wolf (pk reused from SRD) — must lose to canonical SRD Wolf
+        {"model": "x.creature", "pk": 1, "fields": {"name": "Wolf", "hit_points": 999, "armor_class": 99}},
+        # a brand-new pack creature — must be added
+        {"model": "x.creature", "pk": 2, "fields": {"name": "Fizzbin Horror", "hit_points": 42, "armor_class": 13}},
+    ]))
+    (pack / "CreatureAction.json").write_text(_json.dumps([
+        {"model": "x.action", "pk": 1, "fields": {"parent": 2, "name": "Gnash", "desc": "bites"}},
+    ]))
+
+    monkeypatch.setattr(bestiary, "_dirs", lambda: [bestiary._PRIMARY, pack])
+    bestiary._index.cache_clear()
+    bestiary._actions_by_source_parent.cache_clear()
+    try:
+        # srd524 Wolf wins the name collision — not the pack's bogus 999 HP
+        assert bestiary.stat_block("Wolf")["hp"] == 11
+        # the pack's own new creature is available, with its own pk-namespaced action
+        horror = bestiary.stat_block("Fizzbin Horror")
+        assert horror is not None and horror["hp"] == 42
+        assert any(a["name"] == "Gnash" for a in horror["actions"])
+        # find() lists each name once (deduped against the first-wins index)
+        assert bestiary.find("wolf", limit=100).count("Wolf") == 1
+        # count includes the pack's net-new creature
+        assert bestiary.count() >= 301
+    finally:
+        bestiary._index.cache_clear()
+        bestiary._actions_by_source_parent.cache_clear()
+
+
 # --- damage resistance / immunity / vulnerability --------------------------
 
 
