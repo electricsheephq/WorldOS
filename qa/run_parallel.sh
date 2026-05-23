@@ -24,6 +24,7 @@ while [ "$#" -ge 2 ]; do
   echo "[parallel] launching $RUN: prompt=$PROMPT rubric=$RUBRIC"
   qa/run_qa.sh "$RUN" "$BUDGET" "$PROMPT" "$RUBRIC" > "qa/transcripts/$RUN.run.log" 2>&1 &
   pids+=("$!")
+  [ "$#" -ge 2 ] && sleep 8  # stagger starts so scoring phases don't all collide
 done
 
 if [ "${#pids[@]}" -eq 0 ]; then
