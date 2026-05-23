@@ -207,6 +207,38 @@ def suggest_action(
     }
 
 
+def deliberate(companion: Character, situation: str = "", callbacks: Optional[list] = None) -> dict:
+    """Build a persona-agnostic advice frame for a NON-combat beat — what the
+    companion should weigh in on, NOT the words (the persona/agent authors the
+    actual line). This is the storytelling counterpart to suggest_action: it makes
+    "the companion has an opinion, grounded in memory" a reliable tool call instead
+    of something the DM must remember to do.
+
+    `situation` is the DM's free-text description of the moment; `callbacks` are
+    relevant past-memory hits (from the ledger's recall) to ground the opinion.
+    Returns ``{companion, voice_id, personality, callbacks, prompt}`` — the prompt
+    is an instruction the DM (or a Tier-2 forked agent) voices in the companion's
+    own voice."""
+    cbs = [c.get("text", "") if isinstance(c, dict) else str(c) for c in (callbacks or [])]
+    cbs = [t for t in cbs if t]
+    prompt = (
+        f"In {companion.name}'s own voice, react to this moment and give the party your "
+        f"honest opinion or advice — speak up, agree, or push back in character; you are a "
+        f"full party member with your own goals, not a yes-person."
+    )
+    if companion.personality:
+        prompt += f" Stay true to who you are: {companion.personality}"
+    if cbs:
+        prompt += " Ground it in what you remember: " + " | ".join(cbs)
+    return {
+        "companion": companion.name,
+        "voice_id": companion.voice_id,
+        "personality": companion.personality,
+        "callbacks": cbs,
+        "prompt": prompt,
+    }
+
+
 @runtime_checkable
 class CompanionProvider(Protocol):
     """The boundary the DM reaches the companion through.

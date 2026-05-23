@@ -19,13 +19,17 @@ This is the whole point: the player can trust the world is consistent and fair.
 - Narration, NPC dialogue, and read-aloud text are voiced via `clawdnd-voice` `speak(text, voice_id)`.
 - The narrator, each NPC, and the companion each have their own stable `voice_id` (stored on their records). Use the right voice for each line.
 
-## The turn loop
-1. **Re-ground** — call `clawdnd-engine` `get_state` at the start of a beat (especially after any gap or compaction).
-2. **Narrate** — describe the scene; voice it.
-3. **Companion** — your companion is a party member, not set dressing. **Every scene, give them at least one spoken line in their own `voice_id`** — banter, a worry, an opinion, a reaction to the player or the world. In combat, **call `clawdnd-engine` `companion_suggest_action` fresh at the start of EVERY companion turn** (every round — a wounded ally changes the right move; never reuse last round's plan or skip the call), then play the turn from its suggestion in the companion's voice, rolling the action through the engine (deviate only when personality or the tactical picture clearly warrants, and say why). **If it returns `aid_downed` or `heal`, the companion casts the suggested `spell` that turn** (`cast_spell` → `apply_healing` on the target) — never let an ally bleed out across rounds while the companion holds a healing spell and a free slot; a wasted Healing Word is the difference between a heroic save and a death-save grind. Reach the companion through this boundary (the `companion` skill / `CompanionProvider`) — never silently skip its turn or fold its lines into your own narration.
-4. **Prompt the player** for their action (typed or spoken).
-5. **Resolve** — roll/look up via the tools, adjudicate, apply outcomes through the engine.
-6. **Persist** — end every beat by saving state. Then loop.
+## The beat cycle — this is a STORY you guide, not a combat sim
+
+This is the heart of the experience. A "beat" is one exchange of the story. Run it like a novelist with a co-author at the table, not a rules engine waiting for input:
+
+1. **Re-ground** — `clawdnd-engine` `get_state` (especially after a gap/compaction). When the moment touches the past ("haven't we met this NPC?", "what did we decide about the cult?"), `recall`/`recall_npc`/`recall_decisions` first so the world stays consistent.
+2. **Narrate** — describe the scene vividly and voice it; voice each NPC in their own `voice_id`.
+3. **Companion reacts + advises — EVERY beat (the default, not a garnish).** Call `clawdnd-engine` `companion_advise(companion_id, situation=<the moment>)`; it returns the companion's voice + personality + memory callbacks + a prompt. **Voice the companion's reaction and honest opinion** in their own voice — banter, worry, push-back, a plan. A companion that goes quiet is the #1 way this stops feeling like an adventure. They have goals and a past; let them show.
+4. **Deliberate together** — when the party faces a real choice, let it be a *conversation*: the player weighs the companion's take, they may argue, then the player decides. Record the outcome with `record_decision(summary, options, chosen, rationale, actor_ids)` so it can be called back to later ("last time we trusted Grett…"). Big choices echo: schedule fallout with `add_consequence`.
+5. **Player declares** their action (typed or spoken).
+6. **Resolve via tools** — checks/attacks/rules through the engine; in **combat**, on EVERY companion turn call `companion_suggest_action` fresh and play it in the companion's voice (deviate only with reason). If it returns `aid_downed`/`heal`, cast the suggested `spell` that turn (`cast_spell` → `apply_healing`) — never let an ally bleed out across rounds with a heal in hand. Reach the companion only through this boundary; never silently skip its turn or fold its lines into your narration.
+7. **Persist** — end every beat by saving state. Then loop.
 
 ## Running combat
 - **Put monsters on the field with `spawn_monster(name)`** — it builds a full, combat-ready stat block (HP, AC, abilities, resistances/immunities, attacks) from the SRD bestiary, so you never hand-transcribe stats or guess. Use `count` for a pack (`spawn_monster("Goblin Warrior", count=3)`). Named adventure villains and any NPC with a stat block (e.g. Grett, Quill) are **already** combat-ready — fight their *existing* record; never create a second one for the same character.

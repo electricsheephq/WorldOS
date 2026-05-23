@@ -1329,6 +1329,20 @@ def companion_suggest_action(campaign_id: str, companion_id: str) -> dict:
     return companion.suggest_action(_char(c, companion_id), c.combat, c.characters)
 
 
+@mcp.tool()
+def companion_advise(campaign_id: str, companion_id: str, situation: str = "") -> dict:
+    """Get the companion's in-character take on the CURRENT (non-combat) moment so
+    the DM voices it reliably — the storytelling default, not an afterthought. Pass
+    a short `situation` (the choice/discovery/lull at hand); it pulls relevant
+    memory callbacks via recall and returns the companion's voice_id + personality
+    + callbacks + a prompt to voice from. Speak the companion's line in its voice,
+    then let the player respond / deliberate with it. Read-only."""
+    c = _require(campaign_id)
+    comp = _char(c, companion_id)
+    callbacks = ledger_mod.recall(campaign_id, situation, limit=3) if situation.strip() else []
+    return companion.deliberate(comp, situation, callbacks=callbacks)
+
+
 def _new_session_id() -> str:
     import uuid
 
