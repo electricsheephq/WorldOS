@@ -23,6 +23,7 @@ import content as content_mod
 import dice as dice_mod
 import encounter
 import generator
+import imagegen
 import inventory
 import ledger as ledger_mod
 import lorebook
@@ -697,6 +698,18 @@ def recruit_companion(
             c.party.append(ch.id)
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party)}
+
+
+@mcp.tool()
+def generate_image(kind: str, prompt: str, seed: Optional[int] = None, scope: Optional[str] = None) -> dict:
+    """Generate (or recall from cache) an image for the campaign. `kind` is 'map'
+    (region/dungeon), 'portrait' (NPC/PC), or 'scene' (illustration); `prompt` is the
+    visual brief. The active provider is chosen by CLAWDND_IMAGE_PROVIDER (default
+    'null' → a deterministic placeholder, no network); pass `scope` (a world or
+    campaign id) to partition the derived image cache. Repeat requests hit the
+    content-hash cache for free. The cache is a derived, rebuildable artifact — it
+    never touches campaign state (engine stays sole writer)."""
+    return imagegen.generate(kind, prompt, seed=seed, scope=scope)
 
 
 _SHORT_TO_FULL_AB = {
