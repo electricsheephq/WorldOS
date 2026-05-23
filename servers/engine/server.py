@@ -44,6 +44,7 @@ from models import (
     Decision,
     Faction,
     HouseRules,
+    Location,
     Quest,
     SessionLogEntry,
     SpellSlotLevel,
@@ -311,6 +312,66 @@ def get_scene(campaign_id: str, location_id: str = "") -> dict:
         "count": len(scenes),
         "scenes": scenes,
         "all_scene_location_ids": sorted({s.get("location_id", "") for s in c.scenes if s.get("location_id")}),
+    }
+
+
+@mcp.tool()
+def add_location(
+    campaign_id: str,
+    name: str,
+    description: str = "",
+    connections: Optional[list] = None,
+    location_id: str = "",
+    hex: Optional[list] = None,
+) -> dict:
+    """Create — or update — a location in the world DURING live play. The key
+    world-building primitive for generated / sandbox campaigns.
+
+    It puts the place into ENGINE STATE so it can be traveled to (`travel_to`),
+    re-grounded (`look_around`), recalled, and carried into future sessions — instead
+    of living only in your narration (where it's lost and `look_around` returns null).
+    `connections` are existing location ids, wired BIDIRECTIONALLY so the party can
+    walk both ways. Pass `location_id` to fill in a generator placeholder or update an
+    existing place; omit it to mint a new one. If the campaign had no current location,
+    this becomes it. `hex` is optional axial [q, r] map coords (presentation only).
+    """
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        conns = [str(x) for x in (connections or [])]
+        coords = tuple(hex) if hex and len(hex) == 2 else None
+        existing = c.locations.get(location_id) if location_id else None
+        if existing is not None:  # update / fill-in a placeholder
+            if name:
+                existing.name = name
+            if description:
+                existing.description = description
+            if coords is not None:
+                existing.hex = coords
+            loc = existing
+        else:
+            loc = Location(name=name, description=description, hex=coords)
+            if location_id:
+                loc.id = location_id  # honor a caller-chosen id (e.g. a generated skeleton's)
+            c.locations[loc.id] = loc
+        for other_id in conns:  # wire bidirectional edges to existing locations only
+            if other_id == loc.id:
+                continue
+            other = c.locations.get(other_id)
+            if other is None:
+                continue
+            if other_id not in loc.connections:
+                loc.connections.append(other_id)
+            if loc.id not in other.connections:
+                other.connections.append(loc.id)
+        if c.current_location_id is None:
+            c.current_location_id = loc.id
+        save_campaign(c)
+    return {
+        "id": loc.id,
+        "name": loc.name,
+        "connections": loc.connections,
+        "is_current": c.current_location_id == loc.id,
+        "location_count": len(c.locations),
     }
 
 

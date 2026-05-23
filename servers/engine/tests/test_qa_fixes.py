@@ -265,6 +265,35 @@ def test_create_character_rejects_duplicate_companion(tmp_path, monkeypatch):
     assert len(server.get_state(cid)["party"]) == before  # no duplicate added
 
 
+# --- generative QA: live world-building (add_location) ---
+# The live-GENERATED playtest scored 4.1-4.2 story-craft (above the authored
+# benchmark) but flagged its #1 gap: no way to persist a location during play —
+# look_around returned location:null all session; the world lived only in prose.
+
+
+def test_add_location_persists_world_for_live_play(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Generated World")["id"]
+    # the first location becomes current (get_state.location was null before)
+    a = server.add_location(cid, "Ashenveil", "an ash-choked village")
+    assert a["is_current"] and a["location_count"] == 1
+    assert server.get_state(cid)["location"]["name"] == "Ashenveil"
+    # a connected location is reachable BOTH ways (bidirectional wiring)
+    b = server.add_location(cid, "The Silent Mill", "a stopped wheel", connections=[a["id"]])
+    assert a["id"] in b["connections"]
+    assert server.travel_to(cid, b["id"])["to_name"] == "The Silent Mill"
+    assert server.travel_to(cid, a["id"])["to_name"] == "Ashenveil"  # reverse edge exists
+
+
+def test_add_location_upserts_a_placeholder(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Gen")["id"]
+    server.add_location(cid, "Placeholder", location_id="loc-fillme")
+    out = server.add_location(cid, "Hollowmere", "now fully described", location_id="loc-fillme")
+    assert out["location_count"] == 1  # updated in place, not duplicated
+    assert server.get_state(cid)["location"]["name"] == "Hollowmere"
+
+
 def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("embergloom-pact")["campaign_id"]
