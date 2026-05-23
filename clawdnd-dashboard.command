@@ -29,7 +29,7 @@ else
   fi
 fi
 
-URL="http://127.0.0.1:$PORT"
+URL="http://127.0.0.1:$PORT/dashboard"
 # open the browser shortly after the server comes up (macOS `open`, Linux `xdg-open`)
 ( sleep 1.2; (command -v open >/dev/null 2>&1 && open "$URL") \
             || (command -v xdg-open >/dev/null 2>&1 && xdg-open "$URL") \
