@@ -50,8 +50,16 @@ def _title_and_body(text: str, fallback: str) -> tuple[str, str]:
     return title, body
 
 
+def _page_era(text: str) -> str:
+    """A page's chronology line, if it declares one (`*Era: ...*` / `era: ...` near the
+    top). Authored canon pages assert the world's era; ingested wiki pages usually don't."""
+    m = re.search(r"(?im)^\*?\s*(?:era|status|year)\s*:\s*(.+?)\*?\s*$", text)
+    return m.group(1).strip() if m else ""
+
+
 def _pages(world_id: str) -> list[dict]:
-    """Every lore page in the world's corpus: {title, text, source}."""
+    """Every lore page: {title, text, source, tier, era}. tier 0 = authored (lore/*.md),
+    tier 1 = ingested (lore/wiki/*.md) — authored canon outranks ingested in retrieval."""
     d = _lore_dir(world_id)
     if d is None:
         return []
@@ -66,7 +74,8 @@ def _pages(world_id: str) -> list[dict]:
             continue
         title, body = _title_and_body(raw, f.stem.replace("-", " ").title())
         if body:
-            out.append({"title": title, "text": body, "source": f.name})
+            tier = 0 if f.parent == d else 1  # top-level authored beats any subfolder (wiki)
+            out.append({"title": title, "text": body, "source": f.name, "tier": tier, "era": _page_era(body)})
     return out
 
 
@@ -95,33 +104,50 @@ def _excerpt(text: str, tokens: list[str], width: int = 400) -> str:
 
 
 def lookup_lore(world_id: str, query: str, limit: int = 5) -> list[dict]:
-    """Search a world's lore corpus and return the most relevant pages (ranked),
-    each as {title, excerpt, source}. Empty if the world ships no corpus or nothing
-    matches. Read-only; builds a throwaway in-memory index per call."""
+    """Search a world's lore corpus and return the most relevant pages, each as
+    {title, excerpt, source, era}. **Authored canon (tier 0) outranks ingested wiki
+    pages (tier 1)** among matches, so the seed's intended (e.g. post-canon) truth wins
+    over longer-but-stale wiki pages on a bm25 tie. Empty if no corpus / no match.
+    Read-only; builds a throwaway in-memory index per call."""
     pages = _pages(world_id)
     match = _safe_match(query)
     if not pages or not match:
         return []
     conn = sqlite3.connect(":memory:")
     try:
-        conn.execute("CREATE VIRTUAL TABLE lore USING fts5(title, body, src UNINDEXED)")
+        conn.execute("CREATE VIRTUAL TABLE lore USING fts5(title, body, src UNINDEXED, tier UNINDEXED)")
         conn.executemany(
-            "INSERT INTO lore(rowid, title, body, src) VALUES (?,?,?,?)",
-            [(i, p["title"], p["text"], p["source"]) for i, p in enumerate(pages)],
+            "INSERT INTO lore(rowid, title, body, src, tier) VALUES (?,?,?,?,?)",
+            [(i, p["title"], p["text"], p["source"], p.get("tier", 1)) for i, p in enumerate(pages)],
         )
-        try:
-            rows = conn.execute(
-                "SELECT rowid, title, src FROM lore WHERE lore MATCH ? ORDER BY rank LIMIT ?",
-                (match, max(limit, 1)),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            return []
+
+        def _match_tier(tier: int, n: int) -> list[int]:
+            # Filter on the UNINDEXED tier column alongside MATCH so authored matches
+            # are found regardless of how many wiki pages also match (a bm25 over-fetch
+            # over a 250-page corpus would otherwise bury the few short authored pages).
+            try:
+                return [r[0] for r in conn.execute(
+                    "SELECT rowid FROM lore WHERE lore MATCH ? AND tier = ? ORDER BY rank LIMIT ?",
+                    (match, tier, n),
+                ).fetchall()]
+            except sqlite3.OperationalError:
+                return []
+
+        cap = max(limit, 1)
+        ids = _match_tier(0, cap) + _match_tier(1, cap)  # authored canon first, then wiki to fill
     finally:
         conn.close()
     tokens = re.findall(r"[A-Za-z0-9]+", query or "")
-    out = []
-    for rowid, title, src in rows:
-        out.append({"title": title, "excerpt": _excerpt(pages[rowid]["text"], tokens), "source": src})
+    seen: set[int] = set()
+    out: list[dict] = []
+    for rid in ids:
+        if rid in seen:
+            continue
+        seen.add(rid)
+        p = pages[rid]
+        out.append({"title": p["title"], "excerpt": _excerpt(p["text"], tokens), "source": p["source"], "era": p.get("era", "")})
+        if len(out) >= cap:
+            break
     return out
 
 
