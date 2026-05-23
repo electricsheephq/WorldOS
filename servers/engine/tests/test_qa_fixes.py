@@ -456,3 +456,24 @@ def test_remove_last_hostile_auto_ends_combat(tmp_path, monkeypatch):
     assert server.get_state(cid)["in_combat"] is True
     out = server.remove_combatant(cid, g)  # last hostile removed
     assert out["active"] is False and server.get_state(cid)["in_combat"] is False
+
+
+def test_stabilize_closes_the_aid_downed_loop(tmp_path, monkeypatch):
+    import pytest
+    # brawler's top finding: companion_suggest_action returns aid_downed with spell:null
+    # when there's no heal slot, but there was NO engine path to land a stabilize —
+    # the DM had to hand-wave a Medicine check. stabilize() is that path now.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Stab")["id"]
+    medic = server.create_character(
+        cid, "Medic", kind="companion", abilities={"wisdom": 20}, skills=["medicine"],
+    )["id"]
+    downed = server.create_character(cid, "Downed", kind="player", max_hp=10)["id"]
+    server.apply_damage(cid, downed, 10)  # to 0 HP -> dying, unstable
+    assert server.get_character(cid, downed)["current_hp"] == 0
+    out = server.stabilize(cid, medic, downed, dc=1)  # auto-succeeds
+    assert out["success"] is True and out["stable"] is True
+    assert server.get_character(cid, downed)["stable"] is True
+    # can't stabilize someone already stable (or not downed)
+    with pytest.raises(ValueError, match="downed"):
+        server.stabilize(cid, medic, downed)

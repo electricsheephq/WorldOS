@@ -1116,6 +1116,39 @@ def roll_death_save(campaign_id: str, character_id: str) -> dict:
 
 
 @mcp.tool()
+def stabilize(campaign_id: str, actor_id: str, target_id: str, dc: int = 10) -> dict:
+    """An actor stabilizes a DOWNED ally with a DC 10 Wisdom (Medicine) check — the
+    5e action for saving a dying ally when you have NO healing spell in hand. This
+    closes the companion's `aid_downed` loop: when companion_suggest_action returns
+    aid_downed with spell=null (no slot), call this instead of hand-waving it. On
+    success the target becomes stable (dying stops, death saves reset, holds at 0 HP);
+    on failure nothing changes and they keep rolling death saves."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        actor = _char(c, actor_id)
+        target = _char(c, target_id)
+        if target.current_hp != 0 or target.dead or target.stable:
+            raise ValueError("can only stabilize a downed (0 HP), unstable, living creature")
+        r = dice_mod.roll(f"1d20+{actor.skill_bonus('medicine')}")
+        success = r.total >= dc
+        if success:
+            target.stable = True
+            target.death_saves.successes = 0
+            target.death_saves.failures = 0
+        save_campaign(c)
+        return {
+            "actor": actor.name,
+            "target": target.name,
+            "skill": "medicine",
+            "roll": r.total,
+            "natural": r.natural,
+            "dc": dc,
+            "success": success,
+            "stable": target.stable,
+        }
+
+
+@mcp.tool()
 def end_combat(campaign_id: str) -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
     conditions persist past the encounter."""
