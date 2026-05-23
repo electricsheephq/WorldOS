@@ -542,8 +542,11 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         die = srd_tables.hit_die(cname)
         ch.hit_dice = f"{level}d{die}"
         ch.hit_dice_remaining = level
-        if level == 1:
-            ch.max_hp = max(1, die + ch.abilities.modifier(Ability.CON))
+        if ch.max_hp <= 1:  # HP not explicitly provided -> compute for the FULL level
+            # SRD fixed-HP: max die + CON at L1, then average (die//2+1) + CON per level.
+            con = ch.abilities.modifier(Ability.CON)
+            per_level_after_first = (die // 2 + 1) + con
+            ch.max_hp = max(1, die + con + (level - 1) * per_level_after_first)
             ch.current_hp = ch.max_hp
         ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
         if set_base_ac:
@@ -953,8 +956,9 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
 @mcp.tool()
 def remove_combatant(campaign_id: str, character_id: str) -> dict:
     """Remove a combatant from the initiative order (a slain monster, or one that
-    fled). Adjusts the turn pointer so the order stays consistent; ends combat if
-    it was the last combatant."""
+    fled). Adjusts the turn pointer so the order stays consistent; ends combat if it
+    was the last combatant OR if only allies (players/companions) remain — no
+    hostiles left means the fight is over."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         order = c.combat.order
@@ -962,8 +966,11 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         if idx is None:
             raise ValueError(f"{character_id!r} is not in the combat order")
         order.pop(idx)
-        if not order:
-            c.combat = Combat()
+        remaining_kinds = {
+            c.characters[cb.character_id].kind for cb in order if cb.character_id in c.characters
+        }
+        if not order or (remaining_kinds and remaining_kinds <= {"player", "companion"}):
+            c.combat = Combat()  # last combatant gone, or no hostiles left -> end the fight
         else:
             if idx < c.combat.turn_index:
                 c.combat.turn_index -= 1
@@ -1267,6 +1274,9 @@ def level_up(
         ch.max_hp += gain
         ch.current_hp += gain
         ch.hit_dice_remaining += 1
+        # keep the hit_dice string in sync (single-class; was left stale after level_up)
+        if len({cl.name.lower() for cl in ch.classes}) == 1:
+            ch.hit_dice = f"{sum(cl.level for cl in ch.classes)}d{die}"
 
         applied = None
         if srd_tables.is_asi_level(cname, new_class_level):
@@ -1516,6 +1526,8 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
     each); a single-class Warlock recovers all (pact) spell slots."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        if c.combat.active:
+            raise ValueError("cannot rest during active combat — call end_combat first")
         ch = _char(c, character_id)
         out = rests.short_rest(ch, hit_dice_to_spend, dice_mod.roll)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
@@ -1530,6 +1542,8 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
     call this for each party member. Cannot rest while dead."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        if c.combat.active:
+            raise ValueError("cannot rest during active combat — call end_combat first")
         ch = _char(c, character_id)
         out = rests.long_rest(ch)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))

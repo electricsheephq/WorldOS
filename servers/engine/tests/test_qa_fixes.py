@@ -394,3 +394,65 @@ def test_recruit_companion_is_idempotent_and_guards_kind(tmp_path, monkeypatch):
         server.recruit_companion(cid, mon)
     with pytest.raises(Exception):
         server.recruit_companion(cid, "char_nonexistent")
+
+
+# --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
+
+
+def test_apply_srd_defaults_computes_hp_for_higher_levels(tmp_path, monkeypatch):
+    # CRITICAL (operator+wildcard): a level>1 character made with apply_srd_defaults
+    # got max_hp:1 — HP was only computed at level 1, so every multi-level companion/
+    # legend had 1 HP. Now computed across the full level (SRD fixed-HP).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("HP")["id"]
+    wid = server.create_character(
+        cid, "Mage", kind="player", class_name="Wizard", level=3,
+        apply_srd_defaults=True, abilities={"constitution": 14},  # d6, CON +2
+    )["id"]
+    assert server.get_character(cid, wid)["max_hp"] == 20  # 8 + 6 + 6, not 1
+    # an explicit max_hp is still respected (not overwritten by the class calc)
+    bid = server.create_character(
+        cid, "Bruiser", kind="companion", class_name="Barbarian", level=5,
+        max_hp=60, apply_srd_defaults=True,
+    )["id"]
+    assert server.get_character(cid, bid)["max_hp"] == 60
+
+
+def test_rest_refused_during_active_combat(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Rest")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    g = server.create_character(cid, "G", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [a, g])
+    with pytest.raises(ValueError, match="combat"):
+        server.long_rest(cid, a)
+    with pytest.raises(ValueError, match="combat"):
+        server.short_rest(cid, a)
+    server.end_combat(cid)
+    server.long_rest(cid, a)  # allowed once combat is over
+
+
+def test_level_up_keeps_hit_dice_string_in_sync(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("LU")["id"]
+    wid = server.create_character(
+        cid, "W", kind="player", class_name="Wizard", level=3, apply_srd_defaults=True,
+    )["id"]
+    assert server.get_character(cid, wid)["hit_dice"] == "3d6"
+    server.level_up(cid, wid, "wizard")
+    assert server.get_character(cid, wid)["hit_dice"] == "4d6"  # was stale at 3d6
+
+
+def test_remove_last_hostile_auto_ends_combat(tmp_path, monkeypatch):
+    # brawler: after the enemies fled/died, only the party remained but combat stayed
+    # active and the DM had to end it by hand. No hostiles left -> the fight is over.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("End")["id"]
+    a = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
+    comp = server.create_character(cid, "Ally", kind="companion", max_hp=10)["id"]
+    g = server.create_character(cid, "Goblin", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [a, comp, g])
+    assert server.get_state(cid)["in_combat"] is True
+    out = server.remove_combatant(cid, g)  # last hostile removed
+    assert out["active"] is False and server.get_state(cid)["in_combat"] is False
