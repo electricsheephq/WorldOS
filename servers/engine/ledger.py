@@ -79,9 +79,16 @@ def _ensure_fresh(campaign_id: str) -> None:
 
 
 def _safe_match(query: str) -> str:
-    """Reduce an arbitrary query to a safe FTS5 implicit-AND of word tokens —
-    avoids FTS5 syntax errors / injection from punctuation or operators."""
-    return " ".join(re.findall(r"[A-Za-z0-9]+", query or ""))
+    """Reduce an arbitrary query to a safe FTS5 OR-of-tokens, ranked by relevance.
+
+    Each alnum token is wrapped as a quoted phrase and joined with OR, so a
+    natural-language recall query ("what did we decide about the mill?") returns
+    the memories matching the MOST terms first (bm25 rank) instead of nothing.
+    Implicit-AND (space-joined) was the bug: it required EVERY word present, so
+    real queries — which carry intent-words not in the stored text — matched
+    zero rows. Quoting also neutralizes FTS5 operators/punctuation (injection-safe)."""
+    toks = re.findall(r"[A-Za-z0-9]+", query or "")
+    return " OR ".join(f'"{t}"' for t in toks)
 
 
 def _row(r) -> dict:

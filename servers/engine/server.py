@@ -336,6 +336,22 @@ def create_character(
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        if kind == "companion":
+            # Adventures seed their companion at start_adventure; a second
+            # create_character with the same name produces a duplicate party
+            # member (blank personality, wrong id). Block it — the DM should
+            # get_state to find the seeded companion, not recreate it.
+            dup = next(
+                (e for e in c.characters.values()
+                 if e.kind == "companion" and e.name.strip().lower() == name.strip().lower()),
+                None,
+            )
+            if dup is not None:
+                raise ValueError(
+                    f"Companion {name!r} already exists as {dup.id!r}. Adventures seed "
+                    f"their companion at start_adventure — call get_state to find it and "
+                    f"reference that id; do not recreate it."
+                )
         scores = AbilityScores(**(abilities or {}))
         ch = Character(
             name=name,

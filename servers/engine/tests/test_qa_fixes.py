@@ -244,3 +244,34 @@ def test_bonus_action_heal_suggests_followup_attack():
     out = companion.suggest_action(healer, cbt, chars)
     assert out["action"] == "heal" and out["bonus_action"] is True
     assert out["then_attack_target_id"] == gob.id
+
+
+# --- story-QA (story1): guard against re-creating an adventure-seeded companion
+# The story-first playtest created a second "Brother Toll" via create_character
+# even though start_adventure had already seeded companion-toll -> two Tolls in
+# the party (one with blank personality). The engine must reject the duplicate.
+
+
+def test_create_character_rejects_duplicate_companion(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("embergloom-pact")["campaign_id"]  # seeds Brother Toll
+    before = len([i for i in server.get_state(cid)["party"]])
+    with pytest.raises(ValueError, match="already exists"):
+        server.create_character(cid, "Brother Toll", kind="companion", class_name="Cleric")
+    # name match is case/space-insensitive
+    with pytest.raises(ValueError, match="already exists"):
+        server.create_character(cid, "  brother toll ", kind="companion")
+    assert len(server.get_state(cid)["party"]) == before  # no duplicate added
+
+
+def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("embergloom-pact")["campaign_id"]
+    # a differently-named companion is fine
+    quill = server.create_character(cid, "Sister Quill", kind="companion", class_name="Bard")
+    assert quill["id"] and quill["kind"] == "companion"
+    # the guard is companion-scoped: duplicate NPC names are legitimate (two guards)
+    g1 = server.create_character(cid, "Town Guard", kind="npc")["id"]
+    g2 = server.create_character(cid, "Town Guard", kind="npc")["id"]
+    assert g1 and g2 and g1 != g2  # both created, distinct ids — not blocked

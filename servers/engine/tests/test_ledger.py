@@ -17,6 +17,23 @@ def test_recall_finds_logged_event_without_manual_backfill(cid):
     assert any("ghoul" in h["text"].lower() for h in hits)
 
 
+def test_recall_is_fuzzy_not_all_terms_required(cid):
+    # A natural query carries intent-words ("timeline", "creature") that aren't
+    # in the stored text. Recall must still surface the relevant memory (OR/rank),
+    # not return nothing because one word is missing (the old implicit-AND bug).
+    server.log_event(cid, "narration", "The party crossed the ashen barrow and met a ghoul.")
+    hits = server.recall(cid, "ghoul barrow timeline creature evidence")["hits"]
+    assert any("ghoul" in h["text"].lower() for h in hits)
+
+
+def test_recall_ranks_best_match_first(cid):
+    server.log_event(cid, "narration", "A merchant sold the party some rope.")
+    server.log_event(cid, "narration", "The lich raised a barrow-wight from the ashen mound.")
+    # Most query terms hit the lich line -> it must outrank the rope line.
+    hits = server.recall(cid, "lich barrow wight ashen mound")["hits"]
+    assert hits and "lich" in hits[0]["text"].lower()
+
+
 def test_recall_rebuilds_when_state_changes(cid):
     assert server.recall(cid, "obsidian dragon")["hits"] == []  # nothing yet
     server.log_event(cid, "narration", "An obsidian dragon coiled in the dark.")
