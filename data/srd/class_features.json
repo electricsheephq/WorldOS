@@ -1,0 +1,360 @@
+{
+  "barbarian": {
+    "1": [
+      {"name": "Rage", "desc": "Bonus action; advantage on Str checks/saves, bonus melee damage, resist bludgeoning/piercing/slashing. Lasts 1 min.", "rage_damage": 2, "rage_uses": 2},
+      {"name": "Unarmored Defense", "desc": "While not wearing armor, AC equals 10 + Dex mod + Con mod. Can use a shield."},
+      {"name": "Weapon Mastery", "desc": "Use the mastery property of two weapons you have proficiency with; can change choices on a long rest."}
+    ],
+    "2": [
+      {"name": "Reckless Attack", "desc": "Gain advantage on Str-based melee attacks this turn; attacks against you have advantage until your next turn."},
+      {"name": "Danger Sense", "desc": "Advantage on Dexterity saving throws against effects you can see, unless incapacitated."}
+    ],
+    "3": [
+      {"name": "Barbarian Subclass", "desc": "Choose a Primal Path subclass, gaining its features now and at later barbarian levels."},
+      {"name": "Primal Knowledge", "desc": "Gain an extra skill proficiency; while raging you can use Strength for certain other ability checks."}
+    ],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [
+      {"name": "Extra Attack", "desc": "Attack twice instead of once when you take the Attack action.", "extra_attacks": 1},
+      {"name": "Fast Movement", "desc": "Your speed increases by 10 feet while you aren't wearing heavy armor."}
+    ],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Primal Path subclass."}],
+    "7": [{"name": "Feral Instinct", "desc": "Advantage on initiative rolls; you can act normally on a surprise round if you enter your rage."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Brutal Strike", "desc": "Forgo advantage from Reckless Attack to deal an extra 1d10 damage and apply a Forceful or Hamstring effect."}],
+    "10": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Primal Path subclass."}],
+    "11": [{"name": "Relentless Rage", "desc": "When dropped to 0 hp while raging, make a DC 10 Con save (rises 5 each use) to drop to 1 hp instead."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "13": [{"name": "Improved Brutal Strike", "desc": "Brutal Strike gains additional effect options and stronger benefits."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Primal Path subclass."}],
+    "15": [{"name": "Persistent Rage", "desc": "Your rage is so fierce it ends early only if you choose to end it or fall unconscious.", "rage_uses": 5}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Improved Brutal Strike", "desc": "Brutal Strike can apply two effects and deals an extra 2d10 damage.", "rage_uses": 6}],
+    "18": [{"name": "Indomitable Might", "desc": "If a Strength check total is less than your Strength score, you can use your Strength score instead."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Primal Champion", "desc": "Your Strength and Constitution scores increase by 4, to a maximum of 25.", "rage_damage": 4, "rage_uses": 6}]
+  },
+  "bard": {
+    "1": [
+      {"name": "Bardic Inspiration", "desc": "Bonus action; give a creature a d6 to add to one attack, check, or save. Uses equal to Cha mod per long rest.", "bardic_die": "d6"},
+      {"name": "Spellcasting", "desc": "Cast bard spells using Charisma; learn spells and cantrips from the bard list."}
+    ],
+    "2": [
+      {"name": "Jack of All Trades", "desc": "Add half your proficiency bonus (rounded down) to ability checks you aren't proficient in."},
+      {"name": "Expertise", "desc": "Double your proficiency bonus for two chosen skill proficiencies."}
+    ],
+    "3": [
+      {"name": "Bard Subclass", "desc": "Choose a Bard College subclass, gaining its features now and at later bard levels."}
+    ],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Bardic Inspiration (d8)", "desc": "Your Bardic Inspiration die becomes a d8; you regain uses on a short or long rest (Font of Inspiration).", "bardic_die": "d8"}],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Bard College subclass."}],
+    "7": [{"name": "Countercharm", "desc": "Action; you and allies within 30 ft gain advantage on saves vs. frightened and charmed until your next turn."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Expertise", "desc": "Choose two more skill proficiencies to double your proficiency bonus."}],
+    "10": [
+      {"name": "Bardic Inspiration (d10)", "desc": "Your Bardic Inspiration die becomes a d10.", "bardic_die": "d10"},
+      {"name": "Magical Secrets", "desc": "Learn additional spells chosen from any class's spell list."}
+    ],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Bard College subclass."}],
+    "15": [{"name": "Bardic Inspiration (d12)", "desc": "Your Bardic Inspiration die becomes a d12.", "bardic_die": "d12"}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "18": [{"name": "Superior Inspiration", "desc": "When you roll initiative with no Bardic Inspiration uses left, you regain some uses."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Words of Creation", "desc": "You always have Power Word Heal and Power Word Kill prepared, and they can target a second creature."}]
+  },
+  "cleric": {
+    "1": [
+      {"name": "Spellcasting", "desc": "Cast cleric spells using Wisdom; prepare spells from the cleric list and know cantrips."},
+      {"name": "Divine Order", "desc": "Choose Protector (martial/heavy armor) or Thaumaturge (extra cantrip and bonus to Religion)."}
+    ],
+    "2": [{"name": "Channel Divinity", "desc": "Use divine energy for effects like Turn Undead or Divine Spark; 2 uses per short/long rest."}],
+    "3": [{"name": "Cleric Subclass", "desc": "Choose a Divine Domain subclass, gaining its features now and at later cleric levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Sear Undead", "desc": "When you Turn Undead, you also deal radiant damage to affected undead."}],
+    "6": [{"name": "Channel Divinity (3 uses)", "desc": "Gain an additional Channel Divinity use, for 3 per short or long rest."}],
+    "7": [{"name": "Blessed Strikes", "desc": "Once per turn add 1d8 radiant damage to a cantrip hit or weapon attack (Divine Strike / Potent Spellcasting)."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "10": [{"name": "Divine Intervention", "desc": "Action; call on your deity for aid, casting a cleric spell of level 5 or lower for free once per long rest."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Improved Blessed Strikes", "desc": "Your Blessed Strikes bonus damage increases to 2d8."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Divine Domain subclass."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Greater Divine Intervention", "desc": "Your Divine Intervention can replicate the Wish spell once, and otherwise recharges on a short rest."}]
+  },
+  "druid": {
+    "1": [
+      {"name": "Spellcasting", "desc": "Cast druid spells using Wisdom; prepare spells from the druid list and know cantrips."},
+      {"name": "Druidic", "desc": "You know Druidic, the secret language of druids, and can leave hidden messages."},
+      {"name": "Primal Order", "desc": "Choose Magician (extra cantrip and Arcana/Nature bonus) or Warden (martial weapon and medium armor proficiency)."}
+    ],
+    "2": [
+      {"name": "Wild Shape", "desc": "Magically transform into a Beast you've seen; 2 uses per short/long rest. Form improves with level.", "wild_shape_uses": 2},
+      {"name": "Wild Companion", "desc": "Expend a Wild Shape use to cast Find Familiar without material components."}
+    ],
+    "3": [{"name": "Druid Subclass", "desc": "Choose a Druid Circle subclass, gaining its features now and at later druid levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Wild Resurgence", "desc": "Once per turn regain a Wild Shape use by spending a spell slot, or spend a use to gain a slot."}],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Druid Circle subclass."}],
+    "7": [{"name": "Elemental Fury", "desc": "Choose Potent Spellcasting (add Wis mod to cantrip damage) or Primal Strike (extra damage on attacks while Wild Shaped)."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "10": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Druid Circle subclass."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Druid Circle subclass."}],
+    "15": [{"name": "Improved Elemental Fury", "desc": "Your Elemental Fury option grows stronger, increasing cantrip range or extra damage dice."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "18": [{"name": "Beast Spells", "desc": "You can cast druid spells while in Wild Shape (verbal/somatic only)."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Archdruid", "desc": "Unlimited Wild Shape uses; you can convert Wild Shape uses into spell slots and ignore some spell components.", "wild_shape_uses": 0}]
+  },
+  "fighter": {
+    "1": [
+      {"name": "Fighting Style", "desc": "Choose a Fighting Style feat (e.g. Archery, Defense, Great Weapon Fighting) granting a combat bonus."},
+      {"name": "Second Wind", "desc": "Bonus action; regain 1d10 + fighter level hit points. Uses recharge on a short or long rest."},
+      {"name": "Weapon Mastery", "desc": "Use the mastery property of three weapons you have proficiency with."}
+    ],
+    "2": [
+      {"name": "Action Surge", "desc": "Take one additional action on your turn. Recharges on a short or long rest."},
+      {"name": "Tactical Mind", "desc": "Spend a Second Wind use to add 1d10 to a failed ability check instead of expending the use."}
+    ],
+    "3": [{"name": "Fighter Subclass", "desc": "Choose a fighter subclass (Martial Archetype), gaining its features now and at later levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Extra Attack", "desc": "Attack twice instead of once when you take the Attack action.", "extra_attacks": 1}],
+    "6": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "7": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your fighter subclass."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [
+      {"name": "Indomitable", "desc": "Reroll a failed saving throw once per long rest; uses increase at higher levels."},
+      {"name": "Tactical Shift", "desc": "When you activate Second Wind, you can move up to half your speed without provoking opportunity attacks."}
+    ],
+    "10": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your fighter subclass."}],
+    "11": [{"name": "Extra Attack (3 attacks)", "desc": "You can attack three times whenever you take the Attack action.", "extra_attacks": 2}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "13": [
+      {"name": "Indomitable (2 uses)", "desc": "You can use Indomitable twice per long rest."},
+      {"name": "Studied Attacks", "desc": "After missing a creature, you have advantage on your next attack roll against it before your next turn ends."}
+    ],
+    "14": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "15": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your fighter subclass."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [
+      {"name": "Action Surge (2 uses)", "desc": "You can use Action Surge twice per rest, but only once on the same turn."},
+      {"name": "Indomitable (3 uses)", "desc": "You can use Indomitable three times per long rest."}
+    ],
+    "18": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your fighter subclass."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Extra Attack (4 attacks)", "desc": "You can attack four times whenever you take the Attack action.", "extra_attacks": 3}]
+  },
+  "monk": {
+    "1": [
+      {"name": "Martial Arts", "desc": "Use Dex for unarmed strikes and monk weapons; martial arts die scales (1d6 at L1); bonus unarmed strike.", "martial_arts_die": "1d6"},
+      {"name": "Unarmored Defense", "desc": "While unarmored and not using a shield, AC equals 10 + Dex mod + Wis mod."}
+    ],
+    "2": [
+      {"name": "Monk's Focus", "desc": "Gain Focus Points (equal to monk level) to fuel Flurry of Blows, Patient Defense, and Step of the Wind.", "ki_points": 2},
+      {"name": "Unarmored Movement", "desc": "Your speed increases by 10 feet while unarmored; bonus increases at higher levels."}
+    ],
+    "3": [
+      {"name": "Monk Subclass", "desc": "Choose a monk subclass (Monastic Tradition), gaining its features now and at later levels."},
+      {"name": "Deflect Attacks", "desc": "Reaction; reduce the damage of an attack and possibly redirect it by spending a Focus Point."}
+    ],
+    "4": [
+      {"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."},
+      {"name": "Slow Fall", "desc": "Reaction; reduce falling damage by five times your monk level."}
+    ],
+    "5": [
+      {"name": "Extra Attack", "desc": "Attack twice instead of once when you take the Attack action.", "extra_attacks": 1},
+      {"name": "Stunning Strike", "desc": "Spend a Focus Point on a hit to force a Con save; on a failure the target is stunned until your next turn."}
+    ],
+    "6": [{"name": "Empowered Strikes", "desc": "Your unarmed strikes can deal force damage, and you gain a subclass feature."}],
+    "7": [{"name": "Evasion", "desc": "On a Dex save for half damage, take no damage on a success and half on a failure."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Acrobatic Movement", "desc": "While unarmored you can move along vertical surfaces and across liquids without falling."}],
+    "10": [{"name": "Heightened Focus", "desc": "Flurry of Blows grants an extra strike; Patient Defense and Step of the Wind gain added benefits."}],
+    "11": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your monk subclass."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "13": [{"name": "Deflect Energy", "desc": "Your Deflect Attacks can reduce any damage type, not just bludgeoning, piercing, and slashing."}],
+    "14": [{"name": "Disciplined Survivor", "desc": "Proficiency in all saving throws; spend a Focus Point to reroll a failed save."}],
+    "15": [{"name": "Perfect Focus", "desc": "When you roll initiative with few Focus Points left, you regain some Focus Points."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your monk subclass."}],
+    "18": [{"name": "Superior Defense", "desc": "Spend Focus Points to gain resistance to all damage except force for 1 minute."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Body and Mind", "desc": "Your Dexterity and Wisdom scores increase by 4, to a maximum of 25.", "ki_points": 20}]
+  },
+  "paladin": {
+    "1": [
+      {"name": "Lay On Hands", "desc": "Pool of healing equal to 5 x paladin level; touch to restore hp or cure poison. Refreshes on a long rest."},
+      {"name": "Spellcasting", "desc": "Cast paladin spells using Charisma; prepare spells from the paladin list (half-caster)."},
+      {"name": "Weapon Mastery", "desc": "Use the mastery property of two weapons you have proficiency with."}
+    ],
+    "2": [
+      {"name": "Fighting Style", "desc": "Choose a Fighting Style feat granting a combat bonus, or take Blessed Warrior for cleric cantrips."},
+      {"name": "Divine Smite", "desc": "Cast the Divine Smite spell as a bonus action on a hit, expending a slot to deal 2d8 radiant (+1d8/level).", "smite_dice": "2d8"}
+    ],
+    "3": [
+      {"name": "Paladin Subclass", "desc": "Choose a Sacred Oath subclass, gaining its features and Channel Divinity options."},
+      {"name": "Channel Divinity", "desc": "Use oath-granted divine effects; 2 uses per short or long rest."}
+    ],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [
+      {"name": "Extra Attack", "desc": "Attack twice instead of once when you take the Attack action.", "extra_attacks": 1},
+      {"name": "Faithful Steed", "desc": "You always have the Find Steed spell prepared and can cast it once free per long rest."}
+    ],
+    "6": [{"name": "Aura of Protection", "desc": "You and allies within 10 ft add your Charisma modifier (min +1) to saving throws."}],
+    "7": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Sacred Oath subclass."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Abjure Foes", "desc": "Channel Divinity; force creatures within 60 ft to make a Wisdom save or be frightened and lose actions."}],
+    "10": [{"name": "Aura of Courage", "desc": "You and allies within 10 ft can't be frightened while you are conscious."}],
+    "11": [{"name": "Radiant Strikes", "desc": "Your melee weapon attacks deal an extra 1d8 radiant damage on a hit."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Restoring Touch", "desc": "Lay On Hands can also end charmed, frightened, paralyzed, or stunned conditions."}],
+    "15": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Sacred Oath subclass."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "18": [{"name": "Aura Expansion", "desc": "Your auras radiate to 30 feet instead of 10 feet."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Subclass Feature", "desc": "Gain your capstone feature granted by your Sacred Oath subclass."}]
+  },
+  "ranger": {
+    "1": [
+      {"name": "Spellcasting", "desc": "Cast ranger spells using Wisdom; prepare spells from the ranger list (half-caster)."},
+      {"name": "Favored Enemy", "desc": "You always have Hunter's Mark prepared and can cast it a number of times per long rest for free."},
+      {"name": "Weapon Mastery", "desc": "Use the mastery property of two weapons you have proficiency with."}
+    ],
+    "2": [
+      {"name": "Deft Explorer", "desc": "Gain Expertise in a skill plus extra languages; later grants extra speed and resilience benefits."},
+      {"name": "Fighting Style", "desc": "Choose a Fighting Style feat granting a combat bonus (e.g. Archery, Two-Weapon Fighting)."}
+    ],
+    "3": [{"name": "Ranger Subclass", "desc": "Choose a ranger subclass (Conclave), gaining its features now and at later levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Extra Attack", "desc": "Attack twice instead of once when you take the Attack action.", "extra_attacks": 1}],
+    "6": [{"name": "Roving", "desc": "Your speed increases by 10 ft and you gain a climbing and swimming speed equal to your speed."}],
+    "7": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your ranger subclass."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Expertise", "desc": "Choose two skill proficiencies to double your proficiency bonus."}],
+    "10": [{"name": "Tireless", "desc": "Action; grant yourself temporary hit points equal to 1d8 + Wis mod, several times per long rest, and reduce exhaustion."}],
+    "11": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your ranger subclass."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "13": [{"name": "Relentless Hunter", "desc": "Taking damage can't break your concentration on Hunter's Mark."}],
+    "14": [{"name": "Nature's Veil", "desc": "Bonus action; magically become invisible until the end of your next turn, several times per long rest."}],
+    "15": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your ranger subclass."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Precise Hunter", "desc": "You have advantage on attack rolls against the creature marked by your Hunter's Mark."}],
+    "18": [{"name": "Feral Senses", "desc": "You gain blindsight out to 30 feet, sensing creatures you can't see within that range."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Foe Slayer", "desc": "Once per turn deal an extra 1d10 force damage to a creature marked by your Hunter's Mark."}]
+  },
+  "rogue": {
+    "1": [
+      {"name": "Sneak Attack", "desc": "Once per turn deal extra damage to a target you hit with advantage or that's near an ally.", "sneak_attack_dice": "1d6"},
+      {"name": "Expertise", "desc": "Double your proficiency bonus for two chosen skill proficiencies."},
+      {"name": "Thieves' Cant", "desc": "You know the secret rogue mix of dialect, jargon, and code used to convey hidden messages."},
+      {"name": "Weapon Mastery", "desc": "Use the mastery property of two weapons you have proficiency with."}
+    ],
+    "2": [{"name": "Cunning Action", "desc": "Bonus action each turn to Dash, Disengage, or Hide."}],
+    "3": [
+      {"name": "Rogue Subclass", "desc": "Choose a rogue subclass (Roguish Archetype), gaining its features now and at later levels."},
+      {"name": "Steady Aim", "desc": "Bonus action; if you don't move this turn, gain advantage on your next attack roll.", "sneak_attack_dice": "2d6"}
+    ],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [
+      {"name": "Cunning Strike", "desc": "Spend Sneak Attack dice to add effects like Poison, Trip, or Withdraw to your Sneak Attack.", "sneak_attack_dice": "3d6"},
+      {"name": "Uncanny Dodge", "desc": "Reaction; halve the damage of an attack that hits you."}
+    ],
+    "6": [{"name": "Expertise", "desc": "Choose two more skill proficiencies to double your proficiency bonus."}],
+    "7": [
+      {"name": "Evasion", "desc": "On a Dex save for half damage, take no damage on a success and half on a failure."},
+      {"name": "Reliable Talent", "desc": "Treat any d20 of 9 or lower as a 10 for ability checks using your proficiency bonus.", "sneak_attack_dice": "4d6"}
+    ],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [{"name": "Sneak Attack (5d6)", "desc": "Your Sneak Attack damage increases.", "sneak_attack_dice": "5d6"}],
+    "10": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "11": [{"name": "Improved Cunning Strike", "desc": "You can apply two Cunning Strike effects with a single Sneak Attack.", "sneak_attack_dice": "6d6"}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "13": [{"name": "Sneak Attack (7d6)", "desc": "Your Sneak Attack damage increases; subclass feature gained.", "sneak_attack_dice": "7d6"}],
+    "14": [{"name": "Devious Strikes", "desc": "Gain stronger Cunning Strike options such as Daze, Knock Out, and Obscure."}],
+    "15": [{"name": "Slippery Mind", "desc": "Gain proficiency in Wisdom and Charisma saving throws.", "sneak_attack_dice": "8d6"}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Sneak Attack (9d6)", "desc": "Your Sneak Attack damage increases; subclass feature gained.", "sneak_attack_dice": "9d6"}],
+    "18": [{"name": "Elusive", "desc": "No attack roll has advantage against you while you aren't incapacitated."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Stroke of Luck", "desc": "Turn a missed attack into a hit or a failed check into a 20 once per short or long rest.", "sneak_attack_dice": "10d6"}]
+  },
+  "sorcerer": {
+    "1": [
+      {"name": "Spellcasting", "desc": "Cast sorcerer spells using Charisma; know spells and cantrips from the sorcerer list."},
+      {"name": "Innate Sorcery", "desc": "Bonus action; for 1 minute your spell save DC increases by 1 and you have advantage on attack rolls with sorcerer spells."}
+    ],
+    "2": [
+      {"name": "Font of Magic", "desc": "Gain Sorcery Points (equal to sorcerer level) you can convert to and from spell slots.", "sorcery_points": 2},
+      {"name": "Metamagic", "desc": "Learn two Metamagic options to alter spells by spending Sorcery Points."}
+    ],
+    "3": [{"name": "Sorcerer Subclass", "desc": "Choose a Sorcerous Origin subclass, gaining its features now and at later levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Sorcerous Restoration", "desc": "Regain expended Sorcery Points on a short rest (a number equal to half your sorcerer level)."}],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Sorcerous Origin subclass."}],
+    "7": [{"name": "Sorcery Incarnate", "desc": "If you have no uses of Innate Sorcery left, you can activate it by spending 2 Sorcery Points."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "10": [{"name": "Metamagic (4 known)", "desc": "Learn two additional Metamagic options."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Sorcerous Origin subclass."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Metamagic (6 known)", "desc": "Learn two additional Metamagic options."}],
+    "18": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Sorcerous Origin subclass."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Arcane Apotheosis", "desc": "While Innate Sorcery is active, you can use one free Metamagic option on each of your turns.", "sorcery_points": 20}]
+  },
+  "warlock": {
+    "1": [
+      {"name": "Pact Magic", "desc": "Cast warlock spells using Charisma; spell slots are all the same level and recharge on a short rest."},
+      {"name": "Eldritch Invocations", "desc": "Learn supernatural eldritch invocations that grant abilities; swap on level up.", "invocations_known": 1}
+    ],
+    "2": [{"name": "Eldritch Invocations (3 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 3}],
+    "3": [{"name": "Pact Boon", "desc": "Choose a Pact Boon invocation: Pact of the Blade, Chain, Talisman, or Tome."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Eldritch Invocations (5 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 5}],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Otherworldly Patron subclass."}],
+    "7": [{"name": "Eldritch Invocations (6 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 6}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "9": [
+      {"name": "Contact Patron", "desc": "You always have the Contact Other Plane spell prepared and can cast it to contact your patron for free."},
+      {"name": "Eldritch Invocations (7 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 7}
+    ],
+    "10": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Otherworldly Patron subclass."}],
+    "11": [{"name": "Mystic Arcanum (6th level)", "desc": "Choose one 6th-level warlock spell you can cast once per long rest without a slot."}],
+    "12": [
+      {"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."},
+      {"name": "Eldritch Invocations (8 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 8}
+    ],
+    "13": [{"name": "Mystic Arcanum (7th level)", "desc": "Choose one 7th-level warlock spell you can cast once per long rest without a slot."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Otherworldly Patron subclass."}],
+    "15": [{"name": "Mystic Arcanum (8th level)", "desc": "Choose one 8th-level warlock spell you can cast once per long rest without a slot.", "invocations_known": 9}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "17": [{"name": "Mystic Arcanum (9th level)", "desc": "Choose one 9th-level warlock spell you can cast once per long rest without a slot."}],
+    "18": [{"name": "Eldritch Invocations (10 known)", "desc": "You know additional eldritch invocations.", "invocations_known": 10}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Eldritch Master", "desc": "Spend 1 minute entreating your patron to regain all expended Pact Magic spell slots, once per long rest."}]
+  },
+  "wizard": {
+    "1": [
+      {"name": "Spellcasting", "desc": "Cast wizard spells using Intelligence; learn spells in a spellbook and prepare them after a rest."},
+      {"name": "Ritual Adept", "desc": "Cast any spell in your spellbook with the Ritual tag as a ritual without preparing it."},
+      {"name": "Arcane Recovery", "desc": "Once per day on a short rest, recover expended spell slots totaling half your wizard level (rounded up)."}
+    ],
+    "2": [{"name": "Scholar", "desc": "Gain Expertise in an Intelligence-based skill such as Arcana, History, Investigation, Medicine, Nature, or Religion."}],
+    "3": [{"name": "Wizard Subclass", "desc": "Choose an Arcane Tradition subclass, gaining its features now and at later levels."}],
+    "4": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "5": [{"name": "Memorize Spell", "desc": "After a short rest you can swap one prepared wizard spell for another from your spellbook."}],
+    "6": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Arcane Tradition subclass."}],
+    "8": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "10": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Arcane Tradition subclass."}],
+    "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Arcane Tradition subclass."}],
+    "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "18": [{"name": "Spell Mastery", "desc": "Choose a 1st- and a 2nd-level wizard spell you can cast at will without expending a spell slot."}],
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
+    "20": [{"name": "Signature Spells", "desc": "Choose two 3rd-level wizard spells you can cast once each per short rest without a spell slot."}]
+  }
+}

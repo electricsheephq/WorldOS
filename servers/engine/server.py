@@ -362,6 +362,13 @@ def create_character(
                 ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
                 if armor_class == 10:  # caller left AC unarmored -> class baseline
                     ch.armor_class = srd_tables.class_base_ac(cname)
+                for f in srd_tables.features_through(cname, level):
+                    if f["name"] not in ch.features:
+                        ch.features.append(f["name"])
+                    if "extra_attacks" in f:
+                        ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
+                    if f.get("sneak_attack_dice"):
+                        ch.sneak_attack_dice = f["sneak_attack_dice"]
                 _recompute_spellcasting(ch)
             except ValueError:
                 pass  # unknown class -> keep the explicit values
@@ -902,11 +909,24 @@ def level_up(
         ch.initiative_bonus = ch.ability_modifier(Ability.DEX)
         _recompute_spellcasting(ch)
 
+        # Class/subclass features gained at this new class level — leveling now
+        # grants real features (and the mechanical hints the engine references),
+        # not just HP and slots.
+        gained = srd_tables.features_at(cname, new_class_level)
+        for f in gained:
+            if f["name"] not in ch.features:
+                ch.features.append(f["name"])
+            if "extra_attacks" in f:
+                ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
+            if f.get("sneak_attack_dice"):
+                ch.sneak_attack_dice = f["sneak_attack_dice"]
+
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         sheet = c.characters[character_id].model_dump(mode="json")
         sheet["_hp_gained"] = gain
         sheet["_asi_applied"] = applied
+        sheet["_features_gained"] = gained
         return sheet
 
 

@@ -86,6 +86,25 @@ def class_base_ac(name: str) -> int:
     return _BASE_AC.get(name.lower(), 10)
 
 
+def features_at(class_name: str, level: int) -> list[dict]:
+    """The class/subclass features gained AT a given level (from the curated
+    class_features table), each ``{name, desc, ...hints}``. Empty if none or the
+    class is unknown. Hints include extra_attacks / sneak_attack_dice / rage_* for
+    the engine to apply at level-up."""
+    table = _load("class_features").get(class_name.lower(), {})
+    return list(table.get(str(int(level)), []))
+
+
+def features_through(class_name: str, level: int) -> list[dict]:
+    """All features gained from level 1 through `level` (for a character created
+    directly at a level rather than leveled up one step at a time)."""
+    table = _load("class_features").get(class_name.lower(), {})
+    out: list[dict] = []
+    for lv in range(1, int(level) + 1):
+        out.extend(table.get(str(lv), []))
+    return out
+
+
 def caster_type(name: str) -> str:
     return class_data(name)["caster_type"]
 

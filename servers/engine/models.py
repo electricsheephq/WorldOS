@@ -196,6 +196,9 @@ class Character(_StrictModel):
 
     # progression
     xp: int = 0
+    features: list[str] = Field(default_factory=list)  # class/subclass features gained
+    extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
+    sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
 
     # roleplay (companion / npc)
     personality: str = ""
