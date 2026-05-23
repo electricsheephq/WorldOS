@@ -555,6 +555,13 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
             if f.get("sneak_attack_dice"):
                 ch.sneak_attack_dice = f["sneak_attack_dice"]
+        # Grant the class's default skill proficiencies if none were chosen, so skill
+        # checks (incl. social_check) include the proficiency bonus instead of the DM
+        # inventing a modifier on an empty sheet. The caller can pass an explicit
+        # `skills` list to choose; this only fills an otherwise-empty list.
+        if not ch.skill_proficiencies:
+            sk = srd_tables.class_skills(cname)
+            ch.skill_proficiencies = list(sk.get("from", []))[: int(sk.get("count", 0))]
         _recompute_spellcasting(ch)
     except ValueError:
         pass  # unknown class -> keep the explicit values
@@ -575,6 +582,7 @@ def create_character(
     background: str = "",
     subclass: Optional[str] = None,
     apply_srd_defaults: bool = False,
+    skills: Optional[list] = None,
     add_to_party: bool = True,
 ) -> dict:
     """Create a character (player, companion, npc, or monster) and persist it.
@@ -620,6 +628,8 @@ def create_character(
             armor_class=armor_class,
             initiative_bonus=scores.modifier(Ability.DEX),
         )
+        if skills:  # explicit skill choices win over the class default-fill
+            ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class == 10))
         c.characters[ch.id] = ch
@@ -640,6 +650,7 @@ def recruit_companion(
     max_hp: int = 0,
     armor_class: int = 0,
     apply_srd_defaults: bool = True,
+    skills: Optional[list] = None,
 ) -> dict:
     """Promote an EXISTING roster NPC into the party's companion — the clean way to
     bring a world-seed candidate (e.g. "Minsc is ready", "Bram is ready") into the
@@ -669,6 +680,8 @@ def recruit_companion(
             ch.current_hp = max_hp
         if armor_class and armor_class > 0:
             ch.armor_class = armor_class
+        if skills:  # explicit skill choices win over the class default-fill
+            ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class <= 0))
         if ch.id not in c.party:

@@ -348,6 +348,7 @@ def test_recruit_companion_promotes_roster_npc_in_place(tmp_path, monkeypatch):
     assert sheet["max_hp"] == 45 and sheet["armor_class"] >= 10
     assert sheet["hit_dice"] == "5d10"                       # SRD ranger defaults filled
     assert sheet["saving_throw_proficiencies"]               # not the empty stub anymore
+    assert sheet["skill_proficiencies"]                      # class skills auto-granted (was [])
     assert "Extra Attack" in sheet["features"]               # level-5 ranger feature
     # NO duplicate: the promotion mutated the existing record in place, so the party
     # holds exactly the one Minsc (now a companion) and no NPC stub is left behind.
@@ -355,6 +356,27 @@ def test_recruit_companion_promotes_roster_npc_in_place(tmp_path, monkeypatch):
     assert [p for p in state["party"] if p["id"] == npc]     # the promoted Minsc is in the party
     assert sum(1 for p in state["party"] if p["name"] == "Minsc") == 1  # no clone
     assert state["npc_count"] == 0                           # the stub was promoted, not duplicated
+
+
+def test_apply_srd_defaults_grants_and_overrides_skill_proficiencies(tmp_path, monkeypatch):
+    # bg-QA HIGH (both runs): live-made characters had skill_proficiencies:[] so skill
+    # checks (incl. social_check) missed the proficiency bonus and the DM invented
+    # modifiers. apply_srd_defaults now fills the class's default skills; an explicit
+    # `skills` list overrides that default.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Skills")["id"]
+    rid = server.create_character(
+        cid, "Sneak", kind="player", class_name="Rogue", apply_srd_defaults=True,
+        abilities={"dexterity": 16},
+    )["id"]
+    rogue = server.get_character(cid, rid)
+    assert len(rogue["skill_proficiencies"]) == 4              # rogue chooses 4 — not empty
+    # explicit choices win over the default-fill
+    wid = server.create_character(
+        cid, "Pick", kind="player", class_name="Wizard", apply_srd_defaults=True,
+        skills=["arcana", "perception"],
+    )["id"]
+    assert set(server.get_character(cid, wid)["skill_proficiencies"]) == {"arcana", "perception"}
 
 
 def test_recruit_companion_is_idempotent_and_guards_kind(tmp_path, monkeypatch):
