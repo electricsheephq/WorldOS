@@ -139,6 +139,55 @@ def validate_adventure(adv: dict) -> list[str]:
                     f"scene {label!r} references unknown location_id {loc_ref!r}"
                 )
 
+    # --- arcs (optional multi-act campaign structure) ---------------------
+    arcs = adv.get("arcs", [])
+    if not isinstance(arcs, list):
+        problems.append(f"'arcs' must be a list, got {type(arcs).__name__}")
+    else:
+        arc_ids: set[str] = set()
+        for i, arc in enumerate(arcs):
+            where = f"arc[{i}]"
+            if not isinstance(arc, dict):
+                problems.append(f"{where} must be an object, got {type(arc).__name__}")
+                continue
+            arc_id = arc.get("id")
+            if not _is_nonempty_str(arc_id):
+                problems.append(f"{where} is missing a non-empty 'id'")
+            elif arc_id in arc_ids:
+                problems.append(f"duplicate arc id {arc_id!r}")
+            else:
+                arc_ids.add(arc_id)
+            label = arc_id if _is_nonempty_str(arc_id) else where
+            if not _is_nonempty_str(arc.get("title")):
+                problems.append(f"arc {label!r} is missing a non-empty 'title'")
+            beats = arc.get("beats", [])
+            if not isinstance(beats, list):
+                problems.append(f"arc {label!r} 'beats' must be a list")
+            else:
+                for j, beat in enumerate(beats):
+                    if not isinstance(beat, dict):
+                        problems.append(f"arc {label!r} beat[{j}] must be an object")
+                        continue
+                    if not _is_nonempty_str(beat.get("title")):
+                        problems.append(f"arc {label!r} beat[{j}] is missing a non-empty 'title'")
+                    loc_ref = beat.get("location_id")
+                    if loc_ref is not None and loc_ref not in location_ids:
+                        problems.append(
+                            f"arc {label!r} beat references unknown location_id {loc_ref!r}"
+                        )
+
+    # --- antagonist (optional hidden villain) -----------------------------
+    ant = adv.get("antagonist")
+    if ant is not None:
+        if not isinstance(ant, dict):
+            problems.append(f"'antagonist' must be an object, got {type(ant).__name__}")
+        else:
+            if not _is_nonempty_str(ant.get("name")):
+                problems.append("antagonist is missing a non-empty 'name'")
+            voice_id = ant.get("voice_id")
+            if _is_nonempty_str(voice_id) and voice_id not in KNOWN_VOICE_IDS:
+                problems.append(f"antagonist has unknown voice_id {voice_id!r}")
+
     return problems
 
 
@@ -185,3 +234,86 @@ def scaffold_adventure(
         },
         "conclusion": "",
     }
+
+
+def _level_bounds(level_range: Sequence[int]) -> tuple[int, int]:
+    lvls = list(level_range) or [1, 5]
+    lo = max(1, min(int(lvls[0]), 20))
+    hi = max(lo, min(int(lvls[-1]), 20))
+    return lo, hi
+
+
+def _level_bands(lo: int, hi: int, acts: int) -> list[list[int]]:
+    """Split the level range into `acts` contiguous, escalating bands."""
+    span = hi - lo
+    bands = []
+    for i in range(acts):
+        a = lo + (span * i) // acts
+        b = lo + (span * (i + 1)) // acts
+        bands.append([a, max(a, b)])
+    return bands
+
+
+def generate_campaign(
+    title: str,
+    premise: str = "",
+    num_acts: int = 3,
+    level_range: Sequence[int] = (1, 5),
+) -> dict:
+    """Generate a schema-correct MULTI-ACT campaign skeleton (a real generator,
+    not the empty scaffold). Produces a hidden antagonist, `num_acts` arcs each
+    with a hook/challenge/climax beat trio across escalating level bands, and a
+    home-base hub connected to one site per act. Passes validate_adventure() as-is;
+    the campaign-author fills in original/CC-only prose, the NPC roster, the
+    companion, and CR-balanced encounters per act, then re-validates before saving.
+
+    The shape mirrors a classic hub-and-spokes campaign (home base -> escalating
+    sites), the structure proven by published level-1->tier campaigns."""
+    acts = max(1, min(int(num_acts), 10))
+    lo, hi = _level_bounds(level_range)
+    base = scaffold_adventure(title, premise, [lo, hi])
+    base["antagonist"] = {
+        "id": "antagonist",
+        "name": "(unnamed villain — name me)",
+        "goal": "(the escalating scheme that ties the acts together — fill in)",
+        "hidden": True,
+        "voice_id": "npc-elder",
+    }
+    site_ids = [f"loc-act{i + 1}-site" for i in range(acts)]
+    base["locations"].append(
+        {
+            "id": "loc-hub",
+            "name": "Home Base",
+            "description": "(the safe hub the party returns to between acts — a town, keep, or camp)",
+            "connections": list(site_ids),
+        }
+    )
+    bands = _level_bands(lo, hi, acts)
+    arcs = []
+    for i in range(acts):
+        site_id = site_ids[i]
+        base["locations"].append(
+            {
+                "id": site_id,
+                "name": f"Act {i + 1} Site",
+                "description": f"(the principal location of act {i + 1} — fill in)",
+                "connections": ["loc-hub"],
+            }
+        )
+        arcs.append(
+            {
+                "id": f"arc-{i + 1}",
+                "title": f"Act {i + 1}",
+                "level_range": bands[i],
+                "beats": [
+                    {"id": f"act{i+1}-hook", "title": "Hook", "location_id": "loc-hub",
+                     "summary": "(what draws the party into this act)"},
+                    {"id": f"act{i+1}-challenge", "title": "Challenge", "location_id": site_id,
+                     "summary": "(the central obstacle / dungeon of the act)"},
+                    {"id": f"act{i+1}-climax", "title": "Climax", "location_id": site_id,
+                     "summary": "(the act's payoff; the antagonist's hand shows more each act)"},
+                ],
+            }
+        )
+    base["arcs"] = arcs
+    return base

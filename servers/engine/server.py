@@ -1410,6 +1410,20 @@ def scaffold_adventure(title: str, premise: str = "", min_level: int = 1, max_le
 
 
 @mcp.tool()
+def generate_campaign(
+    title: str, premise: str = "", num_acts: int = 3, min_level: int = 1, max_level: int = 5
+) -> dict:
+    """Generate a MULTI-ACT campaign skeleton (not just a one-shot scaffold): a
+    hidden antagonist, `num_acts` arcs each with hook/challenge/climax beats across
+    escalating level bands, and a home-base hub connected to one site per act. The
+    campaign-author fills in original prose, the NPC roster + companion, and
+    CR-balanced encounters per act, then validates with validate_adventure before
+    saving under content/campaigns/<id>/. Use for a full campaign rather than a
+    single dungeon."""
+    return generator.generate_campaign(title, premise, num_acts, (min_level, max_level))
+
+
+@mcp.tool()
 def get_house_rules(campaign_id: str) -> dict:
     """Return the campaign's house-rule configuration."""
     return _require(campaign_id).house_rules.model_dump()
