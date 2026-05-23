@@ -24,6 +24,7 @@ import dice as dice_mod
 import encounter
 import generator
 import inventory
+import ledger as ledger_mod
 import npc as npc_mod
 import recap
 import rests
@@ -1412,6 +1413,32 @@ def session_recap(campaign_id: str) -> dict:
     if not sid:
         return {"recap": recap.format_recap([])}
     return {"recap": recap.recap_from_store(campaign_id, sid)}
+
+
+@mcp.tool()
+def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: int = 8) -> dict:
+    """Search the WHOLE campaign's history (the memory ledger) — events, dialogue,
+    decisions, NPC facts, quest milestones, consequences — ranked by relevance.
+    The DM and companions use this to stay consistent and call back to the past
+    ("what did we decide about the cult?", "who did we meet in the sump?"). Read-
+    only; the index is rebuilt from committed state when stale. `kinds` optionally
+    filters (events|dialogue|decision|npc_fact|quest_milestone|consequence)."""
+    return {"query": query, "hits": ledger_mod.recall(campaign_id, query, kinds=kinds, limit=limit)}
+
+
+@mcp.tool()
+def recall_npc(campaign_id: str, npc_id: str, limit: int = 12) -> dict:
+    """Everything the campaign has recorded about / said by one character — facts
+    (`remember`), dialogue, attitude shifts. Use before role-playing a returning
+    NPC so they remember the party."""
+    return {"npc_id": npc_id, "hits": ledger_mod.recall_npc(campaign_id, npc_id, limit=limit)}
+
+
+@mcp.tool()
+def recall_decisions(campaign_id: str, query: str = "", limit: int = 12) -> dict:
+    """The party's past decisions (from record_decision), most recent first, or
+    filtered by a text query. Use to honor or call back to earlier choices."""
+    return {"hits": ledger_mod.recall_decisions(campaign_id, query, limit=limit)}
 
 
 @mcp.tool()
