@@ -81,21 +81,27 @@ turn_retry() {
   printf '%s' "$r"
 }
 
-MCURSOR=0
+# The move cursor lives in a FILE, not a shell var: player_move runs inside $(...) (a
+# subshell), so a `MCURSOR=…` assignment is LOST on return — the cursor would stay 0 and
+# every beat would re-relay the ENTIRE move history to the DM (stale, ballooning input).
+# A file persists across the subshell, so each beat relays only the NEW moves.
+MCURSOR_FILE="$STATE_DIR/.mcursor"; echo 0 > "$MCURSOR_FILE"
 # A player turn via the constrained facade: the player acts ONLY through tools, which
-# append structured moves to $MOVES. Read the moves it made THIS turn and compose a
-# readable action for the DM (fall back to its reply text if it made no moves).
+# append structured moves to $MOVES. Relay ONLY the structured moves it made THIS turn —
+# NEVER its raw reply text (relaying free-text would re-open the over-writing hole the
+# facade exists to close, H4). If it called no move-tool, nudge once, then give up (empty).
 player_move() {
-  local first="$1" prompt="$2" txt total new
-  txt="$(turn player "$PSID" "$first" "$prompt")"
+  local first="$1" prompt="$2" cur total new
+  turn player "$PSID" "$first" "$prompt" >/dev/null
+  cur=$(cat "$MCURSOR_FILE" 2>/dev/null || echo 0); cur=${cur:-0}
   total=$(wc -l < "$MOVES" 2>/dev/null | tr -d ' '); total=${total:-0}
-  new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"
-  MCURSOR="$total"
-  if [ -n "$new" ]; then
-    printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
-  else
-    printf '%s' "$txt"
+  if [ "$total" -le "$cur" ]; then
+    turn player "$PSID" 0 "You didn't act. Take your action THROUGH YOUR TOOLS now — say(...) / do(...) / request_check(...) / cast_spell(...) / use_item(...) / attack(...). Tools only, no prose." >/dev/null
+    total=$(wc -l < "$MOVES" 2>/dev/null | tr -d ' '); total=${total:-0}
   fi
+  new="$(tail -n +"$((cur + 1))" "$MOVES" 2>/dev/null)"
+  echo "$total" > "$MCURSOR_FILE"
+  [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
 }
 
 # P0: the player introduces their character + opening intent.
@@ -142,10 +148,16 @@ done
 turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point and call end_session with a one-line summary." >/dev/null
 echo "[duo] distilling + scoring…"
 python3 qa/distill.py "$COMBINED" 2>/dev/null
+# The PLAYED exchange (both sides) for the STORY scorer: scene_craft/playability must be
+# judged on the actual back-and-forth (player moves + DM responses), not the DM's narration
+# in isolation. Mechanical scoring stays on the DM distill (it grades tool usage, which lives there).
+PLAY="$T/$RUN.play.md"
+jq -rs 'map((.role|ascii_upcase) + ": " + (.text // "")) | join("\n\n")' "$CHAT" > "$PLAY" 2>/dev/null
+[ -s "$PLAY" ] || cp "$T/$RUN.md" "$PLAY" 2>/dev/null
 CAMP="$(find "$STATE_DIR/campaigns" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)"
 if [ -n "$CAMP" ] && [ -f "$CAMP/snapshot.json" ]; then cp "$CAMP/snapshot.json" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
+[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
 python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES"; GATE=$?
 echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
