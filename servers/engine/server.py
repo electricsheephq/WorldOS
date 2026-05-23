@@ -586,6 +586,7 @@ def create_character(
     subclass: Optional[str] = None,
     apply_srd_defaults: bool = False,
     skills: Optional[list] = None,
+    location_id: str = "",
     add_to_party: bool = True,
 ) -> dict:
     """Create a character (player, companion, npc, or monster) and persist it.
@@ -635,6 +636,11 @@ def create_character(
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class == 10))
+        # Anchor NPCs/monsters to where they're introduced so "who's in the scene" is
+        # the current location's cast — not the whole seeded world roster. Explicit
+        # location_id wins; otherwise default to the party's current location.
+        if kind in ("npc", "monster"):
+            ch.location_id = location_id or c.current_location_id
         c.characters[ch.id] = ch
         if add_to_party and kind in ("player", "companion"):
             c.party.append(ch.id)

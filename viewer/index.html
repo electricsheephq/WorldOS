@@ -101,8 +101,11 @@ function renderState(s) {
       ${(c.conditions||[]).length ? `<span class="cond">${esc((c.conditions||[]).join(", "))}</span>`:""}
     </div>`).join("") || `<div class="empty">No party yet.</div>`;
 
-  // NPCs/monsters at the current location are "in the scene" (best-effort: all npcs/monsters)
-  const scene = Object.values(s.characters||{}).filter(c => c.kind==="npc" || c.kind==="monster");
+  // Who's actually here: NPCs/monsters anchored to the current location, plus anyone
+  // in the current combat — NOT the whole seeded world roster.
+  const combatIds = new Set(((s.combat||{}).order||[]).map(o => o.character_id));
+  const scene = Object.values(s.characters||{}).filter(c =>
+    (c.kind==="npc" || c.kind==="monster") && (c.location_id===curId || combatIds.has(c.id)));
   $("scene").innerHTML = scene.slice(0,12).map(c =>
     `<div class="who">${avatar(c)}<span class="name">${esc(c.name)}</span>
       <span class="vid">${esc(c.attitude||c.voice_id||"")}</span></div>`).join("") || `<div class="empty">—</div>`;

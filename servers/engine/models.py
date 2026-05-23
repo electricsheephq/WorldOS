@@ -148,6 +148,9 @@ class Character(_StrictModel):
     kind: CharacterKind = "player"
     # logical voice id; resolved to a real backend voice via content/voices/voice-map.json
     voice_id: str = "narrator-dm"
+    # which location an NPC/monster is anchored to (where it was introduced), so the
+    # play-view shows the local cast "in the scene" — not the whole world roster.
+    location_id: Optional[str] = None
 
     # identity / build
     race: str = ""

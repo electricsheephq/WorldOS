@@ -477,3 +477,18 @@ def test_stabilize_closes_the_aid_downed_loop(tmp_path, monkeypatch):
     # can't stabilize someone already stable (or not downed)
     with pytest.raises(ValueError, match="downed"):
         server.stabilize(cid, medic, downed)
+
+
+def test_created_npc_is_anchored_to_current_location(tmp_path, monkeypatch):
+    # Dashboard "In the scene" was showing the whole seeded world roster. NPCs/monsters
+    # are now anchored to where they're introduced, so the scene = the local cast.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Anchor")["id"]
+    hub = server.add_location(cid, "Hub", "the hub")["id"]  # first location -> current
+    npc = server.create_character(cid, "Barkeep", kind="npc")["id"]
+    assert server.get_character(cid, npc)["location_id"] == hub          # anchored to current
+    far = server.add_location(cid, "Far", "far", connections=[hub])["id"]
+    npc2 = server.create_character(cid, "Hermit", kind="npc", location_id=far)["id"]
+    assert server.get_character(cid, npc2)["location_id"] == far          # explicit wins
+    pc = server.create_character(cid, "Hero", kind="player")["id"]
+    assert not server.get_character(cid, pc)["location_id"]               # players unanchored
