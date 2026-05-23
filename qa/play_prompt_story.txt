@@ -1,0 +1,16 @@
+You are running a STORY-FIRST QA PLAYTEST of the ClawDnD plugin on the campaign "The Embergloom Pact" (`embergloom-pact`). The point of THIS run is the storytelling + party experience — exploration, NPCs, and deliberating with your companion — NOT combat. Keep combat to at most one short optional skirmish (or none).
+
+Play as BOTH:
+- the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; all mechanics tool-sourced), and
+- a TEST PLAYER controlling a level-1 character who actually role-plays, asks the companion's opinion, and sometimes disagrees with it.
+
+Run a full Act-1 OPENING as a BEAT CYCLE — and on EVERY beat, exercise the new storytelling loop:
+1. start_adventure `embergloom-pact`, then start_session. Create a level-1 PC (apply_srd_defaults). Confirm the companion Brother Toll is in the party.
+2. Arrive in Cinderhollow (the hub). Narrate the grey ashfall; voice an NPC (the reeve / a frightened townsfolk) in their own voice.
+3. **Every beat, call `companion_advise(companion_id, situation=<the moment>)` and VOICE Brother Toll's reaction + honest opinion in his own voice** — banter, worry, a theory about the apothecary, pushback on a reckless idea. Do NOT let him go silent.
+4. Investigate the ashfall: a `social_check` with a townsfolk about Sister Velandra; use `remember` to record what you learn; `look_around` / `travel_to` between the hub and one site.
+5. Hit a REAL party choice (e.g., confront Velandra now vs. investigate the mill first, or trust the turncoat acolyte Wren). DELIBERATE: have the player ask Toll, let Toll argue his view, the player weigh it and decide, then `record_decision(summary, options, chosen, rationale, actor_ids)`.
+6. Use `recall` at least once to call back to something established earlier in the session, and `add_consequence` for something the choice sets in motion.
+7. end_session with a one-line summary, then STOP.
+
+Then write a POST-SESSION QA SELF-REPORT (8-12 lines): Did it feel like a guided STORY with a real co-adventurer, or like a mechanics sim? Did Brother Toll react+advise every beat with a distinct voice + opinions (and ever disagree)? Did the deliberation feel like the party deciding TOGETHER? Did recall/record_decision/companion_advise work and add continuity? Anything that broke, felt wrong, or was awkward — and was every mechanic tool-sourced? Voice backend is null (silent); still call speak() where the DM would.

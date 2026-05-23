@@ -19,6 +19,7 @@ cd "$ROOT" || exit 1
 RUN="${1:-$(date +%Y%m%d-%H%M%S)}"
 BUDGET="${2:-3.00}"
 PROMPT_FILE="${3:-qa/play_prompt.txt}"
+RUBRIC_FILE="${4:-qa/rubric.md}"
 T="qa/transcripts"
 mkdir -p "$T" qa/state
 
@@ -48,7 +49,7 @@ fi
 
 echo "[qa] scoring…"
 SCORER_INPUT="$(printf '%s\n\n# ===== OUTPUT FORMAT =====\nRespond with ONLY a single JSON object conforming to this schema — no prose, no markdown, no code fences:\n%s\n\n# ===== DISTILLED TRANSCRIPT =====\n%s\n\n# ===== FINAL ENGINE STATE (ground truth) =====\n%s\n' \
-  "$(cat qa/rubric.md)" "$(cat qa/score_schema.json)" "$(cat "$T/$RUN.md")" "$(cat "$T/$RUN.state.json")")"
+  "$(cat "$RUBRIC_FILE")" "$(cat qa/score_schema.json)" "$(cat "$T/$RUN.md")" "$(cat "$T/$RUN.state.json")")"
 
 claude -p "$SCORER_INPUT" \
   --model sonnet --permission-mode bypassPermissions \
