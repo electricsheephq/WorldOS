@@ -46,24 +46,18 @@ def seed_threads(campaign: Campaign, threads: list[str], start_day: int = 3, sta
 
 
 def tick(campaign: Campaign, max_beats: int = 2) -> list[Consequence]:
-    """Fire due thread-beats (thread_id set, trigger_day <= today, unfired), mark them,
-    and reschedule each thread's NEXT beat ~_RECUR_DAYS out. Returns the fired beats for
-    the DM to weave in. Mutates the campaign. Non-thread consequences are untouched
-    (those are handled by `consequences.due`)."""
+    """Fire due thread-beats (thread_id set, trigger_day <= today) and RE-ARM each in
+    place ~_RECUR_DAYS out. A standing thread is a PERPETUAL TIMER, not a one-shot, so
+    the same record is just pushed forward rather than marked fired + replaced by a new
+    one — that keeps exactly one record per thread for the life of the campaign (no
+    unbounded growth of dead `fired` consequences) while the thread keeps ticking.
+    Returns the beats that fired this call for the DM to weave in. Mutates the campaign.
+    Non-thread consequences are untouched (those are handled by `consequences.due`)."""
     fired: list[Consequence] = []
-    for c in list(campaign.consequences):  # snapshot — we append while iterating
+    for c in campaign.consequences:  # re-arm in place -> no append, no snapshot needed
         if c.thread_id and not c.fired and c.trigger_day <= campaign.day:
-            c.fired = True
             fired.append(c)
-            base = c.note or c.text
-            campaign.consequences.append(
-                Consequence(
-                    thread_id=c.thread_id,
-                    trigger_day=campaign.day + _RECUR_DAYS,
-                    text=base,
-                    note=base,
-                )
-            )
+            c.trigger_day = campaign.day + _RECUR_DAYS  # the timer rolls forward
             if len(fired) >= max(1, max_beats):
                 break
     return fired

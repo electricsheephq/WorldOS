@@ -28,12 +28,27 @@ def test_tick_fires_due_and_reschedules_the_thread():
     assert worldsim.tick(c) == []          # nothing due at day 1
     c.day = 5                              # advance past the day-4 trigger
     fired = worldsim.tick(c)
-    assert len(fired) == 1 and "dukedom" in fired[0].text and fired[0].fired
-    # the thread re-armed itself a few days out — it keeps ticking
+    assert len(fired) == 1 and "dukedom" in fired[0].text
+    # the thread re-armed itself in place a few days out — it keeps ticking
     pend = worldsim.pending_threads(c)
     assert len(pend) == 1
     assert pend[0].thread_id == fired[0].thread_id
     assert pend[0].trigger_day == 5 + worldsim._RECUR_DAYS
+
+
+def test_tick_reschedules_in_place_without_growing_the_list():
+    # Finding 2 (adversarial review): the old design marked a beat fired and APPENDED
+    # a successor every cycle, so a long campaign accrued hundreds of dead records
+    # (snapshot bloat + re-indexed on every recall). A standing thread is a perpetual
+    # timer: re-armed in place, the record count stays put no matter how long we play.
+    c = _camp(day=1)
+    worldsim.seed_threads(c, ["a cult recruits", "a throne contested"])
+    assert len(c.consequences) == 2
+    for d in range(5, 60, 5):              # tick every 5 days out to ~day 55
+        c.day = d
+        worldsim.tick(c, max_beats=5)
+    assert len(c.consequences) == 2        # still exactly one record per thread — no growth
+    assert len(worldsim.pending_threads(c)) == 2  # and both threads are still live
 
 
 def test_tick_leaves_plain_consequences_to_the_consequence_engine():
