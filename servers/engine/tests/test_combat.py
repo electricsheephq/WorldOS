@@ -201,3 +201,33 @@ def test_remove_combatant(tmp_path, monkeypatch):  # H2
     server.start_combat(cid, [a, b])
     view = server.remove_combatant(cid, b)
     assert all(cb["character_id"] != b for cb in view["order"])
+
+
+def test_remove_combatant_after_many_rounds_keeps_current_and_round_sane(tmp_path, monkeypatch):
+    # Regression: turn_index was a MONOTONIC counter (next_turn only did +=1) while
+    # remove_combatant treated it as a normalized index ("idx < turn_index"). After
+    # several rounds turn_index >> n, so removing an already-acted EARLIER combatant
+    # wrongly decremented the pointer and SKIPPED the current combatant's turn (and
+    # drifted the round counter). turn_index is now normalized to [0, n).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("rounds")["id"]
+    ids = [server.create_character(cid, f"C{i}", kind="monster", max_hp=10)["id"] for i in range(4)]
+    view = server.start_combat(cid, ids)
+    order = [cb["character_id"] for cb in view["order"]]  # the rolled initiative order
+
+    # Advance 6 turns: with n=4 the pointer lands on order[2]; turn_index would have
+    # reached 6 under the old monotonic scheme — large enough to trigger the bug.
+    last = None
+    for _ in range(6):
+        last = server.next_turn(cid)
+    assert last["current"] == order[2]
+    round_before = last["round"]
+
+    # Remove order[0] — already acted this cycle, EARLIER than the current combatant.
+    # Whose turn it is must NOT change, and the round must not jump.
+    after = server.remove_combatant(cid, order[0])
+    assert after["current"] == order[2], "removing an earlier combatant skipped the current turn"
+    assert after["round"] == round_before
+    assert 0 <= after["turn_index"] < len(after["order"])  # normalized, not monotonic

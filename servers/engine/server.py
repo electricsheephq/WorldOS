@@ -802,8 +802,12 @@ def next_turn(campaign_id: str) -> dict:
         n = len(order)
         cur = None
         for _ in range(n):  # at most one full lap; skip dead/removed combatants
-            c.combat.turn_index += 1
-            if c.combat.turn_index % n == 0:
+            # Keep turn_index NORMALIZED to [0, n) — it's a position, not a running
+            # tally. (A monotonic counter desynced remove_combatant's index math,
+            # skipping the current turn after a few rounds.) A wrap back to the top
+            # of the initiative order starts a new round.
+            c.combat.turn_index = (c.combat.turn_index + 1) % n
+            if c.combat.turn_index == 0:
                 c.combat.round += 1
             candidate = c.characters.get(c.combat.current_combatant_id)
             if candidate is not None and not candidate.dead:
