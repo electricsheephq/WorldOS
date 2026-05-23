@@ -409,6 +409,7 @@ def add_location(
         c = _require(campaign_id)
         conns = [str(x) for x in (connections or [])]
         coords = tuple(hex) if hex and len(hex) == 2 else None
+        warnings: list[str] = []
         existing = c.locations.get(location_id) if location_id else None
         if existing is not None:  # update / fill-in a placeholder
             if name:
@@ -419,22 +420,39 @@ def add_location(
                 existing.hex = coords
             loc = existing
         else:
+            # Advisory: a same-named location usually means the DM meant the existing place.
+            dup = next((l for l in c.locations.values() if l.name.strip().lower() == name.strip().lower()), None)
+            if dup is not None:
+                warnings.append(
+                    f"a location named {name!r} already exists ({dup.id!r}) — pass "
+                    f"location_id={dup.id!r} to update it instead of creating a duplicate"
+                )
             loc = Location(name=name, description=description, hex=coords)
             if location_id:
                 loc.id = location_id  # honor a caller-chosen id (e.g. a generated skeleton's)
             c.locations[loc.id] = loc
+        unresolved: list[str] = []
         for other_id in conns:  # wire bidirectional edges to existing locations only
             if other_id == loc.id:
                 continue
             other = c.locations.get(other_id)
             if other is None:
+                unresolved.append(other_id)
                 continue
             if other_id not in loc.connections:
                 loc.connections.append(other_id)
             if loc.id not in other.connections:
                 other.connections.append(loc.id)
+        if unresolved:
+            warnings.append(f"unknown connection ids skipped (no such location): {unresolved}")
         if c.current_location_id is None:
             c.current_location_id = loc.id
+        # Orphan guard: a non-current location with no edges can never be reached.
+        if loc.id != c.current_location_id and not loc.connections:
+            warnings.append(
+                f"location {loc.id!r} has NO connections — it is unreachable; call add_location "
+                f"again with connections=[an existing location id] to wire it into the map"
+            )
         save_campaign(c)
     return {
         "id": loc.id,
@@ -442,6 +460,7 @@ def add_location(
         "connections": loc.connections,
         "is_current": c.current_location_id == loc.id,
         "location_count": len(c.locations),
+        "warnings": warnings,
     }
 
 

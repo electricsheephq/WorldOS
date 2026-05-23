@@ -294,6 +294,21 @@ def test_add_location_upserts_a_placeholder(tmp_path, monkeypatch):
     assert server.get_state(cid)["location"]["name"] == "Hollowmere"
 
 
+def test_add_location_warns_on_orphan_dup_and_bad_connections(tmp_path, monkeypatch):
+    # adversarial review #5: silent orphans + duplicate names break travel/recall.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("W")["id"]
+    hub = server.add_location(cid, "Hub", "the hub")          # first -> current
+    assert hub["is_current"] and not hub["warnings"]
+    orphan = server.add_location(cid, "Far Tower", connections=["loc-typo"])  # all conns bad
+    assert any("unreachable" in w for w in orphan["warnings"])
+    assert any("unknown connection" in w for w in orphan["warnings"])
+    dup = server.add_location(cid, "Hub", connections=[hub["id"]])            # duplicate name
+    assert any("already exists" in w for w in dup["warnings"])
+    good = server.add_location(cid, "Market", connections=[hub["id"]])       # properly wired
+    assert not good["warnings"]
+
+
 def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("embergloom-pact")["campaign_id"]
