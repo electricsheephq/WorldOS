@@ -13,7 +13,7 @@ Inputs (whatever exists):
   - <run>.state.json  the final engine snapshot (ground truth)
   - <run>.chat.jsonl  the two-sided conversation log (duo runs only)
 
-Usage: assert_behavioral.py <run.jsonl> <state.json> [<chat.jsonl>]
+Usage: assert_behavioral.py <run.jsonl> <state.json> [<chat.jsonl>] [<moves.jsonl>]
 Exit 0 = GREEN (warnings allowed), 1 = RED (a fatal gate failed), 2 = usage.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ _OVERWRITE = (
 
 def main() -> int:
     if len(sys.argv) < 3:
-        print("usage: assert_behavioral.py <run.jsonl> <state.json> [<chat.jsonl>]", file=sys.stderr)
+        print("usage: assert_behavioral.py <run.jsonl> <state.json> [<chat.jsonl>] [<moves.jsonl>]", file=sys.stderr)
         return 2
     events = _load_jsonl(sys.argv[1])
     chat = _load_jsonl(sys.argv[3]) if len(sys.argv) > 3 else []
@@ -99,10 +99,20 @@ def main() -> int:
             (r.get("text", "") or "")[:70]
             for r in chat
             if r.get("role") == "player"
+            # structured facade moves ("[say] …", "[do] …") are in-lane by construction
+            and not (r.get("text", "") or "").lstrip().startswith("[")
             and (len(r.get("text", "")) > 700
                  or any(k in (r.get("text", "") or "").lower() for k in _OVERWRITE))
         ]
         chk("player_in_lane", not bad, f"{len(bad)} turn(s) look like over-writing: {bad[:2]}", fatal=False)
+
+    # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
+    # tools. An empty moves log means the facade was blocked/unused (e.g. a missing
+    # --permission-mode), even though it may have produced complaint text.
+    if len(sys.argv) > 4 and sys.argv[4]:
+        mv = _load_jsonl(sys.argv[4])
+        chk("player_used_facade", len(mv) > 0,
+            f"{len(mv)} facade moves recorded (0 ⇒ the player's tools were blocked/unused)")
 
     # 4) dice actually fired somewhere (a whole session with zero rolls is broken)
     dice = tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0)
