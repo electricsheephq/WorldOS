@@ -56,7 +56,8 @@ def _pages(world_id: str) -> list[dict]:
     if d is None:
         return []
     out: list[dict] = []
-    for f in sorted(d.glob("*.md")):
+    # Recursive: authored pages live at lore/*.md; ingested wiki pages at lore/wiki/*.md.
+    for f in sorted(d.rglob("*.md")):
         try:
             raw = f.read_text(encoding="utf-8")
         except OSError:

@@ -18,6 +18,9 @@
 # tree so the public repo stays clean. NEVER commit.
 /content/worlds/_private/
 
+# Raw wiki-ingest cache (tools/ingest) — fetched source, regenerable; not committed.
+/tools/ingest/.cache/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,0 +1,45 @@
+# Dead Three
+
+The **Dead Three**, also known as the **Dark Gods**, was a collective of three death-themed deities: Bane, the Lord of Darkness; Bhaal, the Lord of Murder; and Myrkul, the Lord of Bones. Originally, they were powerful mortal adventurers who sought the path to godhood and were known as the **Dark Three**. They found it in the form of Jergal, who acquiesced to their demands as he was tiring of his life as god of the dead. He gave up his portfolios to the three of them, apotheosizing them in the process. Bane ruled tyranny and strife, Bhaal became the god of murder, and Myrkul was lord of the dead.
+
+They earned the name 'Dead Three' when they all perished during the Time of Troubles in the mid—14 century DR. Bane and Torm killed each other in Tantras; Myrkul was killed by the mortal mage Midnight; and Bhaal was slain by Cyric using the sword *Godsbane*, an avatar of Mask.
+
+## History
+### Mortal Life
+In the mists of the past, centuries before Dale Reckoning, the Dark Three were three power-hungry mortals: Bane, the tyrant; Myrkul, the necromancer; and Bhaal, the assassin. The three forged a pact to achieve godhood or die trying, with their eyes on the ultimate prize of the portfolio of Jergal, Lord of the End of Everything. The three traveled the lengths of Faerûn, endured epic quests.
+
+In the , the three adventurers marshalled an unlikely alliance of champions. Notable among them were the wizards of Barze, the nomadic peoples of Varm, gnoll warriors of Flindyke, along with goliaths of Akoro, and gnomes from Forharn. Together under the canopy of the Frozen Forest, they defeated Maram of the Broken Spear, one of Seven Lost Gods, who had been enlisted by agents of Netheril to fight in Seven Sigils War a century earlier. but escaped their control. The Dark Three used the opportunity to each steal a portion of Maram's divinity for themselves.
+
+With this small portion of divine power the three powerful, but still mortal, companions traveled to the Gray Waste and sought the Castle of Bone. They battled through seemingly endless hordes of undead, including skeletons, zombies, spectres, wraiths, and even liches. After defeating the legions of Jergal's minions they came upon the mighty god upon his throne of bone.
+
+Immediately, the Dark Three claimed the throne as their own, bickering for a moment before the God of the Dead addressed the companions. Much to their surprise, Jergal willingly stepped aside, claiming that he was happy to grant his powers to one of the trio. He offered his guidance to the new ruler, until they were ready to oversee the dead on their own, then asked which among them would take their seat on the throne. At this point they returned to squabbling and a fierce fight broke out between the former friends. Indifferent to their wants, but not wanting to see them battle for eternity or die from exhaustion, Jergal resolved their dispute with a game of skill.
+
+While a failed game of "skull bowling" led nowhere, in part due to the intervention of the god Malar, Jergal suggested leaving the decision up to Lady Luck. He proceeded to break off his skeletal finger bones and the three dark travelers proceeded to play a game of knucklebones. Bane emerged as the winner and took on the divine portfolios of hatred, strife, and tyranny. Myrkul, who came in second place, took reign over the dead and Bhaal was left with dominion over death and murder.
+
+### As Deities
+The Dead Three reigned over their respective realms for many years. True to his word, Bane spread hate and tyrannical rule across Faerûn, inspired a network of zealous wizards and thralls in the Zhentarim during the 13 century DR, and under a century later would come to be one of the most hated deities and the face of evil across the continent. Myrkul never enjoyed the widespread, dreadful veneration as was found among the followers of Bane but he was given constant offerings at funerals, by mourning loved ones full of fear and sorrow. Bhaal on the other hand became a god of immense power, having garnered the servitude of Loviatar and Talona in the divine realm while his avatar Kazgaroth, which on Toril was believed to an aspect of Malar, wreaked havoc in the Moonshae Isles on Toril.
+
+In the , the great seer Alaundo arrived at the library fortress of Candlekeep, where he presented the monks with his many prophecies. Among them was a vision that Bhaal would become aware of his imminent death as a god and ensure his legacy by sowing his seed across Faerûn, with little to no regard for his partners. Alaundo's divination was true and, by the mid–14 century, Bhaal had spawned a score of mortal progeny.
+
+Bane also saw his influence on Toril extending beyond his existence, though the creation of his offspring was somewhat less prolific. Sometime before 710 DR, the half-fiend known as Iyachtu Xvim was spawned as a result of the union between the Black Lord and a true tanar'ri and walked onto Toril through an Abyssal portal in Westgate.
+
+### Time of Troubles
+Consumed by greed for even more power, Bane and Myrkul conspired together to steal the Tablets of Fate from Lord Ao. Frustrated with the deities' growing apathy and abdication of their duties, Ao struck down all the gods to weakened forms of their respective avatars, sending the Tablets to the world of Toril and ushering in the Time of Troubles as well as the dawn of the Era of Upheaval. The reign of each of the three *Dark Gods* came to an end during this time, at least temporarily.
+
+After the avatar of Bane appeared on Toril, he rallied his clergy and agents of the Zhentarim and began to hunt down the Tablets of Fate. He was joined in this endeavour by his fellow former allies, Myrkul and Bhaal. While the tyrant originally assaulted the town of Shadowdale, which ended in a battle with Elminster and Mystra, he eventually discovered the location of one of these artifacts, guarded by the avatar of Torm in the Temple of Torm's Coming in the city of Tantras.
+
+Myrkul appeared in West Faerûn and he proceeded to travel to the Chauntean temple of Goldenfields in the Sword Coast North. The avatar of the God of Death was defeated in battle by the High Priest Tolgar Anuvien, a feat which nearly killed the former Crazed Venturer. Sometime after this battle, Myrkul learned of the location of one of tablets, reclaimed the artifact and brought it to his realm of the Great Waste of Hades.
+
+#### Battle of Tantras
+On Eleasis 13 1358 DR, As the forces of Zhentil Keep prepared to invade the city on the coast of the Dragon Reach, Myrkul had his clergy work on a mass-scale *death spell*. Having gained the true names of all the assassins of Faerûn, his worshipers killed scores of followers of Bhaal in a single moment. Meanwhile the priests of Bane performed a ceremony known as the *Stealing of the Souls*, which allowed them to harness the great amount of life force that had been released at once.
+
+As a result, Bane's essence was transferred from his avatar to the colossal, massively-armored statue of black glass that was known as the *Black Brother*. The gargantuan aspect of the *Black Lord* marched over the Dragon Reach towards the city of Tantras, to claim the found Tablet of Fate, it was met by a titan-sized, lion-headed Torm. The *True Deity* had himself been empowered by thousands of lives, offered in sacrifice by the faithful of the city, given upon their god's request. As the two gods battled over the the coastal city on the Reach, *chain lightning* shot from their massive blows upon one another and the earth beneath them shook as if the Toril was being torn asunder. Just as the Bell of Aylen was rung in the southern end of the city Bane and Torm destroyed one another in a blast of silver radiance, followed by a  massive explosion. 
+
+#### Cyric and his Companions
+Having just betrayed his friends Kelemvor, Adon and Midnight in the events proceeding the deaths of Bane and Torm, the mortal thief Cyric rallied his Zhentilar soldiers in search of his former friends and the Tablet of Fate they had recovered. The adventurers meanwhile began their voyage across the Sea of Fallen Stars to the city of Waterdeep. Bhaal, as well as Myrkul, learned of the artifact in their possession and the Lord of the Dead dispatched his night riders to intercept them in the Hermit's Wood in Cormyr. The adventurers managed to escape and continued westward to the city of Eveningstar. After a brief reunion between Midnight and Cyric, who was armed with the sword *Godsbane*, the thief revealed the fact that Bhaal and Myrkul knew of the tablet's location. With the avatars of two of the Dead Three in pursuit of Midnight, Cyric tried to convince to join him in recovering the other tablet and ascending to godhood. He signaled Zhentarim to swarm the tavern and flush the adventurers out. They escaped in the ensuing chaos and continued through Cormyr.
+
+…(truncated — see source)
+
+
+---
+*Source: https://forgottenrealms.fandom.com/wiki/Dead_Three — Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial fan content; see LICENSE.md in this folder.*

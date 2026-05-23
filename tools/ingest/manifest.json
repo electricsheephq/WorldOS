@@ -1,0 +1,41 @@
+{
+  "_comment": "Curated, BOUNDED ingest scope for the Unofficial Baldur's Gate 3+ Universe Seed. Pulls Sword Coast / Baldur's Gate canon from the Forgotten Realms Fandom wiki (CC-BY-SA) into content/worlds/<world_id>/lore/. Expand by adding categories/titles; max_pages caps the run. Category/title names that don't resolve are skipped, not fatal.",
+  "world_id": "baldurs-gate",
+  "wiki": "forgottenrealms.fandom.com",
+  "max_pages": 250,
+  "rate_delay_seconds": 0.5,
+  "max_chars_per_page": 9000,
+  "categories": [
+    "Locations in Baldur's Gate",
+    "Organizations in Baldur's Gate",
+    "Inhabitants of Baldur's Gate",
+    "Settlements on the Sword Coast"
+  ],
+  "titles": [
+    "Baldur's Gate",
+    "Flaming Fist",
+    "Zhentarim",
+    "Harpers",
+    "Wyrm's Rock",
+    "The Counting House",
+    "Elfsong Tavern",
+    "Rivington",
+    "Wyrm's Crossing",
+    "Elturel",
+    "Candlekeep",
+    "Scornubel",
+    "Chionthar",
+    "Bane",
+    "Bhaal",
+    "Myrkul",
+    "Dead Three",
+    "Balduran",
+    "Mind flayer",
+    "Elder brain",
+    "Githyanki",
+    "Avernus",
+    "Cazador Szarr",
+    "Ulder Ravengard",
+    "Gur"
+  ]
+}

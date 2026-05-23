@@ -28,9 +28,18 @@ The underlying game mechanics are the **System Reference Document 5.2**, ©Wizar
 the Coast, licensed under **Creative Commons Attribution 4.0 (CC-BY-4.0)** (equivalently,
 the Open Game License for SRD 5.1 content). See `data/srd/ATTRIBUTION.md`.
 
+## Ingested lore pages (`lore/wiki/`)
+
+Pages under `lore/wiki/` are ingested from the **Forgotten Realms Wiki (Fandom)**, which
+is licensed **CC-BY-SA**. Each page carries its source URL + a CC-BY-SA attribution
+footer. They are free, unofficial fan content. Note CC-BY-SA (ShareAlike) is a different
+license from the original seed prose (CC-BY-4.0). The hand-authored pages at `lore/*.md`
+are original ClawDnD content.
+
 ## Summary
 
 - **Free, non-commercial, unofficial** fan content.
 - Setting IP: Wizards Fan Content Policy (+ Larian for BG3 elements).
+- Ingested `lore/wiki/` pages: CC-BY-SA (Forgotten Realms Wiki / Fandom), attributed per page.
 - Rules: CC-BY-4.0 SRD / OGL.
 - ClawDnD code: MIT (separate; does not extend to this seed).

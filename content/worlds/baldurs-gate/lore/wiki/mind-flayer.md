@@ -1,0 +1,44 @@
+# Mind flayer
+
+**Mind flayers**, also known as **illithids** (; , meaning "mind flayer" or "mind ruler" in Undercommon), and sometimes referred to as **ghaik** by the githyanki, were sadistic aberrations feared by sentient creatures on many worlds across the multiverse due to their powerful psionic abilities. From their twisted lairs deep in the Underdark, these alien entities sought to expand their dominion over all other lifeforms, controlling their minds to use them as obedient thralls. They consumed their victims' very personality by extracting and devouring their brains while they were still alive.
+
+## Description
+In terms of height, weight, and build, mind flayers were roughly comparable to thin humans, but it was at this point that any external comparison to humanoids ended. A mind flayer's body was, in fact, a gruesome mockery of the humanoid form. An illithid's flesh, was soft, supple, moist, and rubbery, resulting in an unmistakable texture easily distinguishable from any other creature by anyone familiar with it. Their skin ranged from mauve to greenish-violet in color. Mind flayers that were healthy from brain-rich diets excreted a thin film of slimy, glistening mucus that kept in moisture and gave off a faint odor similar to onions, garlic, or even vanilla, although the smell was imperceptible from afar. Their blood had a silvery-white color.
+
+An illithid's bulging, ridged, elongated head was reminiscent of an octopus, with a cluster of four flexible, unsegmented, extendable, purplish-black tentacles surrounding their mouths. The tentacles could range in length from , appearing shorter when an illithid was at rest. They writhed and undulated almost constantly and absent-mindedly while the illithid pondered or otherwise was not using them, and flexed in anticipation when sentient beings drew close. They were also incredibly dexterous, powerful, and could be fully controlled by the mind flayer to perform both fine and strength-based tasks.
+
+In many apocryphal descriptions and diagrams, mind flayers were portrayed as having beaked mouths, possibly owing to their octopus-like heads. In reality, an illithid's mouth was more like that of a lamprey, with a circular, jawless orifice ringed by several rows of small, rasping teeth. The tentacles hung above and around their mouths and an oily slime constantly dripped out of their maws. Illithids did not possess exterior ears, rather hosting small, fleshy, ridged holes on both sides of their heads, nor did they have nostrils. Their eyes, sheltered by brow ridges, were uniformly pale and devoid of pupils in addition to being bloated and featureless, similar to those of blind cave fish.
+
+Illithid hands were long, slender, and lacked an index finger, but were otherwise similar to those of normal humanoid creatures. The remaining fingers and opposable thumb were red to mauve in coloration, and their nails were thick and black. Though illithid nails seemed dangerous, they were actually blunt and composed of soft cartilage, and so had little hope of being effective weapons. Illithid feet were webbed and had only two toes, which were also nailed and could flex widely apart, as if to assist in swimming.
+
+Illithids were known to dress in dramatic flowing robes and cloaks. They were rarely seen without distinctively two-lobed boots, which concealed their webbed feet. They often wore high, flaring collars, dark hats, and various other pieces of ornamentation.
+
+## Personality
+Mind flayers had utterly alien thought processes and enigmatic objectives. They saw themselves as masterminds that twisted others into serving their own sinister and far-reaching schemes. While some individuals could show extreme variance in mindset, the majority shared many common beliefs and precepts.
+
+Illithids were megalomaniacal in the extreme, tyrants driven by an immense ambition and intrinsically ruled by an overwhelming sense of self-importance. The mind flayers sought nothing less than world domination, knew their destiny was mastery over the universe, and the ultimate prize they yearned for was complete dominion over all the planes of existence, with the power to reshape reality and all within it to fit their otherworldly designs. However, mind flayers did not believe themselves to be horrifying monsters.
+
+In the minds of the illithids, their kind acted as agents of "Order", forces of law tasked with taming a chaotic and unguided universe. They saw the various races in its confines as potential thralls with no supervision, living out aimless existences and working with no direction. In this role as multiversal caretakers, the mind flayers constantly worked for what they saw as the betterment of the cosmos, asserting their ultimate control to provide the restoration of order that only their superior species could bestow to all the multiverse.
+
+The mind flayers strongly believed in their manifest destiny, and viewed the task of bringing the multiverse to heel as one of great importance. The illithids instructed all who questioned this view to look at the biological facts, how they stood at the top of the food chain and how all others naturally fell beneath them. While the illithids recognized that other creatures resisted their control, they perceived this as a natural result of reality's current state, the unknowing thralls within not knowing any better than to fight their masters.
+
+Utterly arrogant, mind flayers were elitists who believed all creatures to be inferior to themselves, livestock fit to fulfill only three purposes: to die as their food, work as their slaves, or serve as vessels for more of their kind. Even so, the mind flayers did feel a sense of gratitude towards lesser beings. In truth, they truly appreciated the "gifts" of those they feasted upon, and sincerely felt that they were giving their livestock a gift of their own when they consumed their brains.
+
+The illithids had to dominate not only to achieve their goals, but to fulfill certain basic needs of their own. Without a mind to control, a mind flayer would feel incomplete. They actually had an intimate relationship with their own thralls, suffering when they died (whether by sickness, age, or physical harm) and sometimes going mad from loneliness without their constant companionship. Illithids were known to postpone their other goals just to renew an emptied retinue of thralls and every illithid had at least one personal thrall. When they found one they favored, illithids would go out of their way not to eat personal thralls in bouts of hunger or anger, and might even grant them toys and trinkets to occupy themselves with when not working.
+
+- Individuality:
+While almost every illithid sought the dominion of their race, each was an incredibly intelligent, individual entity with different ideas on how to make that happen. Some would do so with military might, creating grand thrall armies to conquer the world, while others sought to use their psionics to create powerful magic items to use in their quest. Their intentions in given situations could seem bizarre, sometimes to the point of being incomprehensible, but almost every action taken was meant, in some way, to help them achieve their racial supremacy.
+
+Despite their emphasis on order, mind flayers were actually incredibly competitive, as well as individualistic, to the point where they seemed hesitant to work as a team. However, while competitiveness was common, this personal desire for success served to enhance the group overall. Each mind flayer recognized that, in order to contribute to their collective intelligence, every member of the community had to obtain as much wisdom and experience as possible. When the individual failed, the community would put aside their ambitions for the greater "good".
+
+A mind flayer's natural desire to compete, combined with their high levels of intelligence, meant that they were incredibly innovative beings able to come up with unique solutions to their problems. Whether using psionics, alchemy, magic, mundane technology, or some combination of the four, they were creatures of immense creativity and cunning constantly spurred on to reach new heights of individual achievement.
+
+- Knowledge:
+
+Most illithids understood that knowledge equaled power, basing their existence on vast volumes of shared information, and so the mind flayers sought to expand their knowledge in all fields. They used varied methods to obtain information, always sourcing, verifying, and cross-checking acquired knowledge, for they understood better than any how personal perception and interpretation could twist the truth.
+
+…(truncated — see source)
+
+
+---
+*Source: https://forgottenrealms.fandom.com/wiki/Mind_flayer — Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial fan content; see LICENSE.md in this folder.*
