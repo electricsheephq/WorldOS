@@ -138,7 +138,7 @@ Take your next action(s) for this beat using your tools — say / do / request_c
 
 $PMSG
 
-Resolve it through the engine and narrate the next beat. Hand the moment back to the player.")"
+Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line.")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
   chatlog dm "$DMSG"
