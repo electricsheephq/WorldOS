@@ -53,18 +53,26 @@ turn() {
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-      --output-format stream-json --verbose > "$out" 2>/dev/null
+      --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
-      --model sonnet --max-budget-usd "$BUDGET" --output-format json 2>/dev/null \
+      --model sonnet --max-budget-usd "$BUDGET" --output-format json 2>> "$T/$RUN.player.err" \
       | jq -r '.result // ""' 2>/dev/null
   fi
 }
 
+# A turn, with ONE retry on empty output (a transient CLI/auth/rate blip shouldn't
+# silently truncate a run). Echoes the reply text (possibly empty after the retry).
+turn_retry() {
+  local r; r="$(turn "$@")"
+  [ -z "$r" ] && { echo "[duo] empty turn ($1) — retrying once…" >&2; r="$(turn "$@")"; }
+  printf '%s' "$r"
+}
+
 # P0: the player introduces their character + opening intent.
-PMSG="$(turn player "$PSID" 1 "$PLAYER_BRIEF
+PMSG="$(turn_retry player "$PSID" 1 "$PLAYER_BRIEF
 
 This is the very start. In ONE line introduce your character, then state your opening intent as you arrive in the city. Output only your character's words/actions.")"
 echo "[duo] player intro: ${PMSG:0:120}…"
@@ -72,7 +80,7 @@ echo "[duo] player intro: ${PMSG:0:120}…"
 chatlog player "$PMSG"
 
 # D1: DM spins up the world and opens the scene around the player's concept.
-DMSG="$(turn dm "$DSID" 1 "$DM_BRIEF
+DMSG="$(turn_retry dm "$DSID" 1 "$DM_BRIEF
 
 Begin the session. The player agent introduces their character and opening intent:
 
@@ -85,7 +93,7 @@ chatlog dm "$DMSG"
 
 # Alternate player <-> DM for BEATS rounds.
 for b in $(seq 1 "$BEATS"); do
-  PMSG="$(turn player "$PSID" 0 "The DM says:
+  PMSG="$(turn_retry player "$PSID" 0 "The DM says:
 
 $DMSG
 
@@ -93,7 +101,7 @@ Declare your character's next action for this beat.")"
   echo "[duo] beat $b player: ${PMSG:0:100}…"
   [ -z "$PMSG" ] && { echo "[duo] player went silent at beat $b; stopping early"; break; }
   chatlog player "$PMSG"
-  DMSG="$(turn dm "$DSID" 0 "The player does:
+  DMSG="$(turn_retry dm "$DSID" 0 "The player does:
 
 $PMSG
 
@@ -111,4 +119,7 @@ CAMP="$(find "$STATE_DIR/campaigns" -maxdepth 1 -mindepth 1 -type d 2>/dev/null 
 if [ -n "$CAMP" ] && [ -f "$CAMP/snapshot.json" ]; then cp "$CAMP/snapshot.json" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
-echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null)"
+# Behavioral gate — flip RED on a structurally broken run (treat it like software).
+python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl"; GATE=$?
+echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
+exit $GATE

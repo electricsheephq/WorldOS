@@ -70,6 +70,11 @@ else
   echo '{"warning":"no campaign state was persisted"}' > "$T/$RUN.state.json"
 fi
 
+# Behavioral gate — hard PASS/FAIL on a structurally broken run (no DM output, no
+# dice, combat with no attacks, no PC in party, dup companion). Treat it like software.
+echo "[qa] behavioral gate…"
+python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json"; GATE=$?
+
 echo "[qa] scoring (mechanical rubric)…"
 qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" "$RUBRIC_FILE" qa/score_schema.json "$T/$RUN.score.json" 1.50
 
@@ -95,3 +100,6 @@ jq -r '
   "defects (\(.defects|length)):",
   (.defects[]? | "  [\(.severity)] \(.area): \(.evidence) -> \(.suggested_fix)")
 ' "$T/$RUN.tolkien.json" 2>/dev/null || { echo "(tolkien parse failed; raw:)"; cat "$T/$RUN.tolkien.json"; }
+
+echo "[qa] behavioral=$([ "${GATE:-0}" = 0 ] && echo GREEN || echo RED)"
+exit "${GATE:-0}"
