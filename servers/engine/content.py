@@ -44,6 +44,10 @@ def seed_campaign(adv: dict) -> Campaign:
     if not isinstance(adv, dict):
         raise ValueError("adventure data must be a JSON object")
     c = Campaign(title=adv.get("title", "Untitled Adventure"), summary=adv.get("premise", ""))
+    # An authored adventure may declare the WORLD it's set in, so the DM can lookup_lore
+    # that world's corpus + honor its era while running the module.
+    c.world_id = str(adv.get("world_id", ""))
+    c.era = str(adv.get("era", ""))
 
     # Persist the authored scenes verbatim so the DM can read them at play time via
     # get_scene (read_aloud prose, dm_notes staging beats, check DCs). Without this

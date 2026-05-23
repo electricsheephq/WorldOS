@@ -31,6 +31,12 @@ def test_seed_campaign_synthetic():
     assert len(c.quests) == 1
 
 
+def test_seed_campaign_honors_world_id_for_lore():
+    # an authored adventure can declare the world it's set in → lookup_lore + era work
+    c = content.seed_campaign({"title": "X", "world_id": "baldurs-gate", "era": "1492 DR"})
+    assert c.world_id == "baldurs-gate" and c.era == "1492 DR"
+
+
 def test_load_real_cellar_rats():
     adv = content.load_adventure_data("cellar-rats")
     assert adv["id"] == "cellar-rats"

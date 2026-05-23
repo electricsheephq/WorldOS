@@ -89,7 +89,7 @@ def _safe_match(query: str) -> str:
     return " OR ".join(f'"{t}"' for t in toks)
 
 
-def _excerpt(text: str, tokens: list[str], width: int = 400) -> str:
+def _excerpt(text: str, tokens: list[str], width: int = 600) -> str:
     """A bounded snippet centered on the first query-term hit (so the DM gets the
     relevant passage, not a whole page). Falls back to the page head."""
     flat = " ".join(text.split())
