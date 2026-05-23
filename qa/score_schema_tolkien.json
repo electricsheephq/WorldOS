@@ -7,6 +7,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "scene_craft",
         "grandeur",
         "character_depth",
         "prose_atmosphere",
@@ -15,6 +16,7 @@
         "memorability"
       ],
       "properties": {
+        "scene_craft": { "type": "integer", "minimum": 1, "maximum": 5 },
         "grandeur": { "type": "integer", "minimum": 1, "maximum": 5 },
         "character_depth": { "type": "integer", "minimum": 1, "maximum": 5 },
         "prose_atmosphere": { "type": "integer", "minimum": 1, "maximum": 5 },
