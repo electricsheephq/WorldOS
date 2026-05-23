@@ -52,6 +52,21 @@ def _can_heal(companion: Character) -> bool:
     return any(slot.used < slot.maximum for slot in companion.spell_slots.values())
 
 
+# Healing spells in priority order — Healing Word first (a bonus action that can
+# revive a downed ally at range).
+_HEAL_PRIORITY = (
+    "Healing Word", "Cure Wounds", "Mass Healing Word", "Mass Cure Wounds",
+    "Prayer of Healing", "Heal",
+)
+
+
+def _best_heal_spell(companion: Character) -> Optional[str]:
+    """The companion's best available healing spell name (or None) — the concrete
+    spell to cast on an aid_downed / heal suggestion."""
+    have = set(companion.spells_prepared) | set(companion.spells_known)
+    return next((name for name in _HEAL_PRIORITY if name in have), None)
+
+
 def suggest_action(
     companion: Character,
     combat: Combat,
@@ -97,6 +112,7 @@ def suggest_action(
             return {
                 "action": "aid_downed",
                 "target_id": ch.id,
+                "spell": _best_heal_spell(companion),  # cast this to revive; None -> stabilize
                 "reason": (
                     f"{ch.name} is down at 0 HP; stabilizing or reviving "
                     f"{who} comes before anything else."
@@ -119,6 +135,7 @@ def suggest_action(
             return {
                 "action": "heal",
                 "target_id": target.id,
+                "spell": _best_heal_spell(companion),
                 "reason": (
                     f"{target.name} is critically wounded "
                     f"({target.current_hp}/{target.max_hp} HP); healing {who} now "

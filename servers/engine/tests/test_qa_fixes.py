@@ -213,3 +213,17 @@ def test_companion_attacks_when_no_heal_available():
     healer, _hurt, gob, chars, cbt = _heal_scene(slots_used=2)  # slots exhausted
     out = companion.suggest_action(healer, cbt, chars)
     assert out["action"] == "attack" and out["target_id"] == gob.id
+
+
+def test_heal_suggestion_names_the_concrete_spell():
+    healer, _hurt, _gob, chars, cbt = _heal_scene(slots_used=0)
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "heal" and out["spell"] == "Healing Word"
+
+
+def test_aid_downed_suggestion_names_the_concrete_spell():
+    healer, hurt, _gob, chars, cbt = _heal_scene(slots_used=0)
+    hurt.current_hp = 0  # a downed ally -> aid_downed, with the revive spell named
+    out = companion.suggest_action(healer, cbt, chars)
+    assert out["action"] == "aid_downed" and out["target_id"] == hurt.id
+    assert out["spell"] == "Healing Word"
