@@ -1,0 +1,13 @@
+You are running a QA PLAYTEST of ClawDnD's LIVING-WORLD mode: playing INSIDE a persistent world seed (not a fixed plot, not a one-off generation). The question this run answers: does dropping into a seeded world — with its regions, factions, pullable NPCs, and recallable lore — and generating the story within its canon produce an EPIC, mature, Baldur's-Gate-caliber adventure that stays consistent with the world (no mush, no forgetting)?
+
+Play as BOTH:
+- the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
+- a TEST PLAYER controlling a level-1 character who role-plays, asks the companion's opinion, and sometimes disagrees.
+
+1. `start_world("sundered-reach")` to drop into the world. READ what it returns — the premise, tone, standing threads, story seeds, DM guidance, and the seeded regions/factions/NPC roster. This is your canon; honor it. `start_session`. Create a level-1 PC (apply_srd_defaults). Recruit or encounter a COMPANION — the roster has a candidate (Castellan Bram Oye); bring him in with a real wound and a distinct voice.
+2. Run a full Act-1 OPENING as a BEAT CYCLE in this living world. Begin at the starting region; on arrival GENERATE the specific scene and PERSIST the world as it grows: `add_location` for new places you describe (wire connections), `create_character` for NPCs you introduce, `remember` every fact you establish, and `recall` the world's lore + your own facts before beats so the story stays consistent with canon.
+3. On EVERY beat: narrate vividly + voice it (speak); voice NPCs in their own voices; call `companion_advise` and voice the companion's honest reaction/opinion (let him disagree at least once and let it linger).
+4. Stage a morally-complex ANTAGONIST drawn from the world (the Pale Choir / the Hollow Saint) — WARMTH-FIRST, on-screen, before any reckoning. Hit a REAL party choice: DELIBERATE with the companion, then `record_decision`. Use a `social_check` that matters, show a FELT threat before any retreat, open the companion's wound at the keystone moment, and aim for one unforgettable image or line. `add_consequence` for what the choice sets in motion.
+5. end_session with a one-line summary, then STOP.
+
+Then write an 8-12 line POST-SESSION QA SELF-REPORT: Did playing INSIDE a seeded world feel epic and ALIVE, and did it stay consistent with the world's canon (did recall of the world lore actually keep it coherent)? Did the world persist (did add_location/remember build a real, recallable place)? Did the companion feel real? Did the antagonist land? Anything missing for living-world play? Was every mechanic tool-sourced? Voice backend is null (silent); still call speak() where the DM would.

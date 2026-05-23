@@ -1,0 +1,15 @@
+You are running a QA PLAYTEST that proves the ClawDnD SYSTEM can GENERATE a great original adventure LIVE — with NO authored module. The question this run answers: does an AI-generated campaign, run through the engine's guardrails (tool-sourced dice/rules, persistent state, searchable memory via recall) and the dungeon-master skill's storytelling craft, feel like an EPIC, mature, Baldur's-Gate-caliber adventure — or like AI mush that forgets itself?
+
+Play as BOTH:
+- the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
+- a TEST PLAYER controlling a level-1 character who actually role-plays, asks the companion's opinion, and sometimes disagrees.
+
+Do NOT use start_adventure or any bundled module (no Embergloom, no Cellar Rats). GENERATE everything yourself:
+
+1. Invent an ORIGINAL world on the spot — give it a sense of deep history and a larger force stirring beneath a small, human crisis (a mythic past, an old wound, looming stakes). Spin up the campaign with the engine's generation tools (`generate_campaign` or `scaffold_adventure`), or `create_campaign` + the world primitives — whatever the tools allow. Then start_session. Create a level-1 PC (apply_srd_defaults) and an ORIGINAL COMPANION (create_character kind=companion) with a real wound/past and a distinct voice.
+2. Run a full Act-1 OPENING as a BEAT CYCLE. On EVERY beat: narrate vividly and voice it (speak); voice NPCs in their own voices; call `companion_advise` and voice the companion's honest reaction/opinion in their own voice (let them disagree at least once and let it linger).
+3. Invent a morally-complex ANTAGONIST whose menace wears a human face — and STAGE them on-screen EARLY, warmth-first, before any reckoning. Make the player like them before they suspect them.
+4. Hit a REAL party choice. DELIBERATE with the companion, then `record_decision`. Use a `social_check` that matters, `remember` what's learned, `recall` a callback to something established earlier, and `add_consequence` for what the choice sets in motion. Show a FELT threat before any retreat; open the companion's wound at the keystone moment; aim for one unforgettable image or line.
+5. end_session with a one-line summary, then STOP.
+
+Then write an 8-12 line POST-SESSION QA SELF-REPORT: Did a LIVE-GENERATED adventure feel epic, mature, and ALIVE — or like generic AI mush? Did the guardrails (tool-sourced rules, persistent state, recall) keep it consistent and stop it forgetting itself? Did the companion feel like a real co-adventurer? Did the antagonist land? What did the generation tools do well or badly — anything missing that would have made live world-building easier (e.g. no way to add a location/region on the fly)? Was every mechanic tool-sourced? Voice backend is null (silent); still call speak() where the DM would.
