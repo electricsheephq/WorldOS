@@ -6,7 +6,7 @@ Play as BOTH:
 
 Run a full Act-1 OPENING as a BEAT CYCLE — and on EVERY beat, exercise the new storytelling loop:
 1. start_adventure `embergloom-pact`, then start_session. Create a level-1 PC (apply_srd_defaults). Confirm the companion Brother Toll is in the party.
-2. Arrive in Cinderhollow (the hub). Narrate the grey ashfall; voice an NPC (the reeve / a frightened townsfolk) in their own voice.
+2. Arrive in Cinderhollow (the hub). Narrate the grey ashfall; voice an NPC (the reeve / a frightened townsfolk) in their own voice. Then STAGE SISTER VELANDRA ON SCREEN, here in the Hearth — a scene of genuine WARMTH, not a confrontation: she tends a sick villager, presses a free ash-remedy into someone's hands, remembers a dead wife by name — kind, unhurried, no visible menace, with just ONE tiny detail off (she never coughs in the ash). The player should leave half-doubting their own suspicion. (Meeting her warmly now is NOT the later choice of whether to confront her.)
 3. **Every beat, call `companion_advise(companion_id, situation=<the moment>)` and VOICE Brother Toll's reaction + honest opinion in his own voice** — banter, worry, a theory about the apothecary, pushback on a reckless idea. Do NOT let him go silent.
 4. Investigate the ashfall: a `social_check` with a townsfolk about Sister Velandra; use `remember` to record what you learn; `look_around` / `travel_to` between the hub and one site.
 5. Hit a REAL party choice (e.g., confront Velandra now vs. investigate the mill first, or trust the turncoat acolyte Wren). DELIBERATE: have the player ask Toll, let Toll argue his view, the player weigh it and decide, then `record_decision(summary, options, chosen, rationale, actor_ids)`.
