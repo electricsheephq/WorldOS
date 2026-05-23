@@ -248,6 +248,8 @@ class Quest(_StrictModel):
     status: QuestStatus = "active"
     objectives: list[str] = Field(default_factory=list)
     completed_objectives: list[str] = Field(default_factory=list)
+    giver_id: Optional[str] = None  # the NPC who gave the quest
+    location_id: Optional[str] = None  # where it's anchored
 
 
 class Location(_StrictModel):

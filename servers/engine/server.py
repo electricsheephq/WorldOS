@@ -41,6 +41,7 @@ from models import (
     Combatant,
     Condition,
     HouseRules,
+    Quest,
     SessionLogEntry,
     SpellSlotLevel,
 )
@@ -1370,6 +1371,123 @@ def check_consequences(campaign_id: str) -> dict:
                 {"id": x.id, "text": x.text, "trigger_day": x.trigger_day}
                 for x in consequences_mod.pending(c)
             ],
+        }
+
+
+@mcp.tool()
+def add_quest(
+    campaign_id: str,
+    title: str,
+    description: str = "",
+    giver_id: str = "",
+    location_id: str = "",
+    objectives: Optional[list] = None,
+) -> dict:
+    """Add a quest, optionally linked to the NPC who gave it (giver_id) and the
+    location it's anchored to (location_id), so the dashboard and DM can trace
+    who-wants-what-where. A campaign has many quests; the opening hook is just one."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        q = Quest(
+            title=title,
+            description=description,
+            giver_id=giver_id or None,
+            location_id=location_id or None,
+            objectives=list(objectives or []),
+        )
+        c.quests[q.id] = q
+        save_campaign(c)
+        return {"id": q.id, "title": q.title, "status": q.status}
+
+
+@mcp.tool()
+def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -> dict:
+    """Resolve a quest. status: completed | failed | active."""
+    if status not in ("completed", "failed", "active"):
+        raise ValueError("status must be completed | failed | active")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        q = c.quests.get(quest_id)
+        if q is None:
+            raise ValueError(f"no quest {quest_id!r}")
+        q.status = status  # type: ignore[assignment]
+        save_campaign(c)
+        return {"id": q.id, "title": q.title, "status": q.status}
+
+
+@mcp.tool()
+def campaign_dashboard(campaign_id: str) -> dict:
+    """One-call situational rollup for the DM — ideal after a gap or compaction.
+    Returns day/time + location, party vitals, active quests (with giver +
+    location names resolved), faction standings, and pending (not-yet-due)
+    consequences. Read-only."""
+    c = _require(campaign_id)
+
+    def _name(cid):
+        ch = c.characters.get(cid) if cid else None
+        return ch.name if ch else None
+
+    def _loc(lid):
+        loc = c.locations.get(lid) if lid else None
+        return loc.name if loc else None
+
+    party = [
+        {
+            "id": cid,
+            "name": ch.name,
+            "kind": ch.kind,
+            "hp": f"{ch.current_hp}/{ch.max_hp}",
+            "level": ch.total_level,
+        }
+        for cid in c.party
+        if (ch := c.characters.get(cid))
+    ]
+    quests = [
+        {
+            "id": q.id,
+            "title": q.title,
+            "status": q.status,
+            "giver": _name(q.giver_id),
+            "location": _loc(q.location_id),
+        }
+        for q in c.quests.values()
+        if q.status == "active"
+    ]
+    return {
+        "title": c.title,
+        "day": c.day,
+        "time_of_day": c.time_of_day,
+        "location": _loc(c.current_location_id),
+        "party": party,
+        "active_quests": quests,
+        "factions": [
+            {"name": f.name, "reputation": f.reputation} for f in c.factions.values()
+        ],
+        "pending_consequences": [
+            {"text": x.text, "trigger_day": x.trigger_day}
+            for x in consequences_mod.pending(c)
+        ],
+    }
+
+
+@mcp.tool()
+def downtime(campaign_id: str, days: int, note: str = "") -> dict:
+    """Advance the campaign by `days` of downtime (the in-world clock jumps forward,
+    resetting to morning), then surface any consequences that come due in that span
+    for the DM to narrate. Use between adventures for travel, rest, research, or
+    crafting. Returns the new day + the now-due consequences."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        elapsed = max(0, int(days))
+        c.day += elapsed
+        c.time_of_day = "morning"
+        due = consequences_mod.due(c)
+        save_campaign(c)
+        return {
+            "day": c.day,
+            "days_elapsed": elapsed,
+            "note": note,
+            "due_consequences": [{"text": x.text, "note": x.note} for x in due],
         }
 
 
