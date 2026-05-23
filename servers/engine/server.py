@@ -40,6 +40,8 @@ from models import (
     Combat,
     Combatant,
     Condition,
+    Decision,
+    Faction,
     HouseRules,
     Quest,
     SessionLogEntry,
@@ -1569,6 +1571,53 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
             "note": note,
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
         }
+
+
+@mcp.tool()
+def adjust_reputation(
+    campaign_id: str, faction_id: str, delta: int, reason: str = "", name: str = ""
+) -> dict:
+    """Adjust a faction's standing with the party by `delta` (clamped to -100..100).
+    Creates the faction if it doesn't exist yet (pass `name` for a readable label,
+    else the id is title-cased). `reason` is recorded. Use when the party's actions
+    earn or burn standing with a group. Returns the faction's new reputation."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        fac = c.factions.get(faction_id)
+        if fac is None:
+            fac = Faction(id=faction_id, name=name or faction_id.replace("-", " ").replace("_", " ").title())
+            c.factions[faction_id] = fac
+        fac.reputation = max(-100, min(100, fac.reputation + int(delta)))
+        save_campaign(c)
+        return {"id": fac.id, "name": fac.name, "reputation": fac.reputation, "reason": reason}
+
+
+@mcp.tool()
+def record_decision(
+    campaign_id: str,
+    summary: str,
+    options: Optional[list] = None,
+    chosen: str = "",
+    rationale: str = "",
+    actor_ids: Optional[list] = None,
+) -> dict:
+    """Record a party decision so the DM and companions can call back to it later
+    ('last time we trusted Grett...'). Capture the choice after a deliberation:
+    `summary` (the decision), `options` (what was on the table), `chosen`, why
+    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        d = Decision(
+            day=c.day,
+            summary=summary,
+            options=list(options or []),
+            chosen=chosen,
+            rationale=rationale,
+            actor_ids=list(actor_ids or []),
+        )
+        c.decisions.append(d)
+        save_campaign(c)
+        return {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
 
 
 @mcp.tool()

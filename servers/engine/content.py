@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from models import Campaign, Character, Location, Quest
+from models import Campaign, Character, Faction, Location, Quest
 
 
 def _content_dir() -> Path:
@@ -113,6 +113,16 @@ def seed_campaign(adv: dict) -> Campaign:
             ch.hit_dice_remaining = ch.total_level
         c.characters[ch.id] = ch
         c.party.append(ch.id)
+
+    for fac in _as_list(adv, "factions"):
+        faction = Faction(
+            name=fac.get("name", "Faction"),
+            description=fac.get("description", ""),
+            reputation=int(fac.get("reputation", 0)),
+        )
+        if fac.get("id"):
+            faction.id = fac["id"]
+        c.factions[faction.id] = faction
 
     if adv.get("hook"):
         quest = Quest(title=adv.get("title", "Adventure"), description=adv["hook"])

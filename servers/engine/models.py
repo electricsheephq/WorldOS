@@ -315,6 +315,21 @@ class Consequence(_StrictModel):
     fired: bool = False
 
 
+class Decision(_StrictModel):
+    """A choice the party made — recorded so the DM/companions can call back to it
+    later ('last time we trusted Grett...'). Snapshot is the source of truth; the
+    memory ledger indexes these for search."""
+
+    id: str = Field(default_factory=lambda: _new_id("decision"))
+    t: float = Field(default_factory=_now)
+    day: int = 1
+    summary: str  # the decision in one line
+    options: list[str] = Field(default_factory=list)  # what was on the table
+    chosen: str = ""  # what the party went with
+    rationale: str = ""  # why
+    actor_ids: list[str] = Field(default_factory=list)  # who weighed in / decided
+
+
 class HouseRules(_StrictModel):
     """Campaign-level rule toggles the DM honors when adjudicating. Most are
     advisory (the DM applies them); a few may be wired into the engine over time."""
@@ -352,3 +367,4 @@ class Campaign(_StrictModel):
     active_session_id: Optional[str] = None
     session_ids: list[str] = Field(default_factory=list)  # play sessions in order
     consequences: list[Consequence] = Field(default_factory=list)  # time-deferred world events
+    decisions: list[Decision] = Field(default_factory=list)  # party choices, for callbacks
