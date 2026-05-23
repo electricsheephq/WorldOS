@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 
+import worldsim
 from models import Campaign, Character, Faction, Location, Quest
 
 
@@ -226,5 +227,9 @@ def seed_world(world: dict, start_at: str = "") -> Campaign:
 
     # World facts the DM recalls to stay consistent (indexed into the ledger as lore).
     c.lore = [str(x) for x in (_as_list(world, "history") + _as_list(world, "standing_threads")) if str(x).strip()]
+
+    # Background world-sim: schedule the standing threads as recurring "world beats"
+    # so they advance on the clock even when the party isn't pursuing them.
+    worldsim.seed_threads(c, [str(t) for t in _as_list(world, "standing_threads")])
 
     return c

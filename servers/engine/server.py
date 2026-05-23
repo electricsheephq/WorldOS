@@ -32,6 +32,7 @@ import rests
 import spells
 import srd_tables
 import travel
+import worldsim
 from models import (
     SKILL_ABILITIES,
     Ability,
@@ -460,6 +461,10 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result = travel.travel_to(c, destination_id, advance_time=advance_time)
+        if advance_time:  # time passed → the world's standing threads may move
+            beats = worldsim.tick(c)
+            if beats:
+                result["world_beats"] = [b.text for b in beats]
         save_campaign(c)
         return result
 
@@ -1670,6 +1675,29 @@ def check_consequences(campaign_id: str) -> dict:
 
 
 @mcp.tool()
+def world_tick(campaign_id: str) -> dict:
+    """Surface BACKGROUND world events — the world's standing threads (a contested
+    seat of power, a cult recruiting, factions maneuvering) move on their own, whether
+    or not the party is pursuing them, so the world feels alive and the scope stays
+    bigger than the room the party is standing in.
+
+    Returns any due "world beats" for the DM to weave in — a crier's notice, an
+    overheard rumor, an off-screen development — then escalate it and `remember` what
+    changed. Each thread re-arms a few days out, so the world keeps living. This fires
+    automatically on time-advancing `travel_to` and `downtime`; call it explicitly to
+    check whether the wider world has stirred. Read-only to the party; world-level only."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        beats = worldsim.tick(c)
+        save_campaign(c)
+        return {
+            "current_day": c.day,
+            "world_beats": [{"thread_id": b.thread_id, "text": b.text} for b in beats],
+            "pending": [{"thread_id": b.thread_id, "trigger_day": b.trigger_day} for b in worldsim.pending_threads(c)],
+        }
+
+
+@mcp.tool()
 def add_quest(
     campaign_id: str,
     title: str,
@@ -1777,12 +1805,14 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
         c.day += elapsed
         c.time_of_day = "morning"
         due = consequences_mod.due(c)
+        beats = worldsim.tick(c, max_beats=4)  # a long span → the standing threads moved
         save_campaign(c)
         return {
             "day": c.day,
             "days_elapsed": elapsed,
             "note": note,
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
+            "world_beats": [b.text for b in beats],
         }
 
 

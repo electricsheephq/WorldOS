@@ -23,16 +23,22 @@ def schedule(campaign: Campaign, in_days: int, text: str, note: str = "") -> Con
 
 
 def due(campaign: Campaign) -> list[Consequence]:
-    """Return the unfired consequences whose trigger day has arrived (<= the
-    current day), marking each fired. Mutates the campaign."""
+    """Return the unfired AUTHORED consequences whose trigger day has arrived (<= the
+    current day), marking each fired. Mutates the campaign. Skips world-sim thread-beats
+    (``thread_id`` set) — those share this list but belong to ``worldsim`` and are
+    surfaced via ``world_tick``, so this never consumes them out from under it."""
     out: list[Consequence] = []
     for c in campaign.consequences:
-        if not c.fired and c.trigger_day <= campaign.day:
+        if not c.fired and not c.thread_id and c.trigger_day <= campaign.day:
             c.fired = True
             out.append(c)
     return out
 
 
 def pending(campaign: Campaign) -> list[Consequence]:
-    """Unfired consequences not yet due — for DM foresight / a dashboard."""
-    return [c for c in campaign.consequences if not c.fired and c.trigger_day > campaign.day]
+    """Unfired authored consequences not yet due — for DM foresight / a dashboard
+    (excludes world-sim thread-beats, which are reported by ``world_tick``)."""
+    return [
+        c for c in campaign.consequences
+        if not c.fired and not c.thread_id and c.trigger_day > campaign.day
+    ]

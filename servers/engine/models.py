@@ -313,6 +313,7 @@ class Consequence(_StrictModel):
     text: str  # what happens, for the DM to narrate
     note: str = ""  # why / source (e.g. "the player let the cultist escape")
     fired: bool = False
+    thread_id: str = ""  # non-empty => a recurring background "world beat" from a standing thread (world-sim); reschedules itself on tick
 
 
 class Decision(_StrictModel):
