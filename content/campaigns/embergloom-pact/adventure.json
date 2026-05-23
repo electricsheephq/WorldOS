@@ -1,0 +1,619 @@
+{
+  "id": "embergloom-pact",
+  "title": "The Embergloom Pact",
+  "ruleset": "SRD 5.2",
+  "level_range": [1, 5],
+  "session_length_minutes": 240,
+  "premise": "A grey ashfall has begun to settle over the hill-town of Cinderhollow — souring wells, withering crops, and laying a creeping grey sleep over anyone who breathes it too long. The town's beloved apothecary, Sister Velandra Coir, hands out cures and comfort with one hand while feeding the source of the blight with the other: a buried entity called the Embergloom, an old hunger sealed beneath the hills, which she has pledged to wake in exchange for the power to never die. Each thing she kindles for it — a poisoned mill, a violated barrow, a crypt re-opened — lets the ash spread further, and the deeper the party digs, the closer the Embergloom comes to drawing its first full breath in three hundred years.",
+  "hook": "The ashfall has reached Cinderhollow itself, and the village reeve, Halbrand Stoke, is desperate: the upstream Hollowmere Mill — the source of the town's bread and clean water — has gone silent, its wheel stopped, grey ash drifting from its broken windows. The miller and his hands haven't come down to market in six days. Reeve Stoke offers the party room, board, and a purse of coin to walk the mill road, find out what has fouled the water, and put a stop to it before the whole valley chokes on grey.",
+  "themes": ["a slow creeping blight with a hidden human cause", "a trusted friend who is the villain", "escalating dread from a thing best left buried", "mercy and complicity among the desperate"],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "Brother Toll, the party's companion — a road-warden and lay healer.",
+    "npc-elder": "Sister Velandra Coir, the apothecary (and hidden antagonist), and elderly Reeve Halbrand Stoke.",
+    "npc-rogue": "Maelis Vane, Velandra's smooth-tongued enforcer and cult recruiter.",
+    "npc-male-1": "Garrick Donn, the missing miller, and assorted frightened townsfolk.",
+    "npc-female-1": "Ona Stoke, the reeve's sharp-eyed daughter, and the captive acolyte Wren."
+  },
+  "antagonist": {
+    "id": "antagonist",
+    "name": "Sister Velandra Coir",
+    "title": "The Ash-Mother",
+    "voice_id": "npc-elder",
+    "hidden": true,
+    "goal": "To fully wake the Embergloom — a buried entity of grey hunger sealed beneath the Cinderhollow hills three centuries ago — by feeding it deaths and despair, in exchange for its promise that she will never grow old or die. She poses as the town's kindly apothecary, dispensing real cures for the very ashfall she causes, so that no one suspects the hand that comforts is the hand that kills.",
+    "scheme_by_act": [
+      "ACT 1: Velandra has had her cultists poison the Hollowmere Mill's grain and water with 'ash-seed' — spores that spread the blight downstream to Cinderhollow — so the town will grow sick and dependent on her cures, masking the Embergloom's slow waking as a natural plague.",
+      "ACT 2: With the town frightened and trusting her, Velandra sends her cult to the old Ashen Barrow to defile its wards and harvest the grave-ash of the long-dead Embergloom cultists, raising the barrow's dead as servants and tearing open the first of three seals that keep the entity bound.",
+      "ACT 3: Velandra performs the final rite in the Embergloom Crypt beneath the hill, offering herself as the entity's mortal anchor to break the last seal — believing she will rise deathless as its herald. The party must stop the rite or watch the Embergloom draw its first full breath and the ash swallow the valley whole."
+    ],
+    "reveal": "Velandra is presented in Act 1 as a warm, trusted ally (the only one with cures). Clues accumulate: she is never sick though always among the sick; her 'ash-cure' tonic and the cult's 'ash-seed' share a smell; the captive Wren names 'the Ash-Mother' without knowing it is her. The reveal should land at the end of Act 2 or the start of Act 3.",
+    "stat_block": "Velandra fights only in the Act 3 climax. Use the bundled Wight stat block (AC 14, HP 82, CR 3) reflavored as a half-transformed herald wreathed in grey ash: her Life Drain becomes 'Ashen Touch' (necrotic) and her longsword a ritual ashen athame. She is supported by her thralls in the final encounter; run her last.",
+    "max_hp": 82,
+    "armor_class": 14,
+    "hit_dice": "11d8+33",
+    "proficiency_bonus": 2,
+    "abilities": { "strength": 14, "dexterity": 14, "constitution": 16, "intelligence": 12, "wisdom": 13, "charisma": 15 },
+    "damage_resistances": ["necrotic", "bludgeoning, piercing, and slashing from nonmagical attacks"],
+    "damage_immunities": ["poison"],
+    "condition_immunities": ["exhaustion", "poisoned"]
+  },
+  "companions": [
+    {
+      "id": "companion-toll",
+      "name": "Brother Toll",
+      "voice_id": "companion-default",
+      "race": "Human",
+      "background": "Hermit",
+      "classes": [{ "name": "Cleric", "level": 1 }],
+      "abilities": { "strength": 13, "dexterity": 10, "constitution": 14, "intelligence": 11, "wisdom": 16, "charisma": 12 },
+      "proficiency_bonus": 2,
+      "armor_class": 16,
+      "max_hp": 10,
+      "hit_dice": "1d8",
+      "hit_dice_remaining": 1,
+      "skill_proficiencies": ["Insight", "Medicine", "Religion", "Survival"],
+      "saving_throw_proficiencies": ["wis", "cha"],
+      "spells_known": ["Sacred Flame", "Light", "Spare the Dying", "Cure Wounds", "Bless", "Healing Word", "Guiding Bolt", "Protection from Evil and Good"],
+      "spells_prepared": ["Cure Wounds", "Healing Word", "Bless", "Guiding Bolt"],
+      "spell_slots": { "1": { "maximum": 2, "used": 0 } },
+      "personality": "A weathered road-warden of the Ember-Watch, a quiet order that once stood vigil over the buried thing beneath these hills before the world forgot. Brother Toll left his hermitage when the ash began to fall, knowing in his bones what it means. He is calm, dry-humored, and unshakeably steady — the kind of man who hands you a waterskin before a fight and means it. He carries old guilt: his order failed once, and he will not let it fail twice. He argues for compassion toward the cult's pawns (most are sick, frightened farmfolk, not monsters) but is iron-hard about the Embergloom itself — that, he insists, must never be bargained with. He will gently call out a reckless plan, then back the party anyway.",
+      "notes": "Healer/support and lore-anchor. In combat he opens with Bless, leads downed allies back up with Healing Word, and uses Guiding Bolt or Sacred Flame otherwise. Out of combat he is the party's source of slow-drip lore about the Embergloom and the Ember-Watch — but he does NOT initially suspect Velandra (she is well-liked, and he wants to believe the order has a friend in town). The DM should give Toll his own voiced line each scene and reach his combat choices through companion_suggest_action. As the party levels, treat Toll as leveling with them (Cleric matching the party's level) so he keeps pace — the DM may grant him 2nd-level slots and Lesser Restoration / Spiritual Weapon by Act 2 and 3rd-level slots by Act 3."
+    }
+  ],
+  "npcs": [
+    {
+      "id": "reeve-stoke",
+      "name": "Reeve Halbrand Stoke",
+      "voice_id": "npc-elder",
+      "personality": "Cinderhollow's elected reeve: a stooped, white-bearded former wheelwright in his late sixties who took the town's chain of office reluctantly and now can't put it down. Honest to a fault, slow to anger, quick to worry. He loves this valley and is watching it die. He trusts Velandra completely — she nursed his late wife's last months — which is exactly why he cannot see her hand in any of this.",
+      "attitude": "anxious but welcoming",
+      "role": "primary quest-giver",
+      "wants": "To save Cinderhollow from the ashfall and bring his missing millers home. He'll pay what little the town treasury holds and offer the party the run of the place.",
+      "knows": [
+        "The ashfall began about a month ago and has worsened each week; wells upstream foul first.",
+        "The Hollowmere Mill went silent six days ago — no flour, no word, grey ash seen at its windows.",
+        "Sister Velandra's tonics are the only thing keeping the sickest townsfolk on their feet; he is profoundly grateful to her and will vouch for her against any accusation.",
+        "His daughter Ona has been poking at the mystery herself and has noticed things he hasn't."
+      ],
+      "secret": "Nothing sinister — but he is in denial about how bad it has gotten, and his absolute faith in Velandra is the social wall the party must eventually get past.",
+      "stat_block": "Noncombatant. If ever endangered, treat as Commoner; he will not fight."
+    },
+    {
+      "id": "ona-stoke",
+      "name": "Ona Stoke",
+      "voice_id": "npc-female-1",
+      "personality": "The reeve's daughter, late twenties, sharp and impatient, half-trained as a hedge-herbalist herself. She loves her father but is furious at how the town keeps explaining the blight away. She has been keeping a quiet ledger of who sickens and who doesn't — and she has noticed that Sister Velandra never coughs.",
+      "attitude": "wary, testing",
+      "role": "ally / clue-giver",
+      "wants": "Someone competent to take the ashfall seriously and follow the evidence wherever it leads — even somewhere uncomfortable.",
+      "knows": [
+        "The sickness clusters around the millrace and the old Smolderwood road, not randomly.",
+        "Sister Velandra's 'ash-cure' tonic smells faintly of the same bitter grey rot as the blight itself — Ona can't explain why and is afraid of the answer.",
+        "A stranger named Maelis Vane has been buying up grey-ashed grain that no one else will touch, and meeting people after dark by the Smolderwood.",
+        "There is an old standing-stone barrow out past the Smolderwood the elders forbid children to visit."
+      ],
+      "secret": "She already half-suspects Velandra but is terrified of being wrong and breaking her grieving father's heart. She'll share the tonic clue only once she trusts the party (Persuasion/Insight, or after they prove themselves at the mill).",
+      "stat_block": "Noncombatant by preference, but capable in a pinch — if she insists on coming along, treat as Scout (AC 13, HP 16, CR 1/2). She'd rather hand the party her ledger and stay safe.",
+      "max_hp": 16,
+      "armor_class": 13,
+      "hit_dice": "3d8+3",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 11, "dexterity": 14, "constitution": 12, "intelligence": 13, "wisdom": 13, "charisma": 11 }
+    },
+    {
+      "id": "velandra",
+      "name": "Sister Velandra Coir",
+      "voice_id": "npc-elder",
+      "personality": "Cinderhollow's apothecary: a serene, silver-haired woman of indeterminate age with kind eyes and ash-stained fingers, beloved by everyone she has ever nursed. She speaks softly, remembers your name and your mother's name, and presses cures into the hands of the poor for free. Every word of her warmth is real — which is what makes her monstrous. She has decided, after a long life of watching everyone she loved wither and die, that death is the only true enemy, and the Embergloom's bargain is the only honest answer she has ever been offered. She does not see herself as a villain. She sees the ashfall as a small, sad price.",
+      "attitude": "warm and trusted (publicly); zealous (once revealed)",
+      "role": "hidden antagonist — see top-level 'antagonist' for stats and scheme",
+      "wants": "To wake the Embergloom and become its deathless herald — but to be LOVED by the town to the very end, so she works entirely through proxies and never lets her own hand be seen until Act 3.",
+      "knows": [
+        "Everything about the scheme: she designed the ash-seed, dispatched Maelis Vane and the cult, and times each escalation to the three seals beneath the hill.",
+        "The genuine cure for the ashfall (she really can heal it) — which she dispenses to keep the town docile and grateful.",
+        "The full ritual to break the final seal in the Embergloom Crypt."
+      ],
+      "secret": "She IS the Ash-Mother the cultists serve. Public clues: she is never ill though always among the ill; her tonic and the cult's ash-seed share a bitter grey scent; she steers any investigation gently away from the Smolderwood and the barrow.",
+      "stat_block": "See top-level 'antagonist'. She fights only in the Act 3 climax (Wight stats, reflavored as a half-ashen herald). Until then she is a serene, statless social presence.",
+      "max_hp": 82,
+      "armor_class": 14,
+      "hit_dice": "11d8+33",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 14, "dexterity": 14, "constitution": 16, "intelligence": 12, "wisdom": 13, "charisma": 15 },
+      "damage_resistances": ["necrotic", "bludgeoning, piercing, and slashing from nonmagical attacks"],
+      "damage_immunities": ["poison"],
+      "condition_immunities": ["exhaustion", "poisoned"]
+    },
+    {
+      "id": "maelis-vane",
+      "name": "Maelis Vane",
+      "voice_id": "npc-rogue",
+      "personality": "Velandra's chief enforcer and recruiter: a lean, charming drifter with a salesman's smile and a knife's patience. He finds the desperate — the bankrupt farmer, the dying man's son — and offers them grey-ashed coin and a place in 'the Mother's flock.' He genuinely believes the Embergloom will remake a kinder world, or tells himself he does. Smooth in conversation, vicious when cornered.",
+      "attitude": "deceptively friendly, then hostile",
+      "role": "antagonist's lieutenant (recurring across all three acts)",
+      "wants": "To deliver enough deaths, despair, and defiled ground to keep the Embergloom waking on schedule, and to earn his promised place at the Ash-Mother's side.",
+      "knows": [
+        "That 'the Ash-Mother' commands the cult — but he is careful never to name her as Velandra aloud (a clue the party can press him on if captured).",
+        "The location of the Ashen Barrow and which seal the cult is defiling next.",
+        "That the ash-seed comes from the apothecary's own stores (he assumes the party already knows this and may let it slip)."
+      ],
+      "secret": "His loyalty is brittle. Captured and offered his life, he'll name the Ash-Mother and the crypt — but he won't say her true name unless confronted with proof, out of a half-real fear she can hear him.",
+      "stat_block": "Recurring villain. In Act 1 he flees rather than dies (Bandit Captain stats if forced, AC 15, HP 52, CR 2 — but he prefers to escape). In Act 2 he is the mid-boss of the barrow (full Bandit Captain). In Act 3 he stands with Velandra. Scale his support, not his sheet.",
+      "max_hp": 52,
+      "armor_class": 15,
+      "hit_dice": "8d8+16",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 15, "dexterity": 16, "constitution": 14, "intelligence": 14, "wisdom": 11, "charisma": 14 }
+    },
+    {
+      "id": "garrick",
+      "name": "Garrick Donn",
+      "voice_id": "npc-male-1",
+      "personality": "The Hollowmere miller: a big, plain-spoken man gone grey and hollow-eyed, found half-entranced by the ashfall when the party reaches the mill. Slow and dreamy at first from breathing the ash, he sharpens as he recovers and is wracked with guilt — he took Maelis Vane's coin to mill the grey grain, not knowing what it was.",
+      "attitude": "dazed, then ashamed and helpful",
+      "role": "rescued witness (Act 1)",
+      "wants": "To wake from the grey fog, get his hands back, and make right the harm he did by milling poisoned grain.",
+      "knows": [
+        "A smiling stranger (Maelis Vane) paid him well to mill sacks of strange grey-dusted grain and let it run into the millrace 'to settle the chaff.'",
+        "After the milling, the ash came, his hands sickened, and figures in grey hoods came at night to 'tend the wheel.' He stopped being able to tell waking from sleep.",
+        "The cult comes and goes by the Smolderwood road, carrying the milled ash away in covered carts."
+      ],
+      "secret": "He suspects, deep down, that he helped poison his own valley, and dreads the party learning it before he can confess it himself.",
+      "stat_block": "Noncombatant. Treat as Commoner; once revived from the ash-fog he can guide the party but will not fight."
+    },
+    {
+      "id": "wren",
+      "name": "Wren",
+      "voice_id": "npc-female-1",
+      "personality": "A young, frightened cult acolyte found bound and gagged at the Ashen Barrow in Act 2 — not a prisoner of the party's making, but of the cult's: she lost her nerve, tried to flee the rite, and was left as a sacrifice-in-waiting. Barely more than a girl, she joined for grey coin to pay a sick brother's debts and is in far over her head.",
+      "attitude": "terrified, then grateful",
+      "role": "turncoat / informant (Act 2 social beat)",
+      "wants": "To live, to be free of the cult, and (if she dares hope) to undo a little of what she helped do.",
+      "knows": [
+        "The cult serves 'the Ash-Mother,' who is preparing a final rite at the Embergloom Crypt beneath the great hill past the barrow.",
+        "The barrow holds the FIRST of three seals binding the Embergloom; the cult is here to break it and harvest grave-ash.",
+        "She has SEEN the Ash-Mother's face once, by candlelight — and if shown a token of Velandra's (her tonic vial, her ash-grey shawl) Wren will recognize it with horror. (This is the reveal lever.)",
+        "The crypt's entrance is hidden behind the barrow's deepest standing stone and opens only when all three seals are broken — or by the Ash-Mother's own ritual key."
+      ],
+      "secret": "She knows the Ash-Mother's face but not her name or station — she never knew the kind apothecary in town was the hooded figure at the rites. Connecting the two is the party's job, and Wren is the witness who can do it.",
+      "stat_block": "Begins bound/noncombatant. If freed and pressed into a corner she defends herself as a Cultist (AC 12, HP 9, CR 1/8), but she'd far rather hide. Befriending her is the social heart of Act 2 and the key to the reveal.",
+      "max_hp": 9,
+      "armor_class": 12,
+      "hit_dice": "2d8",
+      "proficiency_bonus": 2,
+      "abilities": { "strength": 9, "dexterity": 13, "constitution": 10, "intelligence": 11, "wisdom": 12, "charisma": 12 }
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-cinderhollow",
+      "name": "Cinderhollow — The Hearth & Reeve's Hall",
+      "description": "A close-built hill-town of slate roofs and steep lanes, all of it dusted now with a fine grey ash that gathers in gutters and gritted teeth. The Hearth, its only inn, doubles as the reeve's hall: a smoke-dark common room where frightened townsfolk trade rumors over watered ale, a sickbed corner where Sister Velandra tends the worst-off, and an upstairs the party can lodge in. This is the safe hub — the party returns here between acts to resupply, share findings, and (slowly) learn who is poisoning the well of their trust.",
+      "connections": ["loc-hollowmere-mill", "loc-ashen-barrow", "loc-embergloom-crypt"],
+      "notes": "HOME-BASE HUB. Reeve Stoke, Ona, and Velandra are here. Velandra dispenses real cures here every act — reinforcing how trusted she is. The party rests, levels, and gathers social clues here; it is the natural place to open and close each act. Connections fan out to one site per act."
+    },
+    {
+      "id": "loc-hollowmere-mill",
+      "name": "The Hollowmere Mill (Act 1)",
+      "description": "An old stone gristmill astride the millrace upstream of town, its great wheel stopped and furred with grey. Ash drifts from broken upper windows; the millpond below has gone the colour of cold cinders. Inside, flour-dust and ash hang in the still air, sacks of grey-dusted grain slump in corners, and somewhere a slow drip keeps a rhythm in the dark. The miller and his hands are here — what's left of them — drifting in an ash-induced fog among things that have crept up out of the fouled water to feed.",
+      "connections": ["loc-cinderhollow"],
+      "notes": "ACT 1 SITE (levels 1-2). Three beats: EXPLORATION (search the mill, find the grey grain and Maelis's tally, a trap on the grain-loft); SOCIAL (rescue dazed miller Garrick, learn of the smiling stranger and the Smolderwood); COMBAT (vermin drawn to the ash + a cult cell tending the wheel). Maelis Vane appears here and flees. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-ashen-barrow",
+      "name": "The Ashen Barrow (Act 2)",
+      "description": "Out past the dead grey tangle of the Smolderwood stands a ring of leaning standing-stones over a turf-roofed barrow — a tomb the elders forbid. The cult has been here: the wards are smashed, the entry stone rolled back, and grave-ash has been scraped from the old dead in barrowfuls. Below, cold flagged passages wind among burial niches where the long-dead Embergloom cultists were laid three centuries ago — and where the first of three great seals binding the entity is being broken open. The dead do not rest here anymore.",
+      "connections": ["loc-cinderhollow", "loc-embergloom-crypt"],
+      "notes": "ACT 2 SITE (levels 2-4). Three beats: EXPLORATION (the barrow maze, defiled wards, the seal chamber, hazards); SOCIAL (free the captive acolyte Wren — the turncoat who carries the REVEAL of the Ash-Mother's face); COMBAT (the raised barrow-dead and Maelis Vane's cult work-gang; mid-boss Maelis). Breaking/protecting the first seal is the climax. A passage from the barrow's depths leads on to the crypt (revealed here)."
+    },
+    {
+      "id": "loc-embergloom-crypt",
+      "name": "The Embergloom Crypt (Act 3)",
+      "description": "Beneath the great hill, reached through the barrow's depth, lies the crypt the whole valley was built to forget: a vast ash-choked vault around a black sealing-stone, where three hundred years ago the Ember-Watch bound a grey hunger they could not kill. Now the air itself glows a dull ember-red, ash falls upward toward a wound in the stone, and at the heart of it Sister Velandra Coir stands robed in grey, midway through the rite that will break the last seal and make her the Embergloom's deathless herald. This is where the kind apothecary's face finally falls away.",
+      "connections": ["loc-cinderhollow", "loc-ashen-barrow"],
+      "notes": "ACT 3 SITE (levels 4-5). Three beats: EXPLORATION/HAZARD (the descent through the rite-warped crypt, the upward-falling ash, riddling the seal mechanism); SOCIAL (the confrontation — Velandra's monologue, a last chance to turn her pawns or even shake her resolve); COMBAT (the climax: Velandra as a half-ashen herald [Wight stats] + her thralls; stopping the rite is the true win). The Embergloom itself is never fully seen or fought — it is dread made of ash, the thing whose waking the party must prevent. Reachable directly from the hub only AFTER Act 2 opens the way."
+    }
+  ],
+  "arcs": [
+    {
+      "id": "arc-1-mill",
+      "title": "Act 1 — Grey Bread, Grey Water",
+      "level_range": [1, 2],
+      "beats": [
+        {
+          "id": "a1-hook",
+          "title": "Hook — The Silent Mill",
+          "location_id": "loc-cinderhollow",
+          "summary": "In Cinderhollow's ash-dusted common room, Reeve Stoke begs the party to find out why the Hollowmere Mill has gone silent and grey, while Sister Velandra (warm, trusted) tends the sick in the corner — the first quiet glimpse of the villain wearing a friend's face."
+        },
+        {
+          "id": "a1-challenge",
+          "title": "Challenge — Into the Ashfall",
+          "location_id": "loc-hollowmere-mill",
+          "summary": "The party explores the fouled mill: grey-dusted grain, a stranger's tally-sheet, a fog-dazed miller to rescue, and vermin crept up from the cinder-pond. The clue trail points to a smiling stranger (Maelis Vane) and the Smolderwood road."
+        },
+        {
+          "id": "a1-climax",
+          "title": "Climax — Tending the Wheel",
+          "location_id": "loc-hollowmere-mill",
+          "summary": "A grey-hooded cult cell is found defiling the millrace. Maelis Vane reveals just enough — 'the Ash-Mother sends her thanks' — then flees, leaving his cultists and a risen mill-corpse to cover his escape. The party carries the first thread of the scheme back to town."
+        }
+      ]
+    },
+    {
+      "id": "arc-2-barrow",
+      "title": "Act 2 — The Defiled Barrow",
+      "level_range": [2, 4],
+      "beats": [
+        {
+          "id": "a2-hook",
+          "title": "Hook — The Tonic's Scent",
+          "location_id": "loc-cinderhollow",
+          "summary": "Back in town, Ona Stoke shares her ledger: the sickness follows the Smolderwood road, a stranger buys grey grain, and Velandra's cure smells of the blight itself. The party is pointed to the forbidden Ashen Barrow — over Velandra's gentle objections."
+        },
+        {
+          "id": "a2-challenge",
+          "title": "Challenge — Among the Barrow-Dead",
+          "location_id": "loc-ashen-barrow",
+          "summary": "The party descends the defiled barrow: smashed wards, risen dead, and the cult's grave-ash harvest. They free the captive acolyte Wren — who has seen the Ash-Mother's face and, shown a token of Velandra's, recognizes it with horror. The reveal lands."
+        },
+        {
+          "id": "a2-climax",
+          "title": "Climax — The First Seal",
+          "location_id": "loc-ashen-barrow",
+          "summary": "At the seal chamber, Maelis Vane and his work-gang fight to finish breaking the first of three seals. Stopping or slowing them is the act's payoff — but even in defeat the cult has torn the way to the crypt open, and Maelis flees toward the Ash-Mother's final rite."
+        }
+      ]
+    },
+    {
+      "id": "arc-3-crypt",
+      "title": "Act 3 — The Embergloom Pact",
+      "level_range": [4, 5],
+      "beats": [
+        {
+          "id": "a3-hook",
+          "title": "Hook — The Mask Falls",
+          "location_id": "loc-cinderhollow",
+          "summary": "The party returns to confront Velandra — and finds her gone, the sickbed empty, a grey shawl left behind. Reeve Stoke's faith finally breaks. With Wren's testimony and Ona's ledger, the truth is undeniable: the kind apothecary is the Ash-Mother, and she has gone to the crypt to finish it."
+        },
+        {
+          "id": "a3-challenge",
+          "title": "Challenge — Descent to the Sealing-Stone",
+          "location_id": "loc-embergloom-crypt",
+          "summary": "Through the barrow's depths into the rite-warped crypt: upward-falling ash, ember-red dark, Velandra's thralls and last cultists between the party and the sealing-stone. Brother Toll's old order finally has its second chance to hold the line."
+        },
+        {
+          "id": "a3-climax",
+          "title": "Climax — Breaking the Rite",
+          "location_id": "loc-embergloom-crypt",
+          "summary": "At the sealing-stone, Velandra — half-transformed into a grey ashen herald — works the final rite. The party must defeat or turn her and disrupt the rite before the Embergloom draws its first full breath. The entity is never fully seen; stopping the pact, not slaying a god, is the victory."
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-a1-hook",
+      "name": "The Reeve's Plea",
+      "type": "social",
+      "location_id": "loc-cinderhollow",
+      "read_aloud": "Grey ash sifts past the shutters of the Hearth like a slow, dirty snow. Inside, the common room is full and frightened — farmers with grit in their coughs, a child asleep too deeply in a corner cot. Reeve Halbrand Stoke, white-bearded and stooped under a chain of office he plainly hates, takes your hands in both of his. 'You've the look of folk who can walk a dangerous road,' he says. 'Our mill's gone silent — six days, no flour, grey ash at the windows, and it sits upstream of every well we drink from.' Behind him, a silver-haired woman in an ash-grey shawl looks up from a sickbed, smiles kindly, and goes back to spooning a tonic between a coughing man's lips.",
+      "dm_notes": "Establish the hub, the stakes, and — crucially — plant the villain in plain sight. The woman is Sister Velandra (npc-elder); play her as unreservedly warm and helpful. She'll greet the party, offer a free dose of 'ash-cure' to anyone coughing (it WORKS — she really can heal the blight), and gently suggest the mill trouble is 'surely just the bad water, nothing for brave folk to fear.' Do NOT tip her hand. Reeve Stoke (npc-elder, but pitch him differently — frailer, kindlier) offers room, board, and 40 gp from the town purse to investigate the mill. Ona (npc-female-1) lurks at the edges, sizing the party up; she won't open up yet (save her for Act 2's hook) but a sharp party may catch her watching Velandra with an unreadable look. Brother Toll (companion-default) should speak here: he reacts to the ashfall with quiet dread and lets slip the FIRST lore-crumb — that his old order, the Ember-Watch, once 'kept a vigil in these hills, long ago, over something we were told to forget.' He does NOT yet suspect Velandra.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 12,
+          "success": "You read the room: the Reeve isn't merely worried, he's frightened the whole valley is dying and clinging to Velandra's cures like a drowning man to a rope. You also catch Ona watching the apothecary with something that isn't gratitude. (Flags Ona as worth talking to, and plants the first faint unease about Velandra.)",
+          "failure": "You take the scene at face value: a sick town, a kind healer, a job at the mill. No harm — the clue keeps for later."
+        },
+        {
+          "skill": "Medicine",
+          "dc": 13,
+          "success": "Examining a cough or Velandra's tonic, you confirm the ashfall is no natural sickness — it's a slow grey rot that dulls the mind and withers the body, and the tonic genuinely halts it. Oddly, the cure smells faintly of the very rot it cures. File that away.",
+          "failure": "The sickness is strange and beyond a quick diagnosis; the tonic clearly helps, which is all most folk care about."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party accepts and sets out up the mill road, move to scene-a1-mill at loc-hollowmere-mill."
+    },
+    {
+      "id": "scene-a1-mill",
+      "name": "Into the Ashfall",
+      "type": "exploration",
+      "location_id": "loc-hollowmere-mill",
+      "read_aloud": "The mill road climbs beside a millrace gone the colour of cold ash. The great wheel stands stopped and furred with grey. Inside, the air is thick with hanging flour-dust and something bitterer beneath it; sacks of grey-dusted grain slump in the corners, and up on the grain-loft a tally-board hangs crooked, covered in a stranger's neat figures. By the cold hearth, a big grey-faced man sits motionless, staring at nothing, a slow drip of ashen water keeping time somewhere in the dark.",
+      "dm_notes": "EXPLORATION + the start of the SOCIAL beat. Two threads here: (1) Search the mill. The tally-board is Maelis Vane's accounting of 'grey grain' milled and carted off by the Smolderwood road — the central clue (Investigation). The grain-loft ladder is rigged with a crude cult alarm/deadfall (Perception to spot, Sleight of Hand/Athletics to beat) — tripping it alerts the cult cell in scene-a1-cult (no surprise). (2) The grey-faced man is Garrick the miller (npc-male-1), deep in an ash-fog. Reviving him to coherence is a Medicine check or simply getting him out of the ash-thick air for a few minutes; Brother Toll's Lesser Restoration (if available) or just Cure Wounds snaps him out faster. Once lucid, Garrick is wracked with shame and tells of the smiling stranger who paid him to mill grey grain into the race — the hook toward the cult and the Smolderwood. Companion: Toll recognizes the bitter under-smell as 'grave-ash, the Embergloom's leavings' — escalating his dread. WARN the party that lingering too long breathing the mill's ash risks the fog themselves (a flavorful CON save, DC 11, on a long dawdle: failure = disadvantage on the next check as the grey creeps in; this is atmosphere, not a death-trap).",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 13,
+          "success": "The tally-board resolves into damning bookkeeping: sacks of 'grey grain' received from a buyer marked only with an ashen circle, milled, and carted off 'to the Mother by the wood road.' Tucked behind it is a half-burned note in the same neat hand — '...the race will carry it to the town's wells. She will be pleased. — M.V.' You have the shape of the scheme and a set of initials.",
+          "failure": "The board is a mess of figures you can't make sense of in the gloom. The half-burned note survives, though — even a failure leaves the 'M.V.' initials and the words 'the Mother' to puzzle over."
+        },
+        {
+          "skill": "Perception",
+          "dc": 13,
+          "success": "You spot it before you climb: the grain-loft ladder is rigged — a near-invisible cord runs from the top rung to a balanced heap of millstones and tin, a crude alarm-and-deadfall. Disarm it (DC 12 Sleight of Hand) or step the ladder carefully, and the cult below stays unaware of you.",
+          "failure": "If anyone climbs the loft ladder, the cord pulls a clattering avalanche of tin and stone (DC 12 Dexterity save, 1d6 bludgeoning on a fail) and the noise carries — the cult cell in the wheel-room is now ALERT, with no surprise for the party."
+        },
+        {
+          "skill": "Medicine",
+          "dc": 12,
+          "success": "You coax the grey-faced miller back toward himself — clearing his airway, walking him to fresher air. Garrick blinks, focuses, and his face crumples with shame. He'll talk: a smiling stranger paid him in good coin to mill 'grey grain' and let it wash into the race, and afterward came the ash, the sickness, and grey-hooded figures at night 'tending the wheel.' They come and go by the Smolderwood road.",
+          "failure": "Garrick stays fogged and dreamy, mumbling about a 'kind smiling man' and 'the wheel must turn.' You get fragments — a stranger, the Smolderwood — but not the full confession until he's gotten clear of the ash for longer (try again after the fight, or simply walk him outside)."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Following the grey-hooded figures' sounds (or the alarm, if tripped) into the wheel-room moves to scene-a1-cult. Reviving Garrick can happen before or after; either way his confession points the party home to Cinderhollow and, in Act 2, to the Smolderwood and barrow."
+    },
+    {
+      "id": "scene-a1-cult",
+      "name": "Tending the Wheel",
+      "type": "combat",
+      "location_id": "loc-hollowmere-mill",
+      "read_aloud": "The wheel-room stinks of wet ash and tallow. Three figures in grey hoods crouch at the millrace, scraping a pale grey paste into the water with wooden paddles, murmuring the same dull syllables over and over. At their center, a lean man in a fine grey coat looks up — and smiles, wide and easy, as if you were expected guests. 'Ah. The Reeve's hired hands.' He spreads his arms. 'You're early. The Ash-Mother does so love an eager helper.' Behind him, by the race, a flour-pale corpse in a miller's apron lifts its head and stands.",
+      "dm_notes": "First COMBAT and Maelis Vane's (npc-rogue) introduction. Maelis is a TALKER who flees, not a boss to kill here — he banters, name-drops 'the Ash-Mother' (the party's first taste of the villain, still unnamed and unconnected to Velandra), and on round 2-3 slips out the back toward the Smolderwood, leaving his pawns to cover him. If the party somehow corners and forces him to fight, use Bandit Captain stats (AC 15, HP 52) — but strongly prefer his escape; he is needed for Acts 2 and 3. The fight proper: 2-3 Cultists (use the bundled Cultist, AC 12, HP 9, CR 1/8) plus 1 risen Skeleton (the entranced mill-hand the ash has killed and raised; bundled Skeleton, AC 14, HP 13, CR 1/4). For a level 1-2 party of 3-4 that's a fair fight; see scaling. Difficult footing along the slick race rim matters. Companion: Toll opens with Bless and is horrified to see the dead walk — confirmation, to him, that the Embergloom stirs. A downed PC is his Healing Word beat. If the grain-loft alarm was tripped, the cult acts first with the party surprised.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "If the party tries to talk Maelis down or turn his frightened cultists, a strong appeal can peel ONE cultist out of the fight (he throws down his paddle and flees) — but Maelis himself only laughs, tips an imaginary hat, and bolts. You can't capture him here; you can only learn from his parting words.",
+          "failure": "Maelis isn't moved, and his cultists hold. He covers his own retreat with a thrown handful of ash-powder (lightly obscuring the room for a round) and is gone out the back."
+        },
+        {
+          "skill": "Athletics",
+          "dc": 11,
+          "success": "You keep your feet on the slick, ash-greased race rim (or haul an ally up out of it), denying the enemy the chance to shove you into the fouled water.",
+          "failure": "The footing betrays you — treat the race rim as difficult terrain; a shove or a failed step can dunk you in the ashen water (no damage, but you waste a turn climbing out and breathe a lungful of grey: disadvantage on your next attack)."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Cultist", "count": 3, "reflavor": "Grey-hooded ash-tenders — frightened, half-entranced farmfolk Maelis recruited; not gleeful fanatics. A spared one may become a future informant."},
+          {"name": "Skeleton", "count": 1, "reflavor": "A risen mill-hand the ashfall killed and raised — flour-pale bones in a tattered apron. The first walking dead the party sees; play it as horror, not just a stat block."}
+        ],
+        "tactics": "Maelis Vane gives a round of banter and a name-drop, then flees toward the Smolderwood on round 2-3 (do NOT let the party trap him; he is recurring). The cultists fight reluctantly, clustering at the race to 'finish the work,' and at least one will break and run if frightened or reduced to a single combatant — a chance for the party to take a prisoner. The Skeleton is the only thing here without fear; it shambles relentlessly at the nearest living target. Use the slick race rim as difficult terrain.",
+        "scaling": "Party of 1-2 or all-squishy: 2 Cultists + 1 Skeleton. Party of 4+ or running hot: 3 Cultists + 2 Skeletons. Maelis always flees rather than fights regardless of party size.",
+        "xp": 200,
+        "xp_note": "Roughly 50 (Skeleton) + 3x25 (Cultists) = 125 base; round to 200 with the story-stakes of the cult reveal. Award full value whether the party kills, captures, or scatters the cultists."
+      },
+      "transitions": "With the cult scattered and the millrace clue in hand (Maelis's tally and note, Garrick's confession), the party returns to loc-cinderhollow. They are now level 2-ish and Act 2's hook (Ona, the Smolderwood, the barrow) opens. Maelis is in the wind."
+    },
+    {
+      "id": "scene-a2-hook",
+      "name": "Ona's Ledger",
+      "type": "social",
+      "location_id": "loc-cinderhollow",
+      "read_aloud": "You come down off the mill road grey to the elbows, and Cinderhollow looks worse than you left it — more cots in the common room, more ash in the lanes. As you give the Reeve your account, his daughter Ona slips up beside you and presses a worn ledger into your hands. 'Not here,' she murmurs, with a glance toward the sickbed corner where Sister Velandra is laughing softly with a patient. 'Walk with me.' Outside, in the grey snow, she opens the book to a page of careful tally-marks. 'The sickness isn't random,' she says. 'It follows the Smolderwood road. And there's one more thing I can't make sense of, and it frightens me half to death.'",
+      "dm_notes": "ACT 2 HOOK and a SOCIAL beat that tightens the noose around the (still-secret) villain. Ona (npc-female-1) is the clue-engine: she lays out that (a) the blight clusters along the Smolderwood road, (b) the stranger Maelis Vane has been buying grey grain and meeting people after dark, and — if she trusts the party (reward their mill success, or a Persuasion/Insight check) — (c) the thing that frightens her: Velandra's ash-cure tonic smells of the exact same grey rot as the blight. She can't say what that means. The party should start to. Crucially, Velandra is RIGHT THERE, warm as ever; if confronted now she is wounded and gentle ('Oh, child, the cure is made FROM a little of the sickness — that's how curatives work, you take a little of the poison to teach the body...'), a perfectly reasonable lie that should keep honest suspicion at bay until the Act 2 reveal. She'll gently steer the party away from the barrow ('an old, sad place, nothing there but the dead'). Reeve Stoke will hear NO ill word of her. Brother Toll, asked about a barrow past the Smolderwood, goes pale: 'The Ember-Watch set the seals there. If someone's troubling the barrow...' — he now fears the Embergloom is being deliberately woken, though he still can't imagine by whom. This is the level-2->onward springboard.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 12,
+          "success": "Ona decides you're worth the risk. She gives you the frightening clue outright — the tonic-and-blight smell — and her own quiet conviction that someone in town is lying. She also marks the Ashen Barrow on a scrap map: past the dead Smolderwood, the ring of standing stones the elders forbid.",
+          "failure": "Ona holds back the worst of it, still scared of being wrong. She gives the Smolderwood-road pattern and Maelis's grain-buying, enough to send the party to the barrow — but the tonic clue waits until they've earned more trust (or found proof at the barrow)."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You see what Ona can't bring herself to say plainly: she suspects Sister Velandra, and is terrified of breaking her grieving father's faith. Naming it gently ('You think it's the apothecary, don't you?') wins her trust completely and her whole confidence — including the tonic clue and her promise to dig further while the party is away.",
+          "failure": "You catch only that Ona is frightened and holding something back; pressing too hard makes her clam up and hurry inside."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Armed with the Smolderwood/barrow lead, the party sets out for the Ashen Barrow — move to scene-a2-barrow at loc-ashen-barrow. (Optional: a wary party may try to tail Maelis or watch Velandra; reward investigation with atmosphere, but the trail leads to the barrow either way.)"
+    },
+    {
+      "id": "scene-a2-barrow",
+      "name": "Among the Barrow-Dead",
+      "type": "exploration",
+      "location_id": "loc-ashen-barrow",
+      "read_aloud": "The Smolderwood is dead — grey trunks, grey leaf-litter, not a bird in it. Beyond, a ring of leaning standing-stones crowns a turf-roofed mound, and the wrongness here is plain: protective carvings on the stones lie freshly smashed, the entry-stone is rolled back on a black throat of stairs, and the turf is scraped raw where barrowfuls of grey grave-ash have been hauled out. Cold air breathes up from below, carrying the bitter Embergloom reek and, faintly, the scrape of something moving among old bones in the dark.",
+      "dm_notes": "ACT 2 EXPLORATION + the SOCIAL/REVEAL beat. The barrow is a small dungeon: defiled ward-stones (Religion/Arcana to read what was broken and learn the Ember-Watch bound something here — Toll can supply this for free), burial niches (Investigation for grave-goods and the cult's harvest-tools, marked with the ashen circle), and HAZARDS (a niche-collapse deadfall, DC 13 Dex save; ash-thick air as at the mill). Deeper in, before the seal chamber, the party finds WREN (npc-female-1) — a young cult acolyte bound and gagged, left as a sacrifice-in-waiting by her own people when she lost her nerve. Freeing and calming her is the SOCIAL heart of the act and the REVEAL LEVER: Wren has seen the Ash-Mother's face by candlelight but never knew her name or that she's the town apothecary. If the party shows Wren a token of Velandra's — her ash-grey shawl, a tonic vial, even a good description — Wren recognizes it with dawning horror: 'That's — that's HER. The Ash-Mother. She's your healer?' THAT is the reveal. (If the party didn't grab a token, Wren's vivid description of 'a kind-faced silver-haired woman who calls everyone child' should make the party connect it themselves; Toll, hearing it, will be the one to whisper Velandra's name in dread.) Combat with the barrow-dead may interrupt this; let the social beat breathe either before or after the fight at the seal.",
+      "checks": [
+        {
+          "skill": "Religion",
+          "dc": 13,
+          "success": "You read the smashed ward-carvings: this barrow was never a mere tomb but a SEAL — one of three, set by an old vigil-order to bind 'the grey hunger below.' Someone has deliberately broken the wards to weaken it. (Brother Toll confirms with grim certainty: this is Ember-Watch work, and it is being undone on purpose.)",
+          "failure": "The carvings are clearly protective and clearly smashed, but their full meaning escapes you — until Toll, or Wren, fills in that this is a binding-seal being deliberately broken."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "Your kindness reaches the terrified Wren. She stops thrashing, weeps, and talks: the cult serves 'the Ash-Mother'; they came to break the first of three seals and harvest grave-ash; a final rite waits at the crypt below. Shown anything of Velandra's, she names her with horror. She begs to be let go and swears she'll testify in town. (THE REVEAL — see dm_notes.)",
+          "failure": "Wren is too frightened to trust the party yet (try Insight or Animal-Handling-style gentling, or simply free her and give her time). She'll still let slip 'the Ash-Mother' and a description, but the full crypt-and-seal intel — and the joy of her cooperation — waits."
+        },
+        {
+          "skill": "Insight",
+          "dc": 12,
+          "success": "Reading Wren, you see at once she's no zealot — she's a frightened girl who got in over her head and was discarded by her own people. Treating her as a victim rather than an enemy unlocks her completely (same payoff as the Persuasion success) and tells you the cult's pawns can be turned.",
+          "failure": "She just reads as a captured cultist; you miss the lever of her fear and have to win her the slow way."
+        }
+      ],
+      "encounter": null,
+      "transitions": "The barrow's deepest passage descends toward the seal chamber, where Maelis and his work-gang are at their labor — move to scene-a2-seal. Wren, if freed and befriended, will NOT follow into danger but will wait to guide the party out and testify in town (and she carries the reveal home if the party doesn't already have it)."
+    },
+    {
+      "id": "scene-a2-seal",
+      "name": "The First Seal",
+      "type": "combat",
+      "location_id": "loc-ashen-barrow",
+      "read_aloud": "The passage opens into a domed chamber of black stone. At its center, set into the floor, is a great disc carved with the same vigil-wards as the standing-stones above — and a work-gang of grey-hooded cultists is breaking it apart with iron bars and chisels, grave-ash heaped in baskets all around. Two corpses in ancient barrow-mail stand sentinel at the cultists' backs, waiting. And overseeing it all, ledger in hand, the lean man in the fine grey coat turns and gives you that same easy smile. 'The Reeve's hired hands again. Persistent.' Maelis Vane sighs and draws a slim blade. 'The Ash-Mother said you'd come. This time I'm afraid I'm to keep you.'",
+      "dm_notes": "ACT 2 CLIMAX — the second major COMBAT and Maelis's mid-boss turn. Now he fights: full Bandit Captain (AC 15, HP 52, CR 2 — Multiattack with scimitar+dagger, Parry reaction). His work-gang is 2-3 Cultists (AC 12, HP 9), and 2 risen barrow-guardians are Skeletons (AC 14, HP 13) reflavored in ancient mail. For a level 3-4 party this is a solid climax; see scaling. THE OBJECTIVE is twofold: beat the cult AND decide what to do about the half-broken seal. A successful Arcana/Religion check (or Toll's guidance) lets the party try to RE-WARD the seal or at least slow its breaking — but the cult has done too much; even a win here only delays, and the cult's digging has torn open the passage to the crypt below (the Act 3 way in). Maelis, if reduced below ~1/3 HP or clearly losing, tries to FLEE down toward the crypt to warn the Ash-Mother (he survives to Act 3 unless the party is both lucky and ruthless — and even capturing him is a win, as he can be made to confirm the crypt and, with proof, Velandra). Companion: this is Toll's order's old failure made present — he fights with grim resolve, Spiritual Weapon/Spirit-style support if leveled, and a Healing Word for the inevitable downed PC. The ash-thick air and the unstable broken-seal floor (difficult/hazard terrain) keep positioning tense.",
+      "checks": [
+        {
+          "skill": "Arcana",
+          "dc": 14,
+          "success": "You grasp the seal's logic well enough to fight its unmaking — re-seating a broken ward-stone, smudging a cult-glyph — which staves off the worst: the first seal holds by a thread instead of shattering, buying the valley (and the party) precious time before Act 3. Narrate the ember-glow in the chamber dimming as you work.",
+          "failure": "The seal's workings are beyond you mid-fight; it will break. The way to the crypt opens regardless — but a failure here means the party reaches Act 3 with the Embergloom nearer to waking (raise the urgency, and the thrall count, in the finale)."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 13,
+          "success": "Driving the fight hard, you break the cultists' nerve — one or more throw down their tools and flee or surrender, and a captured cultist (or Maelis, if cornered) can be pressed for confirmation: the rite is at the crypt below, and 'the Ash-Mother' is the one who heals the town. Damning testimony to carry home.",
+          "failure": "The cult fights on; you'll have to win the chamber the hard way and piece the crypt's location together from the dig-passage they've opened."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Cultist", "count": 3, "reflavor": "The Ash-Mother's work-gang, breaking the seal. Frightened pawns again — surrender-prone once the fight turns."},
+          {"name": "Skeleton", "count": 2, "reflavor": "Barrow-guardians in ancient ash-grey mail, raised from the long-dead Embergloom cultists laid here three centuries ago. Tireless and silent."}
+        ],
+        "boss": {"name": "Maelis Vane", "npc_id": "maelis-vane", "stats": "Bandit Captain (AC 15, HP 52, CR 2)", "note": "Mid-boss. Flees toward the crypt to warn the Ash-Mother if reduced below ~1/3 HP or clearly losing — he must survive to Act 3 unless the party is exceptional. Capturing him counts as a full victory and yields the reveal."},
+        "tactics": "Maelis fights smart and selfish: he Multiattacks the most dangerous-looking PC, Parries the heaviest blow, and positions to keep cultists and skeletons between himself and the party so he can break for the crypt passage when the tide turns. The cultists cluster to 'finish the seal' and break under pressure (Intimidation, or seeing Maelis flee). The two barrow-skeletons are fearless and methodical, guarding the seal-disc and falling on anyone who tries to re-ward it. The half-broken seal floor is difficult terrain and may give way (DC 13 Dex save near the disc, 1d6 on a fall).",
+        "scaling": "Party of 1-2 or all-squishy: Maelis + 1 Cultist + 1 Skeleton. Party of 4+ or running hot: Maelis + 3 Cultists + 2 Skeletons (+ a third Skeleton if the Act 1 mill alarm/this seal is fully broken). The seal-warding objective matters more than the body count.",
+        "xp": 700,
+        "xp_note": "Maelis (Bandit Captain, 450) + 2x Skeleton (100) + 3x Cultist (75) ~= 625; round to 700 for the climax and the seal-stakes. Award full value for routing, capturing, or scattering the cult, and a story bonus for re-warding the seal."
+      },
+      "transitions": "With the cult beaten (and Maelis fled or captured), the broken seal has opened a raw passage descending toward the Embergloom Crypt. The party returns to loc-cinderhollow to regroup, level toward 4-5, and act on the reveal — move to scene-a3-hook. The way to the crypt (loc-embergloom-crypt) is now open."
+    },
+    {
+      "id": "scene-a3-hook",
+      "name": "The Mask Falls",
+      "type": "social",
+      "location_id": "loc-cinderhollow",
+      "read_aloud": "You bring the truth down off the Smolderwood road — Wren's testimony, Ona's ledger, the ashen circle on the cult's tools — and lay it before Reeve Stoke in the ash-choked common room. The old man's face goes from disbelief to anger to something worse: as you speak Velandra's name, his eyes drift to the sickbed corner. It is empty. The cots are abandoned, the patients gone or fled, and where the apothecary always sat there is only a folded ash-grey shawl and the faint, bitter smell of grave-ash. Reeve Stoke picks the shawl up in shaking hands. 'She left after you went to the barrow,' someone whispers. 'Said she had one last patient to tend, up at the old hill.'",
+      "dm_notes": "ACT 3 HOOK and the emotional payoff of the reveal. The villain is named and GONE — to the crypt, to finish the rite. This scene is about resolve and the cost of the truth: Reeve Stoke (npc-elder) is shattered (the woman who nursed his dying wife is the one murdering his town); play his grief and his belated, furious resolve to back the party with everything Cinderhollow has left. Ona is vindicated and frightened. Wren (if freed and brought back) testifies and may, bravely, offer what she knows of the crypt's layout and the rite. Brother Toll (companion-default) reaches his crisis: his order's ancient enemy is awake AND has a human herald he failed to suspect — but he steadies, and gives the party the LORE THEY NEED for the finale: the Embergloom cannot be slain, only re-bound; the rite can be broken by stopping its anchor (Velandra) before the last seal gives; and the Ember-Watch's old litany ('ash to ash, the hunger sleeps') may help re-seal the stone. Let the party prepare — a long rest, last supplies, Velandra's abandoned apothecary may even yield a Potion of Healing or two and a vial of the true ash-cure. Then they descend. NOTE: if the party somehow reached this point WITHOUT the reveal (rushed past Wren, took no token), this is the backstop: the empty sickbed and the shawl and the witnesses force the connection here, before the crypt.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "You rally a broken town: Reeve Stoke presses the treasury's last coin and his late wife's silvered dagger into your hands, Ona arms the few hale townsfolk to guard the Hearth, and Wren steels herself to draw you a map of the crypt's approach. The party descends with the valley at its back. (Mechanical perk: the DM may grant the party a one-time Bless-in-a-bottle, an extra Potion of Healing, or advantage on the first crypt check, reflecting the town's support.)",
+          "failure": "Grief and fear rule the room; the town can't be rallied to more than letting the party go. No penalty beyond a lonelier descent — the party still goes to the crypt, just without the extra send-off boon."
+        },
+        {
+          "skill": "Religion",
+          "dc": 12,
+          "success": "Working with Brother Toll, you piece together the Ember-Watch's re-binding litany and how the sealing-stone is meant to work: stop the anchor, speak the words, re-seat the seal. This is concrete help for the climax — narrate it as a plan the party can actually execute at the stone.",
+          "failure": "The old lore stays fragmentary, but Toll knows enough to insist on the core truth: kill the rite, not just the herald, and the stone can be made to hold again."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party is ready, they descend through the barrow into the crypt — move to scene-a3-descent at loc-embergloom-crypt."
+    },
+    {
+      "id": "scene-a3-descent",
+      "name": "Descent to the Sealing-Stone",
+      "type": "exploration",
+      "location_id": "loc-embergloom-crypt",
+      "read_aloud": "Down past the broken first seal, the barrow gives way to something older and far worse: a vast vault beneath the great hill, its air glowing a dull ember-red. Here the ash does not fall — it rises, drifting upward in slow grey veils toward a hairline wound in the black stone overhead. The cold is gone, replaced by a dry, breathing heat. Ahead, between you and a faint chanting that echoes from the vault's heart, the dead keep watch: shapes of grey vapor drift between the pillars, and a great hunched thrall in rusted plate drags itself upright at your approach.",
+      "dm_notes": "ACT 3 EXPLORATION/HAZARD beat and the run-up to the climax. The crypt is rite-warped: the upward-falling ash and ember-glow are atmosphere with teeth — a CON save (DC 13) on prolonged exposure or risk a level of the grey fog (disadvantage until a short rest or a Cure-style spell). The party must cross the vault to reach the sealing-stone, contesting it with Velandra's outer guard: this is a HAZARD + COMBAT-LITE bridge into the boss fight, OR you can fold it directly into scene-a3-climax for a single escalating set-piece — DM's choice based on party resources. Guard force here: 2 Specters (the grey vapor-dead; bundled Specter, AC 12, HP 22, CR 1 — incorporeal, Life Drain, sunlight sensitivity is irrelevant underground) and 1 Ogre thrall (a villager the ash swelled and broke into a mindless brute; bundled Ogre, AC 11, HP 68, CR 2 — reflavor as a grey-skinned, ash-bloated thrall). A navigation choice: a fast, exposed central aisle (straight at the chanting, but past the Ogre) vs. a slow flanking colonnade (avoids the Ogre but the Specters drift through the pillars). EXPLORATION checks let the party spot the sealing-stone mechanism early (Investigation/Arcana) so they understand the climax objective before they're in the thick of it. Companion: Toll recites the Ember-Watch litany under his breath as a ward against the dread, steadying the party (flavor + a Bless when the fighting starts).",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "Even from across the vault you read the sealing-stone's mechanism: three ward-channels meet at the black stone, two already dark (the broken seals), the third flickering as Velandra's rite consumes it. You see HOW to intervene — disrupt the rite-focus at the stone and re-seat the channels — and can tell your allies the plan before the fighting starts. (Sets up the climax objective concretely.)",
+          "failure": "The stone is clearly the rite's heart, but its workings only become clear up close (or with Toll's litany-lore). You go in knowing 'break the rite at the stone' but not the specifics until you're there."
+        },
+        {
+          "skill": "Stealth",
+          "dc": 13,
+          "success": "Taking the flanking colonnade, the party slips past the great Ogre thrall without rousing it — trading the Specters' drifting threat for avoiding the brute, and arriving at the sealing-stone with surprise on Velandra's rite (advantage on the opening round of the climax).",
+          "failure": "A scuff of grit, a clink of mail — the Ogre thrall's dull head turns, and it lumbers to intercept. No surprise; the descent's guard force engages here rather than at the stone."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Specter", "count": 2, "reflavor": "The grey vapor-dead — those the ashfall killed outright, drawn here and bound to the rite. Incorporeal; they drift through pillars and the rising ash."},
+          {"name": "Ogre", "count": 1, "reflavor": "An ash-bloated thrall: a villager the grey rot swelled and hollowed into a mindless grey-skinned brute. Tragic, not gleeful — Toll may flinch to recognize a face."}
+        ],
+        "tactics": "The Ogre thrall guards the central aisle, slow but devastating; it focuses the nearest melee PC and can be kited or avoided via the colonnade. The two Specters use incorporeal movement to phase through the pillars and Life-Drain isolated or backline characters (a real threat to a squishy caster), retreating into stone when focused. This guard force is meant to soften and split the party before the boss — a DM running short on time or facing a battered party can fold these enemies into the climax as Velandra's opening wave instead of a separate fight.",
+        "scaling": "Party of 1-2 or all-squishy: 1 Specter + the Ogre (or drop the Ogre and use 2 Specters). Party of 4+ or running hot: 2 Specters + the Ogre, and hold a third Specter in reserve to arrive when the climax begins.",
+        "xp": 700,
+        "xp_note": "2x Specter (400) + Ogre (450) = 850 raw; budget ~700 toward the act if run as a separate fight, or roll the value into the climax total if folded in. Award for bypassing via Stealth as well — overcoming the guard counts however it's done."
+      },
+      "transitions": "Across the vault (or past it by stealth), the party reaches the sealing-stone and Sister Velandra mid-rite — move to scene-a3-climax. If the guard was folded in, this transition is seamless: the boss fight begins as the last Specter falls or the Ogre is bypassed."
+    },
+    {
+      "id": "scene-a3-climax",
+      "name": "Breaking the Rite",
+      "type": "combat",
+      "location_id": "loc-embergloom-crypt",
+      "read_aloud": "At the vault's heart, the black sealing-stone bleeds ember-light upward in a slow column of rising ash, and before it stands Sister Velandra Coir — but changed. Her silver hair has gone the colour of cold cinders, her kind eyes are two grey coals, and ash sloughs from her skin like a second, peeling face. She turns from her chanting and smiles, and it is, terribly, the same warm smile. 'You came so far, children,' she says, gentle as ever. 'I'm sorry. I truly am. But I have watched everyone I ever loved turn to dust, and I will not. Not anymore. One more breath and the grey will end all dying — yours, mine, the whole tired valley's.' Behind her the wound in the stone widens, and something vast on the far side of it begins, slowly, to inhale.",
+      "dm_notes": "THE CLIMAX — final COMBAT and the campaign's resolution. Velandra (npc-elder, see top-level 'antagonist') is now a half-ashen herald: use the bundled WIGHT stat block (AC 14, HP 82, CR 3) — her Life Drain reflavored as 'Ashen Touch' (necrotic, and a creature slain by it could rise as a grey shade if you want extra horror), her longsword a ritual athame, her undead-command flavor as raising the very thralls the party just fought. She is supported by her surviving guard — and by Maelis Vane (npc-rogue, Bandit Captain) if he fled here in Act 2, fighting at her side now. TWO OBJECTIVES, and the second is the real one: (1) defeat/turn Velandra, and (2) DISRUPT THE RITE at the sealing-stone before the Embergloom finishes its breath. Run this as a CLOCK: each round the rite is uninterrupted, the ember-glow brightens and the dread mounts (frightened-style saves, an extra thrall rising) toward a hard limit (~4-5 rounds) at which the Embergloom wakes — a bad ending. The party can stop the clock by killing Velandra (the anchor) OR by reaching the stone and succeeding on the re-binding (Arcana/Religion + the Ember-Watch litany, ideally a coordinated action while others hold off the herald). THE EMBERGLOOM ITSELF IS NEVER SEEN OR FOUGHT — it is the rising breath, the ember-light, the dread; its waking is the failure state, its re-sealing the victory. Do NOT stat it. SOCIAL OPTION: Velandra is a true believer, not unreachable — a truly clever party that confronts her with the faces of those she's killed (the miller's confession, Wren, a slain villager she once nursed) and lands a very hard Persuasion (DC 17) or Insight-driven appeal can make her FALTER — not switch sides, but hesitate in the rite long enough to give the party a decisive opening, or even, at the DM's discretion for an exceptional table, choose to end her own anchor and re-seal the stone with her last act. Reserve this for genuine brilliance; the default resolution is stopping her by force and re-binding the stone. Companion: Brother Toll's whole arc culminates here — his order's litany IS the re-binding key, and the dramatic beat is Toll at the stone reciting 'ash to ash, the hunger sleeps' while the party holds the line. Give him the climactic Healing Word and let him be the one to speak the final word that seals the stone if the party enables it.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 17,
+          "success": "You reach the woman beneath the ash — not with logic but with the faces of the loved: the miller who trusted her, the girl Wren she discarded, the dying wife she once nursed with real tenderness. For one terrible moment the grey coals of her eyes well up, and Velandra FALTERS in the rite — buying the party a decisive opening (advantage and a free round against her, or a clean shot at the stone). At an exceptional table, she may even break the rite herself, re-seal the stone with her own death, and whisper that she only ever wanted no one else to be lost. (Reserve the full turn for genuine brilliance; the falter is the standard reward.)",
+          "failure": "Her grief hardens back into resolve. 'You don't understand yet,' she says, almost pitying. 'But you will. Everyone does, at the end.' No opening — win this the hard way, by force and by the stone."
+        },
+        {
+          "skill": "Arcana",
+          "dc": 15,
+          "success": "Working the sealing-stone's three ward-channels while your allies hold off the herald, you re-seat the broken seals one by one. Paired with Brother Toll's Ember-Watch litany, the rising column of ash shudders and reverses — the wound in the stone narrows. THIS is the win condition: complete the re-binding (typically over 2-3 rounds of coordinated effort) and the Embergloom's breath is choked off, sealed below for another age.",
+          "failure": "The channels resist you mid-battle; a single failed attempt costs the action but not the war. Try again, lean on Toll's litany (Religion), or end the rite the other way — by putting down its anchor."
+        },
+        {
+          "skill": "Religion",
+          "dc": 14,
+          "success": "You and Brother Toll speak the Ember-Watch's old litany — 'ash to ash, the hunger sleeps' — in unison, and the words have weight here: they steady the party against the crypt's dread (ending/preventing the frightened effect) and are the verbal key the Arcana re-binding needs to take hold. Speaking the litany as the stone is re-seated is the campaign's closing image.",
+          "failure": "The litany comes haltingly and the dread presses in, but Toll knows enough to keep trying; the re-binding can still be completed by Arcana, just without the morale ward."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {"name": "Specter", "count": 1, "reflavor": "A grey shade Velandra raises (or one held over from the descent) — incorporeal reinforcement mid-rite."},
+          {"name": "Ogre", "count": 1, "reflavor": "An ash-bloated thrall at the herald's side (use only if the party is strong or the descent's Ogre survived/was bypassed). Reflavor as before."}
+        ],
+        "boss": {"name": "Sister Velandra Coir, the Ash-Mother", "npc_id": "antagonist", "stats": "Wight (AC 14, HP 82, CR 3) — half-ashen herald; Life Drain reflavored as Ashen Touch (necrotic), longsword as a ritual athame, undead-command as raising thralls.", "note": "The anchor of the rite. Defeating her stops the clock — OR re-bind the stone before she finishes. She fights from beside the sealing-stone and will not abandon the rite; killing her IS one of the two win conditions."},
+        "support_boss": {"name": "Maelis Vane", "npc_id": "maelis-vane", "stats": "Bandit Captain (AC 15, HP 52, CR 2)", "note": "Present ONLY if he fled here from the Act 2 seal fight. Fights at Velandra's side; if she falls or the rite breaks, a cornered Maelis surrenders or flees rather than dying for a lost cause."},
+        "tactics": "Velandra defends the sealing-stone and the rite above all — she will not chase the party away from the stone, because the rite is her purpose; she Ashen-Touches whoever threatens the stone, raises a fresh thrall when bloodied, and monologues between blows (giving the social option room to land). Run this as a RITE CLOCK: each uninterrupted round the ember-glow brightens, a frightened-style WIS save may ripple out, and at the hard limit (~round 4-5) the Embergloom wakes (bad ending) — so the party is racing the clock, not just the HP bar. Maelis (if present) plays bodyguard, Parrying blows aimed at Velandra and harrying anyone who breaks for the stone. The Embergloom is NOT a combatant — spend its waking as escalating dread and the failure timer, never as an attack to be traded with. The two win conditions (kill the anchor / re-bind the stone) let martial AND skill-focused parties each have a path to victory.",
+        "scaling": "Party of 1-2 or all-squishy: Velandra (Wight) alone, OR with 1 Specter; soften the rite clock to ~6 rounds. Party of 4+ or running hot: Velandra + Maelis (Bandit Captain) + 1 Specter + 1 Ogre thrall, rite clock ~4 rounds. Always keep BOTH win conditions live so the fight is about the stone, not just the body count.",
+        "xp": 1200,
+        "xp_note": "Velandra (Wight, 700) + Maelis (Bandit Captain, 450) if present + a Specter/Ogre = ~1150-1600; budget ~1200 for the climax. Award the FULL value for re-binding the stone even if Velandra is talked-down rather than slain, or flees — stopping the pact is the victory, however it's won."
+      },
+      "transitions": "When the rite is broken — Velandra defeated or turned, and the sealing-stone re-bound by the party and Brother Toll's litany — the ember-glow gutters out, the rising ash settles, and the Embergloom's breath is choked back into the dark for another age. Return to loc-cinderhollow for the conclusion."
+    }
+  ],
+  "rewards": {
+    "xp": 2800,
+    "xp_breakdown": {
+      "act1-mill-cult": 200,
+      "act2-barrow-seal": 700,
+      "act3-descent-guard": 700,
+      "act3-climax-rite": 1200,
+      "note": "~2800 XP across three acts, plus social/exploration story bonuses. Split among a party of 3-4 (with Brother Toll), this comfortably carries fresh level-1 characters to about level 5 over the campaign, per SRD encounter/milestone guidance. Many DMs will prefer to run this as MILESTONE leveling: level 2 after the mill (Act 1), level 3-4 across the barrow (Act 2), level 5 before or during the crypt climax (Act 3). Award full encounter XP for diplomatic and stealth resolutions — overcoming a challenge by talking past it or slipping around it counts as overcoming it."
+    },
+    "currency": {
+      "gp": 90,
+      "note": "Reeve Stoke's 40 gp for the mill (Act 1), plus the barrow's grave-goods and the crypt's old offerings (~50 gp in tarnished silver and old coin across Acts 2-3). The town has little; the reward is mostly the valley's survival and gratitude."
+    },
+    "loot": [
+      {"item": "Potion of Healing", "rarity": "common", "count": "2-3 across the campaign", "note": "Found among the cult's supplies at the mill and barrow, and in Velandra's abandoned apothecary before the descent. 2d4+2 HP each."},
+      {"item": "Vial of True Ash-Cure", "value": "priceless to Cinderhollow", "note": "Velandra's genuine cure for the ashfall, recovered from her apothecary or the crypt. Hand it to the town's healers and the blight can finally be ended — a story-reward as much as an item."},
+      {"item": "The Reeve's wife's silvered dagger", "rarity": "uncommon (silvered)", "note": "Pressed on the party by a grief-stricken Reeve Stoke before the crypt (Act 3 hook). A finely-made silvered dagger — useful against the undead it will face below, and a quiet emotional weight."},
+      {"item": "Ember-Watch ward-token", "value": "0 gp (story item)", "note": "An old vigil-order talisman found in the barrow or carried by Brother Toll, marked with the litany 'ash to ash, the hunger sleeps.' Aids the final re-binding; a keepsake of the order that held the line."},
+      {"item": "Cult ledger and ash-seed sample", "value": "evidence", "note": "Maelis Vane's accounting and a sample of the ash-seed spores — proof of the scheme, the lever that turns Reeve Stoke and the town against the Ash-Mother."}
+    ],
+    "story_rewards": [
+      "If Wren was freed and befriended, she testifies in town, is given a second chance, and becomes a quiet ally in Cinderhollow's rebuilding — a redeemed pawn living down what she helped do.",
+      "If cult pawns were spared rather than slaughtered, several frightened farmfolk return to the town fold; Cinderhollow learns that the cult was made of victims, not monsters — a more merciful, more complicated victory.",
+      "If Velandra was reached and turned (the hard Persuasion path) rather than simply slain, the town must reckon with mourning a murderer who was also, once, its most beloved healer — a bittersweet ending Brother Toll will carry for the rest of his road.",
+      "Re-binding rather than merely surviving the rite means the Embergloom is sealed for another age, NOT destroyed — a deliberate dangling thread for a future, higher-tier campaign should the seals ever weaken again.",
+      "Brother Toll's order is vindicated: the Ember-Watch held the line a second time. He may stay on as Cinderhollow's protector, or take to the road with the party as a permanent companion and lore-anchor for further adventures."
+    ]
+  },
+  "conclusion": "Dawn finds Cinderhollow under a clearing sky — the grey ash thinning at last, the wells running clean, the worst-sick beginning to wake from the fog. In the Hearth's common room, Reeve Stoke pours a round with hands that have aged a decade in three weeks, and grieves, openly, the friend who was a monster and the monster who was a friend. How the valley remembers it is up to the party: as the day they cut down a deathless herald and broke an evil cult, or as the day they unmasked a desperate, grieving woman who could not bear to lose one more soul and so would have damned them all — and held the line anyway. Either way, the Embergloom's breath is choked back into the dark beneath the hills, sealed for another age by the party's hand and Brother Toll's old, patient order. But a seal is not a grave. Far below, in the ember-dark, the grey hunger settles back to sleep — and waits, with all the patience of something that has already waited three hundred years. (Hook for a future, higher-tier return to the deep.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-a1-mill (search the mill, Maelis's tally, the grain-loft deadfall), scene-a2-barrow (the defiled barrow maze, ward-stones, hazards), and scene-a3-descent (the rite-warped crypt, sealing-stone mechanism, the aisle-vs-colonnade navigation choice).",
+      "social": "scene-a1-hook (Reeve Stoke + the planted villain Velandra), scene-a2-hook (Ona's ledger + the tonic clue), scene-a2-barrow (Wren, the attitude-shift turncoat who carries the REVEAL — hostile/terrified -> grateful/helpful on Persuasion/Insight), scene-a3-hook (the mask falls), and the climax's optional turn-the-villain Persuasion (DC 17).",
+      "combat_act1": "scene-a1-cult — 3x Cultist + 1x Skeleton (Maelis flees).",
+      "combat_act2": "scene-a2-seal — Maelis Vane (Bandit Captain) + 3x Cultist + 2x Skeleton, with a seal-warding objective.",
+      "combat_act3": "scene-a3-descent — 2x Specter + 1x Ogre (guard); scene-a3-climax — Velandra (Wight) + Maelis (Bandit Captain, if fled here) + Specter/Ogre support, with the rite-clock objective."
+    },
+    "bundled_assets_used": {
+      "monsters_act1": ["Cultist (x3, scene-a1-cult)", "Skeleton (x1, risen mill-hand)"],
+      "monsters_act2": ["Cultist (x3, scene-a2-seal work-gang)", "Skeleton (x2, barrow-guardians)", "Bandit Captain (Maelis Vane, mid-boss)"],
+      "monsters_act3": ["Specter (x2 descent, +1 climax)", "Ogre (x1 descent, optional +1 climax thrall)", "Wight (Velandra, the Ash-Mother — final boss)", "Bandit Captain (Maelis Vane, if he fled to the crypt)"],
+      "monsters_optional": ["Giant Rat / Swarm of Rats (atmosphere vermin at the fouled mill, optional difficulty dial)", "Commoner (Reeve Stoke, Garrick — noncombatants)"],
+      "spells_in_play": ["Bless, Healing Word, Cure Wounds, Guiding Bolt, Sacred Flame (Brother Toll across all acts)", "Lesser Restoration / Spiritual Weapon (Toll by Act 2, if leveled)", "Protection from Evil and Good (vs. the undead and the rite's dread)", "ranged cantrips/Magic Missile (across the mill race, the barrow, and the crypt vault)"],
+      "conditions_in_play": ["Frightened (the crypt's dread and the rite-clock in Act 3)", "Prone / difficult terrain (the slick mill race, the unstable broken seal, the rising-ash vault)", "Poisoned (the ashfall fog — flavored as a CON-save grey-fog hazard at the mill, barrow, and crypt)", "Grappled/Restrained (optional, vermin or thrall)"]
+    },
+    "the_embergloom_note": "The Embergloom — the buried entity — is NEVER fully seen and NEVER fought. It is the ashfall's true source and the rite's prize: a presence of grey hunger felt as rising ash, ember-light, and mounting dread. Its WAKING is the campaign's failure state (the Act 3 rite-clock); its RE-SEALING is the victory. Do NOT stat it. Velandra (Wight stats) is the human anchor the party actually fights; the Embergloom is the reason the fight matters.",
+    "pacing": "Designed as a ~4-session arc (one act per ~80-min session, or a long single sitting). Act 1 ~ levels 1-2 (hook + mill + cult). Act 2 ~ levels 2-4 (barrow + reveal + seal). Act 3 ~ levels 4-5 (descent + crypt climax). Use the per-scene scaling notes to tune each fight to party size, and prefer milestone leveling (2 / 3-4 / 5) for clean act breaks.",
+    "originality_note": "This campaign is 100% original prose written for ClawDnD and is shippable under the repo's MIT license. It uses only SRD 5.2 mechanics and the bundled SRD creature stat blocks (Cultist, Skeleton, Bandit Captain, Specter, Ogre, Wight). No published or copyrighted adventure text, names, places, or plot is reproduced; the town of Cinderhollow, the Embergloom entity, Sister Velandra Coir, Brother Toll, and all NPCs and locations are original creations."
+  }
+}
