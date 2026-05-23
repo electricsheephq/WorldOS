@@ -90,8 +90,60 @@ def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     return out, consumed
 
 
+def _activity_items(obj: dict) -> list[dict]:
+    """Flatten one stream-json event into watchable activity items: an agent's
+    narration (assistant text), each tool call it makes, and the turns fed to it
+    (user/player messages). Tool-result and system noise is dropped."""
+    items: list[dict] = []
+    t = obj.get("type")
+    msg = obj.get("message") or {}
+    if t == "assistant":
+        for blk in msg.get("content") or []:
+            if not isinstance(blk, dict):
+                continue
+            if blk.get("type") == "text" and (blk.get("text") or "").strip():
+                items.append({"kind": "narration", "label": "DM", "detail": blk["text"].strip()})
+            elif blk.get("type") == "tool_use":
+                name = (blk.get("name") or "").split("__")[-1]
+                inp = json.dumps(blk.get("input") or {}, separators=(",", ":"))
+                items.append({"kind": "tool", "label": name, "detail": inp[:160]})
+    # (user-type events in a --resume stream are tool-results / skill-system noise,
+    #  not the player agent's turns — the orchestrator's prompts aren't echoed —
+    #  so we surface only the agent's tool calls + narration here. A true two-sided
+    #  player+DM activity log is a follow-up that emits both agents' turns.)
+    return items
+
+
+def _read_activity(since: int) -> tuple[list[dict], int]:
+    """Tail the configured agent transcript (a stream-json .jsonl, e.g. a QA run's),
+    returning new activity items after line `since`. Mirrors _read_events' tolerance
+    of a half-written trailing line. Empty when no transcript is configured."""
+    path = _Handler.transcript_path
+    if not path:
+        return [], since
+    f = Path(path)
+    if not f.exists():
+        return [], since
+    lines = f.read_text(encoding="utf-8").splitlines()
+    out: list[dict] = []
+    consumed = since
+    for raw in lines[since:]:
+        stripped = raw.strip()
+        if not stripped:
+            consumed += 1
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            break  # partial trailing line — re-read next poll
+        out.extend(_activity_items(obj))
+        consumed += 1
+    return out, consumed
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
+    transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -117,6 +169,11 @@ class _Handler(BaseHTTPRequestHandler):
             since = int((qs.get("since") or ["0"])[0])
             entries, nxt = _read_events(self.campaign_id, since)
             self._json({"entries": entries, "next": nxt})
+        elif route == "/activity":
+            qs = parse_qs(parsed.query)
+            since = int((qs.get("since") or ["0"])[0])
+            items, nxt = _read_activity(since)
+            self._json({"items": items, "next": nxt, "live": bool(self.transcript_path)})
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -131,8 +188,15 @@ def main() -> int:
         print(f"No campaign found under {_campaigns_dir()} — start one first.", file=sys.stderr)
         return 1
     _Handler.campaign_id = campaign_id
+    # Optional agent-transcript to tail in the "Agent activity" panel — point it at a
+    # QA run's stream-json (e.g. qa/transcripts/<run>.jsonl) to WATCH the agents play.
+    _Handler.transcript_path = os.environ.get("CLAWDND_VIEWER_TRANSCRIPT") or (
+        sys.argv[3] if len(sys.argv) > 3 else ""
+    )
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
+    if _Handler.transcript_path:
+        print(f"Watching agent transcript: {_Handler.transcript_path}")
     print("Read-only projection of the live campaign — Ctrl-C to stop.")
     try:
         srv.serve_forever()
