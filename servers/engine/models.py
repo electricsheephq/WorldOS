@@ -370,3 +370,5 @@ class Campaign(_StrictModel):
     decisions: list[Decision] = Field(default_factory=list)  # party choices, for callbacks
     scenes: list[dict] = Field(default_factory=list)  # authored scene guidance (read_aloud, dm_notes, checks) the DM reads via get_scene — inert content, never computed on
     lore: list[str] = Field(default_factory=list)  # world-bible facts (history, standing threads) — indexed into recall so the DM keeps a generated world consistent
+    world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
+    era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened

@@ -165,6 +165,8 @@ def seed_world(world: dict, start_at: str = "") -> Campaign:
     if not isinstance(world, dict):
         raise ValueError("world data must be a JSON object")
     c = Campaign(title=world.get("name", "Untitled World"), summary=world.get("premise", ""))
+    c.world_id = str(world.get("id", ""))  # enables lookup_lore over this world's corpus
+    c.era = str(world.get("era") or world.get("current_year") or "")  # chronology guardrail
 
     first_loc = None
     for reg in _as_list(world, "regions"):

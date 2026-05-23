@@ -25,6 +25,7 @@ import encounter
 import generator
 import inventory
 import ledger as ledger_mod
+import lorebook
 import npc as npc_mod
 import recap
 import rests
@@ -256,8 +257,10 @@ def start_world(world_id: str, start_at: str = "") -> dict:
         "campaign_id": c.id,
         "world": c.title,
         "premise": c.summary,
+        "era": c.era,
         "tone": world.get("tone", ""),
         "dm_guidance": world.get("dm_guidance", ""),
+        "lore_corpus_pages": lorebook.page_count(c.world_id),
         "standing_threads": world.get("standing_threads", []),
         "story_seeds": world.get("story_seeds", []),
         "starting_at": {"id": loc.id, "name": loc.name} if loc else None,
@@ -353,6 +356,31 @@ def get_scene(campaign_id: str, location_id: str = "") -> dict:
         "count": len(scenes),
         "scenes": scenes,
         "all_scene_location_ids": sorted({s.get("location_id", "") for s in c.scenes if s.get("location_id")}),
+    }
+
+
+@mcp.tool()
+def lookup_lore(campaign_id: str, query: str, limit: int = 5) -> dict:
+    """Look up established WORLD LORE on demand — the DM's wiki for a universe seed.
+
+    When the party reaches a city/region or meets a figure tied to the setting, call
+    this to pull the canon, then GROUND your generation in it (and invent the specifics
+    on top — a city's lord can be noble one game and fallen the next, but the city is
+    the city). Searches the world seed's lore corpus (content/worlds/<id>/lore/) and
+    returns the most relevant pages as {title, excerpt, source}, ranked by relevance.
+
+    Also returns `era` — the in-world date/chronology. RESPECT IT: don't bring on
+    figures who are long dead or events that haven't happened yet. Returns empty hits
+    if this campaign isn't from a world seed, or the world ships no lore corpus — then
+    generate freely and use `recall` for the facts you've established this game."""
+    c = _require(campaign_id)
+    hits = lorebook.lookup_lore(c.world_id, query, max(1, limit)) if c.world_id else []
+    return {
+        "world_id": c.world_id,
+        "era": c.era,
+        "query": query,
+        "hits": hits,
+        "corpus_pages": lorebook.page_count(c.world_id) if c.world_id else 0,
     }
 
 

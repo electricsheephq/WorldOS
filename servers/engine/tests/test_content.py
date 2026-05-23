@@ -101,3 +101,16 @@ def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
     w = content.load_world_data("sundered-reach")
     with pytest.raises(ValueError, match="not a region"):
         content.seed_world(w, start_at="loc-nope")
+
+
+def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
+    # the DM's on-demand "wiki": lookup_lore pulls ranked canon from the world's
+    # lore corpus + reports the chronology (era), and is empty/safe off-world.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("sundered-reach")["campaign_id"]
+    out = server.lookup_lore(cid, "Brassmoor capital of the Concord")
+    assert out["corpus_pages"] >= 1 and out["era"]  # chronology surfaced
+    assert out["hits"] and any("brassmoor" in (h["title"] + h["excerpt"]).lower() for h in out["hits"])
+    # a campaign not started from a world seed returns empty, no crash
+    blank = server.create_campaign("blank")["id"]
+    assert server.lookup_lore(blank, "anything")["hits"] == []
