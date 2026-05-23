@@ -84,4 +84,11 @@ cd ClawDnD
 
 ## Licensing
 
-ClawDnD's own code is **MIT** (see `LICENSE`). It deliberately reuses only permissively-licensed components and ships the CC-BY-4.0 SRD. It does **not** redistribute copyrighted published adventures — it ships original / CC-licensed content, a campaign generator, and a *private* import path for adventures you legally own. See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
+ClawDnD's own **code is MIT** (see `LICENSE`). It reuses only permissively-licensed components and ships the **CC-BY-4.0 SRD 5.2** for rules. See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
+
+**World seeds** (`content/worlds/`) are a separate layer with their own licensing:
+
+- **Original seeds** (e.g. *The Sundered Reach*) are original ClawDnD content, **CC-BY-4.0**, built on SRD primitives.
+- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's Gate 3+ Universe Seed*) are **unofficial, FREE fan content** — game rules under the **D&D Open Game License / CC-BY SRD**, and setting names/lore/characters under the **Wizards Fan Content Policy** (and, for Baldur's Gate 3 elements, used as unofficial fan content of Larian Studios). They are **not official, not endorsed**, and never sold. Each such seed ships a `LICENSE.md` carrying the required notice. The MIT license covers ClawDnD's code only — **it does not extend to the universe seeds**, which remain the property of their respective rights-holders and are used here strictly as free, unofficial Fan Content.
+
+A `_private/` path under each content area stays **gitignored** for material you don't intend to publish.

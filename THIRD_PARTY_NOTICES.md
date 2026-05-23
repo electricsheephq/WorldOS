@@ -47,8 +47,27 @@ knowledge.
 
 ## Content policy
 
-Published commercial adventures (e.g. WotC titles) are copyrighted and are
+Published commercial **adventures** (e.g. WotC titles) are copyrighted and are
 **never** redistributed in this repository. ClawDnD ships original and
 CC-licensed content, generates campaigns from SRD primitives, and supports
 *private, local* import of adventures the user legally owns (kept under a
 git-ignored directory and never committed).
+
+## World seeds (`content/worlds/`)
+
+World seeds are a distinct content layer with their own licensing (the project's
+MIT license covers code only and does **not** extend to them). Each seed ships a
+`LICENSE.md`; the CI gate (`scripts/license_check.py`) requires it.
+
+- **Original seeds** (e.g. *The Sundered Reach*) — original ClawDnD content under
+  **CC-BY-4.0**, built on SRD primitives. Clean-room; no third-party setting IP.
+- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's
+  Gate 3+ Universe Seed*) — **FREE, unofficial Fan Content**, never sold:
+  - Game rules: **CC-BY-4.0 SRD / D&D Open Game License**.
+  - Setting names/lore/characters: **Wizards Fan Content Policy** —
+    *"Unofficial Fan Content permitted under the Fan Content Policy. Not
+    approved/endorsed by Wizards. Portions of the materials used are property of
+    Wizards of the Coast. ©Wizards of the Coast LLC."* Baldur's Gate 3 elements are
+    the property of **Larian Studios**, used as unofficial fan content.
+  - These seeds are not official and not endorsed by any rights-holder.
+- A `content/worlds/_private/` path stays git-ignored for unpublished seeds.
