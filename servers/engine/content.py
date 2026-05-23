@@ -50,6 +50,7 @@ def seed_campaign(adv: dict) -> Campaign:
             name=loc.get("name", "?"),
             description=loc.get("description", ""),
             connections=loc.get("connections", []),
+            hex=loc.get("hex"),  # optional axial coords (presentation only)
         )
         if loc.get("id"):
             if loc["id"] in c.locations:
@@ -61,6 +62,10 @@ def seed_campaign(adv: dict) -> Campaign:
     c.current_location_id = first_loc
     if first_loc is not None:
         c.locations[first_loc].visited = True  # the party starts here
+    # Render as a hex map if the adventure declares it or any location has coords.
+    c.map_kind = adv.get("map_kind") or (
+        "hex" if any(l.hex for l in c.locations.values()) else "none"
+    )
 
     for npc in _as_list(adv, "npcs"):
         data = {

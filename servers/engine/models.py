@@ -262,6 +262,10 @@ class Location(_StrictModel):
     connections: list[str] = Field(default_factory=list)  # location ids
     notes: str = ""
     visited: bool = False
+    # Optional axial-hex (q, r) coords — PRESENTATION ONLY (the viewer renders them).
+    # The engine's adjacency/travel is governed solely by `connections`; coords are
+    # never used for movement or distance.
+    hex: Optional[tuple[int, int]] = None
 
 
 class Faction(_StrictModel):
@@ -335,6 +339,7 @@ class Campaign(_StrictModel):
     current_location_id: Optional[str] = None
     day: int = 1  # in-world day counter
     time_of_day: str = "morning"
+    map_kind: Literal["hex", "none"] = "none"  # how the play-view renders the map
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions

@@ -221,3 +221,24 @@ def test_travel_through_engine_rejects_unconnected(started):
     # taproom only connects to cellar-stairs; the sump is not reachable directly
     with pytest.raises(Exception):
         server.travel_to(cid, "loc-sump")
+
+
+# --- P3.1: map coords (presentation only) ----------------------------------
+
+
+def test_location_hex_roundtrips_and_map_kind_derived():
+    adv = {
+        "title": "M",
+        "locations": [
+            {"id": "a", "name": "A", "connections": ["b"], "hex": [0, 0]},
+            {"id": "b", "name": "B", "connections": ["a"], "hex": [1, 0]},
+        ],
+    }
+    c = content.seed_campaign(adv)
+    assert c.map_kind == "hex"  # derived from coords
+    assert c.locations["a"].hex == (0, 0) and c.locations["b"].hex == (1, 0)
+
+
+def test_map_kind_none_without_coords():
+    c = content.seed_campaign({"title": "M", "locations": [{"id": "a", "name": "A"}]})
+    assert c.map_kind == "none" and c.locations["a"].hex is None
