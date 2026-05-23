@@ -18,14 +18,15 @@ cd "$ROOT" || exit 1
 
 RUN="${1:-$(date +%Y%m%d-%H%M%S)}"
 BUDGET="${2:-3.00}"
+PROMPT_FILE="${3:-qa/play_prompt.txt}"
 T="qa/transcripts"
 mkdir -p "$T" qa/state
 
 echo "[qa] run=$RUN budget=\$$BUDGET"
 rm -rf qa/state/campaigns/* 2>/dev/null
 
-echo "[qa] playing (claude --plugin-dir, sonnet)…"
-claude -p "$(cat qa/play_prompt.txt)" \
+echo "[qa] playing (claude --plugin-dir, sonnet) prompt=$PROMPT_FILE…"
+claude -p "$(cat "$PROMPT_FILE")" \
   --plugin-dir "$ROOT" \
   --mcp-config qa/qa.mcp.json --strict-mcp-config \
   --model sonnet --permission-mode bypassPermissions \

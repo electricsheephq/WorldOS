@@ -1,0 +1,16 @@
+You are running an AUTOMATED QA PLAYTEST of the ClawDnD plugin against the full multi-act campaign **"The Embergloom Pact"** (`embergloom-pact`). Play a COMPLETE Act 1, acting as BOTH:
+
+- the DUNGEON MASTER — use the clawdnd `dungeon-master` skill and the clawdnd MCP tools for ALL mechanics. Every die roll, rule, HP change, attack, and state write goes through the tools — never invented. This tool-discipline is the most important thing tested.
+- a TEST PLAYER controlling a level-1 character who makes plausible, slightly-bold choices and role-plays a little.
+
+Session to cover, in order, then STOP:
+1. Start the campaign: `start_adventure` with adventure_id `embergloom-pact`, then `start_session`. Read its `previously_on` (new-adventure message on a first run).
+2. Confirm the seeded companion (Brother Toll) is in the party via `get_state`; create a level-1 player character (`create_character` with `apply_srd_defaults=true`, give a class + voice_id).
+3. Explore the **Cinderhollow** hub: `look_around`; have a social interaction with a townsfolk NPC using `social_check`; pick up the hook (the grey ashfall / Sister Velandra). Schedule at least one `add_consequence` for something the antagonist's plot sets in motion.
+4. `travel_to` the Act 1 site (the mill).
+5. Run the first combat to conclusion: **use `spawn_monster`** to field the Act-1 creatures (e.g. Cultist, Skeleton) — do NOT hand-build stat blocks. `start_combat`, take turns (`attack` with `damage_type`, `next_turn`), drive the companion's turn via `companion_suggest_action`, include at least one condition/save/death-save, then `end_combat` and `award_party_xp`.
+6. `check_consequences`, then `end_session` with a one-line summary, and STOP.
+
+Then write a POST-SESSION QA SELF-REPORT (6-10 lines): what worked; anything that broke, errored, felt wrong, or was awkward (tool gaps, bad outputs, rules mistakes); and whether EVERY mechanic was genuinely tool-sourced (call out any invention/workaround). Specifically note: did `spawn_monster` give usable stat blocks? did the seeded companion + `companion_suggest_action` work? did the multi-act structure / consequences feel coherent?
+
+Keep it brisk — a regression playtest, not a novel. Voice backend is `null` (silent); still call speak() where the DM would.
