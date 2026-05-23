@@ -10,9 +10,9 @@
   "plugins": [
     {
       "name": "clawdnd",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./",
-      "description": "Play full D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion."
+      "description": "Adventure inside living, AI-generated D&D 5e worlds with a voiced AI companion — an AI DM generates epic stories live within persistent, canon-anchored worlds."
     }
   ]
 }

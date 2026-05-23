@@ -4,7 +4,7 @@
 
 ClawDnD is a Claude Code plugin. You don't play *against* the AI; you go on an adventure *with* it. A Dungeon Master narrates the world and voices every NPC, and a companion party member adventures alongside you — with its own character sheet, personality, voice, and agency. Dice and rules are deterministic (never hallucinated), campaigns persist across sessions, and every line is spoken aloud.
 
-> **Status:** Tier-1 feature-complete and tested. The full gameplay stack — dice, characters, combat, spellcasting, rests, inventory/economy, NPC memory, encounters, persistence, recaps, voice, and an original starter adventure — is built and green in CI. Tier 2 (OpenClaw companion) is the next milestone. See the [issues](https://github.com/100yenadmin/ClawDnD/issues) for the roadmap.
+> **Status:** Tier-1 **plus a living-world generative engine** — built and green in CI (~353 engine tests). The full deterministic stack (dice, characters, combat, spellcasting, rests, inventory/economy, NPC memory, encounters, persistence, voice) runs under an AI DM that **generates epic, mature, Baldur's-Gate-caliber stories live inside persistent, canon-anchored worlds** — grounded by on-demand lore lookup, a searchable campaign memory, chronology, and standing threads that move on their own. QA-scored on a story-craft lens (≈4.2/5, prestige-fantasy). Tier 2 (OpenClaw companion fork) is the remaining milestone. See the [issues](https://github.com/100yenadmin/ClawDnD/issues) for the roadmap.
 
 ## What makes it different
 
@@ -25,12 +25,13 @@ The loop is **turn-based** (Claude narrates → per-character voice plays → yo
 ```
 .claude-plugin/   plugin.json + marketplace.json (install metadata)
 .mcp.json         registers the 3 MCP servers
-skills/           dungeon-master, companion, campaign-author
+skills/           dungeon-master, companion, campaign-author, world-author
 agents/           companion-agent (Tier-2 fork seed)
 servers/          engine, rules, voice  (Python, run with uv)
 data/srd/         SRD 5.2.1 data (CC-BY-4.0) + ATTRIBUTION
-commands/         player-facing slash commands
-content/          campaigns + voice map
+commands/         player-facing slash commands (campaign + /world-*)
+content/          campaigns, worlds (living-world seeds + lore corpora), voice map
+tools/ingest/     offline wiki → lore-corpus ingestion
 state/            runtime campaign saves (git-ignored)
 ```
 
@@ -50,13 +51,19 @@ The deterministic core runs in three Python MCP servers and is exercised by a fu
 - **Voice** — `speak(text, voice_id)` behind a swappable `TtsBackend` (Kokoro / ElevenLabs / null), distinct per-character voices, and a speech-to-text seam — with a reliable text-only fallback.
 - **Persistence & recaps** — single-writer atomic saves, a session log, and a "Previously on…" recap so a campaign survives quit/reload and context compaction across many sessions.
 - **Content** — an original CC-BY starter adventure (**"The Cellar Rats"**), a campaign scaffold/validator, and a *private* import path for adventures you legally own.
+- **Living worlds (generative play)** — drop into a persistent **world seed** (regions, factions, a pullable cast, history, and an `era` the DM stays true to) and the DM generates the adventure *live*: grounding in canon on demand (`lookup_lore` over a per-world lore corpus — authored pages outrank ingested ones), *persisting* what it builds (`add_location`, `remember`) so the world is travelable and survives across sessions, and letting the world's **standing threads move on their own** (`world_tick`). Ships an original world (*The Sundered Reach*, CC-BY) plus a wiki-ingestion pipeline (`tools/ingest/`) for building deep lore corpora. See `content/worlds/README.md`.
 
 ## How to play
 
 Once installed, drive the game from Claude Code with these commands:
 
+**Living worlds — the generative mode, ClawDnD at its best:** drop into a persistent world and the DM generates an epic, mature story *live* within its canon (real places, factions, history, and an era it stays true to), grounded by on-demand lore lookup, with the world's standing threads moving on their own — different every playthrough.
+
 | Command | What it does |
 |---|---|
+| `/world-list` | Browse the living worlds you can adventure in. |
+| `/world-play [id]` | Drop into a world (e.g. `sundered-reach`) — the DM generates the story live, grounded in the world's canon, and resumes an existing campaign if one exists. |
+| `/world-new [concept]` | Author a new original world seed to adventure in. |
 | `/campaign-new [name]` | Create a campaign, roll up your character, meet your AI companion, and begin. |
 | `/session-start [id]` | Resume (or begin) play — loads state, recaps "Previously on…", hands off to the DM. |
 | `/session-recap [id]` | Read a voiced recap of the story so far without advancing it. |
