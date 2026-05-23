@@ -1524,12 +1524,26 @@ def forget(campaign_id: str, character_id: str, fact: str) -> dict:
         return {"id": ch.id, "name": ch.name, "memory": ch.memory}
 
 
+# Skills that PERCEIVE an NPC rather than INFLUENCE them. A read (insight,
+# perception, investigation) tells the actor something; it must NOT change how the
+# NPC feels about the actor — observer clarity is not persuasion, and a misread is
+# the actor's problem, not a relationship penalty. Everything else is influence.
+READ_SKILLS = {"insight", "perception", "investigation"}
+
+
 @mcp.tool()
 def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int) -> dict:
-    """The actor makes a social skill check (e.g. persuasion / deception /
-    intimidation / insight) against a DC. On success the NPC's attitude improves
-    one step on the track (hostile -> wary -> indifferent -> friendly -> helpful);
-    on failure it worsens one step."""
+    """An actor's skill check against an NPC, with read-vs-influence semantics.
+
+    INFLUENCE skills (persuasion / deception / intimidation / …) try to move the
+    NPC: on success the attitude improves one step on the track (hostile -> wary ->
+    indifferent -> friendly -> helpful), on failure it worsens one step.
+
+    READ skills (insight / perception / investigation) only PERCEIVE the NPC and
+    NEVER change its attitude — reading or misreading someone is observer clarity,
+    not influence. A read returns a `read` block (an accurate sense of the NPC's
+    stance on success; a deliberately uncertain, almost-grasped impression on a
+    miss) for the DM to narrate — never a flat attitude penalty for a failed read."""
     if skill.lower() not in SKILL_ABILITIES:
         raise ValueError(f"unknown skill {skill!r}")
     if actor_id == npc_id:
@@ -1540,15 +1554,34 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         the_npc = _char(c, npc_id)
         if the_npc.kind not in ("npc", "monster"):
             raise ValueError("social_check target must be an NPC or monster")
-        r = dice_mod.roll(f"1d20+{actor.skill_bonus(skill.lower())}")
+        sk = skill.lower()
+        r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
         success = r.total >= dc
         old = the_npc.attitude
-        the_npc.attitude = npc_mod.shift_attitude(the_npc.attitude, 1 if success else -1)
-        save_campaign(c)
-        return {
+        is_read = sk in READ_SKILLS
+        read = None
+        if is_read:
+            # Perceive, don't influence: attitude is untouched, no state write.
+            read = {
+                "perceived_attitude": old if success else None,
+                "note": (
+                    "A clear read — this is the NPC's honest stance toward the actor "
+                    "right now; narrate what the actor accurately perceives."
+                    if success
+                    else "The read won't resolve — play the miss as a specific "
+                    "almost-grasped detail that slips away (a calculation behind the "
+                    "warmth, a held beat), not a flat blank and not an attitude penalty."
+                ),
+            }
+        else:
+            # Influence: move the attitude and persist the change.
+            the_npc.attitude = npc_mod.shift_attitude(the_npc.attitude, 1 if success else -1)
+            save_campaign(c)
+        out = {
             "actor": actor.name,
             "npc": the_npc.name,
-            "skill": skill.lower(),
+            "skill": sk,
+            "kind": "read" if is_read else "influence",
             "roll": r.total,
             "natural": r.natural,
             "dc": dc,
@@ -1556,6 +1589,9 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
             "old_attitude": old,
             "new_attitude": the_npc.attitude,
         }
+        if read is not None:
+            out["read"] = read
+        return out
 
 
 @mcp.tool()

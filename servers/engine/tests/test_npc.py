@@ -48,6 +48,32 @@ def test_social_check_success_and_failure(campaign):
     server.set_attitude(campaign, npc_id, "indifferent")
     out2 = server.social_check(campaign, pc, npc_id, "persuasion", dc=100)  # always fails
     assert out2["success"] is False and out2["new_attitude"] == "wary"
+    assert out["kind"] == "influence" and "read" not in out  # influence is tagged, no read block
+
+
+def test_social_check_read_skills_perceive_without_shifting_attitude(campaign):
+    # A READ (insight/perception/investigation) tells the actor something; it must
+    # NEVER change how the NPC feels — reading or MISreading someone is observer
+    # clarity, not influence. (A failed Insight wrongly souring a warmth-first
+    # antagonist was the QA-flagged bug this fixes.)
+    pc = server.create_character(campaign, "Watcher", kind="player", abilities={"wisdom": 16})["id"]
+    npc_id = server.create_character(campaign, "Stranger", kind="npc")["id"]
+
+    server.set_attitude(campaign, npc_id, "indifferent")
+    ok = server.social_check(campaign, pc, npc_id, "insight", dc=1)  # always succeeds
+    assert ok["kind"] == "read" and ok["success"] is True
+    assert ok["old_attitude"] == "indifferent" and ok["new_attitude"] == "indifferent"
+    assert ok["read"]["perceived_attitude"] == "indifferent"  # a clear read reveals the stance
+
+    miss = server.social_check(campaign, pc, npc_id, "insight", dc=100)  # always fails
+    assert miss["kind"] == "read" and miss["success"] is False
+    assert miss["new_attitude"] == "indifferent"  # a flubbed read is NOT an attitude penalty
+    assert miss["read"]["perceived_attitude"] is None  # uncertain read, nothing asserted as truth
+
+    # perception and investigation are reads too — attitude holds either way
+    for sk in ("perception", "investigation"):
+        out = server.social_check(campaign, pc, npc_id, sk, dc=100)
+        assert out["kind"] == "read" and out["new_attitude"] == "indifferent"
 
 
 def test_social_check_unknown_skill_raises(campaign):
