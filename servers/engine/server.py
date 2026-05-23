@@ -522,8 +522,8 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result = travel.travel_to(c, destination_id, advance_time=advance_time)
-        if advance_time:  # time passed → the world's standing threads may move
-            beats = worldsim.tick(c)
+        if advance_time:  # time passed → ONE standing thread may stir (one discrete beat, not a list)
+            beats = worldsim.tick(c, max_beats=1)
             if beats:
                 result["world_beats"] = [b.text for b in beats]
         save_campaign(c)
@@ -1866,7 +1866,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
         c.day += elapsed
         c.time_of_day = "morning"
         due = consequences_mod.due(c)
-        beats = worldsim.tick(c, max_beats=4)  # a long span → the standing threads moved
+        beats = worldsim.tick(c, max_beats=2)  # a long span → a couple of threads stirred
         save_campaign(c)
         return {
             "day": c.day,
