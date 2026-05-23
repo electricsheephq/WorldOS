@@ -530,6 +530,36 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
         return result
 
 
+def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
+    """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
+    hit dice, level-1 HP (max die + CON), proficiency bonus, class base AC (when
+    requested), and class features through `level`. No-op on an unknown class. Shared
+    by create_character and recruit_companion so a live-made hero gets a real sheet
+    instead of forcing the DM to invent modifiers."""
+    try:
+        cname = class_name.lower()
+        ch.saving_throw_proficiencies = [Ability(s) for s in srd_tables.class_saves(cname)]
+        die = srd_tables.hit_die(cname)
+        ch.hit_dice = f"{level}d{die}"
+        ch.hit_dice_remaining = level
+        if level == 1:
+            ch.max_hp = max(1, die + ch.abilities.modifier(Ability.CON))
+            ch.current_hp = ch.max_hp
+        ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
+        if set_base_ac:
+            ch.armor_class = srd_tables.class_base_ac(cname)
+        for f in srd_tables.features_through(cname, level):
+            if f["name"] not in ch.features:
+                ch.features.append(f["name"])
+            if "extra_attacks" in f:
+                ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
+            if f.get("sneak_attack_dice"):
+                ch.sneak_attack_dice = f["sneak_attack_dice"]
+        _recompute_spellcasting(ch)
+    except ValueError:
+        pass  # unknown class -> keep the explicit values
+
+
 @mcp.tool()
 def create_character(
     campaign_id: str,
@@ -591,33 +621,60 @@ def create_character(
             initiative_bonus=scores.modifier(Ability.DEX),
         )
         if apply_srd_defaults and class_name:
-            try:
-                cname = class_name.lower()
-                ch.saving_throw_proficiencies = [Ability(s) for s in srd_tables.class_saves(cname)]
-                die = srd_tables.hit_die(cname)
-                ch.hit_dice = f"{level}d{die}"
-                ch.hit_dice_remaining = level
-                if level == 1:
-                    ch.max_hp = max(1, die + scores.modifier(Ability.CON))
-                    ch.current_hp = ch.max_hp
-                ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
-                if armor_class == 10:  # caller left AC unarmored -> class baseline
-                    ch.armor_class = srd_tables.class_base_ac(cname)
-                for f in srd_tables.features_through(cname, level):
-                    if f["name"] not in ch.features:
-                        ch.features.append(f["name"])
-                    if "extra_attacks" in f:
-                        ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
-                    if f.get("sneak_attack_dice"):
-                        ch.sneak_attack_dice = f["sneak_attack_dice"]
-                _recompute_spellcasting(ch)
-            except ValueError:
-                pass  # unknown class -> keep the explicit values
+            _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class == 10))
         c.characters[ch.id] = ch
         if add_to_party and kind in ("player", "companion"):
             c.party.append(ch.id)
         save_campaign(c)
     return {"id": ch.id, "name": ch.name, "kind": ch.kind}
+
+
+@mcp.tool()
+def recruit_companion(
+    campaign_id: str,
+    npc_id: str,
+    class_name: str = "",
+    level: int = 1,
+    abilities: Optional[dict] = None,
+    subclass: Optional[str] = None,
+    max_hp: int = 0,
+    armor_class: int = 0,
+    apply_srd_defaults: bool = True,
+) -> dict:
+    """Promote an EXISTING roster NPC into the party's companion — the clean way to
+    bring a world-seed candidate (e.g. "Minsc is ready", "Bram is ready") into the
+    party. Use this INSTEAD of create_character for someone who already exists in the
+    world: it flips the record npc->companion, adds it to the party (once), and fills
+    a real sheet so you never invent modifiers. Pass `class_name`+`level`+`abilities`
+    for the companion's build; `apply_srd_defaults` sets saves/HP/AC/features (HP is
+    auto-set only at level 1 — pass `max_hp` for a higher-level companion). Idempotent
+    if already a companion. This prevents the duplicate-stub bug (a roster NPC plus a
+    second hand-built companion of the same name)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, npc_id)  # raises if the id isn't in the campaign
+        if ch.kind not in ("npc", "companion"):
+            raise ValueError(
+                f"{npc_id!r} is a {ch.kind!r}; only an NPC (a roster figure) can be recruited "
+                f"as a companion. To make a brand-new companion, use create_character."
+            )
+        ch.kind = "companion"  # type: ignore[assignment]
+        if abilities:
+            ch.abilities = AbilityScores(**abilities)
+            ch.initiative_bonus = ch.abilities.modifier(Ability.DEX)
+        if class_name:
+            ch.classes = [ClassLevel(name=class_name.capitalize(), level=level, subclass=subclass)]
+        if max_hp and max_hp > 0:
+            ch.max_hp = max_hp
+            ch.current_hp = max_hp
+        if armor_class and armor_class > 0:
+            ch.armor_class = armor_class
+        if apply_srd_defaults and class_name:
+            _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class <= 0))
+        if ch.id not in c.party:
+            c.party.append(ch.id)
+        save_campaign(c)
+        return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party)}
 
 
 _SHORT_TO_FULL_AB = {

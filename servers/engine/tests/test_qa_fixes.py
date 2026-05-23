@@ -319,3 +319,56 @@ def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monk
     g1 = server.create_character(cid, "Town Guard", kind="npc")["id"]
     g2 = server.create_character(cid, "Town Guard", kind="npc")["id"]
     assert g1 and g2 and g1 != g2  # both created, distinct ids — not blocked
+
+
+# --- living-world QA (bg runs): recruiting a roster NPC made a DUPLICATE ----
+# The BG playtests showed two failure modes when bringing a world-seed candidate
+# (e.g. Minsc) into the party: (a) using the roster NPC stub directly (kind=npc,
+# abilities all 10, not in the party array -> the DM invents modifiers), or
+# (b) create_character a second Minsc (a duplicate stub + real companion).
+# recruit_companion promotes the EXISTING roster record in place — one record,
+# in the party, with a real sheet.
+
+
+def test_recruit_companion_promotes_roster_npc_in_place(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Recruit")["id"]
+    # a thin roster NPC, as a world seed would create (flat stats, not in party)
+    npc = server.create_character(cid, "Minsc", kind="npc", voice_id="companion-default")["id"]
+    assert npc not in server.get_state(cid)["party"]
+
+    out = server.recruit_companion(
+        cid, npc, class_name="Ranger", level=5,
+        abilities={"strength": 18, "dexterity": 14, "constitution": 14},
+        max_hp=45,
+    )
+    assert out["kind"] == "companion" and npc in out["party"]
+    sheet = server.get_character(cid, npc)
+    assert sheet["kind"] == "companion"
+    assert sheet["max_hp"] == 45 and sheet["armor_class"] >= 10
+    assert sheet["hit_dice"] == "5d10"                       # SRD ranger defaults filled
+    assert sheet["saving_throw_proficiencies"]               # not the empty stub anymore
+    assert "Extra Attack" in sheet["features"]               # level-5 ranger feature
+    # NO duplicate: the promotion mutated the existing record in place, so the party
+    # holds exactly the one Minsc (now a companion) and no NPC stub is left behind.
+    state = server.get_state(cid)
+    assert [p for p in state["party"] if p["id"] == npc]     # the promoted Minsc is in the party
+    assert sum(1 for p in state["party"] if p["name"] == "Minsc") == 1  # no clone
+    assert state["npc_count"] == 0                           # the stub was promoted, not duplicated
+
+
+def test_recruit_companion_is_idempotent_and_guards_kind(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Recruit2")["id"]
+    npc = server.create_character(cid, "Bram", kind="npc")["id"]
+    server.recruit_companion(cid, npc, class_name="Fighter")
+    ids_after_first = [p["id"] for p in server.get_state(cid)["party"]]
+    server.recruit_companion(cid, npc, class_name="Fighter")  # again
+    assert [p["id"] for p in server.get_state(cid)["party"]] == ids_after_first  # not double-added
+    # a monster cannot be recruited; an unknown id raises
+    mon = server.create_character(cid, "Goblin", kind="monster")["id"]
+    with pytest.raises(ValueError, match="recruited"):
+        server.recruit_companion(cid, mon)
+    with pytest.raises(Exception):
+        server.recruit_companion(cid, "char_nonexistent")
