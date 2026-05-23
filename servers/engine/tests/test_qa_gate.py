@@ -64,15 +64,33 @@ def test_gate_green_when_dm_resolves_every_player_move(tmp_path):
     assert "[PASS] player_turns_structured" in r.stdout
 
 
-def test_gate_red_when_dm_ignores_the_players_cast(tmp_path):
-    # C2: the player cast a spell every beat; the DM narrated its own story and never
-    # called cast_spell. Old gate: GREEN (both sides "acted"). New gate: RED.
+def test_gate_green_cantrip_cast_resolved_via_attack(tmp_path):
+    # CRITICAL false-RED regression (review #1): a damage cantrip ([cast] fire bolt) is
+    # resolved via attack() with NO cast_spell — cantrips spend no slot, so a healthy DM
+    # never calls cast_spell for them. Must stay GREEN.
     r = _run_gate(
         tmp_path,
-        dm_tools=["roll"],  # the DM rolled SOMETHING (dice_used passes) but never cast
-        chat=[{"role": "player", "text": "[cast] cast fireball at the wraith"},
+        dm_tools=["attack", "roll"],  # NO cast_spell — the engine resolves attack cantrips via attack()
+        chat=[{"role": "player", "text": "[cast] cast fire bolt at the wraith"},
+              {"role": "dm", "text": "Flame leaps from your fingertips and the wraith reels."}],
+        moves=[{"role": "player", "kind": "cast", "text": "cast fire bolt", "name": "fire bolt"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] dm_resolved_player_moves" in r.stdout
+
+
+def test_gate_red_when_dm_ignores_the_players_attack(tmp_path):
+    # C2 (tight arm): the player attacked; the DM rolled SOMETHING (dice_used passes) but
+    # never called attack() to resolve it — ignored the player. Old gate: GREEN. New: RED.
+    # (Uses [attack], not [cast]: a [cast] is now resolvable via any dice path — see the
+    # cantrip-via-attack test above — so [attack]/[check] carry the tight correlation.)
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["roll"],  # dice fired (dice_used passes), but no attack() → [attack] unresolved
+        chat=[{"role": "player", "text": "[attack] attack the wraith with shortsword"},
               {"role": "dm", "text": "Meanwhile, across town, a bell tolls."}],
-        moves=[{"role": "player", "kind": "cast", "text": "cast fireball", "name": "fireball"}],
+        moves=[{"role": "player", "kind": "attack", "text": "attack the wraith", "target": "wraith"}],
         state=PLAYER_IN_PARTY,
     )
     assert r.returncode == 1, r.stdout

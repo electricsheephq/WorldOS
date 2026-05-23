@@ -128,16 +128,25 @@ def main() -> int:
         # matching engine call somewhere, or the player was ignored while the DM narrated
         # its own story. Aggregate (not per-beat) to avoid brittle alignment + false reds:
         # the gate trips only if the DM resolved ZERO of a move-kind the player used ≥1 of.
-        checks_n = tools.get("roll", 0) + tools.get("saving_throw", 0) + tools.get("social_check", 0)
+        roll_n, attack_n, save_n = tools.get("roll", 0), tools.get("attack", 0), tools.get("saving_throw", 0)
+        checks_n = roll_n + save_n + tools.get("social_check", 0)
+        # A [cast] does NOT require cast_spell: the engine resolves attack-roll spells —
+        # incl. ALL damage cantrips (Fire Bolt, Eldritch Blast) — via attack(), and save
+        # spells via saving_throw; cantrips spend no slot, so a healthy DM never calls
+        # cast_spell for them. Count ANY spell-resolution path so a legit cantrip-caster run
+        # isn't false-RED'd — the gate still trips if the DM made ZERO mechanical resolution
+        # while the player cast. (attack/check stay tightly correlated; the review confirmed
+        # those don't false-RED.)
+        cast_n = tools.get("cast_spell", 0) + attack_n + save_n + roll_n
         unresolved = []
-        if move_kinds.get("cast", 0) and tools.get("cast_spell", 0) == 0:
-            unresolved.append(f"{move_kinds['cast']} [cast] but DM cast_spell=0")
-        if move_kinds.get("attack", 0) and tools.get("attack", 0) == 0:
+        if move_kinds.get("cast", 0) and cast_n == 0:
+            unresolved.append(f"{move_kinds['cast']} [cast] but DM made no cast_spell/attack/save/roll")
+        if move_kinds.get("attack", 0) and attack_n == 0:
             unresolved.append(f"{move_kinds['attack']} [attack] but DM attack=0")
         if move_kinds.get("check", 0) and checks_n == 0:
             unresolved.append(f"{move_kinds['check']} [check] but DM roll/save/social=0")
-        if move_kinds.get("save", 0) and tools.get("saving_throw", 0) == 0:
-            unresolved.append(f"{move_kinds['save']} [save] but DM saving_throw=0")
+        if move_kinds.get("save", 0) and (save_n + roll_n) == 0:
+            unresolved.append(f"{move_kinds['save']} [save] but DM saving_throw/roll=0")
         chk("dm_resolved_player_moves", not unresolved,
             "; ".join(unresolved) or f"move_kinds={dict(move_kinds)}")
         # M6) a 1-move-and-quit run satisfies the checks above; flag a trivially short

@@ -45,6 +45,16 @@ def test_validate_cast_requires_an_available_slot():
     assert ps.validate_cast(_pc(spells_known=["Eldritch Whatsit"]), "Eldritch Whatsit")[0] is True
 
 
+def test_validators_tolerate_whitespace_and_multiword_skills():
+    # review #2/#3: the facade must NOT be stricter than the engine — a trailing space on a
+    # known spell, or a space-named skill, must not be false-refused.
+    pc = _pc(spells_known=["Fire Bolt"])  # cantrip — no slot needed
+    assert ps.validate_cast(pc, "Fire Bolt ")[0] is True            # trailing space tolerated
+    assert ps.validate_check("Sleight of Hand")[0] is True          # multi-word skill (was refused)
+    assert ps.validate_check("animal handling")[0] is True
+    assert ps._norm_skill("Sleight of Hand") == "sleight_of_hand"
+
+
 def test_validate_attack_requires_target_and_owned_weapon():
     # H2: attack was a free pass — now it needs a real target, and a named weapon must
     # be one you carry (it deliberately does NOT gate on in-combat — attacks start fights).

@@ -94,15 +94,22 @@ def _record(kind: str, text: str, **fields) -> dict:
 
 # --- pure validators (unit-testable without MCP/store) ---------------------------
 def known_spells(pc: Character) -> set[str]:
-    return {s.lower() for s in (list(pc.spells_known) + list(pc.spells_prepared))}
+    return {s.strip().lower() for s in (list(pc.spells_known) + list(pc.spells_prepared))}
 
 
 def owned_items(pc: Character) -> set[str]:
-    return {it.name.lower() for it in pc.inventory}
+    return {it.name.strip().lower() for it in pc.inventory}
+
+
+def _norm_skill(skill: str) -> str:
+    """Normalize a skill name to the engine's key form — SKILL_ABILITIES uses underscores
+    (sleight_of_hand, animal_handling), so a player asking for 'Sleight of Hand' must map
+    to the same key (else a core rogue skill is false-refused)."""
+    return skill.strip().lower().replace(" ", "_")
 
 
 def validate_check(skill: str) -> tuple[bool, str]:
-    ok = skill.lower() in SKILL_ABILITIES
+    ok = _norm_skill(skill) in SKILL_ABILITIES
     return ok, "" if ok else f"{skill!r} is not a 5e skill"
 
 
@@ -137,7 +144,7 @@ def has_slot_for(pc: Character, level: int) -> bool:
 def validate_cast(pc: Character, name: str) -> tuple[bool, str]:
     if not name.strip():
         return False, "name a spell to cast"
-    if name.lower() not in known_spells(pc):
+    if name.strip().lower() not in known_spells(pc):
         return False, f"{name!r} is not on your sheet — you don't know/prepare it"
     # C1: a leveled spell needs an actual slot — known-ness alone was the hole that let
     # a tapped-out caster "cast" with no slots, which the DM would then narrate as real.
@@ -148,7 +155,7 @@ def validate_cast(pc: Character, name: str) -> tuple[bool, str]:
 
 
 def validate_item(pc: Character, name: str) -> tuple[bool, str]:
-    if name.lower() not in owned_items(pc):
+    if name.strip().lower() not in owned_items(pc):
         return False, f"you aren't carrying {name!r}"
     return True, ""
 
@@ -188,7 +195,8 @@ def request_check(skill: str, reason: str = "") -> dict:
     ok, why = validate_check(skill)
     if not ok:
         return {"ok": False, "error": why}
-    return _record("check", reason or f"attempt a {skill.lower()} check", skill=skill.lower())
+    s = _norm_skill(skill)
+    return _record("check", reason or f"attempt a {s} check", skill=s)
 
 
 @mcp.tool()
