@@ -136,3 +136,87 @@ def seed_campaign(adv: dict) -> Campaign:
         c.quests[quest.id] = quest
 
     return c
+
+
+def load_world_data(world_id: str) -> dict:
+    """Load a world-seed bible: content/worlds/<id>/world.json."""
+    path = _content_dir() / "worlds" / world_id / "world.json"
+    if not path.exists():
+        raise ValueError(f"no world named {world_id!r} (looked at {path})")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"world {world_id!r} has malformed JSON: {exc}") from exc
+
+
+def seed_world(world: dict, start_at: str = "") -> Campaign:
+    """Seed a Campaign from a WORLD bible (a persistent setting the DM generates
+    *within*, not a fixed plot). Unlike an adventure, a world ships its regions,
+    factions, a roster of pullable NPCs, and its history/standing-threads as `lore`
+    — which the ledger indexes so `recall` keeps the generated story consistent. The
+    DM then drops the party at a starting region and generates + persists the actual
+    adventure as the player explores."""
+    if not isinstance(world, dict):
+        raise ValueError("world data must be a JSON object")
+    c = Campaign(title=world.get("name", "Untitled World"), summary=world.get("premise", ""))
+
+    first_loc = None
+    for reg in _as_list(world, "regions"):
+        location = Location(
+            name=reg.get("name", "?"),
+            description=reg.get("description", ""),
+            connections=reg.get("connections", []),
+            notes=" ".join(reg.get("tags", [])),
+            hex=reg.get("hex"),
+        )
+        if reg.get("id"):
+            if reg["id"] in c.locations:
+                raise ValueError(f"duplicate region id {reg['id']!r} in world")
+            location.id = reg["id"]
+        c.locations[location.id] = location
+        if first_loc is None:
+            first_loc = location.id
+
+    # Drop the party at the requested start, else the world's first starting_option,
+    # else the first region.
+    starts = [s.get("location_id") for s in _as_list(world, "starting_options") if s.get("location_id")]
+    start_id = start_at or (starts[0] if starts else first_loc)
+    if start_id and start_id not in c.locations:
+        raise ValueError(f"start location {start_id!r} is not a region of this world")
+    c.current_location_id = start_id
+    if start_id:
+        c.locations[start_id].visited = True
+    c.map_kind = world.get("map_kind") or ("hex" if any(l.hex for l in c.locations.values()) else "none")
+
+    for fac in _as_list(world, "factions"):
+        faction = Faction(
+            name=fac.get("name", "Faction"),
+            description=fac.get("description", ""),
+            reputation=int(fac.get("reputation", 0)),
+        )
+        if fac.get("id"):
+            faction.id = fac["id"]
+        c.factions[faction.id] = faction
+
+    # Roster NPCs exist in state (recallable, voiced) but are not party members — the
+    # DM pulls them in or invents freely. Each NPC's hook is stored as a memory fact.
+    for npc in _as_list(world, "npc_roster"):
+        ch = Character(
+            name=npc.get("name", "NPC"),
+            kind="npc",
+            voice_id=npc.get("voice_id", "npc-male-1"),
+            personality=npc.get("personality", ""),
+            attitude=npc.get("role", ""),
+        )
+        if npc.get("id"):
+            if npc["id"] in c.characters:
+                raise ValueError(f"duplicate npc id {npc['id']!r} in world")
+            ch.id = npc["id"]
+        if npc.get("hook"):
+            ch.memory.append(npc["hook"])
+        c.characters[ch.id] = ch
+
+    # World facts the DM recalls to stay consistent (indexed into the ledger as lore).
+    c.lore = [str(x) for x in (_as_list(world, "history") + _as_list(world, "standing_threads")) if str(x).strip()]
+
+    return c

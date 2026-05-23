@@ -26,7 +26,7 @@ from typing import Optional
 
 import store
 
-KINDS = ("events", "dialogue", "decision", "npc_fact", "quest_milestone", "consequence")
+KINDS = ("events", "dialogue", "decision", "npc_fact", "quest_milestone", "consequence", "lore")
 
 
 def _db_path(campaign_id: str):
@@ -195,6 +195,8 @@ def backfill(campaign_id: str) -> int:
             _ins("consequence", cq.text, ref=cq.id, day=cq.trigger_day)
         for q in campaign.quests.values():
             _ins("quest_milestone", f"{q.title} [{q.status}]", ref=q.id)
+        for fact in getattr(campaign, "lore", []):  # world-bible facts -> recallable
+            _ins("lore", fact)
         conn.commit()
     finally:
         conn.close()

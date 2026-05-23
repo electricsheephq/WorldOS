@@ -77,3 +77,27 @@ def test_get_scene_surfaces_authored_guidance(tmp_path, monkeypatch):
     assert out["scenes"][0].get("read_aloud") and out["scenes"][0].get("dm_notes")
     assert "Maerith" in " ".join(s.get("dm_notes", "") for s in out["scenes"])
     assert server.get_scene(cid, "loc-nonexistent")["count"] == 0
+
+
+def test_start_world_seeds_living_world_and_lore_is_recallable(tmp_path, monkeypatch):
+    # The generative pivot: a persistent WORLD bible seeds a navigable map + factions +
+    # pullable NPCs + lore, and the lore is recallable so a generated story stays
+    # consistent with canon (the anti-mush guardrail at world scale).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    out = server.start_world("sundered-reach")
+    cid = out["campaign_id"]
+    assert out["world"] == "The Sundered Reach"
+    assert len(out["regions"]) == 6 and len(out["factions"]) == 4 and len(out["npc_roster"]) == 6
+    assert out["starting_at"]["id"] == "loc-brassmoor"  # first starting_option
+    assert server.get_state(cid)["location"]["name"] == "Brassmoor"
+    # the seeded map is navigable (Brassmoor -> Tideway is wired in the bible)
+    assert server.travel_to(cid, "loc-tideway")["to_name"] == "The Tideway"
+    # world lore is recallable, tagged kind=lore
+    hits = server.recall(cid, "Hollow War seal Pale Choir")["hits"]
+    assert hits and any(h["kind"] == "lore" for h in hits)
+
+
+def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
+    w = content.load_world_data("sundered-reach")
+    with pytest.raises(ValueError, match="not a region"):
+        content.seed_world(w, start_at="loc-nope")

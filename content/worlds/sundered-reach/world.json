@@ -1,0 +1,58 @@
+{
+  "id": "sundered-reach",
+  "schema_version": 1,
+  "name": "The Sundered Reach",
+  "ruleset": "SRD 5.2",
+  "license": "CC-BY-4.0",
+  "attribution": "Original ClawDnD world. Built on SRD 5.2 (CC-BY-4.0). No Wizards of the Coast / Larian / Forgotten Realms / Baldur's Gate IP — clean-room.",
+  "map_kind": "none",
+  "tone": "Heroic but grim, mature (18+), morally grey — the Baldur's Gate register. Victory already cost too much; every faction has a real point; kindness and horror wear the same face. Generate prestige fantasy, never a quest board.",
+  "premise": "A storm-battered coast of free cities, twelve years after the Hollow War. When the death-cult called the Pale Choir tore open the Sundering — a rift to a devouring Silence beneath the city of Vael's Crossing — the cities who had never agreed on anything forged the Ashen Concord and turned it back. But only by drowning Vael's Crossing to seal the rift, with thousands still inside. Now the Concord frays, refugees crowd the Tideway, old heroes are monuments or drunks, the seal beneath the waves is said to be thinning, and the Choir's scattered remnants are stirring. This is the world the player inhabits; the DM generates their story within it and saves it as it grows.",
+  "history": [
+    "The Hollow War (ended ~12 years ago): the Pale Choir opened the Sundering beneath Vael's Crossing, and a devouring Silence began to unmake the Reach — land, memory, and the dead alike.",
+    "The Ashen Concord: the free cities' wartime alliance, forged in desperation. It won the war and has been slowly dying of its own rivalries ever since.",
+    "The Drowning of Vael's Crossing: the seal could only be set by flooding the rift-city. The order was given by the Vael line itself. Thousands drowned, many of them the defenders' own. It is remembered as both salvation and atrocity.",
+    "The Uneasy Peace: no power trusts another to lead the Reach now. The Lantern Order watches a seal it cannot fully understand. The Choir was scattered, not destroyed.",
+    "The Thinning (rumor, present day): pilgrims and oracles say the Silence is seeping back through the seal. Most of the Concord calls it grief and superstition. It is not."
+  ],
+  "standing_threads": [
+    "The seal beneath Vael's Crossing is thinning — the slow main gravity of the world.",
+    "The Concord nears a leadership crisis that could tip into open conflict between Brassmoor and Greywater.",
+    "The Pale Choir's remnants are recruiting the grieving and the desperate — quietly, kindly, everywhere."
+  ],
+  "regions": [
+    {"id": "loc-brassmoor", "name": "Brassmoor", "description": "The Concord's proud, corrupt seat — a tiered port city of brass-capped towers and refugee-choked under-streets, ruled by a council that agrees on nothing. The default hub: the player resupplies, hears rumors, and is pulled into threads here.", "connections": ["loc-tideway"], "tags": ["hub", "city"]},
+    {"id": "loc-tideway", "name": "The Tideway", "description": "The storm-lashed coastal road and its waystations, threading every city together. Refugee caravans, toll-knights, banditry, and the smell of the drowned coast. The crossroads of the Reach.", "connections": ["loc-brassmoor", "loc-greywater", "loc-vaels-crossing", "loc-hollowmarch"], "tags": ["road", "crossroads"]},
+    {"id": "loc-greywater", "name": "Greywater", "description": "Brassmoor's mercantile rival — a neutral free-port of canals, counting-houses, and spies, where the Greywater League profits off everyone's war wounds and sells to all sides at once.", "connections": ["loc-tideway"], "tags": ["city", "intrigue"]},
+    {"id": "loc-vaels-crossing", "name": "Vael's Crossing (the Drowned City)", "description": "The war's open wound: a ruin that surfaces only at low tide, its drowned spires breaking the grey water. The seal lies here. Pilgrims, looters, Lantern wardens, and things the Silence left behind share its cold shallows.", "connections": ["loc-tideway"], "tags": ["ruin", "the-seal", "dangerous"]},
+    {"id": "loc-hollowmarch", "name": "The Hollowmarch", "description": "The war-scarred inland frontier — burned farms, lonely holdfasts, and grey moors where the Silence touched the earth and nothing grows right. The Choir hides among its broken people.", "connections": ["loc-tideway", "loc-karth-vael"], "tags": ["frontier", "wilds"]},
+    {"id": "loc-karth-vael", "name": "Karth Vael", "description": "A half-abandoned dwarfhold in the Spine mountains, its upper halls still lit, its deep vaults sealed. It holds war-relics, the Concord's buried records, and the oldest truth about what the Sundering really is.", "connections": ["loc-hollowmarch"], "tags": ["dungeon", "lore", "mountains"]}
+  ],
+  "factions": [
+    {"id": "fac-concord", "name": "The Ashen Concord", "description": "The fraying wartime council of free cities. Wants to hold the peace, paralyzed by rivalry and guilt. Honorable in pieces, sclerotic as a whole.", "reputation": 0},
+    {"id": "fac-choir", "name": "The Pale Choir", "description": "The death-cult that opened the Sundering. Its remnants believe the devouring Silence is mercy — an end to all suffering — and recruit the grieving with genuine, terrible kindness. The world's antagonist gravity; never a snarling villain.", "reputation": -2},
+    {"id": "fac-lantern", "name": "The Lantern Order", "description": "A battered warden-order sworn to watch the seal at Vael's Crossing. Honest, zealous, under-resourced, and quietly terrified that they cannot hold it.", "reputation": 1},
+    {"id": "fac-league", "name": "The Greywater League", "description": "Merchant-princes who found profit in the ruins. Charming, ruthless, play every side — and sometimes the only ones who actually get things done.", "reputation": 0}
+  ],
+  "npc_roster": [
+    {"id": "npc-maren-vael", "name": "Maren Vael", "voice_id": "npc-elder", "role": "reluctant Lord-Warden of Brassmoor", "personality": "Last of the Vael line that gave the order to drown its own city. A weary, decent, compromised war-hero who carries that guilt like a stone and leads because no one else will. Speaks plainly; trusts slowly; would burn her own name to spare the Reach another drowning.", "hook": "Knows the seal is thinning and is hiding it from the Concord to prevent a panic that would tip into civil war."},
+    {"id": "npc-hollow-saint", "name": "The Hollow Saint", "voice_id": "npc-elder", "role": "Pale Choir hierophant (antagonist, warmth-first)", "personality": "Soft-spoken, genuinely gentle, beloved by the refugees she feeds and tends. She believes the Silence is the only true mercy — an end to grief, hunger, and dying — and every kind word she speaks is sincere. That is what makes her monstrous. Stage her warmth long before her horror.", "hook": "Moves openly among the grieving; the player should like her before they suspect her."},
+    {"id": "npc-bram-oye", "name": "Castellan Bram Oye", "voice_id": "companion-default", "role": "Lantern Order knight — candidate COMPANION", "personality": "Grizzled, dry, unshakeably steady; hands you a waterskin before a fight and means it. Held the line at the Drowning and let a sworn friend go under to set the seal — a wound he never speaks of and never stops carrying. Argues for mercy toward the Choir's pawns, iron-hard about the Silence itself.", "hook": "Available as the player's companion; his wound activates whenever the seal or the Drowning is touched."},
+    {"id": "npc-lys", "name": "Lys", "voice_id": "npc-female-1", "role": "Tideway refugee oracle child", "personality": "A quiet, watchful child of the drowned lands who dreams true things and is frightened of them. Trusts almost no one; says little; what she says matters.", "hook": "Dreams the seal's thinning in images no adult will credit — the first warning, dismissed."},
+    {"id": "npc-vance-greywater", "name": "Vance Greywater", "voice_id": "npc-rogue", "role": "merchant-prince spymaster", "personality": "Charming, precise, ruthless; a smile like a contract. Knows everyone's secrets and sells them by the ounce. Genuinely loves the Reach, in the way a man loves a thing he intends to own.", "hook": "The fastest way to learn anything — at a price that is never only coin."},
+    {"id": "npc-old-tam", "name": "Old Tam", "voice_id": "npc-elder", "role": "war-veteran turned drunk", "personality": "A Brassmoor fixture nursing watered ale and old medals. Bitter, funny, and a better witness than anyone gives him credit for — he buried a lot of the Reach's dead and remembers where.", "hook": "Knows a way into the drowned city, and what the Lantern Order pretends isn't down there."}
+  ],
+  "story_seeds": [
+    "The seal at Vael's Crossing is thinning — prove it, and decide who to tell (the slow main thread).",
+    "A Pale Choir cell surfaces in a city, recruiting the grieving with free bread and gentle promises.",
+    "A war-relic resurfaces in Karth Vael that could re-seal the rift — or open it wider.",
+    "A Concord leadership vote in Brassmoor edges toward open conflict with Greywater.",
+    "A refugee caravan vanishes on the Tideway; the survivors won't say what they saw."
+  ],
+  "starting_options": [
+    {"location_id": "loc-brassmoor", "framing": "Default. The player arrives in the capital as hired blades, investigators, or newcomers, and is pulled into a thread."},
+    {"location_id": "loc-tideway", "framing": "The player is among the refugees on the road — lower, grimmer, more personal."},
+    {"location_id": "loc-vaels-crossing", "framing": "The player is a fresh Lantern recruit posted to the seal — in the shadow of the wound from day one."}
+  ],
+  "dm_guidance": "Run this as a LIVING SANDBOX, not a fixed plot. On start_world: seed the regions as locations, the factions, and the standing threads/history into memory (so recall keeps the world consistent). Drop the player at a starting_option, then GENERATE the specific scene/town/NPC on arrival and PERSIST it (add_location, create_character, remember, add_quest) so the world grows and is never forgotten. Hold a short arc spine and let the standing threads (the thinning seal, the Concord crisis, the Choir's recruiting) move whether or not the party is watching. Pull from the npc_roster, but invent freely. The Choir is the gravity; the player chooses the thread. Stage the Hollow Saint warmth-first. Keep the craft bar of the dungeon-master skill: felt menace, a wounded companion (Bram is ready), show-don't-tell, the unforgettable beat."
+}

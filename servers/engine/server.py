@@ -234,6 +234,47 @@ def start_adventure(adventure_id: str) -> dict:
 
 
 @mcp.tool()
+def start_world(world_id: str, start_at: str = "") -> dict:
+    """Seed a NEW campaign from a persistent WORLD bible
+    (content/worlds/<world_id>/world.json) — a living setting you GENERATE WITHIN,
+    not a fixed plot.
+
+    Seeds the world's regions as a navigable map, its factions, a roster of pullable
+    NPCs, and its history + standing-threads as `lore` (indexed into recall, so a
+    generated story stays consistent with the canon and never forgets it). Drops the
+    party at `start_at` (a region id) or the world's first starting option. Then YOU
+    run a LIVING SANDBOX: generate the specific scene on arrival and PERSIST it
+    (add_location / create_character / remember / add_quest) so the world grows and is
+    carried across sessions. Returns the world's premise, tone, DM guidance, standing
+    threads, story seeds, and the seeded regions / factions / NPC roster — your bible
+    for running it (recall the lore mid-play to stay consistent)."""
+    world = content_mod.load_world_data(world_id)
+    c = content_mod.seed_world(world, start_at=start_at)
+    save_campaign(c)
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    return {
+        "campaign_id": c.id,
+        "world": c.title,
+        "premise": c.summary,
+        "tone": world.get("tone", ""),
+        "dm_guidance": world.get("dm_guidance", ""),
+        "standing_threads": world.get("standing_threads", []),
+        "story_seeds": world.get("story_seeds", []),
+        "starting_at": {"id": loc.id, "name": loc.name} if loc else None,
+        "starting_options": world.get("starting_options", []),
+        "regions": [{"id": l.id, "name": l.name} for l in c.locations.values()],
+        "factions": [{"id": f.id, "name": f.name} for f in c.factions.values()],
+        "npc_roster": [
+            {"id": ch.id, "name": ch.name, "role": ch.attitude, "voice_id": ch.voice_id}
+            for ch in c.characters.values()
+            if ch.kind == "npc"
+        ],
+        "lore_count": len(c.lore),
+        "map_kind": c.map_kind,
+    }
+
+
+@mcp.tool()
 def get_state(campaign_id: str) -> dict:
     """Read current campaign state — call at the start of a beat to re-ground
     after any gap or compaction. Returns a summary (scene, party vitals, active
