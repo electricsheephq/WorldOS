@@ -139,10 +139,16 @@ def seed_campaign(adv: dict) -> Campaign:
 
 
 def load_world_data(world_id: str) -> dict:
-    """Load a world-seed bible: content/worlds/<id>/world.json."""
-    path = _content_dir() / "worlds" / world_id / "world.json"
+    """Load a world-seed bible: content/worlds/<id>/world.json, falling back to the
+    gitignored content/worlds/_private/<id>/ for personal/internal seeds (e.g. a
+    Forgotten-Realms/post-BG3 world the owner uses privately). Same loader either way."""
+    base = _content_dir() / "worlds"
+    path = base / world_id / "world.json"
     if not path.exists():
-        raise ValueError(f"no world named {world_id!r} (looked at {path})")
+        private = base / "_private" / world_id / "world.json"
+        if not private.exists():
+            raise ValueError(f"no world named {world_id!r} (looked at {path} and {private})")
+        path = private
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:

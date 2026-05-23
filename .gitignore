@@ -13,6 +13,11 @@
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/
 
+# Private world seeds for personal/internal play (e.g. Forgotten Realms / post-BG3).
+# Loaded by the same IP-agnostic start_world loader; kept out of the MIT-licensed
+# tree so the public repo stays clean. NEVER commit.
+/content/worlds/_private/
+
 # Python
 __pycache__/
 *.py[cod]
