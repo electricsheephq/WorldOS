@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClawDnD — Play View</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #14110e; color: #e9e2d4; }
+  header { padding: 10px 16px; background: #1f1a14; border-bottom: 1px solid #3a3026;
+    display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; color: #e8c98a; }
+  header .meta { color: #b9ad97; }
+  #grid { display: grid; grid-template-columns: 1.4fr 1fr; grid-template-rows: auto 1fr;
+    gap: 12px; padding: 12px; height: calc(100vh - 52px); }
+  .panel { background: #1c1812; border: 1px solid #352c20; border-radius: 8px; padding: 12px; overflow: auto; }
+  .panel h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #9c8e74;
+    margin: 0 0 8px; }
+  #map { grid-row: span 2; }
+  .loc-desc { color: #c9bda6; font-style: italic; margin: 6px 0 12px; }
+  svg { width: 100%; height: 320px; display: block; }
+  .edge { stroke: #4a3e2c; stroke-width: 2; }
+  .node circle { fill: #2a231a; stroke: #6b5a3e; stroke-width: 2; }
+  .node.cur circle { fill: #5a3d1e; stroke: #e8c98a; stroke-width: 3; }
+  .node.visited circle { stroke: #8a7c5a; }
+  .node text { fill: #d8ccb2; font-size: 10px; text-anchor: middle; }
+  .who { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+  .pip { width: 9px; height: 9px; border-radius: 50%; background: #6b5a3e; flex: none; }
+  .pip.player { background: #6fae6f; } .pip.companion { background: #6f9fce; }
+  .pip.npc { background: #c9a86a; } .pip.monster { background: #c56b6b; }
+  .hpbar { height: 6px; background: #3a2f22; border-radius: 3px; overflow: hidden; width: 90px; }
+  .hpbar > i { display: block; height: 100%; background: #6fae6f; }
+  .hpbar.low > i { background: #c56b6b; }
+  .name { flex: 1; } .vid { color: #8a7c64; font-size: 11px; }
+  .cond { color: #c56b6b; font-size: 11px; }
+  .quest { padding: 4px 0; border-bottom: 1px solid #2a231a; }
+  .quest .who2 { color: #9c8e74; font-size: 11px; }
+  #log { display: flex; flex-direction: column; gap: 6px; }
+  .ev { padding: 6px 8px; border-radius: 6px; background: #211b14; border-left: 3px solid #4a3e2c; }
+  .ev.dialogue { border-left-color: #6f9fce; } .ev.combat { border-left-color: #c56b6b; }
+  .ev.narration { border-left-color: #e8c98a; } .ev.system { border-left-color: #5a5040; color: #9c8e74; font-size: 12px; }
+  .ev .sp { color: #9fc0e0; font-weight: 600; }
+  .empty { color: #6b6253; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">ClawDnD</h1>
+  <span class="meta" id="when"></span>
+  <span class="meta" id="where"></span>
+</header>
+<div id="grid">
+  <section class="panel" id="map"><h2>Map</h2><div id="loc"></div><svg id="svg"></svg></section>
+  <section class="panel"><h2>Party</h2><div id="party"></div>
+    <h2 style="margin-top:14px">In the scene</h2><div id="scene"></div></section>
+  <section class="panel"><h2>Quests</h2><div id="quests"></div>
+    <h2 style="margin-top:14px">Factions</h2><div id="factions"></div></section>
+  <section class="panel"><h2>What's happening</h2><div id="log"></div></section>
+</div>
+<script>
+let evCursor = 0;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function hpClass(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return a/b <= 0.35 ? "low" : ""; }
+function hpPct(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return b ? Math.max(0, 100*a/b) : 0; }
+
+function renderState(s) {
+  $("title").textContent = s.title || "ClawDnD";
+  $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
+  const curId = s.current_location_id;
+  const locs = s.locations || {};
+  const cur = locs[curId];
+  $("where").textContent = cur ? `📍 ${cur.name}` : "";
+  $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b><div class="loc-desc">${esc(cur.description||"")}</div>` : "";
+
+  // Party
+  const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
+  $("party").innerHTML = party.map(c => `
+    <div class="who"><span class="pip ${c.kind}"></span>
+      <span class="name">${esc(c.name)} <span class="vid">${esc(c.voice_id||"")}</span></span>
+      <span class="hpbar ${hpClass(c.current_hp+'/'+c.max_hp)}"><i style="width:${hpPct(c.current_hp+'/'+c.max_hp)}%"></i></span>
+      ${(c.conditions||[]).length ? `<span class="cond">${esc((c.conditions||[]).join(", "))}</span>`:""}
+    </div>`).join("") || `<div class="empty">No party yet.</div>`;
+
+  // NPCs/monsters at the current location are "in the scene" (best-effort: all npcs/monsters)
+  const scene = Object.values(s.characters||{}).filter(c => c.kind==="npc" || c.kind==="monster");
+  $("scene").innerHTML = scene.slice(0,12).map(c =>
+    `<div class="who"><span class="pip ${c.kind}"></span><span class="name">${esc(c.name)}</span>
+      <span class="vid">${esc(c.attitude||c.voice_id||"")}</span></div>`).join("") || `<div class="empty">—</div>`;
+
+  // Quests
+  const quests = Object.values(s.quests||{}).filter(q => q.status==="active");
+  $("quests").innerHTML = quests.map(q =>
+    `<div class="quest">${esc(q.title)}${q.giver_id?`<div class="who2">from ${esc(q.giver_id)}</div>`:""}</div>`
+  ).join("") || `<div class="empty">No active quests.</div>`;
+
+  // Factions
+  const fac = Object.values(s.factions||{});
+  $("factions").innerHTML = fac.map(f =>
+    `<div class="who"><span class="name">${esc(f.name)}</span><span class="vid">${f.reputation>0?"+":""}${f.reputation}</span></div>`
+  ).join("") || `<div class="empty">—</div>`;
+
+  drawMap(locs, curId, s.map_kind);
+}
+
+function drawMap(locs, curId, kind) {
+  const ids = Object.keys(locs);
+  const svg = $("svg"); const W = svg.clientWidth || 480, H = 320;
+  const pos = {};
+  const hasHex = kind === "hex" && ids.some(id => locs[id].hex);
+  if (hasHex) {
+    const SZ = 34;
+    ids.forEach(id => { const h = locs[id].hex; if (h) pos[id] = [W/2 + (h[0]*1.5*SZ), H/2 + ((h[1] + h[0]/2)*Math.sqrt(3)*SZ)]; });
+  } else {
+    ids.forEach((id,i) => { const a = 2*Math.PI*i/ids.length; pos[id] = [W/2 + 0.34*W*Math.cos(a), H/2 + 0.36*H*Math.sin(a)]; });
+  }
+  let edges = "", nodes = "";
+  ids.forEach(id => (locs[id].connections||[]).forEach(c => {
+    if (pos[id] && pos[c]) edges += `<line class="edge" x1="${pos[id][0]}" y1="${pos[id][1]}" x2="${pos[c][0]}" y2="${pos[c][1]}"/>`;
+  }));
+  ids.forEach(id => { const [x,y]=pos[id]||[W/2,H/2]; const cls=(id===curId?"cur ":"")+(locs[id].visited?"visited":"");
+    nodes += `<g class="node ${cls}" transform="translate(${x},${y})"><circle r="14"/><text y="26">${esc(locs[id].name).slice(0,16)}</text></g>`; });
+  svg.innerHTML = edges + nodes;
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch("/state")).json();
+    renderState(s);
+    const ev = await (await fetch("/events?since="+evCursor)).json();
+    const log = $("log");
+    if (evCursor === 0) log.innerHTML = "";
+    (ev.entries||[]).forEach(e => {
+      if (!["narration","dialogue","combat","system"].includes(e.kind)) return;
+      const d = document.createElement("div"); d.className = "ev "+e.kind;
+      d.innerHTML = (e.speaker?`<span class="sp">${esc(e.speaker)}:</span> `:"") + esc(e.text);
+      log.appendChild(d);
+    });
+    if ((ev.entries||[]).length) log.scrollTop = log.scrollHeight;
+    evCursor = ev.next ?? evCursor;
+  } catch (e) { /* engine restarting / mid-write — try again next tick */ }
+}
+poll(); setInterval(poll, 1500);
+</script>
+</body>
+</html>
