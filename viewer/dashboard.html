@@ -79,6 +79,52 @@
   .act { padding:3px 7px; border-radius:5px; background:#141a14; border-left:3px solid #3a5a34; }
   .act.tool { font-family:ui-monospace,monospace; font-size:11px; color:#8fb98f; } .act.tool b{color:#b6e0a6;}
   .act.narration { border-left-color:#caa15e; color:#cabfa6; background:#171309; }
+
+  /* ---- player action layer (dice strip + action palette) ---- */
+  .dice { border-top:1px solid var(--line); background:#0e0b08; padding:7px 18px; display:flex; align-items:center; gap:8px; overflow-x:auto; min-height:38px; }
+  .dice .dlbl { font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); flex:none; }
+  .dice .empty { font-size:12px; white-space:nowrap; }
+  .die { flex:none; display:flex; align-items:center; gap:6px; background:#1a140d; border:1px solid #45381f; border-radius:9px; padding:3px 9px; font-size:12px; }
+  .die .dn { font-family:ui-monospace,monospace; font-size:10.5px; color:#8fb98f; }
+  .die .dv { font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .die .dx { color:var(--dim); font-size:11px; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .die.hit { border-color:#4a3c22; } .die.miss { border-color:#5a3030; } .die.miss .dv { color:var(--monster); }
+  .die.fresh { animation:diepop .5s ease; }
+  @keyframes diepop { from { transform:translateY(3px) scale(.9); opacity:0; } to { transform:none; opacity:1; } }
+
+  .palette { border-top:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; max-height:46vh; }
+  .ptabs { display:flex; gap:4px; padding:8px 18px 0; flex-wrap:wrap; }
+  .ptab { font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--dim); background:#1a140d; border:1px solid var(--line); border-bottom:none; border-radius:7px 7px 0 0; padding:5px 11px; cursor:pointer; }
+  .ptab.active { color:var(--gold); background:#2a1d0e; border-color:#4a3c22; }
+  .ptab:disabled { opacity:.4; cursor:not-allowed; }
+  .pbody { padding:10px 18px 12px; overflow-y:auto; border-top:1px solid var(--line); }
+  .pgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(108px,1fr)); gap:6px; }
+  .pgrid.wide { grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); }
+  .psec { font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); margin:10px 0 5px; }
+  .psec:first-child { margin-top:2px; }
+  .act-btn { background:#1c150d; border:1px solid #3d3119; border-radius:8px; padding:7px 9px; color:var(--ink); cursor:pointer; text-align:left; font-size:12.5px; line-height:1.25; transition:background .12s,border-color .12s; }
+  .act-btn:hover { background:#2a1d0e; border-color:var(--gold2); }
+  .act-btn:active { transform:translateY(1px); }
+  .act-btn .ab { display:block; font-weight:800; color:var(--gold); letter-spacing:.02em; }
+  .act-btn .as { display:block; font-size:10px; color:var(--faint); }
+  .act-btn.combat { border-color:#5a3030; } .act-btn.combat .ab { color:#e0a0a0; }
+  .act-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .act-btn.flash { background:#3a5a34; border-color:#8fbf8f; }
+  .saybar { display:flex; gap:8px; align-items:flex-end; margin-top:10px; }
+  .saybar textarea { flex:1; resize:none; background:#0d0b08; border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--ink); font:inherit; min-height:38px; max-height:96px; }
+  .saybar textarea:focus { outline:none; border-color:var(--gold2); }
+  .saybar .sb { background:#241a0d; border:1px solid #4a3c22; border-radius:9px; padding:9px 15px; color:var(--gold); cursor:pointer; font-weight:700; }
+  .saybar .sb:hover { background:#2f2210; } .saybar .sb.do { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
+  .saybar .sb:disabled { opacity:.4; cursor:not-allowed; }
+  #moveflash { font-size:11px; padding:0 18px; min-height:0; color:var(--faint); transition:min-height .15s; }
+  #moveflash.show { min-height:18px; padding-bottom:4px; }
+  #moveflash.err { color:var(--monster); }
+  /* interactive map affordances */
+  #svg { cursor:grab; touch-action:none; } #svg.grabbing { cursor:grabbing; }
+  .node.loc { cursor:pointer; } .node.loc:hover circle { stroke:var(--gold); fill:#3a2a14; }
+  .node.loc:hover text { fill:var(--gold); }
+  .maptip { position:absolute; pointer-events:none; background:#1a140d; border:1px solid #4a3c22; color:var(--gold); font-size:11px; padding:2px 7px; border-radius:6px; opacity:0; transform:translate(-50%,-130%); transition:opacity .1s; white-space:nowrap; }
+  .maphint { font-size:9px; color:var(--faint); margin-top:3px; text-align:right; }
 </style>
 </head>
 <body>
@@ -98,17 +144,24 @@
     <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge">Adventure Mode</span>
       <span class="meta" id="when"></span><span class="meta" id="where"></span></div>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
-    <div class="composer">
-      <div class="box" id="composer-hint">The party acts through Claude Code…</div>
-      <button>🎲 <span class="soon">soon</span></button>
-      <button>🔊 <span class="soon">soon</span></button>
-      <button>Continue »</button>
+    <div class="dice" id="dice"><span class="dlbl">Rolls</span><span class="empty">No rolls yet — the dice are still.</span></div>
+    <div class="palette">
+      <div class="ptabs" id="ptabs"></div>
+      <div class="pbody" id="pbody"></div>
+      <div class="saybar">
+        <textarea id="saytext" rows="1" placeholder="Speak in-character, or describe an action…"></textarea>
+        <button class="sb" id="say-btn" title="Speak in-character">Say</button>
+        <button class="sb do" id="do-btn" title="Describe a free-form action">Do</button>
+      </div>
+      <div id="moveflash"></div>
     </div>
   </main>
 
   <aside>
-    <div class="card" id="mapcard"><h2>Map <span class="soon">painterly soon</span></h2>
-      <div class="loc-d" id="loc"></div><svg id="svg"></svg></div>
+    <div class="card" id="mapcard" style="position:relative"><h2>Map <span class="soon">painterly soon</span></h2>
+      <div class="loc-d" id="loc"></div><svg id="svg"></svg>
+      <div class="maptip" id="maptip"></div>
+      <div class="maphint">scroll to zoom · drag to pan · click a place to travel</div></div>
     <div class="card"><h2>Party</h2><div id="party"></div></div>
     <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
     <div class="card"><h2>Quests</h2><div id="quests"></div>
@@ -124,6 +177,122 @@ const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).joi
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
 const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
+
+// ---- player action layer ----------------------------------------------------
+// Every player action funnels through ONE helper that POSTs to /move. The server
+// appends it (when a live game is configured) or refuses read-only; we surface
+// either outcome in the flash line. We never block the UI on it.
+let moveBusy = false;
+async function submitMove(move) {
+  const flash = $("moveflash");
+  if (moveBusy) return; moveBusy = true;
+  flash.className = "show"; flash.textContent = "Sending move…";
+  try {
+    const r = await fetch("/move", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(move) });
+    const j = await r.json().catch(()=>({}));
+    if (j && j.ok) { flash.className = "show"; flash.textContent = "Move sent — " + describeMove(move); }
+    else { flash.className = "show err"; flash.textContent = (j && j.reason) || "Move not accepted."; }
+  } catch (e) {
+    flash.className = "show err"; flash.textContent = "Could not reach the game server.";
+  } finally {
+    moveBusy = false;
+    clearTimeout(submitMove._t); submitMove._t = setTimeout(()=>{ flash.className=""; flash.textContent=""; }, 4000);
+  }
+}
+const describeMove = (m) => m.text ? `“${m.text}”` : (m.name ? `${m.kind}: ${m.name}` : m.kind || "action");
+
+// The standard-D&D quick-action grid. Buttons mirror the engine's player facade:
+// each emits a {kind,name} move intent (free-text Say/Do is handled separately).
+const ABILITIES = [["STR","Strength"],["DEX","Dexterity"],["CON","Constitution"],["INT","Intelligence"],["WIS","Wisdom"],["CHA","Charisma"]];
+const SKILLS = [
+  ["Acrobatics","DEX"],["Animal Handling","WIS"],["Arcana","INT"],["Athletics","STR"],
+  ["Deception","CHA"],["History","INT"],["Insight","WIS"],["Intimidation","CHA"],
+  ["Investigation","INT"],["Medicine","WIS"],["Nature","INT"],["Perception","WIS"],
+  ["Performance","CHA"],["Persuasion","CHA"],["Religion","INT"],["Sleight of Hand","DEX"],
+  ["Stealth","DEX"],["Survival","WIS"]];
+const COMBAT = [["Initiative","Roll initiative"],["Attack","Make an attack"],["Damage","Roll damage"],["Hit Dice","Spend a Hit Die"]];
+const SAVES = ABILITIES; // the six saving throws share the ability names
+
+function actBtn(label, sub, cls, move) {
+  const b = document.createElement("button");
+  b.className = "act-btn" + (cls?(" "+cls):"");
+  b.innerHTML = `<span class="ab">${esc(label)}</span>${sub?`<span class="as">${esc(sub)}</span>`:""}`;
+  b.onclick = () => { submitMove(move); b.classList.add("flash"); setTimeout(()=>b.classList.remove("flash"),260); };
+  return b;
+}
+function sectionGrid(rows, build, wide) {
+  const g = document.createElement("div"); g.className = "pgrid" + (wide?" wide":"");
+  rows.forEach(r => g.appendChild(build(r)));
+  return g;
+}
+const PALETTE = {
+  abilities: () => sectionGrid(ABILITIES, ([ab,full]) => actBtn(ab, full+" check", "", {kind:"check", name:full})),
+  skills:    () => sectionGrid(SKILLS, ([sk,ab]) => actBtn(sk, "("+ab+")", "", {kind:"check", name:sk}), true),
+  combat:    () => sectionGrid(COMBAT, ([nm,sub]) => actBtn(nm, sub, "combat", {kind: nm==="Initiative"?"combat":(nm==="Attack"?"attack":"combat"), name:nm})),
+  saves:     () => sectionGrid(SAVES, ([ab,full]) => actBtn(ab+" Save", full+" save", "", {kind:"save", name:full})),
+};
+const PTABS = [["abilities","Abilities"],["skills","Skills"],["combat","Combat"],["saves","Saves"]];
+let activeTab = "abilities";
+function renderPalette() {
+  const tabs = $("ptabs"), body = $("pbody");
+  tabs.innerHTML = "";
+  PTABS.forEach(([key,label]) => {
+    const t = document.createElement("button"); t.className = "ptab" + (key===activeTab?" active":"");
+    t.textContent = label; t.onclick = () => { activeTab = key; renderPalette(); };
+    tabs.appendChild(t);
+  });
+  body.innerHTML = ""; body.appendChild(PALETTE[activeTab]());
+}
+function wireSayDo() {
+  const ta = $("saytext");
+  const send = (kind) => { const text = ta.value.trim(); if (!text) { ta.focus(); return; } submitMove({kind, text}); ta.value = ""; ta.style.height="38px"; };
+  $("say-btn").onclick = () => send("say");
+  $("do-btn").onclick = () => send("do");
+  ta.addEventListener("input", () => { ta.style.height="38px"; ta.style.height=Math.min(96, ta.scrollHeight)+"px"; });
+  ta.addEventListener("keydown", e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) { e.preventDefault(); send(e.shiftKey?"do":"say"); } });
+}
+
+// ---- dice / roll-result strip -----------------------------------------------
+// Derived purely from the live /activity feed (read-only): items whose tool label
+// is a roll/attack/save. We parse the tool *input* (the only field the activity
+// item carries) for a number to headline, and keep the last few as chips.
+const ROLL_LABELS = new Set(["roll","attack","saving_throw","roll_death_save","social_check","apply_damage","apply_healing"]);
+const DICE_MAX = 6;
+let recentRolls = [];
+function diceFromActivity(items) {
+  let added = false;
+  (items||[]).forEach(it => {
+    if (it.kind !== "tool" || !ROLL_LABELS.has(it.label)) return;
+    let detail = it.detail || "", parsed = null;
+    try { parsed = JSON.parse(detail); } catch (_) { /* truncated json — show raw */ }
+    // headline value: a dice expression, an explicit total, or a target/ability hint
+    let val = "", sub = detail, miss = false;
+    if (parsed) {
+      val = parsed.expression || parsed.dice || parsed.amount || parsed.dc || "";
+      const hint = [];
+      if (parsed.ability) hint.push(parsed.ability);
+      if (parsed.skill) hint.push(parsed.skill);
+      if (parsed.target_id) hint.push("→ "+parsed.target_id);
+      if (parsed.dc!=null) hint.push("DC "+parsed.dc);
+      if (parsed.advantage) hint.push("adv"); if (parsed.disadvantage) hint.push("dis");
+      sub = hint.join(" · ") || detail;
+      miss = it.label==="apply_damage";
+    }
+    recentRolls.push({ name: it.label, val: (val===""?"·":String(val)), sub, miss, fresh:true });
+    added = true;
+  });
+  if (recentRolls.length > DICE_MAX) recentRolls = recentRolls.slice(-DICE_MAX);
+  if (added) renderDice();
+}
+function renderDice() {
+  const strip = $("dice");
+  if (!recentRolls.length) { strip.innerHTML = `<span class="dlbl">Rolls</span><span class="empty">No rolls yet — the dice are still.</span>`; return; }
+  strip.innerHTML = `<span class="dlbl">Rolls</span>` + recentRolls.map((d,i) => {
+    const fresh = (i===recentRolls.length-1 && d.fresh) ? " fresh" : "";
+    d.fresh = false;
+    return `<span class="die ${d.miss?"miss":"hit"}${fresh}"><span class="dn">${esc(d.name)}</span><span class="dv">${esc(d.val)}</span>${d.sub?`<span class="dx">${esc(d.sub)}</span>`:""}</span>`;
+  }).join("");
+}
 
 function renderState(s) {
   $("title").textContent = s.title || "ClawDnD";
@@ -155,16 +324,54 @@ function renderState(s) {
   drawMap(locs, curId, s.map_kind);
 }
 
+// Pan/zoom transform persists across the 1.5s re-renders so the player's view
+// doesn't snap back while they're exploring the map.
+let mapXf = { k:1, x:0, y:0 };
 function drawMap(locs, curId, kind) {
   const ids = Object.keys(locs), svg = $("svg"), W = svg.clientWidth||420, H = 210, pos = {};
+  // --- existing hex / circular-fallback layout logic (unchanged) ---
   if (kind==="hex" && ids.some(id=>locs[id].hex)) {
     const SZ=26; ids.forEach(id=>{const h=locs[id].hex; if(h) pos[id]=[W/2+h[0]*1.5*SZ, H/2+(h[1]+h[0]/2)*Math.sqrt(3)*SZ];});
   } else ids.forEach((id,i)=>{const a=2*Math.PI*i/Math.max(1,ids.length); pos[id]=[W/2+0.36*W*Math.cos(a), H/2+0.34*H*Math.sin(a)];});
   let e="",n="";
   ids.forEach(id=>(locs[id].connections||[]).forEach(c=>{ if(pos[id]&&pos[c]) e+=`<line class="edge" x1="${pos[id][0]}" y1="${pos[id][1]}" x2="${pos[c][0]}" y2="${pos[c][1]}"/>`; }));
-  ids.forEach(id=>{const p=pos[id]||[W/2,H/2]; const cls=(id===curId?"cur ":"")+(locs[id].visited?"visited":"");
-    n+=`<g class="node ${cls}" transform="translate(${p[0]},${p[1]})"><circle r="13"/><text y="24">${esc(locs[id].name).slice(0,15)}</text></g>`;});
-  svg.innerHTML = e+n;
+  ids.forEach(id=>{const p=pos[id]||[W/2,H/2]; const nm=locs[id].name||id; const cls=(id===curId?"cur ":"")+(locs[id].visited?"visited ":"")+"loc";
+    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" transform="translate(${p[0]},${p[1]})"><circle r="13"/><text y="24">${esc(nm).slice(0,15)}</text></g>`;});
+  // wrap content in a single transform group so zoom/pan apply uniformly
+  svg.innerHTML = `<g id="mapview" transform="translate(${mapXf.x},${mapXf.y}) scale(${mapXf.k})">${e+n}</g>`;
+}
+
+// Interactions are wired ONCE on the live <svg>; redraws only replace inner nodes.
+let mapWired = false;
+function wireMap() {
+  if (mapWired) return; mapWired = true;
+  const svg = $("svg"), tip = $("maptip");
+  const apply = () => { const g = svg.querySelector("#mapview"); if (g) g.setAttribute("transform", `translate(${mapXf.x},${mapXf.y}) scale(${mapXf.k})`); };
+  // wheel = zoom toward cursor
+  svg.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = svg.getBoundingClientRect(), mx = e.clientX-r.left, my = e.clientY-r.top;
+    const f = e.deltaY < 0 ? 1.12 : 1/1.12, nk = Math.min(6, Math.max(0.4, mapXf.k*f));
+    const s = nk/mapXf.k;
+    mapXf.x = mx - (mx-mapXf.x)*s; mapXf.y = my - (my-mapXf.y)*s; mapXf.k = nk;
+    apply();
+  }, { passive:false });
+  // drag = pan (only counts as a click if the pointer barely moved)
+  let dragging=false, sx=0, sy=0, ox=0, oy=0, moved=0;
+  svg.addEventListener("pointerdown", e => { dragging=true; moved=0; sx=e.clientX; sy=e.clientY; ox=mapXf.x; oy=mapXf.y; svg.classList.add("grabbing"); svg.setPointerCapture(e.pointerId); });
+  svg.addEventListener("pointermove", e => {
+    if (dragging) { const dx=e.clientX-sx, dy=e.clientY-sy; moved=Math.max(moved,Math.abs(dx)+Math.abs(dy)); mapXf.x=ox+dx; mapXf.y=oy+dy; apply(); return; }
+    const g = e.target.closest && e.target.closest(".node.loc");
+    if (g) { const r=svg.getBoundingClientRect(); tip.textContent="Travel to "+g.getAttribute("data-loc"); tip.style.left=(e.clientX-r.left)+"px"; tip.style.top=(e.clientY-r.top)+"px"; tip.style.opacity="1"; }
+    else tip.style.opacity="0";
+  });
+  const endDrag = () => { dragging=false; svg.classList.remove("grabbing"); };
+  svg.addEventListener("pointerup", e => {
+    endDrag();
+    if (moved < 5) { const g = e.target.closest && e.target.closest(".node.loc"); if (g) submitMove({kind:"do", text:"travel to "+g.getAttribute("data-loc")}); }
+  });
+  svg.addEventListener("pointercancel", endDrag);
+  svg.addEventListener("pointerleave", () => { tip.style.opacity="0"; });
 }
 
 async function poll() {
@@ -209,9 +416,11 @@ async function poll() {
       ac.appendChild(d);
     });
     if ((act.items||[]).length) ac.scrollTop = ac.scrollHeight;
+    diceFromActivity(act.items);
     actCursor = act.next ?? actCursor;
   } catch (e) { /* mid-write / restart — retry next tick */ }
 }
+renderPalette(); wireSayDo(); wireMap(); renderDice();
 poll(); setInterval(poll, 1500);
 </script>
 </body>

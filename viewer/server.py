@@ -5,8 +5,10 @@ Run it for the PLAYER to *see* the adventure while they play through Claude Code
 the current location/map, party vitals, who's in the scene (with voices), the
 quest log, and a live roll/event feed. The AI never reads this — it reads the
 same state via the engine's MCP tools. This server is a **pure downstream
-reader**: stdlib only (no deps, runs anywhere), read-only, no POST/write path,
-and it can be deleted without touching the engine.
+reader**: stdlib only (no deps, runs anywhere). The sole write path is `POST /move`,
+which appends a player *move intent* (NOT campaign state) to the append-only log at
+$CLAWDND_PLAYER_MOVES — and is inert (refuses, writes nothing) unless that env is set.
+It can be deleted without touching the engine.
 
 It reads the engine's on-disk truth directly:
 - `snapshot.json` is written atomically (temp + os.replace), so reads are always
@@ -38,6 +40,13 @@ def _state_dir() -> Path:
 
 def _campaigns_dir() -> Path:
     return _state_dir() / "campaigns"
+
+
+def _moves_path() -> Path | None:
+    """The single write target: $CLAWDND_PLAYER_MOVES, an append-only log of player
+    *move intents* (NOT campaign state). Unset ⇒ no live game ⇒ no write path."""
+    env = os.environ.get("CLAWDND_PLAYER_MOVES")
+    return Path(env) if env else None
 
 
 def _pick_campaign(arg: str | None) -> str | None:
@@ -210,6 +219,33 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b"not found", "text/plain")
 
+    def do_POST(self) -> None:  # noqa: N802
+        """The ONLY write path. `/move` appends one player *move intent* (a JSON
+        line) to $CLAWDND_PLAYER_MOVES — mirroring the engine's player facade, NOT
+        touching campaign state. No env ⇒ no live game ⇒ refuse and write nothing."""
+        if urlparse(self.path).path != "/move":
+            self._send(404, b"not found", "text/plain")
+            return
+        dest = _moves_path()
+        if dest is None:
+            self._json({"ok": False, "reason": "read-only (no live game)"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            move = json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, UnicodeDecodeError):
+            self._json({"ok": False, "reason": "bad move payload"})
+            return
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(move, separators=(",", ":")) + "\n")
+        except OSError as exc:
+            self._json({"ok": False, "reason": f"write failed: {exc}"})
+            return
+        self._json({"ok": True})
+
     def log_message(self, *_args) -> None:  # quiet
         pass
 
@@ -232,7 +268,13 @@ def main() -> int:
     print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
     if _Handler.transcript_path:
         print(f"Watching agent transcript: {_Handler.transcript_path}")
-    print("Read-only projection of the live campaign — Ctrl-C to stop.")
+    moves = _moves_path()
+    print(
+        f"Player moves → appending to: {moves}"
+        if moves
+        else "Player moves: DISABLED (set CLAWDND_PLAYER_MOVES to enable POST /move)."
+    )
+    print("Downstream projection of the live campaign — Ctrl-C to stop.")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
