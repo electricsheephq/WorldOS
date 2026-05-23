@@ -29,6 +29,11 @@
   .pip { width: 9px; height: 9px; border-radius: 50%; background: #6b5a3e; flex: none; }
   .pip.player { background: #6fae6f; } .pip.companion { background: #6f9fce; }
   .pip.npc { background: #c9a86a; } .pip.monster { background: #c56b6b; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    color: #14110e; background: #6b5a3e; border: 2px solid #00000033; }
+  .avatar.player { background: #8fce8f; } .avatar.companion { background: #8fbfe0; }
+  .avatar.npc { background: #e0c98a; } .avatar.monster { background: #e08f8f; }
   .hpbar { height: 6px; background: #3a2f22; border-radius: 3px; overflow: hidden; width: 90px; }
   .hpbar > i { display: block; height: 100%; background: #6fae6f; }
   .hpbar.low > i { background: #c56b6b; }
@@ -72,6 +77,8 @@
 let evCursor = 0, actCursor = 0;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const avatar = (c) => `<span class="avatar ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 
 function hpClass(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return a/b <= 0.35 ? "low" : ""; }
 function hpPct(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return b ? Math.max(0, 100*a/b) : 0; }
@@ -88,7 +95,7 @@ function renderState(s) {
   // Party
   const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
   $("party").innerHTML = party.map(c => `
-    <div class="who"><span class="pip ${c.kind}"></span>
+    <div class="who">${avatar(c)}
       <span class="name">${esc(c.name)} <span class="vid">${esc(c.voice_id||"")}</span></span>
       <span class="hpbar ${hpClass(c.current_hp+'/'+c.max_hp)}"><i style="width:${hpPct(c.current_hp+'/'+c.max_hp)}%"></i></span>
       ${(c.conditions||[]).length ? `<span class="cond">${esc((c.conditions||[]).join(", "))}</span>`:""}
@@ -97,7 +104,7 @@ function renderState(s) {
   // NPCs/monsters at the current location are "in the scene" (best-effort: all npcs/monsters)
   const scene = Object.values(s.characters||{}).filter(c => c.kind==="npc" || c.kind==="monster");
   $("scene").innerHTML = scene.slice(0,12).map(c =>
-    `<div class="who"><span class="pip ${c.kind}"></span><span class="name">${esc(c.name)}</span>
+    `<div class="who">${avatar(c)}<span class="name">${esc(c.name)}</span>
       <span class="vid">${esc(c.attitude||c.voice_id||"")}</span></div>`).join("") || `<div class="empty">—</div>`;
 
   // Quests
