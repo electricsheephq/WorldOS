@@ -26,15 +26,35 @@ every score, and when unsure, score DOWN:
 - **thematic_resonance** — Touches something real and adult (guilt, mercy, the price of power) with earned maturity. (5 = it's *about* something; 1 = just events.)
 - **memorability** — At least one indelible beat — an image, a line, a moral gut-punch — the player recounts tomorrow. (5 = yes; 3 = pleasant, fades fast; 1 = nothing.)
 
+## Named failure modes — each FORCES scene_craft ≤ 2 (prose does NOT rescue them)
+We keep getting fooled by polished-but-hollow output: quoted dialogue + a tacked-on "what do
+you do?" is NOT a played scene. If ANY of these is present, score **scene_craft ≤ 2** no
+matter how lovely the writing — and the HARD CAP below then binds `overall ≤ 3.0`:
+- **Illusory choice / railroading** — the "choice" handed back has only one real path, or the
+  scene resolves the same regardless of what the player picks. Agency means the player's
+  decision visibly *bends* the scene; an open question the DM has already pre-answered does not.
+- **The DM answers its own question** — it asks "what do you do?" and then, that beat or the
+  next, decides/narrates/speaks the PROTAGONIST's action FOR them. The player must be the one
+  who acts; the DM owning the player's choices is an instant scene_craft kill.
+- **State contradiction (mush)** — it contradicts established facts: a dead or departed NPC
+  reappears, a spent item/slot is used again, geography or the clock silently resets. This is
+  exactly the incoherence the memory ledger exists to prevent — flag it hard.
+- **Dead-air pacing** — beats that don't advance: restating the room, recapping what just
+  happened, stalling on atmosphere while nothing changes and nothing is chosen.
+- **Described-not-spoken NPCs** — NPCs summarized ("Rolph explains he copied the list") instead
+  of speaking in quoted voice. (Already under scene_craft; it caps here too.)
+
 ## Output (JSON only)
 `scores` = the **7** dims above (1–5).
 `overall` = an honest weighted average that **rewards PLAYABLE epic** — weight
 **scene_craft, grandeur, dramatic_momentum, and memorability** most (the "is this a game
 worth playing?" core); character_depth + thematic_resonance next; prose_atmosphere last.
-**HARD CAPS (enforce strictly):** if `scene_craft ≤ 2` (it reads as a summary/log, or NPCs
-don't speak in real dialogue), `overall` MUST NOT exceed **3.0**, regardless of prose. A
-competent-but-flat session MUST NOT exceed ~3.0. Reserve 4.5+ for output that genuinely
-rivals BG3 — that should be rare.
+**HARD CAPS (enforce strictly):** if `scene_craft ≤ 2` (it reads as a summary/log, NPCs
+don't speak in real dialogue, OR **any Named failure mode above is present**), `overall` MUST
+NOT exceed **3.0**, regardless of prose. Before you award 4+ anywhere, explicitly confirm NONE
+of the Named failure modes is present — if one is, `scene_craft` is ≤ 2 and this cap binds, and
+you must cite the offending mode in `defects`. A competent-but-flat session MUST NOT exceed
+~3.0. Reserve 4.5+ for output that genuinely rivals BG3 — that should be rare.
 `verdict` = 1–2 sentences answering plainly: is this a grand, mature, PLAYABLE adventure a
 player would be hungry to live — or competent-but-flat / a log being recounted at them?
 Name the single biggest lever.

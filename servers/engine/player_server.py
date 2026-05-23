@@ -14,6 +14,8 @@ Run as its own MCP server (the player agent connects to ONLY this), e.g.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -21,18 +23,24 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+import spells
 import store
 from models import SKILL_ABILITIES, Character
 
 mcp = FastMCP("clawdnd-player")
 
 
-# --- read-only campaign access (the single campaign in this state dir) -----------
+# --- read-only campaign access (the MOST-RECENT campaign in this state dir) -------
 def _campaign():
+    """The live campaign. ``list_campaigns`` sorts by directory name (UUID), NOT
+    recency, so picking ``[0]`` could read a STALE campaign left in a reused state
+    dir and validate the player against the wrong character's sheet (H3). Pick the
+    most-recently-updated one — that's the session actually being played."""
     camps = store.list_campaigns()
     if not camps:
         return None
-    return store.load_campaign(camps[0]["id"])
+    latest = max(camps, key=lambda c: c.get("updated_at") or 0)
+    return store.load_campaign(latest["id"])
 
 
 def _pc() -> Optional[Character]:
@@ -67,12 +75,20 @@ def _scene() -> dict:
 
 
 def _record(kind: str, text: str, **fields) -> dict:
-    """Append a structured move to the moves file the orchestrator/dashboard reads."""
+    """Append a structured move to the moves file the orchestrator/dashboard reads.
+    flock the append (L9): a future second writer (companion / 2nd PC / the viewer's
+    /move path) must not interleave-corrupt a half-written JSONL line — the engine
+    flocks every campaign write; the moves file gets the same guarantee."""
     move = {"role": "player", "kind": kind, "text": text, **fields}
     p = os.environ.get("CLAWDND_PLAYER_MOVES")
     if p:
         with Path(p).open("a", encoding="utf-8") as f:
+            with contextlib.suppress(OSError):
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             f.write(json.dumps(move) + "\n")
+            f.flush()
+            with contextlib.suppress(OSError):
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return {"ok": True, "move": move}
 
 
@@ -90,17 +106,64 @@ def validate_check(skill: str) -> tuple[bool, str]:
     return ok, "" if ok else f"{skill!r} is not a 5e skill"
 
 
+def spell_base_level(name: str) -> Optional[int]:
+    """The spell's base level from the rules data (0 = cantrip); None if the spell is
+    unknown to both the curated set and SRD — in which case we DON'T refuse on slots
+    (the engine degrades gracefully on un-modeled spells; the facade shouldn't be
+    stricter than the engine and false-refuse a real spell)."""
+    data = None
+    try:
+        data = spells.spell_data(name)
+    except ValueError:
+        data = None
+    if data is None:
+        data = spells.srd_spell(name)
+    if data is None:
+        return None
+    return int(data.get("level", 0) or 0)
+
+
+def has_slot_for(pc: Character, level: int) -> bool:
+    """True if the PC has an unspent slot usable for a spell of ``level`` — upcast-aware
+    (any slot at >= that level counts), mirroring the engine (server.py cast_spell:
+    ``lvl >= spell_level`` and ``slot.used < slot.maximum``). Cantrips (level 0) are
+    always castable."""
+    if level <= 0:
+        return True
+    return any(lv >= level and slot.used < slot.maximum
+               for lv, slot in pc.spell_slots.items())
+
+
 def validate_cast(pc: Character, name: str) -> tuple[bool, str]:
     if not name.strip():
         return False, "name a spell to cast"
     if name.lower() not in known_spells(pc):
         return False, f"{name!r} is not on your sheet — you don't know/prepare it"
+    # C1: a leveled spell needs an actual slot — known-ness alone was the hole that let
+    # a tapped-out caster "cast" with no slots, which the DM would then narrate as real.
+    level = spell_base_level(name)
+    if level is not None and not has_slot_for(pc, level):
+        return False, f"no level-{level}+ spell slot left — you're out of slots for {name!r}"
     return True, ""
 
 
 def validate_item(pc: Character, name: str) -> tuple[bool, str]:
     if name.lower() not in owned_items(pc):
         return False, f"you aren't carrying {name!r}"
+    return True, ""
+
+
+def validate_attack(pc: Character, target: str, weapon: str) -> tuple[bool, str]:
+    """H2: ``attack`` was a free pass (no validation at all). Require a real target,
+    and if a weapon is named it must be one you actually carry (same spirit as
+    ``use_item``). We deliberately do NOT gate on in-combat — declaring an attack can
+    legitimately START a fight; the DM rolls initiative and resolves. The engine
+    remains the authority on hit/damage; this just stops "attack nothing" / "attack
+    with a weapon you don't own" from being relayed to the DM as a valid declaration."""
+    if not target.strip():
+        return False, "name a target to attack"
+    if weapon.strip() and owned_items(pc) and weapon.lower() not in owned_items(pc):
+        return False, f"you aren't carrying {weapon!r} to attack with"
     return True, ""
 
 
@@ -130,8 +193,9 @@ def request_check(skill: str, reason: str = "") -> dict:
 
 @mcp.tool()
 def cast_spell(name: str, target: str = "") -> dict:
-    """Cast a spell you actually know/prepared. Refused if it isn't on your sheet; the
-    engine spends the slot and resolves it."""
+    """Declare casting a spell you actually know/prepared AND have a slot for. Refused
+    if it isn't on your sheet, or if you're out of slots for it. This records your
+    INTENT; the DM resolves it through the engine (which spends the slot)."""
     pc = _pc()
     if pc is None:
         return {"ok": False, "error": "no character yet"}
@@ -155,7 +219,15 @@ def use_item(name: str) -> dict:
 
 @mcp.tool()
 def attack(target: str, weapon: str = "") -> dict:
-    """Attack a target (in combat). The DM/engine rolls and applies it."""
+    """Attack a target. Name who/what you're attacking; if you name a weapon it must be
+    one you carry. The DM/engine rolls to hit and applies damage (and starts combat if
+    needed)."""
+    pc = _pc()
+    if pc is None:
+        return {"ok": False, "error": "no character yet"}
+    ok, why = validate_attack(pc, target, weapon)
+    if not ok:
+        return {"ok": False, "error": why}
     return _record("attack", f"attack {target}" + (f" with {weapon}" if weapon else ""), target=target, weapon=weapon)
 
 

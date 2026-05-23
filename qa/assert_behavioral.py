@@ -72,6 +72,10 @@ def main() -> int:
         return 2
     events = _load_jsonl(sys.argv[1])
     chat = _load_jsonl(sys.argv[3]) if len(sys.argv) > 3 else []
+    moves_path = sys.argv[4] if len(sys.argv) > 4 else ""
+    mv = _load_jsonl(moves_path) if moves_path else []
+    has_facade = bool(moves_path)  # a facade/duo run: the player acts through tools
+    move_kinds = Counter((m.get("kind") or "").lower() for m in mv if m.get("role") == "player")
     try:
         sp = Path(sys.argv[2])
         state = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}
@@ -94,25 +98,52 @@ def main() -> int:
         pl = sum(1 for r in chat if r.get("role") == "player")
         dm = sum(1 for r in chat if r.get("role") == "dm")
         chk("both_sides_acted", pl > 0 and dm > 0, f"player_turns={pl} dm_turns={dm}")
-        # 3) the player stayed in its lane (no DM-style narration / outcome assertion)
-        bad = [
-            (r.get("text", "") or "")[:70]
+        # 3) the player stayed in its lane. In a FACADE run the lane is STRUCTURAL: every
+        # relayed player turn is a tagged move ("[say] …", "[do] …"). A RAW-text turn means
+        # the player bypassed the facade (the 0-tools fallback) and could be over-writing the
+        # world / asserting outcomes — a hard fail (H4), not a soft warning. Without the
+        # facade (legacy single-/duo-agent), fall back to the over-write heuristic as a WARN.
+        unprefixed = [
+            (r.get("text", "") or "")
             for r in chat
-            if r.get("role") == "player"
-            # structured facade moves ("[say] …", "[do] …") are in-lane by construction
-            and not (r.get("text", "") or "").lstrip().startswith("[")
-            and (len(r.get("text", "")) > 700
-                 or any(k in (r.get("text", "") or "").lower() for k in _OVERWRITE))
+            if r.get("role") == "player" and not (r.get("text", "") or "").lstrip().startswith("[")
         ]
-        chk("player_in_lane", not bad, f"{len(bad)} turn(s) look like over-writing: {bad[:2]}", fatal=False)
+        if has_facade:
+            chk("player_turns_structured", not unprefixed,
+                f"{len(unprefixed)} player turn(s) bypassed the facade (raw text, not a [tagged] move): {[t[:70] for t in unprefixed[:2]]}")
+        else:
+            bad = [t for t in unprefixed if len(t) > 700 or any(k in t.lower() for k in _OVERWRITE)]
+            chk("player_in_lane", not bad,
+                f"{len(bad)} turn(s) look like over-writing: {[t[:70] for t in bad[:2]]}", fatal=False)
 
     # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
     # tools. An empty moves log means the facade was blocked/unused (e.g. a missing
     # --permission-mode), even though it may have produced complaint text.
-    if len(sys.argv) > 4 and sys.argv[4]:
-        mv = _load_jsonl(sys.argv[4])
+    if has_facade:
         chk("player_used_facade", len(mv) > 0,
             f"{len(mv)} facade moves recorded (0 ⇒ the player's tools were blocked/unused)")
+        # C2) the DM actually RESOLVED the player's mechanical moves. Counting player vs DM
+        # turns separately (both_sides_acted) never checks the DM ENGAGED with what the
+        # player declared — a [cast]/[attack]/[check]/[save] move must be backed by the
+        # matching engine call somewhere, or the player was ignored while the DM narrated
+        # its own story. Aggregate (not per-beat) to avoid brittle alignment + false reds:
+        # the gate trips only if the DM resolved ZERO of a move-kind the player used ≥1 of.
+        checks_n = tools.get("roll", 0) + tools.get("saving_throw", 0) + tools.get("social_check", 0)
+        unresolved = []
+        if move_kinds.get("cast", 0) and tools.get("cast_spell", 0) == 0:
+            unresolved.append(f"{move_kinds['cast']} [cast] but DM cast_spell=0")
+        if move_kinds.get("attack", 0) and tools.get("attack", 0) == 0:
+            unresolved.append(f"{move_kinds['attack']} [attack] but DM attack=0")
+        if move_kinds.get("check", 0) and checks_n == 0:
+            unresolved.append(f"{move_kinds['check']} [check] but DM roll/save/social=0")
+        if move_kinds.get("save", 0) and tools.get("saving_throw", 0) == 0:
+            unresolved.append(f"{move_kinds['save']} [save] but DM saving_throw=0")
+        chk("dm_resolved_player_moves", not unresolved,
+            "; ".join(unresolved) or f"move_kinds={dict(move_kinds)}")
+        # M6) a 1-move-and-quit run satisfies the checks above; flag a trivially short
+        # session as a WARNING (not every short run is broken — so not fatal).
+        chk("player_engaged", len(mv) >= 3,
+            f"only {len(mv)} move(s) recorded — a trivially short session?", fatal=False)
 
     # 4) dice actually fired somewhere (a whole session with zero rolls is broken)
     dice = tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0)
@@ -122,6 +153,14 @@ def main() -> int:
     if tools.get("start_combat", 0) > 0:
         chk("combat_resolved", tools.get("attack", 0) + tools.get("spawn_monster", 0) > 0,
             f"start_combat={tools['start_combat']} attack={tools.get('attack', 0)} spawn={tools.get('spawn_monster', 0)}")
+        # M6/M7) a combat that never ENDS, or never grants XP, is a smell — but a run cut
+        # off "out of time" mid-fight legitimately may not end_combat/award_xp, so WARN.
+        chk("combat_ended", tools.get("end_combat", 0) > 0,
+            f"start_combat={tools['start_combat']} end_combat={tools.get('end_combat', 0)} — combat may be left hanging",
+            fatal=False)
+        chk("xp_awarded", tools.get("award_xp", 0) > 0,
+            f"combat ran but award_xp={tools.get('award_xp', 0)} — no XP for the fight?",
+            fatal=False)
 
     # 6) a player character exists in the party (state integrity)
     chars = state.get("characters", {}) or {}

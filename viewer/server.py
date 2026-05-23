@@ -27,9 +27,42 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 _HERE = Path(__file__).resolve().parent
+
+# The constrained move palette — the SAME lane the engine facade enforces. A human
+# acting via the dashboard must not be able to POST DM-side narration ("the dragon
+# dies"): only declared PLAYER moves of a known kind are accepted (H5). These are the
+# kinds the dashboard emits (say/do free-text, check/save/combat/attack palette) plus
+# the facade's cast/use_item.
+_MOVE_KINDS = {"say", "do", "check", "save", "combat", "attack", "cast", "use_item"}
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc")
+_MOVE_MAXLEN = 2000
+
+
+def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
+    """Validate + normalize a /move payload to the constrained palette. Returns
+    ``(move, "")`` on success or ``(None, reason)`` on rejection. role is forced to
+    'player' (no impersonating dm/system); kind must be whitelisted; text/name are
+    length-capped; unknown keys are dropped (so a 'narration' overwrite can't ride
+    along in an extra field)."""
+    if not isinstance(raw, dict):
+        return None, "move must be a JSON object"
+    kind = str(raw.get("kind", "")).strip().lower()
+    if kind not in _MOVE_KINDS:
+        return None, f"unknown move kind {kind!r}"
+    move: dict = {"role": "player", "kind": kind}
+    for f in _MOVE_FIELDS:
+        v = raw.get(f)
+        if isinstance(v, str) and v.strip():
+            move[f] = v.strip()[:_MOVE_MAXLEN]
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            move[f] = v
+    if "text" not in move and "name" not in move:
+        return None, "move needs a 'text' or 'name'"
+    return move, ""
 
 
 def _state_dir() -> Path:
@@ -233,9 +266,13 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length > 0 else b""
-            move = json.loads(raw.decode("utf-8")) if raw else {}
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
         except (ValueError, UnicodeDecodeError):
             self._json({"ok": False, "reason": "bad move payload"})
+            return
+        move, why = sanitize_move(payload)
+        if move is None:
+            self._json({"ok": False, "reason": why})
             return
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)

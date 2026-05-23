@@ -13,7 +13,10 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 WORLD="${1:-baldurs-gate}"; RUN="${2:-play-$(date +%H%M%S)}"; PORT="${3:-8765}"
-BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
+BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"            # per DM turn
+SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # M8: aggregate ceiling for the whole session
+MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"        # M8: hard turn cap (worst case = MAX_TURNS×BUDGET)
+DM_TURNS=0
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 DM_CFG="$STATE_DIR/dm.mcp.json"; MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"
@@ -54,11 +57,22 @@ echo "[play] $RUN — open http://127.0.0.1:$PORT/dashboard, act via the palette
 DMSG="$(dm_turn 1 "$DM_BRIEF
 
 Begin a SOLO session for a human player in this world: start_world(\"$WORLD\"), start_session, create a level-3 PC (apply_srd_defaults, sensible skills/spells) — you may pick a fitting concept and tell the player who they are — and recruit a roster companion. Then open a human-scale, personal scene with real dialogue and hand the player an open moment + a clear choice. Their action will arrive next as tagged moves.")"
-chatlog dm "$DMSG"
+chatlog dm "$DMSG"; DM_TURNS=1
+
+# M8: stop the (otherwise infinite) loop once the session hits its cost or turn ceiling.
+# total_cost_usd is reported on each turn's result event (accumulated in $COMBINED).
+over_budget() {
+  local spent; spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
+  [ "$DM_TURNS" -ge "$MAX_TURNS" ] && { echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."; return 0; }
+  awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
+    && { echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."; return 0; }
+  return 1
+}
 
 # Human-paced loop: when a new move lands in $MOVES, resolve it with a DM turn.
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
 while true; do
+  over_budget && break
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then
     new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"; MCURSOR="$total"
@@ -72,7 +86,7 @@ while true; do
 $PMSG
 
 Resolve it through the engine (roll checks, apply casts/attacks, voice NPCs) and narrate the next beat as a played scene. Hand the moment back to the player.")"
-    chatlog dm "$DMSG"
+    chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))
   else
     sleep 2
   fi
