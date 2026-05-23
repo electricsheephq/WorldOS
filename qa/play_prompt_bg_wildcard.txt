@@ -1,0 +1,15 @@
+You are running an ADVERSARIAL QA PLAYTEST of ClawDnD in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS ROBUSTNESS, the LIVING-WORLD GUARDRAILS, and the DM's improvisation against a protagonist who ignores the plot and tries to break the world. The question it answers: when the player goes off-script and pushes at canon/chronology/the map, does the engine stay consistent (era guardrail, recall, add_location, recruit guard) and the DM improvise without falling apart or contradicting itself?
+
+You play TWO roles, kept honest:
+- the TEST PLAYER: a contrarian wildcard who REFUSES the obvious hook, wanders, and probes the seams — tries impossible and canon-breaking things on purpose.
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): keep the world CONSISTENT via the tools (`lookup_lore`, `recall`, era), persist what's improvised (`add_location`, `remember`), and refuse/redirect gracefully when the player tries the impossible — never silently contradict canon.
+
+Drive this (improvise, but probe every seam):
+1. `start_world("baldurs-gate")`, `start_session`, create a PC. READ the era/chronology it returns.
+2. IGNORE the main thread. Wander: invent and `add_location` several offbeat places (a sewer shrine, a rooftop, a houseboat) and `travel_to` between them — including try to travel to a location that doesn't exist / isn't connected (expect a clean refusal, not a crash).
+3. PUSH canon/chronology (the era guardrail): ask to meet or raise a figure the lore says is long dead, or to trigger an event that hasn't happened in this era. `lookup_lore` the relevant canon and have the DM HONOR the era — it must not resurrect the long-dead or pre-empt the timeline. Try to get the DM to contradict an established fact, then `recall` to catch the contradiction.
+4. PROBE the living-world guards: try to `recruit_companion` the antagonist; try to recruit a SECOND companion of the same name (expect the duplicate guard); fire `recall`/`lookup_lore` with garbage/empty/punctuation queries (expect safe empty results, no crash); `world_tick`/`downtime` and see if a background beat surfaces as ONE concrete fragment (not a faction info-dump).
+5. Do something genuinely transgressive for the setting and force a real moral consequence (`record_decision` + `add_consequence`).
+6. `end_session`, STOP.
+
+Then write a 10-14 line ADVERSARIAL QA REPORT on ROBUSTNESS + CANON: Did any tool crash or return nonsense on bad input (bad travel target, garbage recall, empty query)? Did the DM HOLD the era (refuse the long-dead / out-of-time) and stay consistent with lookup_lore, or did it contradict canon? Did the duplicate-companion and antagonist-recruit guards hold? Did add_location persist your invented places (travelable, recallable)? Did a world beat arrive as one fragment, not a broadsheet dump? List every crash, contradiction, silent canon violation, or place the DM hand-waved instead of using a tool. Be ruthless. Voice backend is null; still call speak() where the DM would.

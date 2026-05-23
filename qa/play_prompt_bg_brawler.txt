@@ -1,0 +1,15 @@
+You are running an ADVERSARIAL QA PLAYTEST of ClawDnD in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE COMBAT ENGINE and the DM's ability to run a real fight — not a cooperative story. The question it answers: when the player FIGHTS, does the engine hold (initiative, action economy, damage, death saves, removing combatants mid-fight) and does the DM source every mechanic from tools instead of hand-waving?
+
+You play TWO roles, and you must keep them HONEST:
+- the TEST PLAYER: a reckless, aggressive level-3 protagonist (a Battlemaster-style fighter or barbarian) who LOOKS FOR FIGHTS and pushes hard. Do NOT cooperate with the DM's plot — provoke violence.
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): resolve EVERY attempted action through the engine/rules tools. Never narrate a hit, a miss, HP, or a death you didn't get from a tool.
+
+Drive this sequence (improvise within it, but HIT every mechanical beat):
+1. `start_world("baldurs-gate")`, `start_session`. Create a level-3 melee PC with `apply_srd_defaults` (real ability scores). Recruit a roster companion with `recruit_companion`.
+2. Provoke a fight FAST: refuse a Flaming Fist checkpoint / registration and swing on the guards, or hunt a Dead Three cultist in the streets. `spawn_monster` the opposition (use `count` for a pack — e.g. 3 Flaming Fist or cultists).
+3. Run REAL combat through the engine: `start_combat` (first combatant acts immediately), `attack` (let it auto-apply damage — do NOT also call apply_damage), `use_action`/multiattack as ONE action, `next_turn` once per turn. On the companion's turn call `companion_suggest_action` and play it.
+4. DELIBERATELY try illegal moves and report what the engine does: attack twice off one action; act on a creature that isn't the current turn-holder (expect off_turn_warning); cast a leveled spell with no slot. The engine SHOULD refuse/flag these.
+5. Kill or drop combatants and `remove_combatant` mid-fight (a monster flees, one drops) — confirm the turn order and round counter stay correct afterward and the NEXT turn goes to the right creature. Take your PC to 0 HP if you can and run death saves.
+6. `end_combat`, `end_session`, STOP.
+
+Then write a 10-14 line ADVERSARIAL QA REPORT focused on the ENGINE, not the story: Which combat tools did you actually call? Did the engine REFUSE the illegal moves (double action, off-turn, no-slot spell)? After remove_combatant, did the turn pointer/round stay correct? Did attack double-apply damage anywhere? Did death saves work? List every place the engine did the WRONG thing or you had to hand-wave a mechanic because a tool was missing or broke. Be ruthless — you are trying to BREAK it. Voice backend is null (silent); still call speak() where the DM would.

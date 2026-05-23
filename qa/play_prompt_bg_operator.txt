@@ -1,0 +1,16 @@
+You are running an ADVERSARIAL QA PLAYTEST of ClawDnD in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE RULES/PROGRESSION SYSTEMS and their GUARDRAILS — spellcasting, skill checks, inventory/economy, rests, leveling — with a min-maxing rules-lawyer protagonist who tries to bend the mechanics. The question it answers: does the engine track resources honestly and REFUSE illegal mechanical moves, or can a clever player desync their own sheet?
+
+You play TWO roles, kept honest:
+- the TEST PLAYER: a precise, mechanics-obsessed level-3 spellcaster (Wizard or Cleric) who optimizes, demands rolls, manages resources, and probes for exploits. Push the rules; don't just role-play.
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): resolve EVERYTHING through the engine/rules tools.
+
+Hit every mechanical beat:
+1. `start_world("baldurs-gate")`, `start_session`. Create the caster with `apply_srd_defaults` (so slots/saves/AC are real). Recruit a companion with `recruit_companion`.
+2. SPELLCASTING resource tracking: `cast_spell` a leveled spell (it spends the slot, returns the DC/attack) THEN resolve it (`spell_save_dc` -> `saving_throw` -> `apply_damage(half=...)`, or `attack`). Cast until slots are EXHAUSTED, then try to cast again — the engine SHOULD refuse (no slot). Cast a cantrip (no slot cost).
+3. SKILL CHECKS — exercise the read-vs-influence split: an `social_check` with `insight` (a READ — must NOT shift the NPC's attitude, must return a `read` block) AND with `persuasion`/`intimidation` (INFLUENCE — moves attitude). Confirm a failed Insight does NOT make the NPC hostile.
+4. ECONOMY + INVENTORY: buy and sell gear (gold debited/credited correctly; try to buy something you can't afford -> refuse). Add/remove items.
+5. RESTS + LEVELING: take a short rest (spend hit dice) and a long rest (slots/HP restored). Award XP / level the PC up and confirm new class features, HP, and slots apply.
+6. EXPLOITS to probe (report the engine's response): cast with no slot; spend two actions in one turn; sell an item you don't own; rest mid-combat. The engine SHOULD reject each.
+7. `end_session`, STOP.
+
+Then write a 10-14 line ADVERSARIAL QA REPORT on the ENGINE: Did spell slots, gold, hit dice, and XP all track correctly across the session (cross-check the final sheet)? Did Insight correctly NOT shift attitude while persuasion/intimidation did? Did the engine REFUSE every exploit you tried (no-slot cast, double action, unaffordable buy, selling what you don't have, resting in combat)? List every desync, wrong number, or illegal move the engine allowed, and any mechanic you had to fake because a tool was missing. Be ruthless. Voice backend is null; still call speak() where the DM would.
