@@ -156,6 +156,36 @@ def load_world_data(world_id: str) -> dict:
         raise ValueError(f"world {world_id!r} has malformed JSON: {exc}") from exc
 
 
+def list_worlds() -> list[dict]:
+    """Available world seeds — every content/worlds/<id>/world.json (including the
+    gitignored _private/ ones), as {id, name, premise, era, tone, lore_pages}. Powers
+    /world-list and the start_world discovery flow."""
+    base = _content_dir() / "worlds"
+    out: list[dict] = []
+    if not base.is_dir():
+        return out
+    seen: set[str] = set()
+    for wj in sorted(base.rglob("world.json")):
+        wid = wj.parent.name
+        if wid in seen:
+            continue
+        try:
+            w = json.loads(wj.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        seen.add(wid)
+        lore = wj.parent / "lore"
+        out.append({
+            "id": w.get("id", wid),
+            "name": w.get("name", wid),
+            "premise": (w.get("premise", "") or "")[:240],
+            "era": w.get("era", ""),
+            "tone": (w.get("tone", "") or "")[:140],
+            "lore_pages": len(list(lore.rglob("*.md"))) if lore.is_dir() else 0,
+        })
+    return out
+
+
 def seed_world(world: dict, start_at: str = "") -> Campaign:
     """Seed a Campaign from a WORLD bible (a persistent setting the DM generates
     *within*, not a fixed plot). Unlike an adventure, a world ships its regions,

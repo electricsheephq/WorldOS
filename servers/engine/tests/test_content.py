@@ -123,6 +123,15 @@ def test_start_world_resume_continues_instead_of_orphaning(tmp_path, monkeypatch
     assert fresh["campaign_id"] != cid and "resumed" not in fresh
 
 
+def test_list_worlds_enumerates_seeds():
+    # the front-door discovery tool — enumerates content/worlds/<id>/world.json
+    out = server.list_worlds()["worlds"]
+    ids = {w["id"] for w in out}
+    assert "sundered-reach" in ids
+    sr = next(w for w in out if w["id"] == "sundered-reach")
+    assert sr["name"] and sr["era"] and sr["lore_pages"] >= 1 and sr["premise"]
+
+
 def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
     # the DM's on-demand "wiki": lookup_lore pulls ranked canon from the world's
     # lore corpus + reports the chronology (era), and is empty/safe off-world.

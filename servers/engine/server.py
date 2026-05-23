@@ -236,6 +236,14 @@ def start_adventure(adventure_id: str) -> dict:
 
 
 @mcp.tool()
+def list_worlds() -> dict:
+    """List the available WORLD seeds you can drop into with `start_world` — each a
+    persistent setting the DM generates *within* (returns id, name, premise, era, tone,
+    lore_pages). Use for `/world-list` and to let the player pick a world to play."""
+    return {"worlds": content_mod.list_worlds()}
+
+
+@mcp.tool()
 def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
     """Seed a NEW campaign from a persistent WORLD bible
     (content/worlds/<world_id>/world.json) — a living setting you GENERATE WITHIN,
