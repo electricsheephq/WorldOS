@@ -141,9 +141,34 @@ def _read_activity(since: int) -> tuple[list[dict], int]:
     return out, consumed
 
 
+def _read_chat(since: int) -> tuple[list[dict], int]:
+    """Tail the two-sided conversation log (a duo run's <run>.chat.jsonl: one
+    {"role":"player"|"dm","text":...} per line) so the dashboard can show the
+    PROTAGONIST acting alongside the DM, not just DM narration. Empty when none
+    is configured. Tolerates a half-written trailing line like the other tails."""
+    path = _Handler.chat_path
+    if not path or not Path(path).exists():
+        return [], since
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    out: list[dict] = []
+    consumed = since
+    for raw in lines[since:]:
+        stripped = raw.strip()
+        if not stripped:
+            consumed += 1
+            continue
+        try:
+            out.append(json.loads(stripped))
+        except json.JSONDecodeError:
+            break
+        consumed += 1
+    return out, consumed
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
+    chat_path = ""  # optional two-sided <run>.chat.jsonl to tail for /chat
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -177,6 +202,11 @@ class _Handler(BaseHTTPRequestHandler):
             since = int((qs.get("since") or ["0"])[0])
             items, nxt = _read_activity(since)
             self._json({"items": items, "next": nxt, "live": bool(self.transcript_path)})
+        elif route == "/chat":
+            qs = parse_qs(parsed.query)
+            since = int((qs.get("since") or ["0"])[0])
+            items, nxt = _read_chat(since)
+            self._json({"items": items, "next": nxt, "live": bool(self.chat_path)})
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -196,6 +226,8 @@ def main() -> int:
     _Handler.transcript_path = os.environ.get("CLAWDND_VIEWER_TRANSCRIPT") or (
         sys.argv[3] if len(sys.argv) > 3 else ""
     )
+    # Optional two-sided conversation log to show the player+DM exchange in the chat.
+    _Handler.chat_path = os.environ.get("CLAWDND_VIEWER_CHAT") or ""
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
     if _Handler.transcript_path:

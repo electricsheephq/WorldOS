@@ -38,6 +38,11 @@ DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 DM_BRIEF="$(cat qa/play_dm_duo.txt)"; PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
+# A clean two-sided conversation log (the player agent's turns AND the DM's), so the
+# dashboard can show the PROTAGONIST acting — not just the DM narrating. The DM's own
+# stream (COMBINED) doesn't echo the player's turns, so we capture both sides here.
+CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"
+chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
 echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
 
 # $1=role(player|dm) $2=session-id $3=first?(1/0) $4=message ; echoes the agent's reply text
@@ -64,6 +69,7 @@ PMSG="$(turn player "$PSID" 1 "$PLAYER_BRIEF
 This is the very start. In ONE line introduce your character, then state your opening intent as you arrive in the city. Output only your character's words/actions.")"
 echo "[duo] player intro: ${PMSG:0:120}…"
 [ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
+chatlog player "$PMSG"
 
 # D1: DM spins up the world and opens the scene around the player's concept.
 DMSG="$(turn dm "$DSID" 1 "$DM_BRIEF
@@ -75,6 +81,7 @@ $PMSG
 Do the setup now: start_world(\"$WORLD\"), start_session, create their PC to match that concept (level 3, apply_srd_defaults, choose skills), and recruit a fitting roster companion with recruit_companion. Then open the scene — human-scale and personal — and respond to their stated intent. End by handing the moment to the player.")"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 [ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
+chatlog dm "$DMSG"
 
 # Alternate player <-> DM for BEATS rounds.
 for b in $(seq 1 "$BEATS"); do
@@ -85,6 +92,7 @@ $DMSG
 Declare your character's next action for this beat.")"
   echo "[duo] beat $b player: ${PMSG:0:100}…"
   [ -z "$PMSG" ] && { echo "[duo] player went silent at beat $b; stopping early"; break; }
+  chatlog player "$PMSG"
   DMSG="$(turn dm "$DSID" 0 "The player does:
 
 $PMSG
@@ -92,6 +100,7 @@ $PMSG
 Resolve it through the engine and narrate the next beat. Hand the moment back to the player.")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
+  chatlog dm "$DMSG"
 done
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).

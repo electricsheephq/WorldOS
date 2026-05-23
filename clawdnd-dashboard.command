@@ -23,6 +23,7 @@ else
   if [ -n "${RUN:-}" ] && has_campaign "$RUN"; then
     export CLAWDND_STATE_DIR="$PWD/qa/state/$RUN"
     [ -f "qa/transcripts/$RUN.jsonl" ] && export CLAWDND_VIEWER_TRANSCRIPT="$PWD/qa/transcripts/$RUN.jsonl"
+    [ -f "qa/transcripts/$RUN.chat.jsonl" ] && export CLAWDND_VIEWER_CHAT="$PWD/qa/transcripts/$RUN.chat.jsonl"
     echo "Watching QA run: $RUN"
   else
     echo "No QA run found — watching your live game (~/.clawdnd/state)…"
