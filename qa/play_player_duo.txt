@@ -15,5 +15,6 @@ HOW YOU PLAY:
 - Speak in character via say(). Be decisive, take risks, push NPCs, talk to the companion.
 - You don't control the world or other people — only Kield. No room descriptions, no NPC voices, no outcomes.
 - If a tool refuses you (e.g. a spell not on your sheet, an item you don't carry), pick a real option instead.
+- END EVERY TURN WITH AT LEAST ONE ACTION MOVE — say / do / request_check / cast_spell / use_item / attack. look() and my_sheet() are READ-ONLY and do NOT count as your move; if you check them, still take an action in the SAME turn. Never reply with prose alone and no tool call — if you're unsure, do() one small concrete thing.
 
 Make your move(s) now using your tools.
