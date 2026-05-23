@@ -51,6 +51,14 @@ claude -p "$(cat "$PROMPT_FILE")" \
   > "$T/$RUN.jsonl" 2> "$T/$RUN.err"
 echo "[qa] play exit=$? ($(wc -l < "$T/$RUN.jsonl") events)"
 
+# A blank transcript means the play never ran (transient EINTR / auth-rate blip,
+# often from too many concurrent runs) — fail loudly instead of distilling nothing
+# and emitting a misleading 1.0 scorecard.
+if [ ! -s "$T/$RUN.jsonl" ]; then
+  echo "[qa] PLAY PRODUCED NO OUTPUT — transient failure (see $T/$RUN.err). Skipping distill+score; re-run '$RUN' (ideally solo, not concurrent)." >&2
+  exit 1
+fi
+
 echo "[qa] distilling…"
 python3 qa/distill.py "$T/$RUN.jsonl"
 
