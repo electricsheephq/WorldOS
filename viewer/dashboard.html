@@ -651,7 +651,7 @@
     <div class="nav-i jump" data-jump="quests"><span class="ic">✦</span> Quests</div>
     <div class="nav-i jump" data-jump="world"><span class="ic">◈</span> World</div>
     <div class="nav-i" id="nav-settings" style="cursor:pointer"><span class="ic">⚙</span> Settings</div>
-    <div class="foot">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
+    <div class="foot" id="foot-mode">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
   </nav>
 
   <main>
@@ -996,6 +996,12 @@ function applyLiveMode(live) {
   if (ta) ta.placeholder = live
     ? "Speak in-character, or describe an action…"
     : "Director's view — play your turns in Claude Code.";
+  // LOW-1: the nav-rail footer must not claim "read-only" once the palette is live
+  // (e.g. launched via clawdnd-play.command) — keep it honest with the actual mode.
+  const foot = $("foot-mode");
+  if (foot) foot.innerHTML = live
+    ? "<b>Play mode</b> — act through the palette below; the DM responds live in this window."
+    : "Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.";
 }
 
 // ---- dice tray (#35) --------------------------------------------------------
