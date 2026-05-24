@@ -33,6 +33,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
@@ -270,6 +271,91 @@ def _list_campaigns() -> list[dict]:
         })
     out.sort(key=lambda c: c["last_played"], reverse=True)
     return out
+
+
+def _monitor_roots() -> list[tuple[str, Path]]:
+    """(label, campaigns_dir) for EVERY campaign store the monitor scans: the main play store +
+    each isolated QA run's store under <repo>/qa/state/<run>/campaigns. So one page shows live
+    play AND every parallel test run at once (the QA runs write their snapshot each tool call, so
+    they update live). Read-only discovery; never writes."""
+    roots: list[tuple[str, Path]] = [("play", _campaigns_dir())]
+    qa_state = _HERE.parent / "qa" / "state"
+    if qa_state.is_dir():
+        for run in sorted(qa_state.iterdir()):
+            cdir = run / "campaigns"
+            if cdir.is_dir():
+                roots.append((f"qa:{run.name}", cdir))
+    return roots
+
+
+def _qa_scores(run: str) -> dict:
+    """The mechanical + story overall scores for a QA run, if its scorecards have been written
+    (post-play). Empty while the run is still playing. Read-only."""
+    out: dict = {}
+    tdir = _HERE.parent / "qa" / "transcripts"
+    for kind, fn in (("mechanical", f"{run}.score.json"), ("story", f"{run}.tolkien.json")):
+        p = tdir / fn
+        if p.exists():
+            try:
+                out[kind] = json.loads(p.read_text(encoding="utf-8")).get("overall")
+            except (json.JSONDecodeError, OSError):
+                pass
+    return out
+
+
+def _monitor_card(label: str, snap: Path, data: dict) -> dict:
+    """A compact, read-only summary of one campaign for the monitor grid."""
+    ws = data.get("world_state") or {}
+    chars = data.get("characters") or {}
+    locs = data.get("locations") or {}
+    party = []
+    for cid in (data.get("party") or []):
+        ch = chars.get(cid)
+        if not ch:
+            continue
+        party.append({"name": ch.get("name", cid), "kind": ch.get("kind", ""),
+                      "hp": f"{ch.get('current_hp', '?')}/{ch.get('max_hp', '?')}",
+                      "dead": bool(ch.get("dead"))})
+    loc_id = data.get("current_location_id")
+    updated = _campaign_recency(snap)
+    card = {
+        "root": label, "id": snap.parent.name,
+        "name": str(data.get("title") or snap.parent.name),
+        "world": data.get("world_id", ""), "ending": data.get("ending_id", ""),
+        "day": data.get("day"), "tenor": ws.get("world_tenor", ""),
+        "location": (locs.get(loc_id) or {}).get("name", "") if loc_id else "",
+        "party": party,
+        "npc_count": sum(1 for c in chars.values() if c.get("kind") == "npc"),
+        "quest_hooks": len(data.get("quest_hooks") or []),
+        "quest_outcomes": len(data.get("quest_outcomes") or {}),
+        "updated_at": updated,
+        "live": (time.time() - updated) < 90,  # touched in the last 90s -> a run in motion
+    }
+    if label.startswith("qa:"):
+        card["scores"] = _qa_scores(label.split("qa:", 1)[1])
+    return card
+
+
+def _monitor_campaigns() -> list[dict]:
+    """All campaigns across all roots (play + every QA run), newest-active first — the data behind
+    the one-page monitor. Skips empty/half-written snapshots (the same guard the switcher uses)."""
+    cards: list[dict] = []
+    for label, cdir in _monitor_roots():
+        if not cdir.is_dir():
+            continue
+        for snap in cdir.glob("*/snapshot.json"):
+            try:
+                data = json.loads(snap.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(data, dict) or not data:
+                continue
+            try:
+                cards.append(_monitor_card(label, snap, data))
+            except (OSError, TypeError, ValueError):
+                continue  # one malformed campaign must never blank the whole monitor
+    cards.sort(key=lambda c: c.get("updated_at", 0), reverse=True)
+    return cards
 
 
 def _read_snapshot(campaign_id: str) -> dict:
@@ -653,6 +739,17 @@ class _Handler(BaseHTTPRequestHandler):
             # newest-active first, with the attached one marked `current`. Lets the
             # dashboard offer a picker instead of silently auto-following recency.
             self._json({"campaigns": _list_campaigns()})
+        elif route in ("/monitor", "/monitor.html"):
+            # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
+            # store + all parallel QA runs (watch the stress tests + any live game in one place).
+            html = (_HERE / "monitor.html").read_bytes()
+            self._send(200, html, "text/html; charset=utf-8")
+        elif route == "/monitor.json":
+            # The monitor's data feed (polled): every campaign across all roots, newest-active
+            # first, each with live state + (for QA runs) scores when written. Capped at the 40
+            # most-recent so the page stays scannable; `total` reports the full count. Read-only.
+            all_cards = _monitor_campaigns()
+            self._json({"campaigns": all_cards[:40], "total": len(all_cards), "now": time.time()})
         elif route == "/state":
             # The raw campaign snapshot, plus one viewer-only flag: `live` says whether
             # the dashboard's action layer can land a move (POST /move accepted). The

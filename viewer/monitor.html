@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClawDnD — Campaign Monitor</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #181a21; --panel2: #1f222b; --ink: #e7e6e3; --dim: #9aa0ad;
+    --line: #2b2f3a; --live: #58d18b; --play: #6ea8fe; --qa: #e0b15a; --bad: #e0635a; --good: #58d18b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: rgba(14,15,19,.92);
+    backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); padding: 14px 20px;
+    display: flex; align-items: baseline; gap: 16px; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--dim); font-size: 13px; }
+  header .sub b { color: var(--ink); }
+  .pulse { color: var(--live); }
+  #grid { display: grid; gap: 14px; padding: 18px 20px 40px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; transition: border-color .2s; }
+  .card.live { border-color: #2f4a3a; box-shadow: 0 0 0 1px rgba(88,209,139,.12) inset; }
+  .card .top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .card .name { font-weight: 600; font-size: 15px; }
+  .card a.name { color: var(--play); text-decoration: none; }
+  .card a.name:hover { text-decoration: underline; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line);
+    color: var(--dim); white-space: nowrap; }
+  .badge.live { color: #0e0f13; background: var(--live); border-color: var(--live); font-weight: 700; }
+  .badge.root-play { color: var(--play); border-color: #2d3f5e; }
+  .badge.root-qa { color: var(--qa); border-color: #4d4326; }
+  .meta { color: var(--dim); font-size: 12.5px; }
+  .meta .k { color: var(--ink); }
+  .party { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; padding: 2px 8px; border-radius: 6px; background: var(--panel2);
+    border: 1px solid var(--line); }
+  .chip.dead { color: var(--bad); border-color: #5e2d2d; text-decoration: line-through; }
+  .chip.companion { border-color: #3a4d2d; }
+  .foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--dim);
+    font-size: 12px; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px; }
+  .score { font-weight: 700; }
+  .score.good { color: var(--good); } .score.mid { color: var(--qa); } .score.low { color: var(--bad); }
+  .ago { margin-left: auto; }
+  .empty { color: var(--dim); padding: 60px 20px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ClawDnD <span style="color:var(--dim)">· Campaign Monitor</span></h1>
+  <div class="sub" id="summary">loading…</div>
+  <div class="sub" style="margin-left:auto" id="refresh">↻ live</div>
+</header>
+<div id="grid"></div>
+<div class="empty" id="empty" hidden>No campaigns yet — start one (the play dashboard) or kick off a QA run.</div>
+<script>
+const grid = document.getElementById('grid');
+const summaryEl = document.getElementById('summary');
+const emptyEl = document.getElementById('empty');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function ago(sec) {
+  if (sec < 60) return Math.max(0, Math.round(sec)) + 's ago';
+  if (sec < 3600) return Math.round(sec/60) + 'm ago';
+  if (sec < 86400) return Math.round(sec/3600) + 'h ago';
+  return Math.round(sec/86400) + 'd ago';
+}
+function scoreClass(v) { return v == null ? '' : (v >= 4.3 ? 'good' : v >= 3.5 ? 'mid' : 'low'); }
+function card(c, now) {
+  const live = c.live ? '<span class="badge live">● LIVE</span>' : '';
+  const rootCls = c.root === 'play' ? 'root-play' : 'root-qa';
+  const rootLbl = c.root === 'play' ? 'play' : c.root.replace(/^qa:/, 'QA · ');
+  // play campaigns open in the dashboard to watch/play; QA runs are read-only here.
+  const title = c.root === 'play'
+    ? `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${esc(c.name)}</a>`
+    : `<span class="name">${esc(c.name)}</span>`;
+  const meta = [
+    c.world && `<span class="k">${esc(c.world)}</span>`,
+    c.ending && `ending: ${esc(c.ending)}`,
+    (c.day != null) && `Day ${esc(c.day)}`,
+    c.tenor && `tenor: ${esc(c.tenor)}`,
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const party = (c.party || []).map(p =>
+    `<span class="chip ${p.dead ? 'dead' : ''} ${p.kind === 'companion' ? 'companion' : ''}">${esc(p.name)} ${esc(p.hp)}</span>`
+  ).join('');
+  const scores = c.scores || {};
+  const scoreBadges = ['mechanical','story'].filter(k => scores[k] != null).map(k =>
+    `<span>${k[0].toUpperCase()}: <span class="score ${scoreClass(scores[k])}">${scores[k]}</span></span>`
+  ).join(' &nbsp; ');
+  const counts = [
+    (c.quest_hooks ? `${c.quest_hooks} hooks` : ''),
+    (c.quest_outcomes ? `${c.quest_outcomes} quests` : ''),
+    (c.npc_count ? `${c.npc_count} NPCs` : ''),
+  ].filter(Boolean).join(' · ');
+  return `<div class="card ${c.live ? 'live' : ''}">
+    <div class="top">${title} <span class="badge ${rootCls}">${esc(rootLbl)}</span></div>
+    ${live}
+    <div class="meta">${meta || '<span style="color:#6b7280">unstarted</span>'}</div>
+    ${c.location ? `<div class="meta">📍 ${esc(c.location)}</div>` : ''}
+    ${party ? `<div class="party">${party}</div>` : ''}
+    <div class="foot">
+      ${counts ? `<span>${esc(counts)}</span>` : ''}
+      ${scoreBadges ? `<span>${scoreBadges}</span>` : ''}
+      <span class="ago">${ago(now - c.updated_at)}</span>
+    </div>
+  </div>`;
+}
+async function tick() {
+  try {
+    const r = await fetch('/monitor.json', { cache: 'no-store' });
+    const { campaigns, total, now } = await r.json();
+    emptyEl.hidden = campaigns.length > 0;
+    grid.innerHTML = campaigns.map(c => card(c, now)).join('');
+    const liveN = campaigns.filter(c => c.live).length;
+    const more = (total && total > campaigns.length) ? ` <span style="color:var(--dim)">(showing ${campaigns.length} most recent)</span>` : '';
+    summaryEl.innerHTML = `<b>${total ?? campaigns.length}</b> campaigns · <b class="pulse">${liveN}</b> live${more}`;
+    document.getElementById('refresh').textContent = '↻ ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    summaryEl.textContent = 'monitor offline (is the viewer running?)';
+  }
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
