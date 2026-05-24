@@ -553,6 +553,39 @@ def test_load_canon_character_resolves_fuller_display_name(tmp_path, monkeypatch
     assert content.load_canon_character("baldurs-gate", "Nobody McNoface") is None
 
 
+def test_ability_scores_accept_uppercase_and_mixed_case_keys():
+    # easter-eggs QA: the DM used {'STR':10,'DEX':17,...} (uppercase); the shorthand fix handled
+    # only lowercase. Now any case works; the long form still wins; a real typo still trips forbid.
+    import pytest
+    from models import AbilityScores
+    a = AbilityScores(**{"STR": 10, "DEX": 17, "Con": 14, "int": 12, "WIS": 13, "cha": 11})
+    assert (a.strength, a.dexterity, a.constitution, a.wisdom) == (10, 17, 14, 13)
+    assert AbilityScores(**{"str": 8, "STRENGTH": 18}).strength == 18  # long form wins, any case
+    with pytest.raises(Exception):
+        AbilityScores(**{"STRENTH": 5})
+
+
+def test_set_quest_status_routes_a_tracked_quest_and_extra_attack_echo(tmp_path, monkeypatch):
+    # easter-eggs QA: set_quest_status(quest_id) failed (it only knew hooks). It now routes a
+    # tracked add_quest quest too (hook word 'resolved' -> quest 'completed'); + start_combat
+    # echoes Extra Attack so the DM makes the right number of attacks.
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("EE")["id"]
+    qid = server.add_quest(cid, title="Claudan's Errand")["id"]
+    upd = server.set_quest_status(cid, qid, "resolved")     # a QUEST id + hook-vocab -> completed
+    assert upd["quest_id"] == qid and upd["status"] == "completed"
+    with pytest.raises(ValueError, match="no quest hook or tracked quest"):
+        server.set_quest_status(cid, "nope_id", "active")
+    # extra-attack reminder: a combatant with extra_attacks>0 -> attacks_per_action = N+1
+    bar = server.create_character(cid, "Karlach", kind="companion")["id"]
+    server.update_character(cid, bar, {"extra_attacks": 1})
+    gob = server.spawn_monster(cid, "Goblin Warrior")["spawned"][0]["id"]
+    cv = server.start_combat(cid, [bar, gob])
+    assert any(r["name"] == "Karlach" and r["attacks_per_action"] == 2
+               for r in cv.get("extra_attack_reminder", []))
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

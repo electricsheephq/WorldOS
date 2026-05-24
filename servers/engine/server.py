@@ -1525,7 +1525,17 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
             order=[Combatant(character_id=o[0], initiative=o[1]) for _, o in indexed],
         )
         save_campaign(c)
-        return _combat_view(c)
+        view = _combat_view(c)
+        # Reminder: surface anyone with Extra Attack so the DM makes the right number of attacks
+        # per turn (QA: a Barbarian-5 with extra_attacks=1 made a single attack). One action =
+        # extra_attacks + 1 attack calls; the engine tracks the economy via use_action.
+        ea = [{"id": cid, "name": c.characters[cid].name,
+               "attacks_per_action": int(getattr(c.characters[cid], "extra_attacks", 0)) + 1}
+              for cid in combatant_ids
+              if c.characters.get(cid) is not None and int(getattr(c.characters[cid], "extra_attacks", 0)) > 0]
+        if ea:
+            view["extra_attack_reminder"] = ea
+        return view
 
 
 @mcp.tool()
@@ -3474,21 +3484,35 @@ def get_prelude(campaign_id: str) -> dict:
 
 @mcp.tool()
 def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
-    """S7 — advance a quest hook as the DM narrates it: 'open' (a seed not yet taken), 'active'
-    (the party is pursuing it), 'resolved' (done — its arc_back may now matter to the spine).
-    The engine does NOT auto-detect completion (only the DM judges the fiction); this is how the
-    DM records progress so the graph reflects the story. Returns the updated hook view."""
+    """Advance a quest as the DM narrates it. `hook_id` accepts EITHER:
+      - an S7 quest-HOOK id (status: 'open' | 'active' | 'resolved'), or
+      - a tracked-QUEST id from `add_quest` (status: 'active' | 'completed' | 'failed';
+        'resolved' is accepted and recorded as 'completed', 'open' as 'active').
+    The engine routes by which the id matches, so you don't have to remember which tool — one call
+    advances a seed OR a promoted quest. (Equivalent to `complete_quest` for a tracked quest.) The
+    engine never auto-detects completion; only the DM judges the fiction. Returns the updated view."""
     s = status.strip().lower()
-    if s not in ("open", "active", "resolved"):
-        raise ValueError(f"status must be open|active|resolved, got {status!r}")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        # 1) an S7 quest HOOK (the lore-derived seed)
         h = next((x for x in c.quest_hooks if x.id == hook_id), None)
-        if h is None:
-            raise ValueError(f"no quest hook with id {hook_id!r}")
-        h.status = s  # type: ignore[assignment]
-        save_campaign(c)
-        return _hook_view(c, h)
+        if h is not None:
+            if s not in ("open", "active", "resolved"):
+                raise ValueError(f"hook status must be open|active|resolved, got {status!r}")
+            h.status = s  # type: ignore[assignment]
+            save_campaign(c)
+            return _hook_view(c, h)
+        # 2) a tracked QUEST from add_quest (a different status vocab) — route here so the DM
+        # needn't know which tool; map the hook word 'resolved'->'completed', 'open'->'active'.
+        q = c.quests.get(hook_id)
+        if q is not None:
+            qs = {"resolved": "completed", "open": "active"}.get(s, s)
+            if qs not in ("active", "completed", "failed"):
+                raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
+            q.status = qs  # type: ignore[assignment]
+            save_campaign(c)
+            return {"quest_id": q.id, "title": q.title, "status": q.status}
+        raise ValueError(f"no quest hook or tracked quest with id {hook_id!r}")
 
 
 @mcp.tool()

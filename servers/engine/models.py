@@ -104,19 +104,28 @@ class AbilityScores(_StrictModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_5e_shorthand(cls, data):
-        """Accept the universal 5e shorthand (str/dex/con/int/wis/cha) as well as the
-        full field names. The DM/agent reaches for `{"str": 12, "dex": 19, ...}`
-        reflexively; rejecting it with a bare 'Extra inputs are not permitted' was a
-        silent footgun (QA finding). A long key, if also present, wins over its short
-        alias; a genuine typo ('strenth') still trips extra='forbid'."""
+        """Accept the universal 5e shorthand (str/dex/con/int/wis/cha) AND any case
+        (`STR`, `Str`, `Strength`) as well as the full field names. The DM/agent reaches
+        for `{"STR": 12, "dex": 19, ...}` reflexively; rejecting it with a bare 'Extra
+        inputs are not permitted' was a silent footgun (QA: hit with both lowercase AND
+        uppercase). A long key, if also present, wins over its short alias; a genuine typo
+        ('strenth') still trips extra='forbid'."""
         if isinstance(data, dict):
             abbr = {"str": "strength", "dex": "dexterity", "con": "constitution",
                     "int": "intelligence", "wis": "wisdom", "cha": "charisma"}
-            out = dict(data)
-            for short, long in abbr.items():
-                if short in out:
-                    out.setdefault(long, out[short])  # long form wins if both present
-                    out.pop(short, None)
+            longs = set(abbr.values())
+            out: dict = {}
+            shorts: dict = {}
+            for k, v in data.items():
+                kl = str(k).strip().lower()
+                if kl in longs:
+                    out[kl] = v          # a full field name (any case) -> canonical lowercase
+                elif kl in abbr:
+                    shorts[abbr[kl]] = v  # a short alias (any case) -> its long target, deferred
+                else:
+                    out[k] = v            # unknown -> pass through so a real typo still trips forbid
+            for long, v in shorts.items():
+                out.setdefault(long, v)   # the short alias fills in only where the long wasn't given
             return out
         return data
 
