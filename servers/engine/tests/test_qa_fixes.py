@@ -524,6 +524,35 @@ def test_long_rest_hints_camp_only_when_companions_present(tmp_path, monkeypatch
     assert "camp_hint" in server.long_rest(cid, pc)              # a companion in the party -> nudge
 
 
+def test_recruit_auto_seeds_default_arc_but_never_overwrites_a_seeded_one(tmp_path, monkeypatch):
+    # camp-clarify QA: a freshly-recruited canon companion had arc=null, so camp/arcs were inert.
+    # recruit now auto-seeds a light default loyalty arc when none exists — but must NOT clobber a
+    # richer ending-seeded arc (the guard is `arc is None`).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Arc")["id"]
+    npc = server.create_character(cid, "Bram", kind="npc")["id"]
+    out = server.recruit_companion(cid, npc, class_name="Fighter")
+    assert out.get("arc_seeded") is True
+    arc = server.get_character(cid, npc)["arc"]
+    assert arc and [g["kind"] for g in arc["arc_gates"]] == ["loyalty"]  # the default
+    # an ending-seeded companion (gortash arms Astarion's attitude_below defection) keeps it
+    bg = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
+    server.recruit_companion(bg, "npc-astarion", class_name="Rogue", abilities={"dexterity": 16})
+    seeded = server.get_character(bg, "npc-astarion")["arc"]
+    assert seeded["agenda"]["trigger"] == "attitude_below"  # the seed, NOT overwritten by the default
+
+
+def test_load_canon_character_resolves_fuller_display_name(tmp_path, monkeypatch):
+    # camp-clarify QA: the prelude/roster says "Wyll Ravengard" but the canon file is "Wyll" —
+    # load_canon now resolves a unique token-subset match, so the DM doesn't guess-and-retry.
+    import content
+    rec = content.load_canon_character("baldurs-gate", "Wyll Ravengard")
+    assert rec is not None and rec.get("name") == "Wyll"
+    # exact still works; a genuinely unknown name still returns None (no wild guess)
+    assert content.load_canon_character("baldurs-gate", "Shadowheart") is not None
+    assert content.load_canon_character("baldurs-gate", "Nobody McNoface") is None
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

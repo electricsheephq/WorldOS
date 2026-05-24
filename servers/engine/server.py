@@ -1049,6 +1049,7 @@ def start_character(
             abilities=scores,
             armor_class=int(build["armor_class"]),
             initiative_bonus=scores.modifier(Ability.DEX),
+            location_id=c.current_location_id,  # the PC starts where the session opens (QA: was null)
         )
         # A canon pickup carries the rest of its identity for the DM to voice from.
         if rec is not None:
@@ -1123,10 +1124,21 @@ def recruit_companion(
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class <= 0))
+        # A companion needs an ARC for the relationship system (camp_scene / check_companion_arc)
+        # to have anything to track — QA found a freshly-recruited canon companion with arc=null,
+        # so camp + the gates were inert. If none was seeded (i.e. not an ending-tied
+        # companion_seed), give a light DEFAULT: one loyalty gate at a moderate approval, so the
+        # bond can deepen at camp. Guarded on None, so an ending-seeded arc is never overwritten;
+        # the DM can set_companion_arc to author a richer, character-specific arc.
+        if ch.arc is None:
+            ch.arc = CompanionArc.model_validate({"arc_gates": [
+                {"kind": "loyalty", "threshold": 25,
+                 "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
         if ch.id not in c.party:
             c.party.append(ch.id)
         save_campaign(c)
-        return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party)}
+        return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party),
+                "arc_seeded": ch.arc is not None}
 
 
 @mcp.tool()

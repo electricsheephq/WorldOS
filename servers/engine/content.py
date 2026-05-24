@@ -74,6 +74,8 @@ def list_canon_characters(world_id: str, playable_only: bool = False) -> list[di
 def load_canon_character(world_id: str, name: str) -> "dict | None":
     """Load one ingested canon character record by name (or file slug), or None."""
     want = name.strip().lower()
+    want_toks = set(want.split())
+    recs: list[tuple[str, dict]] = []
     for cdir in _characters_dirs(world_id):
         if not cdir.is_dir():
             continue
@@ -82,9 +84,22 @@ def load_canon_character(world_id: str, name: str) -> "dict | None":
                 rec = json.loads(p.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
-            if (rec.get("name", "").strip().lower() == want) or (p.stem.lower() == want):
-                return rec
-    return None
+            recs.append((p.stem.lower(), rec))
+    # 1) exact match on display name or file slug.
+    for stem, rec in recs:
+        if (rec.get("name", "").strip().lower() == want) or (stem == want):
+            return rec
+    # 2) fuzzy fallback (QA): the roster/prelude may use a FULLER display name than the canon
+    # file — e.g. "Wyll Ravengard" vs the "Wyll" record. Match a record whose name-tokens are a
+    # subset of the query (or the query's are a subset of the name's), but ONLY when that pins a
+    # UNIQUE record — never guess between two. So "Wyll Ravengard" -> Wyll; an ambiguous query -> None.
+    cands: dict[str, dict] = {}
+    for _stem, rec in recs:
+        nm = rec.get("name", "").strip().lower()
+        nm_toks = set(nm.split())
+        if nm_toks and (nm_toks <= want_toks or want_toks <= nm_toks):
+            cands[nm] = rec
+    return next(iter(cands.values())) if len(cands) == 1 else None
 
 
 def load_adventure_data(adventure_id: str) -> dict:
