@@ -421,6 +421,75 @@
   .xp-next { font-size:11.5px; color:var(--faint); margin-top:7px; text-align:center; }
   .xp-next b { color:var(--gold); }
   .xp-max { font-size:12px; color:var(--gold); text-align:center; margin-top:7px; }
+
+  /* ---- shared sheet search box (Relationships / Memories tabs) ---- */
+  .sheet-search { display:flex; align-items:center; gap:8px; margin:0 0 16px;
+    background:#1b150e; border:1px solid var(--card-line); border-radius:9px; padding:0 12px; }
+  .sheet-search .ss-ic { color:var(--gold2); font-size:15px; flex:none; }
+  .sheet-search input { flex:1; background:transparent; border:none; outline:none; color:var(--ink);
+    font:14px/1.5 system-ui,sans-serif; padding:10px 0; }
+  .sheet-search input::placeholder { color:var(--faint); }
+  .sheet-search input::-webkit-search-cancel-button { filter:invert(.6) sepia(1) hue-rotate(5deg); }
+
+  /* ---- 5. Relationships tab ---- */
+  .rel-list { display:flex; flex-direction:column; gap:18px; }
+  .rel-group .rel-gh { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--gold2);
+    margin:0 0 10px; padding-bottom:5px; border-bottom:1px solid #221a10; display:flex; align-items:center; gap:8px; }
+  .rel-gh .rel-gn { color:var(--faint); font-weight:600; }
+  .rel-row { display:flex; gap:12px; padding:11px 13px; border:1px solid var(--card-line); border-radius:10px;
+    background:linear-gradient(180deg,#221b12,#1b150e); }
+  .rel-row + .rel-row { margin-top:8px; }
+  .rel-row.companion { border-color:#3f5a6b; background:linear-gradient(180deg,#16202a,#121a22); }
+  .rel-row .pavatar { width:38px; height:38px; font-size:13px; position:relative; flex:none; }
+  .rel-body { flex:1; min-width:0; }
+  .rel-top { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+  .rel-name { font-weight:700; color:var(--gold); font-size:14.5px; }
+  .rel-kind { font-size:9px; letter-spacing:.07em; text-transform:uppercase; color:var(--npc);
+    border:1px solid #4a3c22; border-radius:7px; padding:1px 6px; flex:none; }
+  .rel-kind.companion { color:var(--companion); border-color:#2e4456; }
+  .rel-rcl { font-size:11.5px; color:var(--dim); }
+  .rel-att { margin-top:8px; max-width:420px; }
+  .rel-att-tag { font-size:9px; letter-spacing:.05em; text-transform:uppercase; flex:none; margin-left:4px;
+    padding:1px 7px; border-radius:7px; border:1px solid; }
+  .rel-att-tag.hostile { color:#e89090; border-color:#5a3030; background:#2a1212; }
+  .rel-att-tag.wary { color:#e8c08a; border-color:#5a4a20; background:#241c0c; }
+  .rel-att-tag.neutral { color:var(--dim); border-color:#3a2f1c; background:#221a10; }
+  .rel-att-tag.friendly { color:#9fd49f; border-color:#2f4a2f; background:#13201a; }
+  .rel-desc { font-size:12.5px; color:#c3b79e; font-style:italic; margin-top:8px; line-height:1.5; }
+  .rel-desc.empty { color:var(--faint); }
+
+  /* ---- 6. Memories tab ---- */
+  .mem-sec { margin-bottom:22px; }
+  .mem-sec:last-child { margin-bottom:0; }
+  .mem-sh { font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--gold);
+    margin:0 0 12px; display:flex; align-items:center; gap:9px; }
+  .mem-sh .mem-sn { font-size:11px; color:var(--faint); letter-spacing:0; font-weight:600;
+    background:#221a10; border:1px solid #3a2f1c; border-radius:8px; padding:1px 8px; }
+  .scard.mem-char > h3 { color:var(--gold); }
+  .mem-char .h3n { text-transform:none; letter-spacing:0; }
+  .mem-list { list-style:none; margin:0; padding:0; }
+  .mem-list li { font-size:13px; color:var(--ink); line-height:1.5; padding:7px 0 7px 16px; position:relative;
+    border-top:1px solid #221a10; }
+  .mem-list li:first-child { border-top:none; }
+  .mem-list li::before { content:"❧"; position:absolute; left:0; top:7px; color:var(--gold2); font-size:11px; }
+  /* decisions ledger */
+  .dec-row { padding:11px 0; border-top:1px solid #221a10; }
+  .dec-row:first-child { border-top:none; padding-top:0; }
+  .dec-row:last-child { padding-bottom:0; }
+  .dec-sum { font-size:13.5px; color:var(--ink); font-weight:600; line-height:1.45; }
+  .dec-meta { font-size:12px; color:var(--dim); margin-top:4px; }
+  .dec-meta .dec-k { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--gold2); margin-right:6px; }
+  .dec-opts { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+  .dec-day { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); margin-top:7px; }
+  /* recent beats */
+  .beat-row { padding:8px 0; border-top:1px solid #221a10; line-height:1.5; }
+  .beat-row:first-child { border-top:none; padding-top:0; }
+  .beat-row:last-child { padding-bottom:0; }
+  .beat-who { font-size:11px; font-weight:700; color:var(--gold); margin-right:8px; }
+  .beat-who.player { color:var(--player); } .beat-who.dialogue { color:#9fc0e0; }
+  .beat-who.combat { color:#e0a0a0; }
+  .beat-text { font-size:12.5px; color:#c3b79e; }
+  .beat-row.player .beat-text { color:var(--ink); }
 </style>
 </head>
 <body>
@@ -431,10 +500,11 @@
     <div class="nav-i tab" data-view="inventory"><span class="ic">▤</span> Inventory</div>
     <div class="nav-i tab" data-view="spellbook"><span class="ic">✶</span> Spellbook</div>
     <div class="nav-i tab" data-view="progression"><span class="ic">⬙</span> Progression</div>
+    <div class="nav-i tab" data-view="relationships"><span class="ic">♥</span> Relationships</div>
+    <div class="nav-i tab" data-view="memories"><span class="ic">❂</span> Memories</div>
     <div class="nav-i"><span class="ic">⚇</span> Party</div>
     <div class="nav-i"><span class="ic">✦</span> Quests</div>
     <div class="nav-i"><span class="ic">◈</span> World</div>
-    <div class="nav-i ph"><span class="ic">❂</span> Memories <span class="soon">soon</span></div>
     <div class="nav-i ph"><span class="ic">⚙</span> Settings <span class="soon">soon</span></div>
     <div class="foot">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
   </nav>
@@ -492,6 +562,16 @@
 <script>
 let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
 let lastState = null, activeView = "play";   // S2 player-sheet tabs
+// Ring buffer of recent story beats captured off the SAME /chat or /events feed the
+// Play view polls, so the Memories journal (parity 6.1) can show logged beats without
+// re-fetching. Capped so a long session can't grow it unbounded.
+const recentBeats = [];
+const BEATS_MAX = 200;
+function pushBeat(cls, who, text) {
+  if (!text) return;
+  recentBeats.push({ cls, who, text });
+  if (recentBeats.length > BEATS_MAX) recentBeats.splice(0, recentBeats.length - BEATS_MAX);
+}
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
@@ -802,7 +882,12 @@ const totalLevel = (c) => (c.classes||[]).reduce((a,cl)=>a+(cl.level||0),0) || 1
 
 // ---- view switching ---------------------------------------------------------
 const SHEET_LABEL = { character:"Character", inventory:"Inventory",
-  spellbook:"Spellbook", progression:"Progression" };
+  spellbook:"Spellbook", progression:"Progression",
+  relationships:"Relationships", memories:"Memories" };
+// Live filter text per searchable tab, kept in module state so it survives the 1.5s
+// re-render (renderSheet replaces innerHTML each poll). We restore the box value +
+// caret + focus after each render so typing during a poll isn't disrupted.
+const sheetFilter = { relationships:"", memories:"" };
 function setView(view) {
   activeView = view;
   document.querySelectorAll("nav .nav-i.tab").forEach(t =>
@@ -825,9 +910,35 @@ function renderSheet() {
   if (!wrap || activeView === "play") return;
   const pc = getPC();
   if (!lastState) { wrap.innerHTML = sheetShell("Loading…", "", `<div class="sheet-empty">Waiting for the story to begin…</div>`); return; }
+  // Relationships + Memories project the whole cast / journal — they don't need a PC.
+  if (activeView === "relationships") { renderRelationships(wrap); return; }
+  if (activeView === "memories")      { renderMemories(wrap); return; }
   if (!pc) { wrap.innerHTML = sheetShell(SHEET_LABEL[activeView]||"Character", "", `<div class="sheet-empty">No player character yet. Create one to see this sheet.</div>`); return; }
   ({ character:renderCharacter, inventory:renderInventory,
      spellbook:renderSpellbook, progression:renderProgression }[activeView] || renderCharacter)(pc, wrap);
+}
+// A search box that survives the 1.5s re-render. `key` indexes sheetFilter; on input we
+// update the stored text and re-render the active sheet (then restore caret + focus below).
+function searchBox(key, placeholder) {
+  return `<div class="sheet-search"><span class="ss-ic">⌕</span>
+    <input id="sheet-search-input" type="search" autocomplete="off" spellcheck="false"
+      placeholder="${esc(placeholder)}" value="${esc(sheetFilter[key]||"")}"
+      oninput="onSheetSearch('${key}', this.value)"></div>`;
+}
+// Update the live filter and re-render; preserve the input's focus + caret position so
+// typing isn't interrupted when the box is rebuilt by the re-render.
+function onSheetSearch(key, val) {
+  sheetFilter[key] = val;
+  const prev = $("sheet-search-input"), start = prev ? prev.selectionStart : null;
+  renderSheet();
+  const next = $("sheet-search-input");
+  if (next) { next.focus(); if (start != null) { try { next.setSelectionRange(start, start); } catch(_){} } }
+}
+// After a poll-driven re-render (not user-typed), restore focus to the search box if the
+// player had it focused, so the box doesn't lose focus every 1.5s while they're typing.
+function keepSearchFocus(wasFocused, caret) {
+  const el = $("sheet-search-input");
+  if (el && wasFocused) { el.focus(); if (caret != null) { try { el.setSelectionRange(caret, caret); } catch(_){} } }
 }
 // Shared header (name + identity line + tab kicker) wrapping a panel body.
 function sheetShell(name, identityHTML, bodyHTML) {
@@ -1046,6 +1157,129 @@ function renderProgression(c, wrap) {
   wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Progression", identityLine(c), body);
 }
 
+// ---- 5. RELATIONSHIPS (parity 5.1) ------------------------------------------
+// A roster of everyone the party knows — companions + NPCs (monsters are combat,
+// not relationships). Each row carries name, race·class, the free-text disposition,
+// and a hostile↔friendly bar. NOTE: the bar position is the attitudePos() KEYWORD
+// HEURISTIC over the free-text `attitude` — a *numeric* relationship value would be a
+// separate engine task (add Character.relationship: int, project it here in its place).
+function relAttClass(pos) { return pos <= 0.25 ? "hostile" : pos <= 0.42 ? "wary" : pos >= 0.7 ? "friendly" : "neutral"; }
+function relRow(c) {
+  const rcl = raceClass(c);
+  const pos = attitudePos(c.attitude);
+  const att = c.attitude || "";
+  const kindLbl = c.kind === "companion" ? "Companion" : "NPC";
+  return `<div class="rel-row ${esc(c.kind)}">
+    <span class="pavatar ${esc(c.kind)}">${esc(initials(c.name))}</span>
+    <div class="rel-body">
+      <div class="rel-top"><span class="rel-name">${esc(c.name)}</span>
+        <span class="rel-kind ${esc(c.kind)}">${kindLbl}</span>
+        ${rcl?`<span class="rel-rcl">${rcl}</span>`:""}</div>
+      <div class="att-bar rel-att"><span class="att-lbl">hostile</span>
+        <span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span>
+        <span class="att-lbl">friendly</span>
+        <span class="rel-att-tag ${relAttClass(pos)}">${relAttClass(pos)}</span></div>
+      ${att?`<div class="rel-desc">${esc(att)}</div>`
+           :`<div class="rel-desc empty">No disposition recorded yet.</div>`}
+    </div></div>`;
+}
+function renderRelationships(wrap) {
+  const sInput = $("sheet-search-input");
+  const wasFocused = sInput && document.activeElement === sInput, caret = sInput ? sInput.selectionStart : null;
+  const chars = Object.values((lastState && lastState.characters) || {})
+    .filter(c => c.kind === "npc" || c.kind === "companion");
+  // companions first, then NPCs; alpha within each group
+  chars.sort((a,b) => (a.kind===b.kind ? (a.name||"").localeCompare(b.name||"")
+                                       : (a.kind==="companion" ? -1 : 1)));
+  const q = (sheetFilter.relationships || "").trim().toLowerCase();
+  const matches = c => !q || [c.name, c.race, klass(c), c.attitude]
+    .some(v => (v||"").toLowerCase().includes(q));
+  const shown = chars.filter(matches);
+  const head = searchBox("relationships", "Search by name, race, class, or disposition…");
+  let body;
+  if (!chars.length) body = `<div class="sheet-empty">No one met yet — the party walks among strangers.</div>`;
+  else if (!shown.length) body = `<div class="sheet-empty">No one matches “${esc(sheetFilter.relationships)}”.</div>`;
+  else {
+    const grp = (kind, label) => {
+      const rows = shown.filter(c => c.kind === kind);
+      if (!rows.length) return "";
+      return `<div class="rel-group"><div class="rel-gh">${label} <span class="rel-gn">${rows.length}</span></div>
+        ${rows.map(relRow).join("")}</div>`;
+    };
+    body = `<div class="rel-list">${grp("companion","Companions")}${grp("npc","People of the world")}</div>`;
+  }
+  wrap.innerHTML = sheetShell("Relationships", "", head + body);
+  keepSearchFocus(wasFocused, caret);
+}
+
+// ---- 6. MEMORIES (parity 6.1) -----------------------------------------------
+// A searchable campaign journal that braids three read-only sources from /state +
+// the live feed: (a) each character's `memory` array (facts they remember), grouped
+// by character; (b) the party `decisions` ledger (choices, for callbacks); and (c)
+// recent logged story beats captured off the same /chat or /events feed the Play view
+// polls (see recentBeats). One search box filters everything; absent fields just drop.
+function renderMemories(wrap) {
+  const sInput = $("sheet-search-input");
+  const wasFocused = sInput && document.activeElement === sInput, caret = sInput ? sInput.selectionStart : null;
+  const s = lastState || {};
+  const q = (sheetFilter.memories || "").trim().toLowerCase();
+  const hit = (...parts) => !q || parts.some(v => (v||"").toLowerCase().includes(q));
+
+  // (a) per-character memories, grouped — companions & PCs first, then NPCs
+  const chars = Object.values(s.characters || {})
+    .filter(c => (c.memory || []).length);
+  chars.sort((a,b) => {
+    const rank = k => k==="player"?0 : k==="companion"?1 : 2;
+    return rank(a.kind)-rank(b.kind) || (a.name||"").localeCompare(b.name||"");
+  });
+  let memCards = "", memCount = 0;
+  chars.forEach(c => {
+    const items = (c.memory || []).filter(m => hit(m, c.name));
+    if (!items.length) return;
+    memCount += items.length;
+    memCards += `<div class="scard mem-char"><h3>${esc(c.name)}
+        <span class="h3n">${esc(c.kind==="player"?"you":c.kind)} · ${items.length}</span></h3>
+      <ul class="mem-list">${items.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>`;
+  });
+
+  // (b) decisions ledger — newest first
+  const decisions = (s.decisions || []).slice().sort((a,b)=>(b.t||0)-(a.t||0))
+    .filter(d => hit(d.summary, d.chosen, d.rationale, (d.options||[]).join(" ")));
+  const decBody = decisions.length ? `<div class="dec-list">${decisions.map(d=>`
+      <div class="dec-row">
+        <div class="dec-sum">${esc(d.summary||"A choice was made.")}</div>
+        ${d.chosen?`<div class="dec-meta"><span class="dec-k">Chose</span> ${esc(d.chosen)}</div>`:""}
+        ${d.rationale?`<div class="dec-meta"><span class="dec-k">Why</span> ${esc(d.rationale)}</div>`:""}
+        ${(d.options||[]).length?`<div class="dec-opts">${d.options.map(o=>`<span class="tag${o===d.chosen?" cond":""}">${esc(o)}</span>`).join("")}</div>`:""}
+        <div class="dec-day">Day ${esc(d.day ?? "?")}</div>
+      </div>`).join("")}</div>` : "";
+
+  // (c) recent logged beats off the live feed (narration / dialogue / player turns)
+  const beats = recentBeats.filter(b => hit(b.text, b.who)).slice(-40).reverse();
+  const beatBody = beats.length ? `<div class="beat-list">${beats.map(b=>`
+      <div class="beat-row ${esc(b.cls)}">
+        ${b.who?`<span class="beat-who ${esc(b.cls)}">${esc(b.who)}</span>`:""}
+        <span class="beat-text">${esc(b.text)}</span></div>`).join("")}</div>` : "";
+
+  const anything = memCount || decisions.length || beats.length;
+  let body;
+  if (!anything) {
+    body = q
+      ? `<div class="sheet-empty">Nothing in the journal matches “${esc(sheetFilter.memories)}”.</div>`
+      : `<div class="sheet-empty">No memories yet — the story hasn't begun to leave its mark.</div>`;
+  } else {
+    body = `
+      ${memCards ? `<div class="mem-sec"><div class="mem-sh">Remembered by the cast <span class="mem-sn">${memCount}</span></div>
+        <div class="sgrid cols2">${memCards}</div></div>` : ""}
+      ${decBody ? `<div class="mem-sec"><div class="mem-sh">Decisions <span class="mem-sn">${decisions.length}</span></div>
+        <div class="scard">${decBody}</div></div>` : ""}
+      ${beatBody ? `<div class="mem-sec"><div class="mem-sh">Recent beats <span class="mem-sn">${beats.length}</span></div>
+        <div class="scard">${beatBody}</div></div>` : ""}`;
+  }
+  wrap.innerHTML = sheetShell("Memories", "", searchBox("memories", "Search memories, decisions, and beats…") + body);
+  keepSearchFocus(wasFocused, caret);
+}
+
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
@@ -1201,6 +1435,7 @@ async function poll() {
         // byline glyph + a drop-cap on the passage. Player bubbles stay plain.
         d.innerHTML = `<div class="hd"><span class="av ${isP?"pc":""}">${esc(initials(who))}</span><span class="nm${isP?"":" dm"}">${esc(who)}</span></div><div class="bd${isP?"":" dropcap"}">${esc(it.text)}</div>`;
         if (it.text) addSpeaker(d.querySelector(".hd"), it.text);  // ▶ on DM + player lines (#36, fix #2)
+        pushBeat(isP?"player":"narration", who, it.text);  // feed the Memories journal (6.1)
         feed.appendChild(d);
       });
       if ((chat.items||[]).length) feed.scrollTop = feed.scrollHeight;
@@ -1216,6 +1451,7 @@ async function poll() {
         d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}${isNarr?" dm":""}">${esc(who)}</span></div>`:"")
           + `<div class="bd${isNarr?" dropcap":""}">${esc(e.text)}</div>`;
         if (e.kind!=="system" && e.text) { const hd=d.querySelector(".hd"); if (hd) addSpeaker(hd, e.text); }  // ▶ narration/dialogue (#36)
+        pushBeat(e.kind, who, e.text);  // feed the Memories journal (6.1)
         feed.appendChild(d);
       });
       if ((ev.entries||[]).length) feed.scrollTop = feed.scrollHeight;
