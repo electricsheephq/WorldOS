@@ -219,6 +219,58 @@ def _campaign_dir(campaign_id: str) -> Path:
     return _campaigns_dir() / campaign_id
 
 
+def _safe_campaign_id(campaign_id: Optional[str]) -> Optional[str]:
+    """Validate a caller-supplied ?campaign id and return the real existing campaign
+    dir's name, or None. Reuses the same path-containment guard /image uses for `path`:
+    resolve the candidate dir and confirm it sits *directly under* the campaigns dir (so
+    a tampered id like '../../etc' or 'a/b' can't escape it). Empty/unknown ⇒ None so the
+    caller falls back to the lazily-attached campaign. Read-only: just a filesystem check."""
+    if not campaign_id:
+        return None
+    root = _campaigns_dir()
+    try:
+        cand = (root / campaign_id).resolve()
+        # must be an existing dir whose PARENT is exactly the campaigns dir (no traversal,
+        # no nesting) — mirrors the _serve_image containment check.
+        if cand.is_dir() and cand.parent == root.resolve():
+            return cand.name
+    except OSError:
+        return None
+    return None
+
+
+def _list_campaigns() -> list[dict]:
+    """All projectable campaigns under the campaigns dir, newest-active first (#H3 switcher).
+
+    One entry per campaign: {id, name, day, last_played, current}. `current` marks the
+    one currently *attached* (_Handler.campaign_id). `name` is the snapshot's world title
+    (falling back to the dir id). Empty/unparseable snapshots are skipped — the SAME guard
+    _pick_campaign uses, so a half-written/`{}` snapshot never shows as a pickable game.
+    Sorted by recency descending. Pure reader: no writes, no engine import."""
+    cdir = _campaigns_dir()
+    out: list[dict] = []
+    if not cdir.is_dir():
+        return out
+    attached = _Handler.campaign_id
+    for snap in cdir.glob("*/snapshot.json"):
+        try:
+            data = json.loads(snap.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(data, dict) or not data:
+            continue  # empty/`{}` snapshot — nothing to show (mirror _pick_campaign)
+        cid = snap.parent.name
+        out.append({
+            "id": cid,
+            "name": str(data.get("title") or cid),
+            "day": data.get("day"),
+            "last_played": _campaign_recency(snap),
+            "current": cid == attached,
+        })
+    out.sort(key=lambda c: c["last_played"], reverse=True)
+    return out
+
+
 def _read_snapshot(campaign_id: str) -> dict:
     snap = _campaign_dir(campaign_id) / "snapshot.json"
     if not snap.exists():
@@ -504,6 +556,17 @@ class _Handler(BaseHTTPRequestHandler):
                 cls.campaign_id = cid
         return cls.campaign_id
 
+    def _view_campaign(self, query: dict) -> str:
+        """Which campaign THIS request projects (#H3 switcher). An explicit, validated
+        ?campaign=<id> is a per-request VIEW OVERRIDE — it lets the dashboard look at any
+        campaign without a relaunch but does NOT change the attached default (recency still
+        decides that). Falls back to the lazily-(re-)attached campaign otherwise. The id is
+        path-validated against the campaigns dir so a tampered value can't escape it."""
+        override = _safe_campaign_id((query.get("campaign") or [""])[0])
+        if override:
+            return override
+        return self._resolve_campaign()
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -584,11 +647,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif route in ("/dashboard", "/dashboard.html"):
             html = (_HERE / "dashboard.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
+        elif route == "/campaigns":
+            # Read-only list for the topbar switcher (#H3): every projectable campaign,
+            # newest-active first, with the attached one marked `current`. Lets the
+            # dashboard offer a picker instead of silently auto-following recency.
+            self._json({"campaigns": _list_campaigns()})
         elif route == "/state":
             # The raw campaign snapshot, plus one viewer-only flag: `live` says whether
             # the dashboard's action layer can land a move (POST /move accepted). The
             # snapshot is a fresh dict per read, so this transient key never persists.
-            cid = self._resolve_campaign()
+            # An explicit ?campaign=<id> is a per-request view override (#H3); otherwise
+            # we project the lazily-attached campaign.
+            cid = self._view_campaign(parse_qs(parsed.query))
             if not cid:
                 # No game on disk yet — serve a graceful empty state (the dashboard shows
                 # "Waiting for the story to begin…") instead of a blank read; we attach
@@ -603,7 +673,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/events":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])
-            entries, nxt = _read_events(self.campaign_id, since)
+            entries, nxt = _read_events(self._view_campaign(qs), since)
             self._json({"entries": entries, "next": nxt})
         elif route == "/activity":
             qs = parse_qs(parsed.query)

@@ -34,6 +34,31 @@
   .topbar h1 { margin:0; font-size:16px; color:var(--gold); }
   .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#bcd4ec; background:#16222e; border:1px solid #2e4456; border-radius:10px; padding:2px 9px; }
   .topbar .meta { color:var(--dim); font-size:13px; }
+  /* ---- campaign switcher (H3) ---- */
+  /* A gold-trimmed control next to the world title; clicking opens a dropdown of every
+     campaign (name + "Day N") so you can VIEW any one without relaunching the viewer. */
+  .switcher { position:relative; }
+  .switcher-btn { display:inline-flex; align-items:center; gap:7px; background:#1a140d; border:1px solid var(--line);
+    color:var(--gold); border-radius:9px; padding:3px 9px; font-size:12px; cursor:pointer; line-height:1.3;
+    transition:background .12s,border-color .12s; max-width:240px; }
+  .switcher-btn:hover { background:#221708; border-color:var(--card-line); }
+  .switcher-btn .sw-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .switcher-btn .sw-day { color:var(--faint); font-size:10px; letter-spacing:.05em; flex:none; }
+  .switcher-btn .sw-caret { color:var(--gold2); font-size:9px; flex:none; transition:transform .14s; }
+  .switcher.open .switcher-btn { background:#221708; border-color:var(--gold2); }
+  .switcher.open .switcher-btn .sw-caret { transform:rotate(180deg); }
+  .switcher-menu { display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:40;
+    min-width:220px; max-width:320px; max-height:340px; overflow-y:auto; background:var(--panel);
+    border:1px solid var(--card-line); border-radius:10px; box-shadow:0 14px 38px rgba(0,0,0,.55); padding:5px; }
+  .switcher.open .switcher-menu { display:block; }
+  .sw-item { display:flex; align-items:baseline; gap:8px; padding:7px 9px; border-radius:7px; cursor:pointer;
+    color:var(--ink); font-size:13px; }
+  .sw-item:hover { background:#241a0d; }
+  .sw-item.current { background:#2a1d0e; }
+  .sw-item .sw-i-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gold); }
+  .sw-item .sw-i-day { color:var(--faint); font-size:10.5px; letter-spacing:.04em; flex:none; }
+  .sw-item .sw-i-tick { color:var(--gold2); font-size:11px; flex:none; width:12px; text-align:center; }
+  .sw-empty { padding:8px 10px; color:var(--faint); font-size:11.5px; }
   /* gear affordance: opens the read-only quick-settings modal. Pushed to the right edge. */
   .gear-btn { margin-left:auto; background:#1a140d; border:1px solid var(--line); color:var(--dim);
     border-radius:8px; width:30px; height:26px; font-size:14px; cursor:pointer; line-height:1;
@@ -220,6 +245,12 @@
   .speak-btn.playing { animation:spk 1.1s ease-in-out infinite; background:#2f2210; border-color:var(--gold); color:#ffe9a8; }
   .speak-btn.done { border-color:#3a7a4a; color:#9fdf9f; background:#16240f; }
   .speak-btn.off { color:var(--faint); border-color:#3a3022; background:#1a150d; cursor:default; }
+  /* L2: when /speak no-ops (null backend / uv missing / timeout) the pill briefly shows
+     "Voice off: <reason>" instead of silently doing nothing — a wider, dimmer one-time cue
+     (self-clears with the existing reset). Tinted faintly red so it reads as "unavailable". */
+  .speak-btn.off { color:#c9a; border-color:#4a3024; background:#1f120d; }
+  .speak-btn.off .sl { max-width:0; opacity:0; }
+  .msg:hover .speak-btn.off .sl, .speak-btn.off.cue .sl { max-width:180px; opacity:1; }
   @keyframes spk { 0%,100%{ box-shadow:0 0 0 0 rgba(232,201,138,.45);} 50%{ box-shadow:0 0 0 5px rgba(232,201,138,0);} }
   /* director / agent-activity (our differentiator) */
   #director { background:#0e1410; border-color:#274030; }
@@ -624,7 +655,16 @@
   </nav>
 
   <main>
-    <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge" id="mode-badge">Adventure Mode</span>
+    <div class="topbar"><h1 id="title">ClawDnD</h1>
+      <!-- Campaign switcher (H3): name of the campaign being VIEWED; click to pick another. -->
+      <div class="switcher" id="switcher" hidden>
+        <button class="switcher-btn" id="switcher-btn" type="button" aria-haspopup="listbox" aria-expanded="false"
+          title="Switch the campaign being viewed">
+          <span class="sw-name" id="switcher-name">Campaign</span><span class="sw-day" id="switcher-day"></span><span class="sw-caret">▼</span>
+        </button>
+        <div class="switcher-menu" id="switcher-menu" role="listbox"></div>
+      </div>
+      <span class="badge" id="mode-badge">Adventure Mode</span>
       <span class="meta" id="when"></span><span class="meta" id="where"></span>
       <button class="gear-btn" id="gear-btn" title="Settings (read-only)" aria-label="Settings">⚙</button></div>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
@@ -717,6 +757,21 @@ const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<"
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 
+// ---- campaign switcher (H3) -------------------------------------------------
+// `selectedCampaignId` is a per-VIEW override the user picks from the topbar dropdown.
+// When set, EVERY data fetch (/state, /events, /chat, and the /image probes) appends
+// ?campaign=<id> so the dashboard projects that campaign without a relaunch. It does NOT
+// change the server's attached default (recency still decides that) — it's a view lens.
+// null ⇒ no override ⇒ the server serves whatever it's lazily attached to. The selection
+// persists across the 1.5s poll re-render (we never clear it from poll data).
+let selectedCampaignId = null;
+let _campaignList = [];           // last /campaigns payload, for re-rendering the dropdown
+// Append the selected ?campaign override to a path, preserving any existing query (?since=).
+function withCampaign(path) {
+  if (!selectedCampaignId) return path;
+  return path + (path.includes("?") ? "&" : "?") + "campaign=" + encodeURIComponent(selectedCampaignId);
+}
+
 // ---- image path (#34 / S2.2; fix #5) ----------------------------------------
 // The viewer projects the engine's imagegen cache via GET /image?scope=<scope>:
 // 200 + image bytes when a provider produced art for that scope, 404 otherwise (so
@@ -727,37 +782,42 @@ const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.k
 const _imgCache = new Map();   // scope -> {url} | {none:true} | "pending"
 async function probeImage(scope) {
   if (!scope) return null;
-  const hit = _imgCache.get(scope);
+  // Namespace the cache by the VIEWED campaign (H3): two campaigns can share a location
+  // id (scope) but have different art, so a bare-scope key would cross-serve after a switch.
+  const key = (selectedCampaignId || "") + "::" + scope;
+  const hit = _imgCache.get(key);
   if (hit === "pending") return null;
   if (hit) return hit.url || null;            // resolved (url) or {none:true} -> null
-  _imgCache.set(scope, "pending");
+  _imgCache.set(key, "pending");
   try {
-    const r = await fetch("/image?scope=" + encodeURIComponent(scope));
-    if (!r.ok) { _imgCache.set(scope, { none: true }); return null; }
+    const r = await fetch(withCampaign("/image?scope=" + encodeURIComponent(scope)));
+    if (!r.ok) { _imgCache.set(key, { none: true }); return null; }
     const ct = (r.headers.get("Content-Type") || "");
-    if (!ct.startsWith("image/")) { _imgCache.set(scope, { none: true }); return null; }
+    if (!ct.startsWith("image/")) { _imgCache.set(key, { none: true }); return null; }
     const blob = await r.blob();
-    if (!blob.size) { _imgCache.set(scope, { none: true }); return null; }
+    if (!blob.size) { _imgCache.set(key, { none: true }); return null; }
     const url = URL.createObjectURL(blob);
-    _imgCache.set(scope, { url });
+    _imgCache.set(key, { url });
     return url;
   } catch (_) {
-    _imgCache.set(scope, { none: true });      // unreachable/parse error -> placeholder
+    _imgCache.set(key, { none: true });        // unreachable/parse error -> placeholder
     return null;
   }
 }
 // Swap a resolved scene image into the .art box (over the placeholder); a miss is a
-// no-op so the painterly placeholder stays. Idempotent across polls.
+// no-op so the painterly placeholder stays. Idempotent across polls. The dataset key is
+// campaign-namespaced (H3) so switching campaigns to a same-named scope still re-probes.
 async function applySceneArt(scope) {
   const box = document.getElementById("sceneart");
   if (!box) return;
-  if (box.dataset.scope === scope && box.querySelector("img.scene")) return;  // already shown
-  if (box.dataset.scope !== scope) {                                          // location changed
+  const vkey = (selectedCampaignId || "") + "::" + (scope || "");
+  if (box.dataset.scope === vkey && box.querySelector("img.scene")) return;  // already shown
+  if (box.dataset.scope !== vkey) {                                          // location/campaign changed
     const old = box.querySelector("img.scene"); if (old) old.remove();
-    box.dataset.scope = scope || "";
+    box.dataset.scope = vkey;
   }
   const url = await probeImage(scope);
-  if (!url || box.dataset.scope !== scope) return;     // miss, or moved on while fetching
+  if (!url || box.dataset.scope !== vkey) return;     // miss, or moved on while fetching
   if (box.querySelector("img.scene")) return;
   const img = document.createElement("img");
   img.className = "scene"; img.alt = ""; img.src = url;
@@ -821,7 +881,17 @@ async function speak(text, btn) {
   if (speaking || !text) return; speaking = true;
   btn.classList.remove("done", "off");
   btn.classList.add("playing"); btn.title = "Playing…"; setSpeakLabel(btn, "▮▮", "Playing");
-  const reset = () => { btn.classList.remove("done", "off"); btn.title = "Play this aloud"; setSpeakLabel(btn, "▶", "Listen"); };
+  const reset = () => { btn.classList.remove("done", "off", "cue"); btn.title = "Play this aloud"; setSpeakLabel(btn, "▶", "Listen"); };
+  // L2: when /speak no-ops (null backend / uv missing / timeout) it returns ok:false with a
+  // human `reason`. Surface it as a brief, subtle one-time cue ON THE PILL ("Voice off: …")
+  // instead of silently doing nothing. Self-clears (the same 2.5s reset); only fires on the
+  // click the user just made, so it never spams the feed.
+  const offCue = (reason) => {
+    const why = (reason || "voice unavailable").toString();
+    btn.classList.add("off", "cue"); btn.title = "Voice off — " + why;
+    setSpeakLabel(btn, "▶", "Voice off: " + (why.length > 26 ? why.slice(0, 25) + "…" : why));
+    setTimeout(reset, 3200);
+  };
   try {
     const r = await fetch("/speak", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
     const j = await r.json().catch(()=>({}));
@@ -829,12 +899,10 @@ async function speak(text, btn) {
       btn.classList.add("done"); btn.title = "Played"; setSpeakLabel(btn, "✓", "Played");
       setTimeout(reset, 2500);
     } else {
-      btn.classList.add("off"); btn.title = (j && j.reason) || "Voice unavailable"; setSpeakLabel(btn, "▶", "No voice");
-      setTimeout(reset, 2500);
+      offCue(j && (j.reason || j.detail));     // null backend / uv missing / timeout → show why
     }
   } catch (_) {
-    btn.classList.add("off"); btn.title = "Voice server unreachable"; setSpeakLabel(btn, "▶", "No voice");
-    setTimeout(reset, 2500);
+    offCue("server unreachable");
   } finally {
     btn.classList.remove("playing"); speaking = false;
   }
@@ -1796,13 +1864,77 @@ function wireMap() {
   svg.addEventListener("pointerleave", () => { tip.style.opacity="0"; });
 }
 
+// ---- campaign switcher wiring (H3) ------------------------------------------
+// Pull the campaign list and (re)paint the topbar control + dropdown. Called once at
+// boot and on every poll so a newly-minted campaign appears in the menu and the marked
+// "current" stays honest — WITHOUT disturbing the user's manual selection.
+async function loadCampaigns() {
+  try {
+    const j = await (await fetch("/campaigns")).json();
+    _campaignList = (j && j.campaigns) || [];
+  } catch (_) { /* keep the last list on a hiccup */ }
+  renderSwitcher();
+}
+// The label shows whichever campaign is being VIEWED: the manual selection if one is set,
+// else the server's currently-attached campaign (the one flagged `current`). Hidden only
+// when there are zero campaigns (the empty-state "waiting for the story" view).
+function renderSwitcher() {
+  const sw = $("switcher");
+  if (!sw) return;
+  if (!_campaignList.length) { sw.hidden = true; return; }
+  sw.hidden = false;
+  const viewing = selectedCampaignId
+    ? _campaignList.find(c => c.id === selectedCampaignId)
+    : _campaignList.find(c => c.current);
+  const cur = viewing || _campaignList[0];
+  $("switcher-name").textContent = cur.name || cur.id;
+  $("switcher-day").textContent = (cur.day != null) ? ("Day " + cur.day) : "";
+  // Build the dropdown: one row per campaign (name + "Day N"), the viewed one ticked.
+  $("switcher-menu").innerHTML = _campaignList.map(c => {
+    const sel = c.id === cur.id;
+    return `<div class="sw-item${sel?" current":""}" role="option" aria-selected="${sel}" data-cid="${esc(c.id)}">`
+      + `<span class="sw-i-tick">${sel?"✓":""}</span>`
+      + `<span class="sw-i-name">${esc(c.name || c.id)}</span>`
+      + `<span class="sw-i-day">${c.day != null ? ("Day " + esc(c.day)) : ""}</span></div>`;
+  }).join("") || `<div class="sw-empty">No campaigns found.</div>`;
+}
+function openSwitcher() { const sw=$("switcher"); sw.classList.add("open"); $("switcher-btn").setAttribute("aria-expanded","true"); }
+function closeSwitcher() { const sw=$("switcher"); sw.classList.remove("open"); $("switcher-btn").setAttribute("aria-expanded","false"); }
+// Pick a campaign to VIEW. We set the per-request override, then reset the feed cursors +
+// clear the feed so the next poll re-reads the chosen campaign's logs from the top (the old
+// cursors index a DIFFERENT campaign's session and would mis-slice it). Image cache is
+// campaign-namespaced already, so scene art re-probes naturally. The server's attached
+// default is untouched — this is purely a view lens.
+function selectCampaign(cid) {
+  const wasCurrent = _campaignList.find(c => c.current);
+  // Selecting the attached campaign clears the override (back to "follow the live game").
+  selectedCampaignId = (wasCurrent && cid === wasCurrent.id) ? null : cid;
+  evCursor = 0; chatCursor = 0; actCursor = 0;
+  $("feed").innerHTML = `<div class="empty">Loading campaign…</div>`;
+  closeSwitcher();
+  renderSwitcher();
+  poll();  // refresh immediately rather than waiting up to ~1.5s for the next tick
+}
+function wireSwitcher() {
+  const btn = $("switcher-btn"), sw = $("switcher"), menu = $("switcher-menu");
+  if (!btn) return;
+  btn.addEventListener("click", (e) => { e.stopPropagation(); sw.classList.contains("open") ? closeSwitcher() : openSwitcher(); });
+  menu.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-cid]"); if (!row) return;
+    selectCampaign(row.getAttribute("data-cid"));
+  });
+  // click-away + Esc close the dropdown (matches the modal's affordances)
+  document.addEventListener("click", (e) => { if (!sw.contains(e.target)) closeSwitcher(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSwitcher(); });
+}
+
 async function poll() {
   try {
-    renderState(await (await fetch("/state")).json());
+    renderState(await (await fetch(withCampaign("/state"))).json());
     const feed = $("feed");
     // Prefer the two-sided conversation (duo runs): the PLAYER's turns + the DM's,
     // so you see the protagonist act. Fall back to the engine story feed otherwise.
-    const chat = await (await fetch("/chat?since="+chatCursor)).json();
+    const chat = await (await fetch(withCampaign("/chat?since="+chatCursor))).json();
     if (chat.live) {
       if (chatCursor===0) feed.innerHTML = "";
       (chat.items||[]).forEach(it=>{
@@ -1818,7 +1950,7 @@ async function poll() {
       if ((chat.items||[]).length) feed.scrollTop = feed.scrollHeight;
       chatCursor = chat.next ?? chatCursor;
     } else {
-      const ev = await (await fetch("/events?since="+evCursor)).json();
+      const ev = await (await fetch(withCampaign("/events?since="+evCursor))).json();
       if (evCursor===0) feed.innerHTML = "";
       (ev.entries||[]).forEach(e=>{
         if (!["narration","dialogue","combat","system"].includes(e.kind)) return;
@@ -1848,6 +1980,9 @@ async function poll() {
     if ((act.items||[]).length) ac.scrollTop = ac.scrollHeight;
     diceFromActivity(act.items);
     actCursor = act.next ?? actCursor;
+    // Keep the switcher list fresh (new campaign minted, recency/`current` shifts) but
+    // throttle the dir glob: every ~6s, not every 1.5s tick. Selection is preserved.
+    if ((poll._n = (poll._n || 0) + 1) % 4 === 1) loadCampaigns();
   } catch (e) { /* mid-write / restart — retry next tick */ }
 }
 // Click-to-travel from the "nearby locations" list mirrors the map's behavior:
@@ -1876,7 +2011,8 @@ function wireJumps() {
     });
   });
 }
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); wireJumps(); renderDice(); wireTabs(); setupSettings();
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); wireJumps(); renderDice(); wireTabs(); setupSettings(); wireSwitcher();
+loadCampaigns();                 // populate the topbar switcher up front (H3)
 poll(); setInterval(poll, 1500);
 </script>
 </body>
