@@ -1,0 +1,17 @@
+{
+  "name": "Wyll",
+  "race": "Human",
+  "class": "Warlock",
+  "level": "1",
+  "alignment": "",
+  "appearance": "Wyll has dark brown hair kept in neat rows with cropped sides, a trimmed circle beard adorning his face. He claims his right eye is made out of carved from the Galena Mountains, which functions as a sending stone, gifted by Mizora as a replacement after losing his eye fighting cultists, doubling as a method to keep track of him. Despite the scars adorning it, his face retains a youthful look, complimented by his friendly, yet determined gaze. He dresses modestly, his outfit suited for combat and hunting, with only his rapier hinting at his noble upbringing.\n\nIf transformed into a devil, two great black horns sprout from his forehead, curving backwards menacingly. His face receives new scars on his cheeks and neck and his good eye will be turned black, with a crimson red pupil. \n\nIn Act 3, Wyll reveals he is 24 years old, having been exiled from Baldur's Gate for the past seven years since his pact with Mizora.",
+  "personality": "Heroic and kindhearted, but conflicted and ever struggling against his pactmistress, Wyll has dedicated most of his life to fighting on behalf of the people of the . He takes his duty and title seriously, and speaks boastfully of his skills and past as \"the Blade of Frontiers\". Despite his determination to his cause, Wyll has a more playful side. He suggests the party stop to try drinks at The Waning Moon, and wistfully tells Karlach he would love to unwind and swim at the beach in Act 3.\n\nHe retains some of his noble upbringing, not only in the manner of his speaking, but also in some pastimes he has, such as dancing and a fondness for good wine. Still, while he is able to partake in the pomp and vanity of higher society, he prefers the simple life he leads now.",
+  "mannerisms": "",
+  "backstory": "Being the fabled \"Blade of Frontiers\" and the son of Grand Duke Ulder Ravengard, Wyll is bound by pact to serve the devil Mizora, a cambion in the service of the Archdevil Zariel. Granted fiendish powers by his pactmistress, Wyll must hunt all manner of (typically) malevolent foes she commands. Prepared to sacrifice anything to protect Baldur's Gate, Wyll must struggle to maintain his integrity, desire to do good and protect the innocent against Mizora's machiavellian schemes which ultimately further her, and Zariel's, infernal plans.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human warlock; playful (voiced by Theo Solomon)",
+  "source_url": "https://bg3.wiki/wiki/Wyll",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

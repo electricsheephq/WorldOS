@@ -1,0 +1,17 @@
+{
+  "name": "Minsc",
+  "race": "Human",
+  "class": "Ranger",
+  "level": "1",
+  "alignment": "",
+  "appearance": "Minsc is a towering, muscle-bound man; his clean-shaven scalp bears a vivid purple crescent that sweeps over his right brow and cheek, and his steel-gray eyes rest beneath heavy brows. Old nicks crisscross his broad arms like a map of hard-won battles. Plain silver-looped earrings, weather-stained studded leather beneath a scarlet sash, and a well-worn longsword slung across his back all underscore his origins. Perched on his left shoulder sits a tiny brown hamster, whiskers twitching, the only soft edge to his otherwise imposing frame.",
+  "personality": "Minsc is a skilled warrior who is otherwise blissfully bereft of the burdens of Intellect. He believes his friend Boo is actually a and that he is the only one who can talk to him. He views the world in absolutes (no pun intended): if there is evil then it should be defeated. \n\nDespite her constant nagging, Minsc sees Jaheira as a dear friend and is very protective of her, going so far as to call her his honorary upon their reunion in Act Three. He intensely dislikes Viconia DeVir and Sarevok Anchev because of his history with the latter and because they are evil.",
+  "mannerisms": "",
+  "backstory": "Minsc is a Rashemaar berserker from a matriarchal nation of Rashemen. As a young man, he went on a dajemma - a coming-of-age tradition for Rashemi men to travel the world accompanying his Wychlaran - a young witch .",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human ranger (voiced by Matthew Mercer)",
+  "source_url": "https://bg3.wiki/wiki/Minsc",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

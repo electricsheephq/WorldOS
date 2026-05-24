@@ -1,0 +1,41 @@
+{
+  "_comment": "S2.5 CHARACTER ingest scope for the Unofficial Baldur's Gate 3+ Universe Seed. Pulls post-BG3 canon character profiles (companions + key NPCs) into clean JSON records under content/worlds/<world_id>/characters/<slug>.json, which ClawDnD can later load as NPCs of the 'baldurs-gate' world. TEXT/DATA ONLY — no images are fetched or committed (portraits are handled separately, local-only). Unlike manifest.json (lore, single Fandom wiki), characters span TWO wikis with DIFFERENT licenses, so each source carries its own wiki host, MediaWiki script_path, license, and attribution string. A title that doesn't resolve is skipped, not fatal.",
+  "world_id": "baldurs-gate",
+  "cache_subdir": "characters",
+  "max_pages": 60,
+  "rate_delay_seconds": 0.75,
+  "max_chars_per_field": 2500,
+  "sources": [
+    {
+      "_comment": "bg3.wiki is a STANDALONE MediaWiki (1.43.x), NOT Fandom. Its API lives at /w/api.php (scriptpath '/w'), pretty URLs at /wiki/$1. License per https://bg3.wiki/wiki/bg3wiki:Copyrights — content on/after 2024-07-20 is dual-licensed CC BY-SA 4.0 AND CC BY-NC-SA 4.0; older content is CC BY-NC-SA 4.0 only (NonCommercial). ClawDnD is a non-commercial fan project, so both options are satisfied; we attribute with a back-link per the wiki's stated requirement, and carry the NonCommercial caveat.",
+      "wiki": "bg3.wiki",
+      "script_path": "/w",
+      "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+      "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+      "titles": [
+        "Shadowheart",
+        "Astarion",
+        "Gale",
+        "Karlach",
+        "Lae'zel",
+        "Wyll",
+        "Halsin",
+        "Minsc",
+        "Jaheira",
+        "Withers"
+      ]
+    },
+    {
+      "_comment": "forgottenrealms.fandom.com is a Fandom wiki (CC-BY-SA, per https://www.fandom.com/licensing). API at /api.php (scriptpath ''). Used for the Forgotten Realms figures whose canon predates BG3 (Jaheira, Minsc, Withers/Jergal) and for deeper FR background; bg3.wiki is preferred for the post-BG3 companion roster.",
+      "wiki": "forgottenrealms.fandom.com",
+      "script_path": "",
+      "license": "CC-BY-SA (Fandom; see https://www.fandom.com/licensing)",
+      "attribution": "Text from the Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial, non-commercial fan content; portions are property of Wizards of the Coast LLC.",
+      "titles": [
+        "Jaheira",
+        "Minsc",
+        "Jergal"
+      ]
+    }
+  ]
+}

@@ -36,10 +36,25 @@ footer. They are free, unofficial fan content. Note CC-BY-SA (ShareAlike) is a d
 license from the original seed prose (CC-BY-4.0). The hand-authored pages at `lore/*.md`
 are original ClawDnD content.
 
+## Ingested character profiles (`characters/`)
+
+Records under `characters/` are ingested from **bg3.wiki** and the **Forgotten Realms
+Wiki (Fandom)** — **text/data only, no images**. Each record carries its `source_url`,
+`license`, and `attribution`:
+- **bg3.wiki** content is **dual-licensed CC-BY-SA-4.0 / CC-BY-NC-SA-4.0** (the
+  NonCommercial option applies to older revisions). Because this seed is **non-commercial**
+  fan content, both options are satisfied. See <https://bg3.wiki/wiki/bg3wiki:Copyrights>.
+- **Forgotten Realms Wiki (Fandom)** content is **CC-BY-SA**.
+
+No official game images/portraits are ingested or committed; character visuals are
+**generated** on the player's machine (or cached locally under `_private/`, never
+redistributed).
+
 ## Summary
 
 - **Free, non-commercial, unofficial** fan content.
 - Setting IP: Wizards Fan Content Policy (+ Larian for BG3 elements).
 - Ingested `lore/wiki/` pages: CC-BY-SA (Forgotten Realms Wiki / Fandom), attributed per page.
+- Ingested `characters/` profiles: bg3.wiki (dual CC-BY-SA / CC-BY-NC-SA, non-commercial) + FR Fandom (CC-BY-SA), text-only, attributed per record.
 - Rules: CC-BY-4.0 SRD / OGL.
 - ClawDnD code: MIT (separate; does not extend to this seed).

@@ -1,0 +1,30 @@
+{
+  "name": "Jaheira",
+  "race": "Half-elf",
+  "class": "Druid (Circle of the Land)",
+  "level": "",
+  "alignment": "Neutral",
+  "appearance": "Jaheira had the typical youthful appearance of half-elves during her youth, circa the mid–14 century DR. Due to her Tethyrian heritage, Jaheira did appear older, albeit at a much slower rate. After nearly a century-and-a-half-long life on Toril, Jaheira retained much of her youthful vigor but showed notable signs of aging.\n\nShe had tan skin that had accumulated a number of scars over the years. Her hair was either a chestnut brown or dirty blonde, which she often wore brushed back, bound in rows of beads.",
+  "personality": "Jaheira was strong-willed and resolute in her convictions whenever she spoke to others. She believed the only way to protect the natural world of Faerûn was to take direct action. She had an acerbic wit and often demonstrated a flippant attitude towards death. Despite her boldness, there were certain events in Jaheira's life that gave her a great sense of doubt and consternation.\n\nOver the many decades of her life, she trusted others less easily but remained wise enough to know when she could let her guard down, as well as acquiring a sense of humor, especially when referring to her own age.",
+  "mannerisms": "",
+  "backstory": "Jaheira was born in the 14 century into a noble Tethyrian family aligned with King Alemander IV. She was but a child during the Ten Black Days of Eleint on the eve of the Tethyrian Interregnum.\n\nJaheira was orphaned when her parents were killed by a mob of angry peasants. Fortunately, she was saved by one of the serving girls during the uprising, fleeing her family's castle with her to the Forest of Tethir. Soon after, they met an enclave of druids, who later accepted Jaheira into their community. She took on the role of a druid in service to the Oak Father Silvanus.\n\nAt some point, Jaheira met Dermin Courtierdale, the man who introduced her to the Harpers and mentored her in the ways of their teachings. While with the Harpers, Jaheira met and fell in love with Khalid, a fellow half-elf who hailed from Calimshan. Despite the stark contrast in their characters, the two married in a short time during a simple ceremony on a gloomy rainy day in the Dalelands. The couple recited their vows, standing upon an upturned cart. Later in life, Jaheira sometimes wondered in amusement if their vows actually counted as Khalid stuttered so much while trying to recite his part.\n\nSometime in her earlier life, Jaheira spent some time as a thrall in an illithid colony.\n\nAt some point, Jaheira and her associates exposed the Calishite businessman Baron Ployer as a breeder of slaves, destroying his reputation within the realm.",
+  "equipment": [],
+  "relationships": [
+    "Jaheira had a very different personality from that of her husband.",
+    "Jaheira was bold and willful, almost to the point of stubbornness, while Khalid was nervous and often lost his wits in battle.",
+    "Regardless, the two were very much in love with one another.",
+    "She liked to believe that her and Khalid's personalities complemented each other, forming a true balance, but that was her druidic training talking.",
+    "She was self-aware enough to admit to herself that she, in reality, was attracted to Khalid's rump and loved his habit of only talking when he had something to say.",
+    "During their time with the Harpers, Jaheira, and Khalid became good friends with the sage Gorion and were acquainted with such people as Elminster.",
+    "Throughout their travels together, Jaheira became quite close with Imoen, though at times she saw the young mage as childish and naive.",
+    "Her friendship with the Rashemaar berserker Minsc remained so strong that she would readily risk life and limb to see him free from peril or imprisonment.",
+    "Minsc came to consider Jaheira as the Wychlaran―a wise spellcaster woman―whom he was personally destined to protect with his life.",
+    "Jaheira did not believe in such superstitions.",
+    "As of the late 15 century DR, Jaheira had a house in the city and cared for at least five foster children.",
+    "Two of them were already grown up, the hammer-wielding half-elf Rion, and the half-orc mushroom druid Jord, while the other three were younger humans, the royalty-dreaming Jhessem, the fighter-in-training Fig, and the stuttering Tate."
+  ],
+  "voice_hint": "half-elf druid (circle of the land)",
+  "source_url": "https://forgottenrealms.fandom.com/wiki/Jaheira",
+  "license": "CC-BY-SA (Fandom; see https://www.fandom.com/licensing)",
+  "attribution": "Text from the Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial, non-commercial fan content; portions are property of Wizards of the Coast LLC."
+}
