@@ -69,10 +69,21 @@ def _actor_id() -> str:
     return (os.environ.get("CLAWDND_ACTOR_ID") or "").strip()
 
 
+_ACTOR_ROLES = ("player", "companion")  # the only roles the ensemble emits
+
+
 def _actor_role() -> str:
     """The role stamped on emitted moves. Default "player" == today's behavior; a
-    companion agent sets "companion" so the DM can tell whose declaration it is."""
-    return (os.environ.get("CLAWDND_ACTOR_ROLE") or "").strip() or "player"
+    companion agent sets "companion" so the DM can tell whose declaration it is.
+
+    A-LOW-2: ``CLAWDND_ACTOR_ROLE`` is operator-supplied free text. Clamp it to the
+    allowlist so a typo (or an injected value) can't smuggle an arbitrary role onto
+    every move the DM/dashboard then trusts — blank -> "player" (today's default),
+    any unknown value -> "companion" (the safe non-narrator peer role)."""
+    raw = (os.environ.get("CLAWDND_ACTOR_ROLE") or "").strip().lower()
+    if not raw:
+        return "player"
+    return raw if raw in _ACTOR_ROLES else "companion"
 
 
 def _pc() -> Optional[Character]:
@@ -88,7 +99,14 @@ def _pc() -> Optional[Character]:
         # Explicit actor: bind to THAT character's sheet (validators use it). If the id
         # isn't in the live campaign, return None — the actor has no sheet to act with
         # (its moves are then refused, the same as "no character yet" for the player).
-        return c.characters.get(aid)
+        ch = c.characters.get(aid)
+        # A-LOW-1: only a live PLAYER/COMPANION may emit moves through this facade. An
+        # actor id pointing at a monster/npc (not a party peer) or a DEAD character must
+        # resolve to no sheet, so its moves are refused — the move palette is the human-
+        # play surface (It.2 reuses this), never a way to drive a monster or a corpse.
+        if ch is not None and (ch.kind not in ("player", "companion") or ch.dead):
+            return None
+        return ch
     for cid in c.party:
         ch = c.characters.get(cid)
         if ch is not None and ch.kind == "player":
