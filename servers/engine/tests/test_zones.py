@@ -195,9 +195,15 @@ def test_melee_attack_far_zone_warns_but_still_resolves(fight):
     res = server.attack(cid, hero, gob, attack_bonus=99, damage_dice="1d6+3")
     assert "range_warning" in res
     assert "not in melee reach" in res["range_warning"]
-    # NOT hard-blocked: the attack was resolved (hit with +99 vs AC 10).
-    assert res["hit"] is True
-    assert res["damage"] is not None
+    # NOT hard-blocked: the warning is ADVISORY — the attack still RESOLVED through the
+    # dice. (Don't assert a hit: a natural 1 auto-misses even at +99, and which roll lands
+    # here depends on RNG order across the suite. "It resolved, not blocked" is the point —
+    # so assert the attack-roll resolved, which happens on hit OR miss.)
+    assert "hit" in res
+    assert "attack_roll" in res and res["attack_roll"]["total"] is not None
+    # On a hit, damage was rolled and applied; on a miss (nat-1), damage stays None. Either
+    # way the engine RESOLVED the attack rather than refusing it for being out of melee reach.
+    assert res["hit"] is False or res["damage"] is not None
 
 
 def test_ranged_attack_far_zone_never_warns(fight):
