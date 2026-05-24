@@ -1376,7 +1376,17 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
         dup = next((ch for ch in c.characters.values()
                     if ch.name.strip().lower() == canonical.strip().lower()), None)
         if dup is not None:
-            return {"error": f"{canonical!r} is already in this campaign", "id": dup.id}
+            # Already present (commonly: the cold-open PRELUDE seeds the companion NPC, then the
+            # DM tries to load them) — return a SUCCESS-shaped response, not a hard error, so the
+            # DM proceeds straight to recruit_companion without an error-handling detour. (QA: the
+            # error path forced a needless two-step + read as a failure.)
+            return {
+                "already_present": True,
+                "id": dup.id, "name": dup.name, "kind": dup.kind,
+                "in_party": dup.id in c.party,
+                "note": (f"{canonical} is already in this campaign — recruit_companion({dup.id!r}) "
+                         f"to bring them into the party, or update_character to flesh them out."),
+            }
         classes = []
         if rec.get("class"):
             try:
@@ -2776,6 +2786,35 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         if read is not None:
             out["read"] = read
         return out
+
+
+@mcp.tool()
+def skill_check(campaign_id: str, character_id: str, skill: str, dc: int = 0,
+                advantage: bool = False, disadvantage: bool = False) -> dict:
+    """Roll a skill check for a character with the CORRECT modifier derived from their sheet
+    (ability modifier + proficiency if proficient, doubled where they have expertise) — so you
+    NEVER hand-compute a bonus, the most common mechanical error. Use this for any non-social
+    check (Perception, Investigation, Stealth, Athletics, Arcana, …) against a DC, or just to see
+    the roll (``dc=0`` -> roll only, no pass/fail). For a check that targets an NPC's attitude
+    (persuade / intimidate / read someone), use ``social_check`` instead. 5e RAW: a skill check
+    does NOT auto-succeed on a natural 20 — success is total vs DC; the natural is reported so you
+    can flavor a 20/1. Read-only (a check is a roll, not a state change)."""
+    sk = skill.strip().lower().replace(" ", "_")
+    if sk not in SKILL_ABILITIES:
+        raise ValueError(f"unknown skill {skill!r}")
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    bonus = ch.skill_bonus(sk)
+    r = dice_mod.roll(f"1d20+{bonus}", advantage=advantage, disadvantage=disadvantage)
+    out = {
+        "character": ch.name, "skill": sk, "modifier": bonus,
+        "roll": r.total, "natural": r.natural, "detail": r.detail,
+        "advantage": advantage, "disadvantage": disadvantage,
+    }
+    if dc and dc > 0:
+        out["dc"] = dc
+        out["success"] = r.total >= dc  # RAW: no auto-success on a nat 20 for a skill check
+    return out
 
 
 @mcp.tool()

@@ -72,7 +72,8 @@ def test_load_canon_character_pulls_real_identity(cid):
     assert sheet["race"] == "Half-elf" and sheet["classes"][0]["name"] == "Cleric"
     assert sheet["appearance"] and sheet["backstory"]  # the prose the DM voices from
     assert res["id"] in store.load_campaign(cid).party
-    assert "error" in server.load_canon_character(cid, "Shadowheart")  # duplicate refused
+    again = server.load_canon_character(cid, "Shadowheart")  # already present -> idempotent success
+    assert again.get("already_present") and again.get("id") == res["id"] and "error" not in again
 
 
 def test_end_combat_milestone_mode_awards_nothing(cid):

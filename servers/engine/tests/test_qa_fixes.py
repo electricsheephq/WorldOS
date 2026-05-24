@@ -428,7 +428,7 @@ def test_recruit_preserves_ending_seeded_arc_end_to_end(tmp_path, monkeypatch):
     # and load_canon_character DEDUPES against the seeded roster NPC — it must NOT spawn a
     # second, arc-less "Astarion" (the duplicate-stub footgun that would bury the synthesis).
     dup = server.load_canon_character(cid, "Astarion", kind="companion", add_to_party=True)
-    assert dup.get("error") and dup.get("id") == "npc-astarion"
+    assert dup.get("already_present") and dup.get("id") == "npc-astarion"  # idempotent, success-shaped
     assert sum(1 for ch in server.get_state(cid)["party"] if ch["name"] == "Astarion") == 1
 
 
@@ -474,6 +474,24 @@ def test_death_clears_conditions_and_concentration():
     mon.conditions = [Condition.POISONED]
     combat.apply_damage(mon, 5)
     assert mon.dead is True and mon.conditions == []
+
+
+def test_skill_check_uses_the_sheet_derived_modifier(tmp_path, monkeypatch):
+    # QA finding (s7-coldopen2): the DM hand-computed skill modifiers for manual roll() calls and
+    # got them wrong (Perception +4 vs +5, Intimidation +3 vs +2). skill_check derives the bonus
+    # from the sheet (ability + proficiency/expertise) so it's never hand-computed.
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Checks")["id"]
+    pid = server.create_character(cid, "Maren", kind="player", class_name="Ranger",
+                                  abilities={"wis": 14, "dex": 16}, skills=["perception"])["id"]
+    expected = server._require(cid).characters[pid].skill_bonus("perception")  # the engine's truth
+    out = server.skill_check(cid, pid, "Perception", dc=15)
+    assert out["modifier"] == expected and out["skill"] == "perception"
+    assert "roll" in out and "success" in out  # dc>0 -> pass/fail reported
+    assert "success" not in server.skill_check(cid, pid, "Perception")  # dc=0 -> roll only
+    with pytest.raises(ValueError, match="unknown skill"):
+        server.skill_check(cid, pid, "flossing")
 
 
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
