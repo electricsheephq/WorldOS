@@ -15,10 +15,13 @@ Two layers, deliberately separate:
   - PROVIDER selection (get_provider) defaults to "null" and DEGRADES to null when
     a real provider is named but unconfigured (no API key wired) — so a
     misconfiguration never crashes the server, exactly like the STT selector.
-  - A real provider, once selected and actually invoked, RAISES NotImplementedError
-    with a clear "set CLAWDND_IMAGE_* to wire" message. That's the seam: the hosted
-    backends are stubs until someone wires them, and calling one directly is a loud,
-    intentional failure rather than a silent no-op.
+  - A real provider, once selected and actually invoked, either produces an image
+    or fails LOUDLY. The OpenAI/Stability backends are still stubs: invoking one
+    raises NotImplementedError with a clear "set CLAWDND_IMAGE_* to wire" message.
+    The "openclaw" backend is wired (it rides the local OpenClaw gateway's
+    image_generate tool + its Codex OAuth — no raw API key here); when it can't
+    reach/complete a generation it raises a clean RuntimeError so the caller can
+    fall back to null. Either way, a selected real provider never silently no-ops.
 
 Caching: when a provider returns bytes or a url, generate() writes a small JSON
 descriptor under store.state_dir()/images/<scope>/<hash>.json, keyed by a content
@@ -147,10 +150,92 @@ class StabilityImageProvider(_UnconfiguredHostedProvider):
     api_key_env = "CLAWDND_IMAGE_API_KEY"
 
 
+class OpenClawImageProvider:
+    """Generate images through the LOCAL OpenClaw gateway's `image_generate` tool.
+
+    Unlike the OpenAI/Stability stubs, this one is REAL — but it carries no API key
+    of its own. It rides the gateway's built-in image generation (model
+    `openai/gpt-image-2`) and the gateway's existing ChatGPT/Codex OAuth profile,
+    so the credential lives in the gateway, not here. See `openclaw_image.py` for
+    the transport (stdlib HTTP against the always-on `/tools/invoke` endpoint) and
+    the async/host-filesystem retrieval details.
+
+    Selection: `CLAWDND_IMAGE_PROVIDER=openclaw`. The gateway URL/token/model are
+    read from `CLAWDND_OPENCLAW_*` env (with `OPENCLAW_GATEWAY_TOKEN` /
+    `OPENCLAW_GATEWAY_PASSWORD` accepted as token fallbacks).
+
+    `configured()` is true once a gateway token is resolvable, so get_provider()
+    hands this back; if no token is set it DEGRADES to null like the other hosted
+    providers. Once invoked, ANY failure (gateway down/timeout/policy/no-image)
+    raises cleanly — never a hang and never a silent no-op — so the caller can
+    fall back to the null provider.
+
+    The heavy client import is lazy (inside generate/configured), keeping
+    `imagegen` import-time free of the client and any network.
+    """
+
+    name = "openclaw"
+
+    def configured(self) -> bool:
+        """True when a gateway bearer token is resolvable from env.
+
+        Construction of the client is cheap and reads no secrets beyond env, so
+        this is safe to probe during selection. Token from CLAWDND_OPENCLAW_GATEWAY_TOKEN
+        or the OPENCLAW_GATEWAY_TOKEN / OPENCLAW_GATEWAY_PASSWORD fallbacks.
+        """
+        try:
+            from openclaw_image import OpenClawImageClient
+        except ImportError:
+            return False
+        return bool(OpenClawImageClient().token)
+
+    def generate(self, kind: str, prompt: str, *, seed: Optional[int] = None) -> dict:
+        """Generate via the gateway and return a cacheable image descriptor.
+
+        On success the descriptor carries the produced image as `path` and/or
+        `url` (and `bytes` when small), plus the gateway `task_id`. On any failure
+        the underlying client raises OpenClawImageError / OpenClawGatewayUnreachable;
+        we re-raise as RuntimeError so generate()'s caller can fall back to null.
+        The null fallback is intentionally the caller's job — this provider, once
+        invoked, fails loudly rather than silently degrading mid-generation.
+        """
+        from openclaw_image import OpenClawImageClient, OpenClawImageError
+
+        try:
+            result = OpenClawImageClient().generate_image(prompt)
+        except OpenClawImageError as exc:
+            # Includes OpenClawGatewayUnreachable. Re-raise as a clean, typed
+            # failure so the caller can catch and fall back to null.
+            raise RuntimeError(f"openclaw image provider failed: {exc}") from exc
+
+        descriptor: dict = {
+            "provider": self.name,
+            "kind": _normalize_kind(kind),
+            "prompt": prompt,
+            "seed": seed,
+            "placeholder": False,
+        }
+        if result.task_id:
+            descriptor["task_id"] = result.task_id
+        if result.path:
+            descriptor["path"] = result.path
+        if result.url:
+            descriptor["url"] = result.url
+        if result.mime_type:
+            descriptor["mime_type"] = result.mime_type
+        if result.data:
+            # Keep the cache JSON-serializable: store bytes as base64 text.
+            import base64
+
+            descriptor["bytes_b64"] = base64.b64encode(result.data).decode("ascii")
+        return descriptor
+
+
 # Real, hosted providers keyed by CLAWDND_IMAGE_PROVIDER value.
-_HOSTED: dict[str, type[_UnconfiguredHostedProvider]] = {
+_HOSTED: dict[str, type] = {
     "openai": OpenAIImageProvider,
     "stability": StabilityImageProvider,
+    "openclaw": OpenClawImageProvider,
 }
 
 
