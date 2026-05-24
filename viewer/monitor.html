@@ -72,10 +72,18 @@ function card(c, now) {
   const live = c.live ? '<span class="badge live">● LIVE</span>' : '';
   const rootCls = c.root === 'play' ? 'root-play' : 'root-qa';
   const rootLbl = c.root === 'play' ? 'play' : c.root.replace(/^qa:/, 'QA · ');
-  // play campaigns open in the dashboard to watch/play; QA runs are read-only here.
-  const title = c.root === 'play'
-    ? `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${esc(c.name)}</a>`
-    : `<span class="name">${esc(c.name)}</span>`;
+  // play campaigns open in the dashboard to watch/play; a FINISHED QA run opens its distilled
+  // transcript (the full played story) so you can read it and give feedback; a still-playing
+  // QA run (no transcript yet) shows live in the card and isn't yet linkable.
+  let title;
+  if (c.root === 'play') {
+    title = `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${esc(c.name)}</a>`;
+  } else if (c.transcript) {
+    const run = c.root.replace(/^qa:/, '');
+    title = `<a class="name" href="/transcript?run=${encodeURIComponent(run)}" target="_blank">${esc(c.name)}</a>`;
+  } else {
+    title = `<span class="name">${esc(c.name)}</span>`;
+  }
   const meta = [
     c.world && `<span class="k">${esc(c.world)}</span>`,
     c.ending && `ending: ${esc(c.ending)}`,

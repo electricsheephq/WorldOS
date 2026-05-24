@@ -303,6 +303,38 @@ def _qa_scores(run: str) -> dict:
     return out
 
 
+def _transcript_path(run: str) -> Optional[Path]:
+    """Resolve a QA run's distilled transcript (qa/transcripts/<run>.md), path-guarded so a
+    tampered ?run can't escape the transcripts dir (same containment check /image + the
+    campaign id use). Returns the file Path, or None for an unsafe/unknown run."""
+    if not run or run in (".", "..") or not all(ch.isalnum() or ch in "._-" for ch in run):
+        return None
+    tdir = (_HERE.parent / "qa" / "transcripts").resolve()
+    try:
+        cand = (tdir / f"{run}.md").resolve()
+    except OSError:
+        return None
+    return cand if cand.is_file() and cand.parent == tdir else None
+
+
+def _transcript_html(run: str, md: str) -> str:
+    """Wrap a distilled QA transcript (already-readable markdown) in a minimal dark page so
+    the monitor can open a finished run's full story in a tab. Content is HTML-escaped and
+    shown verbatim in a <pre> — no markdown rendering, no script, pure read-only."""
+    def esc(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<title>QA transcript · {esc(run)}</title>"
+        "<style>body{background:#0f1115;color:#d8dee9;font:14px/1.6 ui-monospace,SFMono-Regular,"
+        "Menlo,monospace;margin:0;padding:24px}a{color:#58d18b}h1{font-size:15px;color:#9ad;"
+        "font-family:system-ui,sans-serif}pre{white-space:pre-wrap;word-wrap:break-word;max-width:980px}"
+        "</style></head>"
+        f"<body><h1>QA transcript · {esc(run)} &nbsp; <a href='/monitor'>← monitor</a></h1>"
+        f"<pre>{esc(md)}</pre></body></html>"
+    )
+
+
 def _monitor_card(label: str, snap: Path, data: dict) -> dict:
     """A compact, read-only summary of one campaign for the monitor grid."""
     ws = data.get("world_state") or {}
@@ -332,7 +364,11 @@ def _monitor_card(label: str, snap: Path, data: dict) -> dict:
         "live": (time.time() - updated) < 90,  # touched in the last 90s -> a run in motion
     }
     if label.startswith("qa:"):
-        card["scores"] = _qa_scores(label.split("qa:", 1)[1])
+        run = label.split("qa:", 1)[1]
+        card["scores"] = _qa_scores(run)
+        # a distilled transcript exists once the run finished playing -> the card becomes a
+        # link to read the full story (the monitor's "jump in to give feedback" affordance).
+        card["transcript"] = (_HERE.parent / "qa" / "transcripts" / f"{run}.md").is_file()
     return card
 
 
@@ -750,6 +786,21 @@ class _Handler(BaseHTTPRequestHandler):
             # most-recent so the page stays scannable; `total` reports the full count. Read-only.
             all_cards = _monitor_campaigns()
             self._json({"campaigns": all_cards[:40], "total": len(all_cards), "now": time.time()})
+        elif route == "/transcript":
+            # Read-only view of a finished QA run's distilled transcript (qa/transcripts/<run>.md),
+            # opened from a monitor card so the owner can read the full played story to give
+            # feedback. ?run is path-guarded; unknown/unsafe -> 404. Never writes, never imports engine.
+            run = (parse_qs(parsed.query).get("run") or [""])[0]
+            tp = _transcript_path(run)
+            if tp is None:
+                self._send(404, b"no such transcript", "text/plain; charset=utf-8")
+            else:
+                try:
+                    md = tp.read_text(encoding="utf-8")
+                except OSError:
+                    self._send(404, b"unreadable transcript", "text/plain; charset=utf-8")
+                else:
+                    self._send(200, _transcript_html(run, md).encode("utf-8"), "text/html; charset=utf-8")
         elif route == "/state":
             # The raw campaign snapshot, plus one viewer-only flag: `live` says whether
             # the dashboard's action layer can land a move (POST /move accepted). The
