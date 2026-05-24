@@ -3,6 +3,9 @@
 Each test mirrors the issue's repro sketch so a fix is provably tied to a filed finding.
 Grouped by area; the issue number is in each test name.
 """
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 import combat
@@ -10,6 +13,15 @@ import content
 import server
 import store
 from models import Character
+
+_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _license_check():
+    spec = importlib.util.spec_from_file_location("clawdnd_license_check", _ROOT / "scripts" / "license_check.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ── #40/#41 engine-state: path containment + stable character id ──
@@ -83,3 +95,26 @@ def test_issue45_temp_hp_does_not_suppress_concentration_check():
     ch = Character(name="Caster", max_hp=20, current_hp=20, temp_hp=30, concentration="Bless")
     out = combat.apply_damage(ch, 30)  # all absorbed by temp HP, but damage was still taken
     assert out["concentration_dc"] == 15
+
+
+# ── #52/#53 licensing gate ──
+def test_issue52_campaign_private_path_is_forbidden(monkeypatch):
+    lc = _license_check()
+    assert "content/campaigns/_private/" in lc.FORBIDDEN_PREFIXES
+    monkeypatch.setattr(lc, "tracked_files",
+                        lambda: ["content/campaigns/_private/secret/adventure.json"])
+    assert lc.main() == 1  # a committed private campaign trips the gate
+
+
+def test_issue53_ingested_record_without_attribution_is_caught(tmp_path):
+    lc = _license_check()
+    # an ingested character record with no license/attribution should be flagged.
+    rec = tmp_path / "content" / "worlds" / "w" / "characters" / "bad.json"
+    rec.parent.mkdir(parents=True)
+    rec.write_text('{"name": "Nameless"}', encoding="utf-8")
+    lc.ROOT = tmp_path
+    errs = lc._check_ingested_attribution(["content/worlds/w/characters/bad.json"])
+    assert errs and "license/attribution" in errs[0]
+    # one that carries license + attribution passes.
+    rec.write_text('{"name": "X", "license": "CC-BY-SA 4.0", "attribution": "Wiki"}', encoding="utf-8")
+    assert lc._check_ingested_attribution(["content/worlds/w/characters/bad.json"]) == []

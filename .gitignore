@@ -16,6 +16,8 @@
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/
+# Private/user-owned campaigns kept for personal/local play only (documented _private path).
+/content/campaigns/_private/
 
 # Private world seeds for personal/internal play (e.g. Forgotten Realms / post-BG3).
 # Loaded by the same IP-agnostic start_world loader; kept out of the MIT-licensed
