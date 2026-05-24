@@ -4,34 +4,54 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ClawDnD — Campaign Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Unified with the dashboard's warm "ink & candle-gold" system (was a cold flat blue-gray
+     tool). Real typefaces: Cinzel engraves titles, Inter keeps the chrome crisp. */
   :root {
-    --bg: #0e0f13; --panel: #181a21; --panel2: #1f222b; --ink: #e7e6e3; --dim: #9aa0ad;
-    --line: #2b2f3a; --live: #58d18b; --play: #6ea8fe; --qa: #e0b15a; --bad: #e0635a; --good: #58d18b;
+    color-scheme: dark;
+    --bg:#100d0a; --panel:#19140f; --panel2:#1f1912; --ink:#ece4d6; --dim:#a99d86; --faint:#6f6657;
+    --line:#352c20; --card-line:#4a3d28; --gold:#e8c98a; --gold2:#caa15e;
+    --live:#7fd39b; --play:#e8c98a; --qa:#caa15e; --bad:#e08f8f; --good:#7fd39b;
+    --font-display:'Cinzel',Georgia,serif; --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+    --e1:0 1px 2px rgba(0,0,0,.5);
+    --e2:0 6px 18px -8px rgba(0,0,0,.66), 0 1px 0 rgba(232,201,138,.05) inset;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  header { position: sticky; top: 0; z-index: 5; background: rgba(14,15,19,.92);
-    backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); padding: 14px 20px;
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-ui);
+    background-image: radial-gradient(135% 85% at 50% -12%, rgba(232,201,138,.06), transparent 55%);
+    background-attachment: fixed; }
+  header { position: sticky; top: 0; z-index: 5; background: rgba(16,13,10,.9);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 14px 22px;
     display: flex; align-items: baseline; gap: 16px; }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  header h1 { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin: 0;
+    letter-spacing: .04em; color: var(--gold); }
+  header h1 span { font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; }
   header .sub { color: var(--dim); font-size: 13px; }
   header .sub b { color: var(--ink); }
   .pulse { color: var(--live); }
-  #grid { display: grid; gap: 14px; padding: 18px 20px 40px;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; transition: border-color .2s; }
-  .card.live { border-color: #2f4a3a; box-shadow: 0 0 0 1px rgba(88,209,139,.12) inset; }
+  #grid { display: grid; gap: 16px; padding: 20px 22px 48px;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+  .card { background: linear-gradient(180deg, var(--panel), #15110c); border: 1px solid var(--card-line);
+    border-radius: 13px; box-shadow: var(--e2); padding: 15px 17px; display: flex; flex-direction: column;
+    gap: 9px; transition: transform .14s, box-shadow .14s, border-color .14s; }
+  .card:hover { transform: translateY(-2px); border-color: var(--gold2);
+    box-shadow: 0 14px 30px -12px rgba(0,0,0,.72), 0 0 0 1px rgba(232,201,138,.08) inset; }
+  .card.live { border-color: #3a5a44; box-shadow: var(--e2), 0 0 0 1px rgba(127,211,155,.18) inset; }
   .card .top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-  .card .name { font-weight: 600; font-size: 15px; }
-  .card a.name { color: var(--play); text-decoration: none; }
-  .card a.name:hover { text-decoration: underline; }
-  .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line);
-    color: var(--dim); white-space: nowrap; }
-  .badge.live { color: #0e0f13; background: var(--live); border-color: var(--live); font-weight: 700; }
-  .badge.root-play { color: var(--play); border-color: #2d3f5e; }
+  .card .name { font-family: var(--font-display); font-weight: 600; font-size: 15.5px;
+    letter-spacing: .02em; color: var(--gold); }
+  .card a.name { color: var(--gold); text-decoration: none; }
+  .card a.name:hover { color: #f4dca2; text-decoration: underline; }
+  .badge { font-family: var(--font-ui); font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .badge.live { color: #100d0a; background: var(--live); border-color: var(--live); font-weight: 700;
+    display: inline-flex; align-items: center; gap: 5px; }
+  .badge.live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #0c3a20;
+    animation: livepulse 1.6s infinite; }
+  .badge.root-play { color: var(--gold); border-color: var(--card-line); }
   .badge.root-qa { color: var(--qa); border-color: #4d4326; }
   .meta { color: var(--dim); font-size: 12.5px; }
   .meta .k { color: var(--ink); }
@@ -45,7 +65,11 @@
   .score { font-weight: 700; }
   .score.good { color: var(--good); } .score.mid { color: var(--qa); } .score.low { color: var(--bad); }
   .ago { margin-left: auto; }
-  .empty { color: var(--dim); padding: 60px 20px; text-align: center; }
+  .empty { color: var(--dim); padding: 72px 20px; text-align: center; font: italic 16px/1.6 Georgia, serif; }
+  .empty::before { content: "❧"; display: block; font: 34px/1 var(--font-display); color: var(--gold2); margin-bottom: 12px; }
+  a:focus-visible, .card:focus-visible { outline: 2px solid var(--gold2); outline-offset: 2px; }
+  @keyframes livepulse { 0% { box-shadow: 0 0 0 0 rgba(12,58,32,.7); } 70% { box-shadow: 0 0 0 7px rgba(12,58,32,0); } 100% { box-shadow: 0 0 0 0 rgba(12,58,32,0); } }
+  @media (prefers-reduced-motion: reduce) { .badge.live::before { animation: none; } .card { transition: none; } }
 </style>
 </head>
 <body>

@@ -4,21 +4,32 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ClawDnD — Adventure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Clean-room dark-fantasy dashboard (original styling; fables-class layout). */
+  /* Clean-room dark-fantasy dashboard. "Illuminated manuscript meets premium dark RPG": Cinzel
+     engraves titles, EB Garamond sets the narration like a page, Inter keeps the chrome crisp. */
   :root { color-scheme: dark; --bg:#100d0a; --panel:#19140f; --panel2:#1f1912; --line:#352c20;
-    --ink:#ece4d6; --dim:#a99d86; --faint:#6f6657; --gold:#e8c98a; --gold2:#caa15e;
+    --ink:#ece4d6; --dim:#a99d86; --faint:#8a7f6c; --gold:#e8c98a; --gold2:#caa15e;
     --player:#8fce8f; --companion:#8fbfe0; --npc:#e0c98a; --monster:#e08f8f;
-    /* warm-gold hairline for elevated rail panels (fix #1) */ --card-line:#4a3d28; }
+    /* warm-gold hairline for elevated rail panels (fix #1) */ --card-line:#4a3d28;
+    --font-display:'Cinzel',Georgia,serif; --font-prose:'EB Garamond',Georgia,'Iowan Old Style',serif;
+    --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+    --e1:0 1px 2px rgba(0,0,0,.5); --e2:0 6px 18px -8px rgba(0,0,0,.6),0 1px 0 rgba(232,201,138,.06) inset;
+    --e3:0 18px 44px -12px rgba(0,0,0,.78); }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; }
-  body { font:14px/1.55 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink);
+  body { font:14px/1.55 var(--font-ui); background:var(--bg); color:var(--ink);
+    background-image:radial-gradient(135% 80% at 50% -12%, rgba(232,201,138,.06), transparent 55%); background-attachment:fixed;
     display:grid; grid-template-columns:184px 1.55fr 1fr; height:100vh; overflow:hidden; }
+  :focus-visible { outline:2px solid var(--gold2); outline-offset:2px; }
+  @keyframes livepulse { 0%{box-shadow:0 0 0 0 rgba(127,211,155,.5);} 70%{box-shadow:0 0 0 7px rgba(127,211,155,0);} 100%{box-shadow:0 0 0 0 rgba(127,211,155,0);} }
   a,button { color:inherit; font:inherit; }
 
   /* ---- left rail ---- */
   nav { background:#15110c; border-right:1px solid var(--line); padding:14px 10px; display:flex; flex-direction:column; gap:3px; }
-  .brand { font-size:17px; font-weight:800; color:var(--gold); letter-spacing:.02em; padding:6px 10px 14px; }
+  .brand { font-family:var(--font-display); font-size:18px; font-weight:700; color:var(--gold); letter-spacing:.05em; padding:6px 10px 14px; }
   .brand small { display:block; font-size:10px; font-weight:600; color:var(--faint); letter-spacing:.18em; text-transform:uppercase; }
   .nav-i { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:7px; color:var(--dim); cursor:default; }
   .nav-i .ic { width:16px; text-align:center; opacity:.85; }
@@ -31,7 +42,7 @@
   main { display:flex; flex-direction:column; min-width:0; min-height:0; border-right:1px solid var(--line); }
   .topbar { padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel);
     display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
-  .topbar h1 { margin:0; font-size:16px; color:var(--gold); }
+  .topbar h1 { margin:0; font-family:var(--font-display); font-weight:600; font-size:19px; letter-spacing:.03em; color:var(--gold); }
   .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#bcd4ec; background:#16222e; border:1px solid #2e4456; border-radius:10px; padding:2px 9px; }
   .topbar .meta { color:var(--dim); font-size:13px; }
   /* ---- campaign switcher (H3) ---- */
@@ -103,15 +114,15 @@
   .msg.narration .hd::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
     background:linear-gradient(90deg, rgba(202,161,94,.45), rgba(202,161,94,.04) 60%, transparent); }
   /* a warm drop-cap opens each DM passage — the storytelling cue from the reference */
-  .msg.narration .bd.dropcap::first-letter { float:left; font:700 38px/0.86 Georgia,"Iowan Old Style",serif;
-    color:var(--gold); margin:3px 9px 0 0; text-shadow:0 1px 2px rgba(0,0,0,.5); }
+  .msg.narration .bd.dropcap::first-letter { float:left; font:700 44px/0.82 var(--font-display);
+    color:var(--gold); margin:4px 10px 0 0; text-shadow:0 2px 4px rgba(0,0,0,.6); }
   .msg.player { align-self:flex-end; max-width:660px; background:#11201a; border:1px solid #2b4a3a; border-radius:12px 12px 3px 12px; padding:9px 13px; }
   .msg.player .nm { color:var(--player); }
   .av.pc { background:radial-gradient(circle at 32% 26%,#c7ecc7 0%,var(--player) 52%,#3f7a3f 100%); border-color:#3f6b3f; }
   .msg.player .bd { color:#cfe8d8; }
   /* DM/narration prose — the centerpiece. Slightly larger, warm serif for an
      epic-storytelling feel matching the fables reference. */
-  .msg.narration .bd, .msg.dialogue .bd { font:15.5px/1.72 Georgia,"Iowan Old Style","Palatino Linotype",serif; color:#e4dac6; }
+  .msg.narration .bd, .msg.dialogue .bd { font:17px/1.75 var(--font-prose); color:#e4dac6; max-width:64ch; }
   .msg .bd { color:#ddd3c2; white-space:pre-wrap; }
   .msg .bd em, .msg.narration .bd i { color:#f0e4c8; }
   .msg.system .bd { color:var(--faint); font-size:12.5px; font-style:italic; }
@@ -370,8 +381,8 @@
     padding-bottom:14px; margin-bottom:18px; position:relative; }
   .sheet-head::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
     background:linear-gradient(90deg, rgba(202,161,94,.5), rgba(202,161,94,.05) 60%, transparent); }
-  .sheet-title { margin:0; font-size:24px; color:var(--gold); letter-spacing:.01em;
-    font-family:Georgia,"Iowan Old Style",serif; }
+  .sheet-title { margin:0; font-size:24px; color:var(--gold); letter-spacing:.03em;
+    font-family:var(--font-display); font-weight:600; }
   .sheet-sub { color:var(--dim); font-size:13px; }
   .sheet-kicker { font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
     align-self:center; margin-left:auto; }
