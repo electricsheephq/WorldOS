@@ -290,13 +290,147 @@
   .node.loc:hover text { fill:var(--gold); }
   .maptip { position:absolute; pointer-events:none; background:#1a140d; border:1px solid #4a3c22; color:var(--gold); font-size:11px; padding:2px 7px; border-radius:6px; opacity:0; transform:translate(-50%,-130%); transition:opacity .1s; white-space:nowrap; }
   .maphint { font-size:9px; color:var(--faint); margin-top:3px; text-align:right; }
+
+  /* ============================================================================
+     PLAYER SHEET VIEWS (S2 tabs) — Character / Inventory / Spellbook / Progression.
+     Read-only projections of /state. When a sheet view is active, #sheet spans the
+     whole window (over the 3-col Play grid) and Play's columns are hidden; clicking
+     Play restores them. Reuses the dark-fantasy + gold tokens above.
+     ============================================================================ */
+  .nav-i.tab { cursor:pointer; }                 /* implemented tabs are clickable */
+  .nav-i.tab:hover { background:#221708; color:var(--gold); }
+  #sheet { display:none; grid-column:2 / 4; min-height:0; overflow-y:auto;
+    background:radial-gradient(140% 90% at 50% 0%, rgba(232,201,138,.05), rgba(232,201,138,0) 55%), var(--bg); }
+  body.sheet-open #sheet { display:block; }
+  /* When a sheet is open, collapse the center+right Play columns (they sit in cols
+     2 & 3); the nav rail (col 1) stays. */
+  body.sheet-open > main, body.sheet-open > aside { display:none; }
+  .sheet-wrap { max-width:1080px; margin:0 auto; padding:22px 28px 60px; }
+  .sheet-head { display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;
+    padding-bottom:14px; margin-bottom:18px; position:relative; }
+  .sheet-head::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+    background:linear-gradient(90deg, rgba(202,161,94,.5), rgba(202,161,94,.05) 60%, transparent); }
+  .sheet-title { margin:0; font-size:24px; color:var(--gold); letter-spacing:.01em;
+    font-family:Georgia,"Iowan Old Style",serif; }
+  .sheet-sub { color:var(--dim); font-size:13px; }
+  .sheet-kicker { font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+    align-self:center; margin-left:auto; }
+  .sheet-empty { color:var(--faint); font-style:italic; padding:40px 0; text-align:center; font-size:14px; }
+  /* generic panel grid + card (lighter twin of the aside .card) */
+  .sgrid { display:grid; gap:14px; }
+  .sgrid.cols2 { grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+  .sgrid.cols3 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+  .scard { background:linear-gradient(180deg,#221b12,#1b150e); border:1px solid var(--card-line);
+    border-radius:11px; padding:14px 16px;
+    box-shadow:0 1px 0 rgba(232,201,138,.05) inset, 0 6px 16px -8px rgba(0,0,0,.7); }
+  .scard > h3 { margin:0 0 11px; font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+    color:#b39c78; display:flex; align-items:center; gap:8px; }
+  .scard > h3 .h3n { margin-left:auto; color:var(--faint); font-weight:600; letter-spacing:0; font-size:10px; }
+
+  /* ability hexes */
+  .abil-row { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
+  .abil { text-align:center; background:#1b150d; border:1px solid #3a2f1c; border-radius:10px; padding:9px 4px 8px; }
+  .abil .ab-k { font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:#b39c78; }
+  .abil .ab-m { font-size:23px; font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .abil .ab-s { font-size:11px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  /* combat-stat pills row (AC/HP/etc) */
+  .vitals { display:flex; flex-wrap:wrap; gap:10px; }
+  .vital { flex:1 1 90px; text-align:center; background:#1b150d; border:1px solid #3a2f1c; border-radius:9px; padding:8px 6px; }
+  .vital .v-k { font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
+  .vital .v-v { font-size:19px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .vital.hp .v-v { color:var(--player); } .vital.hp.low .v-v { color:var(--monster); }
+  .vital.tmp .v-v { color:#bcd4ec; } .vital.ac .v-v { color:var(--gold); }
+  /* two-column proficiency lists (saves / skills) */
+  .plist { display:flex; flex-direction:column; gap:2px; }
+  .pitem { display:flex; align-items:center; gap:8px; padding:3px 5px; border-radius:6px; font-size:12.5px; }
+  .pitem:hover { background:#1f1810; }
+  .pitem .dot { width:9px; height:9px; border-radius:50%; flex:none; border:1px solid #4a3c22; background:transparent; }
+  .pitem.prof .dot { background:var(--gold2); border-color:var(--gold); }
+  .pitem.exp .dot { background:radial-gradient(circle at 35% 30%, #fff2c8, var(--gold)); border-color:var(--gold);
+    box-shadow:0 0 0 2px rgba(232,201,138,.22); }
+  .pitem .p-nm { flex:1; color:var(--ink); }
+  .pitem .p-ab { font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
+  .pitem .p-bonus { font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; min-width:26px; text-align:right; }
+  .pitem.exp .p-nm { color:#ffe9a8; }
+  .skills-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; }
+  .prof-legend { font-size:10px; color:var(--faint); margin-top:8px; display:flex; gap:14px; }
+  .prof-legend .lg { display:inline-flex; align-items:center; gap:5px; }
+  .prof-legend .dot { width:8px; height:8px; border-radius:50%; }
+  .prof-legend .dot.p { background:var(--gold2); } .prof-legend .dot.e { background:radial-gradient(circle at 35% 30%, #fff2c8, var(--gold)); }
+  /* tag chips (conditions, features, equipped) */
+  .tags { display:flex; flex-wrap:wrap; gap:6px; }
+  .tag { font-size:11px; color:var(--dim); background:#221a10; border:1px solid #3a2f1c; border-radius:7px; padding:2px 9px; }
+  .tag.cond { color:#e8b07a; border-color:#5a4020; background:#2a1c0e; text-transform:capitalize; }
+  .tag.exh { color:#e89090; border-color:#5a3030; background:#2a1212; }
+  /* prose blocks (appearance / backstory) */
+  .prose-blk + .prose-blk { margin-top:12px; }
+  .prose-blk .pb-k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; margin-bottom:3px; }
+  .prose-blk .pb-v { font:14px/1.6 Georgia,"Iowan Old Style",serif; color:#d8ccb2; white-space:pre-wrap; }
+  /* identity line under the name */
+  .ident { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+  .ident .pip { font-size:11px; color:var(--dim); }
+  .ident .pip b { color:var(--gold); font-weight:700; }
+  .ident .sep { color:var(--faint); }
+
+  /* inventory table */
+  .inv-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .inv-table th { text-align:left; font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint);
+    padding:0 8px 7px; border-bottom:1px solid var(--line); font-weight:600; }
+  .inv-table th.num, .inv-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .inv-table td { padding:7px 8px; border-bottom:1px solid #221a10; color:var(--ink); }
+  .inv-table tr:last-child td { border-bottom:none; }
+  .inv-table tr.eq td { color:#f0e4c8; }
+  .inv-table .eqmark { color:var(--gold); font-size:10px; margin-left:7px; letter-spacing:.04em; }
+  .inv-table .att { color:#bcd4ec; font-size:10px; margin-left:6px; }
+  .inv-table .it-desc { display:block; font-size:11px; color:var(--faint); font-style:italic; margin-top:1px; }
+  .inv-foot { display:flex; justify-content:flex-end; gap:14px; margin-top:10px; font-size:12px; color:var(--dim); }
+  /* currency coins */
+  .coins { display:flex; flex-wrap:wrap; gap:9px; }
+  .coin { display:flex; align-items:baseline; gap:6px; background:#1b150d; border:1px solid #3a2f1c; border-radius:9px; padding:7px 12px; }
+  .coin .c-v { font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .coin .c-k { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+  .coin.pp .c-v { color:#e6e6f0; } .coin.gp .c-v { color:var(--gold); } .coin.ep .c-v { color:#cfc98a; }
+  .coin.sp .c-v { color:#cdd3da; } .coin.cp .c-v { color:#d09a6a; }
+
+  /* spellbook */
+  .slot-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .slot { text-align:center; background:#1b150d; border:1px solid #3a2f1c; border-radius:9px; padding:7px 10px; min-width:70px; }
+  .slot .s-lv { font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+  .slot .s-pips { display:flex; gap:3px; justify-content:center; margin-top:4px; }
+  .slot .pip { width:9px; height:9px; border-radius:50%; border:1px solid var(--gold2); }
+  .slot .pip.open { background:var(--gold); box-shadow:0 0 4px rgba(232,201,138,.5); }
+  .slot .pip.used { background:#2a2014; }
+  .slot .s-cnt { font-size:10px; color:var(--dim); margin-top:3px; font-variant-numeric:tabular-nums; }
+  .spell-lv { margin-top:6px; }
+  .spell-lv .lv-h { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#b39c78; margin:10px 0 5px;
+    border-bottom:1px solid #221a10; padding-bottom:3px; }
+  .spell-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .spell { font-size:12px; color:var(--ink); background:#1c150d; border:1px solid #3a2f1c; border-radius:7px; padding:3px 10px; }
+  .spell.prep { color:#ffe9a8; border-color:var(--gold2); background:#241a0d; }
+  .spell .star { color:var(--gold); font-size:9px; margin-right:4px; }
+
+  /* progression XP bar */
+  .xp-wrap { margin-top:4px; }
+  .xp-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
+  .xp-lv { font-size:30px; font-weight:800; color:var(--gold); font-family:Georgia,serif; line-height:1; }
+  .xp-lv small { font-size:11px; color:var(--faint); font-weight:600; letter-spacing:.1em; text-transform:uppercase; font-family:system-ui,sans-serif; display:block; }
+  .xp-num { font-size:13px; color:var(--dim); font-variant-numeric:tabular-nums; text-align:right; }
+  .xp-num b { color:var(--gold); font-weight:800; }
+  .xp-bar { height:12px; border-radius:6px; background:#241a0d; border:1px solid #3a2f1c; overflow:hidden; position:relative; }
+  .xp-bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--gold2),var(--gold)); transition:width .4s; }
+  .xp-next { font-size:11.5px; color:var(--faint); margin-top:7px; text-align:center; }
+  .xp-next b { color:var(--gold); }
+  .xp-max { font-size:12px; color:var(--gold); text-align:center; margin-top:7px; }
 </style>
 </head>
 <body>
   <nav>
     <div class="brand">ClawDnD<small>Living World</small></div>
-    <div class="nav-i active"><span class="ic">▶</span> Play</div>
-    <div class="nav-i ph"><span class="ic">▣</span> Character <span class="soon">soon</span></div>
+    <div class="nav-i tab active" data-view="play"><span class="ic">▶</span> Play</div>
+    <div class="nav-i tab" data-view="character"><span class="ic">▣</span> Character</div>
+    <div class="nav-i tab" data-view="inventory"><span class="ic">▤</span> Inventory</div>
+    <div class="nav-i tab" data-view="spellbook"><span class="ic">✶</span> Spellbook</div>
+    <div class="nav-i tab" data-view="progression"><span class="ic">⬙</span> Progression</div>
     <div class="nav-i"><span class="ic">⚇</span> Party</div>
     <div class="nav-i"><span class="ic">✦</span> Quests</div>
     <div class="nav-i"><span class="ic">◈</span> World</div>
@@ -351,8 +485,13 @@
     <div class="card" id="director"><h2>Agent activity <span id="live" class="off">idle</span></h2><div id="activity"></div></div>
   </aside>
 
+  <!-- Player sheet views (S2 tabs). Full-width over the Play grid when active; one of
+       these is shown at a time via body.sheet-open + the active nav tab. Read-only. -->
+  <section id="sheet"><div class="sheet-wrap" id="sheet-wrap"></div></section>
+
 <script>
 let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
+let lastState = null, activeView = "play";   // S2 player-sheet tabs
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
@@ -613,7 +752,303 @@ function renderDice() {
   tray.innerHTML = heroHTML + histHTML;
 }
 
+// ============================================================================
+// PLAYER SHEET VIEWS (S2 tabs) — Character / Inventory / Spellbook / Progression.
+// Pure read-only projections of the latest /state snapshot. The engine writes raw
+// fields only (no computed bonuses), so we mirror its 5e math client-side:
+//   ability modifier   = floor((score - 10) / 2)
+//   saving-throw bonus  = mod + (proficient ? proficiency_bonus : 0)
+//   skill bonus         = mod + (expertise ? 2*prof : proficient ? prof : 0)
+// Every field is treated as optional — a placeholder/partial sheet renders cleanly.
+// ----------------------------------------------------------------------------
+const ABIL_FULL = { str:"Strength", dex:"Dexterity", con:"Constitution",
+  int:"Intelligence", wis:"Wisdom", cha:"Charisma" };
+const ABIL_ORDER = ["str","dex","con","int","wis","cha"];
+const ABIL_SCORE_KEY = { str:"strength", dex:"dexterity", con:"constitution",
+  int:"intelligence", wis:"wisdom", cha:"charisma" };
+// Skill -> governing ability (SRD 5.2), keyed on the engine's snake_case skill ids.
+const SKILL_DEF = [
+  ["acrobatics","dex"],["animal_handling","wis"],["arcana","int"],["athletics","str"],
+  ["deception","cha"],["history","int"],["insight","wis"],["intimidation","cha"],
+  ["investigation","int"],["medicine","wis"],["nature","int"],["perception","wis"],
+  ["performance","cha"],["persuasion","cha"],["religion","int"],["sleight_of_hand","dex"],
+  ["stealth","dex"],["survival","wis"]];
+// 5e XP -> level thresholds (XP needed to BE at level N). Hardcoded per the spec.
+const XP_THRESHOLDS = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
+  100000,120000,140000,165000,195000,225000,265000,305000,355000];
+const titleCase = (s) => (s||"").replace(/_/g," ").replace(/\b\w/g, c => c.toUpperCase());
+const signed = (n) => (n>=0?"+":"") + n;
+const num = (n) => (n==null? "" : Number(n).toLocaleString());
+function abilityScore(c, ab) { return (c.abilities||{})[ABIL_SCORE_KEY[ab]] ?? 10; }
+function abilityMod(c, ab) { return Math.floor((abilityScore(c, ab) - 10) / 2); }
+function saveBonus(c, ab) {
+  const m = abilityMod(c, ab), prof = (c.saving_throw_proficiencies||[]).includes(ab);
+  return m + (prof ? (c.proficiency_bonus||0) : 0);
+}
+function skillBonus(c, skill) {
+  const ab = SKILL_DEF.find(([k])=>k===skill)?.[1] || "str";
+  let b = abilityMod(c, ab), p = c.proficiency_bonus||0;
+  if ((c.skill_expertise||[]).includes(skill)) b += 2*p;
+  else if ((c.skill_proficiencies||[]).includes(skill)) b += p;
+  return b;
+}
+// The PC is the first id in `party` (per the engine contract). Null when no party.
+function getPC() {
+  if (!lastState) return null;
+  const id = (lastState.party||[])[0];
+  return id ? (lastState.characters||{})[id] || null : null;
+}
+const totalLevel = (c) => (c.classes||[]).reduce((a,cl)=>a+(cl.level||0),0) || 1;
+
+// ---- view switching ---------------------------------------------------------
+const SHEET_LABEL = { character:"Character", inventory:"Inventory",
+  spellbook:"Spellbook", progression:"Progression" };
+function setView(view) {
+  activeView = view;
+  document.querySelectorAll("nav .nav-i.tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.view === view));
+  document.body.classList.toggle("sheet-open", view !== "play");
+  if (view !== "play") renderSheet();
+}
+function wireTabs() {
+  document.querySelectorAll("nav .nav-i.tab").forEach(t =>
+    t.addEventListener("click", () => { setView(t.dataset.view); history.replaceState(null,"","#"+t.dataset.view); }));
+  // Deep-link / restore the open tab from the URL hash (e.g. #character), so a tab is
+  // shareable and survives a reload. Unknown hash falls back to the Play view.
+  const fromHash = (location.hash||"").replace("#","");
+  if (SHEET_LABEL[fromHash]) setView(fromHash);
+}
+// Render the currently-active sheet from the latest snapshot. Re-run each poll so an
+// open sheet reflects live HP/slots/XP changes without the player re-clicking.
+function renderSheet() {
+  const wrap = $("sheet-wrap");
+  if (!wrap || activeView === "play") return;
+  const pc = getPC();
+  if (!lastState) { wrap.innerHTML = sheetShell("Loading…", "", `<div class="sheet-empty">Waiting for the story to begin…</div>`); return; }
+  if (!pc) { wrap.innerHTML = sheetShell(SHEET_LABEL[activeView]||"Character", "", `<div class="sheet-empty">No player character yet. Create one to see this sheet.</div>`); return; }
+  ({ character:renderCharacter, inventory:renderInventory,
+     spellbook:renderSpellbook, progression:renderProgression }[activeView] || renderCharacter)(pc, wrap);
+}
+// Shared header (name + identity line + tab kicker) wrapping a panel body.
+function sheetShell(name, identityHTML, bodyHTML) {
+  return `<div class="sheet-head">
+      <div><h2 class="sheet-title">${esc(name)}</h2>${identityHTML?`<div class="ident">${identityHTML}</div>`:""}</div>
+      <div class="sheet-kicker">${esc(SHEET_LABEL[activeView]||"")}</div>
+    </div>${bodyHTML}`;
+}
+function identityLine(c) {
+  const lvl = totalLevel(c);
+  const bits = [];
+  if (c.race) bits.push(`<span class="pip"><b>${esc(c.race)}</b></span>`);
+  const cls = (c.classes||[]).map(cl=>`${esc(cl.name)}${cl.subclass?` (${esc(cl.subclass)})`:""} ${cl.level}`).join(" / ");
+  if (cls) bits.push(`<span class="pip">${cls}</span>`);
+  bits.push(`<span class="pip">Level <b>${lvl}</b></span>`);
+  if (c.background) bits.push(`<span class="pip">${esc(c.background)}</span>`);
+  if (c.alignment) bits.push(`<span class="pip">${esc(c.alignment)}</span>`);
+  return bits.join(`<span class="sep">·</span>`);
+}
+
+// ---- 1. CHARACTER SHEET -----------------------------------------------------
+function renderCharacter(c, wrap) {
+  // ability hexes
+  const abil = ABIL_ORDER.map(ab => {
+    const m = abilityMod(c, ab);
+    return `<div class="abil"><div class="ab-k">${ab.toUpperCase()}</div>
+      <div class="ab-m">${signed(m)}</div><div class="ab-s">${abilityScore(c, ab)}</div></div>`;
+  }).join("");
+
+  // vitals: AC / HP / temp / speed / prof / initiative
+  const hpLow = (c.max_hp && (c.current_hp ?? 0)/c.max_hp <= 0.35);
+  const vit = [
+    ["ac","AC", c.armor_class ?? "—"],
+    ["hp"+(hpLow?" low":""),"HP", `${c.current_hp ?? 0}/${c.max_hp ?? "?"}`],
+  ];
+  if (c.temp_hp) vit.push(["tmp","Temp HP", c.temp_hp]);
+  vit.push(["","Speed", (c.speed ?? "—") + (c.speed!=null?" ft":"")]);
+  vit.push(["","Prof", c.proficiency_bonus!=null?signed(c.proficiency_bonus):"—"]);
+  const initB = abilityMod(c,"dex") + (c.initiative_bonus||0);
+  vit.push(["","Initiative", signed(initB)]);
+  const vitals = vit.map(([cls,k,v]) =>
+    `<div class="vital ${cls}"><div class="v-k">${esc(k)}</div><div class="v-v">${esc(v)}</div></div>`).join("");
+
+  // saving throws
+  const saves = ABIL_ORDER.map(ab => {
+    const prof = (c.saving_throw_proficiencies||[]).includes(ab);
+    return `<div class="pitem ${prof?"prof":""}"><span class="dot"></span>
+      <span class="p-nm">${esc(ABIL_FULL[ab])}</span><span class="p-bonus">${signed(saveBonus(c,ab))}</span></div>`;
+  }).join("");
+
+  // skills (two columns), proficient/expertise marked
+  const skills = SKILL_DEF.map(([sk,ab]) => {
+    const exp = (c.skill_expertise||[]).includes(sk), prof = (c.skill_proficiencies||[]).includes(sk);
+    const cls = exp?"exp":(prof?"prof":"");
+    return `<div class="pitem ${cls}"><span class="dot"></span>
+      <span class="p-nm">${esc(titleCase(sk))}</span><span class="p-ab">${ab}</span>
+      <span class="p-bonus">${signed(skillBonus(c,sk))}</span></div>`;
+  }).join("");
+
+  // conditions + exhaustion
+  const condTags = (c.conditions||[]).map(cd=>`<span class="tag cond">${esc(cd)}</span>`).join("");
+  const exhTag = (c.exhaustion>0)?`<span class="tag exh">Exhaustion ${c.exhaustion}</span>`:"";
+  const concTag = c.concentration?`<span class="tag cond">Concentrating: ${esc(c.concentration)}</span>`:"";
+  const condBody = (condTags||exhTag||concTag) ? `<div class="tags">${concTag}${condTags}${exhTag}</div>`
+    : `<div class="empty">None — clear-headed.</div>`;
+
+  // optional prose
+  const prose = [["Appearance",c.appearance],["Personality",c.personality],
+    ["Mannerisms",c.mannerisms],["Backstory",c.backstory]]
+    .filter(([,v])=>v).map(([k,v])=>
+      `<div class="prose-blk"><div class="pb-k">${k}</div><div class="pb-v">${esc(v)}</div></div>`).join("");
+
+  const featTags = (c.features||[]).map(f=>`<span class="tag">${esc(f)}</span>`).join("");
+
+  const body = `<div class="sgrid cols2">
+      <div class="scard" style="grid-column:1/-1"><h3>Abilities</h3><div class="abil-row">${abil}</div></div>
+      <div class="scard" style="grid-column:1/-1"><h3>Combat</h3><div class="vitals">${vitals}</div></div>
+      <div class="scard"><h3>Saving throws</h3><div class="plist">${saves}</div></div>
+      <div class="scard"><h3>Conditions</h3>${condBody}
+        ${featTags?`<h3 style="margin-top:14px">Features</h3><div class="tags">${featTags}</div>`:""}</div>
+      <div class="scard" style="grid-column:1/-1"><h3>Skills</h3>
+        <div class="skills-grid">${skills}</div>
+        <div class="prof-legend"><span class="lg"><span class="dot p"></span>proficient</span>
+          <span class="lg"><span class="dot e"></span>expertise</span></div></div>
+      ${prose?`<div class="scard" style="grid-column:1/-1"><h3>Character</h3>${prose}</div>`:""}
+    </div>`;
+  wrap.innerHTML = sheetShell(c.name||"Character", identityLine(c), body);
+}
+
+// ---- 2. INVENTORY -----------------------------------------------------------
+function renderInventory(c, wrap) {
+  const inv = c.inventory||[];
+  const anyWeight = inv.some(i => i.weight);
+  const rows = inv.map(it => {
+    const marks = (it.equipped?`<span class="eqmark">equipped</span>`:"")
+      + (it.requires_attunement?`<span class="att">${it.attuned?"attuned":"needs attunement"}</span>`:"");
+    return `<tr class="${it.equipped?"eq":""}">
+      <td>${esc(it.name)}${marks}${it.description?`<span class="it-desc">${esc(it.description)}</span>`:""}</td>
+      <td class="num">${it.quantity ?? 1}</td>
+      ${anyWeight?`<td class="num">${it.weight?esc(it.weight):"—"}</td>`:""}</tr>`;
+  }).join("");
+  const totalWeight = anyWeight ? inv.reduce((a,i)=>a+(i.weight||0)*(i.quantity||1),0) : 0;
+  const invCard = inv.length ? `<table class="inv-table">
+      <thead><tr><th>Item</th><th class="num">Qty</th>${anyWeight?`<th class="num">Wt (lb)</th>`:""}</tr></thead>
+      <tbody>${rows}</tbody></table>
+      ${anyWeight?`<div class="inv-foot"><span>Total carried: <b>${totalWeight.toFixed(1)} lb</b></span></div>`:""}`
+    : `<div class="empty">Pockets empty.</div>`;
+
+  // equipped gear summary
+  const eq = inv.filter(i=>i.equipped);
+  const eqCard = eq.length ? `<div class="tags">${eq.map(i=>`<span class="tag">${esc(i.name)}</span>`).join("")}</div>`
+    : `<div class="empty">Nothing equipped.</div>`;
+
+  // currency
+  const cur = c.currency||{};
+  const COIN = [["pp","Platinum"],["gp","Gold"],["ep","Electrum"],["sp","Silver"],["cp","Copper"]];
+  const coins = COIN.filter(([k])=>cur[k]).map(([k,full])=>
+    `<div class="coin ${k}" title="${full}"><span class="c-v">${num(cur[k])}</span><span class="c-k">${k}</span></div>`).join("");
+  const curCard = coins || `<div class="empty">No coin to your name.</div>`;
+
+  const body = `<div class="sgrid cols2">
+      <div class="scard" style="grid-column:1/-1"><h3>Items <span class="h3n">${inv.length} entries</span></h3>${invCard}</div>
+      <div class="scard"><h3>Equipped</h3>${eqCard}</div>
+      <div class="scard"><h3>Currency</h3><div class="coins">${curCard}</div></div>
+    </div>`;
+  wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Inventory", identityLine(c), body);
+}
+
+// ---- 3. SPELLBOOK -----------------------------------------------------------
+function renderSpellbook(c, wrap) {
+  const slots = c.spell_slots||{};                     // {"1":{maximum,used},...}
+  const known = c.spells_known||[], prepared = new Set(c.spells_prepared||[]);
+  const slotLevels = Object.keys(slots).map(Number).filter(n=>(slots[n]?.maximum||0)>0).sort((a,b)=>a-b);
+  const hasMagic = known.length || prepared.size || slotLevels.length;
+  if (!hasMagic) {
+    wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spellbook", identityLine(c),
+      `<div class="sheet-empty">No spells known — ${esc(c.name||"this character")} walks the martial path.</div>`);
+    return;
+  }
+  // slot tracker (pips: open vs used)
+  const slotRow = slotLevels.map(lv => {
+    const s = slots[lv], open = (s.maximum||0)-(s.used||0);
+    let pips = ""; for (let i=0;i<s.maximum;i++) pips += `<span class="pip ${i<open?"open":"used"}"></span>`;
+    return `<div class="slot"><div class="s-lv">Level ${lv}</div><div class="s-pips">${pips}</div>
+      <div class="s-cnt">${open}/${s.maximum} left</div></div>`;
+  }).join("");
+  const slotCard = slotLevels.length
+    ? `<div class="scard" style="grid-column:1/-1"><h3>Spell slots</h3><div class="slot-row">${slotRow}</div></div>` : "";
+
+  // We don't have per-spell level metadata in state, so group by prepared/known.
+  // Prepared spells are starred; the rest of the known list follows.
+  const prep = known.filter(s=>prepared.has(s));
+  const rest = known.filter(s=>!prepared.has(s));
+  const chip = (s,isPrep) => `<span class="spell ${isPrep?"prep":""}">${isPrep?`<span class="star">★</span>`:""}${esc(s)}</span>`;
+  const prepBlock = prep.length ? `<div class="spell-lv"><div class="lv-h">Prepared <span style="color:var(--faint)">(${prep.length})</span></div>
+      <div class="spell-chips">${prep.map(s=>chip(s,true)).join("")}</div></div>` : "";
+  const restBlock = rest.length ? `<div class="spell-lv"><div class="lv-h">Known <span style="color:var(--faint)">(${rest.length})</span></div>
+      <div class="spell-chips">${rest.map(s=>chip(s,false)).join("")}</div></div>` : "";
+  // if no prepared/known list at all (slots only), say so
+  const spellCard = (prep.length||rest.length)
+    ? `<div class="scard" style="grid-column:1/-1"><h3>Spells</h3>${prepBlock}${restBlock}</div>`
+    : `<div class="scard" style="grid-column:1/-1"><h3>Spells</h3><div class="empty">Slots available, but no spell list recorded.</div></div>`;
+
+  const body = `<div class="sgrid cols2">${slotCard}${spellCard}</div>`;
+  wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spellbook", identityLine(c), body);
+}
+
+// ---- 4. PROGRESSION ---------------------------------------------------------
+function renderProgression(c, wrap) {
+  const lvl = totalLevel(c), xp = c.xp ?? 0;
+  // Bracket the current XP within the 5e thresholds, anchored on the character's
+  // level (XP_THRESHOLDS[L-1] is the floor for level L, XP_THRESHOLDS[L] the next).
+  // The engine sometimes carries XP that runs ahead of the level (the DM hasn't
+  // leveled the PC up yet), so we keep the bar clamped and tell the truth: when XP
+  // already meets the next threshold we show "ready to level up" rather than 0-to-go.
+  const curFloor = XP_THRESHOLDS[Math.min(Math.max(lvl,1),20)-1] ?? 0;
+  const atMax = lvl >= 20 || (XP_THRESHOLDS[lvl] == null);
+  const nextThresh = atMax ? null : XP_THRESHOLDS[lvl];
+  let barHTML, nextHTML;
+  if (atMax) {
+    barHTML = `<div class="xp-bar"><i style="width:100%"></i></div>`;
+    nextHTML = `<div class="xp-max">Maximum level reached.</div>`;
+  } else if (xp >= nextThresh) {
+    barHTML = `<div class="xp-bar"><i style="width:100%"></i></div>`;
+    nextHTML = `<div class="xp-next" style="color:var(--gold)">Enough XP for level <b>${lvl+1}</b> — ready to level up.</div>`;
+  } else {
+    const span = nextThresh - curFloor, into = Math.max(0, xp - curFloor);
+    const pct = span>0 ? Math.min(100, 100*into/span) : 0;
+    const toNext = Math.max(0, nextThresh - xp);
+    barHTML = `<div class="xp-bar"><i style="width:${pct}%"></i></div>`;
+    nextHTML = `<div class="xp-next"><b>${num(toNext)}</b> XP to level ${lvl+1}</div>`;
+  }
+  const xpCard = `<div class="scard" style="grid-column:1/-1"><h3>Experience</h3>
+    <div class="xp-wrap">
+      <div class="xp-head">
+        <div class="xp-lv">${lvl}<small>Level</small></div>
+        <div class="xp-num"><b>${num(xp)}</b> XP${atMax?"":` &nbsp;/&nbsp; ${num(nextThresh)} next`}</div>
+      </div>${barHTML}${nextHTML}
+    </div></div>`;
+
+  // hit dice
+  const hdCard = `<div class="scard"><h3>Hit dice</h3>
+    ${c.hit_dice ? `<div class="vitals">
+        <div class="vital"><div class="v-k">Pool</div><div class="v-v" style="font-size:15px">${esc(c.hit_dice)}</div></div>
+        <div class="vital hp"><div class="v-k">Remaining</div><div class="v-v">${c.hit_dice_remaining ?? 0}</div></div>
+      </div>` : `<div class="empty">No hit dice recorded.</div>`}</div>`;
+
+  // class breakdown
+  const classes = (c.classes||[]);
+  const clsCard = `<div class="scard"><h3>Classes</h3>${
+    classes.length ? `<div class="plist">${classes.map(cl=>
+      `<div class="pitem"><span class="p-nm">${esc(cl.name)}${cl.subclass?` — ${esc(cl.subclass)}`:""}</span><span class="p-bonus">${cl.level}</span></div>`).join("")}</div>`
+    : `<div class="empty">Unclassed.</div>`}</div>`;
+
+  const body = `<div class="sgrid cols2">${xpCard}${hdCard}${clsCard}</div>`;
+  wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Progression", identityLine(c), body);
+}
+
 function renderState(s) {
+  lastState = s;                              // stash for the player-sheet tabs (S2)
+  if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   $("title").textContent = s.title || "ClawDnD";
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
   const curId = s.current_location_id, locs = s.locations||{}, cur = locs[curId];
@@ -810,7 +1245,7 @@ function wireNearby() {
     submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
   });
 }
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice();
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs();
 poll(); setInterval(poll, 1500);
 </script>
 </body>
