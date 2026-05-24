@@ -143,3 +143,32 @@ def test_issue48_ledger_kind_filter_is_pre_limit(tmp_path, monkeypatch):
     ledger.backfill(cid)
     hits = ledger.recall(cid, "Pale Choir", kinds=["lore"], limit=1)
     assert hits and hits[0]["kind"] == "lore"  # not starved by the 50 narration rows
+
+
+# ── #47/#50/#51 content + prompt contracts ──
+def test_issue47_all_baldurs_gate_regions_reachable_from_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    c = content.seed_world(content.load_world_data("baldurs-gate"))
+    start = c.current_location_id
+    seen, frontier = {start}, [start]
+    while frontier:  # BFS over the (now-undirected) travel graph
+        loc = c.locations.get(frontier.pop())
+        for nb in (loc.connections if loc else []):
+            if nb in c.locations and nb not in seen:
+                seen.add(nb); frontier.append(nb)
+    unreachable = [lid for lid in c.locations if lid not in seen]
+    assert "loc-candlekeep" in seen  # the shipped "Candlekeep's secret" hook is reachable
+    assert not unreachable, f"stranded regions: {unreachable}"
+
+
+def test_issue50_play_party_prompt_uses_existing_campaign_not_start_world():
+    text = (_ROOT / "scripts" / "play_party.sh").read_text(encoding="utf-8")
+    # the DM-facing opening must not tell the DM to start_world after the campaign is pre-seeded.
+    assert 'start_world(\\"$WORLD\\") and read the returned bible' not in text
+    assert "DO NOT call start_world" in text and "campaign_id=$CAMPAIGN_ID" in text
+
+
+def test_issue51_campaign_new_command_creates_one_campaign():
+    text = (_ROOT / "commands" / "campaign-new.md").read_text(encoding="utf-8")
+    assert "create_campaign` to get a campaign id, then" not in text  # the two-campaign instruction
+    assert "start_adventure(adventure_id)" in text and "Do NOT call `create_campaign` first" in text
