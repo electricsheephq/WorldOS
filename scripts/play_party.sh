@@ -308,6 +308,44 @@ Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an at
 chatlog dm "$DMSG"; AGENT_TURNS=1
 echo "[play-party] DM opened: ${DMSG:0:120}…"
 
+# --- beat 0: each companion INTRODUCES in character, loading its PERSONA -----------------
+# This is the fix for the inert-companion bug: COMP_PERSONAS is wired above but was never
+# read, so companions had a sheet but no voice / no agenda. Mirror qa/run_party.sh's beat-0
+# intro: feed each companion `cat "${COMP_PERSONAS[$i]}"` as its `first=1` turn — an
+# "introduce yourself in character, then act through your tools" instruction. This injects
+# the persona AND (for a saboteur persona) its SEALED AGENDA into that companion's OWN
+# `claude -p` prompt ONLY — the persona text NEVER touches the DM's inputs or campaign
+# state (the trust boundary holds: actor_move relays only the resulting STRUCTURED moves,
+# never the raw reply). The DM then responds to the party's opening declarations, so the
+# companions are PRESENT in the scene from the first beat (not silent until the human acts).
+INTRO_BLOCK=""
+for i in $(seq 0 $((NUM_COMP - 1))); do
+  if ! companion_alive "${COMP_IDS[$i]}"; then continue; fi
+  cbrief="$(cat "${COMP_PERSONAS[$i]}" 2>/dev/null)"
+  cmsg="$(actor_move "${COMP_SIDS[$i]}" "${COMP_CFGS[$i]}" "${COMP_MOVES[$i]}" "${COMP_CURSORS[$i]}" 1 "$cbrief
+
+This is the very start of the scene. You are ${COMP_NAMES[$i]}, a companion in this party traveling with the human player (your character sheet is loaded — call my_sheet() to see it). The DM has just opened the scene:
+
+$DMSG
+
+Introduce yourself in ONE short line IN CHARACTER, then take your opening action(s) using your tools — say / do / request_check / cast_spell / use_item / attack. Tools only; no narration.")"
+  AGENT_TURNS=$((AGENT_TURNS + 1))
+  [ -n "$cmsg" ] && { INTRO_BLOCK+="${INTRO_BLOCK:+
+
+}${COMP_NAMES[$i]} (companion):
+$cmsg"; chatlog "companion:${COMP_NAMES[$i]}" "$cmsg"; }
+done
+# Relay ONLY the companions' structured intro moves to the DM (never their persona/agenda).
+if [ -n "$INTRO_BLOCK" ]; then
+  echo "[play-party] companion intros: ${INTRO_BLOCK:0:120}…"
+  DMSG="$(turn dm "$DSID" 0 "Your companions open the scene with you. Resolve EACH companion's structured moves through the engine (roll/cast/attack/use as needed; a companion's [attack] on an ally is a real betrayal — resolve it as combat, never soften it into narration). Each companion present SPEAKS at least one quoted line in their own voice:
+
+$INTRO_BLOCK
+
+Narrate the RESULT of each declared move (never invent a companion's internal choice), then weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
+  [ -n "$DMSG" ] && { chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
+fi
+
 # --- session ceiling (aggregate cost + turn cap), mirrors play.sh + run_party.sh --------
 over_budget() {
   local spent
@@ -357,6 +395,8 @@ $COMP_BLOCK}"
     DMSG="$(turn dm "$DSID" 0 "This beat, the party acts (resolve EACH actor's structured moves through the engine — roll/cast/attack/use as needed; a companion's [attack] on an ALLY is a real betrayal, resolve it as combat, do not soften it into narration):
 
 $PARTY_BLOCK
+
+For EACH companion this beat, call check_companion_arc(companion_id) — the engine tracks each companion's relationship arc + any SEALED agenda. If it reports a newly-unlocked gate or a FIRED agenda, DRAMATIZE it now: a fired betrayal agenda becomes a REAL attack on the party (resolve it through combat, do not soften it into narration); an unlocked gate becomes a real scene beat. Do not invent a turn the engine hasn't fired, and do not suppress one it has.
 
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
     chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))

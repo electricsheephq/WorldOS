@@ -13,6 +13,8 @@ import os
 import random
 from pathlib import Path
 
+from pydantic import ValidationError
+
 import worldsim
 from models import Campaign, CompanionArc, Character, Faction, Location, Quest
 
@@ -532,7 +534,20 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
             ch = _resolve_roster(str(key))
             if ch is None:
                 continue  # companion isn't in this world's roster/campaign — skip silently
-            ch.arc = CompanionArc.model_validate(seed["arc"])
+            # A dict-but-INVALID arc (e.g. a `day_reached` agenda missing its M2-required
+            # `value`, a bad gate kind, a forbidden extra key) raises pydantic at validate
+            # time. An ending overlay is a small hand-edited add-on (like `fates` above):
+            # a single bad seed must DEGRADE — skip it (the companion gets no arc) — not
+            # abort the whole start_world. (The strict adventure-seed path stays loud.)
+            try:
+                ch.arc = CompanionArc.model_validate(seed["arc"])
+            except (ValidationError, ValueError, TypeError):
+                # skip the malformed seed; a valid sibling seed in the same overlay still applies
+                print(
+                    f"[content] skipping malformed companion_seeds arc for {key!r} "
+                    f"in ending overlay {overlay.get('id', overlay.get('name', '?'))!r}"
+                )
+                continue
 
 
 def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
@@ -581,6 +596,7 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     # location ids by name where possible, and left as hints (the Location model accepts
     # free-form strings in `connections`) where they don't match a seeded place.
     seeded_names = {loc.name.strip().lower() for loc in c.locations.values()}
+    seen_area_ids: set[str] = set()  # intra-area id-collision guard (this seeding pass only)
     new_area_ids: list[str] = []
     for area in load_world_areas(c.world_id):
         name = str(area.get("name", "")).strip()
@@ -588,7 +604,17 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             continue  # never double-seed a region the world already declares
         aid = str(area.get("id", "")).strip()
         if aid and aid in c.locations:
-            continue  # id collision with a seeded region — skip rather than clobber
+            # An id already taken — skip rather than clobber. Two cases, both guarded by
+            # this single check: (a) the id collides with a previously-seeded AREA (an
+            # INTRA-area dup: load_world_areas dedupes by NAME, so two differently-named
+            # files can still share an id), or (b) it collides with an authored region.
+            # In case (a) the first area MUST survive untouched — log so a dup isn't silent.
+            if aid in seen_area_ids:
+                print(
+                    f"[content] skipping ingested area {name!r}: duplicate area id {aid!r} "
+                    f"(already seeded a different area with that id — keeping the first)"
+                )
+            continue
         location = Location(
             name=name,
             description=str(area.get("description", "")),
@@ -600,11 +626,20 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             location.id = aid
         c.locations[location.id] = location
         seeded_names.add(name.lower())
+        seen_area_ids.add(location.id)  # remember the id so a later dup can't clobber it
         new_area_ids.append(location.id)
 
     # Resolve the freshly-seeded areas' connection NAMES to location ids where a seeded
     # place matches by name (case-insensitive); unmatched names stay verbatim as hints.
     # Only the new areas are rewritten — regions already carry id-based connections.
+    #
+    # Travel/reachable use DIRECTED edges from the CURRENT location (travel.py): an edge
+    # area→region does NOT make the area reachable while you're standing in the region.
+    # So — exactly like add_location's bidirectional wiring (server.py) — for every
+    # resolved area→location edge we ALSO add the REVERSE edge location→area, guarding
+    # duplicates. Without this, an ingested area lists its parent region as a connection
+    # but is itself unreachable FROM that region (the B2 repro: Bloomridge Market lists
+    # loc-lower-city, yet reachable() from loc-lower-city omits Bloomridge).
     if new_area_ids:
         name_to_id = {loc.name.strip().lower(): lid for lid, loc in c.locations.items()}
         for aid in new_area_ids:
@@ -612,6 +647,12 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             loc.connections = _dedupe_strs(
                 name_to_id.get(conn.strip().lower(), conn) for conn in loc.connections
             )
+            # Mirror the forward edges back: any connection that resolved to a real
+            # location id gets the area added to ITS connections (bidirectional, deduped).
+            for conn_id in loc.connections:
+                target = c.locations.get(conn_id)
+                if target is not None and target.id != aid and aid not in target.connections:
+                    target.connections.append(aid)
 
     # Drop the party at the requested start, else the world's first starting_option,
     # else the first region.
