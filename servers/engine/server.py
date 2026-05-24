@@ -1576,12 +1576,17 @@ def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        if cond not in ch.conditions:
+        # Enforce bestiary/sheet condition immunities (stored as condition-name strings) — a
+        # creature immune to 'poisoned' can't be given the poisoned condition. No-op + immune flag.
+        if cond.value in {i.strip().lower() for i in ch.condition_immunities}:
+            return {**ch.model_dump(mode="json"), "immune": True, "added": False}
+        added = cond not in ch.conditions
+        if added:
             ch.conditions.append(cond)
         if cond in combat.INCAPACITATING:
             ch.concentration = None  # SRD: incapacitation breaks concentration
         save_campaign(c)
-        return ch.model_dump(mode="json")
+        return {**ch.model_dump(mode="json"), "immune": False, "added": added}
 
 
 @mcp.tool()
@@ -1868,7 +1873,15 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
             raise ValueError(f"{ch.name} is not in the initiative order")
         is_current = c.combat.current_combatant_id == character_id
         ok, reason = True, ""
-        if kind in ("action", "bonus"):
+        # SRD: an incapacitated creature (incl. stunned/paralyzed/petrified/unconscious) can take
+        # NO actions, bonus actions, or reactions. Block before consuming the budget.
+        if combat.is_incapacitated(ch) and kind in ("action", "bonus", "reaction"):
+            ok, reason = False, (
+                f"{ch.name} is incapacitated ("
+                f"{', '.join(c.value for c in ch.conditions if c in combat.INCAPACITATING)}) "
+                f"and can't take an action, bonus action, or reaction"
+            )
+        elif kind in ("action", "bonus"):
             if not is_current:
                 ok, reason = False, f"it is not {ch.name}'s turn (only a reaction acts off-turn)"
             elif kind == "action" and c.combat.action_used:
@@ -1943,6 +1956,11 @@ def attack(
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
         target = _char(c, target_id)
+        # SRD: an incapacitated creature can't attack — refuse the illegal action outright
+        # (an unconscious/paralyzed/stunned attacker must not roll to hit).
+        if combat.is_incapacitated(attacker):
+            incap = ", ".join(cn.value for cn in attacker.conditions if cn in combat.INCAPACITATING)
+            raise ValueError(f"{attacker.name} is incapacitated ({incap}) and cannot attack")
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
@@ -2456,12 +2474,27 @@ def cast_spell(
 @mcp.tool()
 def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> dict:
     """Roll a saving throw for a character against a DC. ability is one of
-    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded."""
+    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded.
+
+    Enforces the SRD condition rules so save outcomes don't depend on the DM
+    remembering them: paralyzed / petrified / stunned / unconscious AUTO-FAIL STR
+    and DEX saves; restrained gives DISADVANTAGE on DEX saves. A forced failure
+    still reports the roll, plus a `reason`."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     ab = Ability(ability.lower())
-    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}")
-    return {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc, "success": r.total >= dc}
+    conds = set(ch.conditions)
+    auto_fail = ab in (Ability.STR, Ability.DEX) and bool(conds & combat.SAVE_AUTOFAIL)
+    disadvantage = ab == Ability.DEX and Condition.RESTRAINED in conds
+    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}", disadvantage=disadvantage)
+    out = {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc,
+           "success": (not auto_fail) and r.total >= dc}
+    if auto_fail:
+        forcing = ", ".join(cn.value for cn in ch.conditions if cn in combat.SAVE_AUTOFAIL)
+        out["reason"] = f"condition auto-fail: {ch.name} is {forcing} — STR/DEX saves automatically fail"
+    if disadvantage:
+        out["disadvantage"] = True
+    return out
 
 
 def _catalog_describe(rec: dict) -> str:

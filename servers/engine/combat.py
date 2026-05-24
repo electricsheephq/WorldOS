@@ -72,6 +72,18 @@ def clears_concentration(conditions) -> bool:
     return bool(INCAPACITATING & set(conditions))
 
 
+def is_incapacitated(ch: Character) -> bool:
+    """True if the creature can take no actions, bonus actions, or reactions — the SRD
+    Incapacitated condition and the conditions that include it (Stunned, Paralyzed,
+    Petrified, Unconscious)."""
+    return bool(INCAPACITATING & set(ch.conditions))
+
+
+# Saving throws a condition forces: paralyzed/petrified/stunned/unconscious AUTO-FAIL STR & DEX
+# saves; restrained gives DISADVANTAGE on DEX saves (SRD condition rules).
+SAVE_AUTOFAIL = {Condition.PARALYZED, Condition.PETRIFIED, Condition.STUNNED, Condition.UNCONSCIOUS}
+
+
 # A melee hit within 5 ft of an Unconscious or Paralyzed creature is automatically
 # a Critical Hit (SRD). We have no distance model, so a non-ranged attack is
 # treated as being within 5 ft.
@@ -140,6 +152,9 @@ def apply_damage(
     if ch.dead:
         return {"absorbed": 0, "damage_to_hp": 0, "concentration_dc": None, **status(ch)}
 
+    # Damage that survived resistance/immunity is what counts for a concentration check —
+    # even when temp HP absorbs all of it (you still TOOK the damage; SRD/Sage Advice).
+    damage_taken = amount
     absorbed = min(ch.temp_hp, amount)
     ch.temp_hp -= absorbed
     to_hp = amount - absorbed
@@ -172,8 +187,9 @@ def apply_damage(
     conc_dc = None
     if ch.current_hp == 0:
         ch.concentration = None  # unconsciousness or death ends concentration (no save)
-    elif to_hp > 0 and ch.concentration:
-        conc_dc = max(10, to_hp // 2)
+    elif damage_taken > 0 and ch.concentration:
+        # DC is half the damage TAKEN (min 10) — temp HP absorbing it doesn't dodge the check.
+        conc_dc = max(10, damage_taken // 2)
     return {"absorbed": absorbed, "damage_to_hp": to_hp, "concentration_dc": conc_dc, **status(ch)}
 
 
