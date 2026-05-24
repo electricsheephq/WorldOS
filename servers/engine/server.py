@@ -2411,6 +2411,12 @@ def cast_spell(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        # SRD: an incapacitated creature can't take an action — and a spell's casting time is
+        # (almost always) an action/bonus/reaction, so refuse the cast outright rather than
+        # spend the caster's slot / set concentration. Mirrors the attack() guard. (extends #42)
+        if combat.is_incapacitated(ch):
+            incap = ", ".join(cn.value for cn in ch.conditions if cn in combat.INCAPACITATING)
+            raise ValueError(f"{ch.name} is incapacitated ({incap}) and cannot cast a spell")
         known = set(ch.spells_known) | set(ch.spells_prepared)
         if known and canonical not in known:
             raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")

@@ -63,6 +63,20 @@ def test_issue42_incapacitated_cannot_act_or_attack(tmp_path, monkeypatch):
         server.attack(cid, actor, target, attack_bonus=99, damage_dice="1")
 
 
+def test_issue42_incapacitated_cannot_cast_a_spell(tmp_path, monkeypatch):
+    # Extends #42 (review finding): casting is an action, so an incapacitated caster can't cast —
+    # and the slot must NOT be spent on the refused cast.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = _campaign()
+    w = server.create_character(cid, "Wiz", kind="player", class_name="Wizard",
+                                level=3, apply_srd_defaults=True)["id"]
+    server.learn_spells(cid, w, ["Magic Missile"])
+    server.add_condition(cid, w, "stunned")
+    with pytest.raises(ValueError):
+        server.cast_spell(cid, w, "Magic Missile", slot_level=1)
+    assert server.get_character(cid, w)["spell_slots"]["1"]["used"] == 0  # slot preserved
+
+
 def test_issue43_condition_saves_enforced(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = _campaign()

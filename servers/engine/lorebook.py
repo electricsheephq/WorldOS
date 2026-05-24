@@ -28,6 +28,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from store import safe_path_segment  # path-containment guard for world ids
+
 
 def _content_dir() -> Path:
     raw = os.environ.get("CLAWDND_CONTENT_DIR")
@@ -36,6 +38,7 @@ def _content_dir() -> Path:
 
 def _lore_dir(world_id: str) -> Optional[Path]:
     """content/worlds/<id>/lore/, falling back to the gitignored _private/ seed."""
+    world_id = safe_path_segment(world_id, "world_id")  # defense-in-depth (no current raw-input path)
     base = _content_dir() / "worlds"
     for cand in (base / world_id / "lore", base / "_private" / world_id / "lore"):
         if cand.is_dir():

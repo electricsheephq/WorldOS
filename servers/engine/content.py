@@ -343,6 +343,7 @@ def _origins_dirs(world_id: str) -> list[Path]:
     """Where premade PC origin TEMPLATES live: content/worlds/<id>/origins/ and its
     gitignored _private/ mirror. A template is a ready-to-play character build the
     player can pick as their PC at world start (start_character origin='template:<id>')."""
+    world_id = safe_path_segment(world_id, "world_id")  # defense-in-depth (no current raw-input path)
     base = _content_dir() / "worlds"
     return [base / world_id / "origins", base / "_private" / world_id / "origins"]
 
@@ -394,6 +395,7 @@ def _endings_dirs(world_id: str) -> list[Path]:
     """Where post-state ending OVERLAYS live: content/worlds/<id>/endings/ and its
     gitignored _private/ mirror. An overlay rewrites a base world into a specific
     post-campaign state (e.g. post-BG3 branch outcomes)."""
+    world_id = safe_path_segment(world_id, "world_id")  # defense-in-depth (no current raw-input path)
     base = _content_dir() / "worlds"
     return [base / world_id / "endings", base / "_private" / world_id / "endings"]
 
