@@ -103,12 +103,37 @@ def _excerpt(text: str, tokens: list[str], width: int = 600) -> str:
     return flat[:width] + ("…" if len(flat) > width else "")
 
 
-def lookup_lore(world_id: str, query: str, limit: int = 5) -> list[dict]:
+def lookup_lore(
+    world_id: str,
+    query: str,
+    limit: int = 5,
+    *,
+    supersedes: Optional[list[str]] = None,
+    canon_header: str = "",
+) -> list[dict]:
     """Search a world's lore corpus and return the most relevant pages, each as
     {title, excerpt, source, era}. **Authored canon (tier 0) outranks ingested wiki
     pages (tier 1)** among matches, so the seed's intended (e.g. post-canon) truth wins
     over longer-but-stale wiki pages on a bm25 tie. Empty if no corpus / no match.
-    Read-only; builds a throwaway in-memory index per call."""
+    Read-only; builds a throwaway in-memory index per call.
+
+    De-confliction (additive — both args default to the no-op behavior):
+    - `supersedes`: case-insensitive substrings the active ending RETRACTS (the same
+      predicate `_apply_ending_overlay` applies to `c.lore`). A retrieved excerpt that
+      asserts a superseded fact (e.g. "Gortash is dead" under the tyranny ending) is
+      DROPPED whenever any non-contradicting hit exists to take its place, and kept
+      (DEMOTED to the end) only when the entire match set is superseded — so the
+      contradiction never LEADS the result and never out-ranks the corrected canon, yet a
+      query whose only matches are superseded still returns *something*. This closes the
+      two-surface bug structurally (the .md corpus is de-conflicted on the same basis as
+      c.lore), reusing the tier machinery's "the right canon wins the top slot" guarantee.
+    - `canon_header`: when non-empty, prepended as a synthetic hit (source
+      "world-state") carrying the campaign's authoritative world-state — so the DM's
+      ground truth for the scene is the structured row, with the pages below framed as
+      background that may describe other timelines. A *belt* over the demotion's
+      *suspenders*.
+
+    With both unset/empty the output is byte-identical to before."""
     pages = _pages(world_id)
     match = _safe_match(query)
     if not pages or not match:
@@ -134,20 +159,44 @@ def lookup_lore(world_id: str, query: str, limit: int = 5) -> list[dict]:
                 return []
 
         cap = max(limit, 1)
-        ids = _match_tier(0, cap) + _match_tier(1, cap)  # authored canon first, then wiki to fill
+        # Over-fetch each tier so the de-confliction can demote/drop contradicting hits
+        # and still fill `cap` with clean ones (without it, dropping a top hit would just
+        # shrink the result instead of promoting the next clean page).
+        fetch = cap * 3 if supersedes else cap
+        ids = _match_tier(0, fetch) + _match_tier(1, fetch)  # authored canon first, then wiki to fill
     finally:
         conn.close()
     tokens = re.findall(r"[A-Za-z0-9]+", query or "")
+    subs = [s.lower() for s in (supersedes or []) if str(s).strip()]
+
+    def _contradicts(excerpt: str) -> bool:
+        low = excerpt.lower()
+        return any(sub in low for sub in subs)
+
     seen: set[int] = set()
-    out: list[dict] = []
+    clean: list[dict] = []
+    demoted: list[dict] = []
     for rid in ids:
         if rid in seen:
             continue
         seen.add(rid)
         p = pages[rid]
-        out.append({"title": p["title"], "excerpt": _excerpt(p["text"], tokens), "source": p["source"], "era": p.get("era", "")})
-        if len(out) >= cap:
-            break
+        hit = {"title": p["title"], "excerpt": _excerpt(p["text"], tokens), "source": p["source"], "era": p.get("era", "")}
+        # An excerpt that asserts a now-superseded fact is set aside (the page asserts a
+        # fact the chosen ending retracted — the same predicate the overlay applied to
+        # c.lore). It is DROPPED whenever any non-contradicting hit exists to take its
+        # place; it is kept (DEMOTED, ranked last) ONLY if there is no clean alternative at
+        # all, so the DM still gets *some* canon rather than an empty result. Either way it
+        # never leads, and the header (if present) leads the whole set.
+        (demoted if subs and _contradicts(hit["excerpt"]) else clean).append(hit)
+
+    # Drop contradicting hits when shadowed by any clean hit; fall back to them only when
+    # the entire match set is superseded (else the DM would get nothing on that query).
+    out = clean[:cap] if clean else demoted[:cap]
+    if canon_header:
+        # Prepend the authoritative world-state as a synthetic leading hit. Counts toward
+        # nothing the caller filters on; it just frames every page below it as background.
+        out = [{"title": "CURRENT WORLD (authoritative)", "excerpt": canon_header, "source": "world-state", "era": ""}] + out
     return out
 
 

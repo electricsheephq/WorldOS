@@ -3,8 +3,20 @@
   "name": "The Illithid Crown — a Mind Above the City",
   "schema_version": 1,
   "supersedes": [
-    "emerged over the Lower City and was destroyed in the harbor"
+    "emerged over the Lower City and was destroyed in the harbor",
+    "netherbrain breached the lower city and was destroyed in the harbor",
+    "and the netherbrain with them",
+    "destroyed, and the netherbrain"
   ],
+  "world_state": {
+    "world_tenor": "grim",
+    "facts": {
+      "netherbrain": "dominant",
+      "the_absolute": "ascendant",
+      "the_emperor": "slain",
+      "baldurs_gate": "occupied"
+    }
+  },
   "era": "1492 DR — the winter after one of the Gate's own defenders took the Netherbrain's place. The Absolute war ended not with the brain's death but with its leash changing hands: a hero who carried a tadpole accepted ceremorphosis and the brain's power to end the slaughter, and now a vast illithid intellect holds the freed minds of the Sword Coast in check from the shadows. The old Chosen (Ketheric Thorm, Gortash, Orin) are still dead. Keep the timeline straight: the city was saved, but its savior is no longer human, and what it wants next is the open question of the age. Do not raise the long-dead or pre-empt events that haven't happened.",
   "premise_suffix": " Here the brain was not destroyed — it was claimed. To end the ceremorphosis cascade, one of the Gate's defenders submitted to the tadpole and took the Netherbrain's throne, becoming an Elder Brain that holds every freed mind on the Coast from spilling into chaos. The city was spared mass transformation. But its salvation now thinks with an alien mind, and the tadpole-touched can feel it at the edge of sleep — a benevolence no one is sure they trust. Into a Gate ruled, in secret, by a mind it cannot see, the player steps: a nobody whose thoughts, for the first time in history, might not be entirely their own.",
   "standing_threads": [

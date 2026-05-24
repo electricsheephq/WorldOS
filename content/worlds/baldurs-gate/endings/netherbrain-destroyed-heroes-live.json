@@ -3,6 +3,15 @@
   "name": "The Netherbrain Destroyed — the Heroes Live",
   "schema_version": 1,
   "supersedes": [],
+  "world_state": {
+    "world_tenor": "hopeful",
+    "facts": {
+      "netherbrain": "destroyed",
+      "the_absolute": "broken",
+      "the_emperor": "free",
+      "baldurs_gate": "rebuilding"
+    }
+  },
   "era": "1492 DR — the winter after the Absolute fell clean. The Netherbrain was destroyed outright and its will scattered; the surviving companions chose to remain themselves rather than seize the brain's power, and walked out of the harbor as living legends. The Dead Three's Chosen (Ketheric Thorm, Enver Gortash, Orin the Red) are dead; the tadpole-touched are being cured, not crowned. Keep the timeline straight: this is the brightest of the war's possible mornings — wounded, but unconquered. Do not raise the long-dead or pre-empt events that haven't happened.",
   "premise_suffix": " In this telling, the Gate's defenders made the hardest clean choice: the Netherbrain was annihilated and no one took its crown. The companions who could have become gods or tyrants instead stayed people — and the city, against the odds, gets to grieve and rebuild as itself. The heroes are alive, scattered into their own lives, and the wound is healing. Into that fragile, hopeful morning the player steps: a nobody in a city that, for once, has room to become something.",
   "standing_threads": [
