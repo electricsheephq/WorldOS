@@ -106,21 +106,24 @@ def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: in
     if not _db_path(campaign_id).exists():
         return []
     conn = _connect(campaign_id)
+    # Push the `kinds` filter into SQL BEFORE the rank/limit — filtering in Python after a
+    # global `LIMIT n*5` lets a flood of matching session events starve a rare lore/decision
+    # row exactly when a campaign gets long (the bug). With the constraint in the query, the
+    # ranked top-N is computed within the requested kinds. (#48)
+    sql = "SELECT kind, who, text, ref, day FROM ledger WHERE ledger MATCH ?"
+    params: list = [match]
+    if kinds:
+        sql += f" AND kind IN ({','.join('?' for _ in kinds)})"
+        params.extend(kinds)
+    sql += " ORDER BY rank LIMIT ?"
+    params.append(max(limit, 1))
     try:
-        rows = conn.execute(
-            "SELECT kind, who, text, ref, day FROM ledger WHERE ledger MATCH ? "
-            "ORDER BY rank LIMIT ?",
-            (match, max(limit, 1) * 5),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     except sqlite3.OperationalError:
         return []
     finally:
         conn.close()
-    out = [_row(r) for r in rows]
-    if kinds:
-        kset = set(kinds)
-        out = [r for r in out if r["kind"] in kset]
-    return out[:limit]
+    return [_row(r) for r in rows]
 
 
 def recall_npc(campaign_id: str, npc_id: str, limit: int = 12) -> list[dict]:

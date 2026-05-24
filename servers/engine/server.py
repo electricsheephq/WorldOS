@@ -370,6 +370,11 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
         story_seeds = story_seeds + [
             str(s) for s in (overlay.get("story_seeds_append") or []) if str(s).strip()
         ]
+    # Standing threads shown to the DM must be the PERSISTED, post-overlay threads — the base
+    # world.json list can contradict a chosen ending (e.g. gortash-tyranny's "Gortash dead, the
+    # Steel Watch gone"). seed_world rewrites the live threads into thread-tagged consequences;
+    # project THOSE (fall back to base only if none were seeded). (#46)
+    live_threads = [cq.text for cq in c.consequences if cq.thread_id]
     result = {
         "campaign_id": c.id,
         "world": c.title,
@@ -379,7 +384,7 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
         "tone": world.get("tone", ""),
         "dm_guidance": world.get("dm_guidance", ""),
         "lore_corpus_pages": lorebook.page_count(c.world_id),
-        "standing_threads": world.get("standing_threads", []),
+        "standing_threads": live_threads or world.get("standing_threads", []),
         "story_seeds": story_seeds,
         "starting_at": {"id": loc.id, "name": loc.name} if loc else None,
         "starting_options": world.get("starting_options", []),

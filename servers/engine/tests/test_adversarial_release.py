@@ -118,3 +118,28 @@ def test_issue53_ingested_record_without_attribution_is_caught(tmp_path):
     # one that carries license + attribution passes.
     rec.write_text('{"name": "X", "license": "CC-BY-SA 4.0", "attribution": "Wiki"}', encoding="utf-8")
     assert lc._check_ingested_attribution(["content/worlds/w/characters/bad.json"]) == []
+
+
+# ── #46/#48 canon-memory: ending threads projection + ledger kind filter ──
+def test_issue46_ending_response_threads_match_the_ending(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    out = server.start_world("baldurs-gate", ending="gortash-tyranny")
+    joined = " ".join(out["standing_threads"])
+    # the base thread says Gortash is dead + the Steel Watch gone — contradicted by the ending.
+    assert "with Gortash dead and the Steel Watch gone" not in joined
+    assert out["standing_threads"]  # the post-overlay threads are surfaced, not an empty list
+
+
+def test_issue48_ledger_kind_filter_is_pre_limit(tmp_path, monkeypatch):
+    import ledger
+    from store import load_campaign, save_campaign
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("noisy")["id"]
+    for i in range(50):  # flood with same-matching session events
+        server.log_event(cid, "narration", f"Pale Choir noisy event {i}")
+    c = load_campaign(cid)
+    c.lore.append("Pale Choir authoritative lore row")
+    save_campaign(c)
+    ledger.backfill(cid)
+    hits = ledger.recall(cid, "Pale Choir", kinds=["lore"], limit=1)
+    assert hits and hits[0]["kind"] == "lore"  # not starved by the 50 narration rows
