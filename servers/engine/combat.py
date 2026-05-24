@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from models import Character, Condition, DeathSaves
+from models import Character, Condition, DeathSaves, Zone
 
 _DICE = re.compile(r"(\d*)d(\d+)", re.IGNORECASE)
 
@@ -221,3 +221,62 @@ def resolve_death_save(ch: Character, roll) -> dict:
         "failures": ch.death_saves.failures,
         **status(ch),
     }
+
+
+# --- Tactical zones (S2.7) -------------------------------------------------
+# A light positional model: combat scenes can declare named regions with
+# adjacency. The engine uses zones for melee range and movement; everything is
+# inert when no zones are declared (theater-of-the-mind default).
+
+
+def adjacent_zones(zones: list[Zone], name: str) -> set[str]:
+    """Names directly reachable from zone ``name`` (the zone's own ``adjacent``
+    list, plus any zone that lists ``name`` — adjacency is treated as symmetric so
+    the DM only has to wire each edge once). Empty if the zone isn't declared."""
+    out: set[str] = set()
+    for z in zones:
+        if z.name == name:
+            out.update(z.adjacent)
+        elif name in z.adjacent:
+            out.add(z.name)
+    return out
+
+
+def zones_in_melee(zones: list[Zone], a: str, b: str) -> bool:
+    """True if two zone names are in melee reach of each other: the SAME zone, or
+    directly ADJACENT on the zone graph. (Empty names — unplaced combatants — are
+    never in reach, so the caller can warn rather than silently allow.)"""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return b in adjacent_zones(zones, a)
+
+
+def melee_range_warning(
+    zones: list[Zone],
+    attacker: Character,
+    target: Character,
+    attacker_zone: str,
+    target_zone: str,
+) -> str:
+    """A human-readable out-of-range note for a MELEE attack, or "" if the attack
+    is in reach (or no zones are declared, i.e. theater-of-the-mind — never gate).
+
+    The positional state lives on the COMBATANT records, so the caller passes the
+    attacker's and target's current zone names (and the Characters only for naming
+    the message). ADDITIVE / non-blocking: the engine surfaces this for the DM to
+    adjudicate; it never hard-blocks an attack. Ranged attacks reach any zone and
+    are not checked by callers."""
+    if not zones:
+        return ""  # no positional model in play — nothing to gate
+    if not attacker_zone or not target_zone:
+        return ""  # an un-placed combatant: don't invent a constraint
+    if zones_in_melee(zones, attacker_zone, target_zone):
+        return ""
+    return (
+        f"{attacker.name} (in {attacker_zone!r}) is not in melee reach of "
+        f"{target.name} (in {target_zone!r}) — those zones are neither the same "
+        f"nor adjacent. A melee attack normally requires closing the distance "
+        f"(move_to_zone) first; this is advisory, the attack was still resolved."
+    )

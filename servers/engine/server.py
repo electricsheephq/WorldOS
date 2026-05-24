@@ -51,6 +51,7 @@ from models import (
     Quest,
     SessionLogEntry,
     SpellSlotLevel,
+    Zone,
 )
 
 _AB3_TO_FULL = {
@@ -86,20 +87,32 @@ def _combat_view(c: Campaign) -> dict:
     order = []
     for cb in c.combat.order:
         ch = c.characters.get(cb.character_id)
-        order.append(
-            {
-                "character_id": cb.character_id,
-                "name": ch.name if ch else "?",
-                "initiative": cb.initiative,
-            }
-        )
-    return {
+        entry = {
+            "character_id": cb.character_id,
+            "name": ch.name if ch else "?",
+            "initiative": cb.initiative,
+        }
+        if cb.zone:  # only surface position when zones are in play (S2.7)
+            entry["zone"] = cb.zone
+        order.append(entry)
+    view = {
         "active": c.combat.active,
         "round": c.combat.round,
         "turn_index": c.combat.turn_index,
         "current": c.combat.current_combatant_id,
         "order": order,
     }
+    if c.combat.zones:  # theater-of-the-mind fights omit this entirely
+        view["zones"] = [z.model_dump() for z in c.combat.zones]
+    return view
+
+
+def _combatant(c: Campaign, character_id: str) -> Combatant:
+    """The Combatant record for a character in the active order, or raise."""
+    cb = next((x for x in c.combat.order if x.character_id == character_id), None)
+    if cb is None:
+        raise ValueError(f"{character_id!r} is not in the combat order")
+    return cb
 
 
 def _deep_update(base: dict, patch: dict) -> dict:
@@ -956,6 +969,159 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
 
 
 @mcp.tool()
+def set_zones(campaign_id: str, zones: list[dict]) -> dict:
+    """Declare the TACTICAL ZONES of the current scene — the engine's positional
+    model for combat (S2.7). OPTIONAL: use it only when terrain matters (a doorway
+    to hold, rafters to climb to, an altar dais to reach). With no zones declared,
+    combat is theater-of-the-mind and nothing about range or movement changes.
+
+    Each zone is `{"name", "description"?, "adjacent"?}` — `adjacent` is a list of
+    OTHER zone names directly reachable from it (a melee step / move_to_zone hop).
+    Adjacency is treated as symmetric, so you only wire each edge once: if "doorway"
+    lists "hall", the hall is reachable from the doorway and vice-versa. NOT a
+    coordinate grid — name regions the way you'd describe them at the table ("the
+    rafters", "the altar dais"), which an LLM reasons about far more reliably than
+    (x, y). REPLACES the scene's zone set wholesale; call again to reshape terrain.
+    Then place_combatant each fighter into a zone. Returns the stored zones."""
+    parsed = [Zone.model_validate(z) for z in zones]
+    names = {z.name for z in parsed}
+    warnings: list[str] = []
+    # Advisory: an adjacency pointing at a zone that wasn't declared is almost
+    # always a typo — surface it (don't reject; the DM may add the zone next).
+    for z in parsed:
+        unknown = [a for a in z.adjacent if a not in names]
+        if unknown:
+            warnings.append(f"zone {z.name!r} lists unknown adjacent zone(s): {unknown}")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.combat.zones = parsed
+        save_campaign(c)
+        view = _combat_view(c)
+    view["warnings"] = warnings
+    return view
+
+
+def _zone_exists(c: Campaign, zone: str) -> bool:
+    return any(z.name == zone for z in c.combat.zones)
+
+
+@mcp.tool()
+def place_combatant(campaign_id: str, combatant_id: str, zone: str) -> dict:
+    """Place a combatant directly into a tactical `zone` (S2.7) — the initial setup
+    move, with NO opportunity-attack check (use move_to_zone for in-combat movement
+    that may provoke). The combatant must be in the initiative order. `zone` should
+    name a declared zone (set_zones); an unknown name is accepted but flagged in
+    `warnings` so a typo doesn't silently strand a fighter. Returns the combat view
+    (now carrying each placed combatant's `zone`)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat")
+        cb = _combatant(c, combatant_id)
+        ch = c.characters.get(combatant_id)
+        warnings: list[str] = []
+        if c.combat.zones and not _zone_exists(c, zone):
+            warnings.append(
+                f"{zone!r} is not a declared zone — call set_zones to define it, or "
+                f"check the name. Placed anyway."
+            )
+        cb.zone = zone
+        save_campaign(c)
+        view = _combat_view(c)
+    view["placed"] = {"id": combatant_id, "name": ch.name if ch else "?", "zone": zone}
+    view["warnings"] = warnings
+    return view
+
+
+@mcp.tool()
+def move_to_zone(campaign_id: str, combatant_id: str, zone: str) -> dict:
+    """Move a combatant across the zone graph DURING combat (S2.7). Unlike
+    place_combatant, this models leaving the current zone: if the combatant is
+    LEAVING a zone that still holds a hostile (a creature of a different
+    side — player/companion vs monster/npc), the result sets `opportunity_attack`
+    (with `provokers` = the hostiles left behind) so the DM can resolve each one's
+    reaction (a melee attack via attack(); track it with use_action(kind=reaction)).
+    The engine does NOT auto-roll the OA — staying-vs-disengage and who reacts is a
+    table call.
+
+    `zone` should be the SAME as or ADJACENT to the current zone (a single move);
+    a non-adjacent hop is allowed but flagged in `warnings` (advisory, never
+    blocked — the DM may rule a Dash or special movement). Returns the combat view
+    plus `from`, `to`, `opportunity_attack`, and `provokers`."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat")
+        cb = _combatant(c, combatant_id)
+        mover = c.characters.get(combatant_id)
+        from_zone = cb.zone
+        warnings: list[str] = []
+        if c.combat.zones and not _zone_exists(c, zone):
+            warnings.append(f"{zone!r} is not a declared zone — moved anyway; check the name.")
+
+        # Opportunity attacks: hostiles SHARING the zone the mover is leaving. A
+        # creature is hostile if it's on the opposing side (players/companions vs
+        # monsters/npcs). Only meaningful when actually changing zones.
+        provokers: list[dict] = []
+        if from_zone and zone != from_zone and mover is not None:
+            ally_kinds = {"player", "companion"}
+            mover_ally = mover.kind in ally_kinds
+            for other_cb in c.combat.order:
+                if other_cb.character_id == combatant_id or other_cb.zone != from_zone:
+                    continue
+                other = c.characters.get(other_cb.character_id)
+                if other is None or other.dead:
+                    continue
+                other_ally = other.kind in ally_kinds
+                if other_ally != mover_ally:  # opposing side -> it can take an OA
+                    provokers.append({"id": other.id, "name": other.name})
+
+        # Advisory non-adjacency note (only when zones are declared and we know both).
+        if c.combat.zones and from_zone and zone != from_zone:
+            if not combat.zones_in_melee(c.combat.zones, from_zone, zone):
+                warnings.append(
+                    f"{zone!r} is not adjacent to {from_zone!r} — a single move normally "
+                    f"reaches only the same or an adjacent zone (this may need a Dash). "
+                    f"Moved anyway."
+                )
+
+        cb.zone = zone
+        save_campaign(c)
+        view = _combat_view(c)
+    view["from"] = from_zone
+    view["to"] = zone
+    view["opportunity_attack"] = bool(provokers)
+    view["provokers"] = provokers
+    view["warnings"] = warnings
+    return view
+
+
+@mcp.tool()
+def combatants_in_zone(campaign_id: str, zone: str) -> dict:
+    """List the combatants currently in a tactical `zone` (S2.7) — the targeting
+    helper for an AREA-OF-EFFECT spell or ability ("everyone on the dais"). Returns
+    each occupant `{id, name, kind, hp}` so you can saving_throw / apply_damage them
+    in turn. Read-only. Empty list if no one is in that zone (or no zones declared)."""
+    c = _require(campaign_id)
+    occupants = []
+    for cb in c.combat.order:
+        if cb.zone != zone:
+            continue
+        ch = c.characters.get(cb.character_id)
+        if ch is None:
+            continue
+        occupants.append(
+            {
+                "id": ch.id,
+                "name": ch.name,
+                "kind": ch.kind,
+                "hp": f"{ch.current_hp}/{ch.max_hp}",
+            }
+        )
+    return {"zone": zone, "count": len(occupants), "combatants": occupants}
+
+
+@mcp.tool()
 def next_turn(campaign_id: str) -> dict:
     """Advance to the next LIVING combatant's turn (round increments on wrap;
     dead or removed combatants are skipped). Returns whose turn it is and whether
@@ -1121,6 +1287,16 @@ def attack(
                 f"{cur.name if cur else c.combat.current_combatant_id}'s turn — "
                 f"a reaction? Otherwise advance with next_turn so the order stays in sync."
             )
+        # Zone-aware range (S2.7): a MELEE attack needs attacker & target in the same
+        # or an adjacent zone; ranged reaches any zone. Advisory only — surface a
+        # warning, never hard-block. Inert when no zones are declared. Position lives
+        # on the Combatant records, so look up each side's zone (absent = unplaced).
+        if not is_ranged and c.combat.zones:
+            az = next((cb.zone for cb in c.combat.order if cb.character_id == attacker_id), "")
+            tz = next((cb.zone for cb in c.combat.order if cb.character_id == target_id), "")
+            warn = combat.melee_range_warning(c.combat.zones, attacker, target, az, tz)
+            if warn:
+                result["range_warning"] = warn
         if hit:
             expr = combat.double_dice(damage_dice) if is_crit else damage_dice
             dmg = dice_mod.roll(expr)
@@ -1486,7 +1662,12 @@ def spell_save_dc(campaign_id: str, character_id: str) -> dict:
 
 @mcp.tool()
 def cast_spell(
-    campaign_id: str, character_id: str, spell_name: str, slot_level: Optional[int] = None
+    campaign_id: str,
+    character_id: str,
+    spell_name: str,
+    slot_level: Optional[int] = None,
+    target_id: str = "",
+    is_melee: bool = False,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -1500,7 +1681,13 @@ def cast_spell(
     by hand — `save_ability`, `attack_roll`, `base_damage`, `upcast`, plus the
     `spell_save_dc`/`spell_attack_bonus`. It never errors on an un-modeled spell.
     Resolve: attack-roll spells via attack(); save spells via saving_throw + then
-    apply_damage(half=<save succeeded>); heals via apply_healing."""
+    apply_damage(half=<save succeeded>); heals via apply_healing.
+
+    ZONES (S2.7): pass `target_id` + `is_melee=True` for a TOUCH/melee spell (e.g.
+    Shocking Grasp, Inflict Wounds) to get the same advisory `range_warning` as a
+    melee attack when caster and target aren't in the same or an adjacent zone.
+    Ranged spells reach any zone — leave `is_melee` False (the default) and they're
+    never gated. Inert when no zones are declared (theater-of-the-mind)."""
     curated = None
     try:
         curated = spells.spell_data(spell_name)
@@ -1568,6 +1755,17 @@ def cast_spell(
                 "spell_save_dc) then apply_damage(base_damage, damage_types, "
                 "half=<save succeeded>); healing via apply_healing."
             )
+        # Zone-aware range for a TOUCH/melee spell (S2.7): same rule as a melee
+        # attack — advisory, never blocks, inert without declared zones. Position
+        # lives on the Combatant records.
+        if is_melee and target_id and c.combat.zones:
+            tgt = c.characters.get(target_id)
+            if tgt is not None:
+                az = next((cb.zone for cb in c.combat.order if cb.character_id == character_id), "")
+                tz = next((cb.zone for cb in c.combat.order if cb.character_id == target_id), "")
+                warn = combat.melee_range_warning(c.combat.zones, ch, tgt, az, tz)
+                if warn:
+                    result["range_warning"] = warn
         return result
 
 

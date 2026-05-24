@@ -291,6 +291,22 @@ class Combatant(_StrictModel):
     character_id: str
     initiative: int = 0
     reaction_used: bool = False  # one reaction per round; refreshes at turn start
+    # Tactical position — the named region this combatant occupies (S2.7). "" =
+    # theater-of-the-mind (no positional model); set only when the scene declares
+    # zones via set_zones. Additive: existing combats deserialize with "".
+    zone: str = ""
+
+
+class Zone(_StrictModel):
+    """A named tactical region of a combat scene ("the doorway", "the rafters",
+    "the altar dais") — the engine's positional model. NOT a coordinate grid: LLM
+    agents reason about named regions and their adjacency far more reliably than
+    (x, y). Movement and melee range are governed by `adjacent`; `description` is
+    flavor for the DM. Additive — a combat with no zones is theater-of-the-mind."""
+
+    name: str
+    description: str = ""
+    adjacent: list[str] = Field(default_factory=list)  # names of directly-reachable zones
 
 
 class Combat(_StrictModel):
@@ -300,6 +316,9 @@ class Combat(_StrictModel):
     order: list[Combatant] = Field(default_factory=list)  # sorted desc by initiative
     action_used: bool = False  # current turn's action economy
     bonus_action_used: bool = False
+    # Tactical regions for THIS fight (S2.7). Empty = theater-of-the-mind: range/
+    # movement gating is inert and nothing changes. Additive default.
+    zones: list[Zone] = Field(default_factory=list)
 
     @property
     def current_combatant_id(self) -> Optional[str]:
