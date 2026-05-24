@@ -12,18 +12,23 @@
     "with the steel watch gone",
     "the empty archduke's seat",
     "the dukedom is empty",
-    "seat of power is contested"
+    "seat of power is contested",
+    "the contested dukedom",
+    "the wrecked steel watch foundry below it",
+    "all three were destroyed"
   ],
   "world_state": {
     "world_tenor": "grim",
     "facts": {
-      "netherbrain": "claimed",
-      "the_absolute": "ascendant",
-      "the_emperor": "slain",
+      "netherbrain": "destroyed",
+      "the_absolute": "broken",
+      "gortash": "archduke",
+      "the_emperor": "free",
       "baldurs_gate": "occupied"
     }
   },
   "era": "1492 DR — the winter the Gate kept its tyrant. The Netherbrain was brought down, but Enver Gortash survived the war and consolidated the victory under his own banner: he is Archduke in fact as well as name, the Steel Watch is being rebuilt to police every street, and the city's salvation has been rewritten as his triumph. The other Chosen (Ketheric Thorm, Orin the Red) are dead. Keep the timeline straight: the Absolute is broken and the tyrant who helped break it now rules the relief, the rebuilding, and the watch. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise": "It is the winter after the Battle of Baldur's Gate. The Cult of the Absolute is broken — the Netherbrain was destroyed and the other Chosen (Ketheric Thorm, Orin the Red) are dead — but Enver Gortash, Chosen of Bane, lived through the war and rules the Gate as Archduke, his rebuilt Steel Watch policing every street.",
   "premise_suffix": " In this telling the brain fell — and Enver Gortash lived to take the credit. The Bane-chosen Archduke turned the war's end into his coronation: the Steel Watch foundry roars again, his Banite order administers the relief, and the heroes who actually saved the city are exiles, fugitives, or dead names in his proclamations. The Gate is orderly, rebuilt, and afraid. Into a city under the smiling boot of a tyrant who calls himself its savior, the player steps: a nobody beneath notice — which, in a police state, is the only safe thing to be, and the only thing that can move unseen.",
   "standing_threads": [
     "The tyrant's grip: Gortash rules as Archduke with a rebuilt Steel Watch at his back; the relief, the courts, and the gazette all sing his praises, and dissent vanishes quietly into the foundry's shadow.",
@@ -34,6 +39,14 @@
     "The tyrant survived: Enver Gortash, Chosen of Bane, lived through the Battle of Baldur's Gate and moved at once to claim its victory — presenting the brain's fall as proof of his fitness to rule.",
     "The Watch reborn: rather than lying wrecked beneath Wyrm's Rock, the Steel Watch foundry was repaired and expanded; arcane constructs once more walk the streets, now answering to the Archduke alone.",
     "The rewritten war: official history credits Gortash and his order with the Gate's salvation; the surviving companions are recast as dangerous fanatics, and saying otherwise in the wrong tavern is a crime."
+  ],
+  "story_seeds_replace": [
+    "The tyrant's seat: Gortash holds the Archduke's chair, but a tyranny is never secure — patriars, the Fist's officers, and the Banite order itself jockey beneath the throne, and any of them would use a useful nobody to shift the balance (the slow main thread).",
+    "Loose ends of the Absolute: a cult remnant or a freed illithid surfaces, still echoing the brain, gathering the desperate — and the Watch would rather erase them than admit they exist.",
+    "The tadpole question: the regime registers and 'pardons' the tadpole-survivors as a loyalty test; a survivor the party knows is on the list and being pressured to denounce the old heroes.",
+    "Elturel's debt: a devil comes to the Gate to collect on a soul-bargain made when the city hung over Avernus — and finds a Banite Archduke who might bargain or might burn it.",
+    "Cazador's leavings: vampire spawn abandoned in the Outer City, leaderless and starving, draw the Gur hunters and the Guild into a quiet war the Watch is happy to ignore.",
+    "Candlekeep's secret: a page the Avowed won't sell holds the truth about the Crown of Karsus — or about the Emperor's first name."
   ],
   "story_seeds_append": [
     "A resistance cell needs a face the Watch doesn't know to carry a message to a hidden hero — and the only route runs straight through a Steel Watch checkpoint that wasn't on that corner yesterday.",

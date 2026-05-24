@@ -8,6 +8,8 @@
 - **Shadowheart** — a cleric at the crossroads of **Shar** and **Selûne**, her stolen memories and her faith the wound at her center.
 - **Wyll Ravengard** — the **Blade of Frontiers**, a noble warlock and son of Marshal Ulder Ravengard, bound by a devil's pact and torn between the road and his father's legacy.
 - **Karlach** — a tiefling barbarian whose heart is a roaring **infernal engine** forged in Avernus by Gortash; all open warmth and fury, living loud against a clock.
+- **Gale** — a wizard of Waterdeep and devotee (and exile) of **Mystra**, who carried a Netherese orb of raw magic in his chest; brilliant, charming, and never short of a story or a risk.
 - **Lae'zel** — a githyanki warrior who broke with the lich-queen **Vlaakith**; proud, blunt, deadly.
+- **Halsin** — a druid and former First Druid of the Emerald Grove, deep in the work of healing the **Shadow-Cursed Lands**; calm, vast-hearted, at home in the wilds.
 - **The Emperor** — a mind flayer of immense intellect (once **Balduran**), reasonable and seductive, serving only itself. The most dangerous "ally" on the Coast.
 - **Withers** — a gaunt, undying keeper of the dead (servant of **Jergal**) who turns up at thresholds of death and choice with dust-dry counsel.

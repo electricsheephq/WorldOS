@@ -2,17 +2,24 @@
   "id": "dark-urge-bhaal",
   "name": "The Slayer Crowned — Bhaal's Chosen Rises",
   "schema_version": 1,
-  "supersedes": [],
+  "supersedes": [
+    "all maneuver for control of the Gate",
+    "the city survived; the cost was enormous",
+    "the city is traumatized and rebuilding"
+  ],
   "world_state": {
     "world_tenor": "grim",
     "facts": {
       "netherbrain": "destroyed",
       "the_absolute": "broken",
       "bhaal": "ascendant",
-      "baldurs_gate": "fallen"
+      "gortash": "dead",
+      "the_emperor": "free",
+      "baldurs_gate": "occupied"
     }
   },
   "era": "1492 DR — the winter the murder-god won his throne back. The Netherbrain fell, but in the same hour a defender who carried the Dark Urge embraced their birthright as the true Chosen of Bhaal, slew their way clear of the war, and gave the Lord of Murder a living hand in the world again. Ketheric Thorm and Enver Gortash are dead; Orin the Red is dead, supplanted. Keep the timeline straight: the Absolute is broken, but a new Bhaalspawn walks crowned in blood, and the Gate's nights have a patron once more. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise": "It is the winter after the Battle of Baldur's Gate. The Cult of the Absolute is broken — the Netherbrain was destroyed and its three Chosen (Ketheric Thorm, Enver Gortash, Orin the Red) are dead — but in the same hour a defender who carried the Dark Urge embraced their birthright as Bhaal's true Chosen, and a crowned Bhaalspawn now rules the Gate's living, terrorized nights while its heroes hunt the murder-cult.",
   "premise_suffix": " In this telling the brain was destroyed — and a darker thing took root in the ruins. A defender who had carried the Dark Urge all along surrendered to it, claimed the mantle of Bhaal's true Chosen, and ended the war with a coronation of murder. Now the Lord of Murder has a living instrument in Baldur's Gate again: the Bhaalist cult walks bolder, ritual killings mark the calendar, and the city's relief is shot through with quiet terror. Into a Gate where the dark has a name and a patron, the player steps: a nobody whose anonymity is the only thing between them and a god's appetite — and perhaps the only blade close enough to matter.",
   "standing_threads": [
     "The crowned Bhaalspawn: a living Chosen of Bhaal rules the Gate's nights from the shadows, and ritual murder has become a slow, deliberate liturgy written across the city.",
@@ -23,6 +30,14 @@
     "The Urge embraced: a defender who had fought the Dark Urge through the whole war gave in at its climax, claiming the murderous birthright of a true Bhaalspawn and butchering a path out of the chaos.",
     "Orin supplanted: Orin the Red, Bhaal's prior Chosen, fell — and the new Bhaalspawn took her place at the head of the Lord of Murder's faith, more deliberate and far more dangerous.",
     "The liturgy of murder: where the war left wounds, the new Chosen leaves art — ritual killings staged to honor Bhaal, each one tightening the cult's grip and the city's dread."
+  ],
+  "story_seeds_replace": [
+    "The crowned Bhaalspawn: a living Chosen of Bhaal rules the Gate's nights, and the slow question beneath every scene is who they are, whether they can die by mortal hands, and what the cult does as the hunt closes (the slow main thread).",
+    "Loose ends of the Absolute: a cult remnant or a freed illithid surfaces, still echoing the brain — and finds the city's underworld already claimed by a hungrier faith.",
+    "The tadpole question: a reactionary patriar pushes to register and exile the tadpole-survivors; a survivor the party knows is on the list, and the murder-cult is happy to let the city tear at itself.",
+    "Elturel's debt: a devil comes to the Gate to collect on a soul-bargain made when the city hung over Avernus — into a city where a rival god's Chosen already walks crowned.",
+    "Cazador's leavings: vampire spawn abandoned in the Outer City, leaderless and starving, draw the Gur hunters and the Guild into a quiet war — even as the Bhaalist cult harvests the same dark streets.",
+    "Candlekeep's secret: a page the Avowed won't sell holds the truth about the Crown of Karsus — or about how a Bhaalspawn's divine spark might be severed."
   ],
   "story_seeds_append": [
     "A string of ritual murders follows a pattern only the party notices; tracing it leads toward a name no one will say aloud — and toward the question of whether the Slayer can be killed by mortal hands at all.",

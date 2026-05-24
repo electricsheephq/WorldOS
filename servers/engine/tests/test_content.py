@@ -402,7 +402,14 @@ def test_seed_world_sets_typed_world_state_from_ending():
     g = content.seed_world(w, ending="gortash-tyranny")
     assert g.world_state is not None
     assert g.world_state.world_tenor == "grim"
-    assert g.world_state.facts.get("netherbrain") == "claimed"
+    # S6 audit fix: the gortash row was mis-templated from the brain-CONTROL branch
+    # (netherbrain=claimed/the_absolute=ascendant/the_emperor=slain) and contradicted its
+    # own prose ("the brain fell", "the Absolute is broken", a living Emperor). It now
+    # matches the prose: brain destroyed, Absolute broken, Gortash lives & rules, Emperor free.
+    assert g.world_state.facts.get("netherbrain") == "destroyed"
+    assert g.world_state.facts.get("the_absolute") == "broken"
+    assert g.world_state.facts.get("gortash") == "archduke"
+    assert g.world_state.facts.get("the_emperor") == "free"
     assert g.world_state.facts.get("baldurs_gate") == "occupied"
     assert g.lore_supersedes  # the .md de-confliction predicate was recorded
     # a hopeful ending wires the hopeful tenor + rebuilding city
@@ -476,16 +483,20 @@ def test_recall_and_lookup_lore_agree_under_nondefault_ending(tmp_path, monkeypa
     rec = server.recall(cid, "Gortash")["hits"]
     look = server.lookup_lore(cid, "Gortash")["hits"]
 
-    # both surfaces LEAD with the same authoritative world-state header
+    # both surfaces LEAD with the same authoritative world-state header (S6 fix: the row
+    # now matches the prose — brain destroyed, Absolute broken, Gortash rules, Emperor free).
     assert rec[0]["kind"] == "world_state" and "tenor=grim" in rec[0]["text"]
     assert look[0]["source"] == "world-state" and "tenor=grim" in look[0]["excerpt"]
-    assert "netherbrain=claimed" in rec[0]["text"] and "netherbrain=claimed" in look[0]["excerpt"]
+    assert "netherbrain=destroyed" in rec[0]["text"] and "netherbrain=destroyed" in look[0]["excerpt"]
+    assert "gortash=archduke" in rec[0]["text"] and "the_emperor=free" in rec[0]["text"]
 
-    # the contradicting "Gortash is dead / brain destroyed / Steel Watch wrecked / dukedom
-    # empty" assertions no longer appear among the authored lookup_lore hits...
+    # The genuinely-stale "Gortash is dead / Steel Watch wrecked / dukedom empty/contested"
+    # assertions no longer appear among the authored lookup_lore hits. NOTE (S6): brain-
+    # destruction prose ("destroyed in the harbor") is now CORRECT (netherbrain=destroyed)
+    # and is deliberately NOT a contradiction — it may surface, agreeing with the header.
     CONTRADICTIONS = (
-        "gortash is dead", "and was destroyed in the harbor",
-        "steel watch wrecked", "the dukedom is empty", "the seat of power is contested",
+        "gortash is dead", "steel watch wrecked", "the dukedom is empty",
+        "the seat of power is contested", "the contested dukedom",
     )
     page_hits = [h for h in look if h["source"] != "world-state"]
     assert page_hits, "lookup_lore should still return background canon, just de-conflicted"
@@ -496,6 +507,203 @@ def test_recall_and_lookup_lore_agree_under_nondefault_ending(tmp_path, monkeypa
     # ...and the surviving recall canon affirms the tyrant lives (agreement, not silence)
     rec_blob = " || ".join(h["text"].lower() for h in rec)
     assert "gortash rules as archduke" in rec_blob or "the tyrant survived" in rec_blob
+
+
+# --- S6 audit: per-ending cross-surface fact agreement + premise/Emperor reconciliation -
+
+# Under EACH grim ending, the facts the overlay FLIPS must AGREE across both retrieval
+# surfaces: the canon header (recall + lookup_lore) asserts the corrected value, and NO
+# authored .md sentence or recall lore line leaks a contradicting (pre-flip) claim. The
+# `header` strings are the corrected facts; `no_leak` are the stale assertions the audits
+# found leaking; `queries` exercise the surfaces a DM would actually call to ground a scene.
+_CROSS_SURFACE = {
+    "gortash-tyranny": {
+        # mis-templated from the brain-CONTROL branch; now matches its own prose.
+        "header": ["netherbrain=destroyed", "the_absolute=broken", "gortash=archduke",
+                   "the_emperor=free", "baldurs_gate=occupied"],
+        "no_leak": ["gortash is dead", "is dead, his **steel watch** wrecked",
+                    "the dukedom is empty", "seat of power is contested",
+                    "the contested dukedom", "the wrecked steel watch foundry below it",
+                    "all three were destroyed"],
+        "queries": ["Gortash", "Steel Watch", "dukedom", "the Absolute", "the Emperor"],
+    },
+    "dark-urge-bhaal": {
+        # FAIL fix: baldurs_gate fallen->occupied (living Bhaal-cult city), Emperor free.
+        "header": ["bhaal=ascendant", "baldurs_gate=occupied", "the_emperor=free",
+                   "gortash=dead"],
+        "no_leak": ["the city is traumatized and rebuilding",
+                    "the city survived; the cost was enormous",
+                    "all maneuver for control of the gate"],
+        "queries": ["Baldur's Gate city", "the Emperor", "power vacuum", "rebuilding"],
+    },
+    "illithid-ascension": {
+        # Emperor slain->free (a living NPC with a betrayal arc); absolute/city/heroes leaks scrubbed.
+        "header": ["netherbrain=dominant", "the_absolute=ascendant", "the_emperor=free",
+                   "baldurs_gate=occupied"],
+        "no_leak": ["the heroes who ended the absolute", "these are living legends now",
+                    "reasonable and seductive, serving only itself", "it serves only itself now",
+                    "the city is traumatized and rebuilding",
+                    "the winter after the fall of the absolute", "1492 dr, after the absolute",
+                    "lately freed from the absolute's grip"],
+        "queries": ["the heroes", "the Emperor", "the Absolute", "Baldur's Gate city", "factions"],
+    },
+}
+
+
+@pytest.mark.parametrize("ending", sorted(_CROSS_SURFACE))
+def test_grim_ending_recall_and_lookup_lore_agree_on_all_flipped_facts(ending, tmp_path, monkeypatch):
+    # S6 audit (HIGH): for every grim ending, recall and lookup_lore must AGREE on ALL the
+    # facts that ending flips (Gortash / Steel-Watch / the-Absolute / the-city / the-Emperor)
+    # — both surfaces lead with the corrected canon header, and NO stale pre-flip assertion
+    # survives on EITHER surface that would contradict the (corrected) world_state header.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    spec = _CROSS_SURFACE[ending]
+    cid = server.start_world("baldurs-gate", ending=ending)["campaign_id"]
+    for q in spec["queries"]:
+        rec = server.recall(cid, q)["hits"]
+        look = server.lookup_lore(cid, q)["hits"]
+        # both surfaces lead with the same authoritative header carrying the corrected facts
+        assert rec and rec[0]["kind"] == "world_state", f"{ending}/{q}: no recall header"
+        assert look and look[0]["source"] == "world-state", f"{ending}/{q}: no lookup header"
+        for fact in spec["header"]:
+            assert fact in rec[0]["text"], f"{ending}/{q}: recall header missing {fact!r}"
+            assert fact in look[0]["excerpt"], f"{ending}/{q}: lookup header missing {fact!r}"
+        # no stale leak that contradicts the corrected header — on EITHER surface
+        for h in look:
+            if h["source"] == "world-state":
+                continue
+            ex = h["excerpt"].lower()
+            for leak in spec["no_leak"]:
+                assert leak not in ex, f"{ending}/{q}: lookup_lore leaked {leak!r} ({h['source']})"
+        for h in rec:
+            if h["kind"] == "world_state":
+                continue
+            tx = h["text"].lower()
+            for leak in spec["no_leak"]:
+                assert leak not in tx, f"{ending}/{q}: recall leaked {leak!r}"
+
+
+def test_emperor_fact_is_living_when_emperor_has_a_companion_arc():
+    # S6 audit (HIGH, the slain-vs-alive class): an ending whose Emperor NPC carries a
+    # `companion_seeds` arc (a recruitable/gated/betraying live NPC) MUST set `the_emperor`
+    # to a LIVING value in its facts row — a `slain` Emperor cannot also have a live arc.
+    # (illithid-ascension shipped the_emperor=slain alongside a live prize_seized betrayal
+    # arc — a hard self-contradiction this guards against regressing.) More broadly: any
+    # ending that keeps the Emperor alive (fate or arc) must not assert the_emperor=slain.
+    LIVING = {"free", "allied", "ruler", "displaced", "at-large"}
+    checked_arc = False
+    for e in content.list_endings("baldurs-gate"):
+        ov = content.load_ending_data("baldurs-gate", e["id"])
+        facts = (ov.get("world_state") or {}).get("facts", {})
+        emp = facts.get("the_emperor")
+        cseeds = ov.get("companion_seeds") or {}
+        has_emperor_arc = any(
+            str(k).strip().lower() in ("npc-the-emperor", "the emperor") for k in cseeds
+        )
+        if has_emperor_arc:
+            checked_arc = True
+            assert emp in LIVING, (
+                f"{e['id']}: the_emperor={emp!r} but the Emperor has a live companion arc "
+                f"— must be a living value {sorted(LIVING)}"
+            )
+        # no ending may assert the Emperor is slain at all in this world-set (every ending
+        # keeps the Emperor as a live, scheming NPC in its fates/prose).
+        assert emp != "slain", f"{e['id']}: the_emperor=slain contradicts the live Emperor prose"
+    assert checked_arc, "expected at least one ending to seed an Emperor companion arc (illithid)"
+
+
+def _rendered_premise(world_id: str, ending: str) -> str:
+    # The premise the DM reads to open the table — base premise (or the overlay's full
+    # `premise` replacement) + the appended `premise_suffix`, exactly as start_world renders it.
+    c = content.seed_world(content.load_world_data(world_id), ending=ending)
+    return c.summary.lower()
+
+
+@pytest.mark.parametrize("ending,dead_clauses,alive_marker", [
+    # gortash: the base premise asserted "...Enver Gortash, Orin the Red) dead, the Steel
+    # Watch fallen silent ... Gortash's death left a power vacuum"; the overlay suffix
+    # asserts "Gortash lived". The rendered premise must NOT carry both — the full `premise`
+    # replacement drops every dead-Gortash / fallen-Watch / power-vacuum base clause.
+    # (Substrings are taken verbatim from the BASE world.json premise so the test bites.)
+    ("gortash-tyranny",
+     ["orin the red) dead", "the steel watch fallen silent",
+      "power vacuum no one trusts", "death left a power vacuum"],
+     "rules the gate as archduke"),
+    # dark-urge: Gortash IS dead here (so a dead-Gortash clause is NOT a contradiction), but
+    # the base premise's quiet-recovery / heroes-scattered / power-vacuum framing must not
+    # co-exist with the crowned-Bhaalspawn overlay — the living-city thriller premise replaces it.
+    ("dark-urge-bhaal",
+     ["power vacuum no one trusts", "scattered into legend",
+      "the heroes who saved the city have scattered", "death left a power vacuum"],
+     "crowned bhaalspawn"),
+])
+def test_rendered_premise_is_internally_consistent(ending, dead_clauses, alive_marker):
+    # S6 audit (HIGH, systemic): the rendered premise must not say a thing is both dead and
+    # alive in one paragraph (the "Gortash is dead AND Gortash lived" bleed-through caused by
+    # appending the overlay suffix to an un-replaced base premise). With the `premise`
+    # replacement field these endings render a single coherent opening framing.
+    prem = _rendered_premise("baldurs-gate", ending)
+    for clause in dead_clauses:
+        assert clause not in prem, f"{ending}: rendered premise still carries stale clause {clause!r}"
+    assert alive_marker in prem, f"{ending}: rendered premise lost its post-state framing {alive_marker!r}"
+
+
+def test_overlay_premise_and_story_seeds_replace_are_additive(tmp_path, monkeypatch):
+    # S6 engine addition: `premise` (full premise replace) and `story_seeds_replace`/
+    # `story_seeds` (replace base seeds) are ADDITIVE — absent => today's append behavior.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    w = content.load_world_data("baldurs-gate")
+    base_premise = w.get("premise", "")
+    base_seeds = list(w.get("story_seeds", []) or [])
+
+    # heroes-live ships NO premise / story_seeds_replace -> base premise kept (+ its suffix),
+    # base seeds kept (+ its appends). The replacement machinery is a no-op here.
+    n = content.seed_world(w, ending="netherbrain-destroyed-heroes-live")
+    assert n.summary.startswith(base_premise), "no-premise ending must keep the base premise opener"
+    out = server.start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")
+    # base seeds survive in order, then the overlay's appends follow
+    assert out["story_seeds"][: len(base_seeds)] == base_seeds
+
+    # gortash ships BOTH a `premise` replacement and a `story_seeds_replace`:
+    g = content.seed_world(w, ending="gortash-tyranny")
+    assert not g.summary.startswith(base_premise), "premise replacement must supersede the base opener"
+    gout = server.start_world("baldurs-gate", ending="gortash-tyranny")
+    # the base "contested dukedom: Gortash's empty seat" seed is REPLACED (not present),
+    # while non-conflicting flavor is re-authored; appends still follow the replace set.
+    assert not any("gortash's empty seat" in s.lower() for s in gout["story_seeds"]), \
+        "story_seeds_replace must drop the contradicting base seed"
+    assert any("a resistance cell needs a face" in s.lower() for s in gout["story_seeds"]), \
+        "story_seeds_append must still apply on top of the replace set"
+
+
+def test_overlay_premise_and_story_seeds_replace_degrade_not_abort(tmp_path, monkeypatch):
+    # S6 engine addition: a malformed `premise` / `story_seeds_replace` must DEGRADE (be
+    # ignored, base kept) not abort start_world — mirroring the world_state/companion_seeds
+    # guards for hand-edited overlays. We author a custom overlay with bad shapes.
+    import shutil
+    src_world = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.parent.mkdir(parents=True)
+    shutil.copytree(src_world, dst_world, ignore=lambda d, names: ["endings"] if "endings" in names else [])
+    endings_dir = dst_world / "endings"
+    endings_dir.mkdir()
+    (endings_dir / "bad-replace.json").write_text(json.dumps({
+        "id": "bad-replace", "name": "Bad Replace", "era": "1493 DR",
+        "premise": ["not", "a", "string"],          # malformed -> coerced/ignored
+        "story_seeds_replace": "not a list",          # malformed -> ignored, base seeds stand
+    }), encoding="utf-8")
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    w = content.load_world_data("baldurs-gate")
+    base_seeds = list(w.get("story_seeds", []) or [])
+    c = content.seed_world(w, ending="bad-replace")  # must NOT raise
+    assert c.ending_id == "bad-replace"
+    # malformed premise (a list) -> str() coercion makes it a non-empty string, which the
+    # field treats as a replacement; the key guarantee is simply that it does not CRASH.
+    assert isinstance(c.summary, str)
+    out = server.start_world("baldurs-gate", ending="bad-replace")
+    # malformed story_seeds_replace (a string) is ignored -> the base seeds survive intact.
+    assert out["story_seeds"] == base_seeds, "malformed story_seeds_replace must fall back to base seeds"
 
 
 def test_world_state_default_path_is_byte_identical(tmp_path, monkeypatch):

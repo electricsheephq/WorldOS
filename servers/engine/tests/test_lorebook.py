@@ -222,3 +222,22 @@ def test_redact_superseded_helper_sentence_granularity():
     out4, did4, gut4 = _redact_superseded("Gortash is dead. The seat is empty.",
                                           ["gortash is dead", "the seat is empty"])
     assert did4 is True and gut4 is True and out4 == "[…superseded…]"
+
+
+def test_legends_page_covers_all_eleven_shipped_heroes():
+    # S6 audit (content gap): the authored hero roster the-legends.md must name ALL 11 major
+    # heroes so lookup_lore("Gale"/"Halsin") resolves to the authored bio page instead of
+    # falling through to unrelated wiki pages (couriers, a mansion). Gale and Halsin were
+    # missing (9/11); this guards the base-seed fix that benefits every ending's hero lookups.
+    heroes = ["Jaheira", "Minsc", "Astarion", "Shadowheart", "Wyll", "Karlach",
+              "Gale", "Lae'zel", "Halsin", "Emperor", "Withers"]
+    for hero in ("Gale", "Halsin"):
+        hits = lorebook.lookup_lore("baldurs-gate", hero, 5)
+        assert any("the-legends" in h["source"] for h in hits), \
+            f"lookup_lore({hero!r}) must surface the authored the-legends.md roster page"
+    # the page itself names every hero (ending-neutral roster — per-ending fate is separate)
+    pages = {p["source"]: p["text"].lower() for p in lorebook._pages("baldurs-gate")}
+    legends = next(t for s, t in pages.items() if "the-legends" in s)
+    for hero in heroes:
+        key = hero.split()[-1].lower()  # "Lae'zel" / "Emperor" etc.
+        assert key in legends, f"the-legends.md omits {hero!r}"

@@ -427,8 +427,11 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     (surviving base threads + overlay threads) — never base-then-overlay — so no retired
     thread keeps ticking and there are no duplicate `thread_id`s (B-LOW-1). Each `fates`
     entry lands as a memory fact on the matching npc_roster Character — plus a lore line
-    so a hero who isn't in the roster is still covered. Premise gets the suffix appended.
-    (The overlay's story_seeds_append are surfaced by start_world, not here.)
+    so a hero who isn't in the roster is still covered. Premise gets the suffix appended —
+    unless the overlay supplies a full `premise` REPLACEMENT (S6), which supersedes the
+    base premise before the suffix appends (for endings whose base premise contradicts the
+    post-state). (The overlay's story_seeds_append / story_seeds_replace are surfaced by
+    start_world, not here.)
 
     ADDITIVE (S4): an optional `companion_seeds` block PRE-LOADS canon companions'
     relationship arcs + sealed agendas onto the matching roster Character — so the chosen
@@ -438,6 +441,16 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     new_era = str(overlay.get("era") or "").strip()
     if new_era:
         c.era = new_era
+
+    # ADDITIVE (S6 audit): an optional `premise` REPLACES the base rendered premise
+    # entirely (paralleling how `era` is overwritten), for endings whose base premise
+    # contradicts the post-state (the "Gortash dead AND alive in one paragraph" bleed-
+    # through). Absent -> the base premise is kept and only the suffix appends (today's
+    # behavior). The replacement runs BEFORE the suffix append, so an ending may use both
+    # a clean standalone premise and the "into this world the player steps" suffix closer.
+    new_premise = str(overlay.get("premise") or "").strip()
+    if new_premise:
+        c.summary = new_premise
 
     suffix = str(overlay.get("premise_suffix") or "").strip()
     if suffix:
@@ -597,12 +610,13 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     adventure as the player explores.
 
     `ending` selects a post-state OVERLAY (content/worlds/<id>/endings/<ending>.json):
-    after the base seed, the overlay OVERWRITES the era, appends its history + standing
-    threads into recallable lore (and ticks them in the world-sim), appends story_seeds,
-    lands each `fates` entry on the matching roster NPC, and PRE-LOADS any `companion_seeds`
-    arc/agenda onto the matching roster companion. `ending="random"` picks one
-    of the world's overlays at random; an unknown/empty `ending` leaves the BASE world
-    state untouched (today's behavior). The resolved id is stored on `Campaign.ending_id`."""
+    after the base seed, the overlay OVERWRITES the era (and, optionally, the rendered
+    premise), appends its history + standing threads into recallable lore (and ticks them
+    in the world-sim), appends OR replaces story_seeds, lands each `fates` entry on the
+    matching roster NPC, and PRE-LOADS any `companion_seeds` arc/agenda onto the matching
+    roster companion. `ending="random"` picks one of the world's overlays at random; an
+    unknown/empty `ending` leaves the BASE world state untouched (today's behavior). The
+    resolved id is stored on `Campaign.ending_id`."""
     if not isinstance(world, dict):
         raise ValueError("world data must be a JSON object")
     c = Campaign(title=world.get("name", "Untitled World"), summary=world.get("premise", ""))
