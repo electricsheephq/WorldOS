@@ -212,6 +212,39 @@ def main() -> int:
     comp = [(c.get("name", "") or "").strip().lower() for c in chars.values() if c.get("kind") == "companion"]
     chk("no_duplicate_companion", len(comp) == len(set(comp)), f"companions={comp}")
 
+    # 8) WORLD-PROGRESSION FLOOR (the keystone fix). The LLM scorers happily gave a frozen
+    # one-scene run story=4.1 / mechanical=4.0 / GREEN — because NOTHING checked that the world
+    # actually MOVED. Across 56 saved campaigns the day never left 1 and the party never left
+    # the opening room, yet every run "passed" and we kept polishing prose inside a dead scene.
+    # A living-world session that runs a full arc MUST advance time and travel; one that ends
+    # frozen at the start is broken, however pretty the prose. Applied only to a SUBSTANTIAL
+    # session (>= MIN_BEATS player beats) so a short smoke/scene test isn't penalized.
+    MIN_BEATS = 6
+    if chat:
+        session_beats = sum(1 for r in chat if r.get("role") == "player")
+    elif has_facade:
+        session_beats = len(mv)
+    else:
+        session_beats = dm_text
+    if session_beats >= MIN_BEATS:
+        day = state.get("day") or 1
+        tod = (state.get("time_of_day") or "").strip().lower()
+        # Campaigns start at day 1, "morning"; a full session still parked there never aged.
+        chk("world_advanced_time", day > 1 or (tod not in ("", "morning")),
+            f"day={day} time_of_day={tod or '?'} after {session_beats} beats — the clock never moved "
+            f"(advance_time / travel_to(advance_time=True) / long_rest)")
+        locs = state.get("locations", {}) or {}
+        visited = sum(1 for l in locs.values() if isinstance(l, dict) and l.get("visited"))
+        chk("party_traveled", visited >= 2,
+            f"visited {visited}/{len(locs)} location(s) after {session_beats} beats — the party never "
+            f"left the opening scene (travel_to / add_location make_current=True)")
+        # WARN (the metric is softer): did the world gain/engage faces, or just sit in the seed?
+        npcs_met = sum(1 for c in chars.values()
+                       if isinstance(c, dict) and c.get("kind") == "npc" and c.get("met"))
+        chk("world_peopled", npcs_met >= 2,
+            f"only {npcs_met} NPC(s) engaged (met) across {session_beats} beats — a living world "
+            f"should introduce new faces, not just sit in the seeded roster", fatal=False)
+
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]
     print("=== behavioral assertions ===")
