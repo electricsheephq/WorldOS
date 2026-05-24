@@ -414,6 +414,13 @@ def get_state(campaign_id: str) -> dict:
     c = _require(campaign_id)
     loc = c.locations.get(c.current_location_id) if c.current_location_id else None
     party = []
+    # F2: TPK / wipe detector — read-only. A "down" party member is dead OR at 0 HP and
+    # not stabilized (i.e. dead or bleeding out). `party_down` is true only when EVERY
+    # living-role member (player/companion) is down AND there is at least one such member
+    # (an empty party is not a wipe). The DM reads this to RECOGNIZE the wipe moment and
+    # offer all-re-roll-and-continue vs a tragic end; the engine never auto-acts on it.
+    fighters_total = 0
+    fighters_down = 0
     for cid in c.party:
         ch = c.characters.get(cid)
         if ch is None:
@@ -426,7 +433,19 @@ def get_state(campaign_id: str) -> dict:
             "ac": ch.armor_class,
             "conditions": [x.value for x in ch.conditions],
             "voice_id": ch.voice_id,
+            # F1: surface the death state per party member so a DEAD PC doesn't read as
+            # alive. `dead` is the re-roll trigger (vs `dying`, which is still saveable);
+            # `stable` flags a downed-but-not-dying ally. Always present (additive keys) so
+            # the DM can tell "died" from "dying" without a second get_character call.
+            "dead": ch.dead,
+            "stable": ch.stable,
         }
+        # Count toward the wipe signal only the living-role members (a monster/npc that
+        # somehow sits in `party` doesn't make a TPK). "Down" = dead or at 0 HP & not stable.
+        if ch.kind in ("player", "companion"):
+            fighters_total += 1
+            if ch.dead or (ch.current_hp <= 0 and not ch.stable):
+                fighters_down += 1
         # Surface the two states a re-grounding DM most needs but the thin summary hid:
         # a DYING ally (0 HP, not dead/stabilized) with their death-save tally, and any
         # remaining class-resource pools (Rage/Ki/Channel Divinity/…) as "left/max". The
@@ -452,6 +471,9 @@ def get_state(campaign_id: str) -> dict:
         "time_of_day": c.time_of_day,
         "location": {"id": loc.id, "name": loc.name} if loc else None,
         "party": party,
+        # F2: true when every player/companion in the party is down (dead or bleeding out)
+        # and the party is non-empty — the read-only signal a DM uses to recognize a wipe.
+        "party_down": fighters_total > 0 and fighters_down == fighters_total,
         "active_quests": [
             {"id": q.id, "title": q.title}
             for q in c.quests.values()
@@ -1073,6 +1095,113 @@ def recruit_companion(
             c.party.append(ch.id)
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party)}
+
+
+@mcp.tool()
+def reroll_character(
+    campaign_id: str,
+    dead_id: str,
+    name: str,
+    class_name: str = "",
+    race: str = "",
+    abilities: Optional[dict] = None,
+    background: str = "",
+    subclass: Optional[str] = None,
+    skills: Optional[list] = None,
+    voice_id: str = "narrator-dm",
+    level: Optional[int] = None,
+) -> dict:
+    """Re-roll a NEW player character after a PC dies, and continue the same quest — the
+    D&D-table answer to "no save states". Death is one-way (the engine never resurrects
+    the fallen); this is *forward* motion: a new hero, at the dead PC's level, joins the
+    ongoing campaign. The world-state — quests, day, locations, lore, factions, surviving
+    companions and their memories — is untouched (it lives on the Campaign, not the PC).
+
+    Atomic swap under the campaign lock:
+      1. Validate `dead_id` is a player/companion record that is actually `dead` (re-roll
+         is for death, not a live swap — refuses a living target).
+      2. Build the new PC at the dead PC's `total_level` by default (pass `level` to
+         override), `kind="player"`, with a full SRD sheet when `class_name` is a known
+         class (saves/HP/AC/features), else a blank sheet the DM fleshes out.
+      3. DEMOTE the corpse OFF `kind=="player"` → `kind="npc"`, and REMOVE it from the
+         party. This is the keystone: the player facade resolves the active PC by
+         `kind=="player"` (party-order-first, no dead-filter), so the corpse MUST be
+         demoted or the facade keeps handing moves to it and the new PC can't act. The
+         record is KEPT in `characters` (a memorial — the fallen hero the world remembers).
+      4. Add the new PC to the party as the sole `kind=="player"`.
+
+    Gear and gold are LOST with the body by default — a new character earns their own kit
+    (use `add_item`/`adjust_currency` if the fiction lets the party loot the corpse). HOW
+    the new hero arrives in the world is the DM's narration, not this tool's job. On a
+    party WIPE, call this once per fallen member (there is no separate batch tool).
+
+    Returns ``{new_pc: {id, name, kind, level, in_party}, memorial: {id, name, now_kind}}``.
+    """
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        dead = _char(c, dead_id)  # raises if the id isn't in the campaign
+        # Guard: re-roll is the answer to DEATH, not a swap of a living PC. A character is
+        # only re-rollable once it has actually died (combat marks `dead=True` on 3 failed
+        # death saves / massive damage / a killing blow while down).
+        if not dead.dead:
+            raise ValueError(
+                f"{dead_id!r} ({dead.name!r}) is not dead — re-roll is for a fallen "
+                f"character, not swapping a living one. Heal/stabilize them instead, or "
+                f"use create_character for a brand-new party member."
+            )
+        if dead.kind not in ("player", "companion"):
+            raise ValueError(
+                f"{dead_id!r} is a {dead.kind!r}; only a fallen player or companion can be "
+                f"re-rolled. (Monsters/NPCs die outright and are not party members.)"
+            )
+        lvl = level if level is not None else dead.total_level
+
+        # Build the new PC at the dead PC's level (mirrors create_character's core). A known
+        # class gets a full SRD sheet via _apply_srd_class_defaults (HP/saves/AC/features at
+        # `lvl`); no class -> a blank level-N sheet the DM fleshes out (like `nobody`).
+        scores = AbilityScores(**(abilities or {}))
+        new = Character(
+            name=name,
+            kind="player",
+            race=race,
+            background=background,
+            voice_id=voice_id,
+            classes=[ClassLevel(name=class_name.capitalize(), level=lvl, subclass=subclass)]
+            if class_name
+            else [],
+            abilities=scores,
+            initiative_bonus=scores.modifier(Ability.DEX),
+        )
+        if skills:  # explicit skill choices win over the class default-fill
+            new.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
+        if class_name:
+            _apply_srd_class_defaults(new, class_name, lvl, set_base_ac=True)
+
+        # KEYSTONE — demote the corpse off kind=="player" so the facade stops resolving it,
+        # and remove it from the party. Keep the record in `characters` as a memorial (it
+        # stays dead=True, anchored where it fell — the ledger/decisions may reference it,
+        # and the world remembers the fallen hero). Gear/gold stay ON the corpse (lost with
+        # the body) — we deliberately do NOT transfer inventory or currency to the new PC.
+        dead.kind = "npc"  # type: ignore[assignment]
+        if dead.location_id is None:  # anchor the fallen one where the party currently is
+            dead.location_id = c.current_location_id
+        c.party = [pid for pid in c.party if pid != dead_id]
+
+        # Add the new PC last, so it is the ONLY kind=="player" the facade can resolve
+        # (clean regardless of party order).
+        c.characters[new.id] = new
+        c.party.append(new.id)
+        save_campaign(c)
+        return {
+            "new_pc": {
+                "id": new.id,
+                "name": new.name,
+                "kind": new.kind,
+                "level": new.total_level,
+                "in_party": new.id in c.party,
+            },
+            "memorial": {"id": dead.id, "name": dead.name, "now_kind": dead.kind},
+        }
 
 
 @mcp.tool()

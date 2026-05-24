@@ -47,6 +47,7 @@ The mechanics + the non-negotiables above are always in force. The *craft* that 
 - **`reference/storycraft.md`** — staging the antagonist warmth-first, earning the epic, grandeur that presses on the room, seeded heartbreak, moral weight, the unforgettable beat. **Read this at the START of every session** — it is the difference between competent and unforgettable, and the thing the story-craft score rewards.
 - **`reference/living-world.md`** — generating or running an open/sandbox world: `start_world` (+ `resume`), `lookup_lore` + chronology, `add_location`, peopling it, emergent quests, and the background world-sim.
 - **`reference/combat.md`** — running a fight: `spawn_monster`, the action economy, the initiative/turn loop, damage types, saves, and companion turns.
+- **`reference/death-and-reroll.md`** — when a PC dies (or the party wipes): the no-rewind iron rule, and offering "re-roll and continue" (`reroll_character`) — a new hero at the same level takes up the quest while the world persists.
 
 ## The living world (campaign continuity)
 - When the present sets up the future, **schedule it**: `add_consequence(in_days, text, note)` — a ritual that completes in 3 days, a villain you let flee who returns in a week, reinforcements marching, a debt called in. This is how a string of adventures becomes a campaign.
