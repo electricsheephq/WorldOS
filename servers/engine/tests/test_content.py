@@ -272,6 +272,30 @@ def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch
     assert server.load_canon_character(cid, "Astarion", kind="npc").get("id") == "npc-astarion"
 
 
+def test_start_character_pickup_promotes_existing_roster_npc(tmp_path, monkeypatch):
+    # B-MED-1: start_world seeds Minsc as a roster NPC (npc-minsc "Minsc and Boo").
+    # pickup:Minsc must PROMOTE that record to the player, NOT mint a second Minsc.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    from store import load_campaign
+
+    before = [ch for ch in load_campaign(cid).characters.values() if "minsc" in ch.name.lower()]
+    assert len(before) == 1 and before[0].id == "npc-minsc" and before[0].kind == "npc"
+
+    pm = server.start_character(cid, origin="pickup:Minsc")
+    # the SAME roster record is reused (no duplicate), now the player and in the party
+    assert pm["id"] == "npc-minsc" and pm["kind"] == "player" and pm["in_party"]
+    assert pm.get("promoted_existing") is True
+
+    after = [ch for ch in load_campaign(cid).characters.values() if "minsc" in ch.name.lower()]
+    assert len(after) == 1, f"expected exactly ONE Minsc, got {[(c.id, c.kind) for c in after]}"
+    only = after[0]
+    assert only.id == "npc-minsc" and only.kind == "player" and only.id in load_campaign(cid).party
+    # the canon sheet is applied to the promoted record (race + a real SRD class sheet)
+    sheet = server.get_character(cid, "npc-minsc")
+    assert sheet["race"] == "Human" and sheet["proficiency_bonus"] == 2  # Ranger L1 SRD
+
+
 def test_ending_overlay_retracts_contradictory_base_canon():
     # B-HIGH-1: a post-state overlay and the base seed are mutually exclusive. The
     # overlay must RETRACT the base facts it supersedes, so `recall`/the ticking world-
