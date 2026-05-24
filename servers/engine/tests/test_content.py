@@ -376,6 +376,136 @@ def test_ending_overlay_tolerates_malformed_optional_field():
     assert "base fact" not in c.lore  # supersedes="base" coerced + applied -> retracted
 
 
+# --- S5: structured WorldState canon + the two-surface (recall vs lookup_lore) fix ----
+
+def test_worldstate_model_typed_tenor_and_canon_header():
+    # The typed canon spine: world_tenor is a closed Literal (a typo raises), facts is a
+    # free dict (setting-agnostic), and canon_header renders the authoritative one-liner.
+    from models import WorldState
+    from pydantic import ValidationError as VE
+    ws = WorldState(world_tenor="grim", facts={"netherbrain": "claimed", "baldurs_gate": "occupied"})
+    h = ws.canon_header()
+    assert h.startswith("CURRENT WORLD (authoritative): tenor=grim")
+    assert "netherbrain=claimed" in h and "baldurs_gate=occupied" in h
+    assert "may describe other timelines" in h  # frames the prose below as background
+    # a bad tenor enum is rejected (this is what makes the degrade-not-abort guard matter)
+    with pytest.raises(VE):
+        WorldState(world_tenor="grimdark")
+    # default == today's neutral base (hopeful, no facts) -> header lists just the dial
+    assert WorldState().canon_header().startswith("CURRENT WORLD (authoritative): tenor=hopeful.")
+
+
+def test_seed_world_sets_typed_world_state_from_ending():
+    # Each shipped ending now carries a structured world_state block; the overlay sets it
+    # on the campaign (+ records the retraction predicate for lookup_lore de-confliction).
+    w = content.load_world_data("baldurs-gate")
+    g = content.seed_world(w, ending="gortash-tyranny")
+    assert g.world_state is not None
+    assert g.world_state.world_tenor == "grim"
+    assert g.world_state.facts.get("netherbrain") == "claimed"
+    assert g.world_state.facts.get("baldurs_gate") == "occupied"
+    assert g.lore_supersedes  # the .md de-confliction predicate was recorded
+    # a hopeful ending wires the hopeful tenor + rebuilding city
+    n = content.seed_world(w, ending="netherbrain-destroyed-heroes-live")
+    assert n.world_state.world_tenor == "hopeful"
+    assert n.world_state.facts.get("baldurs_gate") == "rebuilding"
+    # all four shipped endings parse to a valid WorldState (no malformed rows ship)
+    for e in content.list_endings("baldurs-gate"):
+        ws = content.seed_world(w, ending=e["id"]).world_state
+        assert ws is not None and ws.world_tenor in ("hopeful", "uneasy", "grim")
+
+
+def test_recall_and_lookup_lore_agree_under_nondefault_ending(tmp_path, monkeypatch):
+    # THE acceptance criterion (none existed before): under gortash-tyranny the two
+    # retrieval surfaces must AGREE about Gortash. recall reads overlay-de-conflicted
+    # c.lore; lookup_lore reads the SEPARATE .md corpus — which previously still asserted
+    # "Gortash is dead / brain destroyed". Now the corpus is de-conflicted on the same
+    # basis (+ both led by the canon header), so no contradicting assertion reaches the DM.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
+
+    rec = server.recall(cid, "Gortash")["hits"]
+    look = server.lookup_lore(cid, "Gortash")["hits"]
+
+    # both surfaces LEAD with the same authoritative world-state header
+    assert rec[0]["kind"] == "world_state" and "tenor=grim" in rec[0]["text"]
+    assert look[0]["source"] == "world-state" and "tenor=grim" in look[0]["excerpt"]
+    assert "netherbrain=claimed" in rec[0]["text"] and "netherbrain=claimed" in look[0]["excerpt"]
+
+    # the contradicting "Gortash is dead / brain destroyed / Steel Watch wrecked / dukedom
+    # empty" assertions no longer appear among the authored lookup_lore hits...
+    CONTRADICTIONS = (
+        "gortash is dead", "and was destroyed in the harbor",
+        "steel watch wrecked", "the dukedom is empty", "the seat of power is contested",
+    )
+    page_hits = [h for h in look if h["source"] != "world-state"]
+    assert page_hits, "lookup_lore should still return background canon, just de-conflicted"
+    for h in page_hits:
+        ex = h["excerpt"].lower()
+        assert not any(c in ex for c in CONTRADICTIONS), f"contradiction leaked: {h['source']}"
+
+    # ...and the surviving recall canon affirms the tyrant lives (agreement, not silence)
+    rec_blob = " || ".join(h["text"].lower() for h in rec)
+    assert "gortash rules as archduke" in rec_blob or "the tyrant survived" in rec_blob
+
+
+def test_world_state_default_path_is_byte_identical(tmp_path, monkeypatch):
+    # ADDITIVE: with no ending (or an ending without a world_state block) there is no
+    # world_state -> recall/lookup_lore emit NO header and NO de-confliction, byte-for-byte
+    # as before. Compare a base campaign's surfaces with and against the header path.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    # base world (no ending): world_state is None, lore_supersedes empty
+    base_cid = server.start_world("baldurs-gate")["campaign_id"]
+    from store import load_campaign
+    bc = load_campaign(base_cid)
+    assert bc.world_state is None and bc.lore_supersedes == []
+
+    # recall: no synthetic world_state hit prepended
+    rec = server.recall(base_cid, "Gortash")["hits"]
+    assert all(h["kind"] != "world_state" for h in rec)
+    # and it equals the raw ledger result (the wrapper added nothing)
+    import ledger as ledger_mod
+    assert rec == ledger_mod.recall(base_cid, "Gortash", kinds=None, limit=8)
+
+    # lookup_lore: no header hit, and identical to the bare lorebook call (no de-confliction)
+    look = server.lookup_lore(base_cid, "Gortash")["hits"]
+    assert all(h["source"] != "world-state" for h in look)
+    import lorebook
+    assert look == lorebook.lookup_lore("baldurs-gate", "Gortash", 5)
+
+
+def test_world_state_malformed_block_degrades_not_aborts(tmp_path, monkeypatch):
+    # DEGRADE-not-abort: a malformed world_state block in an ending must be SKIPPED (the
+    # world keeps None state), never crash start_world — mirroring the companion_seeds guard.
+    import shutil
+    src = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.mkdir(parents=True)
+    for item in src.iterdir():
+        if item.name == "endings":
+            continue  # author our own endings/ below
+        if item.is_dir():
+            shutil.copytree(item, dst_world / item.name)
+        else:
+            shutil.copy2(item, dst_world / item.name)
+    endings_dir = dst_world / "endings"
+    endings_dir.mkdir()
+    (endings_dir / "bad-ws.json").write_text(json.dumps({
+        "id": "bad-ws", "name": "Bad WorldState", "era": "1493 DR, after the crisis",
+        # MALFORMED: tenor outside the Literal set + a forbidden extra key
+        "world_state": {"world_tenor": "apocalyptic", "facts": {"x": "y"}, "bogus": 1},
+        # a valid sibling field still applies, proving only the bad block degraded
+        "history_append": ["A new line of history."],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w, ending="bad-ws")  # must NOT raise
+    assert c.ending_id == "bad-ws"
+    assert c.world_state is None, "malformed world_state must degrade to None, not partial"
+    assert any("A new line of history." in l for l in c.lore)  # the rest of the overlay applied
+
+
 # --- S4 synthesis: the chosen ENDING pre-loads which companions can turn --------------
 
 def test_ending_companion_seed_preloads_arc_on_roster_companion():

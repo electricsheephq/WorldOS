@@ -3,6 +3,15 @@
   "name": "The Slayer Crowned — Bhaal's Chosen Rises",
   "schema_version": 1,
   "supersedes": [],
+  "world_state": {
+    "world_tenor": "grim",
+    "facts": {
+      "netherbrain": "destroyed",
+      "the_absolute": "broken",
+      "bhaal": "ascendant",
+      "baldurs_gate": "fallen"
+    }
+  },
   "era": "1492 DR — the winter the murder-god won his throne back. The Netherbrain fell, but in the same hour a defender who carried the Dark Urge embraced their birthright as the true Chosen of Bhaal, slew their way clear of the war, and gave the Lord of Murder a living hand in the world again. Ketheric Thorm and Enver Gortash are dead; Orin the Red is dead, supplanted. Keep the timeline straight: the Absolute is broken, but a new Bhaalspawn walks crowned in blood, and the Gate's nights have a patron once more. Do not raise the long-dead or pre-empt events that haven't happened.",
   "premise_suffix": " In this telling the brain was destroyed — and a darker thing took root in the ruins. A defender who had carried the Dark Urge all along surrendered to it, claimed the mantle of Bhaal's true Chosen, and ended the war with a coronation of murder. Now the Lord of Murder has a living instrument in Baldur's Gate again: the Bhaalist cult walks bolder, ritual killings mark the calendar, and the city's relief is shot through with quiet terror. Into a Gate where the dark has a name and a patron, the player steps: a nobody whose anonymity is the only thing between them and a god's appetite — and perhaps the only blade close enough to matter.",
   "standing_threads": [
