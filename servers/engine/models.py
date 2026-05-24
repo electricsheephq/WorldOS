@@ -202,12 +202,18 @@ class Character(_StrictModel):
     features: list[str] = Field(default_factory=list)  # class/subclass features gained
     extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
     sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
+    xp_value: int = 0  # XP this creature grants when defeated (set when spawned from the bestiary; drives auto-XP)
 
     # roleplay (companion / npc)
     personality: str = ""
     attitude: str = ""  # npc disposition toward the party
     memory: list[str] = Field(default_factory=list)  # facts the npc/companion remembers
     notes: str = ""
+    # structured identity — fed by canon ingestion (S2.5) + shown in portrait cards;
+    # all optional (empty = today's behavior). Give the DM concrete material to voice.
+    appearance: str = ""   # physical description (hair, build, scars, dress) → portrait prompts
+    mannerisms: str = ""   # tics/gestures/speech habits ("taps two fingers when thinking")
+    backstory: str = ""    # origin + current want, in brief
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
@@ -269,6 +275,9 @@ class Location(_StrictModel):
     # The engine's adjacency/travel is governed solely by `connections`; coords are
     # never used for movement or distance.
     hex: Optional[tuple[int, int]] = None
+    # Spatial "walk-time" context (fables-style) — ADDITIVE; empty = today's behavior.
+    region: str = ""  # the parent zone this location nests in ("South West Odrun Fell")
+    travel_times: dict[str, int] = Field(default_factory=dict)  # connected location id -> walk minutes
 
 
 class Faction(_StrictModel):
@@ -376,3 +385,4 @@ class Campaign(_StrictModel):
     lore: list[str] = Field(default_factory=list)  # world-bible facts (history, standing threads) — indexed into recall so the DM keeps a generated world consistent
     world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
     era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened
+    leveling_mode: Literal["xp", "milestone"] = "xp"  # "xp": end_combat auto-awards defeated monsters' XP to the party; "milestone": DM levels by story beat (no auto-XP)

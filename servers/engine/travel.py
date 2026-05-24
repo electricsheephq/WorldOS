@@ -120,12 +120,27 @@ def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = Fals
     }
 
 
-def look_around(campaign: Campaign) -> dict:
-    """Describe where the party stands and the exits they can take.
+def _cast_at(campaign: Campaign, loc_id: str) -> list[dict]:
+    """The local cast anchored to a location — NPCs/monsters/companions — for the
+    "who's here / who's nearby" spatial context (fables-style). Players aren't
+    listed (they ARE the party)."""
+    return [
+        {"id": ch.id, "name": ch.name, "kind": ch.kind, "attitude": ch.attitude}
+        for ch in campaign.characters.values()
+        if ch.location_id == loc_id and ch.kind in ("npc", "monster", "companion")
+    ]
 
-    Returns ``{location, exits, day, time_of_day}``. ``location`` is None when
-    the party hasn't been placed yet. Each exit carries whether it's been
-    visited so the DM knows what's new; dangling connection ids are dropped.
+
+def look_around(campaign: Campaign) -> dict:
+    """Describe where the party stands, who's around, and the exits they can take.
+
+    Returns ``{location, here, exits, day, time_of_day}``. ``location`` is None when
+    the party hasn't been placed yet and now also carries its ``region`` (the parent
+    zone). ``here`` is the local cast in speaking distance (same location). Each exit
+    carries ``visited`` plus ``walk_minutes`` (from the location's `travel_times`, or
+    None when unset → the DM uses a sensible default) and ``characters`` (who's over
+    there, out of speaking distance) — mirroring fables' nearby-locations context.
+    Dangling connection ids are dropped.
     """
     cur_id = campaign.current_location_id
     cur = campaign.locations.get(cur_id) if cur_id is not None else None
@@ -136,16 +151,26 @@ def look_around(campaign: Campaign) -> dict:
             "description": cur.description,
             "notes": cur.notes,
             "visited": cur.visited,
+            "region": cur.region,
         }
         if cur is not None
         else None
     )
+    here = _cast_at(campaign, cur.id) if cur is not None else []
+    cur_times = cur.travel_times if cur is not None else {}
     exits = [
-        {"id": loc.id, "name": loc.name, "visited": loc.visited}
+        {
+            "id": loc.id,
+            "name": loc.name,
+            "visited": loc.visited,
+            "walk_minutes": cur_times.get(loc.id),
+            "characters": [ch["name"] for ch in _cast_at(campaign, loc.id)],
+        }
         for loc in reachable(campaign)
     ]
     return {
         "location": location,
+        "here": here,
         "exits": exits,
         "day": campaign.day,
         "time_of_day": campaign.time_of_day,

@@ -436,6 +436,8 @@ def add_location(
     connections: Optional[list] = None,
     location_id: str = "",
     hex: Optional[list] = None,
+    region: str = "",
+    travel_times: Optional[dict] = None,
 ) -> dict:
     """Create — or update — a location in the world DURING live play. The key
     world-building primitive for generated / sandbox campaigns.
@@ -447,11 +449,15 @@ def add_location(
     walk both ways. Pass `location_id` to fill in a generator placeholder or update an
     existing place; omit it to mint a new one. If the campaign had no current location,
     this becomes it. `hex` is optional axial [q, r] map coords (presentation only).
+    `region` is the parent zone this nests in ("Lower City"); `travel_times` is an
+    optional `{connected_location_id: walk_minutes}` map that `look_around` surfaces as
+    fables-style walk-times to nearby places.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         conns = [str(x) for x in (connections or [])]
         coords = tuple(hex) if hex and len(hex) == 2 else None
+        tt = {str(k): int(v) for k, v in (travel_times or {}).items()}
         warnings: list[str] = []
         existing = c.locations.get(location_id) if location_id else None
         if existing is not None:  # update / fill-in a placeholder
@@ -461,6 +467,10 @@ def add_location(
                 existing.description = description
             if coords is not None:
                 existing.hex = coords
+            if region:
+                existing.region = region
+            if tt:
+                existing.travel_times.update(tt)
             loc = existing
         else:
             # Advisory: a same-named location usually means the DM meant the existing place.
@@ -470,7 +480,7 @@ def add_location(
                     f"a location named {name!r} already exists ({dup.id!r}) — pass "
                     f"location_id={dup.id!r} to update it instead of creating a duplicate"
                 )
-            loc = Location(name=name, description=description, hex=coords)
+            loc = Location(name=name, description=description, hex=coords, region=region, travel_times=tt)
             if location_id:
                 loc.id = location_id  # honor a caller-chosen id (e.g. a generated skeleton's)
             c.locations[loc.id] = loc
@@ -759,6 +769,7 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
                 damage_vulnerabilities=sb["damage_vulnerabilities"],
                 condition_immunities=sb["condition_immunities"],
                 notes=summary,
+                xp_value=sb["xp"],
             )
             c.characters[ch.id] = ch
             spawned.append({"id": ch.id, "name": ch.name})
@@ -1170,12 +1181,42 @@ def stabilize(campaign_id: str, actor_id: str, target_id: str, dc: int = 10) -> 
 @mcp.tool()
 def end_combat(campaign_id: str) -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
-    conditions persist past the encounter."""
+    conditions persist past the encounter.
+
+    If the campaign is in "xp" `leveling_mode` (the default), the XP of monsters
+    defeated THIS encounter is auto-awarded to the party, split evenly — so
+    progression isn't a manual chore. Returns `xp_awarded` + per-character `grants`
+    (with `can_level_up`) when any was granted. "milestone" mode leaves leveling to
+    the DM (no auto-XP)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        result: dict = {"active": False}
+        if c.leveling_mode == "xp":
+            combat_ids = {cb.character_id for cb in c.combat.order}
+            total = sum(
+                ch.xp_value for ch in c.characters.values()
+                if ch.id in combat_ids and ch.kind == "monster" and ch.dead and ch.xp_value > 0
+            )
+            recipients = [
+                c.characters[i] for i in c.party
+                if i in c.characters and not c.characters[i].dead
+            ]
+            if total > 0 and recipients:
+                each, rem = divmod(total, len(recipients))
+                grants = []
+                for idx, ch in enumerate(recipients):
+                    amt = each + (rem if idx == 0 else 0)
+                    ch.xp = max(0, ch.xp + amt)
+                    available = srd_tables.level_for_xp(ch.xp)
+                    grants.append({
+                        "id": ch.id, "name": ch.name, "xp_gained": amt, "xp": ch.xp,
+                        "level_available": available, "can_level_up": available > ch.total_level,
+                    })
+                result["xp_awarded"] = total
+                result["grants"] = grants
         c.combat = Combat()
         save_campaign(c)
-        return {"active": False}
+        return result
 
 
 @mcp.tool()
