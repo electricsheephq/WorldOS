@@ -1,6 +1,10 @@
 # Runtime campaign state — local saves, never committed
 /state/
 
+# Dashboard-play runtime — saves, chat log, move sink, and DM transcripts for games
+# launched via scripts/play.sh / clawdnd-play.command. One dir per game; regenerable.
+/play-state/
+
 # QA harness runtime artifacts — sandboxed playtest state, transcripts, logs.
 # The harness scripts/rubric/config (qa/*.sh, qa/*.py, qa/*.json, qa/*.txt, qa/*.md)
 # ARE committed; only these run outputs are ignored.
