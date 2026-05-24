@@ -41,6 +41,7 @@ from models import (
     Campaign,
     Character,
     ClassLevel,
+    ClassResource,
     Combat,
     Combatant,
     Condition,
@@ -142,6 +143,32 @@ def _recompute_spellcasting(ch: Character) -> None:
         if pact:
             new_slots[pact["level"]] = SpellSlotLevel(maximum=pact["slots"], used=0)
     ch.spell_slots = new_slots
+
+
+def _recompute_class_resources(ch: Character) -> None:
+    """Recompute depletable class-resource pools (Rage, Ki, Lay on Hands, Channel
+    Divinity, Bardic Inspiration, Sorcery Points, Second Wind, Action Surge, Wild
+    Shape) from the character's class levels, preserving `used` so a level-up or
+    re-derive doesn't silently refill a half-spent pool. Multiclass pools merge by
+    resource id: same-id pools (e.g. Cleric + Paladin Channel Divinity) sum their
+    max and take the more generous (short) recharge. Additive — a character whose
+    classes grant no pools ends up with an empty dict (today's behavior)."""
+    cha = ch.ability_modifier(Ability.CHA)
+    derived: dict[str, dict] = {}
+    for cl in ch.classes:
+        for res_id, spec in srd_tables.class_resources_through(cl.name, cl.level, cha).items():
+            if res_id in derived:
+                derived[res_id]["max"] += spec["max"]
+                if spec["recharge"] == "short":  # the more generous recharge wins
+                    derived[res_id]["recharge"] = "short"
+            else:
+                derived[res_id] = dict(spec)
+    new_res: dict[str, ClassResource] = {}
+    for res_id, spec in derived.items():
+        prev = ch.class_resources.get(res_id)
+        used = min(prev.used, spec["max"]) if prev else 0
+        new_res[res_id] = ClassResource(max=spec["max"], used=used, recharge=spec["recharge"])
+    ch.class_resources = new_res
 
 
 def _casting_mod(ch: Character) -> int:
@@ -577,6 +604,7 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
             sk = srd_tables.class_skills(cname)
             ch.skill_proficiencies = list(sk.get("from", []))[: int(sk.get("count", 0))]
         _recompute_spellcasting(ch)
+        _recompute_class_resources(ch)
     except ValueError:
         pass  # unknown class -> keep the explicit values
 
@@ -785,14 +813,34 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     }
 
 
+def _class_resources_view(ch: Character) -> dict:
+    """fables-style resource bars: {resource_id: {"remaining", "max", "used",
+    "recharge", "label"}} — what the play-view renders as e.g. Lay on Hands 15/15.
+    Empty when the character has no pools."""
+    return {
+        rid: {
+            "remaining": res.max - res.used,
+            "max": res.max,
+            "used": res.used,
+            "recharge": res.recharge,
+            "label": f"{res.max - res.used}/{res.max}",
+        }
+        for rid, res in ch.class_resources.items()
+    }
+
+
 @mcp.tool()
 def get_character(campaign_id: str, character_id: str) -> dict:
-    """Return a character's full sheet."""
+    """Return a character's full sheet, including depletable class-resource pools
+    (Rage, Ki, Lay on Hands, Channel Divinity, …) under `class_resources` plus a
+    `class_resources_view` with fables-style remaining/max bars."""
     c = _require(campaign_id)
     ch = c.characters.get(character_id)
     if ch is None:
         raise ValueError(f"no character {character_id!r} in campaign")
-    return ch.model_dump(mode="json")
+    sheet = ch.model_dump(mode="json")
+    sheet["class_resources_view"] = _class_resources_view(ch)
+    return sheet
 
 
 @mcp.tool()
@@ -1452,6 +1500,7 @@ def level_up(
         ch.proficiency_bonus = srd_tables.proficiency_bonus(ch.total_level)
         ch.initiative_bonus = ch.ability_modifier(Ability.DEX)
         _recompute_spellcasting(ch)
+        _recompute_class_resources(ch)
 
         # Class/subclass features gained at this new class level — leveling now
         # grants real features (and the mechanical hints the engine references),
@@ -1708,6 +1757,51 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         return out
+
+
+@mcp.tool()
+def use_resource(campaign_id: str, character_id: str, resource: str, amount: int = 1) -> dict:
+    """Spend from a depletable class-resource pool (Rage, Ki, Lay on Hands, Channel
+    Divinity, Bardic Inspiration, Sorcery Points, Second Wind, Action Surge, Wild
+    Shape, …). Deducts `amount` (default 1; for Lay on Hands pass the hit points to
+    spend). Returns ``{ok: True, remaining, max, used}`` on success; ``{ok: False,
+    error, remaining, max}`` without changing state when the character lacks that
+    pool or hasn't enough left, so the DM gets a clean signal instead of an
+    exception. Pools refresh via short_rest / long_rest."""
+    if amount < 1:
+        raise ValueError("amount must be >= 1")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        res = ch.class_resources.get(resource)
+        if res is None:
+            return {
+                "ok": False,
+                "error": f"{ch.name} has no {resource!r} pool",
+                "available": sorted(ch.class_resources.keys()),
+            }
+        remaining = res.max - res.used
+        if amount > remaining:
+            return {
+                "ok": False,
+                "error": f"not enough {resource}: need {amount}, have {remaining}",
+                "resource": resource,
+                "remaining": remaining,
+                "max": res.max,
+            }
+        res.used += amount
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        new = ch.class_resources[resource]
+        return {
+            "ok": True,
+            "resource": resource,
+            "spent": amount,
+            "remaining": new.max - new.used,
+            "max": new.max,
+            "used": new.used,
+            "recharge": new.recharge,
+        }
 
 
 @mcp.tool()
