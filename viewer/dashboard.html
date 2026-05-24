@@ -365,11 +365,7 @@
      Play restores them. Reuses the dark-fantasy + gold tokens above.
      ============================================================================ */
   .nav-i.tab { cursor:pointer; }                 /* implemented tabs are clickable */
-  .nav-i.jump { cursor:pointer; }                /* jump-to-rail-card rows (M1) */
-  .nav-i.tab:hover, .nav-i.jump:hover, #nav-settings:hover { background:#221708; color:var(--gold); }
-  /* brief gold ring when a jump lands on its rail card so the eye finds it */
-  @keyframes railflash { 0%{ box-shadow:0 0 0 2px rgba(232,201,138,.55); } 100%{ box-shadow:0 0 0 2px rgba(232,201,138,0); } }
-  .rail-flash { animation:railflash 1.1s ease-out; border-radius:11px; }
+  .nav-i.tab:hover, #nav-settings:hover { background:#221708; color:var(--gold); }
   #sheet { display:none; grid-column:2 / 4; min-height:0; overflow-y:auto;
     background:radial-gradient(140% 90% at 50% 0%, rgba(232,201,138,.05), rgba(232,201,138,0) 55%), var(--bg); }
   body.sheet-open #sheet { display:block; }
@@ -433,6 +429,10 @@
   .tag { font-size:11px; color:var(--dim); background:#221a10; border:1px solid #3a2f1c; border-radius:7px; padding:2px 9px; }
   .tag.cond { color:#e8b07a; border-color:#5a4020; background:#2a1c0e; text-transform:capitalize; }
   .tag.exh { color:#e89090; border-color:#5a3030; background:#2a1212; }
+  /* key/value rows used by the Party / Quests / World sheet tabs */
+  .kv-line { font-size:13px; color:var(--ink); line-height:1.55; margin-top:2px; }
+  .kv-line + .kv-line { margin-top:5px; }
+  .kv-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   /* prose blocks (appearance / backstory) */
   .prose-blk + .prose-blk { margin-top:12px; }
   .prose-blk .pb-k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; margin-bottom:3px; }
@@ -670,11 +670,9 @@
     <div class="nav-i tab" data-view="progression"><span class="ic">⬙</span> Progression</div>
     <div class="nav-i tab" data-view="relationships"><span class="ic">♥</span> Relationships</div>
     <div class="nav-i tab" data-view="memories"><span class="ic">❂</span> Memories</div>
-    <!-- These three jump to their existing right-rail cards in the Play view (they used
-         to be inert placeholder rows that looked like tabs but did nothing — M1). -->
-    <div class="nav-i jump" data-jump="party"><span class="ic">⚇</span> Party</div>
-    <div class="nav-i jump" data-jump="quests"><span class="ic">✦</span> Quests</div>
-    <div class="nav-i jump" data-jump="world"><span class="ic">◈</span> World</div>
+    <div class="nav-i tab" data-view="party"><span class="ic">⚇</span> Party</div>
+    <div class="nav-i tab" data-view="quests"><span class="ic">✦</span> Quests</div>
+    <div class="nav-i tab" data-view="world"><span class="ic">◈</span> World</div>
     <div class="nav-i" id="nav-settings" style="cursor:pointer"><span class="ic">⚙</span> Settings</div>
     <div class="foot" id="foot-mode">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
   </nav>
@@ -1225,7 +1223,8 @@ function deathSavePips(ds, { labels = true } = {}) {
 // ---- view switching ---------------------------------------------------------
 const SHEET_LABEL = { character:"Character", inventory:"Inventory",
   spellbook:"Abilities", progression:"Progression",
-  relationships:"Relationships", memories:"Memories" };
+  relationships:"Relationships", memories:"Memories",
+  party:"Party", quests:"Quests", world:"World" };
 // Live filter text per searchable tab, kept in module state so it survives the 1.5s
 // re-render (renderSheet replaces innerHTML each poll). We restore the box value +
 // caret + focus after each render so typing during a poll isn't disrupted.
@@ -1304,9 +1303,12 @@ function renderSheet() {
   if (!wrap || activeView === "play") return;
   const pc = getPC();
   if (!lastState) { wrap.innerHTML = sheetShell("Loading…", "", `<div class="sheet-empty">Waiting for the story to begin…</div>`); return; }
-  // Relationships + Memories project the whole cast / journal — they don't need a PC.
+  // These project the whole world/cast — they don't need a PC.
   if (activeView === "relationships") { renderRelationships(wrap); return; }
   if (activeView === "memories")      { renderMemories(wrap); return; }
+  if (activeView === "party")         { renderPartyView(wrap); return; }
+  if (activeView === "quests")        { renderQuestsView(wrap); return; }
+  if (activeView === "world")         { renderWorldView(wrap); return; }
   if (!pc) { wrap.innerHTML = sheetShell(SHEET_LABEL[activeView]||"Character", "", `<div class="sheet-empty">No player character yet. Create one to see this sheet.</div>`); return; }
   ({ character:renderCharacter, inventory:renderInventory,
      spellbook:renderSpellbook, progression:renderProgression }[activeView] || renderCharacter)(pc, wrap);
@@ -1782,6 +1784,60 @@ function renderMemories(wrap) {
   keepSearchFocus(wasFocused, caret);
 }
 
+// ---- Party / Quests / World — real tab pages (owner QA: these nav items "went nowhere") ----
+function renderPartyView(wrap) {
+  const s = lastState || {};
+  const rows = (s.party || []).map(id => (s.characters || {})[id]).filter(Boolean);
+  let body;
+  if (!rows.length) body = `<div class="sheet-empty">No party yet — the road is still empty.</div>`;
+  else body = `<div class="sgrid cols2">${rows.map(c => {
+    const tag = c.kind === "player" ? "You" : (c.kind === "companion" ? "Companion" : esc(c.kind));
+    const conds = (c.conditions || []).length
+      ? `<div class="kv-tags">${c.conditions.map(x => `<span class="tag cond">${esc(x)}</span>`).join("")}</div>` : "";
+    return `<div class="scard"><h3>${esc(c.name)} <span class="h3n">${tag}</span></h3>
+      <div class="kv-line">${esc(c.race || "")} ${esc(klass(c) || "")}</div>
+      <div class="kv-tags"><span class="tag">❤ ${esc(c.current_hp ?? "?")}/${esc(c.max_hp ?? "?")}</span>
+        <span class="tag">⛨ AC ${esc(c.armor_class ?? "?")}</span>${c.dead ? `<span class="tag cond">fallen</span>` : ""}</div>${conds}</div>`;
+  }).join("")}</div>`;
+  wrap.innerHTML = sheetShell("Party", "", body);
+}
+function renderQuestsView(wrap) {
+  const s = lastState || {};
+  const order = { active: 0, completed: 1, failed: 2 };
+  const qs = Object.values(s.quests || {}).sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  const nm = id => ((s.characters || {})[id] || {}).name || "";
+  const loc = id => ((s.locations || {})[id] || {}).name || "";
+  let body;
+  if (!qs.length) body = `<div class="sheet-empty">No quests yet — they're out there, waiting to be stumbled into.</div>`;
+  else body = `<div class="sgrid">${qs.map(q => {
+    const meta = [q.giver_id && ("from " + nm(q.giver_id)), q.location_id && ("at " + loc(q.location_id))].filter(Boolean).join(" · ");
+    return `<div class="scard"><h3>${esc(q.title || "A quest")} <span class="h3n">${esc(q.status || "active")}</span></h3>
+      ${meta ? `<div class="kv-line">${esc(meta)}</div>` : ""}
+      ${q.description ? `<div class="kv-line" style="color:var(--dim)">${esc(q.description)}</div>` : ""}</div>`;
+  }).join("")}</div>`;
+  wrap.innerHTML = sheetShell("Quests", "", body);
+}
+function renderWorldView(wrap) {
+  const s = lastState || {};
+  const locs = s.locations || {};
+  const cur = locs[s.current_location_id];
+  const visited = Object.values(locs).filter(l => l.visited);
+  const factions = Object.values(s.factions || {});
+  const wmeta = [s.era && ("Era: " + s.era), (s.day != null) && ("Day " + s.day + (s.time_of_day ? ", " + s.time_of_day : ""))].filter(Boolean).map(esc).join(" · ");
+  const hdr = `<div class="scard" style="grid-column:1/-1"><h3>${esc(s.title || "The world")}</h3>
+    ${s.summary ? `<div class="kv-line" style="color:var(--dim)">${esc(s.summary)}</div>` : ""}
+    ${wmeta ? `<div class="kv-line">${wmeta}</div>` : ""}</div>`;
+  const here = cur ? `<div class="scard"><h3>You are here <span class="h3n">${esc(cur.name)}</span></h3>
+    ${cur.description ? `<div class="kv-line" style="color:var(--dim)">${esc(cur.description)}</div>` : ""}</div>` : "";
+  const placesList = visited.length
+    ? visited.map(l => `<span class="tag${l.id === s.current_location_id ? " cond" : ""}">${esc(l.name)}</span>`).join("")
+    : `<span style="color:var(--faint)">Nowhere charted yet.</span>`;
+  const places = `<div class="scard"><h3>Places known <span class="h3n">${visited.length}</span></h3><div class="kv-tags">${placesList}</div></div>`;
+  const facBody = factions.length ? `<div class="scard"><h3>Factions <span class="h3n">${factions.length}</span></h3>
+    <div class="kv-tags">${factions.map(f => `<span class="tag">${esc(f.name)} ${f.reputation > 0 ? "+" : ""}${esc(f.reputation ?? 0)}</span>`).join("")}</div></div>` : "";
+  wrap.innerHTML = sheetShell("World", "", `<div class="sgrid cols2">${hdr}${here}${places}${facBody}</div>`);
+}
+
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
   if (s && s.empty) {
@@ -2117,25 +2173,7 @@ function wireNearby() {
     submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
   });
 }
-// M1: the Party / Quests / World nav rows used to be inert placeholders that looked
-// like tabs but did nothing. They now jump to their existing right-rail cards: leave
-// any open sheet (back to Play, where the rail lives), scroll the target into view, and
-// flash it so the eye lands on it.
-const JUMP_TARGET = { party:"partycard", quests:"ctx-quests", world:"ctx-world" };
-function wireJumps() {
-  document.querySelectorAll("nav .nav-i.jump").forEach(item => {
-    item.addEventListener("click", () => {
-      if (activeView !== "play") { setView("play"); history.replaceState(null,"","#play"); }
-      const el = $(JUMP_TARGET[item.dataset.jump]);
-      if (!el) return;
-      if (el.tagName === "DETAILS") el.open = true;   // expand a collapsed ctx block
-      el.scrollIntoView({ behavior:"smooth", block:"start" });
-      el.classList.remove("rail-flash"); void el.offsetWidth; el.classList.add("rail-flash");
-      setTimeout(() => el.classList.remove("rail-flash"), 1200);
-    });
-  });
-}
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); wireJumps(); renderDice(); wireTabs(); setupSettings(); wireSwitcher();
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs(); setupSettings(); wireSwitcher();
 loadCampaigns();                 // populate the topbar switcher up front (H3)
 poll(); setInterval(poll, 1500);
 </script>
