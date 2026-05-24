@@ -1,15 +1,34 @@
-"""Constrained player-move facade (Sprint S1, It.1) — the player ACTS ONLY through
-this limited tool surface, so it cannot narrate the world, voice NPCs, or assert
-outcomes. The durable lesson made structural: enforce roles in CODE, not prose.
+"""Constrained move facade (Sprint S1, It.1; S3 multi-agent) — an ACTOR acts ONLY
+through this limited tool surface, so it cannot narrate the world, voice NPCs, or
+assert outcomes. The durable lesson made structural: enforce roles in CODE, not prose.
 
-The player *declares*; the DM + dice *resolve*. This facade is READ-ONLY on campaign
+The actor *declares*; the DM + dice *resolve*. This facade is READ-ONLY on campaign
 state (the engine stays the sole writer) and only appends structured MOVES to the
 file named by ``CLAWDND_PLAYER_MOVES`` for the DM (and the dashboard) to consume.
-``cast_spell`` / ``use_item`` / ``request_check`` validate against the PC's ACTUAL
+``cast_spell`` / ``use_item`` / ``request_check`` validate against the actor's ACTUAL
 sheet, so you can only attempt what you actually have. This is the same move palette
 the human play UI (It.2) will emit.
 
-Run as its own MCP server (the player agent connects to ONLY this), e.g.
+ACTOR PARAMETERIZATION (S3 — the harness-ensemble model). Two env vars retarget the
+facade so the SAME constrained surface drives every party member, each as its own
+``claude -p`` peer agent:
+
+- ``CLAWDND_ACTOR_ID``   — a character id. When set, the facade resolves THAT
+  character (whatever its ``kind``: companion / a 2nd PC / etc.) and validates every
+  move against ITS sheet (its own spells/slots/inventory). Unset = today's behavior:
+  resolve the ``kind=="player"`` PC in the most-recently-updated campaign.
+- ``CLAWDND_ACTOR_ROLE`` — the role string stamped on every emitted move (default
+  ``"player"``). A companion run sets ``"companion"`` so the DM/dashboard can tell
+  whose declaration it is.
+
+DEFAULT (neither env set) == the original single-player facade EXACTLY — the env is
+purely additive, so existing duo runs and tests are unchanged. The security boundary
+is UNCHANGED and per-actor: an actor emits ONLY its own legal moves and can NEVER
+narrate outcomes or act as the DM. A saboteur companion can therefore only propose
+LEGAL moves (say/do/attack/cast); the engine resolves them, so a betrayal becomes
+real combat, never narration.
+
+Run as its own MCP server (each actor agent connects to ONLY this), e.g.
 ``uv run --directory servers/engine python player_server.py``.
 """
 from __future__ import annotations
@@ -43,10 +62,33 @@ def _campaign():
     return store.load_campaign(latest["id"])
 
 
+def _actor_id() -> str:
+    """The character this facade speaks for, or "" for default (the player PC). A
+    blank/whitespace value is treated as unset — so an empty env var doesn't silently
+    select 'no character'."""
+    return (os.environ.get("CLAWDND_ACTOR_ID") or "").strip()
+
+
+def _actor_role() -> str:
+    """The role stamped on emitted moves. Default "player" == today's behavior; a
+    companion agent sets "companion" so the DM can tell whose declaration it is."""
+    return (os.environ.get("CLAWDND_ACTOR_ROLE") or "").strip() or "player"
+
+
 def _pc() -> Optional[Character]:
+    """Resolve the character this facade acts for. When ``CLAWDND_ACTOR_ID`` is set,
+    return THAT character by id (any kind — a companion, a 2nd PC), so its moves
+    validate against its OWN sheet. Unset = today's behavior: the ``kind=="player"``
+    PC of the live campaign (party first, then any player record)."""
     c = _campaign()
     if c is None:
         return None
+    aid = _actor_id()
+    if aid:
+        # Explicit actor: bind to THAT character's sheet (validators use it). If the id
+        # isn't in the live campaign, return None — the actor has no sheet to act with
+        # (its moves are then refused, the same as "no character yet" for the player).
+        return c.characters.get(aid)
     for cid in c.party:
         ch = c.characters.get(cid)
         if ch is not None and ch.kind == "player":
@@ -76,10 +118,21 @@ def _scene() -> dict:
 
 def _record(kind: str, text: str, **fields) -> dict:
     """Append a structured move to the moves file the orchestrator/dashboard reads.
-    flock the append (L9): a future second writer (companion / 2nd PC / the viewer's
-    /move path) must not interleave-corrupt a half-written JSONL line — the engine
-    flocks every campaign write; the moves file gets the same guarantee."""
-    move = {"role": "player", "kind": kind, "text": text, **fields}
+    The move is tagged with the actor's ROLE (``CLAWDND_ACTOR_ROLE``, default
+    "player") and, when an explicit actor is bound, its ``actor_id`` — so the
+    orchestrator can relay each actor's moves to the DM under the right banner and
+    the dashboard can attribute them. Default (no env) == the original
+    ``role:"player"`` record, no ``actor_id`` key, so existing consumers are unchanged.
+
+    flock the append (L9): a second writer (a companion / 2nd PC, the viewer's /move
+    path) must not interleave-corrupt a half-written JSONL line — the engine flocks
+    every campaign write; the moves file gets the same guarantee. With N companion
+    agents all appending to (separate, but possibly shared) moves files, this lock is
+    what keeps each line atomic."""
+    move = {"role": _actor_role(), "kind": kind, "text": text, **fields}
+    aid = _actor_id()
+    if aid:
+        move["actor_id"] = aid
     p = os.environ.get("CLAWDND_PLAYER_MOVES")
     if p:
         with Path(p).open("a", encoding="utf-8") as f:
@@ -247,7 +300,10 @@ def look() -> dict:
 
 @mcp.tool()
 def my_sheet() -> dict:
-    """Your character sheet summary (read-only): HP, AC, skills, spells, inventory."""
+    """Your character sheet summary (read-only): HP, AC, skills, spells, inventory,
+    spell slots, and your ``attitude`` toward the party. ``attitude_value`` (-100..+100,
+    0 = neutral) lets a companion read its OWN standing — the betrayal hook: a sealed
+    agenda can say "when your attitude_value drops below -40, turn on them"."""
     pc = _pc()
     if pc is None:
         return {"error": "no character yet"}
@@ -258,6 +314,11 @@ def my_sheet() -> dict:
         "skills": list(pc.skill_proficiencies),
         "spells": sorted(known_spells(pc)),
         "inventory": [it.name for it in pc.inventory],
+        # slots remaining per level, so a caster knows what it can actually cast.
+        "spell_slots": {lv: f"{max(0, s.maximum - s.used)}/{s.maximum}"
+                        for lv, s in sorted(pc.spell_slots.items())},
+        "attitude": pc.attitude,
+        "attitude_value": pc.attitude_value,
     }
 
 
