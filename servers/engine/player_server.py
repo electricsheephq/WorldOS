@@ -163,6 +163,39 @@ def _record(kind: str, text: str, **fields) -> dict:
     return {"ok": True, "move": move}
 
 
+_CLARIFY_PER_TURN = 3  # cap consecutive questions so clarify can't become a forever ping-pong
+
+
+def _consecutive_clarifies() -> int:
+    """How many ``clarify`` moves THIS actor has emitted since its last REAL (non-clarify) move —
+    the 'this turn' proxy that bounds the question budget. Reads the moves-file tail; a real action
+    (say/do/attack/…) resets it. 0 when there's no moves file or it's unreadable (fail-open: a read
+    glitch must never block a legitimate question)."""
+    p = os.environ.get("CLAWDND_PLAYER_MOVES")
+    if not p or not Path(p).exists():
+        return 0
+    role, aid = _actor_role(), _actor_id()
+    count = 0
+    try:
+        for line in reversed(Path(p).read_text(encoding="utf-8").splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                m = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if m.get("role") != role or (m.get("actor_id", "") or "") != aid:
+                continue  # only THIS actor's moves count against its own budget
+            if m.get("kind") == "clarify":
+                count += 1
+            else:
+                break  # a real move ends the run -> the per-turn clarify budget resets
+    except OSError:
+        return 0
+    return count
+
+
 # --- pure validators (unit-testable without MCP/store) ---------------------------
 def known_spells(pc: Character) -> set[str]:
     return {s.strip().lower() for s in (list(pc.spells_known) + list(pc.spells_prepared))}
@@ -257,6 +290,24 @@ def do(action: str) -> dict:
     """Declare a physical action your character ATTEMPTS — intent only. The DM and the
     dice decide if it works; do NOT describe the world or assert the result."""
     return _record("do", action)
+
+
+@mcp.tool()
+def clarify(question: str) -> dict:
+    """Ask the DM a CLARIFYING QUESTION before you commit to an action — exactly like asking a
+    real Dungeon Master at the table ("Is the guard armed? How far is the door? Do I recognize
+    this sigil? What do I actually know about this person?"). This is NOT an action and does NOT
+    advance the scene or spend your turn: the DM answers what your character could plausibly
+    perceive or know, then you still get to act. Reach for it when the scene is ambiguous and the
+    answer would change your choice — better a quick question than a blind guess. Bounded: up to
+    3 questions before you must act (so it can't become an endless back-and-forth)."""
+    if not question.strip():
+        return {"ok": False, "error": "ask a real question"}
+    if _consecutive_clarifies() >= _CLARIFY_PER_TURN:
+        return {"ok": False, "error": (
+            f"you've asked {_CLARIFY_PER_TURN} questions this turn — act now; the DM will fill in "
+            f"the rest as you play.")}
+    return _record("clarify", question.strip())
 
 
 @mcp.tool()

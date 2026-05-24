@@ -88,3 +88,22 @@ def test_cast_and_use_refused_without_a_character(tmp_path, monkeypatch):
     assert ps.use_item("Rope")["ok"] is False
     # but a pure-narrative move still records (no sheet needed)
     assert ps.say("I wait.")["ok"] is True
+
+
+def test_clarify_emits_a_question_move_and_caps_per_turn(tmp_path, monkeypatch):
+    # clarify lets the player ASK the DM before acting — a question move, not an action, and
+    # bounded so it can't become a forever ping-pong. No sheet needed (it's just a question).
+    moves = tmp_path / "moves.jsonl"
+    monkeypatch.setenv("CLAWDND_PLAYER_MOVES", str(moves))
+    assert ps.clarify("Is the guard armed?")["ok"] is True
+    assert ps.clarify("How far is the door?")["ok"] is True
+    assert ps.clarify("Do I recognize this sigil?")["ok"] is True
+    capped = ps.clarify("And his rank?")              # 4th consecutive -> capped
+    assert capped["ok"] is False and "this turn" in capped["error"]
+    rows = [json.loads(x) for x in moves.read_text(encoding="utf-8").splitlines()]
+    assert [m["kind"] for m in rows] == ["clarify", "clarify", "clarify"]  # only 3 recorded
+    assert all(m["role"] == "player" for m in rows)
+    # a REAL action resets the per-turn budget -> questions flow again next turn
+    assert ps.do("I step into the light, hands open")["ok"] is True
+    assert ps.clarify("Does he relax?")["ok"] is True
+    assert ps.clarify("")["ok"] is False              # an empty question is refused (no budget spent)

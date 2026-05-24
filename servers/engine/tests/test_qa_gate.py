@@ -182,6 +182,10 @@ def test_sanitize_move_accepts_palette_and_forces_player_role():
     move, why = v.sanitize_move({"role": "dm", "kind": "say", "text": "the name, and forty gold"})
     assert move is not None, why
     assert move["role"] == "player" and move["kind"] == "say"  # role can't be spoofed
+    # clarify is a valid player move kind (ask the DM a question from the dashboard)
+    cm, why2 = v.sanitize_move({"kind": "clarify", "text": "Is the guard armed?"})
+    assert cm is not None, why2
+    assert cm["kind"] == "clarify" and cm["role"] == "player"
 
 
 def test_sanitize_move_rejects_dm_narration_and_unknown_kinds():

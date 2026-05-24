@@ -46,8 +46,9 @@ _VOICE_DIR = _HERE.parent / "servers" / "voice"
 # acting via the dashboard must not be able to POST DM-side narration ("the dragon
 # dies"): only declared PLAYER moves of a known kind are accepted (H5). These are the
 # kinds the dashboard emits (say/do free-text, check/save/combat/attack palette) plus
-# the facade's cast/use_item.
-_MOVE_KINDS = {"say", "do", "check", "save", "combat", "attack", "cast", "use_item"}
+# the facade's cast/use_item, plus `clarify` (ask the DM a question before acting — a
+# question, never a world-assertion, so it's a safe player-side move kind).
+_MOVE_KINDS = {"say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify"}
 _MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc")
 _MOVE_MAXLEN = 2000
 
