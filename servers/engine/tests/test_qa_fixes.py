@@ -396,6 +396,42 @@ def test_recruit_companion_is_idempotent_and_guards_kind(tmp_path, monkeypatch):
         server.recruit_companion(cid, "char_nonexistent")
 
 
+def test_recruit_preserves_ending_seeded_arc_end_to_end(tmp_path, monkeypatch):
+    # THE S4-C2 SYNTHESIS REACHING LIVE PLAY (the load-bearing connection the two
+    # half-tests — seed-lands-arc + recruit-promotes-in-place — never jointly pinned):
+    # an ending pre-loads a canon companion's arc onto the roster NPC; RECRUITING that
+    # companion must PROMOTE IN PLACE and PRESERVE the seeded arc (so check_companion_arc
+    # can later fire the betrayal/loyalty beat). A future refactor that rebuilt the
+    # character on recruit would silently kill the synthesis — this catches it.
+    import pytest
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
+
+    # the gortash post-state arms Astarion: a loyalty gate + an attitude_below defection.
+    seeded = server.get_character(cid, "npc-astarion")
+    assert seeded["arc"] is not None, "ending should pre-load Astarion's arc"
+    assert seeded["arc"]["agenda"]["trigger"] == "attitude_below"
+    assert {g["kind"] for g in seeded["arc"]["arc_gates"]} == {"loyalty"}
+
+    # recruit him as a companion — promotes the EXISTING record in place.
+    out = server.recruit_companion(cid, "npc-astarion", class_name="Rogue", level=5,
+                                   abilities={"dexterity": 16, "charisma": 14})
+    assert out["kind"] == "companion" and "npc-astarion" in out["party"]
+
+    # the seeded arc SURVIVED the recruit (not reset to None, not rebuilt without it).
+    after = server.get_character(cid, "npc-astarion")
+    assert after["arc"] is not None, "recruit must NOT drop the seeded arc"
+    assert after["arc"]["agenda"]["trigger"] == "attitude_below"
+    assert after["arc"]["agenda"]["fired"] is False  # still armed, not sprung
+    assert {g["kind"] for g in after["arc"]["arc_gates"]} == {"loyalty"}
+
+    # and load_canon_character DEDUPES against the seeded roster NPC — it must NOT spawn a
+    # second, arc-less "Astarion" (the duplicate-stub footgun that would bury the synthesis).
+    dup = server.load_canon_character(cid, "Astarion", kind="companion", add_to_party=True)
+    assert dup.get("error") and dup.get("id") == "npc-astarion"
+    assert sum(1 for ch in server.get_state(cid)["party"] if ch["name"] == "Astarion") == 1
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 
