@@ -128,8 +128,8 @@ Begin a SOLO session in a living world for a single human player who will act th
 - start_world(\"$WORLD\") and read the returned bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster). If it returns existing_campaigns, start fresh.
 - start_session (for continuity and the recap).
 - Create a level-3 player character (generate_ability_scores + create_character, apply_srd_defaults, sensible skills/spells). You may pick a fitting concept for them and tell the player who they are.
-- Bring in a companion — recruit a roster legend (recruit_companion / load_canon_character) or create an original — with a real wound and a distinct voice.
 - Open a human-scale, personal scene grounded in the world's canon, with real quoted dialogue, and hand the player an open moment + a clear, real choice.
+- A companion should ENTER as part of that opening scene — a roster legend (recruit_companion / load_canon_character) or an original — someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together), NOT a name that silently appears in the party. Recruit them into the party as that meeting lands.
 
 Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
 chatlog dm "$DMSG"; DM_TURNS=1

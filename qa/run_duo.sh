@@ -104,10 +104,14 @@ player_move() {
   [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
 }
 
-# P0: the player introduces their character + opening intent.
+# P0: the player introduces their character with a SINGLE say() — who they are + what
+# they're after. They do NOT act yet: the world isn't built and the scene isn't set, so
+# "firing off" actions into a void reads as the PLAYER authoring the story (owner live-QA:
+# "the player just starts making up story; there's no intro"). The DM opens the scene next
+# (D1); the player's first real action comes at beat 1.
 PMSG="$(player_move 1 "$PLAYER_BRIEF
 
-This is the very start (the world isn't built yet). Introduce your character in one short line, then take your opening action(s) using your tools — e.g. do(\"…\") / say(\"…\"). Tools only; no narration.")"
+This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else.")"
 echo "[duo] player intro: ${PMSG:0:120}…"
 [ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
 chatlog player "$PMSG"
@@ -119,7 +123,7 @@ Begin the session. The player agent introduces their character and opening inten
 
 $PMSG
 
-Do the setup now: start_world(\"$WORLD\"), start_session, create their PC to match that concept (level 3, apply_srd_defaults, choose skills), and recruit a fitting roster companion with recruit_companion. Then open the scene — human-scale and personal — and respond to their stated intent. End by handing the moment to the player.")"
+Do the setup now: start_world(\"$WORLD\"), start_session, create their PC to match that concept (level 3, apply_srd_defaults, choose skills). Then OPEN the scene — human-scale and personal — grounded in the world's canon, responding to their stated intent. A companion should ENTER as part of that opening scene: someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together) — recruit_companion / load_canon_character as that meeting lands, NOT a silent name dropped into the party before the player has met anyone. End by handing the moment to the player.")"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 [ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 chatlog dm "$DMSG"
