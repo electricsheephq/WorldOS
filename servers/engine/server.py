@@ -2739,7 +2739,13 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
 def long_rest(campaign_id: str, character_id: str) -> dict:
     """Take a long rest: restore all HP, recover half total Hit Dice (min 1), reset
     all spell slots, reduce exhaustion by 1, and end the dying state. The DM should
-    call this for each party member. Cannot rest while dead."""
+    call this for each party member. Cannot rest while dead.
+
+    A long rest is ~8 in-world hours (overnight), so it advances the campaign clock
+    to the NEXT MORNING (``day += 1``, ``time_of_day = 'morning'``) — the rollover is
+    applied once and persisted, and the new ``day``/``time_of_day`` are returned so the
+    DM narrates the new dawn. (Repeated long_rest calls for each party member on the
+    same night land on the same morning — they don't each burn a day.)"""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -2747,6 +2753,19 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         ch = _char(c, character_id)
         out = rests.long_rest(ch)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        # A long rest is an overnight (~8h) and ends the next morning: advance the
+        # in-world clock to the next "morning", rolling the day over. Reuse the travel
+        # helper (advance_clock) for the phase/day math rather than hand-rolling it.
+        # If the party is already at morning, this rolls a full day to the next dawn.
+        phases = travel.PHASES
+        try:
+            cur = phases.index(c.time_of_day)
+        except ValueError:
+            cur = 0  # normalize an unknown phase to the canonical cycle
+        steps = (phases.index("morning") - cur) % len(phases) or len(phases)
+        day, tod = travel.advance_clock(c, steps)
+        out["day"] = day
+        out["time_of_day"] = tod
         save_campaign(c)
         # A long rest is the natural moment for a CAMP scene — nudge the DM to gather the party
         # (companions breathe here) when there are companions to gather.

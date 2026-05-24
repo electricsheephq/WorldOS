@@ -113,3 +113,36 @@ def test_rest_tools_persist(tmp_path, monkeypatch):
     server.cast_spell(cid, w, "Magic Missile")  # consume a slot
     server.long_rest(cid, w)
     assert server.get_character(cid, w)["spell_slots"]["1"]["used"] == 0
+
+
+# --- long rest advances the in-world clock (a confirmed cause of campaigns
+# frozen at day=1: the tool restored resources but never rolled the calendar) ---
+def test_long_rest_advances_clock_to_next_morning(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Clock")["id"]
+    c = server._require(cid)
+    assert (c.day, c.time_of_day) == (1, "morning")  # fresh-campaign baseline
+    pc = server.create_character(cid, "Astarion", kind="player", class_name="Wizard",
+                                 apply_srd_defaults=True,
+                                 abilities={"intelligence": 16, "constitution": 12})["id"]
+    server.cast_spell(cid, pc, "Magic Missile")  # consume a slot to prove restore still happens
+    out = server.long_rest(cid, pc)
+    # morning -> next morning is a full day on (you don't rest the day away in place)
+    assert out["day"] == 2 and out["time_of_day"] == "morning"
+    persisted = server._require(cid)
+    assert persisted.day == 2 and persisted.time_of_day == "morning"  # change was saved
+    sheet = server.get_character(cid, pc)
+    assert sheet["spell_slots"]["1"]["used"] == 0  # slots still restored
+    assert sheet["current_hp"] == sheet["max_hp"]  # HP still restored
+
+
+def test_long_rest_from_evening_rolls_into_next_morning(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Clock2")["id"]
+    c = server._require(cid)
+    c.day, c.time_of_day = 1, "evening"  # bed down at dusk
+    server.save_campaign(c)
+    pc = server.create_character(cid, "Karlach", kind="player", class_name="Fighter",
+                                 apply_srd_defaults=True, abilities={"constitution": 14})["id"]
+    out = server.long_rest(cid, pc)
+    assert out["day"] == 2 and out["time_of_day"] == "morning"  # evening -> next dawn = day 2
