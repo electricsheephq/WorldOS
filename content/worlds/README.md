@@ -36,6 +36,7 @@ content/worlds/_private/<id>/   # gitignored — personal seeds (e.g. third-part
 | `factions` | object[] | `{id, name, description, reputation}` → seeded as **Factions** |
 | `npc_roster` | object[] | `{id, name, voice_id, role, personality, hook}` → seeded as **NPC Characters** (the `hook` becomes a memory fact; "pullable" — the DM brings them in or invents freely) |
 | `story_seeds` | string[] | emergent hooks the player can stumble into (returned by `start_world`, not auto-created as quests) |
+| `quest_variants` | object[]? | the replayability layer — each MAJOR quest's outcome, resolved once at world-gen. `{id, name, outcomes[{id, when?:{facts-subset} OR random:<weight>, lore, hook?}]}`. An outcome with a `when` dict that is a subset of the world-state (the chosen ending's `facts` + the `world_tenor` dial) is ENDING-TIED (first match wins); otherwise a seeded weighted roll picks among the `random` outcomes. The resolved outcome lands on `Campaign.quest_outcomes[id]` and its `lore`/`hook` are appended to recallable lore as `[Outcome] …` / `[Hook] …` lines. Absent -> no resolution (today's behavior). Read via `get_quest_outcomes`. |
 | `starting_options` | object[] | `{location_id, framing}` — where the DM can drop the party |
 | `dm_guidance` | string | how to run this world as a living sandbox |
 | `license`, `attribution` | string? | for non-original seeds (see Licensing) |
