@@ -410,8 +410,12 @@ def test_2_cache_hit_invokes_provider_once(monkeypatch, state):
     assert calls["n"] == 1, "cache hit must not re-invoke the gateway client"
 
 
-def test_3_unreachable_propagates_as_runtime_error(monkeypatch, state):
-    """imagegen.generate() with a down gateway raises so the caller falls back to null."""
+def test_3_unreachable_degrades_to_null_not_raise(monkeypatch, state):
+    """A down gateway must NOT crash the caller. The skill promises generate_image is
+    "always safe — a cheap no-op"; the seam (imagegen.generate) OWNS that fallback now
+    (review #1): it degrades to the null placeholder, marks it degraded, and caches
+    NOTHING, so a later gateway-up retry can still succeed. (The provider itself still
+    raises — the seam catches it.)"""
     monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openclaw")
 
     def fake_generate_image(self, prompt, **kw):  # noqa: ANN001
@@ -419,10 +423,10 @@ def test_3_unreachable_propagates_as_runtime_error(monkeypatch, state):
 
     monkeypatch.setattr(OpenClawImageClient, "generate_image", fake_generate_image)
 
-    with pytest.raises(RuntimeError) as exc:
-        imagegen.generate("map", "the sunken city", seed=1, scope="camp2")
-    assert "openclaw image provider failed" in str(exc.value)
-    # Nothing was cached on failure (the descriptor was never produced).
+    desc = imagegen.generate("map", "the sunken city", seed=1, scope="camp2")  # must NOT raise
+    assert desc.get("degraded_from") == "openclaw" and "error" in desc
+    assert desc.get("cache_hit") is False
+    # Nothing was cached on failure (a later, gateway-up retry can still succeed).
     key = imagegen.content_hash("map", "the sunken city", seed=1, provider="openclaw")
     assert imagegen.cache_read(key, scope="camp2") is None
 

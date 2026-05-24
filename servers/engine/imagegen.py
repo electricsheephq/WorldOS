@@ -371,9 +371,21 @@ def generate(
             hit["cache_hit"] = True
             return hit
 
-    descriptor = provider.generate(kind, prompt, seed=seed)
-    descriptor["cache_hit"] = False
+    try:
+        descriptor = provider.generate(kind, prompt, seed=seed)
+    except Exception as exc:
+        # The skill promises generate_image is "always safe — a cheap no-op when no
+        # provider/gateway is available." Honor it: a hosted/gateway provider that fails
+        # (gateway down, timeout, auth, policy) must NOT crash the DM's turn. Degrade to
+        # the null placeholder so play continues + the dashboard shows its placeholder.
+        # Do NOT cache the degraded result — a transient gateway blip must be retryable.
+        descriptor = NullImageProvider().generate(kind, prompt, seed=seed)
+        descriptor["cache_hit"] = False
+        descriptor["degraded_from"] = getattr(provider, "name", "provider")
+        descriptor["error"] = str(exc)[:200]
+        return descriptor
 
+    descriptor["cache_hit"] = False
     if use_cache:
         cache_write(descriptor, scope)
 

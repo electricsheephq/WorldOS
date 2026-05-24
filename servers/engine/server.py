@@ -1256,10 +1256,11 @@ def end_combat(campaign_id: str) -> dict:
         result: dict = {"active": False}
         if c.leveling_mode == "xp":
             combat_ids = {cb.character_id for cb in c.combat.order}
-            total = sum(
-                ch.xp_value for ch in c.characters.values()
+            defeated = [
+                ch for ch in c.characters.values()
                 if ch.id in combat_ids and ch.kind == "monster" and ch.dead and ch.xp_value > 0
-            )
+            ]
+            total = sum(ch.xp_value for ch in defeated)
             recipients = [
                 c.characters[i] for i in c.party
                 if i in c.characters and not c.characters[i].dead
@@ -1275,6 +1276,8 @@ def end_combat(campaign_id: str) -> dict:
                         "id": ch.id, "name": ch.name, "xp_gained": amt, "xp": ch.xp,
                         "level_available": available, "can_level_up": available > ch.total_level,
                     })
+                for m in defeated:
+                    m.xp_value = 0  # XP consumed — a reused corpse can't re-award (review #3)
                 result["xp_awarded"] = total
                 result["grants"] = grants
         c.combat = Combat()

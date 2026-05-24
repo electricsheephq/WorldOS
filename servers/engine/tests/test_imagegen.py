@@ -209,3 +209,22 @@ def test_scope_is_sanitized_to_safe_segment(state):
     assert written, "expected a cached descriptor"
     for p in written:
         assert images_root in p.parents  # stayed inside the cache root
+
+
+def test_generate_degrades_to_null_when_provider_raises(monkeypatch, tmp_path):
+    """A hosted/gateway provider failure must NOT crash the caller — the skill promises
+    generate_image is 'always safe, a cheap no-op'. It degrades to the null placeholder
+    and is NOT cached, so a transient gateway blip stays retryable (review #1)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+
+    class _Boom:
+        name = "boom"
+
+        def generate(self, kind, prompt, *, seed=None):
+            raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(imagegen, "get_provider", lambda: _Boom())
+    desc = imagegen.generate("scene", "a torchlit door", scope="t")  # must NOT raise
+    assert desc.get("degraded_from") == "boom" and "error" in desc
+    # degraded result is not cached (a later, gateway-up retry can still succeed)
+    assert imagegen.cache_read(imagegen.content_hash("scene", "a torchlit door", provider="boom"), "t") is None

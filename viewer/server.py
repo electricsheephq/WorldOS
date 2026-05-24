@@ -473,11 +473,23 @@ class _Handler(BaseHTTPRequestHandler):
             return
         ctype = desc.get("mime_type")
         ctype = ctype if isinstance(ctype, str) and ctype.strip() else "image/png"
-        # 1) a real file on disk
+        # 1) a real file on disk — ONLY if it's contained under an expected image root
+        # (the derived cache, or the OpenClaw gateway media dir where it writes generated
+        # images). The viewer is the documented "pure reader": a descriptor's `path` must
+        # never let /image serve an arbitrary file (e.g. /etc/passwd) even if tampered.
         path = desc.get("path")
         if isinstance(path, str) and path:
+            _oh = os.environ.get("OPENCLAW_HOME")
+            roots = [
+                _state_dir() / "images",
+                Path(os.environ.get("CLAWDND_OPENCLAW_MEDIA_DIR")
+                     or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
+            ]
+            data = None
             try:
-                data = Path(path).read_bytes()
+                rp = Path(path).resolve()
+                if any(rp == r.resolve() or r.resolve() in rp.parents for r in roots):
+                    data = rp.read_bytes()
             except OSError:
                 data = None
             if data:
