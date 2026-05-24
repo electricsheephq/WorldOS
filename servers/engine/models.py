@@ -155,6 +155,52 @@ class DeathSaves(_StrictModel):
     failures: int = 0
 
 
+class ArcGate(_StrictModel):
+    """One milestone on a companion's relationship arc — a personal-quest reveal, a
+    romance beat, a deepened loyalty. It UNLOCKS when the companion's `attitude_value`
+    (the approval gauge) reaches `threshold`; the DM then dramatizes `note`. Inert
+    until unlocked, idempotent once it is — the engine reports each gate's unlock
+    exactly once. Additive: a companion with no arc has no gates."""
+
+    id: str = Field(default_factory=lambda: _new_id("gate"))
+    kind: Literal["personal_quest", "romance", "loyalty", "betrayal"]
+    threshold: int  # the attitude_value at/above which this gate unlocks
+    unlocked: bool = False
+    note: str = ""  # what the unlock means, for the DM to play
+
+
+class CompanionAgenda(_StrictModel):
+    """A companion's SEALED turn — the saboteur's betrayal, the zealot's defection —
+    made a REAL engine-evaluated event instead of an ephemeral prompt string. It
+    FIRES once when its `trigger` holds, and the DM dramatizes the fallout (a betrayal
+    fires as a real `attack`, not narration). One agenda per companion; idempotent
+    (a fired agenda never re-reports).
+
+    Triggers:
+    - "attitude_below": `attitude_value < value` (approval curdled past a breaking point)
+    - "day_reached":    `campaign.day >= value` (a plan that comes due on a fixed day)
+    - "party_vulnerable": any party member at `current_hp <= 0` OR `<= 25% of max_hp`
+                          (strikes when the party is weakest)
+    - "prize_seized":   the campaign flag `prize_seized` is set (the goal is in hand)
+    """
+
+    trigger: Literal["attitude_below", "day_reached", "party_vulnerable", "prize_seized"]
+    value: int = 0  # threshold for attitude_below / day_reached; ignored otherwise
+    fired: bool = False
+    note: str = ""  # the agenda's intent, for the DM to dramatize when it fires
+
+
+class CompanionArc(_StrictModel):
+    """A companion's relationship arc + sealed agenda — the durable engine record so a
+    companion's loyalty/betrayal/personal-quest is a REAL evaluated event, not a line
+    that lives only in a QA prompt. Attached to a Character via `arc`; evaluated by
+    `companion_arc.evaluate`. Additive: a Character with `arc=None` behaves exactly as
+    today."""
+
+    arc_gates: list[ArcGate] = Field(default_factory=list)
+    agenda: Optional[CompanionAgenda] = None
+
+
 class Character(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("char"))
     name: str
@@ -238,6 +284,10 @@ class Character(_StrictModel):
     appearance: str = ""   # physical description (hair, build, scars, dress) → portrait prompts
     mannerisms: str = ""   # tics/gestures/speech habits ("taps two fingers when thinking")
     backstory: str = ""    # origin + current want, in brief
+    # Companion relationship arc + sealed agenda (S4). None == today's behavior, so an
+    # existing snapshot with no `arc` deserializes unchanged. Evaluated by
+    # companion_arc.evaluate; populated by set_companion_arc / the ending-seed loader.
+    arc: Optional["CompanionArc"] = None
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
@@ -414,6 +464,9 @@ class Campaign(_StrictModel):
     day: int = 1  # in-world day counter
     time_of_day: str = "morning"
     map_kind: Literal["hex", "none"] = "none"  # how the play-view renders the map
+    # World-state boolean flags the DM/engine set to gate events — e.g. "prize_seized"
+    # drives a companion's prize_seized agenda (S4). Additive: empty == today's behavior.
+    flags: dict[str, bool] = Field(default_factory=dict)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions

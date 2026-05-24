@@ -19,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 import bestiary
 import combat
 import companion
+import companion_arc
 import consequences as consequences_mod
 import content as content_mod
 import dice as dice_mod
@@ -45,6 +46,7 @@ from models import (
     ClassResource,
     Combat,
     Combatant,
+    CompanionArc,
     Condition,
     Decision,
     Faction,
@@ -2704,6 +2706,74 @@ def world_tick(campaign_id: str) -> dict:
             "world_beats": [{"thread_id": b.thread_id, "text": b.text} for b in beats],
             "pending": [{"thread_id": b.thread_id, "trigger_day": b.trigger_day} for b in worldsim.pending_threads(c)],
         }
+
+
+def _require_companion(c: Campaign, companion_id: str) -> Character:
+    """Resolve a companion by id and assert it IS a companion — so an arc isn't
+    attached to a PC, NPC, or monster by mistake."""
+    ch = _char(c, companion_id)
+    if ch.kind != "companion":
+        raise ValueError(f"character {companion_id!r} is a {ch.kind!r}, not a companion")
+    return ch
+
+
+@mcp.tool()
+def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
+    """Advance companions' relationship arcs against the CURRENT state and surface the
+    moments that just became live — the storytelling default for making an ally's bond
+    or betrayal REAL, not a line that evaporates. Call it each beat (like
+    `check_consequences`): when a gate UNLOCKS (a personal_quest opens, a romance turns,
+    loyalty deepens) play that beat; when a betrayal AGENDA FIRES, the companion turns
+    NOW — resolve it as a real `attack`, never soften it to narration.
+
+    Pass `companion_id` to evaluate one companion, or leave it blank to evaluate ALL
+    companions that carry an arc. A gate unlocks when the companion's `attitude_value`
+    (the approval gauge) reaches its threshold; the sealed agenda fires when its trigger
+    holds. Idempotent — a gate/agenda already resolved on a prior call is NOT reported
+    again, so calling every beat is safe."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if companion_id:
+            targets = [_require_companion(c, companion_id)]
+        else:
+            targets = [ch for ch in c.characters.values() if ch.kind == "companion" and ch.arc is not None]
+        results = []
+        for ch in targets:
+            if ch.arc is None:
+                continue
+            res = companion_arc.evaluate(ch, c)
+            if res["newly_unlocked"] or res["agenda_fired"]:
+                results.append({"companion_id": ch.id, "name": ch.name, **res})
+        save_campaign(c)
+        return {"results": results}
+
+
+@mcp.tool()
+def set_companion_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
+    """Attach (or REPLACE) a companion's relationship arc + sealed agenda, so the DM —
+    or the ending-seed loader — can author what a bond grows into and what a saboteur is
+    planning. `arc` is `{arc_gates: [{kind, threshold, note?}], agenda: {trigger, value?,
+    note?}}` where gate `kind` is personal_quest|romance|loyalty|betrayal and agenda
+    `trigger` is attitude_below|day_reached|party_vulnerable|prize_seized. The companion
+    must exist and be a companion. `check_companion_arc` then evaluates it each beat."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _require_companion(c, companion_id)
+        ch.arc = CompanionArc.model_validate(arc)
+        save_campaign(c)
+        return {"id": ch.id, "name": ch.name, "arc": ch.arc.model_dump()}
+
+
+@mcp.tool()
+def set_flag(campaign_id: str, flag: str, value: bool = True) -> dict:
+    """Set a world-state boolean flag the engine gates events on — notably
+    `prize_seized`, which arms a companion's `prize_seized` betrayal agenda (the goal is
+    in hand, and the knife comes out). Returns the full flag map."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.flags[flag] = bool(value)
+        save_campaign(c)
+        return {"flags": dict(c.flags)}
 
 
 @mcp.tool()
