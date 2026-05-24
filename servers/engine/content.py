@@ -101,6 +101,19 @@ def _as_list(adv: dict, key: str) -> list:
     return val
 
 
+def _dedupe_strs(xs) -> list[str]:
+    """Order-preserving de-duplication of a string iterable (case-sensitive on the id/
+    name value as stored). Used when area connection-name resolution can collapse two
+    distinct names onto the same location id."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in xs:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
 def _as_list_lenient(rec: dict, key: str) -> list:
     """Tolerant list-getter for OPTIONAL, externally-authored overlay fields (B-LOW-2).
 
@@ -237,6 +250,40 @@ def load_world_data(world_id: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"world {world_id!r} has malformed JSON: {exc}") from exc
+
+
+def _areas_dirs(world_id: str) -> list[Path]:
+    """Where ingested navigable AREAS live: content/worlds/<id>/areas/ and its gitignored
+    _private/ mirror (for locally-cached records). Each *.json is a Location-shaped record
+    produced by tools/ingest/wiki_to_areas.py."""
+    base = _content_dir() / "worlds"
+    return [base / world_id / "areas", base / "_private" / world_id / "areas"]
+
+
+def load_world_areas(world_id: str) -> list[dict]:
+    """The ingested navigable areas a world ships — content/worlds/<id>/areas/*.json — as
+    a list of Location-shaped dicts (name, description, region, connections, tags, +
+    source_url/license/attribution). De-duplicated by name (a place on two wikis collapses
+    to one). Returns an EMPTY list if no areas/ dir exists, so a world without ingested
+    areas reproduces today's seed behavior exactly. Malformed/unreadable files are skipped."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for adir in _areas_dirs(world_id):
+        if not adir.is_dir():
+            continue
+        for p in sorted(adir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            nm = (rec.get("name") or p.stem).strip()
+            if not nm or nm.lower() in seen:
+                continue
+            seen.add(nm.lower())
+            out.append(rec)
+    return out
 
 
 def list_worlds() -> list[dict]:
@@ -495,6 +542,46 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
         c.locations[location.id] = location
         if first_loc is None:
             first_loc = location.id
+
+    # ADDITIVE: also seed any ingested areas/ records as navigable Locations (S4). A
+    # world with no areas/ dir gets an empty list, so this is a no-op and the default
+    # path reproduces today's behavior EXACTLY. Areas are deduped against the regions
+    # already seeded above (by id AND by case-insensitive name) so an ingested page that
+    # overlaps an authored region never double-seeds; connection NAMES are resolved to
+    # location ids by name where possible, and left as hints (the Location model accepts
+    # free-form strings in `connections`) where they don't match a seeded place.
+    seeded_names = {loc.name.strip().lower() for loc in c.locations.values()}
+    new_area_ids: list[str] = []
+    for area in load_world_areas(c.world_id):
+        name = str(area.get("name", "")).strip()
+        if not name or name.lower() in seeded_names:
+            continue  # never double-seed a region the world already declares
+        aid = str(area.get("id", "")).strip()
+        if aid and aid in c.locations:
+            continue  # id collision with a seeded region — skip rather than clobber
+        location = Location(
+            name=name,
+            description=str(area.get("description", "")),
+            region=str(area.get("region", "")),
+            notes=" ".join(str(t) for t in (area.get("tags") or []) if str(t).strip()),
+            connections=[str(x) for x in (area.get("connections") or []) if str(x).strip()],
+        )
+        if aid:
+            location.id = aid
+        c.locations[location.id] = location
+        seeded_names.add(name.lower())
+        new_area_ids.append(location.id)
+
+    # Resolve the freshly-seeded areas' connection NAMES to location ids where a seeded
+    # place matches by name (case-insensitive); unmatched names stay verbatim as hints.
+    # Only the new areas are rewritten — regions already carry id-based connections.
+    if new_area_ids:
+        name_to_id = {loc.name.strip().lower(): lid for lid, loc in c.locations.items()}
+        for aid in new_area_ids:
+            loc = c.locations[aid]
+            loc.connections = _dedupe_strs(
+                name_to_id.get(conn.strip().lower(), conn) for conn in loc.connections
+            )
 
     # Drop the party at the requested start, else the world's first starting_option,
     # else the first region.

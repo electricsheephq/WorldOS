@@ -1,0 +1,61 @@
+{
+  "_comment": "S4 AREAS ingest scope for the Unofficial Baldur's Gate 3+ Universe Seed. Pulls Sword Coast / Baldur's Gate area + location pages into clean JSON records under content/worlds/<world_id>/areas/<slug>.json, which ClawDnD's seed_world loads as NAVIGABLE Locations (places the party can travel to) — not just lookup_lore entries. TEXT/DATA ONLY — no maps/images are fetched or committed. Like manifest_characters.json, areas span TWO wikis with DIFFERENT licenses, so each source carries its own wiki host, MediaWiki script_path, license, and attribution string. cache_subdir 'areas' isolates this pipeline's cache from lore + characters. A title/category that doesn't resolve is skipped, not fatal. BOUNDED at max_pages 80. NOTE: this manifest drives the LATER live fetch; this change ships the PARSER + a hand-written example only (no network run).",
+  "world_id": "baldurs-gate",
+  "cache_subdir": "areas",
+  "max_pages": 80,
+  "rate_delay_seconds": 0.75,
+  "max_chars_per_field": 1500,
+  "sources": [
+    {
+      "_comment": "bg3.wiki is a STANDALONE MediaWiki (1.43.x), NOT Fandom. Its API lives at /w/api.php (scriptpath '/w'), pretty URLs at /wiki/$1. License per https://bg3.wiki/wiki/bg3wiki:Copyrights — content on/after 2024-07-20 is dual-licensed CC BY-SA 4.0 AND CC BY-NC-SA 4.0; older content is CC BY-NC-SA 4.0 only (NonCommercial). ClawDnD is a non-commercial fan project, so both options are satisfied; we attribute with a back-link per the wiki's stated requirement, and carry the NonCommercial caveat. Areas here are BG3's in-game zones (the explorable acts/regions).",
+      "wiki": "bg3.wiki",
+      "script_path": "/w",
+      "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+      "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+      "categories": [
+        "Locations",
+        "Areas"
+      ],
+      "titles": [
+        "Baldur's Gate",
+        "Lower City",
+        "Upper City",
+        "Rivington",
+        "Wyrm's Crossing",
+        "The Risen Road",
+        "Reithwin Town",
+        "Last Light Inn",
+        "Moonrise Towers",
+        "Emerald Grove",
+        "Blighted Village",
+        "Goblin Camp",
+        "Grymforge",
+        "Underdark",
+        "Shadow-Cursed Lands"
+      ]
+    },
+    {
+      "_comment": "forgottenrealms.fandom.com is a Fandom wiki (CC-BY-SA, per https://www.fandom.com/licensing). API at /api.php (scriptpath ''). Used for the wider Sword Coast geography whose canon predates BG3 (Candlekeep, Elturel, the Western Heartlands) and for deeper background on the in-game zones; bg3.wiki is preferred for the BG3-specific act regions.",
+      "wiki": "forgottenrealms.fandom.com",
+      "script_path": "",
+      "license": "CC-BY-SA (Fandom; see https://www.fandom.com/licensing)",
+      "attribution": "Text from the Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial, non-commercial fan content; portions are property of Wizards of the Coast LLC.",
+      "categories": [
+        "Locations on the Sword Coast",
+        "Settlements on the Sword Coast"
+      ],
+      "titles": [
+        "Baldur's Gate",
+        "Candlekeep",
+        "Elturel",
+        "Western Heartlands",
+        "Sword Coast",
+        "Trade Way",
+        "Coast Way",
+        "Wyrm's Rock",
+        "Moonrise Towers",
+        "Reithwin"
+      ]
+    }
+  ]
+}

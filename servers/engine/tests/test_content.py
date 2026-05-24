@@ -372,3 +372,87 @@ def test_ending_overlay_tolerates_malformed_optional_field():
     assert c.era == "later"
     assert "a single string, not a list" in c.lore  # coerced to a one-element list
     assert "base fact" not in c.lore  # supersedes="base" coerced + applied -> retracted
+
+
+# --- S4: ingested areas become navigable Locations (additively) ----------------------
+
+def test_load_world_areas_returns_shipped_samples():
+    # The hand-written example areas under content/worlds/baldurs-gate/areas/ load as
+    # Location-shaped dicts, deduped by name, each carrying license + attribution.
+    areas = content.load_world_areas("baldurs-gate")
+    by_name = {a["name"]: a for a in areas}
+    assert "Bloomridge Market" in by_name and "the Siltwharf Steps" in by_name
+    bm = by_name["Bloomridge Market"]
+    assert bm["description"] and bm["region"] == "Baldur's Gate"
+    assert isinstance(bm["connections"], list) and bm["license"] and bm["attribution"]
+
+
+def test_load_world_areas_absent_dir_is_empty():
+    # A world with no areas/ dir yields an empty list (the no-op default path).
+    assert content.load_world_areas("sundered-reach") == []
+    assert content.load_world_areas("no-such-world") == []
+
+
+def test_seed_world_seeds_areas_additively_with_resolved_connections():
+    # ADDITIVE: after the 7 authored regions, the 2 example areas are seeded as Locations.
+    w = content.load_world_data("baldurs-gate")
+    base_regions = len(w["regions"])
+    c = content.seed_world(w)
+    by_name = {loc.name: loc for loc in c.locations.values()}
+    # the authored regions are all still present, plus the ingested areas
+    assert "Baldur's Gate — Lower City" in by_name      # an authored region
+    assert "Bloomridge Market" in by_name               # an ingested area
+    assert "the Siltwharf Steps" in by_name
+    assert len(c.locations) == base_regions + 2
+
+    bm = by_name["Bloomridge Market"]
+    # ingested-area fields carried through (region, tags→notes)
+    assert bm.region == "Baldur's Gate"
+    assert "market" in bm.notes
+    # connection NAMES resolve to seeded location ids where a name matches…
+    lower_id = by_name["Baldur's Gate — Lower City"].id
+    silt_id = by_name["the Siltwharf Steps"].id
+    assert lower_id in bm.connections          # "Baldur's Gate — Lower City" → loc id
+    assert silt_id in bm.connections           # cross-link to the other ingested area
+    # …and an unmatched name is left verbatim as a hint, not dropped
+    assert "the Cloistered Quarter" in bm.connections
+
+
+def test_seed_world_areas_do_not_double_seed_or_change_start():
+    # The party still starts at the authored start; areas never become the start, and a
+    # region whose name an area duplicates is NOT seeded twice.
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)
+    # start is the first starting_option (an authored region), unaffected by areas
+    assert c.current_location_id == "loc-lower-city"
+    # no two locations share a (case-insensitive) name — dedup held
+    names = [loc.name.strip().lower() for loc in c.locations.values()]
+    assert len(names) == len(set(names))
+    # explicit dedup probe: a region whose NAME an injected area reuses is not re-seeded
+    w2 = content.load_world_data("baldurs-gate")
+    before = len(content.seed_world(w2).locations)
+    # (the example areas have unique names, so the count is the regions + 2 areas)
+    assert before == len(w2["regions"]) + 2
+
+
+def test_seed_world_without_areas_is_unchanged(tmp_path, monkeypatch):
+    # No areas/ dir == today's behavior EXACTLY. Point the content dir at a copy of the
+    # world that has world.json but NO areas/ subdir, and confirm only regions seed.
+    import shutil
+    src = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.mkdir(parents=True)
+    for item in src.iterdir():
+        if item.name == "areas":
+            continue  # deliberately omit the areas/ dir
+        if item.is_dir():
+            shutil.copytree(item, dst_world / item.name)
+        else:
+            shutil.copy2(item, dst_world / item.name)
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)
+    assert content.load_world_areas("baldurs-gate") == []
+    # exactly the authored regions, nothing more
+    assert len(c.locations) == len(w["regions"])
+    assert "Bloomridge Market" not in {loc.name for loc in c.locations.values()}
