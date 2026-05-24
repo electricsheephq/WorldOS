@@ -1561,6 +1561,8 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
         ch = _char(c, character_id)
         data = ch.model_dump(mode="json")
         _deep_update(data, patch)
+        data["id"] = character_id  # identity is IMMUTABLE: the stored model's id must equal its
+        # dict key, so a patch can't strand the character under a visible-but-unusable id (#41).
         c.characters[character_id] = Character.model_validate(data)
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")

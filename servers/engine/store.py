@@ -27,8 +27,20 @@ def state_dir() -> Path:
     return Path(raw).expanduser() if raw else Path.home() / ".clawdnd" / "state"
 
 
+def safe_path_segment(value: str, kind: str = "id") -> str:
+    """Validate a filesystem-shaped identifier (campaign id, world/adventure dir name) that
+    gets joined into the state or content root. IDs are FLAT segment names — never absolute,
+    never containing a path separator or '..' — so a hostile/buggy value like '../../etc' or
+    '/tmp/x' can't escape the root (and can't create a lock dir outside it before the read
+    even fails). Raises ValueError on an escaping value. Reused by content.py for world ids."""
+    v = (value or "").strip()
+    if (not v or v in (".", "..") or "/" in v or "\\" in v or "\x00" in v or os.path.isabs(v)):
+        raise ValueError(f"unsafe {kind} {value!r}: must be a flat name, not a path")
+    return v
+
+
 def _campaign_dir(campaign_id: str) -> Path:
-    return state_dir() / "campaigns" / campaign_id
+    return state_dir() / "campaigns" / safe_path_segment(campaign_id, "campaign_id")
 
 
 @contextlib.contextmanager

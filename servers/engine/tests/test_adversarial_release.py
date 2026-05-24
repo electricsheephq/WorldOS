@@ -6,8 +6,32 @@ Grouped by area; the issue number is in each test name.
 import pytest
 
 import combat
+import content
 import server
+import store
 from models import Character
+
+
+# ── #40/#41 engine-state: path containment + stable character id ──
+def test_issue40_path_like_ids_cannot_escape_roots(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path / "state"))
+    for bad in ("../../escape", "/tmp/abs", "..", "a/b", ""):
+        with pytest.raises(ValueError):
+            with store.campaign_lock(bad):
+                pass
+    assert not (tmp_path / "escape").exists()  # no lock dir leaked outside the root
+    with pytest.raises(ValueError):
+        content.load_world_data("../../../etc")
+
+
+def test_issue41_update_character_cannot_change_the_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("ids")["id"]
+    old = server.create_character(cid, "Hero")["id"]
+    server.update_character(cid, old, {"id": "visible_unusable", "armor_class": 15})
+    assert server.get_state(cid)["party"][0]["id"] == old  # id stayed the stable handle
+    assert server.get_character(cid, old)["name"] == "Hero"  # still usable under it
+    assert server.get_character(cid, old)["armor_class"] == 15  # the rest of the patch applied
 
 
 def _campaign():

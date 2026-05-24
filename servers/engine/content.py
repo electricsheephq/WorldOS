@@ -18,6 +18,7 @@ from pydantic import ValidationError
 import questgen
 import worldsim
 from models import Campaign, CompanionArc, Character, Faction, Location, Quest, WorldState
+from store import safe_path_segment  # path-containment guard for world/adventure ids
 
 
 def _content_dir() -> Path:
@@ -28,6 +29,7 @@ def _content_dir() -> Path:
 def _characters_dirs(world_id: str) -> list[Path]:
     """Where ingested canon characters live: content/worlds/<id>/characters/ and its
     gitignored _private/ mirror (for locally-cached records)."""
+    world_id = safe_path_segment(world_id, "world_id")
     base = _content_dir() / "worlds"
     return [base / world_id / "characters", base / "_private" / world_id / "characters"]
 
@@ -103,6 +105,7 @@ def load_canon_character(world_id: str, name: str) -> "dict | None":
 
 
 def load_adventure_data(adventure_id: str) -> dict:
+    adventure_id = safe_path_segment(adventure_id, "adventure_id")
     path = _content_dir() / "campaigns" / adventure_id / "adventure.json"
     if not path.exists():
         raise ValueError(f"no adventure named {adventure_id!r} (looked at {path})")
@@ -257,6 +260,7 @@ def load_world_data(world_id: str) -> dict:
     """Load a world-seed bible: content/worlds/<id>/world.json, falling back to the
     gitignored content/worlds/_private/<id>/ for personal/internal seeds (e.g. a
     Forgotten-Realms/post-BG3 world the owner uses privately). Same loader either way."""
+    world_id = safe_path_segment(world_id, "world_id")
     base = _content_dir() / "worlds"
     path = base / world_id / "world.json"
     if not path.exists():
@@ -274,6 +278,7 @@ def _areas_dirs(world_id: str) -> list[Path]:
     """Where ingested navigable AREAS live: content/worlds/<id>/areas/ and its gitignored
     _private/ mirror (for locally-cached records). Each *.json is a Location-shaped record
     produced by tools/ingest/wiki_to_areas.py."""
+    world_id = safe_path_segment(world_id, "world_id")
     base = _content_dir() / "worlds"
     return [base / world_id / "areas", base / "_private" / world_id / "areas"]
 
