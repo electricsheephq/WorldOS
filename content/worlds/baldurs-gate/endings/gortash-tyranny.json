@@ -2,6 +2,12 @@
   "id": "gortash-tyranny",
   "name": "The Tyrant's Peace — Gortash Holds the Gate",
   "schema_version": 1,
+  "supersedes": [
+    "served the brain — and were destroyed",
+    "was detonated/disabled during the battle",
+    "his death reopened the seat",
+    "with Gortash dead and the Steel Watch gone"
+  ],
   "era": "1492 DR — the winter the Gate kept its tyrant. The Netherbrain was brought down, but Enver Gortash survived the war and consolidated the victory under his own banner: he is Archduke in fact as well as name, the Steel Watch is being rebuilt to police every street, and the city's salvation has been rewritten as his triumph. The other Chosen (Ketheric Thorm, Orin the Red) are dead. Keep the timeline straight: the Absolute is broken and the tyrant who helped break it now rules the relief, the rebuilding, and the watch. Do not raise the long-dead or pre-empt events that haven't happened.",
   "premise_suffix": " In this telling the brain fell — and Enver Gortash lived to take the credit. The Bane-chosen Archduke turned the war's end into his coronation: the Steel Watch foundry roars again, his Banite order administers the relief, and the heroes who actually saved the city are exiles, fugitives, or dead names in his proclamations. The Gate is orderly, rebuilt, and afraid. Into a city under the smiling boot of a tyrant who calls himself its savior, the player steps: a nobody beneath notice — which, in a police state, is the only safe thing to be, and the only thing that can move unseen.",
   "standing_threads": [

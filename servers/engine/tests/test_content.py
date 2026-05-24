@@ -270,3 +270,81 @@ def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch
     # the heroes remain encounterable as NPCs — load_canon_character(kind="npc") is
     # unrestricted (they're already seeded into the world roster by start_world)
     assert server.load_canon_character(cid, "Astarion", kind="npc").get("id") == "npc-astarion"
+
+
+def test_ending_overlay_retracts_contradictory_base_canon():
+    # B-HIGH-1: a post-state overlay and the base seed are mutually exclusive. The
+    # overlay must RETRACT the base facts it supersedes, so `recall`/the ticking world-
+    # sim never carry BOTH the base fact AND the contradicting overlay fact at once.
+    w = content.load_world_data("baldurs-gate")
+    g = content.seed_world(w, ending="gortash-tyranny")
+    lore_blob = " || ".join(g.lore).lower()
+    thread_blob = " || ".join(cq.text for cq in g.consequences if cq.thread_id).lower()
+
+    # The base "Gortash dead / power vacuum / Steel Watch wrecked" facts are GONE from
+    # both recallable lore AND the ticking world-beats...
+    for retracted in (
+        "with gortash dead and the steel watch gone",  # base power-vacuum thread
+        "his death reopened the seat",                  # base "the city's rule"
+        "was detonated/disabled during the battle",      # base wrecked Steel Watch
+        "served the brain — and were destroyed",         # base "Gortash destroyed"
+    ):
+        assert retracted not in lore_blob, f"base fact not retracted from lore: {retracted!r}"
+        assert retracted not in thread_blob, f"retired thread still ticking: {retracted!r}"
+    # ...while the overlay's mutually-exclusive post-state IS present.
+    assert "gortash rules as archduke" in lore_blob
+    assert "the tyrant survived" in lore_blob
+
+    # B-LOW-1: threads are seeded ONCE from the merged (surviving-base + overlay) set —
+    # exactly one record per thread, with unique ids, so the world-sim never double-ticks.
+    thread_ids = [cq.thread_id for cq in g.consequences if cq.thread_id]
+    assert len(thread_ids) == len(set(thread_ids)), f"duplicate thread_ids: {thread_ids}"
+    # the contradictory base power-vacuum thread was retracted, so the seeded beats are
+    # the 2 surviving base threads + the overlay's 3 post-state threads = 5 (was 3+3=6).
+    assert len(thread_ids) == 5
+
+    # illithid-ascension likewise retracts the base "Netherbrain destroyed" fact (the
+    # brain was CLAIMED here, not destroyed) but keeps the non-conflicting backstory.
+    il = content.seed_world(w, ending="illithid-ascension")
+    il_blob = " || ".join(il.lore).lower()
+    assert "emerged over the lower city and was destroyed in the harbor" not in il_blob
+    assert "the new absolute" in il_blob  # the overlay's claimed-the-brain post-state
+    assert "enslave an elder brain" in il_blob  # non-conflicting base backstory survives
+    il_ids = [cq.thread_id for cq in il.consequences if cq.thread_id]
+    assert len(il_ids) == len(set(il_ids))
+
+
+def test_ending_overlay_default_path_is_byte_identical():
+    # The DEFAULT (no-ending) seed must be UNCHANGED by the supersedes/single-seed
+    # rework: same lore, same standing-thread beats, same texts (ids/timestamps aside).
+    for wid in ("baldurs-gate", "sundered-reach"):
+        w = content.load_world_data(wid)
+        base = content.seed_world(w)
+        expected_lore = [str(x) for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
+        assert base.lore == expected_lore  # exactly base history + threads, nothing dropped/added
+        assert base.ending_id == ""
+        # one beat per base standing thread, in order, unique ids, text == the thread
+        beats = [cq for cq in base.consequences if cq.thread_id]
+        base_threads = [str(t) for t in w.get("standing_threads", []) if str(t).strip()]
+        assert [b.text for b in beats] == base_threads
+        assert len({b.thread_id for b in beats}) == len(beats)
+
+
+def test_ending_overlay_tolerates_malformed_optional_field():
+    # B-LOW-2: an externally-authored overlay field present-but-not-a-list must DEGRADE,
+    # not raise — start_world should never crash on a hand-edit typo. (The strict
+    # adventure-seed path keeps raising; this leniency is overlay-only.)
+    from models import Campaign
+    c = Campaign(title="W", summary="s")
+    c.lore = ["base fact"]
+    bad = {
+        "id": "x", "name": "X", "era": "later",
+        "history_append": "a single string, not a list",  # malformed
+        "standing_threads": None,                            # malformed
+        "supersedes": "base",                                # malformed (string)
+        "fates": "not a dict",                               # already-tolerated shape
+    }
+    content._apply_ending_overlay(c, bad)  # must not raise
+    assert c.era == "later"
+    assert "a single string, not a list" in c.lore  # coerced to a one-element list
+    assert "base fact" not in c.lore  # supersedes="base" coerced + applied -> retracted
