@@ -372,24 +372,51 @@ def _monitor_card(label: str, snap: Path, data: dict) -> dict:
     return card
 
 
+# mtime-gated card cache: building a card parses the snapshot JSON + globs the session logs
+# (for recency). The monitor polls every 3s; re-doing that for ALL campaigns (e.g. 56 × ~40KB
+# = 2.2MB read + parse + a sessions glob each) every tick is pure waste when nothing changed and
+# grows linearly with QA runs. Cache the built card per snapshot path, keyed by its mtime
+# (save_campaign rewrites the snapshot on every mutation, so mtime bumps exactly when a campaign
+# advances). On a hit we skip the read/parse/glob and only refresh the time-relative `live` flag.
+_monitor_card_cache: dict[str, tuple[float, dict]] = {}
+
+
 def _monitor_campaigns() -> list[dict]:
     """All campaigns across all roots (play + every QA run), newest-active first — the data behind
     the one-page monitor. Skips empty/half-written snapshots (the same guard the switcher uses)."""
     cards: list[dict] = []
+    now = time.time()
+    seen: set[str] = set()
     for label, cdir in _monitor_roots():
         if not cdir.is_dir():
             continue
         for snap in cdir.glob("*/snapshot.json"):
+            key = str(snap)
             try:
-                data = json.loads(snap.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+                mtime = snap.stat().st_mtime
+            except OSError:
                 continue
-            if not isinstance(data, dict) or not data:
-                continue
-            try:
-                cards.append(_monitor_card(label, snap, data))
-            except (OSError, TypeError, ValueError):
-                continue  # one malformed campaign must never blank the whole monitor
+            seen.add(key)
+            cached = _monitor_card_cache.get(key)
+            if cached and cached[0] == mtime:
+                card = dict(cached[1])  # reuse the parsed card; only `live` is recomputed below
+            else:
+                try:
+                    data = json.loads(snap.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if not isinstance(data, dict) or not data:
+                    continue
+                try:
+                    card = _monitor_card(label, snap, data)
+                except (OSError, TypeError, ValueError):
+                    continue  # one malformed campaign must never blank the whole monitor
+                _monitor_card_cache[key] = (mtime, dict(card))
+            card["live"] = (now - card.get("updated_at", 0)) < 90  # time-relative → always fresh
+            cards.append(card)
+    # Drop cache entries for snapshots that vanished (a deleted QA run) so it can't grow unbounded.
+    for stale in [k for k in _monitor_card_cache if k not in seen]:
+        _monitor_card_cache.pop(stale, None)
     # Order so the page is USEFUL, not a wall of dead Day-1 QA runs: LIVE first, then the owner's
     # own play campaigns, then everything else by recency. Without this the 40-card cap fills with
     # stale identically-titled QA snapshots and a real/live game is buried (the "locked on one

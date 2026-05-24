@@ -815,20 +815,24 @@ async function probeImage(scope) {
   const key = (selectedCampaignId || "") + "::" + scope;
   const hit = _imgCache.get(key);
   if (hit === "pending") return null;
-  if (hit) return hit.url || null;            // resolved (url) or {none:true} -> null
+  if (hit && hit.url) return hit.url;          // resolved art never changes — keep it forever
+  // A "no art" result is cached only for a TTL (45s) so art GENERATED after the first probe
+  // (the DM makes a scene illustration mid-beat) actually appears, instead of a placeholder
+  // sticking until reload (L1).
+  if (hit && hit.none && (Date.now() - (hit.t || 0)) < 45000) return null;
   _imgCache.set(key, "pending");
   try {
     const r = await fetch(withCampaign("/image?scope=" + encodeURIComponent(scope)));
-    if (!r.ok) { _imgCache.set(key, { none: true }); return null; }
+    if (!r.ok) { _imgCache.set(key, { none: true, t: Date.now() }); return null; }
     const ct = (r.headers.get("Content-Type") || "");
-    if (!ct.startsWith("image/")) { _imgCache.set(key, { none: true }); return null; }
+    if (!ct.startsWith("image/")) { _imgCache.set(key, { none: true, t: Date.now() }); return null; }
     const blob = await r.blob();
-    if (!blob.size) { _imgCache.set(key, { none: true }); return null; }
+    if (!blob.size) { _imgCache.set(key, { none: true, t: Date.now() }); return null; }
     const url = URL.createObjectURL(blob);
     _imgCache.set(key, { url });
     return url;
   } catch (_) {
-    _imgCache.set(key, { none: true });        // unreachable/parse error -> placeholder
+    _imgCache.set(key, { none: true, t: Date.now() });        // unreachable/parse error -> placeholder
     return null;
   }
 }
