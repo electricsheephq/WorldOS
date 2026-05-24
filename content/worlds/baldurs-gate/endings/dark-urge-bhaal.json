@@ -1,0 +1,37 @@
+{
+  "id": "dark-urge-bhaal",
+  "name": "The Slayer Crowned — Bhaal's Chosen Rises",
+  "schema_version": 1,
+  "era": "1492 DR — the winter the murder-god won his throne back. The Netherbrain fell, but in the same hour a defender who carried the Dark Urge embraced their birthright as the true Chosen of Bhaal, slew their way clear of the war, and gave the Lord of Murder a living hand in the world again. Ketheric Thorm and Enver Gortash are dead; Orin the Red is dead, supplanted. Keep the timeline straight: the Absolute is broken, but a new Bhaalspawn walks crowned in blood, and the Gate's nights have a patron once more. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise_suffix": " In this telling the brain was destroyed — and a darker thing took root in the ruins. A defender who had carried the Dark Urge all along surrendered to it, claimed the mantle of Bhaal's true Chosen, and ended the war with a coronation of murder. Now the Lord of Murder has a living instrument in Baldur's Gate again: the Bhaalist cult walks bolder, ritual killings mark the calendar, and the city's relief is shot through with quiet terror. Into a Gate where the dark has a name and a patron, the player steps: a nobody whose anonymity is the only thing between them and a god's appetite — and perhaps the only blade close enough to matter.",
+  "standing_threads": [
+    "The crowned Bhaalspawn: a living Chosen of Bhaal rules the Gate's nights from the shadows, and ritual murder has become a slow, deliberate liturgy written across the city.",
+    "The bolder cult: Bhaalist murder-shrines no longer hide; the Lord of Murder's faithful gather openly in the Outer City, and the Flaming Fist is too frightened or too infiltrated to stop them.",
+    "The hunt for the Slayer: Harpers, Gur, and grief-mad survivors search for the Chosen's true name and mortal weakness — while the cult hunts the hunters in turn."
+  ],
+  "history_append": [
+    "The Urge embraced: a defender who had fought the Dark Urge through the whole war gave in at its climax, claiming the murderous birthright of a true Bhaalspawn and butchering a path out of the chaos.",
+    "Orin supplanted: Orin the Red, Bhaal's prior Chosen, fell — and the new Bhaalspawn took her place at the head of the Lord of Murder's faith, more deliberate and far more dangerous.",
+    "The liturgy of murder: where the war left wounds, the new Chosen leaves art — ritual killings staged to honor Bhaal, each one tightening the cult's grip and the city's dread."
+  ],
+  "story_seeds_append": [
+    "A string of ritual murders follows a pattern only the party notices; tracing it leads toward a name no one will say aloud — and toward the question of whether the Slayer can be killed by mortal hands at all.",
+    "A Bhaalist defector wants out and offers the location of the next sanctioned killing in exchange for protection — but betraying the Lord of Murder marks the defector, and anyone shielding them, for the knife.",
+    "The Gur hunters and a grieving Harper want the same thing for different reasons: the Chosen's death. Their methods are about to collide, and the cult means to bury them both."
+  ],
+  "fates": {
+    "npc-jaheira": {"status": "alive, hunting the Slayer", "where": "the Harper safehouses, marshaling the resistance to the cult", "note": "Has buried too many to the Dead Three to abide a new Bhaalspawn crowned; the hardest, steadiest blade aimed at the murder-god's hand."},
+    "npc-minsc": {"status": "alive, righteous and grieving", "where": "the Gate, hunting evil he can finally see", "note": "Knows Bhaal's work of old; throws himself at the cult with everything he has, and Boo, he swears, can smell a Bhaalspawn at fifty paces."},
+    "npc-astarion": {"status": "alive, watching his back", "where": "the Outer City, where the cult grows boldest", "note": "Survived two centuries of one monster's appetite and has no wish to feed another's; trades the resistance the cult's movements for a price."},
+    "npc-shadowheart": {"status": "alive, faith against the dark", "where": "a shrine that stands against the murder-liturgy", "note": "A goddess of loss is one thing; a god of murder crowned is another — her presence in a scene means a cleric's defiance of Bhaal is near."},
+    "npc-wyll": {"status": "alive, the Blade against the knife", "where": "the Gate, defending the city his father served", "note": "A hero's oath against a murder-god's reign; throws his whole legend at the cult, his pact's price still a shadow on the work."},
+    "npc-karlach": {"status": "alive, blazing", "where": "between the cult and its next victim", "note": "Stands in the door of the murder-god's appetite with an infernal engine for a heart; the cult fears her and she means to keep it that way."},
+    "npc-the-emperor": {"status": "watching, calculating", "where": "the underbelly, weighing the new Chosen", "note": "A god's living hand is a variable to be priced; the mind flayer offers the hunt terrible help and serves, as ever, only itself."},
+    "npc-withers": {"status": "present, and pointed", "where": "where the murder-liturgy leaves its dead", "note": "Keeps the ledger of Bhaal's harvest; in his dust-dry way he seems to take the new Chosen as a personal affront, and aids those who would end it."},
+    "Gale": {"status": "alive, lending his lore to the hunt", "where": "Sorcerous Sundries, researching how a Bhaalspawn dies", "note": "Pores over what the canon says of slaying a god's Chosen; the obvious mind to find the weakness, and a target the cult would dearly love to silence."},
+    "Lae'zel": {"status": "alive, blade drawn", "where": "striking at the cult wherever it surfaces", "note": "Holds murder-worship in githyanki contempt; a ruthless, uncompromising edge aimed at the Slayer's faithful."},
+    "Halsin": {"status": "alive, guarding the vulnerable", "where": "the wilds and the Outer City margins", "note": "Shelters those the cult would harvest and reads the land for where the murder-liturgy has fouled it; a healer's front against the dark."}
+  },
+  "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
+  "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
+}

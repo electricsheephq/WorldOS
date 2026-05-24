@@ -431,6 +431,7 @@ class Campaign(_StrictModel):
     lore: list[str] = Field(default_factory=list)  # world-bible facts (history, standing threads) — indexed into recall so the DM keeps a generated world consistent
     world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
     era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened
+    ending_id: str = ""  # the post-state ending OVERLAY this world was seeded in (content/worlds/<id>/endings/<id>.json), or "" for the base/default state
     leveling_mode: Literal["xp", "milestone"] = "xp"  # "xp": end_combat auto-awards defeated monsters' XP to the party; "milestone": DM levels by story beat (no auto-XP)
     # Narrative pacing the DM honors when setting scene density. "adventure" (default):
     # tension, momentum, encounters. "downtime": slower — let scenes breathe, lean into

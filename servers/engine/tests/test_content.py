@@ -149,3 +149,124 @@ def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
     # a campaign not started from a world seed returns empty, no crash
     blank = server.create_campaign("blank")["id"]
     assert server.lookup_lore(blank, "anything")["hits"] == []
+
+
+# --- post-BG3 ending overlays + character origins ------------------------------------
+
+def test_seed_world_default_is_unchanged_base_state():
+    # The DEFAULT path (no ending) must reproduce today's base seed EXACTLY — no era
+    # rewrite, no extra lore, no fate facts, ending_id empty.
+    w = content.load_world_data("baldurs-gate")
+    base = content.seed_world(w)
+    assert base.ending_id == ""
+    assert base.era == str(w.get("era"))  # base chronology, untouched
+    expected_lore = [str(x) for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
+    assert base.lore == expected_lore  # exactly the base history + threads, nothing appended
+    # each roster NPC carries only its single base hook (no overlay fate fact)
+    jaheira = next(ch for ch in base.characters.values() if ch.name == "Jaheira")
+    assert len(jaheira.memory) == 1
+    # an unknown/empty ending also falls through to the base state (no crash, no change)
+    unknown = content.seed_world(w, ending="no-such-ending")
+    assert unknown.ending_id == "" and unknown.era == base.era and unknown.lore == base.lore
+
+
+def test_seed_world_ending_rewrites_era_and_lands_fate_on_npc():
+    # An ending overlay OVERWRITES the era (the chronology guardrail moves to the
+    # post-state) and lands each `fates` entry as a memory fact on the matching roster
+    # NPC (resolved by id npc-jaheira -> Jaheira), plus a recallable lore line.
+    w = content.load_world_data("baldurs-gate")
+    base = content.seed_world(w)
+    e = content.seed_world(w, ending="gortash-tyranny")
+    assert e.ending_id == "gortash-tyranny"
+    assert e.era != base.era and "tyrant" in e.era.lower()  # post-state chronology
+    assert len(e.lore) > len(base.lore)  # overlay history + threads folded into lore
+    jaheira = next(ch for ch in e.characters.values() if ch.name == "Jaheira")
+    assert len(jaheira.memory) == 2  # base hook + the overlay fate fact
+    assert any("hunted" in m.lower() or "resistance" in m.lower() for m in jaheira.memory)
+    # a hero who is NOT in the npc_roster (Gale, only in lore) is still covered by a
+    # recallable lore line carrying their fate
+    assert any(l.startswith("[") and "Gale" in l for l in e.lore)
+    # the post-state threads also got scheduled as background world-beats
+    assert any("tyrant" in cq.text.lower() or "watch" in cq.text.lower() for cq in e.consequences)
+
+
+def test_seed_world_ending_random_resolves_to_a_concrete_overlay():
+    w = content.load_world_data("baldurs-gate")
+    ids = {x["id"] for x in content.list_endings("baldurs-gate")}
+    assert len(ids) >= 4  # the four core post-BG3 endings ship
+    r = content.seed_world(w, ending="random")
+    assert r.ending_id in ids  # "random" resolves to a concrete shipped overlay
+
+
+def test_start_world_echoes_chosen_ending(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    out = server.start_world("baldurs-gate", ending="illithid-ascension")
+    assert out["ending"] == "illithid-ascension"
+    assert out["ending_name"] and out["ending_state"]  # DM has a one-line state to announce
+    assert "illithid" in out["era"].lower() or "brain" in out["era"].lower()
+    # the base (no ending) start still advertises the available overlays but seeds base
+    base = server.start_world("baldurs-gate")
+    assert base["ending"] == "" and {e["id"] for e in base["available_endings"]} >= {"gortash-tyranny"}
+
+
+def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    allc = server.list_canon_characters(cid)["available"]
+    names = {x["name"] for x in allc}
+    # every record now reports a playable flag; the seven origin heroes are NOT playable
+    assert {"Astarion", "Gale", "Karlach", "Lae'zel", "Shadowheart", "Wyll", "Halsin"} <= names
+    by_name = {x["name"]: x for x in allc}
+    assert by_name["Astarion"]["playable"] is False and by_name["Astarion"]["role"] == "hero"
+    assert by_name["Minsc"]["playable"] is True
+    # the playable-only filter keeps just the minor figures a player can pick up
+    play = {x["name"] for x in server.list_canon_characters(cid, playable_only=True)["available"]}
+    assert play == {"Jaheira", "Minsc", "Withers", "Jergal"}
+    assert "Astarion" not in play and "Gale" not in play
+
+
+def test_start_character_origins(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    # nobody_l1 (default) — a fresh level-1 PC, added to the party
+    n = server.start_character(cid, name="Nobody")
+    assert n["origin"] == "nobody_l1" and n["level"] == 1 and n["kind"] == "player"
+    assert n["in_party"]
+    # nobody_l1 with a class gets a real SRD level-1 sheet
+    n2 = server.start_character(cid, origin="nobody_l1", name="Greenhorn", class_name="fighter")
+    sheet = server.get_character(cid, n2["id"])
+    assert sheet["proficiency_bonus"] == 2 and sheet["max_hp"] > 1  # SRD defaults applied
+    # veteran_l5 — level 5 via the SRD class tables
+    v = server.start_character(cid, origin="veteran_l5", name="Vet", class_name="ranger")
+    assert v["level"] == 5
+    vsheet = server.get_character(cid, v["id"])
+    assert vsheet["proficiency_bonus"] == 3  # L5 proficiency
+    # veteran_l5 with no class is rejected (a level-5 PC needs a class)
+    assert "error" in server.start_character(cid, origin="veteran_l5", name="Bad")
+    # template:<id> — a premade build from origins/*.json
+    t = server.start_character(cid, origin="template:flaming-fist-deserter")
+    assert t["origin"] == "template:flaming-fist-deserter" and t["level"] == 3 and t["class"] == "Fighter"
+    # an explicit name overrides the template's
+    t2 = server.start_character(cid, origin="template:guild-cutpurse", name="Pip")
+    assert t2["name"] == "Pip" and t2["class"] == "Rogue"
+    # an unknown template id errors with the available list
+    bad_t = server.start_character(cid, origin="template:does-not-exist")
+    assert "error" in bad_t and "available" in bad_t
+
+
+def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    # pickup a MINOR canon figure as the PLAYER — allowed, carries their real identity
+    pm = server.start_character(cid, origin="pickup:Minsc")
+    assert pm["origin"] == "pickup:Minsc" and pm["kind"] == "player" and pm["in_party"]
+    sheet = server.get_character(cid, pm["id"])
+    assert sheet["race"] == "Human" and sheet.get("backstory")  # canon identity carried over
+    # pickup a TOP HERO as the player is REJECTED with a clear message
+    ph = server.start_character(cid, origin="pickup:Astarion")
+    assert "error" in ph and ph["playable"] is False
+    assert "legend" in ph["error"].lower() and "npc" in ph["error"].lower()
+    assert "Minsc" in ph["playable_options"]  # points the player at who they CAN pick up
+    # the heroes remain encounterable as NPCs — load_canon_character(kind="npc") is
+    # unrestricted (they're already seeded into the world roster by start_world)
+    assert server.load_canon_character(cid, "Astarion", kind="npc").get("id") == "npc-astarion"

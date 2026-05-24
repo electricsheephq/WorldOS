@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from pathlib import Path
 
 import worldsim
@@ -28,10 +29,18 @@ def _characters_dirs(world_id: str) -> list[Path]:
     return [base / world_id / "characters", base / "_private" / world_id / "characters"]
 
 
-def list_canon_characters(world_id: str) -> list[dict]:
-    """The ingested canon characters available for a world — {name, race, class} each —
-    from content/worlds/<id>/characters/*.json. De-duplicated by name (a figure on two
-    wikis collapses to one)."""
+def is_playable(rec: dict) -> bool:
+    """Whether a canon record may be picked up as the PLAYER. Top heroes (the BG3
+    origin companions) are marked `"playable": false` so they stay legends/quest-givers,
+    never a hero the player embodies. Absent flag = playable (a minor figure)."""
+    return bool(rec.get("playable", True))
+
+
+def list_canon_characters(world_id: str, playable_only: bool = False) -> list[dict]:
+    """The ingested canon characters available for a world — {name, race, class,
+    playable, role} each — from content/worlds/<id>/characters/*.json. De-duplicated by
+    name (a figure on two wikis collapses to one). `playable_only` keeps just the minor
+    figures the player may pick up as their PC (top heroes are filtered out)."""
     out: list[dict] = []
     seen: set[str] = set()
     for cdir in _characters_dirs(world_id):
@@ -45,8 +54,17 @@ def list_canon_characters(world_id: str) -> list[dict]:
             nm = (rec.get("name") or p.stem).strip()
             if nm.lower() in seen:
                 continue
+            playable = is_playable(rec)
+            if playable_only and not playable:
+                continue
             seen.add(nm.lower())
-            out.append({"name": nm, "race": rec.get("race", ""), "class": rec.get("class", "")})
+            out.append({
+                "name": nm,
+                "race": rec.get("race", ""),
+                "class": rec.get("class", ""),
+                "playable": playable,
+                "role": rec.get("role", ""),
+            })
     return out
 
 
@@ -235,13 +253,178 @@ def list_worlds() -> list[dict]:
     return out
 
 
-def seed_world(world: dict, start_at: str = "") -> Campaign:
+def _origins_dirs(world_id: str) -> list[Path]:
+    """Where premade PC origin TEMPLATES live: content/worlds/<id>/origins/ and its
+    gitignored _private/ mirror. A template is a ready-to-play character build the
+    player can pick as their PC at world start (start_character origin='template:<id>')."""
+    base = _content_dir() / "worlds"
+    return [base / world_id / "origins", base / "_private" / world_id / "origins"]
+
+
+def list_origin_templates(world_id: str) -> list[dict]:
+    """The premade PC origin templates a world ships (content/worlds/<id>/origins/*.json),
+    as {id, name, class, level, blurb} each. De-duplicated by id."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for odir in _origins_dirs(world_id):
+        if not odir.is_dir():
+            continue
+        for p in sorted(odir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            oid = (rec.get("id") or p.stem).strip()
+            if oid.lower() in seen:
+                continue
+            seen.add(oid.lower())
+            out.append({
+                "id": oid,
+                "name": rec.get("name", oid),
+                "class": rec.get("class_name", "") or rec.get("class", ""),
+                "level": rec.get("level", 1),
+                "blurb": rec.get("blurb", ""),
+            })
+    return out
+
+
+def load_origin_template(world_id: str, template_id: str) -> "dict | None":
+    """Load one premade PC origin template by id (or file slug) for a world, or None."""
+    want = template_id.strip().lower()
+    for odir in _origins_dirs(world_id):
+        if not odir.is_dir():
+            continue
+        for p in sorted(odir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if (str(rec.get("id", "")).strip().lower() == want) or (p.stem.lower() == want):
+                return rec
+    return None
+
+
+def _endings_dirs(world_id: str) -> list[Path]:
+    """Where post-state ending OVERLAYS live: content/worlds/<id>/endings/ and its
+    gitignored _private/ mirror. An overlay rewrites a base world into a specific
+    post-campaign state (e.g. post-BG3 branch outcomes)."""
+    base = _content_dir() / "worlds"
+    return [base / world_id / "endings", base / "_private" / world_id / "endings"]
+
+
+def list_endings(world_id: str) -> list[dict]:
+    """The post-state ending overlays a world ships (content/worlds/<id>/endings/*.json),
+    as {id, name} each. These let start_world seed the setting in a chosen aftermath
+    rather than its default state. De-duplicated by id."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for edir in _endings_dirs(world_id):
+        if not edir.is_dir():
+            continue
+        for p in sorted(edir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            eid = (rec.get("id") or p.stem).strip()
+            if eid.lower() in seen:
+                continue
+            seen.add(eid.lower())
+            out.append({"id": eid, "name": rec.get("name", eid)})
+    return out
+
+
+def load_ending_data(world_id: str, ending_id: str) -> "dict | None":
+    """Load one ending overlay by id (or file slug) for a world, or None if not found."""
+    want = ending_id.strip().lower()
+    for edir in _endings_dirs(world_id):
+        if not edir.is_dir():
+            continue
+        for p in sorted(edir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if (str(rec.get("id", "")).strip().lower() == want) or (p.stem.lower() == want):
+                return rec
+    return None
+
+
+def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
+    """Fold a post-state ending overlay onto an already-base-seeded Campaign (mutates).
+
+    ADDITIVE on top of the base seed: OVERWRITES `era` (the chronology guardrail moves
+    to the post-state); appends the overlay's standing_threads + history into `lore`
+    (so they're recallable) and re-runs the world-sim so the new threads tick; and lands
+    each `fates` entry as a memory fact on the matching npc_roster Character — plus a
+    lore line so a hero who isn't in the roster is still covered. Premise gets the suffix
+    appended. (The overlay's story_seeds_append are surfaced by start_world, not here.)"""
+    # The post-state chronology REPLACES the base era — who's alive / what happened changed.
+    new_era = str(overlay.get("era") or "").strip()
+    if new_era:
+        c.era = new_era
+
+    suffix = str(overlay.get("premise_suffix") or "").strip()
+    if suffix:
+        c.summary = (c.summary + " " + suffix).strip() if c.summary else suffix
+
+    # Recallable post-state facts: the overlay's history + standing threads join `lore`.
+    extra_lore = [
+        str(x) for x in (
+            _as_list(overlay, "history_append") + _as_list(overlay, "standing_threads")
+        ) if str(x).strip()
+    ]
+    if extra_lore:
+        c.lore = list(c.lore) + extra_lore
+
+    # The post-state threads also tick in the background like the base standing threads.
+    new_threads = [str(t) for t in _as_list(overlay, "standing_threads") if str(t).strip()]
+    if new_threads:
+        worldsim.seed_threads(c, new_threads)
+
+    # Each fate lands on the matching roster NPC as a memory fact (so the DM voices the
+    # right post-state when they appear). Roster characters are keyed by id or name; a
+    # hero who ISN'T in the roster (e.g. Gale, only in lore) is covered by a lore line.
+    fates = overlay.get("fates") or {}
+    if isinstance(fates, dict):
+        for key, fate in fates.items():
+            if not isinstance(fate, dict):
+                continue
+            who = str(key)
+            parts = [p for p in (
+                fate.get("status"), fate.get("where"), fate.get("note"),
+            ) if str(p or "").strip()]
+            detail = " — ".join(str(p).strip() for p in parts)
+            # Resolve the roster character by id first, then by case-insensitive name.
+            ch = c.characters.get(who)
+            if ch is None:
+                kl = who.strip().lower()
+                ch = next(
+                    (x for x in c.characters.values() if x.name.strip().lower() == kl),
+                    None,
+                )
+            label = ch.name if ch is not None else who
+            fact = f"[{overlay.get('name', overlay.get('id', 'ending'))}] {label}: {detail}".strip(" :—")
+            if ch is not None:
+                ch.memory.append(fact)
+            # Always add a lore line too, so non-roster heroes are recallable as well.
+            c.lore.append(fact)
+
+
+def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     """Seed a Campaign from a WORLD bible (a persistent setting the DM generates
     *within*, not a fixed plot). Unlike an adventure, a world ships its regions,
     factions, a roster of pullable NPCs, and its history/standing-threads as `lore`
     — which the ledger indexes so `recall` keeps the generated story consistent. The
     DM then drops the party at a starting region and generates + persists the actual
-    adventure as the player explores."""
+    adventure as the player explores.
+
+    `ending` selects a post-state OVERLAY (content/worlds/<id>/endings/<ending>.json):
+    after the base seed, the overlay OVERWRITES the era, appends its history + standing
+    threads into recallable lore (and ticks them in the world-sim), appends story_seeds,
+    and lands each `fates` entry on the matching roster NPC. `ending="random"` picks one
+    of the world's overlays at random; an unknown/empty `ending` leaves the BASE world
+    state untouched (today's behavior). The resolved id is stored on `Campaign.ending_id`."""
     if not isinstance(world, dict):
         raise ValueError("world data must be a JSON object")
     c = Campaign(title=world.get("name", "Untitled World"), summary=world.get("premise", ""))
@@ -310,5 +493,21 @@ def seed_world(world: dict, start_at: str = "") -> Campaign:
     # Background world-sim: schedule the standing threads as recurring "world beats"
     # so they advance on the clock even when the party isn't pursuing them.
     worldsim.seed_threads(c, [str(t) for t in _as_list(world, "standing_threads")])
+
+    # Optional post-state overlay: fold a chosen (or random) ending onto the base seed.
+    # Unknown/empty `ending` is a no-op, so the default path reproduces the base world
+    # state exactly.
+    want_ending = (ending or "").strip()
+    if want_ending:
+        wid = str(world.get("id", ""))
+        if want_ending.lower() == "random":
+            choices = [e["id"] for e in list_endings(wid)]
+            want_ending = random.choice(choices) if choices else ""
+        overlay = load_ending_data(wid, want_ending) if want_ending else None
+        if overlay is not None:
+            _apply_ending_overlay(c, overlay)
+            # Persist the resolved id so a re-grounding / resume knows which post-state
+            # this world is in (and "random" resolves to a concrete id, not re-rolled).
+            c.ending_id = str(overlay.get("id", want_ending))
 
     return c

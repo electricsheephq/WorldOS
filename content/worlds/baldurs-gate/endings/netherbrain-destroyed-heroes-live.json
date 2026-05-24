@@ -1,0 +1,37 @@
+{
+  "id": "netherbrain-destroyed-heroes-live",
+  "name": "The Netherbrain Destroyed — the Heroes Live",
+  "schema_version": 1,
+  "era": "1492 DR — the winter after the Absolute fell clean. The Netherbrain was destroyed outright and its will scattered; the surviving companions chose to remain themselves rather than seize the brain's power, and walked out of the harbor as living legends. The Dead Three's Chosen (Ketheric Thorm, Enver Gortash, Orin the Red) are dead; the tadpole-touched are being cured, not crowned. Keep the timeline straight: this is the brightest of the war's possible mornings — wounded, but unconquered. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise_suffix": " In this telling, the Gate's defenders made the hardest clean choice: the Netherbrain was annihilated and no one took its crown. The companions who could have become gods or tyrants instead stayed people — and the city, against the odds, gets to grieve and rebuild as itself. The heroes are alive, scattered into their own lives, and the wound is healing. Into that fragile, hopeful morning the player steps: a nobody in a city that, for once, has room to become something.",
+  "standing_threads": [
+    "The hopeful rebuild: with the brain gone clean and no dark power crowned, the Lower City's Wound is being walled and tended rather than feared — and a hundred small fights break out over who gets to define the peace.",
+    "Living legends, ordinary lives: the surviving companions are alive and known by name, pulled at constantly to lend their fame to one cause or another — and increasingly weary of being symbols instead of people.",
+    "The cure and the holdouts: tadpole-survivors are being treated by Gate healers and githyanki defectors alike, but a hard reactionary core insists no cure can be trusted — and works to undo the mercy."
+  ],
+  "history_append": [
+    "The clean victory: at the height of the Battle of Baldur's Gate, the chance came to seize the Netherbrain's power — to rule the freed minds, or to become something worse. The defenders refused it and destroyed the brain entirely, and so walked away as themselves.",
+    "No crown taken: because no one claimed the Absolute's power, the war left no new tyrant in its wake — only an exhausted, hopeful city and a clutch of heroes who would rather be left alone than worshipped.",
+    "The morning after: the companions parted on good terms, most of them alive and free; their reunions are warm and rare, and the Gate treats the anniversary of the brain's fall as part wake, part festival."
+  ],
+  "story_seeds_append": [
+    "A grateful magistrate wants a living legend to bless a new public works project and will pay handsomely for an escort to bring one to the Gate — except the hero in question is sick of being a mascot and has gone to ground.",
+    "A cured tadpole-survivor, now thriving, is being blackmailed by someone who kept proof of what they once carried — and the only people who can vouch for the cure are the heroes who administered it.",
+    "The anniversary of the brain's fall approaches; a reactionary cell plans to turn the festival into a pogrom against the tadpole-touched, and the city watch is too busy with the parade to notice."
+  ],
+  "fates": {
+    "npc-jaheira": {"status": "alive", "where": "the Gate and the Harper safehouses", "note": "Came through the war whole and is quietly furious that peacetime is no less dangerous; mentors newcomers and watches the reactionaries like a hawk."},
+    "npc-minsc": {"status": "alive", "where": "wandering the Sword Coast, Boo on his shoulder", "note": "Unfrozen and unbowed, a beloved living legend; turns up wherever evil is too obvious to miss and is genuinely happy the morning came clean."},
+    "npc-astarion": {"status": "alive — and still himself, not ascended", "where": "the Outer City after dark", "note": "Refused the ritual that would have made him a vampire ascendant; free, sun-walking when he can, and hunting the last of Cazador's leavings on his own terms."},
+    "npc-shadowheart": {"status": "alive", "where": "wherever she chose — moon-temple or quiet road", "note": "Survived the war with her own faith reclaimed; her presence in a scene means old questions of Shar and Selune are near."},
+    "npc-wyll": {"status": "alive, the Blade of Frontiers", "where": "between his father's city and the road", "note": "Honored as a hero and torn, as ever, between the Gate's empty seat and the open road; his pact's terms color any infernal business."},
+    "npc-karlach": {"status": "alive — her engine mended (or held back from the brink)", "where": "loud and somewhere in the thick of things", "note": "Got her clock stopped one way or another and is making up for lost time; the most alive person in any room and a living grudge against what Gortash built."},
+    "npc-the-emperor": {"status": "departed into its own designs", "where": "unknown, the city's underbelly or beyond it", "note": "The mind flayer that helped end the Absolute serves only itself; it took no power from the brain's fall but it is not gone, and its goals remain its own."},
+    "npc-withers": {"status": "as the grave is — present", "where": "thresholds of death and choice", "note": "Keeps his ledger; the war ended clean, and he seems, in his dust-dry way, almost satisfied."},
+    "Gale": {"status": "alive", "where": "Waterdeep or Sorcerous Sundries, restored to Mystra's grace (or his own path)", "note": "Did not detonate the Karsus orb against the brain; a celebrated wizard whose appearance means weave-deep lore is near."},
+    "Lae'zel": {"status": "alive, turned against Vlaakith", "where": "leading githyanki defectors against the lich-queen's lie", "note": "Broke with Vlaakith; a hero to the freed gith and a danger to the Astral throne — her patrols now hunt tyranny, not the living."},
+    "Halsin": {"status": "alive", "where": "the lifting Shadow-Cursed Lands, tending Reithwin's recovery", "note": "Stayed to heal the poisoned country as Shar's curse withdraws; a druid-anchor for anyone working in the wilds."}
+  },
+  "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
+  "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
+}

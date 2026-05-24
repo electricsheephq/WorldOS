@@ -1,5 +1,7 @@
 {
   "name": "Withers",
+  "playable": true,
+  "role": "minor",
   "race": "Skeleton",
   "class": "",
   "level": "",

@@ -1,5 +1,7 @@
 {
   "name": "Jergal",
+  "playable": true,
+  "role": "minor",
   "race": "",
   "class": "Cleric Necromancer",
   "level": "",

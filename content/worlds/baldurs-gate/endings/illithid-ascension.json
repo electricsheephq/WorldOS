@@ -1,0 +1,37 @@
+{
+  "id": "illithid-ascension",
+  "name": "The Illithid Crown — a Mind Above the City",
+  "schema_version": 1,
+  "era": "1492 DR — the winter after one of the Gate's own defenders took the Netherbrain's place. The Absolute war ended not with the brain's death but with its leash changing hands: a hero who carried a tadpole accepted ceremorphosis and the brain's power to end the slaughter, and now a vast illithid intellect holds the freed minds of the Sword Coast in check from the shadows. The old Chosen (Ketheric Thorm, Gortash, Orin) are still dead. Keep the timeline straight: the city was saved, but its savior is no longer human, and what it wants next is the open question of the age. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise_suffix": " Here the brain was not destroyed — it was claimed. To end the ceremorphosis cascade, one of the Gate's defenders submitted to the tadpole and took the Netherbrain's throne, becoming an Elder Brain that holds every freed mind on the Coast from spilling into chaos. The city was spared mass transformation. But its salvation now thinks with an alien mind, and the tadpole-touched can feel it at the edge of sleep — a benevolence no one is sure they trust. Into a Gate ruled, in secret, by a mind it cannot see, the player steps: a nobody whose thoughts, for the first time in history, might not be entirely their own.",
+  "standing_threads": [
+    "The watching mind: an Elder Brain born of a former hero holds the Coast's freed minds in check — and every tadpole-survivor can feel its quiet weight; some call it guardian, some call it the next tyrant, and no one can prove which.",
+    "The cult reborn upward: scattered Absolute remnants now whisper that the new brain is the true Absolute at last, and gather to serve it — wanted or not — while the Gate's powers debate whether to thank it or destroy it.",
+    "Free will on a leash: a resistance of mages, githyanki, and frightened patriars searches for a way to sever the brain's hold without unleashing the cascade it prevents — a knot with no clean cut."
+  ],
+  "history_append": [
+    "The crown accepted: at the climax of the Battle of Baldur's Gate, a tadpole-bearing defender chose ceremorphosis over annihilation — taking the Netherbrain's power to halt the mass transformation that would otherwise have swept the Coast.",
+    "The new Absolute: the freed minds did not scatter into madness; they were caught and held by the ascended hero-turned-Elder-Brain, which now anchors every former true soul from the dark of the Underdark.",
+    "The benevolent unknown: the brain has, so far, used its dominion to protect rather than enslave — but its mind is illithid now, its timescale geological, and the Gate lives under a guardian whose mercy is a daily, unprovable gamble."
+  ],
+  "story_seeds_append": [
+    "A tadpole-survivor begins receiving precise, helpful 'intuitions' that save lives — and then one that asks something terrible in return; the party must decide whether the watching mind is to be obeyed, refused, or hunted.",
+    "An Absolute remnant has located what they believe is the brain's physical anchor and means to either worship it or detonate it; both outcomes free the cascade the brain holds back.",
+    "A resistance cell offers the party a device that can shield a mind from the brain's reach — but field-testing it on a willing survivor risks cutting them loose from the one thing keeping them sane."
+  ],
+  "fates": {
+    "npc-jaheira": {"status": "alive, and grimly opposed", "where": "the Harper safehouses, organizing the resistance", "note": "Refuses to live under any mind but her own; the steadiest hand in the effort to sever the brain's hold without dooming the Coast."},
+    "npc-minsc": {"status": "alive, righteously confused", "where": "the Gate, ready to 'go for the eyes' of a brain he cannot see", "note": "Hates an enemy he can't punch; a blunt, loyal ally to anyone fighting the leash — though Boo, he insists, trusts no one's thoughts but his own."},
+    "npc-astarion": {"status": "alive, keeping his distance", "where": "the Outer City, well away from the brain's true souls", "note": "Survived a life of being someone's instrument and has no intention of being a mind's; sells information about the cult-reborn to whoever pays."},
+    "npc-shadowheart": {"status": "alive, faith shaken anew", "where": "between temples, questioning what 'salvation' costs", "note": "The brain's bargain — safety for surrender — cuts at her oldest wound; her presence raises the question of whether mercy without choice is mercy at all."},
+    "npc-wyll": {"status": "alive, the Blade against a new tyranny", "where": "the Gate, rallying its defenders", "note": "Sees the watching mind as exactly the kind of power his oath was meant to break; torn, as ever, between his city and the harder road."},
+    "npc-karlach": {"status": "alive, engine roaring", "where": "the front of any fight against the cult-reborn", "note": "Will not be told what to feel by anything, least of all an Elder Brain; the loudest 'no' in the city."},
+    "npc-the-emperor": {"status": "displaced — and very interested", "where": "the shadows, circling its successor", "note": "The mind flayer that once steered the Absolute now watches another wear the crown it understood; whether it means to serve, supplant, or sever the new brain is its own cold calculus."},
+    "npc-withers": {"status": "present at the threshold", "where": "where minds are lost and kept", "note": "Keeps his ledger of souls; notes, drily, that the new brain has complicated his accounting considerably."},
+    "Gale": {"status": "alive — and the resistance's brightest hope (or its gravest temptation)", "where": "Sorcerous Sundries, studying the brain's nature", "note": "Knows more than anyone about Netherese power and ceremorphosis; the obvious person to find the cut — and the obvious person to be tempted by the crown himself."},
+    "Lae'zel": {"status": "alive, blade drawn against the brain", "where": "leading gith hunters who will not abide a living Elder Brain", "note": "To the githyanki an Elder Brain is the oldest enemy regardless of its mercy; a ruthless, uncompromising ally against it."},
+    "Halsin": {"status": "alive, troubled", "where": "the wilds, watching nature's reaction to the brain", "note": "Feels the watching mind press on the living world itself; a druid's read on whether the brain's 'order' is balance or a slow strangling."}
+  },
+  "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
+  "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
+}
