@@ -490,6 +490,20 @@ class _Handler(BaseHTTPRequestHandler):
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
     chat_path = ""  # optional two-sided <run>.chat.jsonl to tail for /chat
 
+    @classmethod
+    def _resolve_campaign(cls) -> str:
+        """Lazily (re-)attach to a campaign. The viewer may launch BEFORE any campaign
+        exists on disk — e.g. `scripts/play.sh` opens the dashboard, then the DM's first
+        turn mints the world. Rather than refuse to start (the old behavior crashed with
+        "No campaign found"), we bind the port immediately and re-resolve on each request,
+        auto-attaching the instant a campaign appears. Once bound, it sticks (recency only
+        decides the FIRST attach, so the view doesn't hop between games mid-session)."""
+        if not cls.campaign_id:
+            cid = _pick_campaign(None)
+            if cid:
+                cls.campaign_id = cid
+        return cls.campaign_id
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -561,6 +575,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(404, b"no image", "text/plain")
 
     def do_GET(self) -> None:  # noqa: N802
+        self._resolve_campaign()  # lazily attach if we launched before a game existed
         parsed = urlparse(self.path)
         route = parsed.path
         if route in ("/", "/index.html"):
@@ -573,7 +588,14 @@ class _Handler(BaseHTTPRequestHandler):
             # The raw campaign snapshot, plus one viewer-only flag: `live` says whether
             # the dashboard's action layer can land a move (POST /move accepted). The
             # snapshot is a fresh dict per read, so this transient key never persists.
-            snap = _read_snapshot(self.campaign_id)
+            cid = self._resolve_campaign()
+            if not cid:
+                # No game on disk yet — serve a graceful empty state (the dashboard shows
+                # "Waiting for the story to begin…") instead of a blank read; we attach
+                # automatically once the DM mints the campaign.
+                self._json({"empty": True, "live": _live_play()})
+                return
+            snap = _read_snapshot(cid)
             snap["live"] = _live_play()
             self._json(snap)
         elif route == "/config":
@@ -665,10 +687,10 @@ class _Handler(BaseHTTPRequestHandler):
 def main() -> int:
     campaign_id = _pick_campaign(sys.argv[1] if len(sys.argv) > 1 else None)
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8765
-    if not campaign_id:
-        print(f"No campaign found under {_campaigns_dir()} — start one first.", file=sys.stderr)
-        return 1
-    _Handler.campaign_id = campaign_id
+    # Bind even with NO campaign yet: a fresh launch (or scripts/play.sh starting the
+    # dashboard before the DM mints the world) must not crash with "No campaign found".
+    # We serve a graceful empty state and attach automatically once a campaign appears.
+    _Handler.campaign_id = campaign_id or ""
     # Optional agent-transcript to tail in the "Agent activity" panel — point it at a
     # QA run's stream-json (e.g. qa/transcripts/<run>.jsonl) to WATCH the agents play.
     _Handler.transcript_path = os.environ.get("CLAWDND_VIEWER_TRANSCRIPT") or (
@@ -677,7 +699,10 @@ def main() -> int:
     # Optional two-sided conversation log to show the player+DM exchange in the chat.
     _Handler.chat_path = os.environ.get("CLAWDND_VIEWER_CHAT") or ""
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
-    print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
+    if campaign_id:
+        print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
+    else:
+        print(f"ClawDnD play-view: http://127.0.0.1:{port}  (no game yet — the view attaches automatically once one starts)")
     if _Handler.transcript_path:
         print(f"Watching agent transcript: {_Handler.transcript_path}")
     moves = _moves_path()
