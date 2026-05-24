@@ -35,6 +35,16 @@
     "Lae'zel": {"status": "alive, blade drawn against the brain", "where": "leading gith hunters who will not abide a living Elder Brain", "note": "To the githyanki an Elder Brain is the oldest enemy regardless of its mercy; a ruthless, uncompromising ally against it."},
     "Halsin": {"status": "alive, troubled", "where": "the wilds, watching nature's reaction to the brain", "note": "Feels the watching mind press on the living world itself; a druid's read on whether the brain's 'order' is balance or a slow strangling."}
   },
+  "companion_seeds": {
+    "npc-the-emperor": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "personal_quest", "threshold": 20, "note": "Sever the Elder Brain's hold — the Emperor wants the leash cut, ostensibly to free the Coast's minds, in truth so no other intellect outranks its own. Earning its regard unlocks the route to the brain's anchor."}
+        ],
+        "agenda": {"trigger": "prize_seized", "note": "The moment the party holds the means to the brain's throne, the brain's whisper wins: the Emperor turns — not from malice but from appetite — it would sooner wear the crown itself than see it broken, and it strikes to take what's in hand."}
+      }
+    }
+  },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
   "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
 }
