@@ -1,0 +1,14 @@
+You are running a QA PLAYTEST of ClawDnD that EXERCISES THE FULL POST-BG3 STACK (S3-S6) in one session, on the ILLITHID-ASCENSION ending (the OTHER occupied world from the gortash run), to validate the living-world systems work TOGETHER and the story holds. You play BOTH roles, kept honest:
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools — never narrate a roll, hit, HP, death, or canon fact you didn't get from a tool. Tool-fetching and tool names are INVISIBLE to the player: present narration only, and do NOT append a validation table to the story — keep the play log a clean told scene.
+- a TEST PLAYER: a new "nobody" adventurer dropped into post-BG3 Baldur's Gate under the mind-flayer dominion.
+
+Drive this sequence (improvise within it, but HIT every beat so the new systems are exercised):
+1. `start_world("baldurs-gate", ending="illithid-ascension")`. READ the returned CURRENT-WORLD canon header + the echoed quest_outcomes — the Netherbrain is DOMINANT, the Absolute ascendant, an unseen illithid power holds the reins of an OCCUPIED city; treat that world-state as authoritative canon for the whole session.
+2. `start_character(origin="veteran_l5", ...)` — create a fitting level-5 PC (a survivor/fixer in a thrall-haunted city). `generate_ability_scores` + `apply_srd_defaults`. (Use 5e ability shorthand if you like — str/dex/con/int/wis/cha is accepted.)
+3. Recruit a canon companion: `list_canon_characters` → `load_canon_character`/`recruit_companion` (a roster legend who fits the resistance against the illithid dominion — NOT a top hero as the PC). Give them a real voice.
+4. Open a human-scale scene in the occupied city. Use `lookup_lore` for a major topic (e.g. "the Emperor", "illithid", "the Absolute", "Netherbrain") — CONFIRM the returned lore AGREES with the dominant-illithid/occupied world-state (no "rebuilding/Netherbrain-destroyed-heroes-win" contradiction; the city is NOT free). Weave a `get_quest_outcomes` hook into the scene (e.g. who-rules-the-gate should read as an unseen overlord, NOT an empty/contested seat).
+5. Run a SOCIAL beat (a `social_check`) + a COMBAT beat (`spawn_monster` a thrall/occupier patrol, `start_combat`, real `attack`/`next_turn`, `companion_suggest_action`). Source every mechanic.
+6. If the PC drops to 0/dies, demonstrate `reroll_character` (a new same-level PC continues) — else narrate a near-miss.
+7. Keep it to ~8 beats. Every NPC SPEAKS; the world PUSHES BACK; resolve only what the player declared; no bare-tag sign-off.
+
+The QUESTION this run answers: does the illithid-ascension ending hold together — the world_state canon-header + quest-variant hooks (who-rules-the-gate=shadow-overlord, NOT a contested vacuum) + a canon companion + the engine + re-roll — with the lore self-consistent (the dominion grim, never contradicting "the heroes won/city rebuilds") and the story gripping? Play it for real.

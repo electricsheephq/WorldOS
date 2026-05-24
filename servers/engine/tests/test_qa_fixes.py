@@ -586,6 +586,22 @@ def test_set_quest_status_routes_a_tracked_quest_and_extra_attack_echo(tmp_path,
                for r in cv.get("extra_attack_reminder", []))
 
 
+def test_unarmored_defense_ac_is_ability_derived(tmp_path, monkeypatch):
+    # camp-clarify2 QA: a Barbarian's seeded AC was 1 low — Unarmored Defense is 10 + DEX + CON
+    # (Barbarian) / 10 + DEX + WIS (Monk), not a flat table value. Other classes keep the table.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("AC")["id"]
+    b = server.create_character(cid, "Karlach", kind="player", class_name="Barbarian",
+                                apply_srd_defaults=True, abilities={"dex": 14, "con": 17})["id"]
+    assert server.get_character(cid, b)["armor_class"] == 15  # 10 + 2 + 3
+    m = server.create_character(cid, "Mei", kind="player", class_name="Monk",
+                                apply_srd_defaults=True, abilities={"dex": 16, "wis": 14})["id"]
+    assert server.get_character(cid, m)["armor_class"] == 15  # 10 + 3 + 2
+    f = server.create_character(cid, "Duren", kind="player", class_name="Fighter",
+                                apply_srd_defaults=True, abilities={"dex": 14})["id"]
+    assert server.get_character(cid, f)["armor_class"] >= 14    # table-based, not unarmored formula
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

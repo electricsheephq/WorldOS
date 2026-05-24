@@ -169,6 +169,26 @@ def test_gate_green_social_check_counts_as_dice_used(tmp_path):
     assert "[PASS] dice_used" in r.stdout
 
 
+def test_gate_green_skill_check_counts_as_dice_used(tmp_path):
+    # skill_check (the generic ability/skill d20) must satisfy dice_used the same way
+    # social_check does — a camp/exploration beat that rolls a Perception or Investigation
+    # check but never enters combat is a legitimate GREEN run (regression: camp-clarify2,
+    # where skill_check:1 fired but the gate counted roll=attack=save=social=0 → false RED).
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["skill_check", "camp_scene", "long_rest"],
+        chat=[{"role": "player", "text": "[do] I search the cold room for what the killers missed."},
+              {"role": "dm", "text": "The stone is limestone, recently quarried — clean cuts, unhurried."},
+              {"role": "player", "text": "[check] investigate the torn ledger"},
+              {"role": "dm", "text": "Two pages gone; the binding still holds a sliver of one."}],
+        moves=[{"role": "player", "kind": "do", "text": "search the room"},
+               {"role": "player", "kind": "check", "text": "investigate the ledger", "skill": "investigation"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] dice_used" in r.stdout
+
+
 # --- viewer /move sanitizer (H5) -------------------------------------------------
 def _viewer():
     spec = importlib.util.spec_from_file_location("clawdnd_viewer_under_test", ROOT / "viewer" / "server.py")

@@ -1,0 +1,15 @@
+You are running a QA PLAYTEST of ClawDnD that validates the NEW companion/UX features together — the CAMP social hub, the CLARIFY question move, and the skill_check tool — on top of the post-BG3 cold-open. You play BOTH roles, kept honest:
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching/tool-names are INVISIBLE to the player — present narration only; do NOT append a validation table to the story (keep the play log a clean told scene). When the player sends a `clarify` question, ANSWER it briefly (what the character could perceive/know) and do NOT advance the scene — then let them act.
+- a TEST PLAYER: a new "nobody" veteran dropped into post-BG3 Baldur's Gate.
+
+Drive this sequence (improvise within it, but HIT every beat so the new features are exercised):
+1. `start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")`. READ the canon header + the echoed `prelude`. The city is rebuilding under a restored council — authoritative canon.
+2. `start_character(origin="veteran_l5", ...)` (use 5e shorthand str/dex/… if you like). `generate_ability_scores` + `apply_srd_defaults`.
+3. THE COLD OPEN: `get_prelude` and weave its 4 beats — Arrival, **Meeting** (recruit a fitting canon companion; if the prelude already seeded them, `load_canon_character` now returns already_present — go straight to `recruit_companion`), Inciting Incident, Threshold. HOLD the threshold open — let the PLAYER commit, don't narrate it for them.
+4. CLARIFY: at an ambiguous beat, the TEST PLAYER uses `clarify` to ask the DM a question BEFORE acting (e.g. "is the watch-officer armed?", "do I recognize this sigil?"). The DM answers without advancing; then the player acts on the answer. Do this at least once.
+5. SKILL_CHECK: when the PC attempts a non-social check (Perception, Investigation, Stealth), call `skill_check(character_id, skill, dc)` — the engine rolls with the CORRECT sheet-derived modifier (never hand-compute a bonus into a raw roll). Use `social_check` for any influence/read vs an NPC.
+6. A quest HOOK: `get_quest_hooks`, surface ONE as something the player NOTICES (not a menu); `add_quest` + `set_quest_status(active)` when they bite.
+7. THE CAMP SCENE (headline): take a `long_rest` (note the `camp_hint`), then call `camp_scene` and run an Owlcat-style camp round — voice EACH companion's moment in turn (a worry, a memory, banter, a question for the player), grounded in their standing; let the player talk to one of them. If a companion's arc gate is near, lean toward it and `check_companion_arc`.
+8. Keep it to ~9 beats. Every NPC SPEAKS; the world PUSHES BACK (one real cost); resolve only what the player declared; no bare-tag sign-off.
+
+The QUESTION this run answers: do the CAMP hub (companions breathing, arc-aware), the CLARIFY move (ask-before-acting, answered without advancing), and skill_check (correct modifiers) work TOGETHER with the cold-open + hooks — making the session feel like a real, played, companion-rich RPG? Play it for real.

@@ -146,7 +146,7 @@ def main() -> int:
         # its own story. Aggregate (not per-beat) to avoid brittle alignment + false reds:
         # the gate trips only if the DM resolved ZERO of a move-kind the player used ≥1 of.
         roll_n, attack_n, save_n = tools.get("roll", 0), tools.get("attack", 0), tools.get("saving_throw", 0)
-        checks_n = roll_n + save_n + tools.get("social_check", 0)
+        checks_n = roll_n + save_n + tools.get("social_check", 0) + tools.get("skill_check", 0)
         # A [cast] does NOT require cast_spell: the engine resolves attack-roll spells —
         # incl. ALL damage cantrips (Fire Bolt, Eldritch Blast) — via attack(), and save
         # spells via saving_throw; cantrips spend no slot, so a healthy DM never calls
@@ -172,11 +172,14 @@ def main() -> int:
             f"only {len(mv)} move(s) recorded — a trivially short session?", fatal=False)
 
     # 4) dice actually fired somewhere (a whole session with zero rolls is broken). social_check
-    # rolls a d20 too — count it, so a valid non-combat / social + exploration session (e.g. an
-    # S7 cold-open + quest-finding beat) isn't falsely flagged. Mirrors the checks_n treatment above.
-    dice = tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0) + tools.get("social_check", 0)
+    # AND skill_check roll a d20 too — count them, so a valid non-combat / social + exploration
+    # session (e.g. an S7 cold-open + camp + quest-finding beat) isn't falsely flagged. Mirrors the
+    # checks_n treatment above.
+    dice = (tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0)
+            + tools.get("social_check", 0) + tools.get("skill_check", 0))
     chk("dice_used", dice > 0,
-        f"roll={tools.get('roll', 0)} attack={tools.get('attack', 0)} save={tools.get('saving_throw', 0)} social={tools.get('social_check', 0)}")
+        f"roll={tools.get('roll', 0)} attack={tools.get('attack', 0)} save={tools.get('saving_throw', 0)} "
+        f"social={tools.get('social_check', 0)} skill_check={tools.get('skill_check', 0)}")
 
     # 5) if combat started, attacks/monsters actually happened
     if tools.get("start_combat", 0) > 0:

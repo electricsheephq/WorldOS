@@ -729,7 +729,17 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
             ch.current_hp = ch.max_hp
         ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
         if set_base_ac:
-            ch.armor_class = srd_tables.class_base_ac(cname)
+            # Unarmored Defense is ABILITY-derived, not a flat table value: a Barbarian is
+            # 10 + DEX + CON and a Monk is 10 + DEX + WIS when wearing no armor (the abilities are
+            # already on the sheet at this point). The flat class_base_ac mis-set it (QA: a
+            # Barbarian's AC came out 1 low). Compute it for those classes; others use the table.
+            dex = ch.abilities.modifier(Ability.DEX)
+            if cname == "barbarian":
+                ch.armor_class = 10 + dex + ch.abilities.modifier(Ability.CON)
+            elif cname == "monk":
+                ch.armor_class = 10 + dex + ch.abilities.modifier(Ability.WIS)
+            else:
+                ch.armor_class = srd_tables.class_base_ac(cname)
         for f in srd_tables.features_through(cname, level):
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
