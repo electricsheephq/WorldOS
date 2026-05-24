@@ -86,9 +86,26 @@ def speak(text: str, voice_id: str = "narrator-dm", speed: float = 1.0, play: bo
     backend's real voice. Generates audio and plays it on macOS when play=True.
     Voice every line of narration and dialogue through this tool.
     """
-    backend = _get_backend()
-    backend_voice = registry.resolve(voice_id, backend.name)
-    res: SpeakResult = backend.speak(text, backend_voice, speed=speed, play=play)
+    try:
+        backend = _get_backend()
+        backend_voice = registry.resolve(voice_id, backend.name)
+        res: SpeakResult = backend.speak(text, backend_voice, speed=speed, play=play)
+    except Exception as exc:
+        # Voice is an ADAPTER — a TTS failure (missing deps, model-load, WAV write, or playback
+        # error) must DEGRADE to text-only, never raise through `speak` and break the story loop
+        # (the shipped .mcp.json selects Kokoro by default). Fall back to the silent null backend
+        # so the call still returns cleanly with no audio. (#55)
+        detail = f"TTS backend {_backend_name()!r} failed ({type(exc).__name__}: {exc}); text-only fallback"
+        try:
+            from adapters.null import NullBackend
+            nb = NullBackend()
+            res = nb.speak(text, registry.resolve(voice_id, nb.name), speed=speed, play=False)
+            return {"ok": True, "voice_id": voice_id, "backend": res.backend,
+                    "backend_voice": res.backend_voice, "audio_path": res.audio_path,
+                    "played": res.played, "detail": detail}
+        except Exception:  # even the null path failed — still never raise out of speak
+            return {"ok": True, "voice_id": voice_id, "backend": "null", "backend_voice": "",
+                    "audio_path": None, "played": False, "detail": detail}
     return {
         "ok": res.ok,
         "voice_id": voice_id,

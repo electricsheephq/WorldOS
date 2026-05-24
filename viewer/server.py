@@ -816,6 +816,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             snap = _read_snapshot(cid)
             snap["live"] = _live_play()
+            # is_live_view: the move sink (CLAWDND_PLAYER_MOVES) belongs to the ATTACHED campaign;
+            # a move only makes sense when the VIEWED campaign IS that one. The dashboard grays the
+            # palette when this is false, so the switcher can't send moves to the wrong run (#49).
+            snap["is_live_view"] = _live_play() and cid == self.campaign_id
             self._json(snap)
         elif route == "/config":
             self._json(_viewer_config())
@@ -870,6 +874,14 @@ class _Handler(BaseHTTPRequestHandler):
         if payload is ...:
             self._json({"ok": False, "reason": "bad move payload"})
             return
+        # Bind the write to the LIVE campaign: the move sink belongs to the attached campaign,
+        # so a move the client tagged for a DIFFERENT (viewed) campaign must be refused — never
+        # misrouted into the live run. An untagged move (no `campaign`) is the live view. (#49)
+        if isinstance(payload, dict):
+            viewed = payload.get("campaign")
+            if viewed and self.campaign_id and viewed != self.campaign_id:
+                self._json({"ok": False, "reason": "viewing a non-live campaign — switch to the live run to act"})
+                return
         move, why = sanitize_move(payload)
         if move is None:
             self._json({"ok": False, "reason": why})

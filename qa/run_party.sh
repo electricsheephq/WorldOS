@@ -324,8 +324,10 @@ SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json 
 if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
 [ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
-# Behavioral gate runs on the PLAYER's moves (the saboteur's separate moves file isn't
-# the player contract the gate asserts); pass the player moves file as run_duo does.
-python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$PLAYER_MOVES"; GATE=$?
+# Behavioral gate runs on ALL actor moves — player AND each companion. Merging them is what
+# lets the gate see an IGNORED companion move (a saboteur's [attack] the DM never resolves):
+# with only the player file, a companion attack the DM drops would false-GREEN (#54).
+ALLMOVES="$STATE_DIR/all_moves.jsonl"; cat "$PLAYER_MOVES" "${COMP_MOVES[@]}" > "$ALLMOVES" 2>/dev/null
+python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$ALLMOVES"; GATE=$?
 echo "[party] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
 exit $GATE

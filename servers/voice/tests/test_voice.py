@@ -43,3 +43,20 @@ def test_server_module_imports():
 
     assert server.mcp is not None
     assert server._backend_name() in ("kokoro", "null", "elevenlabs")
+
+
+def test_issue55_tts_failure_falls_back_to_text_only(monkeypatch):
+    # A TTS backend that raises (missing deps, model-load, WAV/playback error) must DEGRADE to
+    # the silent null backend, never raise out of speak() and break the story loop (pre-release #55).
+    import server
+
+    class Boom:
+        name = "kokoro"
+        def speak(self, *a, **k):
+            raise ImportError("kokoro unavailable")
+
+    monkeypatch.setenv("CLAWDND_TTS_BACKEND", "kokoro")
+    monkeypatch.setitem(server._backends, "kokoro", Boom())
+    out = server.speak("hello")
+    assert out["backend"] == "null" and out["audio_path"] is None and out["ok"] is True
+    assert "fail" in out["detail"].lower()

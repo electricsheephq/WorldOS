@@ -872,7 +872,10 @@ async function submitMove(move) {
   if (moveBusy) return; moveBusy = true;
   flash.className = "show"; flash.textContent = "Sending move…";
   try {
-    const r = await fetch("/move", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(move) });
+    // Carry the VIEWED campaign so the server can reject a move aimed at a non-live campaign
+    // (the switcher can show campaign B while the live move sink belongs to A). (#49)
+    const body = selectedCampaignId ? { ...move, campaign: selectedCampaignId } : move;
+    const r = await fetch("/move", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
     const j = await r.json().catch(()=>({}));
     if (j && j.ok) { flash.className = "show"; flash.textContent = "Move sent — " + describeMove(move); }
     else { flash.className = "show err"; flash.textContent = (j && j.reason) || "Move not accepted."; }
@@ -1735,7 +1738,11 @@ function renderMemories(wrap) {
 
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
-  applyLiveMode(s.live !== false);            // C1a: gray the action layer when read-only
+  // Gate the action layer on whether the VIEWED campaign is the LIVE one (is_live_view) — not
+  // the global `live` flag, so switching to a PAST campaign while another is live grays the
+  // palette instead of letting moves land in the wrong run (#49). Falls back to `live` if the
+  // server didn't send is_live_view.
+  applyLiveMode((s.is_live_view !== undefined ? s.is_live_view : s.live) !== false);
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
   $("title").textContent = s.title || "ClawDnD";

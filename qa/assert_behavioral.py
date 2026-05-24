@@ -76,7 +76,12 @@ def main() -> int:
     moves_path = sys.argv[4] if len(sys.argv) > 4 else ""
     mv = _load_jsonl(moves_path) if moves_path else []
     has_facade = bool(moves_path)  # a facade/duo run: the player acts through tools
-    move_kinds = Counter((m.get("kind") or "").lower() for m in mv if m.get("role") == "player")
+    # Count the move-resolution kinds for the PLAYER and every COMPANION (party QA) — a
+    # companion's [attack]/[cast]/[check] the DM ignores is a real defect too. Solo/duo runs
+    # have only player moves, so this is unchanged there. (#54)
+    move_kinds = Counter(
+        (m.get("kind") or "").lower() for m in mv if m.get("role") in ("player", "companion")
+    )
     try:
         sp = Path(sys.argv[2])
         state = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}

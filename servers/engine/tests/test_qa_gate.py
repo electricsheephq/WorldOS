@@ -169,6 +169,23 @@ def test_gate_green_social_check_counts_as_dice_used(tmp_path):
     assert "[PASS] dice_used" in r.stdout
 
 
+def test_gate_red_when_dm_ignores_a_companion_attack(tmp_path):
+    # Party QA (#54): a COMPANION's [attack] (e.g. a saboteur turning) that the DM never resolves
+    # must trip the gate — previously only player-role moves were counted, so an ignored companion
+    # attack false-GREENed. The merged move file now carries companion moves too.
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["roll"],  # dice fired (dice_used passes) but NO attack() → companion [attack] unresolved
+        chat=[{"role": "player", "text": "[say] Hold the line."},
+              {"role": "dm", "text": "The fight breaks out."}],
+        moves=[{"role": "player", "kind": "say", "text": "hold the line"},
+               {"role": "companion", "kind": "attack", "text": "Grok attacks Kield"}],
+        state=PARTY_WITH_COMPANION,
+    )
+    assert r.returncode != 0  # the ignored companion attack is caught
+    assert "attack" in r.stdout.lower()
+
+
 def test_gate_xp_awarded_satisfied_by_end_combat(tmp_path):
     # fidelity1/easter2 QA: end_combat AUTO-awards the defeated monsters' XP in the default
     # "xp" mode, so a clean fight needs no separate award_xp call — end_combat must satisfy the
