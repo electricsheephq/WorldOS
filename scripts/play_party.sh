@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+# Play ClawDnD in the dashboard WITH AI companions — the human plays in the browser
+# while a party of AI companion agents adventures alongside, each its own `claude -p`.
+#
+# This is the PARTY counterpart to scripts/play.sh. play.sh launches the dashboard +
+# a solo human-vs-DM loop (you act through the palette, the DM responds). This script
+# adds the proven multi-agent ENSEMBLE from qa/run_party.sh on top of that same human
+# play surface: when you name companions, each becomes its OWN agent acting through the
+# SAME constrained move facade as you do (NOT the DM voicing them), parameterized to its
+# own character via CLAWDND_ACTOR_ID + CLAWDND_ACTOR_ROLE=companion. Every beat the human's
+# dashboard move AND each living companion's structured moves are relayed to the DM, who
+# resolves them all through the engine and narrates the next beat in the chat — so the
+# dashboard shows YOU + your companions + the DM, turn by turn, live.
+#
+# TRUST BOUNDARY (lifted from run_party.sh): we relay ONLY each actor's STRUCTURED moves
+# to the DM — NEVER an actor's raw reply text. A companion acts only through the facade
+# (say/do/attack/cast/use_item/request_check), so even a betrayal is a LEGAL move the
+# engine resolves into real combat, never narration it invents. A sealed agenda lives
+# ONLY in that companion's prompt; it is NEVER written to campaign state and the DM never
+# sees it.
+#
+# SOLO IS UNCHANGED. With NO companion spec, this is byte-for-byte today's solo play:
+# it execs scripts/play.sh with your args and adds nothing. The ensemble machinery only
+# engages when you opt in with companions (which multiply `claude -p` cost — hence opt-in).
+#
+# Usage: scripts/play_party.sh [world-id] [run-id] [port] [companion-spec]
+#   world-id   a living world to drop into (default: baldurs-gate). See `/world-list`.
+#   run-id     names this game's save dir under play-state/ (default: a timestamp).
+#   port       the dashboard port (default: 8765 or $CLAWDND_PLAY_PORT).
+#   companion-spec  COMMA-separated tokens, each  Name:class:persona_file[:spell1|spell2|…]
+#                   (same grammar as run_party.sh). The optional 4th field names a caster's
+#                   known spells (SRD defaults give slots, not spell CHOICE). May also be
+#                   set via $CLAWDND_PLAY_COMPANIONS (the positional arg wins if both set).
+#                   e.g. "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Sacred Flame"
+#                        ",Brogan:fighter:qa/play_companion.txt"
+#   Default (no spec, no env) = solo play.sh, EXACTLY.
+# Examples:
+#   scripts/play_party.sh                              # solo (== scripts/play.sh)
+#   scripts/play_party.sh baldurs-gate '' 8765 \
+#     "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding Bolt"
+#   CLAWDND_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" scripts/play_party.sh
+#
+# Safety caps (a runaway loop self-stops; companions count toward the SAME session ceiling):
+#   CLAWDND_PLAY_BUDGET           per-turn USD budget for one agent turn  (default 1.50)
+#   CLAWDND_PLAY_SESSION_BUDGET   aggregate USD ceiling for the session   (default 15.00)
+#   CLAWDND_PLAY_MAX_TURNS        hard cap on agent turns (DM + companions)(default 40)
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+WORLD="${1:-baldurs-gate}"
+RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
+PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
+COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
+
+# --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
+# Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
+# replaces this process, so a solo launch is indistinguishable from running play.sh
+# directly — no ensemble code path, no extra cost, no behavior drift.
+if [ -z "${COMPANION_SPEC//[[:space:]]/}" ]; then
+  exec "$ROOT/scripts/play.sh" "$WORLD" "$RUN" "$PORT"
+fi
+
+# ===========================================================================
+# COMPANIONS SPECIFIED → the human-paced ENSEMBLE. From here we mirror play.sh's
+# viewer + human loop, and lift run_party.sh's pre-seed + per-companion facade +
+# companion-alive + relay machinery. The human is the player (acts via the dashboard,
+# NOT a claude -p agent); the companions are the claude -p peers.
+# ===========================================================================
+BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per agent turn (DM or companion)
+SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
+MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"               # hard cap on agent turns (DM + companions)
+AGENT_TURNS=0
+
+# Product play state under play-state/ (git-ignored), same layout as play.sh.
+STATE_DIR="$ROOT/play-state/$RUN"
+mkdir -p "$STATE_DIR"
+DM_CFG="$STATE_DIR/dm.mcp.json"
+MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"     # the HUMAN's moves (dashboard /move sink)
+CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"
+DM_LOG="$STATE_DIR/dm"          # per-turn stream-json files: $DM_LOG.<ts>.jsonl
+COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"  # every agent turn's stream (cost accounting)
+VIEWER_LOG="$STATE_DIR/viewer.log"
+
+# --- DM config: the three plugin MCP servers, engine pointed at this game's state dir,
+# silent voice backend — IDENTICAL wiring to play.sh (the DM runs the full plugin). -----
+python3 - "$ROOT" "$STATE_DIR" "$DM_CFG" <<'PY'
+import json, sys
+root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = {"mcpServers": {
+    "clawdnd-engine": {"type": "stdio", "command": "uv",
+        "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
+        "env": {"CLAWDND_STATE_DIR": state_dir}},
+    "clawdnd-rules": {"type": "stdio", "command": "uv",
+        "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
+        "env": {"CLAWDND_RULES_OFFLINE": "1"}},
+    "clawdnd-voice": {"type": "stdio", "command": "uv",
+        "args": ["run", "--directory", f"{root}/servers/voice", "server.py"],
+        "env": {"CLAWDND_TTS_BACKEND": "null"}},
+}}
+json.dump(cfg, open(out, "w"))
+PY
+
+# --- PRE-SEED the COMPANIONS via the engine; capture each companion's id ---------------
+# We must know each companion's character id UP FRONT to wire its facade (the facade
+# binds to CLAWDND_ACTOR_ID). So — exactly like run_party.sh — we call the engine's own
+# tools to create the world, the session, and each companion with a REAL SRD sheet before
+# any agent runs. UNLIKE run_party.sh we DO NOT pre-create the player PC: in human play the
+# DM creates the human's character live (preserving play.sh's "the DM hands you a character"
+# feel). The DM later re-grounds via get_state and finds the companions already in the party.
+# The companion SPEC is Name:class:persona[:spells]; only Name+class+spells touch state
+# (the persona/agenda NEVER does). Prints JSON: {campaign_id, companions:[{id,name,persona}]}.
+# Run under `uv` from the engine dir (its venv has mcp/pydantic; bare python3 lacks them).
+SEED_JSON="$(CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "$COMPANION_SPEC" <<'PY'
+import json, sys
+world, spec = sys.argv[1], sys.argv[2]
+import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
+
+# A new campaign in this world, with an active session. If the world returns existing
+# campaigns we still start a fresh one (start_world mints a new campaign id).
+camp = server.start_world(world)["campaign_id"]
+server.start_session(camp, title="Dashboard party")
+
+# Each companion: a fresh kind="companion" with an SRD sheet, added to the party. The
+# player PC is intentionally NOT created here (the DM creates the human PC live). Spec
+# token: Name:class:persona[:spell1|spell2|…]. apply_srd_defaults fills slots but NOT
+# spells_known, so a caster companion that should cast needs its spells named (4th field);
+# a martial companion needs none. The persona/spells touch only build state, never any
+# sealed agenda (that lives solely in the persona PROMPT, read later by the shell).
+# Companions are COMMA-separated (so a spell field can contain spaces like "Cure Wounds");
+# fields within a token are ":"-separated; spells "|"-separated.
+companions = []
+for tok in (t for t in spec.split(",") if t.strip()):
+    parts = tok.strip().split(":")
+    name = parts[0].strip()
+    cls = parts[1] if len(parts) > 1 and parts[1] else "fighter"
+    persona = parts[2] if len(parts) > 2 and parts[2] else "qa/play_companion.txt"
+    cid = server.create_character(
+        camp, name, kind="companion", class_name=cls, level=3, apply_srd_defaults=True,
+    )["id"]
+    if len(parts) > 3 and parts[3].strip():
+        server.learn_spells(camp, cid, [s.strip() for s in parts[3].split("|") if s.strip()])
+    companions.append({"id": cid, "name": name, "persona": persona})
+
+print(json.dumps({"campaign_id": camp, "companions": companions}))
+PY
+)"
+if [ -z "$SEED_JSON" ]; then echo "[play-party] companion pre-seed FAILED — see above" >&2; exit 1; fi
+echo "[play-party] seeded: $(printf '%s' "$SEED_JSON" | jq -c '{campaign: .campaign_id, companions: [.companions[].name]}')"
+CAMPAIGN_ID="$(printf '%s' "$SEED_JSON" | jq -r '.campaign_id')"
+NUM_COMP="$(printf '%s' "$SEED_JSON" | jq -r '.companions | length')"
+
+# --- COMPANION facade configs (one per companion, each bound to its own actor id) ------
+# Lifted verbatim from run_party.sh: each companion gets the SAME constrained facade but
+# with CLAWDND_ACTOR_ID set to ITS character + role "companion", its OWN moves file,
+# cursor, and session id. The persona file (incl. any sealed agenda) is passed to the
+# agent's PROMPT only — never into the config or state. NOTE the companions write to
+# SEPARATE moves files, NOT the human's $MOVES — the human's relay path stays pristine.
+COMP_CFGS=(); COMP_MOVES=(); COMP_CURSORS=(); COMP_SIDS=(); COMP_IDS=(); COMP_NAMES=(); COMP_PERSONAS=()
+for i in $(seq 0 $((NUM_COMP - 1))); do
+  cid="$(printf '%s' "$SEED_JSON" | jq -r ".companions[$i].id")"
+  cname="$(printf '%s' "$SEED_JSON" | jq -r ".companions[$i].name")"
+  cpersona="$(printf '%s' "$SEED_JSON" | jq -r ".companions[$i].persona")"
+  ccfg="$STATE_DIR/companion_$i.mcp.json"
+  cmoves="$STATE_DIR/companion_${i}_moves.jsonl"; : > "$cmoves"
+  ccur="$STATE_DIR/.mcursor.companion_$i"; echo 0 > "$ccur"
+  python3 - "$ROOT" "$STATE_DIR" "$cmoves" "$cid" "$ccfg" <<'PY'
+import json, sys
+root, state, moves, actor_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
+  "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
+  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
+          "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion"}}}}, open(out, "w"))
+PY
+  COMP_CFGS+=("$ccfg"); COMP_MOVES+=("$cmoves"); COMP_CURSORS+=("$ccur")
+  COMP_SIDS+=("$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
+  COMP_IDS+=("$cid"); COMP_NAMES+=("$cname"); COMP_PERSONAS+=("$cpersona")
+done
+
+DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+echo "[play-party] run=$RUN world=$WORLD port=$PORT companions=$NUM_COMP dm=$DSID"
+
+# --- one agent turn (DM full plugin, or a companion via its facade only) ----------------
+# DM gets the plugin + stream-json (tool calls land in COMBINED). A companion gets ONLY its
+# facade config (--strict-mcp-config) + json output. Both carry --max-budget-usd (per call)
+# and append their stream to COMBINED so companion tool-call cost counts toward the ceiling.
+# $1=kind(dm|actor) $2=session-id $3=first?(1/0) $4=message $5=mcp-cfg(actor only); echoes reply.
+turn() {
+  local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=()
+  [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
+  if [ "$kind" = "dm" ]; then
+    out="$DM_LOG.$(date +%s%N).jsonl"
+    claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+    cat "$out" >> "$COMBINED"
+    jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+  else
+    out="$STATE_DIR/companion.$(date +%s%N).jsonl"
+    claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
+      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err"
+    cat "$out" >> "$COMBINED"   # companion tool-call cost counts toward the session ceiling
+    jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+  fi
+}
+
+# A companion turn via the constrained facade: it acts ONLY through tools, which append
+# structured moves to ITS OWN moves file. We relay ONLY the moves made THIS turn (the NEW
+# lines past the file-based cursor) — NEVER the raw reply text. One nudge if it didn't act.
+# (Lifted from run_party.sh's actor_move.) $1=session $2=cfg $3=moves $4=cursor $5=first
+# $6=prompt ; echoes the relayed moves (banner-tagged text), or empty.
+actor_move() {
+  local sid="$1" cfg="$2" moves="$3" curf="$4" first="$5" prompt="$6" cur total new
+  turn actor "$sid" "$first" "$prompt" "$cfg" >/dev/null
+  cur=$(cat "$curf" 2>/dev/null || echo 0); cur=${cur:-0}
+  total=$(wc -l < "$moves" 2>/dev/null | tr -d ' '); total=${total:-0}
+  if [ "$total" -le "$cur" ]; then
+    turn actor "$sid" 0 "You didn't act. Take your action THROUGH YOUR TOOLS now — say(...) / do(...) / request_check(...) / cast_spell(...) / use_item(...) / attack(...). Tools only, no prose." "$cfg" >/dev/null
+    total=$(wc -l < "$moves" 2>/dev/null | tr -d ' '); total=${total:-0}
+  fi
+  new="$(tail -n +"$((cur + 1))" "$moves" 2>/dev/null)"
+  echo "$total" > "$curf"
+  [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
+}
+
+# Is companion $i still ABLE to act? Skip the dead, the 0-HP, and the unconscious — a
+# downed companion takes no turn (the DM may still narrate around it). Reads the snapshot.
+# (Lifted from run_party.sh's companion_alive.)
+CAMP_DIR="$STATE_DIR/campaigns/$CAMPAIGN_ID"
+companion_alive() {
+  local cid="$1" snap="$CAMP_DIR/snapshot.json"
+  [ -f "$snap" ] || return 0   # no snapshot yet -> assume alive (pre-combat)
+  python3 - "$snap" "$cid" <<'PY'
+import json, sys
+snap, cid = sys.argv[1], sys.argv[2]
+ch = json.load(open(snap)).get("characters", {}).get(cid)
+if ch is None:
+    sys.exit(0)  # not found -> do not block (defensive)
+down = ch.get("dead") or (ch.get("current_hp", 1) <= 0) or ("unconscious" in (ch.get("conditions") or []))
+sys.exit(1 if down else 0)
+PY
+}
+
+# Collect this beat's LIVING-companion moves (banner-tagged so the DM knows who acted), in
+# roster order, given the DM's last narration as their prompt. Echoes the combined block
+# (or empty). The human's move is prepended by the caller (it comes from the dashboard).
+companion_moves() {
+  local dm_says="$1" block="" cm i
+  for i in $(seq 0 $((NUM_COMP - 1))); do
+    if ! companion_alive "${COMP_IDS[$i]}"; then
+      echo "[play-party] beat: ${COMP_NAMES[$i]} is down — skipping its turn" >&2; continue
+    fi
+    cm="$(actor_move "${COMP_SIDS[$i]}" "${COMP_CFGS[$i]}" "${COMP_MOVES[$i]}" "${COMP_CURSORS[$i]}" 0 "$dm_says")"
+    AGENT_TURNS=$((AGENT_TURNS + 1))
+    [ -n "$cm" ] && { block+="${block:+
+
+}${COMP_NAMES[$i]} (companion):
+$cm"; chatlog "companion:${COMP_NAMES[$i]}" "$cm"; }
+  done
+  printf '%s' "$block"
+}
+
+# --- viewer supervisor: IDENTICAL to play.sh (binds immediately, serves the empty state,
+# attaches once the campaign exists; restarted by a tiny supervisor if it ever dies). ----
+VPID_FILE="$STATE_DIR/.viewer.pid"
+viewer_supervisor() {
+  while :; do
+    CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
+      python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
+    local vp=$!; echo "$vp" > "$VPID_FILE"
+    wait "$vp" 2>/dev/null   # blocks until the viewer exits (and reaps it)
+    sleep 1                  # campaign not ready yet → brief pause, then relaunch
+  done
+}
+viewer_supervisor &  SUP=$!
+# On any exit: kill the supervisor (so it can't respawn) and the live viewer it tracks.
+trap 'kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null' EXIT INT TERM
+
+# Open the browser once the dashboard is actually serving (after the campaign exists).
+( for _ in $(seq 1 60); do
+    curl -s --max-time 2 "http://127.0.0.1:$PORT/state" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/dashboard") \
+    || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/dashboard") || true ) &
+
+echo "ClawDnD — playing in the dashboard WITH companions → http://127.0.0.1:$PORT/dashboard"
+echo "  Party: you + $NUM_COMP AI companion(s). The dashboard fills in as the DM opens the scene."
+echo "  Act via the palette (Say / Do / Continue, dice & combat, click-to-travel). Ctrl-C to stop."
+echo "  Save dir: $STATE_DIR"
+
+# --- DM opens the world live around the EXISTING (pre-seeded) companions ----------------
+# Same shipped-skill opening as play.sh, with TWO changes: (1) the companions ALREADY EXIST
+# (the DM must NOT recruit its own — it re-grounds via get_state and finds the party), and
+# (2) the human's moves AND each companion's moves will arrive as tagged declarations.
+COMP_NAME_LIST="$(printf '%s' "$SEED_JSON" | jq -r '[.companions[].name] | join(", ")')"
+DMSG="$(turn dm "$DSID" 1 "You are the Dungeon Master for a ClawDnD adventure played by ONE human plus an AI PARTY. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+
+Begin a session in a living world for a single human player (who acts through the dashboard) traveling with a party of companions who ALREADY EXIST in the world:
+- start_world(\"$WORLD\") and read the returned bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster). A campaign and the party companions have ALREADY been created for this session — DO NOT start a new campaign and DO NOT recruit or create companions yourself.
+- call get_state FIRST to see the existing party roster. The companions already present are: $COMP_NAME_LIST. They are SEPARATE people with their own agency — each is controlled by its OWN agent. You voice the WORLD and NPCs and resolve everyone's declared moves; you NEVER invent a companion's internal choice or speak for them beyond narrating the RESULT of what they declared.
+- start_session (for continuity and the recap) if get_state shows no active session.
+- Create a level-3 player character for the HUMAN (generate_ability_scores + create_character, apply_srd_defaults, sensible skills/spells). Pick a fitting concept and tell the player who they are. This is the ONLY character you create.
+- Open a human-scale, personal scene grounded in the world's canon, with real quoted dialogue, that includes the human's PC AND their companions, and hand the player an open moment + a clear, real choice.
+
+Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — from the HUMAN (their PC) and from each companion (banner-tagged with the companion's name). Resolve EACH actor's moves through the engine.")"
+[ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
+chatlog dm "$DMSG"; AGENT_TURNS=1
+echo "[play-party] DM opened: ${DMSG:0:120}…"
+
+# --- session ceiling (aggregate cost + turn cap), mirrors play.sh + run_party.sh --------
+over_budget() {
+  local spent
+  [ "$AGENT_TURNS" -ge "$MAX_TURNS" ] && { echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."; return 0; }
+  spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
+  awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
+    && { echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."; return 0; }
+  return 1
+}
+
+# --- human-paced beat loop --------------------------------------------------------------
+# When a new HUMAN move lands in $MOVES (you acted in the dashboard): each LIVING companion
+# takes its turn (its own claude -p, relayed as structured moves), then the DM resolves the
+# WHOLE beat (human move + companion moves) and narrates the next beat live. Otherwise idle.
+# This is play.sh's loop with run_party.sh's per-companion relay folded into each beat.
+MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
+while true; do
+  over_budget && break
+  total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
+  if [ "$total" -gt "$MCURSOR" ]; then
+    new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"; MCURSOR="$total"
+    # The human's move(s): dashboard palette sends {kind,name}; Say/Do send {kind,text}.
+    PMSG="$(printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text // .name // "")") | join("  ")' 2>/dev/null)"
+    [ -z "$PMSG" ] && continue
+    echo "[play-party] you: ${PMSG:0:100}"
+    chatlog player "$PMSG"
+
+    # Each living companion reacts to the LAST DM narration + (implicitly) the unfolding
+    # beat, taking its own move via its facade. Relay ONLY structured moves to the DM.
+    COMP_BLOCK="$(companion_moves "The DM says:
+
+$DMSG
+
+The human player just acted:
+
+$PMSG
+
+Take your next action(s) for this beat using your tools — say / do / request_check / cast_spell / use_item / attack (look or my_sheet first if useful). Tools only.")"
+    [ -n "$COMP_BLOCK" ] && echo "[play-party] companions: ${COMP_BLOCK:0:120}…"
+
+    # Assemble the beat: the human's move first (banner-tagged), then each companion's moves.
+    PARTY_BLOCK="PLAYER (you):
+$PMSG${COMP_BLOCK:+
+
+$COMP_BLOCK}"
+
+    DMSG="$(turn dm "$DSID" 0 "This beat, the party acts (resolve EACH actor's structured moves through the engine — roll/cast/attack/use as needed; a companion's [attack] on an ALLY is a real betrayal, resolve it as combat, do not soften it into narration):
+
+$PARTY_BLOCK
+
+Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
+    chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
+  else
+    sleep 2
+  fi
+done
