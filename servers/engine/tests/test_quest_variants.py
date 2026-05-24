@@ -82,6 +82,18 @@ def test_ending_tied_outcome_resolves_by_world_state_subset_match():
     for occupied in (bhaal, illithid):
         assert occupied.quest_outcomes["who-rules-the-gate"] != "vacuum-contested"
 
+    # REGRESSION (adversarial Finding 2): the-steel-watch-foundry's random outcomes all
+    # describe the foundry as WRECKED ("automatons dead in the streets"). Under the Gortash
+    # tyranny the Steel Watch is the live engine of the occupation — so it must pin the
+    # ending-tied "watch-operational" (when:{gortash:archduke}), never a "the foundry fell"
+    # random that contradicts the occupied-under-Gortash canon header.
+    assert grim.quest_outcomes["the-steel-watch-foundry"] == "watch-operational"
+    # the non-archduke endings (Gortash dead / city rebuilding) correctly let the foundry
+    # FALL to its random pool — there the wrecked-foundry prose is canon-consistent.
+    for fell in (bhaal, illithid, hopeful):
+        assert fell.quest_outcomes["the-steel-watch-foundry"] in {
+            "gondians-survived", "ironhands-survived", "factions-at-peace"}
+
 
 def test_pure_random_quest_resolves_to_some_valid_outcome_seeded_deterministic():
     # A purely-random quest (no `when` matched, or no world_state at all) resolves to ONE

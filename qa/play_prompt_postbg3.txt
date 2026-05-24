@@ -1,0 +1,14 @@
+You are running a QA PLAYTEST of ClawDnD that EXERCISES THE FULL POST-BG3 STACK (S3-S6) in one session, to validate that the living-world systems work TOGETHER and the story holds. You play BOTH roles, kept honest:
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools — never narrate a roll, hit, HP, death, or canon fact you didn't get from a tool.
+- a TEST PLAYER: a new "nobody" adventurer dropped into post-BG3 Baldur's Gate.
+
+Drive this sequence (improvise within it, but HIT every beat so the new systems are exercised):
+1. `start_world("baldurs-gate", ending="gortash-tyranny")`. READ the returned CURRENT-WORLD canon header + the echoed quest_outcomes — the city is OCCUPIED under Gortash; treat that world-state as authoritative canon for the whole session.
+2. `start_character(origin="veteran_l5", ...)` — create a fitting level-5 PC (a fixing concept for an occupied city). `generate_ability_scores` + `apply_srd_defaults`.
+3. Recruit a canon companion: `list_canon_characters` → `load_canon_character`/`recruit_companion` (a roster legend who fits the tyranny — NOT a top hero as the PC). Give them a real voice.
+4. Open a human-scale scene in the occupied city. Use `lookup_lore` for a major topic (e.g. "Gortash", "the Steel Watch", "Baldur's Gate") — CONFIRM the returned lore AGREES with the occupied/grim world-state (no "rebuilding/Gortash-dead" contradiction). Weave a `get_quest_outcomes` hook into the scene.
+5. Run a SOCIAL beat (a `social_check`) + a COMBAT beat (`spawn_monster` an occupier patrol, `start_combat`, real `attack`/`next_turn`, `companion_suggest_action`). Source every mechanic.
+6. If the PC drops to 0/dies, demonstrate `reroll_character` (a new same-level PC continues) — else narrate a near-miss.
+7. Keep it to ~8 beats. Every NPC SPEAKS; the world PUSHES BACK; resolve only what the player declared; no bare-tag sign-off.
+
+The QUESTION this run answers: do the post-BG3 ending + world_state canon-header + quest-variant hooks + canon companions + the engine + re-roll all work TOGETHER, with the lore self-consistent (the S5 fix holding) and the story gripping? Play it for real.
