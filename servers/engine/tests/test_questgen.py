@@ -1,0 +1,117 @@
+"""S7 — the quest-generation layer: assemble lore-derived quest hooks + a guaranteed 4-beat
+cold-open PRELUDE the DM weaves. The engine assembles STRUCTURE (a SHAPE tag bound to lore nouns
++ a grievance, with prereq/arc_back LABELS); it does NOT own win-conditions/monitors (proven
+hollow — world_state is immutable in play). These tests pin: the prelude always emits its 4 ordered
+beats with bound nouns; hooks derive from the resolved quest_outcomes; the spine is the most
+world-central hook and ribs arc back to it; apophenia binds related nouns; determinism off the seed;
+and the additive default (no variants → no hooks; no locations → no prelude; byte-identical otherwise).
+"""
+
+import random
+
+import content
+import questgen
+from models import Campaign, Faction, Location, QuestHook
+
+
+def _gen(ending: str = "gortash-tyranny") -> Campaign:
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w, ending=ending)
+    questgen.generate(c, w, random.Random(c.id))
+    return c
+
+
+def test_prelude_emits_four_ordered_beats_with_bound_nouns():
+    c = _gen()
+    kinds = [b.kind for b in c.prelude]
+    assert kinds == ["arrival", "meeting", "inciting_incident", "threshold"]  # fixed order, all four
+    beats = {b.kind: b for b in c.prelude}
+    # arrival grounds the PC in a real place; meeting binds a companion; inciting binds the spine hook
+    assert beats["arrival"].ref_id and beats["arrival"].ref_id in c.locations
+    assert beats["meeting"].ref_id in c.characters  # a real roster companion to meet
+    assert beats["meeting"].note  # carries a shared-stake frame, not empty
+    spine = next(h for h in c.quest_hooks if h.spine)
+    assert beats["inciting_incident"].ref_id == spine.id  # the inciting wrong IS the spine grievance
+    assert beats["threshold"].ref_id == spine.id
+
+
+def test_hooks_derive_from_resolved_quest_outcomes():
+    c = _gen()
+    # every resolved quest_outcome whose chosen outcome ships a follow-on `hook` becomes a typed
+    # hook (not every random outcome carries one, so this is a subset — never more than resolved).
+    assert c.quest_hooks, "the seeded BG world resolves quest_variants -> hooks expected"
+    assert 1 <= len(c.quest_hooks) <= len(c.quest_outcomes)
+    for h in c.quest_hooks:
+        assert h.grievance and h.note  # a wrong + its follow-on
+        assert h.shape in {"fetch_plus", "investigation", "hunt", "rescue", "heist",
+                            "escort", "faction_war", "dilemma"}
+        assert h.status == "open"
+
+
+def test_exactly_one_spine_and_ribs_arc_back_to_it():
+    c = _gen()
+    spines = [h for h in c.quest_hooks if h.spine]
+    assert len(spines) == 1
+    spine = spines[0]
+    # under the tyranny ending the central wrong IS who-rules-the-gate (max overlap w/ facts)
+    assert "Who Rules" in spine.grievance
+    assert spine.arc_back == ""  # the spine arcs back to nothing
+    for h in c.quest_hooks:
+        if not h.spine:
+            assert spine.grievance in h.arc_back  # every rib feeds the spine
+
+
+def test_apophenia_binds_related_nouns():
+    # the shadow-cursed-lands hook should bind a place whose name overlaps it (Reithwin/Shadow),
+    # not an arbitrary location — connected nouns read as authored intent.
+    c = _gen()
+    sc = next((h for h in c.quest_hooks if "Shadow-Cursed" in h.grievance), None)
+    assert sc is not None and sc.place_id
+    place = c.locations.get(sc.place_id)
+    assert place is not None
+    assert any(w in place.name.lower() for w in ("shadow", "reithwin", "moonrise", "last light"))
+
+
+def test_determinism_same_seed_same_graph():
+    # The contract: given the SAME campaign state + SAME rng seed, generate() is reproducible.
+    # (seed_world rolls different random quest_outcomes per fresh campaign id, so two seedings
+    # would have different INPUTS — deep-copy one seeded campaign to hold the inputs fixed.)
+    import copy
+    w = content.load_world_data("baldurs-gate")
+    c1 = content.seed_world(w, ending="gortash-tyranny")
+    c2 = copy.deepcopy(c1)
+    questgen.generate(c1, w, random.Random("fixed-seed"))
+    questgen.generate(c2, w, random.Random("fixed-seed"))
+    sig1 = [(h.shape, h.grievance, h.giver_id, h.place_id, h.spine) for h in c1.quest_hooks]
+    sig2 = [(h.shape, h.grievance, h.giver_id, h.place_id, h.spine) for h in c2.quest_hooks]
+    assert sig1 == sig2  # identical structure from the same inputs + seed
+    assert [b.note for b in c1.prelude] == [b.note for b in c2.prelude]
+
+
+def test_additive_default_no_variants_no_hooks_no_prelude():
+    # a synthetic world with NO quest_variants resolves no hooks; a world with no locations
+    # opens no prelude — both == today's behavior.
+    base = {"id": "qg-empty", "name": "Empty", "regions": []}
+    c = content.seed_world(base)
+    questgen.generate(c, base, random.Random(c.id))
+    assert c.quest_hooks == []
+    assert c.prelude == []  # no locations -> no cold-open
+
+
+def test_no_world_state_first_hook_is_spine_and_degrades_clean():
+    # a campaign with quest_outcomes but no world_state (base/no-ending) still builds a graph:
+    # the first hook leads as spine; generation never raises.
+    c = Campaign(title="No-WS")
+    c.locations["loc-1"] = Location(id="loc-1", name="A Place")
+    c.current_location_id = "loc-1"
+    c.factions["fac-1"] = Faction(id="fac-1", name="The Ring")
+    c.quest_outcomes = {"q-a": "o-a", "q-b": "o-b"}
+    world = {"id": "w", "quest_variants": [
+        {"id": "q-a", "name": "The First Wrong", "outcomes": [{"id": "o-a", "random": 1, "lore": "x", "hook": "a thread to pull"}]},
+        {"id": "q-b", "name": "The Second Wrong", "outcomes": [{"id": "o-b", "random": 1, "lore": "y", "hook": "another thread"}]},
+    ]}
+    questgen.generate(c, world, random.Random("s"))
+    assert len(c.quest_hooks) == 2
+    assert sum(1 for h in c.quest_hooks if h.spine) == 1
+    assert c.quest_hooks[0].spine  # no facts to rank by -> the first hook leads
+    assert [b.kind for b in c.prelude] == ["arrival", "meeting", "inciting_incident", "threshold"]

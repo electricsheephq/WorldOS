@@ -517,6 +517,43 @@ class WorldState(_StrictModel):
         )
 
 
+class QuestHook(_StrictModel):
+    """S7 — a lore-derived quest SEED the DM pulls and weaves. The engine ASSEMBLES it at
+    world-gen (a dramatic SHAPE tag bound to typed lore nouns + a `grievance` — a wrong the
+    lore already contains) and the DM narrates/advances it. It is NOT an engine-driven state
+    machine: `prereq`/`arc_back` are DATA the DM reads (branching it weaves), never
+    engine-evaluated predicates — the engine can't judge fiction (world_state is near-constant
+    in play, so a 'monitor' would watch a constant). The DM promotes a hook the party bites on
+    into a tracked Quest (add_quest) and sets `status` off its own narration. Additive: no
+    hooks == today's behavior. Keys/values live in CONTENT + generated refs, never engine code."""
+
+    id: str = Field(default_factory=lambda: _new_id("hook"))
+    title: str = ""                       # short DM-facing label
+    shape: str = ""                       # archetype TAG (a label, not a grammar): fetch_plus|investigation|hunt|rescue|heist|escort|faction_war|dilemma
+    grievance: str = ""                   # the lore "wrong" this addresses — the spine primitive quests derive from
+    motivation: str = ""                  # the giver's "why": knowledge|protection|conquest|serenity|wealth|reputation|comfort|ability|equipment
+    giver_id: str = ""                    # bound lore noun: the NPC who offers/embodies it (ref into c.characters)
+    target_id: str = ""                   # bound lore noun: the NPC or faction the quest concerns (ref into c.characters/c.factions)
+    place_id: str = ""                    # bound lore noun: where it points (ref into c.locations)
+    item: str = ""                        # bound lore noun: an item/relic at stake (free text)
+    prereq: list[str] = Field(default_factory=list)  # hook ids that should resolve first — DM reads, NOT enforced
+    arc_back: str = ""                    # how resolving this feeds the main arc — a note the DM weaves
+    spine: bool = False                   # a main-arc hook (vs a rib / side thread)
+    status: Literal["open", "active", "resolved"] = "open"  # DM-set off its own narration
+    note: str = ""                        # the DM-facing seed detail (the prose seed)
+
+
+class PreludeBeat(_StrictModel):
+    """S7 — one of the four guaranteed cold-open beats. The engine guarantees all four exist
+    with bound nouns so a session never 'starts mid-quest' or skips 'how the party meets'; the
+    DM owns ORDER, framing, and prose (a woven checklist, NOT a rigid rail — a hard template
+    every session goes formulaic). Additive: an empty prelude == today's behavior."""
+
+    kind: Literal["arrival", "meeting", "inciting_incident", "threshold"]
+    note: str = ""        # the bound seed for this beat (e.g. 'meeting' -> the companion + a shared stake)
+    ref_id: str = ""      # the bound noun: companion id for 'meeting', grievance/hook id for 'inciting_incident'
+
+
 class Campaign(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("camp"))
     title: str
@@ -539,6 +576,13 @@ class Campaign(_StrictModel):
     # canon header. Additive: empty == today's behavior (a world with no quest_variants).
     # Mirrors `flags`/`world_state` — keys/values live in CONTENT, never engine code.
     quest_outcomes: dict[str, str] = Field(default_factory=dict)
+    # S7 — the quest-generation layer: lore-derived quest SEEDS the DM weaves (NOT an engine
+    # state machine — assembled from the seeded world + world_state; the DM narrates/advances).
+    # `prelude` is the guaranteed 4-beat cold-open (fixes "starts mid-quest" / "how they meet").
+    # Generated once at seed_world, AFTER quest_variants (so grievances can draw on resolved
+    # outcomes + facts + roster). Additive: empty == today's behavior. Mirrors quest_outcomes.
+    quest_hooks: list[QuestHook] = Field(default_factory=list)
+    prelude: list[PreludeBeat] = Field(default_factory=list)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions
