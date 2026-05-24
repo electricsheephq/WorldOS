@@ -1160,13 +1160,23 @@ function renderProgression(c, wrap) {
 // ---- 5. RELATIONSHIPS (parity 5.1) ------------------------------------------
 // A roster of everyone the party knows — companions + NPCs (monsters are combat,
 // not relationships). Each row carries name, race·class, the free-text disposition,
-// and a hostile↔friendly bar. NOTE: the bar position is the attitudePos() KEYWORD
-// HEURISTIC over the free-text `attitude` — a *numeric* relationship value would be a
-// separate engine task (add Character.relationship: int, project it here in its place).
+// and a hostile↔friendly bar. The engine now tracks a numeric Character.attitude_value
+// (-100..+100, 0 = neutral) alongside the free-text attitude, so we PREFER it: a nonzero
+// value positions the bar exactly ((v+100)/200) and bands the disposition tag; when it's
+// still neutral/untouched we fall back to the attitudePos() keyword heuristic over the
+// free-text `attitude`. (Was a "separate engine task" — now done.)
 function relAttClass(pos) { return pos <= 0.25 ? "hostile" : pos <= 0.42 ? "wary" : pos >= 0.7 ? "friendly" : "neutral"; }
+// Disposition band from the numeric value: <=-40 hostile, -39..-10 wary, -9..29 neutral,
+// >=30 friendly. Mirrors the engine's -100..+100 scale; used only when a value is set.
+function attValueClass(v) { return v <= -40 ? "hostile" : v <= -10 ? "wary" : v >= 30 ? "friendly" : "neutral"; }
 function relRow(c) {
   const rcl = raceClass(c);
-  const pos = attitudePos(c.attitude);
+  // Prefer the engine's numeric relationship when it's been moved off neutral; else the
+  // keyword heuristic. `pos` (0..1) drives the bar; `tag` is the disposition label.
+  const v = typeof c.attitude_value === "number" ? c.attitude_value : 0;
+  const hasNum = v !== 0;
+  const pos = hasNum ? (v + 100) / 200 : attitudePos(c.attitude);
+  const tag = hasNum ? attValueClass(v) : relAttClass(pos);
   const att = c.attitude || "";
   const kindLbl = c.kind === "companion" ? "Companion" : "NPC";
   return `<div class="rel-row ${esc(c.kind)}">
@@ -1178,7 +1188,7 @@ function relRow(c) {
       <div class="att-bar rel-att"><span class="att-lbl">hostile</span>
         <span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span>
         <span class="att-lbl">friendly</span>
-        <span class="rel-att-tag ${relAttClass(pos)}">${relAttClass(pos)}</span></div>
+        <span class="rel-att-tag ${tag}"${hasNum?` title="${v>0?"+":""}${v}"`:""}>${tag}</span></div>
       ${att?`<div class="rel-desc">${esc(att)}</div>`
            :`<div class="rel-desc empty">No disposition recorded yet.</div>`}
     </div></div>`;

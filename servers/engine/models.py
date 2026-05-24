@@ -225,7 +225,12 @@ class Character(_StrictModel):
 
     # roleplay (companion / npc)
     personality: str = ""
-    attitude: str = ""  # npc disposition toward the party
+    attitude: str = ""  # npc disposition toward the party (free text: "guarded", or a track value)
+    # Numeric per-NPC relationship toward the party, -100..+100 (0 = neutral). The
+    # free-text `attitude` reads well for the DM; this gives the viewer a precise bar
+    # position (and lets the DM reward/punish choices in points). Additive: 0 == today's
+    # behavior, so the dashboard falls back to the keyword heuristic when it's untouched.
+    attitude_value: int = 0
     memory: list[str] = Field(default_factory=list)  # facts the npc/companion remembers
     notes: str = ""
     # structured identity — fed by canon ingestion (S2.5) + shown in portrait cards;
