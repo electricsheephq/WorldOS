@@ -26,6 +26,7 @@ import encounter
 import generator
 import imagegen
 import inventory
+import itemcatalog
 import ledger as ledger_mod
 import lorebook
 import npc as npc_mod
@@ -2142,13 +2143,90 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     return {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc, "success": r.total >= dc}
 
 
+def _catalog_describe(rec: dict) -> str:
+    """A one-line description for an inventory item granted from the catalog:
+    the SRD prose, prefixed with the mechanical tags (kind/rarity/attunement/
+    damage/AC) the bare Item model can't hold as structured fields."""
+    tags = [rec["kind"]]
+    if rec.get("rarity"):
+        tags.append(rec["rarity"])
+    if rec.get("damage"):
+        tags.append(f"{rec['damage']} {rec.get('damage_type', '')}".strip())
+    if rec.get("ac"):
+        tags.append(f"AC {rec['ac']}")
+    if rec.get("requires_attunement"):
+        tags.append("requires attunement")
+    for p in rec.get("properties", []):
+        tags.append(p)
+    head = f"[{'; '.join(tags)}] " if tags else ""
+    return (head + (rec.get("description") or "")).strip()
+
+
+def _apply_item_catalog(
+    item_name: str, name: str, weight: float, requires_attunement: bool, description: str
+) -> tuple[str, float, bool, str, dict | None]:
+    """If `item_name` is given and resolves in the SRD catalog, fill the item's
+    name/weight/attunement/description from the real record — but a caller value
+    that was explicitly set (non-default) always wins, so this stays purely
+    additive over the free-text path. Returns the (possibly enriched) tuple plus
+    the catalog record (None if `item_name` empty or unresolved)."""
+    if not item_name:
+        return name, weight, requires_attunement, description, None
+    rec = itemcatalog.resolve(item_name)
+    if rec is None:
+        return name, weight, requires_attunement, description, None
+    return (
+        name or rec["name"],
+        weight if weight else rec.get("weight", 0.0),
+        requires_attunement or rec.get("requires_attunement", False),
+        description or _catalog_describe(rec),
+        rec,
+    )
+
+
+@mcp.tool()
+def lookup_item(name: str) -> dict:
+    """Look up a single SRD item by name (case-insensitive) in the bundled
+    ~960-item catalog (magic items, weapons, armor, gear, potions, etc.). Returns
+    the flattened record — {name, kind, rarity, requires_attunement, weight, cost,
+    description, properties} plus damage/damage_type for weapons and ac for armor —
+    or {"error", "suggestions"} on a miss. Use this (then add_item with
+    item_name=...) to grant a REAL item instead of free-texting it."""
+    rec = itemcatalog.resolve(name)
+    if rec is None:
+        return {"error": f"no item named {name!r} in the SRD catalog",
+                "suggestions": itemcatalog.suggest(name)}
+    return rec
+
+
+@mcp.tool()
+def find_items(query: str, limit: int = 10) -> dict:
+    """Search the bundled SRD item catalog by name (case-insensitive substring),
+    e.g. find_items("potion") or find_items("sword"). Returns up to `limit`
+    matching catalog records (same shape as lookup_item). Empty query lists the
+    first `limit` items. The DM's catalog browser for handing out loot."""
+    matches = itemcatalog.find(query, max(1, min(int(limit), 50)))
+    return {"query": query, "count": len(matches), "items": matches}
+
+
 @mcp.tool()
 def add_item(
-    campaign_id: str, character_id: str, name: str, quantity: int = 1, weight: float = 0.0,
-    requires_attunement: bool = False, description: str = "",
+    campaign_id: str, character_id: str, name: str = "", quantity: int = 1, weight: float = 0.0,
+    requires_attunement: bool = False, description: str = "", item_name: str = "",
 ) -> dict:
     """Add an item to a character's inventory (stacks with an identical unequipped,
-    non-attuned item)."""
+    non-attuned item).
+
+    Pass `item_name` to grant a REAL SRD item by name: weight, attunement, and a
+    rich description (with damage/AC/rarity tags) are filled from the bundled
+    catalog. Any value you also pass explicitly (name, weight, requires_attunement,
+    description) overrides the catalog fill. Omit `item_name` for the original
+    free-text path (then `name` is required)."""
+    name, weight, requires_attunement, description, _ = _apply_item_catalog(
+        item_name, name, weight, requires_attunement, description
+    )
+    if not name:
+        raise ValueError("add_item needs a name (or an item_name that resolves in the catalog)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -2205,11 +2283,26 @@ def adjust_currency(
 
 @mcp.tool()
 def buy_item(
-    campaign_id: str, character_id: str, name: str, cost_gp: float, quantity: int = 1,
-    weight: float = 0.0, requires_attunement: bool = False, description: str = "",
+    campaign_id: str, character_id: str, name: str = "", cost_gp: float = -1.0, quantity: int = 1,
+    weight: float = 0.0, requires_attunement: bool = False, description: str = "", item_name: str = "",
 ) -> dict:
     """Buy an item: pay cost_gp (making change from the purse) and add it to inventory.
-    Raises if the character can't afford it."""
+    Raises if the character can't afford it.
+
+    Pass `item_name` to buy a REAL SRD item by name: name, weight, attunement, a
+    rich description, AND the catalog price are filled from the bundled catalog
+    (leave `cost_gp` unset to charge the SRD price, or pass `cost_gp` to override —
+    e.g. a haggled or marked-up price). Omit `item_name` for the original free-text
+    path (then `name` and `cost_gp` are required)."""
+    name, weight, requires_attunement, description, rec = _apply_item_catalog(
+        item_name, name, weight, requires_attunement, description
+    )
+    if cost_gp < 0:  # sentinel: caller didn't state a price
+        cost_gp = rec.get("cost", 0.0) if rec else -1.0
+        if cost_gp < 0:
+            raise ValueError("buy_item needs cost_gp (or an item_name that resolves in the catalog)")
+    if not name:
+        raise ValueError("buy_item needs a name (or an item_name that resolves in the catalog)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
