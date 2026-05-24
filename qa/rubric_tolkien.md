@@ -17,6 +17,29 @@ every score, and when unsure, score DOWN:
 - **2** — flat/generic, OR (critically) reads like an AFTER-ACTION SUMMARY / scribe's log: third-person recap, NPCs *described* instead of *speaking*, no felt choices, the protagonist not visibly acting.
 - **1** — incoherent or lifeless.
 
+## Read the ARC, not just the scene — score ACT-RELATIVE
+D&D adventures have structure — a **3-act** short (Act 1 setup + inciting incident → Act 2 rising
+action + a midpoint **reversal** → Act 3 climax + resolution), a **5-act** grand arc, or the
+**5-room-dungeon** one-shot. A flat score is timing-blind — it wrongly demands world-stakes in Act 1
+or a climax from a setup scene. So FIRST judge the arc, THEN the beats:
+1. **Detect `scope`.** Is this a `setup-slice` (the opening of a longer arc — e.g. a short session
+   that only reaches Act 1 + a turn), a `one-shot` (a complete 5-room micro-arc), a `short-3act`, or
+   a `campaign-arc`? **Do NOT penalize a short slice for acts it was never meant to reach** — a
+   setup-slice with no Act-3 climax is CORRECT, not a failure. Judge it on the act(s) it DOES cover.
+2. **Score the dimensions act-relative:**
+   - **grandeur** belongs to Act 3, not Act 1. In Act 1 grandeur is *texture* (the vast glimpsed at
+     the edges) — reward that; do NOT demand world-stakes, and DOCK a session that dumps world-saving
+     stakes in the cold open (it reads weightless). The full epic is *earned* by the later acts.
+   - **dramatic_momentum** needs the **act turns**: Act 2 must carry a real **reversal / midpoint
+     twist** AND a choice that **costs the protagonist personally** — the hero's own skin, bond, or
+     secret on the line, not just abstract world-stakes; Act 3 must **pay off** what was set up. A
+     session that "escalates but never reverses / nothing costs the hero" is the classic flat Act 2 —
+     dock momentum and NAME the missing act-beat.
+   - Act 1 is judged on a true **inciting incident** + a human-scale, personal hook (not an info-dump).
+3. **Report `acts`** — for each act the transcript ACTUALLY covers: label, `present`, a one-line
+   `assessment` of the beat it delivered or missed, and a 1–5. Only the acts present — don't invent
+   ones a slice doesn't reach.
+
 ## Score each 1–5
 - **scene_craft** *(playability — the one we were missing)* — Does this read like a PLAYED scene you could step INTO, or a recap of one? In-the-moment and immersive; **NPCs SPEAK in real quoted dialogue** (not "X reveals/explains…"); the **protagonist visibly ACTS and CHOOSES**; each beat hands back an open moment + a choice. A third-person after-action summary, described-not-spoken NPCs, or no felt choice ⇒ **2 or below**. This is what catches "I couldn't actually play this."
 - **grandeur** — Epic scope *felt in the present*: the vast/ancient/mythic pressing on the local scene as concrete detail, not backstory. (5 = the local crisis clearly belongs to a looming epic; 2 = small, self-contained.)
@@ -45,10 +68,15 @@ matter how lovely the writing — and the HARD CAP below then binds `overall ≤
   of speaking in quoted voice. (Already under scene_craft; it caps here too.)
 
 ## Output (JSON only)
-`scores` = the **7** dims above (1–5).
+`scope` = the arc scope this transcript represents (`setup-slice` | `one-shot` | `short-3act` | `campaign-arc`).
+`acts` = the per-act breakdown — ONLY the acts actually present — each `{act, present, assessment, score}`.
+`scores` = the **7** dims above (1–5), judged ACT-RELATIVE per the arc section.
 `overall` = an honest weighted average that **rewards PLAYABLE epic** — weight
 **scene_craft, grandeur, dramatic_momentum, and memorability** most (the "is this a game
 worth playing?" core); character_depth + thematic_resonance next; prose_atmosphere last.
+**Act-informed:** a `setup-slice` that nails Act 1 (real inciting incident, human-scale, grandeur-as-
+texture) can reach 4+ WITHOUT a climax; but a `one-shot`/`short-3act` that SHOULD turn and pay off yet
+fizzles — a missing Act-2 reversal or Act-3 payoff *when the scope calls for it* — is capped ≤ ~3.5.
 **HARD CAPS (enforce strictly):** if `scene_craft ≤ 2` (it reads as a summary/log, NPCs
 don't speak in real dialogue, OR **any Named failure mode above is present**), `overall` MUST
 NOT exceed **3.0**, regardless of prose. Before you award 4+ anywhere, explicitly confirm NONE

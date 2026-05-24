@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["scores", "overall", "defects", "highlights", "verdict"],
+  "required": ["scope", "acts", "scores", "overall", "defects", "highlights", "verdict"],
   "properties": {
     "scores": {
       "type": "object",
@@ -41,6 +41,22 @@
       }
     },
     "highlights": { "type": "array", "items": { "type": "string" } },
-    "verdict": { "type": "string" }
+    "verdict": { "type": "string" },
+    "scope": { "type": "string", "description": "the arc scope this transcript represents: setup-slice | one-shot | short-3act | campaign-arc" },
+    "acts": {
+      "type": "array",
+      "description": "per-act assessment of the structure PRESENT (don't invent acts a short slice doesn't reach)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["act", "present", "assessment", "score"],
+        "properties": {
+          "act": { "type": "string" },
+          "present": { "type": "boolean" },
+          "assessment": { "type": "string" },
+          "score": { "type": "integer", "minimum": 1, "maximum": 5 }
+        }
+      }
+    }
   }
 }
