@@ -1,0 +1,37 @@
+{
+  "id": "gortash-tyranny",
+  "name": "The Tyrant's Peace — Gortash Holds the Gate",
+  "schema_version": 1,
+  "era": "1492 DR — the winter the Gate kept its tyrant. The Netherbrain was brought down, but Enver Gortash survived the war and consolidated the victory under his own banner: he is Archduke in fact as well as name, the Steel Watch is being rebuilt to police every street, and the city's salvation has been rewritten as his triumph. The other Chosen (Ketheric Thorm, Orin the Red) are dead. Keep the timeline straight: the Absolute is broken and the tyrant who helped break it now rules the relief, the rebuilding, and the watch. Do not raise the long-dead or pre-empt events that haven't happened.",
+  "premise_suffix": " In this telling the brain fell — and Enver Gortash lived to take the credit. The Bane-chosen Archduke turned the war's end into his coronation: the Steel Watch foundry roars again, his Banite order administers the relief, and the heroes who actually saved the city are exiles, fugitives, or dead names in his proclamations. The Gate is orderly, rebuilt, and afraid. Into a city under the smiling boot of a tyrant who calls himself its savior, the player steps: a nobody beneath notice — which, in a police state, is the only safe thing to be, and the only thing that can move unseen.",
+  "standing_threads": [
+    "The tyrant's grip: Gortash rules as Archduke with a rebuilt Steel Watch at his back; the relief, the courts, and the gazette all sing his praises, and dissent vanishes quietly into the foundry's shadow.",
+    "The hunted heroes: the war's true saviors are branded agitators, cultists, or worse — scattered, hidden, or in chains — and a resistance gathers around their names while the Archduke erases them from the story.",
+    "The Banite order ascendant: Bane's worship is no longer a back-alley fear but a rising state faith, and the cult of tyranny tightens its hold on the institutions of the Gate one appointment at a time."
+  ],
+  "history_append": [
+    "The tyrant survived: Enver Gortash, Chosen of Bane, lived through the Battle of Baldur's Gate and moved at once to claim its victory — presenting the brain's fall as proof of his fitness to rule.",
+    "The Watch reborn: rather than lying wrecked beneath Wyrm's Rock, the Steel Watch foundry was repaired and expanded; arcane constructs once more walk the streets, now answering to the Archduke alone.",
+    "The rewritten war: official history credits Gortash and his order with the Gate's salvation; the surviving companions are recast as dangerous fanatics, and saying otherwise in the wrong tavern is a crime."
+  ],
+  "story_seeds_append": [
+    "A resistance cell needs a face the Watch doesn't know to carry a message to a hidden hero — and the only route runs straight through a Steel Watch checkpoint that wasn't on that corner yesterday.",
+    "A patriar family that backed Gortash early now wants out, and will trade the location of the foundry's control-cores for safe passage — but the Banite order is already hunting the leak.",
+    "The Archduke is staging a public 'mercy' — a pardon for select tadpole-survivors who denounce the old heroes; a survivor the party knows is being pressured to lie on the High Hall steps."
+  ],
+  "fates": {
+    "npc-jaheira": {"status": "alive, hunted, leading the resistance", "where": "deep in the Harper safehouses the Watch hasn't found", "note": "Branded an agitator by the regime; the spine of the underground, too old and too stubborn to bow to a tyrant she's outlived the like of before."},
+    "npc-minsc": {"status": "alive, a wanted folk-hero", "where": "the Outer City and the wilds, one step ahead of the Watch", "note": "Too loud to hide and too beloved to forget; the Watch wants him in the foundry, the people hide him in their cellars, and Boo, he says, has named the Archduke evil."},
+    "npc-astarion": {"status": "alive, surviving as he always has", "where": "the cracks of the police city, trading secrets", "note": "Knows a tyrant's regime is just another predator to outwit; sells the resistance what it needs and the Watch nothing it can use."},
+    "npc-shadowheart": {"status": "alive, in hiding", "where": "a deconsecrated shrine off the Watch's maps", "note": "A tyrant's 'order' is the kind of certainty she spent the war learning to distrust; quietly shelters the hunted."},
+    "npc-wyll": {"status": "alive, an exile from his father's stolen city", "where": "the road, raising support against the Archduke", "note": "Gortash sits in the seat Wyll's father bled for; the Blade of Frontiers turns his whole legend against the tyrant — and his pact's price still shadows the work."},
+    "npc-karlach": {"status": "alive, and incandescent", "where": "wherever the Steel Watch is weakest", "note": "Gortash sold her heart to Avernus and now wears her city's crown — there is no one in Faerun who wants him dead more, and her engine still burns for it."},
+    "npc-the-emperor": {"status": "watching, unaligned", "where": "the underbelly, beneath the Watch's notice", "note": "A tyrant's order is merely a new board to play; the mind flayer offers the resistance terrible help on terms it sets, and serves, as always, only itself."},
+    "npc-withers": {"status": "present, unimpressed", "where": "where the disappeared end up", "note": "Keeps his ledger of the regime's quiet dead; offers the desperate a cryptic word and, now and then, a second chance the Watch can't take away."},
+    "Gale": {"status": "alive, in hiding or chains", "where": "hunted for what he knows of the Watch's arcana", "note": "The foundry's arcane cores are exactly his expertise; the regime wants him collared, the resistance wants him free, and he wants the orb in his chest to stay quiet."},
+    "Lae'zel": {"status": "alive, contemptuous of the tyrant", "where": "striking at the Watch from outside the law", "note": "Has no patience for a soft tyrant and his toy soldiers; a blade the resistance points and then gets out of the way of."},
+    "Halsin": {"status": "alive, sheltering refugees", "where": "the wilds and Reithwin, beyond the Watch's reach", "note": "Runs an underground road out of the police city for the hunted and the tadpole-touched the Archduke would 'pardon' into silence."}
+  },
+  "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
+  "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
+}

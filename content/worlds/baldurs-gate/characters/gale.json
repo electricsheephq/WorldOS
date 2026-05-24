@@ -1,5 +1,7 @@
 {
   "name": "Gale",
+  "playable": false,
+  "role": "hero",
   "race": "Human",
   "class": "Wizard",
   "level": "1",

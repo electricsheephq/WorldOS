@@ -1,0 +1,18 @@
+{
+  "id": "tadpole-survivor",
+  "name": "The Tadpole Survivor",
+  "blurb": "One of the thousands who carried an Absolute tadpole and lived. Cured — mostly — but feared, shunned, and on a reactionary's list. A sorcerer whose strange power may be the parasite's parting gift.",
+  "race": "Half-Elf",
+  "class_name": "Sorcerer",
+  "level": 3,
+  "background": "Hermit",
+  "subclass": "Wild Magic",
+  "alignment": "Chaotic Neutral",
+  "abilities": {"strength": 8, "dexterity": 14, "constitution": 14, "intelligence": 11, "wisdom": 10, "charisma": 16},
+  "armor_class": 12,
+  "skills": ["arcana", "persuasion"],
+  "appearance": "Hollow-cheeked and watchful, with a faint, unsettling shimmer behind the eyes when their power stirs — the kind of look that empties a tavern bench.",
+  "personality": "Guarded and dryly funny, used to being the thing people cross the street to avoid. Carries the war's living wound as a daily fact, not a backstory.",
+  "license": "Original ClawDnD fan-content origin build, CC-BY-4.0. SRD 5.2 mechanics under CC-BY-4.0. Unofficial; not endorsed by Wizards of the Coast or Larian.",
+  "attribution": "Origin build © ClawDnD contributors, CC-BY-4.0. SRD 5.2 © Wizards of the Coast LLC, used under CC-BY-4.0. Setting under the Wizards Fan Content Policy; BG3 elements © Larian Studios."
+}

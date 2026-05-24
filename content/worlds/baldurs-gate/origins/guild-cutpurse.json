@@ -1,0 +1,18 @@
+{
+  "id": "guild-cutpurse",
+  "name": "The Guild Cutpurse",
+  "blurb": "A small-time thief who came up under the Guild in the Outer City — light fingers, lighter conscience, and a debt to Nine-Fingers' people they'd rather not discuss. The vacuum is good for business.",
+  "race": "Halfling",
+  "class_name": "Rogue",
+  "level": 3,
+  "background": "Criminal",
+  "subclass": "Thief",
+  "alignment": "Chaotic Neutral",
+  "abilities": {"strength": 9, "dexterity": 16, "constitution": 13, "intelligence": 12, "wisdom": 11, "charisma": 14},
+  "armor_class": 14,
+  "skills": ["stealth", "sleight of hand", "deception", "perception"],
+  "appearance": "Quick-eyed and forgettable on purpose, dressed to vanish into a market crowd, with a gambler's grin and a knife you never see drawn.",
+  "personality": "Charming, mercenary, and loyal only to a short list — but that list is real, and growing one name longer is how this one's story turns.",
+  "license": "Original ClawDnD fan-content origin build, CC-BY-4.0. SRD 5.2 mechanics under CC-BY-4.0. Unofficial; not endorsed by Wizards of the Coast or Larian.",
+  "attribution": "Origin build © ClawDnD contributors, CC-BY-4.0. SRD 5.2 © Wizards of the Coast LLC, used under CC-BY-4.0. Setting under the Wizards Fan Content Policy; BG3 elements © Larian Studios."
+}

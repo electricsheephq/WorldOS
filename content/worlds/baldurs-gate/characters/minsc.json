@@ -1,5 +1,7 @@
 {
   "name": "Minsc",
+  "playable": true,
+  "role": "companion",
   "race": "Human",
   "class": "Ranger",
   "level": "1",

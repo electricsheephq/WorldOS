@@ -1,5 +1,7 @@
 {
   "name": "Jaheira",
+  "playable": true,
+  "role": "mentor",
   "race": "Half-elf",
   "class": "Druid (Circle of the Land)",
   "level": "",

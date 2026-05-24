@@ -1,5 +1,7 @@
 {
   "name": "Karlach",
+  "playable": false,
+  "role": "hero",
   "race": "Tiefling",
   "class": "Barbarian",
   "level": "1",

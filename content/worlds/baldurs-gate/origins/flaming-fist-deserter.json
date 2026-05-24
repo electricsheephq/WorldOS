@@ -1,0 +1,18 @@
+{
+  "id": "flaming-fist-deserter",
+  "name": "The Flaming Fist Deserter",
+  "blurb": "A rank-and-file fighter who walked away from the overstretched Fist after the war and now sells the only thing they're good at. Honest steel, bad dreams, a uniform burned in an alley.",
+  "race": "Human",
+  "class_name": "Fighter",
+  "level": 3,
+  "background": "Soldier",
+  "subclass": "Champion",
+  "alignment": "Neutral Good",
+  "abilities": {"strength": 16, "dexterity": 13, "constitution": 15, "intelligence": 10, "wisdom": 12, "charisma": 8},
+  "armor_class": 16,
+  "skills": ["athletics", "intimidation"],
+  "appearance": "Broad-shouldered and weather-worn, with a soldier's posture they can't quite shed and a faded burn-scar where a Fist insignia used to be.",
+  "personality": "Plain-spoken, dutiful out of habit, and quietly haunted by orders they followed during the Absolute war. Wants to do one clean thing.",
+  "license": "Original ClawDnD fan-content origin build, CC-BY-4.0. SRD 5.2 mechanics under CC-BY-4.0. Unofficial; not endorsed by Wizards of the Coast or Larian.",
+  "attribution": "Origin build © ClawDnD contributors, CC-BY-4.0. SRD 5.2 © Wizards of the Coast LLC, used under CC-BY-4.0. Setting under the Wizards Fan Content Policy; BG3 elements © Larian Studios."
+}

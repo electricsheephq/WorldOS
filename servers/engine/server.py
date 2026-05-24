@@ -285,7 +285,7 @@ def list_worlds() -> dict:
 
 
 @mcp.tool()
-def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
+def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str = "") -> dict:
     """Seed a NEW campaign from a persistent WORLD bible
     (content/worlds/<world_id>/world.json) — a living setting you GENERATE WITHIN,
     not a fixed plot.
@@ -297,6 +297,16 @@ def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
     run a LIVING SANDBOX: generate the specific scene on arrival and PERSIST it
     (add_location / create_character / remember / add_quest) so the world grows and is
     carried across sessions.
+
+    Pass `ending`=<ending_id> to seed the world in a specific POST-STATE rather than its
+    default present — e.g. a post-campaign aftermath where a war ended one way or another
+    (content/worlds/<world_id>/endings/<ending_id>.json). The overlay rewrites the era,
+    folds its standing threads + history into recallable lore, and sets each named
+    figure's fate. `ending="random"` picks one of the world's overlays; omitting it (the
+    default) seeds the BASE world exactly as before. The result echoes the chosen
+    `ending`, its `name`, and a one-line `ending_state` so you can ANNOUNCE the world's
+    aftermath at the table. After start_world, call `start_character` to build the PC
+    (a new nobody — never one of this era's top heroes), then start_session.
 
     Pass `resume`=<campaign_id> to CONTINUE an existing campaign in this world rather
     than starting fresh — re-running start_world otherwise mints a NEW campaign and
@@ -316,6 +326,7 @@ def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
                 "resumed": True,
                 "premise": prior.summary,
                 "era": prior.era,
+                "ending": prior.ending_id,
                 "day": prior.day,
                 "time_of_day": prior.time_of_day,
                 "dm_guidance": world.get("dm_guidance", ""),
@@ -326,19 +337,28 @@ def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
             }
         # invalid/mismatched resume id -> fall through to a fresh start
 
-    c = content_mod.seed_world(world, start_at=start_at)
+    c = content_mod.seed_world(world, start_at=start_at, ending=ending)
     save_campaign(c)
     loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    # Surface the chosen post-state overlay so the DM announces the world's aftermath.
+    # story_seeds are the base seeds plus any the overlay appends (DM reference list).
+    overlay = content_mod.load_ending_data(world_id, c.ending_id) if c.ending_id else None
+    story_seeds = list(world.get("story_seeds", []) or [])
+    if overlay is not None:
+        story_seeds = story_seeds + [
+            str(s) for s in (overlay.get("story_seeds_append") or []) if str(s).strip()
+        ]
     result = {
         "campaign_id": c.id,
         "world": c.title,
         "premise": c.summary,
         "era": c.era,
+        "ending": c.ending_id,
         "tone": world.get("tone", ""),
         "dm_guidance": world.get("dm_guidance", ""),
         "lore_corpus_pages": lorebook.page_count(c.world_id),
         "standing_threads": world.get("standing_threads", []),
-        "story_seeds": world.get("story_seeds", []),
+        "story_seeds": story_seeds,
         "starting_at": {"id": loc.id, "name": loc.name} if loc else None,
         "starting_options": world.get("starting_options", []),
         "regions": [{"id": l.id, "name": l.name} for l in c.locations.values()],
@@ -357,6 +377,20 @@ def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
         "lore_count": len(c.lore),
         "map_kind": c.map_kind,
     }
+    # When an ending overlay seeded a post-state, echo its name + a one-line summary so
+    # the DM can announce "the world you step into" at the table.
+    if overlay is not None:
+        result["ending_name"] = overlay.get("name", c.ending_id)
+        suffix = str(overlay.get("premise_suffix") or "").strip()
+        one_line = suffix.split(". ")[0].strip()
+        if one_line and not one_line.endswith("."):
+            one_line += "."
+        result["ending_state"] = one_line or (str(overlay.get("era") or "").split(". ")[0])
+        result["available_endings"] = content_mod.list_endings(world_id)
+    elif content_mod.list_endings(world_id):
+        # No ending chosen, but this world ships post-state overlays — advertise them so
+        # the DM can offer to seed the world in a specific aftermath.
+        result["available_endings"] = content_mod.list_endings(world_id)
     others = [x for x in campaigns_for_world(world_id) if x["id"] != c.id]
     if others:
         result["existing_campaigns"] = others
@@ -724,6 +758,178 @@ def create_character(
 
 
 @mcp.tool()
+def start_character(
+    campaign_id: str,
+    origin: str = "nobody_l1",
+    name: str = "",
+    class_name: str = "",
+    race: str = "",
+    abilities: Optional[dict] = None,
+    background: str = "",
+    subclass: Optional[str] = None,
+    skills: Optional[list] = None,
+    voice_id: str = "narrator-dm",
+) -> dict:
+    """Build the PLAYER character via a chosen ORIGIN, and add them to the party.
+
+    The intended flow: after start_world, present a 4-item menu, then call this with the
+    player's pick. In a post-ending world the PC is always a NEW nobody — the famous
+    heroes of the era are NPCs/quest-givers, never a hero the player embodies.
+
+    `origin` selects how the PC is built:
+      - "nobody_l1"  (DEFAULT) — a fresh level-1 character (a BG4-style nobody). If a
+                       `class_name` is given, a real SRD level-1 sheet is filled
+                       (saves, HP, proficiency, class AC/features); otherwise a blank
+                       sheet the DM fleshes out. This is exactly today's create_character
+                       level-1 player path.
+      - "veteran_l5" — a level-5 character via the SRD class tables (a seasoned but still
+                       original PC). Requires `class_name`.
+      - "template:<id>" — a premade build from content/worlds/<world>/origins/<id>.json
+                       (race/class/level/abilities/skills/background/subclass and flavor),
+                       finished with SRD class defaults. Explicit args override the file.
+      - "pickup:<canon_name>" — adopt a MINOR canon figure as the PLAYER (their real
+                       race/class + canon identity), finished with SRD defaults. REJECTED
+                       for a top hero (playable: false) — they appear as an NPC, not a PC.
+
+    Returns the created PC (id, name, kind, origin, level)."""
+    spec = (origin or "nobody_l1").strip()
+    lower = spec.lower()
+
+    # Resolve the origin into concrete build params (then funnel through one builder).
+    build = {
+        "name": name,
+        "class_name": class_name,
+        "race": race,
+        "level": 1,
+        "abilities": dict(abilities or {}),
+        "background": background,
+        "subclass": subclass,
+        "skills": list(skills) if skills else None,
+        "armor_class": 10,
+        "appearance": "",
+        "personality": "",
+        "alignment": "",
+        "from_canon": None,  # set for pickup: so we carry the full identity over
+    }
+
+    if lower in ("nobody_l1", "nobody", "l1", ""):
+        resolved = "nobody_l1"
+        build["level"] = 1
+    elif lower in ("veteran_l5", "veteran", "l5"):
+        resolved = "veteran_l5"
+        build["level"] = 5
+        if not build["class_name"]:
+            return {"error": "origin 'veteran_l5' needs a class_name (a level-5 PC has a class)."}
+    elif lower.startswith("template:"):
+        tid = spec.split(":", 1)[1].strip()
+        c0 = _require(campaign_id)
+        tpl = content_mod.load_origin_template(c0.world_id, tid) if c0.world_id else None
+        if tpl is None:
+            avail = [t["id"] for t in (content_mod.list_origin_templates(c0.world_id) if c0.world_id else [])]
+            return {"error": f"no origin template {tid!r} for world {c0.world_id!r}", "available": avail}
+        resolved = f"template:{tpl.get('id', tid)}"
+        # File supplies defaults; explicit args (passed in) win over them.
+        build["name"] = name or tpl.get("name", "")
+        build["class_name"] = class_name or tpl.get("class_name", "") or tpl.get("class", "")
+        build["race"] = race or tpl.get("race", "")
+        build["level"] = max(1, int(tpl.get("level", 1) or 1))
+        build["abilities"] = dict(abilities) if abilities else dict(tpl.get("abilities", {}) or {})
+        build["background"] = background or tpl.get("background", "")
+        build["subclass"] = subclass or tpl.get("subclass")
+        build["skills"] = (list(skills) if skills else None) or tpl.get("skills")
+        build["armor_class"] = int(tpl.get("armor_class", 10) or 10)
+        build["appearance"] = tpl.get("appearance", "")
+        build["personality"] = tpl.get("personality", "")
+        build["alignment"] = tpl.get("alignment", "")
+    elif lower.startswith("pickup:"):
+        who = spec.split(":", 1)[1].strip()
+        c0 = _require(campaign_id)
+        rec = content_mod.load_canon_character(c0.world_id, who) if c0.world_id else None
+        if rec is None:
+            avail = [x["name"] for x in (content_mod.list_canon_characters(c0.world_id, playable_only=True) if c0.world_id else [])]
+            return {"error": f"no canon character {who!r} for world {c0.world_id!r}", "playable": avail}
+        if not content_mod.is_playable(rec):
+            return {
+                "error": (
+                    f"{rec.get('name', who)!r} is a legend of this era — they appear as an "
+                    f"NPC/quest-giver, not a hero you play. Pick a minor figure, or use "
+                    f"load_canon_character to encounter them in the world."
+                ),
+                "playable": False,
+                "playable_options": [x["name"] for x in (content_mod.list_canon_characters(c0.world_id, playable_only=True) if c0.world_id else [])],
+            }
+        resolved = f"pickup:{rec.get('name', who)}"
+        build["name"] = name or rec.get("name", who)
+        build["class_name"] = class_name or str(rec.get("class", "") or "")
+        build["race"] = race or rec.get("race", "")
+        try:
+            build["level"] = max(1, int(rec.get("level") or 1))
+        except (TypeError, ValueError):
+            build["level"] = 1
+        build["appearance"] = rec.get("appearance", "")
+        build["personality"] = rec.get("personality", "")
+        build["alignment"] = rec.get("alignment", "")
+        build["from_canon"] = rec
+    else:
+        return {
+            "error": (
+                f"unknown origin {origin!r}. Use 'nobody_l1', 'veteran_l5', "
+                f"'template:<id>', or 'pickup:<canon_name>'."
+            )
+        }
+
+    if not build["name"]:
+        return {"error": "a PC needs a name — pass name=… (or pick an origin that supplies one)."}
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        scores = AbilityScores(**(build["abilities"] or {}))
+        cn = build["class_name"]
+        lvl = int(build["level"])
+        ch = Character(
+            name=build["name"],
+            kind="player",
+            race=build["race"],
+            background=build["background"],
+            alignment=build["alignment"],
+            appearance=build["appearance"],
+            personality=build["personality"],
+            voice_id=voice_id,
+            classes=[ClassLevel(name=cn.capitalize(), level=lvl, subclass=build["subclass"])] if cn else [],
+            abilities=scores,
+            armor_class=int(build["armor_class"]),
+            initiative_bonus=scores.modifier(Ability.DEX),
+        )
+        # A canon pickup carries the rest of its identity for the DM to voice from.
+        rec = build["from_canon"]
+        if rec is not None:
+            ch.mannerisms = rec.get("mannerisms", "")
+            ch.backstory = rec.get("backstory", "")
+            ch.notes = rec.get("voice_hint", "")
+        if build["skills"]:  # explicit/template skill choices win over the class default-fill
+            ch.skill_proficiencies = [s.lower() for s in build["skills"] if s.lower() in SKILL_ABILITIES]
+        # Fill a real SRD sheet whenever a class is known (every origin but a class-less
+        # nobody_l1). set_base_ac only when AC is the unarmored default, mirroring
+        # create_character so an explicit/template AC is preserved.
+        if cn:
+            _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
+        c.characters[ch.id] = ch
+        if ch.id not in c.party:
+            c.party.append(ch.id)
+        save_campaign(c)
+    return {
+        "id": ch.id,
+        "name": ch.name,
+        "kind": ch.kind,
+        "origin": resolved,
+        "race": ch.race,
+        "class": cn,
+        "level": ch.total_level,
+        "in_party": ch.id in c.party,
+    }
+
+
+@mcp.tool()
 def recruit_companion(
     campaign_id: str,
     npc_id: str,
@@ -880,14 +1086,19 @@ def get_character(campaign_id: str, character_id: str) -> dict:
 
 
 @mcp.tool()
-def list_canon_characters(campaign_id: str) -> dict:
+def list_canon_characters(campaign_id: str, playable_only: bool = False) -> dict:
     """Who's available to pull into THIS world from the ingested canon roster (the
-    post-BG3 cast — Shadowheart, Astarion, Gale, …). Returns {name, race, class} each.
-    Use load_canon_character to bring one into play."""
+    post-BG3 cast — Shadowheart, Astarion, Gale, …). Returns {name, race, class,
+    playable, role} each. Use load_canon_character to bring one in as an NPC/companion.
+
+    The top heroes of the era (the BG3 origin companions) are `playable: false` — they
+    remain legends/quest-givers/encounterable NPCs but are NOT a hero the player embodies.
+    Pass `playable_only=True` for just the minor figures a player may pick up as their PC
+    via start_character(origin="pickup:<name>")."""
     c = _require(campaign_id)
     return {
         "world_id": c.world_id,
-        "available": content_mod.list_canon_characters(c.world_id) if c.world_id else [],
+        "available": content_mod.list_canon_characters(c.world_id, playable_only=playable_only) if c.world_id else [],
     }
 
 

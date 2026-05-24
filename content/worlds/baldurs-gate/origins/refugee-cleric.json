@@ -1,0 +1,18 @@
+{
+  "id": "refugee-cleric",
+  "name": "The Refugee Cleric",
+  "blurb": "A faithful soul who fled the Shadow-Cursed Lands (or Elturel's return from the hells) and washed up in the Gate, tending the war's wounded with what mercy their god still grants. Faith tested, not broken.",
+  "race": "Human",
+  "class_name": "Cleric",
+  "level": 3,
+  "background": "Acolyte",
+  "subclass": "Life Domain",
+  "alignment": "Lawful Good",
+  "abilities": {"strength": 12, "dexterity": 10, "constitution": 14, "intelligence": 11, "wisdom": 16, "charisma": 13},
+  "armor_class": 18,
+  "skills": ["medicine", "religion", "insight"],
+  "appearance": "Travel-worn vestments mended too many times, kind eyes that have seen too much, and a holy symbol worn smooth from being held in the dark.",
+  "personality": "Gentle but iron-spined, the sort who runs toward the screaming. Carries the weight of those they couldn't save and keeps showing up anyway.",
+  "license": "Original ClawDnD fan-content origin build, CC-BY-4.0. SRD 5.2 mechanics under CC-BY-4.0. Unofficial; not endorsed by Wizards of the Coast or Larian.",
+  "attribution": "Origin build © ClawDnD contributors, CC-BY-4.0. SRD 5.2 © Wizards of the Coast LLC, used under CC-BY-4.0. Setting under the Wizards Fan Content Policy; BG3 elements © Larian Studios."
+}
