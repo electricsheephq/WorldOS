@@ -35,23 +35,26 @@
   .topbar h1 { margin:0; font-size:16px; color:var(--gold); }
   .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#bcd4ec; background:#16222e; border:1px solid #2e4456; border-radius:10px; padding:2px 9px; }
   .topbar .meta { color:var(--dim); font-size:13px; }
-  #feed { flex:1; min-height:0; overflow-y:auto; padding:18px 20px; display:flex; flex-direction:column; gap:14px; }
-  .msg { max-width:780px; }
-  .msg .hd { display:flex; align-items:center; gap:9px; margin-bottom:5px; }
-  .msg .nm { font-weight:700; color:var(--gold); font-size:13px; }
+  #feed { flex:1; min-height:0; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:18px;
+    scroll-behavior:smooth; }
+  .msg { max-width:760px; }
+  .msg.narration, .msg.dialogue, .msg.combat, .msg.system { animation:msgin .25s ease; }
+  @keyframes msgin { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .msg .hd { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
+  .msg .nm { font-weight:700; color:var(--gold); font-size:12.5px; letter-spacing:.01em; }
   .msg .nm.dialogue { color:#9fc0e0; } .msg .nm.combat { color:#e0a0a0; }
-  .msg.player { align-self:flex-end; max-width:680px; background:#11201a; border:1px solid #2b4a3a; border-radius:10px 10px 2px 10px; padding:8px 12px; }
+  .msg.player { align-self:flex-end; max-width:660px; background:#11201a; border:1px solid #2b4a3a; border-radius:12px 12px 3px 12px; padding:9px 13px; }
   .msg.player .nm { color:var(--player); } .av.pc { background:var(--player); }
   .msg.player .bd { color:#cfe8d8; }
+  /* DM/narration prose — the centerpiece. Slightly larger, warm serif for an
+     epic-storytelling feel matching the fables reference. */
+  .msg.narration .bd, .msg.dialogue .bd { font:15.5px/1.72 Georgia,"Iowan Old Style","Palatino Linotype",serif; color:#e4dac6; }
   .msg .bd { color:#ddd3c2; white-space:pre-wrap; }
+  .msg .bd em, .msg.narration .bd i { color:#f0e4c8; }
   .msg.system .bd { color:var(--faint); font-size:12.5px; font-style:italic; }
   .msg.combat .bd { color:#e9c9c0; }
   .av { width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
     font-size:10px;font-weight:800;color:#14110e;background:var(--gold2); }
-  .composer { border-top:1px solid var(--line); padding:12px 18px; background:var(--panel); display:flex; gap:10px; align-items:center; }
-  .composer .box { flex:1; background:#0d0b08; border:1px solid var(--line); border-radius:22px; padding:10px 16px; color:var(--faint); }
-  .composer button { background:#241a0d; border:1px solid #4a3c22; border-radius:18px; padding:8px 14px; color:var(--gold); opacity:.6; cursor:default; }
-
   /* ---- right: scene / party / world ---- */
   aside { min-height:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; background:#120f0b; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
@@ -70,6 +73,65 @@
   .quest { padding:5px 0; border-bottom:1px solid #241d14; } .quest .g { color:var(--faint); font-size:11px; }
   .fac { display:flex; justify-content:space-between; padding:3px 0; } .fac .rep { color:var(--dim); }
   .empty { color:var(--faint); font-style:italic; }
+
+  /* ---- scene illustration / portrait placeholder (#34; S2.2 drops images here) ---- */
+  .art { position:relative; border-radius:9px; overflow:hidden; background:
+      repeating-linear-gradient(135deg,#161009 0 11px,#1a130b 11px 22px); border:1px dashed #3a2f1c;
+    aspect-ratio:16/10; display:flex; align-items:center; justify-content:center; text-align:center; }
+  .art .hint { color:#6f6657; font-size:11px; font-style:italic; padding:0 18px; line-height:1.5; }
+  .art .hint b { display:block; font-style:normal; font-weight:700; color:#8a7c5a; letter-spacing:.08em; text-transform:uppercase; font-size:9px; margin-bottom:4px; }
+
+  /* ---- NPC portrait cards (#34) — fables-style compact stat cards ---- */
+  .npc-card { display:flex; gap:10px; padding:9px; border:1px solid var(--line); border-radius:9px; background:#171109; }
+  .npc-card + .npc-card { margin-top:8px; }
+  .npc-card.monster { border-color:#4a2828; background:#1a0f0f; }
+  .pavatar { width:38px; height:38px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:800; color:#14110e; background:var(--npc); border:1px solid #0004; }
+  .pavatar.monster{background:var(--monster);} .pavatar.npc{background:var(--npc);} .pavatar.companion{background:var(--companion);}
+  .npc-body { flex:1; min-width:0; }
+  .npc-top { display:flex; align-items:baseline; gap:7px; }
+  .npc-name { font-weight:700; color:var(--gold); font-size:13px; }
+  .npc-card.monster .npc-name { color:#e8a0a0; }
+  .npc-rcl { font-size:10.5px; color:var(--dim); }
+  .npc-desc { font-size:11px; color:#b6aa92; font-style:italic; margin-top:2px; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .npc-stats { display:flex; gap:6px; flex-wrap:wrap; margin-top:5px; }
+  .pstat { font-size:10px; color:var(--dim); background:#221a10; border:1px solid #3a2f1c; border-radius:6px; padding:1px 6px; font-variant-numeric:tabular-nums; }
+  .pstat.hp { color:#9fd49f; border-color:#2f4a2f; } .pstat.hp.low { color:#e89090; border-color:#5a3030; }
+  .pstat.dist { color:#bcd4ec; border-color:#2e4456; }
+  .att-bar { display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .att-track { flex:1; height:4px; border-radius:2px; background:linear-gradient(90deg,#7a3030,#7a6a30,#2f6a3a); position:relative; opacity:.55; }
+  .att-track > i { position:absolute; top:-3px; width:10px; height:10px; border-radius:50%; background:#ece4d6; border:2px solid #14110e; transform:translateX(-50%); }
+  .att-lbl { font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); flex:none; }
+
+  /* ---- collapsible context block (#34) ---- */
+  .ctx { border:1px solid var(--line); border-radius:9px; background:var(--panel); overflow:hidden; }
+  .ctx + .ctx { margin-top:8px; }
+  .ctx > summary { list-style:none; cursor:pointer; padding:9px 11px; display:flex; align-items:center; gap:8px;
+    font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:#9c8e74; font-weight:700; user-select:none; }
+  .ctx > summary::-webkit-details-marker { display:none; }
+  .ctx > summary .tw { transition:transform .15s; color:var(--faint); font-size:10px; }
+  .ctx[open] > summary .tw { transform:rotate(90deg); }
+  .ctx > summary:hover { color:var(--gold); }
+  .ctx > summary .ctx-n { margin-left:auto; font-weight:600; color:var(--faint); letter-spacing:0; }
+  .ctx-body { padding:0 11px 11px; }
+  .ctx-body .loc-desc { font-size:12px; color:#c4b89f; font-style:italic; line-height:1.5; }
+  .loclist { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:3px; }
+  .loclist li { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ink); padding:3px 6px; border-radius:6px;
+    cursor:pointer; border:1px solid transparent; }
+  .loclist li:hover { background:#241a0d; border-color:#3d3119; }
+  .loclist li .arrow { color:var(--gold2); font-size:11px; }
+  .loclist li .vtag { margin-left:auto; font-size:9px; color:var(--faint); letter-spacing:.05em; text-transform:uppercase; }
+
+  /* ---- speaker (voice playback, #36) ---- */
+  .speak-btn { flex:none; width:20px; height:20px; border-radius:50%; border:1px solid #3d3119; background:#1c150d;
+    color:var(--gold); font-size:9px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
+    cursor:pointer; padding:0; opacity:.55; transition:opacity .12s,background .12s; }
+  .msg:hover .speak-btn { opacity:1; }
+  .speak-btn:hover { background:#2a1d0e; border-color:var(--gold2); }
+  .speak-btn.playing { animation:spk 1s ease-in-out infinite; background:#2a1d0e; border-color:var(--gold); }
+  .speak-btn.off { color:var(--faint); border-color:#2f281c; cursor:default; }
+  @keyframes spk { 0%,100%{ box-shadow:0 0 0 0 rgba(232,201,138,.4);} 50%{ box-shadow:0 0 0 4px rgba(232,201,138,0);} }
   /* director / agent-activity (our differentiator) */
   #director { background:#0e1410; border-color:#274030; }
   #director h2 { color:#8fbf8f; }
@@ -80,17 +142,49 @@
   .act.tool { font-family:ui-monospace,monospace; font-size:11px; color:#8fb98f; } .act.tool b{color:#b6e0a6;}
   .act.narration { border-left-color:#caa15e; color:#cabfa6; background:#171309; }
 
-  /* ---- player action layer (dice strip + action palette) ---- */
-  .dice { border-top:1px solid var(--line); background:#0e0b08; padding:7px 18px; display:flex; align-items:center; gap:8px; overflow-x:auto; min-height:38px; }
+  /* ---- player action layer (dice tray + action palette) ---- */
+  /* The dice tray (#35): the latest roll headlined big (d20 + result + check name,
+     crit/miss colored) with the recent history as compact chips beside it. */
+  .dice { border-top:1px solid var(--line); background:linear-gradient(180deg,#120d08,#0c0906);
+    padding:9px 18px; display:flex; align-items:center; gap:14px; min-height:64px; }
+  .dice.empty-state { min-height:44px; }
   .dice .dlbl { font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); flex:none; }
-  .dice .empty { font-size:12px; white-space:nowrap; }
-  .die { flex:none; display:flex; align-items:center; gap:6px; background:#1a140d; border:1px solid #45381f; border-radius:9px; padding:3px 9px; font-size:12px; }
-  .die .dn { font-family:ui-monospace,monospace; font-size:10.5px; color:#8fb98f; }
-  .die .dv { font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; }
-  .die .dx { color:var(--dim); font-size:11px; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .die.hit { border-color:#4a3c22; } .die.miss { border-color:#5a3030; } .die.miss .dv { color:var(--monster); }
-  .die.fresh { animation:diepop .5s ease; }
-  @keyframes diepop { from { transform:translateY(3px) scale(.9); opacity:0; } to { transform:none; opacity:1; } }
+  .dice .empty { font-size:12.5px; color:var(--faint); font-style:italic; white-space:nowrap; }
+  /* the headline roll */
+  .roll-hero { flex:none; display:flex; align-items:center; gap:11px; }
+  .d20 { position:relative; width:42px; height:42px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:16px; font-variant-numeric:tabular-nums; color:var(--gold); }
+  .d20 svg { position:absolute; inset:0; width:100%; height:100%; }
+  .d20 .d20poly { fill:#1d160d; stroke:#5a4a2c; stroke-width:2; }
+  .d20 .d20n { position:relative; z-index:1; }
+  .roll-hero.hit .d20 .d20poly { stroke:var(--gold2); fill:#241a0d; }
+  .roll-hero.miss .d20 { color:var(--monster); } .roll-hero.miss .d20 .d20poly { stroke:#6a3636; fill:#241010; }
+  .roll-hero.crit .d20 { color:#ffe9a8; } .roll-hero.crit .d20 .d20poly { stroke:var(--gold); fill:#3a2a0e;
+    filter:drop-shadow(0 0 6px rgba(232,201,138,.7)); }
+  .roll-hero.fumble .d20 { color:#ff9a9a; } .roll-hero.fumble .d20 .d20poly { stroke:var(--monster); fill:#3a1212;
+    filter:drop-shadow(0 0 6px rgba(224,143,143,.6)); }
+  .roll-hero .rh-meta { display:flex; flex-direction:column; line-height:1.25; min-width:0; }
+  .roll-hero .rh-top { display:flex; align-items:baseline; gap:7px; }
+  .roll-hero .rh-total { font-size:21px; font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .roll-hero.miss .rh-total { color:var(--monster); }
+  .roll-hero.crit .rh-total { color:#ffe9a8; text-shadow:0 0 10px rgba(232,201,138,.55); }
+  .roll-hero.fumble .rh-total { color:#ff9a9a; }
+  .roll-hero .rh-tag { font-size:9px; letter-spacing:.08em; text-transform:uppercase; padding:1px 6px; border-radius:7px; }
+  .roll-hero.crit .rh-tag { background:#3a2a0e; color:var(--gold); border:1px solid var(--gold2); }
+  .roll-hero.fumble .rh-tag { background:#3a1212; color:#ff9a9a; border:1px solid #6a3636; }
+  .roll-hero .rh-name { font-size:12px; color:var(--ink); font-weight:600; }
+  .roll-hero .rh-sub { font-size:10.5px; color:var(--faint); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .roll-hero.fresh .d20 { animation:rollpop .55s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes rollpop { 0%{ transform:rotate(-90deg) scale(.5); opacity:0; } 60%{ transform:rotate(8deg) scale(1.08); } 100%{ transform:none; opacity:1; } }
+  /* recent history chips */
+  .roll-hist { display:flex; align-items:center; gap:6px; overflow-x:auto; flex:1; min-width:0; padding-bottom:2px; }
+  .roll-hist .rhl { font-size:9px; letter-spacing:.07em; text-transform:uppercase; color:var(--faint); flex:none; }
+  .chip { flex:none; display:flex; align-items:center; gap:5px; background:#16110b; border:1px solid #3a2f1c; border-radius:8px; padding:2px 8px; font-size:11.5px; }
+  .chip .cv { font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .chip .cx { font-family:ui-monospace,monospace; font-size:9.5px; color:var(--faint); }
+  .chip.miss { border-color:#5a3030; } .chip.miss .cv { color:var(--monster); }
+  .chip.crit { border-color:var(--gold2); background:#241a0d; } .chip.crit .cv { color:#ffe9a8; }
+  .chip.fumble { border-color:#6a3636; background:#241010; } .chip.fumble .cv { color:#ff9a9a; }
 
   .palette { border-top:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; max-height:46vh; }
   .ptabs { display:flex; gap:4px; padding:8px 18px 0; flex-wrap:wrap; }
@@ -116,6 +210,13 @@
   .saybar .sb { background:#241a0d; border:1px solid #4a3c22; border-radius:9px; padding:9px 15px; color:var(--gold); cursor:pointer; font-weight:700; }
   .saybar .sb:hover { background:#2f2210; } .saybar .sb.do { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
   .saybar .sb:disabled { opacity:.4; cursor:not-allowed; }
+  /* Continue affordance (#5) — fables-style "press on" nudge to the DM. */
+  .continue-row { display:flex; justify-content:center; padding:2px 18px 0; }
+  .continue-btn { display:inline-flex; align-items:center; gap:8px; background:#1a1409; border:1px solid #4a3c22;
+    border-radius:20px; padding:7px 18px; color:var(--gold); cursor:pointer; font-size:12.5px; font-weight:600;
+    letter-spacing:.02em; transition:background .12s,border-color .12s; }
+  .continue-btn:hover { background:#2a1d0e; border-color:var(--gold2); }
+  .continue-btn .ci { font-size:11px; }
   #moveflash { font-size:11px; padding:0 18px; min-height:0; color:var(--faint); transition:min-height .15s; }
   #moveflash.show { min-height:18px; padding-bottom:4px; }
   #moveflash.err { color:var(--monster); }
@@ -144,8 +245,10 @@
     <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge">Adventure Mode</span>
       <span class="meta" id="when"></span><span class="meta" id="where"></span></div>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
-    <div class="dice" id="dice"><span class="dlbl">Rolls</span><span class="empty">No rolls yet — the dice are still.</span></div>
+    <div class="dice empty-state" id="dice"><span class="empty">No rolls yet — the dice are still.</span></div>
     <div class="palette">
+      <div class="continue-row"><button class="continue-btn" id="continue-btn" title="Let the story press on">
+        <span class="ci">▶</span> Continue</button></div>
       <div class="ptabs" id="ptabs"></div>
       <div class="pbody" id="pbody"></div>
       <div class="saybar">
@@ -158,14 +261,29 @@
   </main>
 
   <aside>
+    <div class="card" id="scenecard"><h2>The scene</h2>
+      <div class="art" id="sceneart">
+        <div class="hint"><b>Scene illustration</b>Art appears here when an image provider is on.</div>
+      </div>
+      <div class="loc-d" id="loc" style="margin-top:10px"></div></div>
+    <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
+    <div class="card"><h2>Party</h2><div id="party"></div></div>
+    <details class="ctx" id="ctx-world" open><summary><span class="tw">▸</span> World &amp; nearby
+        <span class="ctx-n" id="ctx-world-n"></span></summary>
+      <div class="ctx-body">
+        <div class="loc-desc" id="ctx-locdesc"></div>
+        <ul class="loclist" id="ctx-nearby"></ul>
+      </div></details>
     <div class="card" id="mapcard" style="position:relative"><h2>Map <span class="soon">painterly soon</span></h2>
-      <div class="loc-d" id="loc"></div><svg id="svg"></svg>
+      <svg id="svg"></svg>
       <div class="maptip" id="maptip"></div>
       <div class="maphint">scroll to zoom · drag to pan · click a place to travel</div></div>
-    <div class="card"><h2>Party</h2><div id="party"></div></div>
-    <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
-    <div class="card"><h2>Quests</h2><div id="quests"></div>
-      <h2 style="margin-top:12px">Factions</h2><div id="factions"></div></div>
+    <details class="ctx" id="ctx-quests" open><summary><span class="tw">▸</span> Quests &amp; factions
+        <span class="ctx-n" id="ctx-quests-n"></span></summary>
+      <div class="ctx-body">
+        <div id="quests"></div>
+        <div class="psec" style="margin:10px 0 4px">Factions</div><div id="factions"></div>
+      </div></details>
     <div class="card" id="director"><h2>Agent activity <span id="live" class="off">idle</span></h2><div id="activity"></div></div>
   </aside>
 
@@ -177,6 +295,23 @@ const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).joi
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
 const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
+// race + class line for a stat card, omitting whatever's blank (placeholder NPCs
+// carry empty race / [] classes — we don't want to print "Level 0" noise).
+const raceClass = (c) => [esc(c.race||""), klass(c)].filter(Boolean).join(" · ");
+// Does this NPC have a *real* HP block worth showing? Placeholder roster NPCs are
+// 1/1 with AC 10 — showing "1/1 HP" for them is noise, so gate on a meatier sheet.
+const hasVitals = (c) => (c.max_hp||0) > 1 || (c.classes||[]).length > 0;
+// Map a free-text attitude to a hostile↔friendly position (0..1) for the relationship
+// bar. Most attitudes are descriptive phrases, so we scan for sentiment keywords and
+// otherwise sit neutral-center — the bar is a soft hint, not a claim of precision.
+function attitudePos(att) {
+  const s = (att||"").toLowerCase();
+  if (/hostile|enemy|antagonist|hates|attacks|kill|threat/.test(s)) return 0.12;
+  if (/wary|suspicious|distrust|afraid|fear|cautious|guarded/.test(s)) return 0.32;
+  if (/ally|friend|loyal|trust|warm|fond|companion|devoted|grateful/.test(s)) return 0.86;
+  if (/neutral|pragmatic|professional|indifferent/.test(s)) return 0.5;
+  return 0.5;
+}
 
 // ---- player action layer ----------------------------------------------------
 // Every player action funnels through ONE helper that POSTs to /move. The server
@@ -200,6 +335,37 @@ async function submitMove(move) {
   }
 }
 const describeMove = (m) => m.text ? `“${m.text}”` : (m.name ? `${m.kind}: ${m.name}` : m.kind || "action");
+
+// ---- voice playback (#36) ---------------------------------------------------
+// A speaker on each DM/narration line POSTs its text to /speak; the server shells
+// out to the voice backend (Kokoro plays on macOS; null = silent). We surface the
+// audio-or-null outcome inline on the button — never block, never error the page.
+// One line plays at a time (the previous request is left to finish server-side).
+let speaking = false;
+async function speak(text, btn) {
+  if (speaking || !text) return; speaking = true;
+  btn.classList.add("playing"); btn.title = "Playing…";
+  try {
+    const r = await fetch("/speak", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
+    const j = await r.json().catch(()=>({}));
+    if (!(j && j.ok)) {
+      btn.classList.add("off"); btn.title = (j && j.reason) || "Voice unavailable";
+      setTimeout(()=>{ btn.classList.remove("off"); btn.title = "Play narration"; }, 2500);
+    } else { btn.title = "Play narration"; }
+  } catch (_) {
+    btn.classList.add("off"); btn.title = "Voice server unreachable";
+    setTimeout(()=>{ btn.classList.remove("off"); btn.title = "Play narration"; }, 2500);
+  } finally {
+    btn.classList.remove("playing"); speaking = false;
+  }
+}
+// Attach a ▶ speaker to a message's header; clicking plays that message's prose.
+function addSpeaker(headerEl, text) {
+  const b = document.createElement("button");
+  b.className = "speak-btn"; b.type = "button"; b.title = "Play narration"; b.textContent = "▶";
+  b.onclick = (e) => { e.stopPropagation(); speak(text, b); };
+  headerEl.appendChild(b);
+}
 
 // The standard-D&D quick-action grid. Buttons mirror the engine's player facade:
 // each emits a {kind,name} move intent (free-text Say/Do is handled separately).
@@ -250,48 +416,77 @@ function wireSayDo() {
   $("do-btn").onclick = () => send("do");
   ta.addEventListener("input", () => { ta.style.height="38px"; ta.style.height=Math.min(96, ta.scrollHeight)+"px"; });
   ta.addEventListener("keydown", e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) { e.preventDefault(); send(e.shiftKey?"do":"say"); } });
+  // Continue (#5): a one-press nudge to let the story press on, as a free-form 'do'
+  // move (the same constrained lane as Say/Do — refused cleanly when read-only).
+  $("continue-btn").onclick = () => submitMove({ kind:"do", text:"continue" });
 }
 
-// ---- dice / roll-result strip -----------------------------------------------
-// Derived purely from the live /activity feed (read-only): items whose tool label
-// is a roll/attack/save. We parse the tool *input* (the only field the activity
-// item carries) for a number to headline, and keep the last few as chips.
-const ROLL_LABELS = new Set(["roll","attack","saving_throw","roll_death_save","social_check","apply_damage","apply_healing"]);
-const DICE_MAX = 6;
+// ---- dice tray (#35) --------------------------------------------------------
+// Derived purely from the live /activity feed (read-only). The server now emits a
+// `roll` item per dice resolution, mined from the tool RESULT, carrying the real
+// outcome: total, the natural d20 face, crit/fumble, the expression, and a reason.
+// We headline the latest roll (big total + d20 + crit/miss coloring) and keep the
+// rest as compact history chips.
+const SKILL_WORDS = ["Acrobatics","Animal Handling","Arcana","Athletics","Deception","History",
+  "Insight","Intimidation","Investigation","Medicine","Nature","Perception","Performance",
+  "Persuasion","Religion","Sleight of Hand","Stealth","Survival","Initiative","Attack","Damage",
+  "Strength","Dexterity","Constitution","Intelligence","Wisdom","Charisma","Save","Death"];
+// Pull a short, human check label out of the roll's free-text reason — match a known
+// skill/ability word if present, otherwise the clause before the first em-dash.
+function rollLabel(r) {
+  const reason = r.reason || "";
+  for (const w of SKILL_WORDS) { if (new RegExp("\\b"+w+"\\b","i").test(reason)) return w; }
+  const cut = reason.split(/[—–-]/)[0].trim();
+  return cut ? (cut.length>26 ? cut.slice(0,26)+"…" : cut) : (r.expression || "Roll");
+}
+const DICE_MAX = 8;     // history depth (latest is the hero; up to 7 chips behind it)
 let recentRolls = [];
 function diceFromActivity(items) {
   let added = false;
   (items||[]).forEach(it => {
-    if (it.kind !== "tool" || !ROLL_LABELS.has(it.label)) return;
-    let detail = it.detail || "", parsed = null;
-    try { parsed = JSON.parse(detail); } catch (_) { /* truncated json — show raw */ }
-    // headline value: a dice expression, an explicit total, or a target/ability hint
-    let val = "", sub = detail, miss = false;
-    if (parsed) {
-      val = parsed.expression || parsed.dice || parsed.amount || parsed.dc || "";
-      const hint = [];
-      if (parsed.ability) hint.push(parsed.ability);
-      if (parsed.skill) hint.push(parsed.skill);
-      if (parsed.target_id) hint.push("→ "+parsed.target_id);
-      if (parsed.dc!=null) hint.push("DC "+parsed.dc);
-      if (parsed.advantage) hint.push("adv"); if (parsed.disadvantage) hint.push("dis");
-      sub = hint.join(" · ") || detail;
-      miss = it.label==="apply_damage";
-    }
-    recentRolls.push({ name: it.label, val: (val===""?"·":String(val)), sub, miss, fresh:true });
+    if (it.kind !== "roll") return;
+    recentRolls.push({
+      total: it.total, natural: it.natural, crit: !!it.crit, fumble: !!it.fumble,
+      expression: it.expression || "", label: rollLabel(it), reason: it.reason || "",
+      detail: it.detail || "", fresh: true,
+    });
     added = true;
   });
   if (recentRolls.length > DICE_MAX) recentRolls = recentRolls.slice(-DICE_MAX);
   if (added) renderDice();
 }
+// crit/miss styling key. nat-20 ⇒ crit (gold glow), nat-1 ⇒ fumble (red); engine
+// flags win when set. Otherwise we don't claim hit/miss (no DC here) — neutral.
+function rollClass(d) {
+  if (d.crit || d.natural===20) return "crit";
+  if (d.fumble || d.natural===1) return "fumble";
+  return "hit";
+}
 function renderDice() {
-  const strip = $("dice");
-  if (!recentRolls.length) { strip.innerHTML = `<span class="dlbl">Rolls</span><span class="empty">No rolls yet — the dice are still.</span>`; return; }
-  strip.innerHTML = `<span class="dlbl">Rolls</span>` + recentRolls.map((d,i) => {
-    const fresh = (i===recentRolls.length-1 && d.fresh) ? " fresh" : "";
-    d.fresh = false;
-    return `<span class="die ${d.miss?"miss":"hit"}${fresh}"><span class="dn">${esc(d.name)}</span><span class="dv">${esc(d.val)}</span>${d.sub?`<span class="dx">${esc(d.sub)}</span>`:""}</span>`;
-  }).join("");
+  const tray = $("dice");
+  if (!recentRolls.length) {
+    tray.className = "dice empty-state";
+    tray.innerHTML = `<span class="empty">No rolls yet — the dice are still.</span>`;
+    return;
+  }
+  tray.className = "dice";
+  const hero = recentRolls[recentRolls.length-1];
+  const hc = rollClass(hero);
+  const face = (hero.natural!=null) ? hero.natural : "d20";
+  const tag = hc==="crit" ? `<span class="rh-tag">crit</span>` : (hc==="fumble" ? `<span class="rh-tag">nat 1</span>` : "");
+  const heroHTML = `<div class="roll-hero ${hc}${hero.fresh?" fresh":""}">
+    <div class="d20"><svg viewBox="0 0 40 40"><polygon class="d20poly" points="20,2 37,12 37,28 20,38 3,28 3,12"/></svg><span class="d20n">${esc(face)}</span></div>
+    <div class="rh-meta">
+      <div class="rh-top"><span class="rh-total">${esc(hero.total)}</span>${tag}<span class="rh-name">${esc(hero.label)}</span></div>
+      <div class="rh-sub">${esc(hero.detail || hero.expression || "")}</div>
+    </div></div>`;
+  hero.fresh = false;
+  const hist = recentRolls.slice(0,-1).reverse();   // most-recent-first, behind the hero
+  const histHTML = hist.length ? `<div class="roll-hist"><span class="rhl">Recent</span>` + hist.map(d => {
+    const c = rollClass(d);
+    return `<span class="chip ${c}" title="${esc((d.label?d.label+" · ":"")+(d.detail||d.expression||""))}"><span class="cv">${esc(d.total)}</span><span class="cx">${esc(d.expression||"")}</span></span>`;
+  }).join("") + `</div>` : `<div class="roll-hist"></div>`;
+  tray.innerHTML = heroHTML + histHTML;
 }
 
 function renderState(s) {
@@ -299,29 +494,64 @@ function renderState(s) {
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
   const curId = s.current_location_id, locs = s.locations||{}, cur = locs[curId];
   $("where").textContent = cur ? `· ${cur.name}` : "";
-  $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b> — ${esc(cur.description||"")}` : "";
+  // the scene-card byline (under the illustration placeholder)
+  $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b>${cur.description?` — ${esc(cur.description)}`:""}` : "";
 
   const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
-  if (party[0]) { pcName = party[0].name; $("composer-hint").textContent = `${party[0].name} acts through Claude Code…`; }
+  if (party[0]) pcName = party[0].name;
   $("party").innerHTML = party.map(c => { const h=hp(c); return `
     <div class="row">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
     <span class="hpbar ${h.low?"low":""}" title="${h.txt}"><i style="width:${h.pct}%"></i></span></div>`; }).join("")
     || `<div class="empty">No party yet.</div>`;
 
+  // ---- "In the scene" → NPC portrait cards (#34) ----
   const combatIds = new Set(((s.combat||{}).order||[]).map(o=>o.character_id));
   const scene = Object.values(s.characters||{}).filter(c =>
     (c.kind==="npc"||c.kind==="monster") && (c.location_id===curId || combatIds.has(c.id)));
-  $("scene").innerHTML = scene.map(c =>
-    `<div class="row">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}</span><span class="sub">${esc(c.attitude||"")}</span></div>`).join("")
+  $("scene").innerHTML = scene.map(c => npcCard(c, combatIds.has(c.id))).join("")
     || `<div class="empty">Just the party here.</div>`;
 
+  // ---- World & nearby context block (#34) ----
+  $("ctx-locdesc").innerHTML = cur
+    ? `${esc(cur.description || "An unmapped place.")}`
+    : `<span class="empty">Location unknown.</span>`;
+  const nearby = (cur && cur.connections || []).map(id => ({ id, l: locs[id] })).filter(x => x.l);
+  $("ctx-world-n").textContent = nearby.length ? `${nearby.length} nearby` : "";
+  $("ctx-nearby").innerHTML = nearby.map(({id,l}) =>
+    `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(l.name||id)}"><span class="arrow">→</span>${esc(l.name||id)}${l.visited?`<span class="vtag">visited</span>`:""}</li>`).join("")
+    || (cur ? `<li class="empty" style="cursor:default;border:none">No known routes from here.</li>` : "");
+
+  // ---- Quests & factions context block ----
   const quests = Object.values(s.quests||{}).filter(q=>q.status==="active");
+  $("ctx-quests-n").textContent = quests.length ? `${quests.length} active` : "";
   $("quests").innerHTML = quests.map(q=>`<div class="quest">${esc(q.title)}${q.giver_id?`<div class="g">from ${esc(q.giver_id)}</div>`:""}</div>`).join("")
     || `<div class="empty">No active quests.</div>`;
   const fac = Object.values(s.factions||{});
   $("factions").innerHTML = fac.map(f=>`<div class="fac"><span>${esc(f.name)}</span><span class="rep">${f.reputation>0?"+":""}${f.reputation}</span></div>`).join("")
     || `<div class="empty">—</div>`;
   drawMap(locs, curId, s.map_kind);
+}
+
+// A fables-style compact NPC stat card: portrait initials, name, race·class, a
+// one-line descriptor (from attitude), HP/AC pills (only when meaningful), a combat
+// "in fight" marker, and a soft hostile↔friendly relationship bar.
+function npcCard(c, inCombat) {
+  const k = c.kind==="monster" ? "monster" : (c.kind==="companion" ? "companion" : "npc");
+  const rcl = raceClass(c);
+  const h = hp(c);
+  const pills = [];
+  if (hasVitals(c)) pills.push(`<span class="pstat hp ${h.low?"low":""}" title="Hit points">HP ${esc(h.txt)}</span>`);
+  if ((c.armor_class||0) && hasVitals(c)) pills.push(`<span class="pstat" title="Armor class">AC ${esc(c.armor_class)}</span>`);
+  if (inCombat) pills.push(`<span class="pstat dist" title="In the current fight">in fight</span>`);
+  const pos = attitudePos(c.attitude);
+  return `<div class="npc-card ${k}">
+    <span class="pavatar ${k}">${esc(initials(c.name))}</span>
+    <div class="npc-body">
+      <div class="npc-top"><span class="npc-name">${esc(c.name)}</span>${rcl?`<span class="npc-rcl">${rcl}</span>`:""}</div>
+      ${c.attitude?`<div class="npc-desc" title="${esc(c.attitude)}">${esc(c.attitude)}</div>`:""}
+      ${pills.length?`<div class="npc-stats">${pills.join("")}</div>`:""}
+      <div class="att-bar"><span class="att-lbl">hostile</span><span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span><span class="att-lbl">friendly</span></div>
+    </div></div>`;
 }
 
 // Pan/zoom transform persists across the 1.5s re-renders so the player's view
@@ -387,6 +617,7 @@ async function poll() {
         const isP = it.role==="player"; const who = isP ? (pcName||"Player") : "Dungeon Master";
         const d = document.createElement("div"); d.className = "msg "+(isP?"player":"narration");
         d.innerHTML = `<div class="hd"><span class="av ${isP?"pc":""}">${esc(initials(who))}</span><span class="nm">${esc(who)}</span></div><div class="bd">${esc(it.text)}</div>`;
+        if (!isP && it.text) addSpeaker(d.querySelector(".hd"), it.text);  // ▶ on DM narration (#36)
         feed.appendChild(d);
       });
       if ((chat.items||[]).length) feed.scrollTop = feed.scrollHeight;
@@ -400,6 +631,7 @@ async function poll() {
         const who = e.speaker || (e.kind==="system"?"":"Dungeon Master");
         d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}">${esc(who)}</span></div>`:"")
           + `<div class="bd">${esc(e.text)}</div>`;
+        if (e.kind!=="system" && e.text) { const hd=d.querySelector(".hd"); if (hd) addSpeaker(hd, e.text); }  // ▶ narration/dialogue (#36)
         feed.appendChild(d);
       });
       if ((ev.entries||[]).length) feed.scrollTop = feed.scrollHeight;
@@ -411,6 +643,7 @@ async function poll() {
     const ac = $("activity");
     if (actCursor===0) ac.innerHTML = act.live ? "" : `<div class="empty">Open via clawdnd-dashboard.command to watch a run's agents.</div>`;
     (act.items||[]).forEach(it=>{
+      if (it.kind==="roll") return;  // roll items feed the dice tray, not this text log
       const d=document.createElement("div"); d.className="act "+it.kind;
       d.innerHTML = it.kind==="tool" ? `▸ <b>${esc(it.label)}</b> ${esc(it.detail)}` : `${esc(it.detail)}`;
       ac.appendChild(d);
@@ -420,7 +653,15 @@ async function poll() {
     actCursor = act.next ?? actCursor;
   } catch (e) { /* mid-write / restart — retry next tick */ }
 }
-renderPalette(); wireSayDo(); wireMap(); renderDice();
+// Click-to-travel from the "nearby locations" list mirrors the map's behavior:
+// one delegated listener on the stable container survives the per-poll re-render.
+function wireNearby() {
+  $("ctx-nearby").addEventListener("click", e => {
+    const li = e.target.closest("li[data-loc]"); if (!li) return;
+    submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
+  });
+}
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice();
 poll(); setInterval(poll, 1500);
 </script>
 </body>

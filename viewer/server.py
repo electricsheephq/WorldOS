@@ -5,10 +5,15 @@ Run it for the PLAYER to *see* the adventure while they play through Claude Code
 the current location/map, party vitals, who's in the scene (with voices), the
 quest log, and a live roll/event feed. The AI never reads this — it reads the
 same state via the engine's MCP tools. This server is a **pure downstream
-reader**: stdlib only (no deps, runs anywhere). The sole write path is `POST /move`,
-which appends a player *move intent* (NOT campaign state) to the append-only log at
-$CLAWDND_PLAYER_MOVES — and is inert (refuses, writes nothing) unless that env is set.
-It can be deleted without touching the engine.
+reader**: stdlib only (no deps, runs anywhere). It has exactly two side effects,
+both opt-in and local:
+- `POST /move` appends a player *move intent* (NOT campaign state) to the
+  append-only log at $CLAWDND_PLAYER_MOVES — inert (refuses, writes nothing)
+  unless that env is set.
+- `POST /speak` shells out to the existing voice server (servers/voice) to
+  synthesize + play one line of narration audio. It NEVER writes game state and
+  NEVER hangs the page: it returns audio-or-null cleanly (ok:false when the voice
+  backend is null/unavailable). It can be deleted without touching the engine.
 
 It reads the engine's on-disk truth directly:
 - `snapshot.json` is written atomically (temp + os.replace), so reads are always
@@ -24,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -31,6 +37,8 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 _HERE = Path(__file__).resolve().parent
+# servers/voice lives two levels up from viewer/ (repo root / servers / voice).
+_VOICE_DIR = _HERE.parent / "servers" / "voice"
 
 # The constrained move palette — the SAME lane the engine facade enforces. A human
 # acting via the dashboard must not be able to POST DM-side narration ("the dragon
@@ -82,13 +90,44 @@ def _moves_path() -> Path | None:
     return Path(env) if env else None
 
 
+def _campaign_recency(snap_path: Path) -> float:
+    """Most-recent-activity time for a campaign (#38: auto-follow the live run).
+
+    Prefer the active session log's mtime — that's what advances turn-by-turn while
+    you play — and fall back to the snapshot's mtime (a fresh campaign with no
+    session yet). Taking the max of the two means a campaign whose snapshot was
+    written once but whose session is being appended to *right now* still sorts to
+    the top, so the viewer follows wherever the story is actually moving."""
+    cdir = snap_path.parent
+    best = snap_path.stat().st_mtime
+    sessions = cdir / "sessions"
+    if sessions.is_dir():
+        for log in sessions.glob("*.jsonl"):
+            try:
+                best = max(best, log.stat().st_mtime)
+            except OSError:
+                pass
+    return best
+
+
 def _pick_campaign(arg: str | None) -> str | None:
+    """Resolve which campaign to project. An explicit arg wins; otherwise pick the
+    most-recently-ACTIVE campaign by recency (#38) so launching the viewer follows
+    whatever run is live without a relaunch. Snapshots that fail to parse are
+    skipped so a half-written/corrupt one can't win the race and blank the view."""
     if arg:
         return arg
     cdir = _campaigns_dir()
     if not cdir.is_dir():
         return None
-    snaps = [(p.parent.name, p.stat().st_mtime) for p in cdir.glob("*/snapshot.json")]
+    snaps: list[tuple[str, float]] = []
+    for p in cdir.glob("*/snapshot.json"):
+        try:
+            if not json.loads(p.read_text(encoding="utf-8")):
+                continue  # empty/`{}` snapshot — nothing to show; don't let it win
+        except (json.JSONDecodeError, OSError):
+            continue
+        snaps.append((p.parent.name, _campaign_recency(p)))
     return max(snaps, key=lambda x: x[1])[0] if snaps else None
 
 
@@ -132,10 +171,51 @@ def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     return out, consumed
 
 
+# Roll-result detection (#35): the dice tool's *result* (total / nat-d20 / crit)
+# lives in the tool_RESULT, not the tool_use input — so to headline a real number
+# with crit/miss coloring we mine results too. A roll result is a JSON dict that
+# carries a numeric `total` plus the tell-tale `expression`+`rolls` shape.
+def _parse_roll_result(content: object) -> dict | None:
+    """Extract a roll outcome from a tool_result's content (str or text blocks).
+    Returns a compact dict the dice widget can headline, or None if it isn't a
+    roll. Stays defensive: anything that doesn't look exactly like the engine's
+    roll payload is ignored (so a truncated/odd result never throws)."""
+    if isinstance(content, list):
+        text = "".join(
+            b.get("text", "") for b in content if isinstance(b, dict)
+        )
+    else:
+        text = content if isinstance(content, str) else ""
+    text = text.strip()
+    if not text or "total" not in text or "expression" not in text:
+        return None
+    try:
+        d = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(d, dict) or "total" not in d or "rolls" not in d:
+        return None
+    total = d.get("total")
+    if not isinstance(total, (int, float)) or isinstance(total, bool):
+        return None
+    out = {
+        "kind": "roll",
+        "expression": str(d.get("expression") or ""),
+        "total": total,
+        "natural": d.get("natural") if isinstance(d.get("natural"), int) else None,
+        "crit": bool(d.get("crit")),
+        "fumble": bool(d.get("fumble")),
+        "detail": str(d.get("detail") or ""),
+        "reason": str(d.get("reason") or "")[:140],
+    }
+    return out
+
+
 def _activity_items(obj: dict) -> list[dict]:
     """Flatten one stream-json event into watchable activity items: an agent's
-    narration (assistant text), each tool call it makes, and the turns fed to it
-    (user/player messages). Tool-result and system noise is dropped."""
+    narration (assistant text), each tool call it makes, and — for the dice widget
+    — the *outcome* of roll tools (mined from tool_results). System noise is
+    dropped."""
     items: list[dict] = []
     t = obj.get("type")
     msg = obj.get("message") or {}
@@ -149,10 +229,16 @@ def _activity_items(obj: dict) -> list[dict]:
                 name = (blk.get("name") or "").split("__")[-1]
                 inp = json.dumps(blk.get("input") or {}, separators=(",", ":"))
                 items.append({"kind": "tool", "label": name, "detail": inp[:160]})
-    # (user-type events in a --resume stream are tool-results / skill-system noise,
-    #  not the player agent's turns — the orchestrator's prompts aren't echoed —
-    #  so we surface only the agent's tool calls + narration here. A true two-sided
-    #  player+DM activity log is a follow-up that emits both agents' turns.)
+    elif t == "user":
+        # user-type events in a --resume stream are tool-results / skill-system
+        # noise — NOT the player agent's turns (the orchestrator's prompts aren't
+        # echoed). We surface only one thing from them: a roll *outcome*, which
+        # the dice widget headlines. Everything else here stays dropped.
+        for blk in msg.get("content") or []:
+            if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                roll = _parse_roll_result(blk.get("content"))
+                if roll:
+                    items.append(roll)
     return items
 
 
@@ -207,6 +293,98 @@ def _read_chat(since: int) -> tuple[list[dict], int]:
     return out, consumed
 
 
+# ---- voice playback (#36) ----------------------------------------------------
+# /speak shells out to the EXISTING voice server (servers/voice) rather than
+# importing it: the Kokoro backend pulls in PyTorch and lives in that server's own
+# venv + `kokoro` dependency group, which this stdlib-only reader must not depend
+# on. `uv run --directory servers/voice` gives us the right interpreter + deps +
+# import path (cwd-relative `import registry` / `from adapters... import` resolve
+# there, exactly as the voice server itself and playtest_voice.py do). The backend
+# is selected by CLAWDND_TTS_BACKEND, mirroring servers/voice/server.py._get_backend.
+
+# Runs in the voice server's environment. Selects the backend the same way the voice
+# server does, speaks one line (play=True ⇒ afplay on macOS), and prints ONE compact
+# JSON line to stdout. Stays silent on stderr-only failures so our parse is clean.
+_SPEAK_SNIPPET = r"""
+import json, sys
+import registry
+def _backend(name):
+    if name == "null":
+        from adapters.null import NullBackend; return NullBackend()
+    if name == "elevenlabs":
+        from adapters.elevenlabs import ElevenLabsBackend; return ElevenLabsBackend()
+    from adapters.kokoro import KokoroBackend; return KokoroBackend()
+def main():
+    raw = sys.stdin.read()
+    req = json.loads(raw) if raw.strip() else {}
+    text = (req.get("text") or "").strip()
+    voice_id = (req.get("voice_id") or "narrator-dm").strip() or "narrator-dm"
+    name = (req.get("backend") or "kokoro").strip().lower() or "kokoro"
+    if not text:
+        print(json.dumps({"ok": False, "played": False, "backend": name, "detail": "empty text"})); return
+    b = _backend(name)
+    voice = registry.resolve(voice_id, b.name)
+    r = b.speak(text, voice, play=True)
+    print(json.dumps({"ok": bool(r.ok), "played": bool(r.played), "backend": r.backend, "detail": r.detail or ""}))
+try:
+    main()
+except Exception as exc:  # never let an exception escape — caller maps to ok:false
+    print(json.dumps({"ok": False, "played": False, "backend": "?", "detail": "speak error: " + str(exc)[:200]}))
+"""
+
+_SPEAK_TIMEOUT = 90  # seconds — Kokoro's first call loads a model; well above that, never unbounded
+
+
+def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
+    """Synthesize + play one line via the voice server; return a UI-ready verdict.
+
+    Contract (never hangs, never errors the page):
+    - audio actually played            -> {"ok": True, ...}
+    - null backend / nothing played    -> {"ok": False, "reason": "voice backend null", ...}
+    - voice dir/uv/timeout/crash       -> {"ok": False, "reason": <human reason>, ...}
+    The heavy lifting (model load, afplay) runs in a bounded subprocess so a wedged
+    backend can't tie up the viewer thread.
+    """
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "reason": "empty text"}
+    if not _VOICE_DIR.is_dir():
+        return {"ok": False, "reason": "voice server not found"}
+    backend = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro").strip().lower() or "kokoro"
+    req = json.dumps({"text": text[:_MOVE_MAXLEN], "voice_id": voice_id, "backend": backend})
+    cmd = [
+        "uv", "run", "--directory", str(_VOICE_DIR), "--no-project",
+        "python", "-c", _SPEAK_SNIPPET,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, input=req, capture_output=True, text=True, timeout=_SPEAK_TIMEOUT
+        )
+    except FileNotFoundError:
+        return {"ok": False, "reason": "uv not installed", "backend": backend}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "reason": "voice backend timed out", "backend": backend}
+    except Exception as exc:  # noqa: BLE001 — last-resort guard; /speak must never 500
+        return {"ok": False, "reason": f"voice error: {exc}", "backend": backend}
+    line = (proc.stdout or "").strip().splitlines()
+    res: dict = {}
+    if line:
+        try:
+            res = json.loads(line[-1])  # the snippet's final line is its JSON verdict
+        except json.JSONDecodeError:
+            res = {}
+    if not res:
+        # backend produced no parseable verdict (e.g. import/env failure on stderr)
+        reason = (proc.stderr or "").strip().splitlines()
+        return {"ok": False, "reason": (reason[-1][:160] if reason else "voice backend unavailable"), "backend": backend}
+    if res.get("ok") and res.get("played"):
+        return {"ok": True, "backend": res.get("backend", backend), "detail": res.get("detail", "")}
+    # ok-but-not-played (null backend, or no afplay) — surface as a clean false.
+    nm = (res.get("backend") or backend)
+    reason = "voice backend null" if nm == "null" else (res.get("detail") or "audio not played")
+    return {"ok": False, "reason": reason, "backend": nm}
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
@@ -252,22 +430,34 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b"not found", "text/plain")
 
+    def _read_post_json(self) -> object:
+        """Read + JSON-parse the request body. Returns the parsed object, or the
+        sentinel ``...`` (Ellipsis) on a malformed/undecodable body."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            return json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, UnicodeDecodeError):
+            return ...
+
     def do_POST(self) -> None:  # noqa: N802
-        """The ONLY write path. `/move` appends one player *move intent* (a JSON
+        """The write/effect paths. `/move` appends one player *move intent* (a JSON
         line) to $CLAWDND_PLAYER_MOVES — mirroring the engine's player facade, NOT
-        touching campaign state. No env ⇒ no live game ⇒ refuse and write nothing."""
-        if urlparse(self.path).path != "/move":
+        touching campaign state. `/speak` plays narration audio via the voice server
+        (no state write). Anything else 404s."""
+        route = urlparse(self.path).path
+        if route == "/speak":
+            self._do_speak()
+            return
+        if route != "/move":
             self._send(404, b"not found", "text/plain")
             return
         dest = _moves_path()
         if dest is None:
             self._json({"ok": False, "reason": "read-only (no live game)"})
             return
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length) if length > 0 else b""
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except (ValueError, UnicodeDecodeError):
+        payload = self._read_post_json()
+        if payload is ...:
             self._json({"ok": False, "reason": "bad move payload"})
             return
         move, why = sanitize_move(payload)
@@ -282,6 +472,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "reason": f"write failed: {exc}"})
             return
         self._json({"ok": True})
+
+    def _do_speak(self) -> None:
+        """POST /speak — play one line of narration audio via the voice server.
+        Reads {"text", "voice_id"?}. Always 200 with a JSON verdict (audio-or-null);
+        never hangs (bounded subprocess) and never errors the page."""
+        payload = self._read_post_json()
+        if payload is ... or not isinstance(payload, dict):
+            self._json({"ok": False, "reason": "bad speak payload"})
+            return
+        text = payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._json({"ok": False, "reason": "speak needs 'text'"})
+            return
+        voice = payload.get("voice_id")
+        voice_id = voice.strip() if isinstance(voice, str) and voice.strip() else "narrator-dm"
+        self._json(_speak(text, voice_id))
 
     def log_message(self, *_args) -> None:  # quiet
         pass
@@ -311,6 +517,11 @@ def main() -> int:
         if moves
         else "Player moves: DISABLED (set CLAWDND_PLAYER_MOVES to enable POST /move)."
     )
+    tts = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro")
+    if _VOICE_DIR.is_dir():
+        print(f"Voice (POST /speak): backend={tts} via {_VOICE_DIR}")
+    else:
+        print("Voice (POST /speak): voice server not found — /speak returns ok:false.")
     print("Downstream projection of the live campaign — Ctrl-C to stop.")
     try:
         srv.serve_forever()
