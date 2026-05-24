@@ -435,6 +435,13 @@ def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     if not log.exists():
         return [], since
     lines = log.read_text(encoding="utf-8").splitlines()
+    # Session ROTATION reset: when the engine opens a NEW session the log starts back at line 0,
+    # but the client's cursor is still at the old session's high-water mark — so `lines[since:]`
+    # is empty FOREVER and the feed freezes on stale beats while the campaign advances (the
+    # "locked on one day" report). If the cursor is past the end of the current file, re-read it
+    # from the top.
+    if since > len(lines):
+        since = 0
     out: list[dict] = []
     consumed = since  # advance the cursor only past lines we actually finish
     for raw in lines[since:]:
@@ -668,19 +675,24 @@ class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
     chat_path = ""  # optional two-sided <run>.chat.jsonl to tail for /chat
+    pinned = False  # launched with an explicit campaign id -> never auto-follow recency
 
     @classmethod
     def _resolve_campaign(cls) -> str:
         """Lazily (re-)attach to a campaign. The viewer may launch BEFORE any campaign
         exists on disk — e.g. `scripts/play.sh` opens the dashboard, then the DM's first
-        turn mints the world. Rather than refuse to start (the old behavior crashed with
-        "No campaign found"), we bind the port immediately and re-resolve on each request,
-        auto-attaching the instant a campaign appears. Once bound, it sticks (recency only
-        decides the FIRST attach, so the view doesn't hop between games mid-session)."""
-        if not cls.campaign_id:
-            cid = _pick_campaign(None)
-            if cid:
-                cls.campaign_id = cid
+        turn mints the world. We bind the port immediately and re-resolve on each request.
+
+        Auto-follow (#38 / C3): when NOT launched for a specific campaign, track the
+        most-recently-ACTIVE campaign so the dashboard picks up a NEWLY-started game instead
+        of sticking forever to whatever existed at launch (the "stuck on a stale campaign"
+        bug). The per-request ?campaign= switcher override (_view_campaign) is unaffected — it
+        still wins for that request. When launched WITH an explicit id (`pinned`), stick to it."""
+        if cls.pinned:
+            return cls.campaign_id
+        cid = _pick_campaign(None)
+        if cid:
+            cls.campaign_id = cid
         return cls.campaign_id
 
     def _view_campaign(self, query: dict) -> str:
@@ -835,13 +847,19 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/activity":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])
-            items, nxt = _read_activity(since)
-            self._json({"items": items, "next": nxt, "live": bool(self.transcript_path)})
+            # The activity/chat transcripts belong to the LAUNCHED live run, not whatever campaign
+            # the switcher is viewing — only serve them when the viewed campaign IS the attached
+            # one, else report not-live so the dashboard falls back to the campaign-scoped /events
+            # feed instead of showing a stale/other run's narration (#49 C1).
+            a_live = bool(self.transcript_path) and self._view_campaign(qs) == self.campaign_id
+            items, nxt = _read_activity(since) if a_live else ([], since)
+            self._json({"items": items, "next": nxt, "live": a_live})
         elif route == "/chat":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])
-            items, nxt = _read_chat(since)
-            self._json({"items": items, "next": nxt, "live": bool(self.chat_path)})
+            c_live = bool(self.chat_path) and self._view_campaign(qs) == self.campaign_id
+            items, nxt = _read_chat(since) if c_live else ([], since)
+            self._json({"items": items, "next": nxt, "live": c_live})
         elif route == "/image":
             qs = parse_qs(parsed.query)
             self._serve_image((qs.get("scope") or [""])[0])
@@ -920,12 +938,16 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    campaign_id = _pick_campaign(sys.argv[1] if len(sys.argv) > 1 else None)
+    arg_campaign = sys.argv[1] if len(sys.argv) > 1 else None
+    campaign_id = _pick_campaign(arg_campaign)
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8765
     # Bind even with NO campaign yet: a fresh launch (or scripts/play.sh starting the
     # dashboard before the DM mints the world) must not crash with "No campaign found".
     # We serve a graceful empty state and attach automatically once a campaign appears.
     _Handler.campaign_id = campaign_id or ""
+    # An EXPLICIT campaign arg pins the view (don't auto-follow recency); launched bare (''),
+    # the dashboard follows the most-recently-active game (#38 / C3 auto-follow).
+    _Handler.pinned = bool(arg_campaign)
     # Optional agent-transcript to tail in the "Agent activity" panel — point it at a
     # QA run's stream-json (e.g. qa/transcripts/<run>.jsonl) to WATCH the agents play.
     _Handler.transcript_path = os.environ.get("CLAWDND_VIEWER_TRANSCRIPT") or (

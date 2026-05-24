@@ -755,6 +755,7 @@
 
 <script>
 let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
+let lastFeedCampaign = undefined;  // the campaign the feed cursors belong to (reset on a switch)
 let lastState = null, activeView = "play";   // S2 player-sheet tabs
 // Ring buffer of recent story beats captured off the SAME /chat or /events feed the
 // Play view polls, so the Memories journal (parity 6.1) can show logged beats without
@@ -767,7 +768,9 @@ function pushBeat(cls, who, text) {
   if (recentBeats.length > BEATS_MAX) recentBeats.splice(0, recentBeats.length - BEATS_MAX);
 }
 const $ = (id) => document.getElementById(id);
-const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+// Escape for BOTH text nodes AND double-quoted attributes (LLM-authored names land in
+// title="..."/data-loc="..." — an unescaped " breaks out of the attribute → DOM/attr injection).
+const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 
@@ -1738,6 +1741,15 @@ function renderMemories(wrap) {
 
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
+  if (s && s.empty) {
+    // No campaign on disk yet (#M2): show a waiting message and keep the action layer off —
+    // do NOT run the full render below, which would paint the scene/title with empty data.
+    $("title").textContent = "ClawDnD";
+    applyLiveMode(false);
+    const feed = $("feed");
+    if (feed && !feed.children.length) feed.innerHTML = '<div class="empty">Waiting for the story to begin…</div>';
+    return;
+  }
   // Gate the action layer on whether the VIEWED campaign is the LIVE one (is_live_view) — not
   // the global `live` flag, so switching to a PAST campaign while another is live grays the
   // palette instead of letting moves land in the wrong run (#49). Falls back to `live` if the
@@ -1985,14 +1997,26 @@ function wireSwitcher() {
 }
 
 async function poll() {
+  // When the VIEWED campaign changes (the switcher), reset the feed cursors + clear the feed so
+  // the new campaign renders FRESH — otherwise campaign A's high-water mark is applied to B and
+  // the feed shows stale/empty (#49 C1/C2 client side).
+  const viewed = selectedCampaignId || "";
+  if (viewed !== lastFeedCampaign) {
+    chatCursor = evCursor = actCursor = 0;
+    lastFeedCampaign = viewed;
+    const f = $("feed"); if (f) f.innerHTML = "";
+    const a = $("activity"); if (a) a.innerHTML = "";
+  }
+  // Each section is independently guarded (#H1): a single slow/failed fetch (e.g. /state read
+  // mid-write) must not starve the feed + activity for the whole tick.
+  try { renderState(await (await fetch(withCampaign("/state"))).json()); } catch (e) {}
   try {
-    renderState(await (await fetch(withCampaign("/state"))).json());
     const feed = $("feed");
     // Prefer the two-sided conversation (duo runs): the PLAYER's turns + the DM's,
     // so you see the protagonist act. Fall back to the engine story feed otherwise.
     const chat = await (await fetch(withCampaign("/chat?since="+chatCursor))).json();
     if (chat.live) {
-      if (chatCursor===0) feed.innerHTML = "";
+      if (chatCursor===0 && (chat.items||[]).length) feed.innerHTML = "";  // clear only when replacing with content (#M2)
       (chat.items||[]).forEach(it=>{
         const isP = it.role==="player"; const who = isP ? (pcName||"Player") : "Dungeon Master";
         const d = document.createElement("div"); d.className = "msg "+(isP?"player":"narration");
@@ -2007,7 +2031,7 @@ async function poll() {
       chatCursor = chat.next ?? chatCursor;
     } else {
       const ev = await (await fetch(withCampaign("/events?since="+evCursor))).json();
-      if (evCursor===0) feed.innerHTML = "";
+      if (evCursor===0 && (ev.entries||[]).length) feed.innerHTML = "";  // clear only when replacing with content (#M2)
       (ev.entries||[]).forEach(e=>{
         if (!["narration","dialogue","combat","system"].includes(e.kind)) return;
         const d = document.createElement("div"); d.className = "msg "+e.kind;
@@ -2022,8 +2046,9 @@ async function poll() {
       if ((ev.entries||[]).length) feed.scrollTop = feed.scrollHeight;
       evCursor = ev.next ?? evCursor;
     }
-
-    const act = await (await fetch("/activity?since="+actCursor)).json();
+  } catch (e) {}
+  try {
+    const act = await (await fetch(withCampaign("/activity?since="+actCursor))).json();
     const lv = $("live"); lv.textContent = act.live?"live":"idle"; lv.className = act.live?"on":"off";
     const ac = $("activity");
     if (actCursor===0) ac.innerHTML = act.live ? "" : `<div class="empty">Open via clawdnd-dashboard.command to watch a run's agents.</div>`;
@@ -2036,10 +2061,10 @@ async function poll() {
     if ((act.items||[]).length) ac.scrollTop = ac.scrollHeight;
     diceFromActivity(act.items);
     actCursor = act.next ?? actCursor;
-    // Keep the switcher list fresh (new campaign minted, recency/`current` shifts) but
-    // throttle the dir glob: every ~6s, not every 1.5s tick. Selection is preserved.
-    if ((poll._n = (poll._n || 0) + 1) % 4 === 1) loadCampaigns();
-  } catch (e) { /* mid-write / restart — retry next tick */ }
+  } catch (e) {}
+  // Keep the switcher list fresh (new campaign minted, recency/`current` shifts) but
+  // throttle the dir glob: every ~6s, not every 1.5s tick. Selection is preserved.
+  try { if ((poll._n = (poll._n || 0) + 1) % 4 === 1) loadCampaigns(); } catch (e) {}
 }
 // Click-to-travel from the "nearby locations" list mirrors the map's behavior:
 // one delegated listener on the stable container survives the per-poll re-render.
