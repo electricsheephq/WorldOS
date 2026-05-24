@@ -151,6 +151,24 @@ def test_gate_green_when_dm_voices_characters(tmp_path):
     assert "[PASS] dm_voices_characters" in r.stdout
 
 
+def test_gate_green_social_check_counts_as_dice_used(tmp_path):
+    # A valid non-combat session (e.g. an S7 cold-open + quest-finding beat) that resolves a
+    # social_check but rolls no attack/save must NOT trip dice_used — social_check rolls a d20.
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["social_check", "look_around", "travel_to"],
+        chat=[{"role": "player", "text": "[say] I ask the chronicler what he knows."},
+              {"role": "dm", "text": "\"You'll want to sit down for this,\" the warden says."},
+              {"role": "player", "text": "[check] persuade the warden"},
+              {"role": "dm", "text": "The warden wavers, then nods you through the cordon."}],
+        moves=[{"role": "player", "kind": "say", "text": "I ask what he knows"},
+               {"role": "player", "kind": "check", "text": "persuade the warden", "skill": "persuasion"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] dice_used" in r.stdout
+
+
 # --- viewer /move sanitizer (H5) -------------------------------------------------
 def _viewer():
     spec = importlib.util.spec_from_file_location("clawdnd_viewer_under_test", ROOT / "viewer" / "server.py")

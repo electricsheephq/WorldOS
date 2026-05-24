@@ -171,9 +171,12 @@ def main() -> int:
         chk("player_engaged", len(mv) >= 3,
             f"only {len(mv)} move(s) recorded — a trivially short session?", fatal=False)
 
-    # 4) dice actually fired somewhere (a whole session with zero rolls is broken)
-    dice = tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0)
-    chk("dice_used", dice > 0, f"roll={tools.get('roll', 0)} attack={tools.get('attack', 0)} save={tools.get('saving_throw', 0)}")
+    # 4) dice actually fired somewhere (a whole session with zero rolls is broken). social_check
+    # rolls a d20 too — count it, so a valid non-combat / social + exploration session (e.g. an
+    # S7 cold-open + quest-finding beat) isn't falsely flagged. Mirrors the checks_n treatment above.
+    dice = tools.get("roll", 0) + tools.get("attack", 0) + tools.get("saving_throw", 0) + tools.get("social_check", 0)
+    chk("dice_used", dice > 0,
+        f"roll={tools.get('roll', 0)} attack={tools.get('attack', 0)} save={tools.get('saving_throw', 0)} social={tools.get('social_check', 0)}")
 
     # 5) if combat started, attacks/monsters actually happened
     if tools.get("start_combat", 0) > 0:
