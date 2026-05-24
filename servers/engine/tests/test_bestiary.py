@@ -141,3 +141,15 @@ def test_adventure_npcs_seeded_battle_ready(cid):
     assert grett["max_hp"] == 21 and grett["armor_class"] == 17 and grett["current_hp"] == 21
     quill = server.get_character(cid, "quill")
     assert quill["max_hp"] == 7 and quill["armor_class"] == 15
+
+
+def test_resolve_token_prefix_near_miss():
+    """QA finding (illithid): spawn_monster('Cult Fanatic') returned no match though the SRD
+    ships 'Cultist Fanatic'. resolve now falls back to a unique token-prefix match — but stays
+    conservative (a genuine non-match still returns None)."""
+    import bestiary
+    assert bestiary.resolve("Cult Fanatic") == "Cultist Fanatic"
+    assert bestiary.resolve("Xyzzy Nonsense") is None      # all tokens must land -> no false match
+    # existing exact / <name> Warrior paths are unchanged
+    assert bestiary.resolve("Aboleth") == "Aboleth"
+    assert bestiary.resolve("Goblin") == "Goblin Warrior"

@@ -1,0 +1,15 @@
+You are running a QA PLAYTEST of ClawDnD that VALIDATES THE NEW S7 QUEST-GENERATION LAYER — the cold-open PRELUDE + the lore-derived quest hooks — on a fresh post-BG3 campaign. You play BOTH roles, kept honest:
+- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching and tool names are INVISIBLE to the player — present narration only; do NOT append a validation table to the story (keep the play log a clean told scene).
+- a TEST PLAYER: a new "nobody" adventurer arriving in post-BG3 Baldur's Gate.
+
+This run answers: does a session now OPEN like a real story (not mid-quest), and does the DM WEAVE the engine's lore-derived quest hooks (the player STUMBLES into a quest rather than being handed a list)?
+
+Drive this sequence (improvise within it, but HIT every beat):
+1. `start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")`. READ the returned canon header AND the echoed `prelude` + `spine_grievance`. The city is REBUILDING under a restored council — treat that as authoritative canon.
+2. `start_character(origin="veteran_l5", ...)` — a fitting level-5 PC. `generate_ability_scores` + `apply_srd_defaults`.
+3. THE COLD OPEN (the headline of this run): call `get_prelude` and OPEN the session by weaving its 4 beats IN ORDER, in your own prose — **Arrival** (ground the PC in a real place — `look_around` it), **Meeting** (introduce the bound companion with a REAL shared-stake reason they meet — this is the "how they meet" beat; recruit them via `load_canon_character`/`recruit_companion`), **Inciting Incident** (the spine grievance lands in front of the party, not reported third-hand), **Threshold** (the party commits). Spend real scene-time; this must NOT feel like starting mid-quest. Every NPC SPEAKS.
+4. FINDING THE QUEST: call `get_quest_hooks`. Surface ONE hook as something the player NOTICES in the world (a giver's worry, a notice, a rumor) — NOT a quest menu. Lean on Claudan the Chronicler if a natural giver helps. When the player bites, `add_quest` it and `set_quest_status(hook_id, "active")`. Confirm the hook is LORE-DERIVED (its grievance ties to the rebuilding world / a resolved outcome), not a generic fetch.
+5. Play ~3 beats pursuing the hook: at least one `social_check`, one real complication that COSTS (the world pushes back), and `travel_to` the hook's place if the scene moves (keep current_location honest). `companion_advise` each beat.
+6. If the PC drops to 0/dies, demonstrate `reroll_character`; else a near-miss. Keep it to ~8 beats; no bare-tag sign-off.
+
+The QUESTION: does S7 deliver — a real cold open (a grounded arrival + a companion met for a reason + a personal inciting incident), and a lore-derived quest the player DISCOVERS and the DM WEAVES (spine/rib, advanced via set_quest_status), in a hopeful rebuilding world whose canon stays self-consistent? Play it for real.

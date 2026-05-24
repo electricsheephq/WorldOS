@@ -458,6 +458,24 @@ def test_ability_scores_accept_5e_shorthand(tmp_path, monkeypatch):
     assert sheet["abilities"]["dexterity"] == 17 and sheet["abilities"]["wisdom"] == 14
 
 
+def test_death_clears_conditions_and_concentration():
+    # QA finding (illithid): a dead character kept conditions=['unconscious'] + a stale
+    # concentration, an inconsistent record downstream reads trip on. Death supersedes all.
+    from models import Character, Condition
+    # massive damage while at 0 -> instant death; the unconscious/prone + concentration clear
+    ch = Character(name="Nessa", kind="player", max_hp=10, current_hp=0)
+    ch.conditions = [Condition.UNCONSCIOUS, Condition.PRONE]
+    ch.concentration = "bless"
+    combat.apply_damage(ch, 99)
+    assert ch.dead is True
+    assert ch.conditions == [] and ch.stable is False and ch.concentration is None
+    # a monster dies outright at 0 with no lingering condition either
+    mon = Character(name="Cultist", kind="monster", max_hp=11, current_hp=5)
+    mon.conditions = [Condition.POISONED]
+    combat.apply_damage(mon, 5)
+    assert mon.dead is True and mon.conditions == []
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

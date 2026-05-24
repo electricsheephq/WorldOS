@@ -88,6 +88,16 @@ def _ensure_unconscious(ch: Character) -> None:
         ch.conditions.append(Condition.UNCONSCIOUS)
 
 
+def _die(ch: Character) -> None:
+    """Mark a creature dead — and DEATH SUPERSEDES ALL CONDITIONS. Clears conditions (incl. the
+    'unconscious' applied while dying), concentration, and stable. A dead record left carrying a
+    stale 'unconscious' is an inconsistent state downstream reads trip on (QA finding)."""
+    ch.dead = True
+    ch.stable = False
+    ch.concentration = None
+    ch.conditions = []
+
+
 def status(ch: Character) -> dict:
     dying = ch.current_hp == 0 and not ch.dead and not ch.stable
     return {
@@ -140,14 +150,11 @@ def apply_damage(
         if ch.kind in ("monster", "npc"):
             # Monsters and NPCs die outright at 0 HP — death saves are a
             # player-character (and companion) mechanic in the SRD.
-            ch.dead = True
-            ch.stable = False
+            _die(ch)
         elif hp_before > 0:
             overkill = to_hp - hp_before  # damage remaining after reaching 0
             if overkill >= ch.max_hp:  # massive damage -> instant death
-                ch.dead = True
-                ch.stable = False
-                _ensure_unconscious(ch)
+                _die(ch)
             else:  # newly dying
                 ch.death_saves = DeathSaves()
                 ch.stable = False
@@ -156,11 +163,11 @@ def apply_damage(
             ch.stable = False
             _ensure_unconscious(ch)
             if to_hp >= ch.max_hp:  # SRD: damage >= HP max while at 0 -> instant death
-                ch.dead = True
+                _die(ch)
             else:
                 ch.death_saves.failures += 2 if crit else 1
                 if ch.death_saves.failures >= 3:
-                    ch.dead = True
+                    _die(ch)
 
     conc_dc = None
     if ch.current_hp == 0:
@@ -208,7 +215,7 @@ def resolve_death_save(ch: Character, roll) -> dict:
 
     result = "pending"
     if ch.death_saves.failures >= 3:
-        ch.dead = True
+        _die(ch)
         result = "dead"
     elif ch.death_saves.successes >= 3:
         ch.stable = True

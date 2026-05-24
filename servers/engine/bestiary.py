@@ -154,13 +154,39 @@ def find(query: str, limit: int = 10) -> list[str]:
     return [n for n in names if q in n.lower()][:limit]
 
 
+def _token_prefix_matches(name: str) -> list[str]:
+    """Candidate names where EVERY whitespace token of `name` is a prefix of a DISTINCT token in
+    the candidate — a forgiving near-miss fallback ('Cult Fanatic' -> 'Cultist Fanatic', 'Goblin
+    Boss' -> 'Goblin Boss'). Conservative: requires all query tokens to land, so it only resolves
+    a genuine near-miss, not an arbitrary partial."""
+    q_tokens = [t for t in name.strip().lower().split() if t]
+    if not q_tokens:
+        return []
+    out = set()
+    for e in _index().values():
+        cand = e["row"]["fields"]["name"]
+        c_tokens = cand.lower().split()
+        used = [False] * len(c_tokens)
+        ok = True
+        for qt in q_tokens:
+            hit = next((i for i, ct in enumerate(c_tokens) if not used[i] and ct.startswith(qt)), None)
+            if hit is None:
+                ok = False
+                break
+            used[hit] = True
+        if ok:
+            out.add(cand)
+    return sorted(out)
+
+
 def resolve(name: str) -> Optional[str]:
     """Resolve a loose creature name to a canonical bestiary name, or None.
 
     Tries exact match, then ``<name> Warrior`` (the 2024 SRD's baseline statblock
-    for many humanoids — e.g. 'Goblin' -> 'Goblin Warrior'), then a unique
-    substring match. Returns None when ambiguous or absent (the caller should then
-    offer ``find()`` suggestions)."""
+    for many humanoids — e.g. 'Goblin' -> 'Goblin Warrior'), then a unique substring
+    match, then a unique TOKEN-PREFIX match ('Cult Fanatic' -> 'Cultist Fanatic'; a
+    QA finding where a near-miss name returned no match). Returns None when ambiguous
+    or absent (the caller should then offer ``find()`` suggestions)."""
     key = name.strip().lower()
     idx = _index()
     if key in idx:
@@ -169,7 +195,10 @@ def resolve(name: str) -> Optional[str]:
     if warrior in idx:
         return idx[warrior]["row"]["fields"]["name"]
     matches = find(name)
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    tok = _token_prefix_matches(name)
+    return tok[0] if len(tok) == 1 else None
 
 
 def count() -> int:
