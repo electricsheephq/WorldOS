@@ -273,8 +273,14 @@ viewer_supervisor() {
   done
 }
 viewer_supervisor &  SUP=$!
-# On any exit: kill the supervisor (so it can't respawn) and the live viewer it tracks.
-trap 'kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null' EXIT INT TERM
+# On any exit: kill the supervisor (so it can't respawn) and the live viewer it tracks. CRITICAL:
+# INT/TERM must CLEAN UP **and EXIT** — a bare `trap … TERM` runs the handler and then RESUMES the
+# main loop, so `kill`/closing the window couldn't stop a wedged run (it took kill -9, and a
+# dry-run with no human spun a sleep-loop for 8.5h). Separate the EXIT trap (cleanup) from the
+# signal traps (cleanup + exit) so a normal `kill` actually stops it.
+_party_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
+trap _party_cleanup EXIT
+trap '_party_cleanup; exit 130' INT TERM
 
 # Open the browser once the dashboard is actually serving (after the campaign exists).
 ( for _ in $(seq 1 60); do
@@ -362,10 +368,16 @@ over_budget() {
 # WHOLE beat (human move + companion moves) and narrates the next beat live. Otherwise idle.
 # This is play.sh's loop with run_party.sh's per-companion relay folded into each beat.
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
+# IDLE CEILING: this loop waits for a HUMAN move in $MOVES. With no human acting (a dry-run, or a
+# player who walked away) it would otherwise spin `sleep 2` forever — the 8.5h orphan. Stop after
+# CLAWDND_PLAY_MAX_IDLE seconds (default 30 min) with no new move; relaunch when you're ready.
+MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-1800}"
+last_activity=$SECONDS
 while true; do
   over_budget && break
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then
+    last_activity=$SECONDS
     new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"; MCURSOR="$total"
     # The human's move(s): dashboard palette sends {kind,name}; Say/Do send {kind,text}.
     PMSG="$(printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text // .name // "")") | join("  ")' 2>/dev/null)"
@@ -401,6 +413,10 @@ For EACH companion this beat, call check_companion_arc(companion_id) — the eng
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
     chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
   else
+    if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
+      echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      break
+    fi
     sleep 2
   fi
 done
