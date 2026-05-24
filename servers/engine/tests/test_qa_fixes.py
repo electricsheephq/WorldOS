@@ -666,6 +666,24 @@ def test_start_character_seeds_starting_gear_so_ac_and_inventory_agree(tmp_path,
     assert server.get_character(cid, n)["inventory"] == []
 
 
+def test_add_location_make_current_arrives_in_one_call(tmp_path, monkeypatch):
+    # Recurring QA gap: the DM creates the scene the party walks into (add_location) but never
+    # travels there, so current_location lags the prose and the new place stays visited=false.
+    # make_current arrives in the one call.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Move")["id"]
+    sq = server.add_location(cid, "Town Square", description="A plaza.")["id"]
+    # generate the next scene AND step onto it in one move, advancing the clock for the walk.
+    r = server.add_location(cid, "Siltwharf Steps", connections=[sq],
+                            make_current=True, advance_time=True)
+    assert r["is_current"] and r["arrived"] and r["visited"]
+    assert server.get_state(cid)["location"]["name"] == "Siltwharf Steps"
+    assert server.get_state(cid)["time_of_day"] == "afternoon"  # the walk advanced one phase
+    # without make_current the place is created but NOT current (explicit travel_to still works).
+    hp = server.add_location(cid, "Heapside Room", connections=[r["id"]])
+    assert not hp["is_current"] and not hp["visited"]
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

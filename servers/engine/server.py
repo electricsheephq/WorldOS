@@ -614,6 +614,8 @@ def add_location(
     hex: Optional[list] = None,
     region: str = "",
     travel_times: Optional[dict] = None,
+    make_current: bool = False,
+    advance_time: bool = False,
 ) -> dict:
     """Create — or update — a location in the world DURING live play. The key
     world-building primitive for generated / sandbox campaigns.
@@ -628,6 +630,13 @@ def add_location(
     `region` is the parent zone this nests in ("Lower City"); `travel_times` is an
     optional `{connected_location_id: walk_minutes}` map that `look_around` surfaces as
     fables-style walk-times to nearby places.
+
+    **When you're GENERATING the scene the party is walking into, pass `make_current=True`
+    — that arrives them HERE in this one call** (sets current_location_id, marks the place
+    visited), instead of leaving the party's location pointing at the place they just left
+    while your prose describes the new room. This is the common live-gen pattern: create the
+    Siltwharf Steps and step onto them in a single move. `advance_time=True` also rolls the
+    clock one phase (a journey, not a step next door) and stirs a standing thread.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -676,6 +685,19 @@ def add_location(
             warnings.append(f"unknown connection ids skipped (no such location): {unresolved}")
         if c.current_location_id is None:
             c.current_location_id = loc.id
+        # Live-gen arrival: the DM is generating the scene the party walks INTO, so move them
+        # here in this one call (the recurring QA gap was a created-but-never-traveled-to scene
+        # — current_location stuck at the previous place while the prose described the new one).
+        world_beats: list[str] = []
+        arrived = False
+        if make_current and c.current_location_id != loc.id:
+            c.current_location_id = loc.id
+            arrived = True
+        if make_current:
+            loc.visited = True  # arriving (or already here) marks it visited, like travel_to
+            if advance_time:
+                travel.advance_clock(c, 1)
+                world_beats = [b.text for b in worldsim.tick(c, max_beats=1)]
         # Orphan guard: a non-current location with no edges can never be reached.
         if loc.id != c.current_location_id and not loc.connections:
             warnings.append(
@@ -688,6 +710,11 @@ def add_location(
         "name": loc.name,
         "connections": loc.connections,
         "is_current": c.current_location_id == loc.id,
+        "arrived": arrived,
+        "visited": loc.visited,
+        "day": c.day,
+        "time_of_day": c.time_of_day,
+        "world_beats": world_beats,
         "location_count": len(c.locations),
         "warnings": warnings,
     }
