@@ -47,12 +47,30 @@ rescue, faction-war, …) bound to typed lore nouns (a **giver**, a **target**, 
   same spirit (a SHAPE + a lore grievance + real nouns) and `add_quest` them — the hooks are a
   starting graph, not a ceiling. Chain them: resolving one wrong should expose the next.
 
-## A note on givers
+## Claudan & the Wild Wasteland — a RARE chaos-engine easter egg
 
-The roster includes **Claudan the Chronicler** — a wandering archivist who keeps a ledger of the
-city's open griefs and trades threads to anyone willing to pull on them. He's a natural, low-friction
-quest-giver when you need one (especially for investigation/knowledge hooks): he knows which wrongs
-are ripe and asks only that someone remember it happened.
+The roster includes **Claudan the Chronicler**, but he is **NOT a normal quest-giver** — the engine
+deliberately keeps him out of the default hook pool (he's flagged an easter egg; the real hooks bind
+to the world's factions and figures, never to him). Treat him like Fallout's *Wild Wasteland* perk:
+a rare, opt-in detour into the gleefully absurd.
+
+- **He's a find, not a fixture.** Don't seed him into the main arc or push his quests. He turns up
+  **off the beaten path** — a side alley, a wrong turn, a door that wasn't there yesterday — and
+  only for a party that goes looking or stumbles in. Most playthroughs never meet him. That's the point.
+- **His errands open as the MOST mundane thing imaginable** — "deliver this sealed jar, don't open
+  it"; "ask the miller about his cat"; "return a library book." The kind of quest a player would
+  shrug off. Let them take it precisely because it looks like nothing.
+- **Then crank the chaos dial to 100.** Escalate beat by beat into the off-the-wall: the jar holds a
+  bound archdevil's *grudge*; the miller's cat is a polymorphed petty god mid-divorce; the overdue
+  book is the only copy of a ritual three cults are killing for. Planar incursions, indignant deities,
+  an explosion no one can explain. **Intense and hilarious by turns** — real stakes (gods and demons
+  genuinely throw down) wrapped in farce. It is a deliberate, gleeful tonal break from the main
+  grim/hopeful story — so use it sparingly, where a palate-cleanser of pure spectacle lands.
+- **Claudan means well and is baffled by his own wake.** Play him sincere, soft-spoken, a half-step
+  behind the catastrophe he set in motion. He is never the villain; he's the fuse.
+- Mechanically it's still the normal loop — `add_quest` it, run the beats, resolve through the engine
+  — you just narrate the escalation. (No special tool; the chaos is yours to dial. If a run wants a
+  mechanical chaos knob later, that's a noted follow-up.)
 
 ## The contract (why this is safe to lean on)
 The engine assembles seeds + the cold open from the seeded world (world_state, factions, roster,

@@ -168,6 +168,18 @@ def test_s7_tools_read_filter_and_advance(tmp_path, monkeypatch):
         server.set_quest_status(cid, "hook_nope", "active")
 
 
+def test_easter_egg_npc_excluded_from_default_giver_pool():
+    # Claudan is flagged easter_egg in the roster — a RARE opt-in chaos-engine, NOT a default
+    # quest-giver. He must exist in the world (the DM can surface him) but never be auto-bound as
+    # a giver/target or the cold-open companion, so one oddball can't dominate the quest system.
+    c = _gen("gortash-tyranny")
+    assert "npc-claudan" in c.characters  # he exists in the world
+    for h in c.quest_hooks:
+        assert h.giver_id != "npc-claudan" and h.target_id != "npc-claudan"
+    meeting = next((b for b in c.prelude if b.kind == "meeting"), None)
+    assert meeting is None or meeting.ref_id != "npc-claudan"
+
+
 def test_sundered_reach_gets_cold_open_but_no_hooks(tmp_path, monkeypatch):
     # a world with locations but NO quest_variants: a generic cold-open prelude still generates
     # (every world deserves an opening), but there are no lore-derived hooks. And questgen never

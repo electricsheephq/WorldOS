@@ -92,12 +92,24 @@ def _best_overlap(want: set[str], candidates: list, rng: random.Random):
     return best if best is not None else rng.choice(candidates)
 
 
-def _derive_hooks(c: Campaign, world: dict, rng: random.Random) -> list[QuestHook]:
+def _easter_egg_ids(world: dict) -> set[str]:
+    """Roster NPC ids flagged ``easter_egg: true`` — kept OUT of the default quest-giver pool so
+    one oddball never becomes the system's go-to giver (e.g. Claudan the chaos-engine: a rare,
+    opt-in find, never the spine's default voice). Setting-agnostic: any world flags its own."""
+    roster = world.get("npc_roster") if isinstance(world, dict) else None
+    if not isinstance(roster, list):
+        return set()
+    return {str(n.get("id")) for n in roster if isinstance(n, dict) and n.get("easter_egg") and n.get("id")}
+
+
+def _derive_hooks(c: Campaign, world: dict, rng: random.Random, exclude: set[str]) -> list[QuestHook]:
     """Promote each resolved quest_outcome into a typed hook: its follow-on `hook` text is a wrong
-    the world now contains (a grievance), bound to the campaign's own nouns via apophenia."""
+    the world now contains (a grievance), bound to the campaign's own nouns via apophenia. NPCs in
+    `exclude` (easter-egg givers) are never bound as a default giver/target."""
     qv = world.get("quest_variants") if isinstance(world, dict) else None
     qv_by_id = {q["id"]: q for q in qv if isinstance(q, dict) and q.get("id")} if isinstance(qv, list) else {}
-    npcs = [ch for ch in c.characters.values() if getattr(ch, "kind", "") in ("npc", "companion")]
+    npcs = [ch for ch in c.characters.values()
+            if getattr(ch, "kind", "") in ("npc", "companion") and ch.id not in exclude]
     factions = list(c.factions.values())
     places = list(c.locations.values())
 
@@ -155,11 +167,13 @@ def _mark_spine(c: Campaign, hooks: list[QuestHook]) -> None:
             h.arc_back = f"feeds the main arc: {spine.grievance}"
 
 
-def _build_prelude(c: Campaign, hooks: list[QuestHook], rng: random.Random) -> list[PreludeBeat]:
+def _build_prelude(c: Campaign, hooks: list[QuestHook], rng: random.Random, exclude: set[str]) -> list[PreludeBeat]:
     """The guaranteed 4-beat cold-open. Binds a start place, a suggested companion + shared stake,
-    and the spine grievance — so a session never opens mid-quest. The DM owns order/framing/prose."""
+    and the spine grievance — so a session never opens mid-quest. The DM owns order/framing/prose.
+    Easter-egg NPCs (`exclude`) are never the companion you 'meet' — the cold open stays canon."""
     start_place = c.current_location_id or (next(iter(c.locations), "") if c.locations else "")
-    companions = [ch for ch in c.characters.values() if getattr(ch, "kind", "") in ("npc", "companion")]
+    companions = [ch for ch in c.characters.values()
+                  if getattr(ch, "kind", "") in ("npc", "companion") and ch.id not in exclude]
     companion = rng.choice(companions) if companions else None
     spine = next((h for h in hooks if h.spine), (hooks[0] if hooks else None))
 
@@ -188,8 +202,9 @@ def generate(c: Campaign, world: dict, rng: random.Random) -> None:
     Runs at ``seed_world`` AFTER ``_resolve_quest_variants`` (so quest_outcomes + world_state are
     populated). Degrade-not-abort: any section that raises is skipped, never failing seed_world.
     Additive: a world with no quest_variants / no facts yields an empty graph (today's behavior)."""
+    exclude = _easter_egg_ids(world)  # easter-egg givers (Claudan) kept out of the default flow
     try:
-        hooks = _derive_hooks(c, world, rng)
+        hooks = _derive_hooks(c, world, rng, exclude)
         _mark_spine(c, hooks)
         c.quest_hooks = hooks
     except Exception as e:  # pragma: no cover - defensive; a bad source must not abort seed_world
@@ -199,6 +214,6 @@ def generate(c: Campaign, world: dict, rng: random.Random) -> None:
         # Only build a cold-open when there's a world to open INTO (locations seeded). A bare
         # synthetic world with no locations leaves prelude empty == today's behavior.
         if c.locations:
-            c.prelude = _build_prelude(c, hooks, rng)
+            c.prelude = _build_prelude(c, hooks, rng, exclude)
     except Exception as e:  # pragma: no cover - defensive
         print(f"[questgen] skipping prelude generation: {e!r}")
