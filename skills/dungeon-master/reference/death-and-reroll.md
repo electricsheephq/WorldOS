@@ -64,6 +64,15 @@ By default the dead PC becomes a **memorial NPC** — a body, a grave, a name th
 speak. Honor it. A companion grieves. The party may choose to recover the gear (or leave
 it). Don't pretend the dead character never existed; the world remembers its fallen heroes.
 
+**Easter egg — the Ledger of Souls.** If **Withers** is in this world's roster (the post-BG3
+seed ships him — the undying keeper who tends a ledger of souls), a re-roll is his moment: rarely,
+he may appear at the threshold between the fall and the new hero's arrival and *name the dead* —
+their name and their **last deed**, pulled via `recall` from what the engine remembers of them —
+then close the ledger and regard the newcomer in silence. The keeper of the dead remembering a
+hero the living have already had to move past is one of the quietest, most earned beats the game
+can offer. Use it sparingly (not every death); let it land with no explanation, and never let it
+soften the loss — it honors the fallen, it doesn't undo them.
+
 ## 7. Gear & gold: lost with the body by default
 A new character earns their own kit — `reroll_character` does **not** hand the new hero the
 dead one's inventory or gold. Auto-gifting a level's worth of magic items cheapens the
