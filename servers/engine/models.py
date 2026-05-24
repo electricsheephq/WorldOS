@@ -321,6 +321,15 @@ class Character(_StrictModel):
     # position (and lets the DM reward/punish choices in points). Additive: 0 == today's
     # behavior, so the dashboard falls back to the keyword heuristic when it's untouched.
     attitude_value: int = 0
+    # Has the PARTY actually encountered this NPC in play? A world seed pre-populates a
+    # roster of NPCs who EXIST but whom the party hasn't met yet — the dashboard's
+    # Relationships view must not list strangers the player "already knows". The engine
+    # flips this True at the natural first-contact tools (social_check against a tracked
+    # NPC, recruit_companion, load_canon_character into the party); the DM can also set it
+    # via update_character. Additive: False == today's behavior, and the viewer keeps a
+    # keyword/attitude fallback so existing snapshots (no `met` written) still surface
+    # NPCs the party clearly has a standing with. Companions/players are implicitly met.
+    met: bool = False
     memory: list[str] = Field(default_factory=list)  # facts the npc/companion remembers
     notes: str = ""
     # structured identity — fed by canon ingestion (S2.5) + shown in portrait cards;

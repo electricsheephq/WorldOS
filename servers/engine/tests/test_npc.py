@@ -187,3 +187,37 @@ def test_forget_case_insensitive(campaign):
     server.remember(campaign, npc_id, "The Party Helped")
     server.forget(campaign, npc_id, "the party helped")  # different case
     assert server.get_character(campaign, npc_id)["memory"] == []
+
+
+def test_npc_met_flag_tracks_first_contact(campaign):
+    # Owner live-QA: Relationships listed seeded roster NPCs the party had NEVER met
+    # ("he apparently already knows the 8 NPCs"). `met` is the engine-level truth the
+    # dashboard filters on — a roster NPC EXISTS unmet; encountering them flips it.
+    pc = server.create_character(campaign, "Hero", kind="player",
+                                 abilities={"charisma": 14, "wisdom": 14})["id"]
+    stranger = server.create_character(campaign, "Stranger", kind="npc")["id"]
+    assert server.get_character(campaign, stranger)["met"] is False  # exists, not yet encountered
+
+    # A READ (insight) is first contact too — you can't read someone you haven't met.
+    server.social_check(campaign, pc, stranger, "insight", dc=1)
+    assert server.get_character(campaign, stranger)["met"] is True
+
+    # An influence check against another NPC flips met as well.
+    guard = server.create_character(campaign, "Guard", kind="npc")["id"]
+    server.social_check(campaign, pc, guard, "persuasion", dc=1)
+    assert server.get_character(campaign, guard)["met"] is True
+
+    # Recruiting a roster NPC into the party means they're met.
+    ally = server.create_character(campaign, "Ally", kind="npc")["id"]
+    server.recruit_companion(campaign, ally, class_name="fighter", level=1)
+    assert server.get_character(campaign, ally)["met"] is True
+
+
+def test_scene_extra_social_check_marks_nobody(campaign):
+    # The ephemeral target path (npc_id="" + target_name) must persist NOTHING — no roster
+    # NPC created, so a one-off social beat can't pollute Relationships with a stray stranger.
+    pc = server.create_character(campaign, "Hero", kind="player", abilities={"charisma": 14})["id"]
+    before = len(server._require(campaign).characters)
+    out = server.social_check(campaign, pc, "", "persuasion", dc=1, target_name="a fishmonger")
+    assert out.get("ephemeral") is True
+    assert len(server._require(campaign).characters) == before  # nobody added

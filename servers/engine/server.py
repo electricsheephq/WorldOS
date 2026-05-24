@@ -856,6 +856,7 @@ def create_character(
     skills: Optional[list] = None,
     location_id: str = "",
     add_to_party: bool = True,
+    met: bool = False,
 ) -> dict:
     """Create a character (player, companion, npc, or monster) and persist it.
 
@@ -865,6 +866,13 @@ def create_character(
     (max hit die + CON), spell slots, and a class-appropriate AC (only when
     armor_class is left at the unarmored default of 10) from that class; otherwise
     the explicit max_hp/armor_class are used as-is. Returns the new character id.
+
+    `met` marks whether the PARTY has encountered this NPC — it drives the dashboard's
+    Relationships view, which must not list strangers the player hasn't met. Pass
+    met=True when you create an NPC the party is meeting ON-SCREEN right now (a named
+    figure they walk up to and talk with); leave it False for a background/off-screen
+    NPC you're only registering. Players and companions are always met. (social_check
+    and recruit_companion also flip met=True automatically on first contact.)
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -899,6 +907,7 @@ def create_character(
             current_hp=max_hp,
             armor_class=armor_class,
             initiative_bonus=scores.modifier(Ability.DEX),
+            met=bool(met) or kind in ("player", "companion"),  # PC/companion are always "met"
         )
         if skills:  # explicit skill choices win over the class default-fill
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
@@ -1228,6 +1237,7 @@ def recruit_companion(
             ch.arc = CompanionArc.model_validate({"arc_gates": [
                 {"kind": "loyalty", "threshold": 25,
                  "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
+        ch.met = True  # joining the party means the party has met them
         if ch.id not in c.party:
             c.party.append(ch.id)
         save_campaign(c)
@@ -1543,9 +1553,11 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             notes=rec.get("voice_hint", ""),
             location_id=c.current_location_id,
         )
+        if add_to_party:
+            ch.met = True  # brought into the party => met
+            if ch.id not in c.party:
+                c.party.append(ch.id)
         c.characters[ch.id] = ch
-        if add_to_party and ch.id not in c.party:
-            c.party.append(ch.id)
         save_campaign(c)
         return {
             "id": ch.id, "name": ch.name, "race": ch.race, "kind": ch.kind,
@@ -3023,10 +3035,19 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         success = r.total >= dc
         old = the_npc.attitude
         old_value = the_npc.attitude_value
+        # Interacting with a tracked NPC means the party has now MET them (even a READ —
+        # you can't read someone you haven't encountered). `met` is a discovery flag, not
+        # an attitude change, so flipping it here doesn't violate the read-doesn't-influence
+        # rule; the read branch saves only if the flag actually changed.
+        newly_met = not the_npc.met
+        the_npc.met = True
         is_read = sk in READ_SKILLS
         read = None
         if is_read:
-            # Perceive, don't influence: attitude (text AND number) is untouched, no write.
+            # Perceive, don't influence: attitude (text AND number) is untouched. Persist
+            # only if `met` just flipped (the discovery), never the attitude.
+            if newly_met:
+                save_campaign(c)
             read = {
                 "perceived_attitude": old if success else None,
                 "note": (
