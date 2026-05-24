@@ -154,8 +154,10 @@ python3 qa/distill.py "$COMBINED" 2>/dev/null
 PLAY="$T/$RUN.play.md"
 jq -rs 'map((.role|ascii_upcase) + ": " + (.text // "")) | join("\n\n")' "$CHAT" > "$PLAY" 2>/dev/null
 [ -s "$PLAY" ] || cp "$T/$RUN.md" "$PLAY" 2>/dev/null
-CAMP="$(find "$STATE_DIR/campaigns" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)"
-if [ -n "$CAMP" ] && [ -f "$CAMP/snapshot.json" ]; then cp "$CAMP/snapshot.json" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
+# Largest NON-EMPTY snapshot — not a blind head -1 (a fat-fingered campaign_id can orphan
+# a lock-only dir with no snapshot, which head -1 may grab -> false "no state" RED).
+SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c -exec ls -S {} + 2>/dev/null | head -1)"
+if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
 [ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).

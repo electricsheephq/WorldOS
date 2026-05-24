@@ -62,10 +62,14 @@ fi
 echo "[qa] distilling…"
 python3 qa/distill.py "$T/$RUN.jsonl"
 
-# Snapshot the final persisted campaign as ground truth for the scorers.
-CAMP="$(find "$STATE_DIR/campaigns" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)"
-if [ -n "$CAMP" ] && [ -f "$CAMP/snapshot.json" ]; then
-  cp "$CAMP/snapshot.json" "$T/$RUN.state.json"
+# Snapshot the final persisted campaign as ground truth for the scorers. Pick the
+# campaign with the LARGEST NON-EMPTY snapshot.json — NOT a blind `head -1` over dirs:
+# if the play agent ever fat-fingers/hallucinates a campaign_id, campaign_lock() can
+# orphan a lock-only dir (no snapshot), and head -1 may grab THAT and mis-report the run
+# as "no state persisted" (a false-RED behavioral gate on a session that actually played).
+SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c -exec ls -S {} + 2>/dev/null | head -1)"
+if [ -n "$SNAP" ] && [ -f "$SNAP" ]; then
+  cp "$SNAP" "$T/$RUN.state.json"
 else
   echo '{"warning":"no campaign state was persisted"}' > "$T/$RUN.state.json"
 fi
