@@ -225,7 +225,12 @@ class Character(_StrictModel):
 
     # roleplay (companion / npc)
     personality: str = ""
-    attitude: str = ""  # npc disposition toward the party
+    attitude: str = ""  # npc disposition toward the party (free text: "guarded", or a track value)
+    # Numeric per-NPC relationship toward the party, -100..+100 (0 = neutral). The
+    # free-text `attitude` reads well for the DM; this gives the viewer a precise bar
+    # position (and lets the DM reward/punish choices in points). Additive: 0 == today's
+    # behavior, so the dashboard falls back to the keyword heuristic when it's untouched.
+    attitude_value: int = 0
     memory: list[str] = Field(default_factory=list)  # facts the npc/companion remembers
     notes: str = ""
     # structured identity — fed by canon ingestion (S2.5) + shown in portrait cards;
@@ -427,3 +432,7 @@ class Campaign(_StrictModel):
     world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
     era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened
     leveling_mode: Literal["xp", "milestone"] = "xp"  # "xp": end_combat auto-awards defeated monsters' XP to the party; "milestone": DM levels by story beat (no auto-XP)
+    # Narrative pacing the DM honors when setting scene density. "adventure" (default):
+    # tension, momentum, encounters. "downtime": slower — let scenes breathe, lean into
+    # social/shopping/recovery. Advisory (the DM reads it via get_state); never computed on.
+    pacing_mode: Literal["adventure", "downtime"] = "adventure"

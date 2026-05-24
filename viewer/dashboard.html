@@ -36,6 +36,33 @@
   .topbar h1 { margin:0; font-size:16px; color:var(--gold); }
   .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#bcd4ec; background:#16222e; border:1px solid #2e4456; border-radius:10px; padding:2px 9px; }
   .topbar .meta { color:var(--dim); font-size:13px; }
+  /* gear affordance: opens the read-only quick-settings modal. Pushed to the right edge. */
+  .gear-btn { margin-left:auto; background:#1a140d; border:1px solid var(--line); color:var(--dim);
+    border-radius:8px; width:30px; height:26px; font-size:14px; cursor:pointer; line-height:1;
+    transition:background .12s,border-color .12s,color .12s; }
+  .gear-btn:hover { background:#221708; border-color:var(--card-line); color:var(--gold); }
+
+  /* ---- quick-settings modal (read-only) ---- */
+  .modal-scrim { position:fixed; inset:0; background:rgba(8,6,3,.62); backdrop-filter:blur(2px);
+    display:none; align-items:center; justify-content:center; z-index:50; }
+  .modal-scrim.open { display:flex; }
+  .modal { width:380px; max-width:calc(100vw - 32px); background:var(--panel); border:1px solid var(--card-line);
+    border-radius:12px; box-shadow:0 18px 48px rgba(0,0,0,.55); padding:18px 20px 20px; }
+  .modal-hd { display:flex; align-items:center; gap:10px; margin:0 0 4px; }
+  .modal-hd h2 { margin:0; font-size:13px; letter-spacing:.09em; text-transform:uppercase; color:var(--gold); }
+  .modal-hd .x { margin-left:auto; background:none; border:none; color:var(--faint); font-size:18px; cursor:pointer; line-height:1; }
+  .modal-hd .x:hover { color:var(--gold); }
+  .modal-sub { font-size:11px; color:var(--faint); margin:0 0 14px; }
+  .set-row { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--line); }
+  .set-row:first-of-type { border-top:none; }
+  .set-k { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#b39c78; flex:none; width:84px; }
+  .set-v { font-size:13px; color:var(--ink); margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .set-pill { font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px; border-radius:9px;
+    border:1px solid var(--line); color:var(--dim); background:#1a140d; }
+  .set-pill.on { color:#bfe6c4; border-color:#2e5638; background:#14241a; }
+  .set-pill.off { color:#caa; border-color:#5a2e2e; background:#241414; }
+  .set-pill.mode { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
+  .modal-foot { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:10.5px; color:var(--faint); }
   #feed { flex:1; min-height:0; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:18px;
     scroll-behavior:smooth; }
   .msg { max-width:760px; }
@@ -298,7 +325,7 @@
      Play restores them. Reuses the dark-fantasy + gold tokens above.
      ============================================================================ */
   .nav-i.tab { cursor:pointer; }                 /* implemented tabs are clickable */
-  .nav-i.tab:hover { background:#221708; color:var(--gold); }
+  .nav-i.tab:hover, #nav-settings:hover { background:#221708; color:var(--gold); }
   #sheet { display:none; grid-column:2 / 4; min-height:0; overflow-y:auto;
     background:radial-gradient(140% 90% at 50% 0%, rgba(232,201,138,.05), rgba(232,201,138,0) 55%), var(--bg); }
   body.sheet-open #sheet { display:block; }
@@ -505,13 +532,14 @@
     <div class="nav-i"><span class="ic">⚇</span> Party</div>
     <div class="nav-i"><span class="ic">✦</span> Quests</div>
     <div class="nav-i"><span class="ic">◈</span> World</div>
-    <div class="nav-i ph"><span class="ic">⚙</span> Settings <span class="soon">soon</span></div>
+    <div class="nav-i" id="nav-settings" style="cursor:pointer"><span class="ic">⚙</span> Settings</div>
     <div class="foot">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
   </nav>
 
   <main>
-    <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge">Adventure Mode</span>
-      <span class="meta" id="when"></span><span class="meta" id="where"></span></div>
+    <div class="topbar"><h1 id="title">ClawDnD</h1><span class="badge" id="mode-badge">Adventure Mode</span>
+      <span class="meta" id="when"></span><span class="meta" id="where"></span>
+      <button class="gear-btn" id="gear-btn" title="Settings (read-only)" aria-label="Settings">⚙</button></div>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
     <div class="dice empty-state" id="dice"><span class="empty">No rolls yet — the dice are still.</span></div>
     <div class="palette">
@@ -558,6 +586,28 @@
   <!-- Player sheet views (S2 tabs). Full-width over the Play grid when active; one of
        these is shown at a time via body.sheet-open + the active nav tab. Read-only. -->
   <section id="sheet"><div class="sheet-wrap" id="sheet-wrap"></div></section>
+
+  <!-- Quick-settings modal (read-only). Mirrors the engine's pacing_mode / leveling_mode
+       from the snapshot (/state) and voice/image runtime status (/config). DISPLAY-ONLY:
+       the viewer is a pure downstream reader and never writes campaign state — see the
+       TODO in setupSettings() for why pacing isn't togglable here. -->
+  <div class="modal-scrim" id="settings-scrim">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-hd"><span class="ic" style="color:var(--gold2)">⚙</span>
+        <h2 id="settings-title">Settings</h2>
+        <button class="x" id="settings-close" title="Close" aria-label="Close">×</button></div>
+      <p class="modal-sub">A read-only view of how this campaign is being run.</p>
+      <div class="set-row"><span class="set-k">Pacing</span>
+        <span class="set-v"><span class="set-pill mode" id="set-pacing">—</span></span></div>
+      <div class="set-row"><span class="set-k">Leveling</span>
+        <span class="set-v"><span class="set-pill mode" id="set-leveling">—</span></span></div>
+      <div class="set-row"><span class="set-k">Voice</span>
+        <span class="set-v" id="set-voice"><span class="set-pill">—</span></span></div>
+      <div class="set-row"><span class="set-k">Images</span>
+        <span class="set-v" id="set-image"><span class="set-pill">—</span></span></div>
+      <div class="modal-foot" id="settings-foot">Change these from Claude Code — the engine is the sole writer of campaign state.</div>
+    </div>
+  </div>
 
 <script>
 let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
@@ -903,6 +953,58 @@ function wireTabs() {
   const fromHash = (location.hash||"").replace("#","");
   if (SHEET_LABEL[fromHash]) setView(fromHash);
 }
+
+// ---- quick-settings modal (read-only) ---------------------------------------
+// A gear in the header / the nav "Settings" item opens a small panel showing how the
+// campaign is being run: pacing_mode + leveling_mode (from the engine snapshot via
+// /state) and voice/image runtime status (from /config). It is DISPLAY-ONLY.
+//
+// TODO(writable): make pacing togglable here once there's a SAFE write path. The
+// viewer is a pure downstream reader (stdlib-only, never imports the engine) and the
+// engine is the SOLE WRITER of campaign state. The /move path is NOT an engine call —
+// it appends a constrained PLAYER move-intent to an append-only log the DM consumes;
+// set_pacing is a direct engine state write, not a player move, so it has no analogous
+// sink. Writing requires either an engine-side intent consumer for a "set_pacing" verb
+// or a thin authenticated bridge to the engine MCP — neither exists yet. Until then we
+// stay read-only rather than write snapshot.json directly (which would break the
+// sole-writer invariant). Change pacing from Claude Code via the set_pacing tool.
+let _settingsCfg = null;  // memoized /config (voice/image runtime facts; fetched on first open)
+function openSettings() {
+  $("settings-scrim").classList.add("open");
+  renderSettings();
+  if (_settingsCfg === null) {  // fetch runtime facts once, then re-render
+    fetch("/config").then(r => r.json()).then(j => { _settingsCfg = j || {}; renderSettings(); })
+      .catch(() => { _settingsCfg = {}; renderSettings(); });
+  }
+}
+function closeSettings() { $("settings-scrim").classList.remove("open"); }
+const _titleCase = (s) => s ? s[0].toUpperCase() + s.slice(1) : "—";
+function renderSettings() {
+  const s = lastState || {};
+  // pacing / leveling come straight from the snapshot the engine wrote.
+  $("set-pacing").textContent = _titleCase(s.pacing_mode || "adventure");
+  $("set-leveling").textContent = s.leveling_mode === "milestone" ? "Milestone" : "XP";
+  // voice / image from /config (runtime facts the reader can see without a state write).
+  const cfg = _settingsCfg || {};
+  const voice = cfg.voice || {};
+  const vEl = $("set-voice");
+  if (_settingsCfg === null) { vEl.innerHTML = `<span class="set-pill">checking…</span>`; }
+  else if (voice.ready) { vEl.innerHTML = `<span class="set-pill on">on</span><span style="color:var(--faint);font-size:11px">${esc(voice.backend||"")}</span>`; }
+  else { vEl.innerHTML = `<span class="set-pill off">off</span><span style="color:var(--faint);font-size:11px">${esc(voice.backend||"silent")}</span>`; }
+  const img = cfg.image || {};
+  const iEl = $("set-image");
+  if (_settingsCfg === null) iEl.innerHTML = `<span class="set-pill">checking…</span>`;
+  else iEl.innerHTML = img.cache_present ? `<span class="set-pill on">art cached</span>` : `<span class="set-pill off">none yet</span>`;
+}
+function setupSettings() {
+  $("gear-btn").addEventListener("click", openSettings);
+  $("nav-settings").addEventListener("click", openSettings);
+  $("settings-close").addEventListener("click", closeSettings);
+  // click the dim scrim (outside the panel) to dismiss
+  $("settings-scrim").addEventListener("click", e => { if (e.target === $("settings-scrim")) closeSettings(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+}
+
 // Render the currently-active sheet from the latest snapshot. Re-run each poll so an
 // open sheet reflects live HP/slots/XP changes without the player re-clicking.
 function renderSheet() {
@@ -1160,13 +1262,23 @@ function renderProgression(c, wrap) {
 // ---- 5. RELATIONSHIPS (parity 5.1) ------------------------------------------
 // A roster of everyone the party knows — companions + NPCs (monsters are combat,
 // not relationships). Each row carries name, race·class, the free-text disposition,
-// and a hostile↔friendly bar. NOTE: the bar position is the attitudePos() KEYWORD
-// HEURISTIC over the free-text `attitude` — a *numeric* relationship value would be a
-// separate engine task (add Character.relationship: int, project it here in its place).
+// and a hostile↔friendly bar. The engine now tracks a numeric Character.attitude_value
+// (-100..+100, 0 = neutral) alongside the free-text attitude, so we PREFER it: a nonzero
+// value positions the bar exactly ((v+100)/200) and bands the disposition tag; when it's
+// still neutral/untouched we fall back to the attitudePos() keyword heuristic over the
+// free-text `attitude`. (Was a "separate engine task" — now done.)
 function relAttClass(pos) { return pos <= 0.25 ? "hostile" : pos <= 0.42 ? "wary" : pos >= 0.7 ? "friendly" : "neutral"; }
+// Disposition band from the numeric value: <=-40 hostile, -39..-10 wary, -9..29 neutral,
+// >=30 friendly. Mirrors the engine's -100..+100 scale; used only when a value is set.
+function attValueClass(v) { return v <= -40 ? "hostile" : v <= -10 ? "wary" : v >= 30 ? "friendly" : "neutral"; }
 function relRow(c) {
   const rcl = raceClass(c);
-  const pos = attitudePos(c.attitude);
+  // Prefer the engine's numeric relationship when it's been moved off neutral; else the
+  // keyword heuristic. `pos` (0..1) drives the bar; `tag` is the disposition label.
+  const v = typeof c.attitude_value === "number" ? c.attitude_value : 0;
+  const hasNum = v !== 0;
+  const pos = hasNum ? (v + 100) / 200 : attitudePos(c.attitude);
+  const tag = hasNum ? attValueClass(v) : relAttClass(pos);
   const att = c.attitude || "";
   const kindLbl = c.kind === "companion" ? "Companion" : "NPC";
   return `<div class="rel-row ${esc(c.kind)}">
@@ -1178,7 +1290,7 @@ function relRow(c) {
       <div class="att-bar rel-att"><span class="att-lbl">hostile</span>
         <span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span>
         <span class="att-lbl">friendly</span>
-        <span class="rel-att-tag ${relAttClass(pos)}">${relAttClass(pos)}</span></div>
+        <span class="rel-att-tag ${tag}"${hasNum?` title="${v>0?"+":""}${v}"`:""}>${tag}</span></div>
       ${att?`<div class="rel-desc">${esc(att)}</div>`
            :`<div class="rel-desc empty">No disposition recorded yet.</div>`}
     </div></div>`;
@@ -1283,7 +1395,10 @@ function renderMemories(wrap) {
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
+  if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
   $("title").textContent = s.title || "ClawDnD";
+  // the mode badge reflects the engine's pacing_mode (downtime = a quieter beat)
+  $("mode-badge").textContent = (s.pacing_mode === "downtime") ? "Downtime Mode" : "Adventure Mode";
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
   const curId = s.current_location_id, locs = s.locations||{}, cur = locs[curId];
   $("where").textContent = cur ? `· ${cur.name}` : "";
@@ -1481,7 +1596,7 @@ function wireNearby() {
     submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
   });
 }
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs();
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs(); setupSettings();
 poll(); setInterval(poll, 1500);
 </script>
 </body>

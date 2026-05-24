@@ -202,6 +202,22 @@ def _read_snapshot(campaign_id: str) -> dict:
         return {}
 
 
+def _viewer_config() -> dict:
+    """Read-only runtime facts for the quick-settings modal — voice backend + whether
+    the voice server is present, and whether a live move sink is configured. Pure
+    reader: no writes, no engine import, just env + filesystem the viewer already
+    knows. Campaign settings (pacing_mode, leveling_mode) come from /state instead."""
+    backend = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro").strip().lower() or "kokoro"
+    voice_ready = _VOICE_DIR.is_dir() and backend != "null"
+    return {
+        "voice": {"backend": backend, "ready": voice_ready},
+        # The engine's image provider runs server-side; the viewer can only say whether
+        # any cached art exists for this state dir (a non-empty images/ tree).
+        "image": {"cache_present": (_state_dir() / "images").is_dir()},
+        "moves_enabled": _moves_path() is not None,
+    }
+
+
 def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     """Return (new story entries after line `since`, new line count). Drops a
     trailing partial line defensively (append-only writes can exceed PIPE_BUF)."""
@@ -528,6 +544,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
         elif route == "/state":
             self._json(_read_snapshot(self.campaign_id))
+        elif route == "/config":
+            self._json(_viewer_config())
         elif route == "/events":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])

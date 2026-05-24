@@ -344,7 +344,13 @@ def start_world(world_id: str, start_at: str = "", resume: str = "") -> dict:
         "regions": [{"id": l.id, "name": l.name} for l in c.locations.values()],
         "factions": [{"id": f.id, "name": f.name} for f in c.factions.values()],
         "npc_roster": [
-            {"id": ch.id, "name": ch.name, "role": ch.attitude, "voice_id": ch.voice_id}
+            {
+                "id": ch.id,
+                "name": ch.name,
+                "role": ch.attitude,
+                "attitude_value": ch.attitude_value,
+                "voice_id": ch.voice_id,
+            }
             for ch in c.characters.values()
             if ch.kind == "npc"
         ],
@@ -401,6 +407,8 @@ def get_state(campaign_id: str) -> dict:
         "in_combat": c.combat.active,
         "current_turn": c.combat.current_combatant_id,
         "npc_count": sum(1 for x in c.characters.values() if x.kind == "npc"),
+        "pacing_mode": c.pacing_mode,
+        "leveling_mode": c.leveling_mode,
     }
 
 
@@ -2024,16 +2032,70 @@ def prepare_spells(campaign_id: str, character_id: str, spells_list: list) -> di
         return {"spells_prepared": ch.spells_prepared}
 
 
+def _clamp_attitude(value: int) -> int:
+    """Keep a numeric per-NPC relationship within the -100..+100 scale (0 = neutral)."""
+    return max(-100, min(100, int(value)))
+
+
 @mcp.tool()
-def set_attitude(campaign_id: str, character_id: str, attitude: str) -> dict:
+def set_attitude(
+    campaign_id: str, character_id: str, attitude: str, value: int | None = None
+) -> dict:
     """Set an NPC's attitude (free text, e.g. 'guarded', or a track value:
-    hostile / wary / indifferent / friendly / helpful)."""
+    hostile / wary / indifferent / friendly / helpful).
+
+    Pass `value` (-100..+100, 0 = neutral) to ALSO set the numeric per-NPC
+    relationship the dashboard bar reads; omit it to leave the number untouched
+    (the free-text track keeps working exactly as before)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         ch.attitude = attitude
+        if value is not None:
+            ch.attitude_value = _clamp_attitude(value)
         save_campaign(c)
-        return {"id": ch.id, "name": ch.name, "attitude": ch.attitude}
+        return {
+            "id": ch.id,
+            "name": ch.name,
+            "attitude": ch.attitude,
+            "attitude_value": ch.attitude_value,
+        }
+
+
+@mcp.tool()
+def adjust_attitude(campaign_id: str, character_id: str, delta: int) -> dict:
+    """Nudge an NPC's numeric relationship (`attitude_value`) by `delta`, clamped to
+    -100..+100. For the DM to reward a kindness or punish a betrayal directly, outside
+    a social check. Leaves the free-text `attitude` track unchanged."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        old = ch.attitude_value
+        ch.attitude_value = _clamp_attitude(ch.attitude_value + delta)
+        save_campaign(c)
+        return {
+            "id": ch.id,
+            "name": ch.name,
+            "old_attitude_value": old,
+            "attitude_value": ch.attitude_value,
+        }
+
+
+PACING_MODES = ("adventure", "downtime")
+
+
+@mcp.tool()
+def set_pacing(campaign_id: str, mode: str) -> dict:
+    """Set the campaign's narrative pacing. "adventure" (default): tension, momentum,
+    encounters. "downtime": slower — let scenes breathe, lean into social / shopping /
+    recovery. Advisory: the DM reads it via get_state and shifts narration density."""
+    if mode not in PACING_MODES:
+        raise ValueError(f"pacing mode must be one of {PACING_MODES}, got {mode!r}")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.pacing_mode = mode
+        save_campaign(c)
+        return {"id": c.id, "pacing_mode": c.pacing_mode}
 
 
 @mcp.tool()
@@ -2097,10 +2159,11 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
         success = r.total >= dc
         old = the_npc.attitude
+        old_value = the_npc.attitude_value
         is_read = sk in READ_SKILLS
         read = None
         if is_read:
-            # Perceive, don't influence: attitude is untouched, no state write.
+            # Perceive, don't influence: attitude (text AND number) is untouched, no write.
             read = {
                 "perceived_attitude": old if success else None,
                 "note": (
@@ -2113,8 +2176,11 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
                 ),
             }
         else:
-            # Influence: move the attitude and persist the change.
+            # Influence: move BOTH tracks and persist. The free-text track steps one
+            # band; the numeric value nudges (+15 on a success, -10 on a failure),
+            # clamped to the -100..+100 scale.
             the_npc.attitude = npc_mod.shift_attitude(the_npc.attitude, 1 if success else -1)
+            the_npc.attitude_value = _clamp_attitude(old_value + (15 if success else -10))
             save_campaign(c)
         out = {
             "actor": actor.name,
@@ -2127,6 +2193,8 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
             "success": success,
             "old_attitude": old,
             "new_attitude": the_npc.attitude,
+            "old_attitude_value": old_value,
+            "new_attitude_value": the_npc.attitude_value,
         }
         if read is not None:
             out["read"] = read
