@@ -142,7 +142,7 @@ Take your next action(s) for this beat using your tools — say / do / request_c
 
 $PMSG
 
-Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line.")"
+Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line. KEEP THE WORLD MOVING: if this scene has run its course, don't linger — advance the clock (advance_time / travel_to(advance_time=True) / long_rest), move the party to a NEW location (travel_to along a connection, or add_location(make_current=True)) and narrate that new place's tone yourself, or bring a NEW named NPC on-screen who speaks. Don't run the whole session in one room at one hour.")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
   chatlog dm "$DMSG"

@@ -161,7 +161,7 @@ while true; do
 
 $PMSG
 
-Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player.")"
+Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. KEEP THE WORLD MOVING: when a scene has run its course, advance the clock (advance_time / travel_to(advance_time=True) / long_rest — don't leave the day frozen at morning), move the party to new locations (travel_to / add_location(make_current=True), narrating the new place's tone yourself first), and bring new named NPCs on-screen as they explore — the seeded roster is a starting cast, not the whole world.")"
     chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))
   else
     sleep 2
