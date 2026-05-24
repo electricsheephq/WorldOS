@@ -684,6 +684,48 @@ def test_add_location_make_current_arrives_in_one_call(tmp_path, monkeypatch):
     assert not hp["is_current"] and not hp["visited"]
 
 
+def test_combat_numbers_surface_authoritative_attack_bonus(tmp_path, monkeypatch):
+    # easter2 QA: the DM invented a Rogue's to-hit (+7) by copying another combatant; her sheet
+    # gave +3. combat_numbers surfaces the real bonus at creation AND on get_character so the DM
+    # passes the sheet's number to attack() instead of inventing one.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("CN")["id"]
+    r = server.start_character(cid, name="Vesper", origin="veteran_l5", class_name="Rogue",
+                               abilities={"dex": 10, "str": 10})
+    cn = r["combat_numbers"]  # echoed at creation
+    assert cn["proficiency_bonus"] == 3 and cn["ranged_attack_bonus"] == 3  # prof 3 + DEX 0, NOT +7
+    gc = server.get_character(cid, r["id"])["combat_numbers"]  # and on the sheet
+    assert gc["ranged_attack_bonus"] == 3 and gc["melee_attack_bonus"] == 3
+    assert set(gc["ability_mods"]) == {"str", "dex", "con", "int", "wis", "cha"}
+
+
+def test_social_check_ephemeral_target_does_not_corrupt_a_roster_npc(tmp_path, monkeypatch):
+    # easter2 QA: a Deception vs a dock extra reused a seeded companion's id as the target and
+    # silently shifted her standing. An ephemeral target rolls without writing any roster NPC.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Soc")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", abilities={"cha": 16})["id"]
+    npc = server.create_character(cid, "Jaheira", kind="npc")["id"]
+    before = server.get_character(cid, npc)["attitude_value"]
+    out = server.social_check(cid, pc, "", "deception", 5, target_name="the fishmonger")
+    assert out["ephemeral"] and out["npc"] == "the fishmonger"
+    assert server.get_character(cid, npc)["attitude_value"] == before  # untouched
+    # the real-NPC path still moves a tracked relationship.
+    server.social_check(cid, pc, npc, "persuasion", 1)
+    assert server.get_character(cid, npc)["attitude_value"] != before
+
+
+def test_spawn_monster_resolves_thug_alias_and_suggests_on_miss(tmp_path, monkeypatch):
+    # fidelity1 QA: spawn_monster('Thug') failed with empty suggestions. 'Thug' is the 2014 name
+    # for the 2024 'Tough'; alias it, and give any miss real recovery suggestions.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("B")["id"]
+    r = server.spawn_monster(cid, "Thug")
+    assert "spawned" in r and r["spawned"][0]["name"] == "Tough"
+    miss = server.spawn_monster(cid, "Zorblax the Unknowable")
+    assert "error" in miss and len(miss["suggestions"]) > 0  # never a dead end
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

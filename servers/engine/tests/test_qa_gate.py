@@ -169,6 +169,22 @@ def test_gate_green_social_check_counts_as_dice_used(tmp_path):
     assert "[PASS] dice_used" in r.stdout
 
 
+def test_gate_xp_awarded_satisfied_by_end_combat(tmp_path):
+    # fidelity1/easter2 QA: end_combat AUTO-awards the defeated monsters' XP in the default
+    # "xp" mode, so a clean fight needs no separate award_xp call — end_combat must satisfy the
+    # xp_awarded check (it was falsely WARNing on fights that did award XP).
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["start_combat", "spawn_monster", "attack", "end_combat"],
+        chat=[{"role": "player", "text": "[do] I draw and strike."},
+              {"role": "dm", "text": "Steel rings; the thug drops."}],
+        moves=[{"role": "player", "kind": "do", "text": "attack the thug"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] xp_awarded" in r.stdout  # end_combat counts, not just an explicit award_xp
+
+
 def test_gate_green_skill_check_counts_as_dice_used(tmp_path):
     # skill_check (the generic ability/skill d20) must satisfy dice_used the same way
     # social_check does — a camp/exploration beat that rolls a Perception or Investigation

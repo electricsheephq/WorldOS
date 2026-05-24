@@ -179,18 +179,32 @@ def _token_prefix_matches(name: str) -> list[str]:
     return sorted(out)
 
 
+# 2014-SRD names a DM reaches for that the 2024 SRD (srd524) RENAMED — map them to the
+# existing 2024 statblock so a natural choice resolves instead of dead-ending. These are
+# pure name aliases to creatures already in the bestiary (no new content, no stat numbers).
+_ALIASES = {
+    "thug": "Tough",          # 2014 Thug -> 2024 Tough (CR 1/2 hired muscle)
+    "veteran": "Warrior Veteran",
+    "bandit captain": "Bandit Captain",
+}
+
+
 def resolve(name: str) -> Optional[str]:
     """Resolve a loose creature name to a canonical bestiary name, or None.
 
-    Tries exact match, then ``<name> Warrior`` (the 2024 SRD's baseline statblock
-    for many humanoids — e.g. 'Goblin' -> 'Goblin Warrior'), then a unique substring
-    match, then a unique TOKEN-PREFIX match ('Cult Fanatic' -> 'Cultist Fanatic'; a
-    QA finding where a near-miss name returned no match). Returns None when ambiguous
-    or absent (the caller should then offer ``find()`` suggestions)."""
+    Tries exact match, then a known 2014->2024 rename alias ('Thug' -> 'Tough'), then
+    ``<name> Warrior`` (the 2024 SRD's baseline statblock for many humanoids — e.g.
+    'Goblin' -> 'Goblin Warrior'), then a unique substring match, then a unique
+    TOKEN-PREFIX match ('Cult Fanatic' -> 'Cultist Fanatic'; a QA finding where a
+    near-miss name returned no match). Returns None when ambiguous or absent (the
+    caller should then offer ``find()`` suggestions)."""
     key = name.strip().lower()
     idx = _index()
     if key in idx:
         return idx[key]["row"]["fields"]["name"]
+    alias = _ALIASES.get(key)
+    if alias and alias.strip().lower() in idx:
+        return idx[alias.strip().lower()]["row"]["fields"]["name"]
     warrior = f"{key} warrior"
     if warrior in idx:
         return idx[warrior]["row"]["fields"]["name"]

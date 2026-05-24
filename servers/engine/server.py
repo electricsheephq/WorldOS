@@ -1114,6 +1114,7 @@ def start_character(
                 "level": ch.total_level,
                 "in_party": ch.id in c.party,
                 "promoted_existing": True,  # reused the roster record (no duplicate minted)
+                "combat_numbers": _combat_numbers(ch),  # authoritative to-hit/damage — don't invent
             }
 
         ch = Character(
@@ -1157,6 +1158,7 @@ def start_character(
         "class": cn,
         "level": ch.total_level,
         "in_party": ch.id in c.party,
+        "combat_numbers": _combat_numbers(ch),  # authoritative to-hit/damage — don't invent
     }
 
 
@@ -1363,7 +1365,12 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     canonical = bestiary.resolve(name)
     sb = bestiary.stat_block(canonical) if canonical else None
     if sb is None:
-        return {"error": f"no creature named {name!r} in the bestiary", "suggestions": bestiary.find(name)}
+        # Offer the best recovery hints: substring matches first, else token-prefix near-misses,
+        # else a few common low-CR humanoid foes that DO exist (so the DM never dead-ends on a miss).
+        sugg = bestiary.find(name) or bestiary._token_prefix_matches(name)
+        if not sugg:
+            sugg = [s for s in ("Bandit", "Guard", "Cultist", "Tough", "Scout") if bestiary.resolve(s)]
+        return {"error": f"no creature named {name!r} in the bestiary", "suggestions": sugg}
     n = max(1, min(int(count), 20))
     scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
     actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
@@ -1422,17 +1429,40 @@ def _class_resources_view(ch: Character) -> dict:
     }
 
 
+def _combat_numbers(ch: Character) -> dict:
+    """The sheet-derived attack/save numbers the DM must pass to `attack` — surfaced so the
+    DM reads AUTHORITATIVE values instead of inventing them (QA: a Rogue's to-hit was narrated
+    as +7 by copying another combatant when the sheet gave +3). `attack` trusts the bonus you
+    hand it, so the correct number has to be visible at the point of attack. Melee uses STR,
+    ranged/finesse uses DEX; damage modifiers are the same ability mod."""
+    prof = ch.proficiency_bonus
+    str_mod = ch.ability_modifier(Ability.STR)
+    dex_mod = ch.ability_modifier(Ability.DEX)
+    return {
+        "proficiency_bonus": prof,
+        "ability_mods": {a.value: ch.ability_modifier(a) for a in Ability},
+        "melee_attack_bonus": prof + str_mod,        # STR weapon
+        "ranged_attack_bonus": prof + dex_mod,        # DEX / finesse weapon
+        "melee_damage_mod": str_mod,
+        "ranged_damage_mod": dex_mod,
+        "note": "Pass these to attack(attack_bonus=…, damage_dice='NdM+<mod>'); the engine "
+                "trusts the number, so use the sheet's — never copy another combatant's.",
+    }
+
+
 @mcp.tool()
 def get_character(campaign_id: str, character_id: str) -> dict:
     """Return a character's full sheet, including depletable class-resource pools
     (Rage, Ki, Lay on Hands, Channel Divinity, …) under `class_resources` plus a
-    `class_resources_view` with fables-style remaining/max bars."""
+    `class_resources_view` with fables-style remaining/max bars, and a `combat_numbers`
+    block (sheet-derived attack/damage bonuses) so the DM never hand-invents a to-hit."""
     c = _require(campaign_id)
     ch = c.characters.get(character_id)
     if ch is None:
         raise ValueError(f"no character {character_id!r} in campaign")
     sheet = ch.model_dump(mode="json")
     sheet["class_resources_view"] = _class_resources_view(ch)
+    sheet["combat_numbers"] = _combat_numbers(ch)
     return sheet
 
 
@@ -2887,7 +2917,8 @@ READ_SKILLS = {"insight", "perception", "investigation"}
 
 
 @mcp.tool()
-def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int) -> dict:
+def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int,
+                 target_name: str = "") -> dict:
     """An actor's skill check against an NPC, with read-vs-influence semantics.
 
     INFLUENCE skills (persuasion / deception / intimidation / …) try to move the
@@ -2898,18 +2929,44 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
     NEVER change its attitude — reading or misreading someone is observer clarity,
     not influence. A read returns a `read` block (an accurate sense of the NPC's
     stance on success; a deliberately uncertain, almost-grasped impression on a
-    miss) for the DM to narrate — never a flat attitude penalty for a failed read."""
+    miss) for the DM to narrate — never a flat attitude penalty for a failed read.
+
+    For a SCENE-LOCAL EXTRA you won't track — a fishmonger, a gate guard, a barkeep —
+    pass ``npc_id=""`` and ``target_name="the fishmonger"``: the engine rolls the check
+    and returns pass/fail WITHOUT creating or mutating any roster NPC. Use a real
+    ``npc_id`` ONLY when you mean to move a tracked NPC's relationship — reusing a
+    standing NPC's id as a throwaway target silently corrupts their attitude across the
+    whole campaign (QA: a Deception vs a dock extra accidentally shifted a seeded
+    companion's standing because her id was passed as the target)."""
     if skill.lower() not in SKILL_ABILITIES:
         raise ValueError(f"unknown skill {skill!r}")
-    if actor_id == npc_id:
-        raise ValueError("actor and npc must be different characters")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         actor = _char(c, actor_id)
+        sk = skill.lower()
+        # Ephemeral target: a nameless scene extra. Roll it, persist NOTHING — no roster
+        # lookup, no attitude write — so a one-off social beat can't corrupt a tracked NPC.
+        if not npc_id:
+            if not target_name.strip():
+                raise ValueError("pass either npc_id (a tracked NPC) or target_name (a scene extra)")
+            r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
+            return {
+                "actor": actor.name,
+                "npc": target_name.strip(),
+                "skill": sk,
+                "kind": "read" if sk in READ_SKILLS else "influence",
+                "roll": r.total,
+                "natural": r.natural,
+                "dc": dc,
+                "success": r.total >= dc,
+                "ephemeral": True,
+                "note": "Scene extra — nothing persisted; narrate the outcome.",
+            }
+        if actor_id == npc_id:
+            raise ValueError("actor and npc must be different characters")
         the_npc = _char(c, npc_id)
         if the_npc.kind not in ("npc", "monster"):
             raise ValueError("social_check target must be an NPC or monster")
-        sk = skill.lower()
         r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
         success = r.total >= dc
         old = the_npc.attitude

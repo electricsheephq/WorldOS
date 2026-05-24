@@ -44,7 +44,7 @@ The mechanics above are the floor; these make it a *scene* and not a log. They a
 - **End each beat on a live, open moment dramatized IN the scene** — the situation in front of them and the choice it forces ("his hand drifts toward his coat; the back door is six feet behind you"). **Never** end on a bare sign-off tag on its own line — "*Your move.*" / "*What do you do?*" repeated every beat is dead air masquerading as agency. Let the open question live in the concrete detail, then stop and let the player act.
 
 ## Playbooks — pull the right one
-The mechanics + the non-negotiables above are always in force. The *craft* that makes a scene unforgettable, and the procedures for world-gen and combat, live in focused reference docs — read the one you need:
+The mechanics + the non-negotiables above are always in force. The *craft* that makes a scene unforgettable, and the procedures for world-gen and combat, live in focused reference docs — read the one you need. **Read them at `skills/dungeon-master/reference/<name>.md` (path relative to the repo root, i.e. your cwd) — not a bare `reference/…`, which won't resolve and wastes turns.**
 
 - **`reference/storycraft.md`** — staging the antagonist warmth-first, earning the epic, grandeur that presses on the room, seeded heartbreak, moral weight, the unforgettable beat. **Read this at the START of every session** — it is the difference between competent and unforgettable, and the thing the story-craft score rewards.
 - **`reference/living-world.md`** — generating or running an open/sandbox world: `start_world` (+ `resume`), `lookup_lore` + chronology, `add_location`, peopling it, emergent quests, and the background world-sim.

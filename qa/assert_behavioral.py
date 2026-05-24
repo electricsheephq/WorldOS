@@ -190,8 +190,11 @@ def main() -> int:
         chk("combat_ended", tools.get("end_combat", 0) > 0,
             f"start_combat={tools['start_combat']} end_combat={tools.get('end_combat', 0)} — combat may be left hanging",
             fatal=False)
-        chk("xp_awarded", tools.get("award_xp", 0) > 0,
-            f"combat ran but award_xp={tools.get('award_xp', 0)} — no XP for the fight?",
+        # end_combat AUTO-awards the defeated monsters' XP in the default "xp" leveling mode,
+        # so a clean fight needs NO separate award_xp call — count end_combat as the award path
+        # (only a fight cut off before end_combat should WARN here).
+        chk("xp_awarded", tools.get("award_xp", 0) + tools.get("end_combat", 0) > 0,
+            f"combat ran but neither award_xp nor end_combat fired ({tools.get('award_xp', 0)}/{tools.get('end_combat', 0)}) — no XP for the fight?",
             fatal=False)
 
     # 6) a player character exists in the party (state integrity)
