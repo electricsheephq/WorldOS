@@ -175,11 +175,31 @@ def suggest_action(
                     result["reason"] += f" {spell} is a bonus action — then attack {foe.name}."
             return result
 
-    # 2) A living enemy — focus the weakest to drop it fastest.
+    # 2) A living enemy. DEFAULT: focus the weakest to end its action economy fastest.
+    # PERIL OVERRIDE: when an ally is critically low (still up, <= HEAL_THRESHOLD max HP) and the
+    # companion can't heal it (the heal step above didn't fire), efficiency yields to PROTECTION —
+    # go for the most dangerous foe (proxy: highest max HP, the 'biggest' threat most likely about
+    # to drop the ally), not a trivial straggler. (QA: a non-healer companion mopped up a 2-HP
+    # cultist while the boss multiattacked the PC to death — it should have gone for the boss.)
     living_enemies = [
         ch for ch in in_combat if ch.kind in ENEMY_KINDS and ch.current_hp > 0
     ]
     if living_enemies:
+        ally_in_peril = any(
+            ch.kind in ALLY_KINDS and not ch.dead and 0 < ch.current_hp <= HEAL_THRESHOLD * ch.max_hp
+            for ch in in_combat
+        )
+        if ally_in_peril and len(living_enemies) > 1:
+            # max() keeps the first of any tie, i.e. the higher-initiative enemy.
+            target = max(living_enemies, key=lambda ch: ch.max_hp)
+            return {
+                "action": "attack",
+                "target_id": target.id,
+                "reason": (
+                    f"an ally is near death — drop {target.name}, the most dangerous foe on the "
+                    f"field ({target.current_hp}/{target.max_hp} HP), not a straggler."
+                ),
+            }
         # min() keeps the first of any HP tie, i.e. the higher-initiative enemy.
         target = min(living_enemies, key=lambda ch: ch.current_hp)
         return {

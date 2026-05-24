@@ -77,6 +77,34 @@ def test_suggest_attack_lowest_hp_enemy():
     assert isinstance(out["reason"], str) and out["reason"]
 
 
+def test_suggest_attack_protects_dying_ally_targets_biggest_threat():
+    # PERIL OVERRIDE (illithid QA): a non-healer companion, an ally near death (<=25% HP) and no
+    # heal available -> efficiency yields to protection: go for the most dangerous foe (highest
+    # max HP), NOT a 2-HP straggler. (The companion let the PC die mopping the straggler.)
+    comp = mk("Minsc", kind="companion")  # no spells -> can't heal -> reaches the attack step
+    dying = mk("Hero", kind="player", current_hp=2, max_hp=23)   # ~9% -> in peril
+    boss = mk("Priest", kind="npc", current_hp=20, max_hp=38)    # biggest threat by max HP
+    straggler = mk("Cultist", kind="monster", current_hp=2, max_hp=11)
+    combat = in_combat(comp, dying, boss, straggler)
+
+    out = suggest_action(comp, combat, roster(comp, dying, boss, straggler))
+    assert out["action"] == "attack"
+    assert out["target_id"] == boss.id  # the big threat, NOT the weakest straggler
+    assert "near death" in out["reason"]
+
+
+def test_suggest_attack_no_peril_still_focuses_weakest():
+    # Without an ally in peril the default holds: focus the weakest to drop it fastest.
+    comp = mk("Minsc", kind="companion")
+    ally = mk("Hero", kind="player", current_hp=20, max_hp=23)   # healthy -> no peril
+    boss = mk("Priest", kind="npc", current_hp=20, max_hp=38)
+    straggler = mk("Cultist", kind="monster", current_hp=2, max_hp=11)
+    combat = in_combat(comp, ally, boss, straggler)
+
+    out = suggest_action(comp, combat, roster(comp, ally, boss, straggler))
+    assert out["target_id"] == straggler.id  # weakest -> default efficiency
+
+
 def test_suggest_attack_skips_downed_enemies():
     # A 0-HP enemy is not a valid target; the only living enemy is chosen.
     comp = mk("Companion", kind="companion")
