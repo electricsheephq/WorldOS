@@ -519,7 +519,20 @@ def lookup_lore(campaign_id: str, query: str, limit: int = 5) -> dict:
     if this campaign isn't from a world seed, or the world ships no lore corpus — then
     generate freely and use `recall` for the facts you've established this game."""
     c = _require(campaign_id)
-    hits = lorebook.lookup_lore(c.world_id, query, max(1, limit)) if c.world_id else []
+    # De-conflict the .md corpus against the chosen ending on the SAME basis the overlay
+    # de-conflicts c.lore (recall's surface): demote/drop authored hits asserting a fact
+    # the ending superseded, and frame every hit with the authoritative world-state header
+    # — so recall and lookup_lore agree under a non-default ending (the two-surface fix).
+    # Both args are empty for a base/no-ending campaign -> byte-identical to before.
+    header = c.world_state.canon_header() if c.world_state else ""
+    hits = (
+        lorebook.lookup_lore(
+            c.world_id, query, max(1, limit),
+            supersedes=c.lore_supersedes, canon_header=header,
+        )
+        if c.world_id
+        else []
+    )
     return {
         "world_id": c.world_id,
         "era": c.era,
@@ -2721,7 +2734,22 @@ def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: in
     ("what did we decide about the cult?", "who did we meet in the sump?"). Read-
     only; the index is rebuilt from committed state when stale. `kinds` optionally
     filters (events|dialogue|decision|npc_fact|quest_milestone|consequence)."""
-    return {"query": query, "hits": ledger_mod.recall(campaign_id, query, kinds=kinds, limit=limit)}
+    hits = ledger_mod.recall(campaign_id, query, kinds=kinds, limit=limit)
+    # Frame the recalled memory with the campaign's authoritative world-state (the chosen
+    # ending), exactly as lookup_lore does — so both surfaces lead with the same canon and
+    # the DM never narrates against it. recall already reads overlay-de-conflicted c.lore;
+    # the header makes that authority explicit + consistent across the two retrieval tools.
+    # No world_state (base/no-ending campaign) -> no header, byte-identical to before.
+    # load_campaign (not _require) so a missing campaign stays a no-op (recall returns []),
+    # never a new raise the original wrapper didn't have.
+    c = load_campaign(campaign_id)
+    if c is not None and c.world_state is not None:
+        header = {
+            "kind": "world_state", "who": "world",
+            "text": c.world_state.canon_header(), "ref": "", "day": c.day,
+        }
+        hits = [header] + hits
+    return {"query": query, "hits": hits}
 
 
 @mcp.tool()

@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 import worldsim
-from models import Campaign, CompanionArc, Character, Faction, Location, Quest
+from models import Campaign, CompanionArc, Character, Faction, Location, Quest, WorldState
 
 
 def _content_dir() -> Path:
@@ -452,6 +452,13 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
         low = str(text).lower()
         return any(sub in low for sub in supersedes)
 
+    # Record the retraction predicate on the campaign so the OTHER lore surface
+    # (lookup_lore's .md corpus) can de-conflict on the same basis (the two-surface bug:
+    # the overlay edits c.lore but never the authored .md pages, so they contradict). The
+    # server wrapper passes these to lookup_lore to drop/demote a contradicting tier-0 hit.
+    if supersedes:
+        c.lore_supersedes = list(supersedes)
+
     # The base standing-thread texts are exactly the world-beats seed_threads already
     # scheduled (text == the thread). Capture the SURVIVING base threads (not retracted),
     # then clear ALL base thread-beats — we reseed once from the merged set below so no
@@ -517,6 +524,23 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 ch.memory.append(fact)
             # Always add a lore line too, so non-roster heroes are recallable as well.
             c.lore.append(fact)
+
+    # ADDITIVE (S5): the chosen ending sets the campaign's structured, canonical
+    # WORLD-STATE — the load-bearing facts the DM narrates within (tenor + setting-
+    # specific decisionals), surfaced as a canon header on recall/lookup_lore so both
+    # retrieval surfaces share one authority. A malformed block (bad tenor enum, wrong
+    # shape, forbidden extra key) must DEGRADE — skip it (the world keeps the base/None
+    # state) — not abort start_world, exactly like the companion_seeds guard below. No
+    # `world_state` key -> world_state stays None, so the default path is today's behavior.
+    ws_raw = overlay.get("world_state")
+    if isinstance(ws_raw, dict):
+        try:
+            c.world_state = WorldState.model_validate(ws_raw)
+        except (ValidationError, ValueError, TypeError):
+            print(
+                f"[content] skipping malformed world_state in ending overlay "
+                f"{overlay.get('id', overlay.get('name', '?'))!r}"
+            )
 
     # ADDITIVE post-state seeding (S4 synthesis): the chosen ending may PRE-LOAD a
     # canon companion's relationship arc + sealed agenda, so "the chosen ending shapes

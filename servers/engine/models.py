@@ -461,6 +461,43 @@ class HouseRules(_StrictModel):
     dm_can_fudge: bool = False  # allow DM dice fudging (off by default)
 
 
+class WorldState(_StrictModel):
+    """The campaign's canonical, structured world-state — the load-bearing FACTS the
+    DM must never narrate against (set by the chosen ending; default == today's base
+    world). The free-text `era`/`lore` prose is a *view* over this; when prose and
+    this row disagree (the two-surface bug: `recall` vs `lookup_lore`), THIS is canon.
+
+    Two halves, deliberately split so the engine stays setting-agnostic (lorebook's
+    "never hard-code a setting" contract):
+    - `world_tenor` — a TYPED, GENERIC dial (every setting has a mood). It is the only
+      field the engine may branch on (e.g. difficulty later); a closed Literal so a
+      typo can't silently invent a tenor.
+    - `facts` — the SETTING-SPECIFIC decisionals as a free `dict[str,str]` (e.g.
+      {"netherbrain":"claimed","the_emperor":"slain","baldurs_gate":"occupied"}). The
+      keys live in CONTENT (the ending files), never in engine code, so Sundered Reach
+      (or any world) defines its own. Surfaced verbatim as a canon header on lore reads.
+
+    ADDITIVE: an empty/absent WorldState is today's behavior (no header, no
+    de-confliction). Malformed ending blocks DEGRADE (the setter skips them), they
+    never abort start_world — mirroring the companion_seeds guard."""
+
+    world_tenor: Literal["hopeful", "uneasy", "grim"] = "hopeful"
+    facts: dict[str, str] = Field(default_factory=dict)
+
+    def canon_header(self) -> str:
+        """Render this state as a compact, authoritative one-liner the engine prepends to
+        lore reads (recall + lookup_lore) so the DM's ground truth for the scene is the
+        structured row — with the prose pages below explicitly framed as background that
+        may describe other timelines. Setting-agnostic: it just lists the dial + whatever
+        facts the content defined, never naming a specific setting's keys in engine code."""
+        facts = ", ".join(f"{k}={v}" for k, v in self.facts.items() if str(v).strip())
+        body = f"tenor={self.world_tenor}" + (f" — {facts}" if facts else "")
+        return (
+            f"CURRENT WORLD (authoritative): {body}. "
+            "Treat as canon; pages/memories below are background and may describe other timelines."
+        )
+
+
 class Campaign(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("camp"))
     title: str
@@ -494,6 +531,15 @@ class Campaign(_StrictModel):
     world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
     era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened
     ending_id: str = ""  # the post-state ending OVERLAY this world was seeded in (content/worlds/<id>/endings/<id>.json), or "" for the base/default state
+    # The canonical, structured world-state set by the chosen ending — the authoritative
+    # FACTS the DM narrates within (surfaced as a canon header on recall/lookup_lore).
+    # Additive: None == today's behavior (no header, no de-confliction). Mirrors ending_id/flags.
+    world_state: Optional[WorldState] = None
+    # The active ending's retraction predicate: case-insensitive substrings whose presence
+    # in an authored lore excerpt marks a now-SUPERSEDED fact (e.g. "Gortash is dead" under
+    # the tyranny ending). Stored at seed time so lookup_lore can de-conflict the .md corpus
+    # on the SAME basis _apply_ending_overlay already de-conflicts c.lore. Additive: [] == today.
+    lore_supersedes: list[str] = Field(default_factory=list)
     leveling_mode: Literal["xp", "milestone"] = "xp"  # "xp": end_combat auto-awards defeated monsters' XP to the party; "milestone": DM levels by story beat (no auto-XP)
     # Narrative pacing the DM honors when setting scene density. "adventure" (default):
     # tension, momentum, encounters. "downtime": slower — let scenes breathe, lean into
