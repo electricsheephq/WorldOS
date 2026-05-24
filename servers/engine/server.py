@@ -349,6 +349,16 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
     overlay = content_mod.load_ending_data(world_id, c.ending_id) if c.ending_id else None
     story_seeds = list(world.get("story_seeds", []) or [])
     if overlay is not None:
+        # S6 audit: an overlay may REPLACE the base story_seeds (not just append) for
+        # endings whose first base seed contradicts the post-state (e.g. "the contested
+        # dukedom: Gortash's empty seat" under a Gortash-rules ending). `story_seeds_replace`
+        # (or the alias `story_seeds`) supplants the base list; absent -> the base seeds are
+        # kept and only `story_seeds_append` adds to them (today's behavior). Degrade-not-
+        # abort: a present-but-non-list replace field is ignored (the base seeds stand),
+        # mirroring the world_state / companion_seeds tolerance for hand-edited overlays.
+        replace_raw = overlay.get("story_seeds_replace", overlay.get("story_seeds"))
+        if isinstance(replace_raw, list):
+            story_seeds = [str(s) for s in replace_raw if str(s).strip()]
         story_seeds = story_seeds + [
             str(s) for s in (overlay.get("story_seeds_append") or []) if str(s).strip()
         ]
