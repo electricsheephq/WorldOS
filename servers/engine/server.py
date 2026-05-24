@@ -817,16 +817,20 @@ _STARTING_WEAPON = {
 
 
 def _seed_starting_gear(ch, class_name: str) -> None:
-    """Seed a minimal class-appropriate kit (the armor that justifies the AC, a primary
-    weapon, a pack) onto a freshly-built sheet whose inventory is EMPTY — so an armored class
-    isn't walking at AC 16 with nothing on the sheet to explain it (QA: a veteran Fighter had
-    armor_class 16 and inventory []). No-op when the character already carries anything (a
-    template or canon pickup brought its own gear) or the class is unknown."""
-    if ch.inventory:
-        return  # respect gear a template / canon record already supplied
+    """Seed a minimal class-appropriate kit (the armor that justifies the AC, a primary weapon,
+    a pack) AND a modest starting purse onto a freshly-built PC/companion sheet — so a new hero
+    isn't standing there with an empty pack and 0 gold (QA: a level-3 rogue had inventory [] and
+    no currency). Currency is seeded only when the purse is empty, gear only when inventory is
+    empty (so a template / canon record that supplied its own kit is respected). Unknown/
+    class-less characters get nothing."""
     cname = (class_name or "").lower()
     if cname not in _STARTING_WEAPON:
-        return  # unknown / class-less -> leave inventory empty (today's behavior)
+        return  # unknown / class-less -> leave the sheet as-is (today's behavior)
+    cur = ch.currency
+    if not (cur.cp or cur.sp or cur.ep or cur.gp or cur.pp):  # don't clobber an explicit grant
+        cur.gp = 10 + 5 * max(0, ch.total_level - 1)  # a modest, level-scaled purse
+    if ch.inventory:
+        return  # respect gear a template / canon record already supplied
     armor = _STARTING_ARMOR.get(cname)
     if armor:
         ch.inventory.append(Item(name=armor, equipped=True, description="Starting armor."))
@@ -900,6 +904,8 @@ def create_character(
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class == 10))
+            if kind in ("player", "companion"):
+                _seed_starting_gear(ch, class_name)  # gear + purse (was only seeded via start_character)
         # Anchor NPCs/monsters to where they're introduced so "who's in the scene" is
         # the current location's cast — not the whole seeded world roster. Explicit
         # location_id wins; otherwise default to the party's current location.

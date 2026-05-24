@@ -666,7 +666,7 @@
     <div class="nav-i tab active" data-view="play"><span class="ic">▶</span> Play</div>
     <div class="nav-i tab" data-view="character"><span class="ic">▣</span> Character</div>
     <div class="nav-i tab" data-view="inventory"><span class="ic">▤</span> Inventory</div>
-    <div class="nav-i tab" data-view="spellbook"><span class="ic">✶</span> Spellbook</div>
+    <div class="nav-i tab" data-view="spellbook"><span class="ic">✶</span> Abilities</div>
     <div class="nav-i tab" data-view="progression"><span class="ic">⬙</span> Progression</div>
     <div class="nav-i tab" data-view="relationships"><span class="ic">♥</span> Relationships</div>
     <div class="nav-i tab" data-view="memories"><span class="ic">❂</span> Memories</div>
@@ -1224,7 +1224,7 @@ function deathSavePips(ds, { labels = true } = {}) {
 
 // ---- view switching ---------------------------------------------------------
 const SHEET_LABEL = { character:"Character", inventory:"Inventory",
-  spellbook:"Spellbook", progression:"Progression",
+  spellbook:"Abilities", progression:"Progression",
   relationships:"Relationships", memories:"Memories" };
 // Live filter text per searchable tab, kept in module state so it survives the 1.5s
 // re-render (renderSheet replaces innerHTML each poll). We restore the box value +
@@ -1472,14 +1472,34 @@ function renderInventory(c, wrap) {
 }
 
 // ---- 3. SPELLBOOK -----------------------------------------------------------
+// Class FEATURES (Sneak Attack, Cunning Action, Rage, …) live on c.features — surface them so a
+// martial's tab isn't blank ("rogue has no spells or abilities", owner QA): the abilities exist,
+// they're just not spells. Sneak Attack dice + Extra Attack get an explicit starred chip.
+function featuresCardHTML(c) {
+  const feats = (c.features || []).filter(f => f && !/\bSubclass$/.test(f));  // drop the "<Class> Subclass" placeholder
+  const extra = [];
+  if (c.sneak_attack_dice) extra.push("Sneak Attack " + c.sneak_attack_dice);
+  if (c.extra_attacks) extra.push("Extra Attack ×" + (Number(c.extra_attacks) + 1));
+  if (!feats.length && !extra.length) return "";
+  const chips = feats.map(f => `<span class="spell">${esc(f)}</span>`).join("")
+    + extra.map(e => `<span class="spell prep"><span class="star">✦</span>${esc(e)}</span>`).join("");
+  return `<div class="scard" style="grid-column:1/-1"><h3>Class features</h3><div class="spell-chips">${chips}</div></div>`;
+}
 function renderSpellbook(c, wrap) {
   const slots = c.spell_slots||{};                     // {"1":{maximum,used},...}
   const known = c.spells_known||[], prepared = new Set(c.spells_prepared||[]);
   const slotLevels = Object.keys(slots).map(Number).filter(n=>(slots[n]?.maximum||0)>0).sort((a,b)=>a-b);
   const hasMagic = known.length || prepared.size || slotLevels.length;
   if (!hasMagic) {
-    wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spellbook", identityLine(c),
-      `<div class="sheet-empty">No spells known — ${esc(c.name||"this character")} walks the martial path.</div>`);
+    // A martial: no spells, but show their class features + any resource pools so the tab carries
+    // their abilities (not a bare "walks the martial path").
+    const fc = featuresCardHTML(c);
+    const res = resourcePoolsHTML(c);
+    const resCard = res ? `<div class="scard" style="grid-column:1/-1"><h3>Resources</h3>${res}</div>` : "";
+    const body = (fc || resCard)
+      ? `<div class="sgrid cols2">${fc}${resCard}</div>`
+      : `<div class="sheet-empty">No spells or class features recorded yet.</div>`;
+    wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Abilities", identityLine(c), body);
     return;
   }
   // slot tracker (pips: open vs used)
@@ -1512,8 +1532,8 @@ function renderSpellbook(c, wrap) {
   const resCard = resBody
     ? `<div class="scard" style="grid-column:1/-1"><h3>Resources</h3>${resBody}</div>` : "";
 
-  const body = `<div class="sgrid cols2">${slotCard}${resCard}${spellCard}</div>`;
-  wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spellbook", identityLine(c), body);
+  const body = `<div class="sgrid cols2">${slotCard}${resCard}${spellCard}${featuresCardHTML(c)}</div>`;
+  wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spells & Abilities", identityLine(c), body);
 }
 
 // ---- 4. PROGRESSION ---------------------------------------------------------
@@ -1635,8 +1655,14 @@ function relRow(c) {
 function renderRelationships(wrap) {
   const sInput = $("sheet-search-input");
   const wasFocused = sInput && document.activeElement === sInput, caret = sInput ? sInput.selectionStart : null;
+  // Only show people the party has actually MET — not the whole seeded canon roster (owner QA:
+  // "he already knows the 8 NPCs"). Companions are always shown (they're travelling with you);
+  // an NPC counts as met when the engine flags `met` (set when the DM brings them on-screen) or,
+  // as a fallback for older state, once any interaction has moved their disposition off neutral.
+  const party = (lastState && lastState.party) || [];
   const chars = Object.values((lastState && lastState.characters) || {})
-    .filter(c => c.kind === "npc" || c.kind === "companion");
+    .filter(c => c.kind === "companion"
+      || (c.kind === "npc" && (c.met === true || (c.attitude_value || 0) !== 0 || party.includes(c.id))));
   // companions first, then NPCs; alpha within each group
   chars.sort((a,b) => (a.kind===b.kind ? (a.name||"").localeCompare(b.name||"")
                                        : (a.kind==="companion" ? -1 : 1)));
@@ -1733,7 +1759,11 @@ function renderMemories(wrap) {
         </div></div>`;
   }).join("")}</div>` : "";
 
-  const anything = memCount || decisions.length || beats.length || pending.length;
+  // Memories is the PAST: what the cast remembers, what the party decided, and what just
+  // happened. The DM's SCHEDULED FUTURE (pending consequences + private notes) is intentionally
+  // NOT shown here — surfacing "what's coming" read as fortune-telling and leaked DM-side notes
+  // (owner QA). It stays a director-side concern, out of the player's journal.
+  const anything = memCount || decisions.length || beats.length;
   let body;
   if (!anything) {
     body = q
@@ -1741,8 +1771,6 @@ function renderMemories(wrap) {
       : `<div class="sheet-empty">No memories yet — the story hasn't begun to leave its mark.</div>`;
   } else {
     body = `
-      ${conseqBody ? `<div class="mem-sec"><div class="mem-sh">What's coming <span class="mem-sn">${pending.length}</span></div>
-        <div class="scard">${conseqBody}</div></div>` : ""}
       ${memCards ? `<div class="mem-sec"><div class="mem-sh">Remembered by the cast <span class="mem-sn">${memCount}</span></div>
         <div class="sgrid cols2">${memCards}</div></div>` : ""}
       ${decBody ? `<div class="mem-sec"><div class="mem-sh">Decisions <span class="mem-sn">${decisions.length}</span></div>
@@ -1750,7 +1778,7 @@ function renderMemories(wrap) {
       ${beatBody ? `<div class="mem-sec"><div class="mem-sh">Recent beats <span class="mem-sn">${beats.length}</span></div>
         <div class="scard">${beatBody}</div></div>` : ""}`;
   }
-  wrap.innerHTML = sheetShell("Memories", "", searchBox("memories", "Search memories, decisions, beats, and what's coming…") + body);
+  wrap.innerHTML = sheetShell("Memories", "", searchBox("memories", "Search memories, decisions, and recent beats…") + body);
   keepSearchFocus(wasFocused, caret);
 }
 
