@@ -432,3 +432,7 @@ class Campaign(_StrictModel):
     world_id: str = ""  # the world seed this campaign was started from (for lookup_lore over its lore corpus)
     era: str = ""  # in-world chronology ("1492 DR, the winter after the Absolute") so the DM keeps the timeline straight — who's alive, what's already happened
     leveling_mode: Literal["xp", "milestone"] = "xp"  # "xp": end_combat auto-awards defeated monsters' XP to the party; "milestone": DM levels by story beat (no auto-XP)
+    # Narrative pacing the DM honors when setting scene density. "adventure" (default):
+    # tension, momentum, encounters. "downtime": slower — let scenes breathe, lean into
+    # social/shopping/recovery. Advisory (the DM reads it via get_state); never computed on.
+    pacing_mode: Literal["adventure", "downtime"] = "adventure"

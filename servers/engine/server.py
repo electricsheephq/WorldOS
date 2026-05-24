@@ -407,6 +407,8 @@ def get_state(campaign_id: str) -> dict:
         "in_combat": c.combat.active,
         "current_turn": c.combat.current_combatant_id,
         "npc_count": sum(1 for x in c.characters.values() if x.kind == "npc"),
+        "pacing_mode": c.pacing_mode,
+        "leveling_mode": c.leveling_mode,
     }
 
 
@@ -2077,6 +2079,23 @@ def adjust_attitude(campaign_id: str, character_id: str, delta: int) -> dict:
             "old_attitude_value": old,
             "attitude_value": ch.attitude_value,
         }
+
+
+PACING_MODES = ("adventure", "downtime")
+
+
+@mcp.tool()
+def set_pacing(campaign_id: str, mode: str) -> dict:
+    """Set the campaign's narrative pacing. "adventure" (default): tension, momentum,
+    encounters. "downtime": slower — let scenes breathe, lean into social / shopping /
+    recovery. Advisory: the DM reads it via get_state and shifts narration density."""
+    if mode not in PACING_MODES:
+        raise ValueError(f"pacing mode must be one of {PACING_MODES}, got {mode!r}")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.pacing_mode = mode
+        save_campaign(c)
+        return {"id": c.id, "pacing_mode": c.pacing_mode}
 
 
 @mcp.tool()

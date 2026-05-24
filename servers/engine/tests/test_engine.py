@@ -122,3 +122,25 @@ def test_engine_tools_end_to_end():
 
     with pytest.raises(Exception):
         server.update_character(cid, char_id, {"max_hpp": 99})  # typo rejected
+
+
+def test_pacing_mode_default_set_and_invalid():
+    # Feature 2: pacing defaults to "adventure", a valid mode persists + surfaces in
+    # get_state, and an invalid mode is rejected (sole-writer validation).
+    import server
+
+    cid = server.create_campaign("Pacing")["id"]
+    assert server.get_state(cid)["pacing_mode"] == "adventure"  # additive default
+
+    out = server.set_pacing(cid, "downtime")
+    assert out["pacing_mode"] == "downtime"
+    assert server.get_state(cid)["pacing_mode"] == "downtime"  # persisted
+
+    # round-trips through the snapshot the viewer reads
+    assert store.load_campaign(cid).pacing_mode == "downtime"
+
+    server.set_pacing(cid, "adventure")
+    assert server.get_state(cid)["pacing_mode"] == "adventure"
+
+    with pytest.raises(Exception):
+        server.set_pacing(cid, "leisurely")  # not a valid mode
