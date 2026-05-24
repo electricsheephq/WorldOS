@@ -137,6 +137,19 @@ class SpellSlotLevel(_StrictModel):
     used: int = 0
 
 
+class ClassResource(_StrictModel):
+    """A depletable per-rest class resource pool (Rage, Ki, Lay on Hands, Channel
+    Divinity, Bardic Inspiration, Sorcery Points, Second Wind, Action Surge, Wild
+    Shape, …). `used` counts expended points; `max - used` is what's left.
+    `recharge` says which rest refills it: "short" pools refresh on a short OR long
+    rest, "long" only on a long rest, "none" never (DM restores manually). Pools are
+    data-driven from class + level; empty `class_resources` == today's behavior."""
+
+    max: int = 0
+    used: int = 0
+    recharge: Literal["short", "long", "none"] = "long"
+
+
 class DeathSaves(_StrictModel):
     successes: int = 0
     failures: int = 0
@@ -196,6 +209,12 @@ class Character(_StrictModel):
     spell_slots: dict[int, SpellSlotLevel] = Field(default_factory=dict)  # slot level -> slots
     spells_known: list[str] = Field(default_factory=list)
     spells_prepared: list[str] = Field(default_factory=list)
+    # Depletable per-rest class resource pools, keyed by a stable resource id
+    # ("rage", "ki", "lay_on_hands", "channel_divinity", "bardic_inspiration",
+    # "sorcery_points", "second_wind", "action_surge", "wild_shape"). Derived from
+    # class + level; empty == today's behavior, so existing campaigns deserialize
+    # unchanged. See ClassResource / srd_tables.class_resources_through.
+    class_resources: dict[str, ClassResource] = Field(default_factory=dict)
 
     # progression
     xp: int = 0
@@ -225,6 +244,9 @@ class Character(_StrictModel):
         for slot in self.spell_slots.values():
             slot.maximum = max(0, slot.maximum)
             slot.used = max(0, min(slot.used, slot.maximum))
+        for res in self.class_resources.values():
+            res.max = max(0, res.max)
+            res.used = max(0, min(res.used, res.max))
         return self
 
     @property

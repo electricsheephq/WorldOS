@@ -177,3 +177,106 @@ def warlock_pact_slots(warlock_level: int) -> dict | None:
     if warlock_level < 1:
         return None
     return _slots()["warlock_pact"].get(str(min(20, warlock_level)))
+
+
+# ---------------------------------------------------------------------------
+# Class resource pools (Rage, Ki, Lay on Hands, Channel Divinity, …)
+#
+# Depletable per-rest pools, derived from class + level. Each spec is a callable
+# (level, cha_mod) -> (max, recharge) or None when the class has no pool yet at
+# that level. Values are sensible SRD 5e baselines (the engine is the authority;
+# the DM can always restore manually for edge cases / homebrew). recharge is one
+# of "short" (refresh on short OR long rest), "long" (long rest only), "none".
+# ---------------------------------------------------------------------------
+
+# Barbarian Rage uses by level (SRD: 2/3/3/3/4/4/4/4/4/4/4/5/5/5/5/5/6 ...).
+_RAGE_USES = {1: 2, 3: 3, 6: 4, 12: 5, 17: 6}
+
+
+def _rage_uses(level: int) -> int:
+    n = 2
+    for threshold, uses in sorted(_RAGE_USES.items()):
+        if level >= threshold:
+            n = uses
+    return n
+
+
+def _channel_divinity_cleric(level: int) -> int:
+    # Cleric: 2 uses at L2, 3 at L6, 4 at L18 (SRD 5.2).
+    if level < 2:
+        return 0
+    if level >= 18:
+        return 4
+    if level >= 6:
+        return 3
+    return 2
+
+
+def _channel_divinity_paladin(level: int) -> int:
+    # Paladin: gains Channel Divinity at L3 (2 uses), 3 uses at L11 (SRD 5.2).
+    if level < 3:
+        return 0
+    return 3 if level >= 11 else 2
+
+
+# class name -> {resource_id: (label, recharge, fn(level, cha_mod) -> max)}
+_CLASS_RESOURCES: dict[str, dict] = {
+    "barbarian": {
+        "rage": ("Rage", "long", lambda lvl, cha: _rage_uses(lvl)),
+    },
+    "monk": {
+        # Monk's Focus / Ki points = monk level, from L2; short-rest recharge.
+        "ki": ("Ki / Focus Points", "short", lambda lvl, cha: lvl if lvl >= 2 else 0),
+    },
+    "paladin": {
+        # Lay on Hands pool = 5 x paladin level (hit points), long-rest recharge.
+        "lay_on_hands": ("Lay on Hands", "long", lambda lvl, cha: 5 * lvl),
+        "channel_divinity": ("Channel Divinity", "long", lambda lvl, cha: _channel_divinity_paladin(lvl)),
+    },
+    "cleric": {
+        # Cleric Channel Divinity from L2; short-rest recharge.
+        "channel_divinity": ("Channel Divinity", "short", lambda lvl, cha: _channel_divinity_cleric(lvl)),
+    },
+    "bard": {
+        # Bardic Inspiration uses = CHA mod (min 1 once you have the feature).
+        # Short-rest recharge from L5 (Font of Inspiration); long-rest before that.
+        "bardic_inspiration": ("Bardic Inspiration", "long", lambda lvl, cha: max(1, cha)),
+    },
+    "sorcerer": {
+        # Sorcery Points = sorcerer level, from L2; long-rest recharge.
+        "sorcery_points": ("Sorcery Points", "long", lambda lvl, cha: lvl if lvl >= 2 else 0),
+    },
+    "fighter": {
+        # Second Wind from L1; Action Surge from L2 (2 uses at L17). Short-rest.
+        "second_wind": ("Second Wind", "short", lambda lvl, cha: 1),
+        "action_surge": ("Action Surge", "short", lambda lvl, cha: (2 if lvl >= 17 else 1) if lvl >= 2 else 0),
+    },
+    "druid": {
+        # Wild Shape: 2 uses from L2 (Archdruid grants unlimited at L20 -> not pooled).
+        "wild_shape": ("Wild Shape", "short", lambda lvl, cha: 0 if lvl >= 20 else (2 if lvl >= 2 else 0)),
+    },
+}
+
+# Bard switches Bardic Inspiration to short-rest recharge at L5 (Font of Inspiration).
+_BARD_FONT_OF_INSPIRATION_LEVEL = 5
+
+
+def class_resources_through(class_name: str, level: int, cha_mod: int = 0) -> dict[str, dict]:
+    """The depletable resource pools a single class grants by `level`, as
+    ``{resource_id: {"max": int, "recharge": str}}``. ``cha_mod`` feeds pools sized
+    by Charisma (Bardic Inspiration). Empty for an unknown class or a class with no
+    pool yet at that level (e.g. a level-1 wizard). Pure — no campaign state."""
+    spec = _CLASS_RESOURCES.get(class_name.lower())
+    if not spec:
+        return {}
+    lvl = int(level)
+    out: dict[str, dict] = {}
+    for res_id, (_label, recharge, fn) in spec.items():
+        mx = int(fn(lvl, cha_mod))
+        if mx <= 0:
+            continue
+        # Bard's Bardic Inspiration becomes short-rest at L5 (Font of Inspiration).
+        if res_id == "bardic_inspiration" and lvl >= _BARD_FONT_OF_INSPIRATION_LEVEL:
+            recharge = "short"
+        out[res_id] = {"max": mx, "recharge": recharge}
+    return out
