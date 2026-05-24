@@ -432,6 +432,32 @@ def test_recruit_preserves_ending_seeded_arc_end_to_end(tmp_path, monkeypatch):
     assert sum(1 for ch in server.get_state(cid)["party"] if ch["name"] == "Astarion") == 1
 
 
+def test_ability_scores_accept_5e_shorthand(tmp_path, monkeypatch):
+    # QA finding (postbg3-validate): start_character failed with "6 validation errors for
+    # AbilityScores — Extra inputs are not permitted" because the DM passed the universal
+    # 5e shorthand {str, dex, con, int, wis, cha}. The model now aliases short -> long.
+    from models import AbilityScores
+    import pytest
+    a = AbilityScores(**{"str": 12, "dex": 19, "con": 14, "int": 10, "wis": 13, "cha": 8})
+    assert (a.strength, a.dexterity, a.constitution) == (12, 19, 14)
+    assert (a.intelligence, a.wisdom, a.charisma) == (10, 13, 8)
+    # long form unaffected; both-present -> long wins; a genuine typo still trips forbid
+    assert AbilityScores(strength=15).strength == 15
+    assert AbilityScores(**{"str": 8, "strength": 18}).strength == 18
+    with pytest.raises(Exception):
+        AbilityScores(**{"strenth": 12})
+
+    # and end-to-end through the tool the QA actually used: create_character with shorthand
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Shorthand")["id"]
+    pid = server.create_character(
+        cid, "Mira", kind="player", class_name="Rogue",
+        abilities={"str": 10, "dex": 17, "con": 13, "int": 12, "wis": 14, "cha": 11},
+    )["id"]
+    sheet = server.get_character(cid, pid)
+    assert sheet["abilities"]["dexterity"] == 17 and sheet["abilities"]["wisdom"] == 14
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

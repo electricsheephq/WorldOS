@@ -101,6 +101,25 @@ class AbilityScores(_StrictModel):
     wisdom: int = 10
     charisma: int = 10
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_5e_shorthand(cls, data):
+        """Accept the universal 5e shorthand (str/dex/con/int/wis/cha) as well as the
+        full field names. The DM/agent reaches for `{"str": 12, "dex": 19, ...}`
+        reflexively; rejecting it with a bare 'Extra inputs are not permitted' was a
+        silent footgun (QA finding). A long key, if also present, wins over its short
+        alias; a genuine typo ('strenth') still trips extra='forbid'."""
+        if isinstance(data, dict):
+            abbr = {"str": "strength", "dex": "dexterity", "con": "constitution",
+                    "int": "intelligence", "wis": "wisdom", "cha": "charisma"}
+            out = dict(data)
+            for short, long in abbr.items():
+                if short in out:
+                    out.setdefault(long, out[short])  # long form wins if both present
+                    out.pop(short, None)
+            return out
+        return data
+
     def score(self, ability: Ability) -> int:
         return getattr(self, _ABILITY_FIELD[ability])
 
