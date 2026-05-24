@@ -83,15 +83,14 @@ dm_turn() {
 # viewer into interactive (live) mode so the action palette accepts moves — /move
 # appends each to $MOVES; CLAWDND_VIEWER_CHAT is the beat-by-beat chat it renders.
 #
-# Note: viewer/server.py exits immediately ("No campaign found") if it starts before
-# any campaign exists on disk — and the DM only mints the campaign on its first turn
-# (below). So supervise it: (re)start the viewer until it stays up. The DM's start_world
-# writes the campaign within the first seconds of that turn, so the viewer comes up and
-# stays up well before the opening scene is narrated. No engine/viewer changes needed.
-# The supervisor runs in its own subshell: it (re)starts the viewer and BLOCKS on it
-# with `wait` — which also reaps it, so an exited viewer is truly gone (no zombie that
-# would fool a liveness check). When the viewer exits (e.g. it found no campaign yet),
-# loop and restart after a short pause; once a campaign exists it binds and `wait`
+# Note: the viewer now binds immediately even before any campaign exists (it serves a
+# graceful empty state and lazily attaches once the DM's first turn mints the world), so
+# it no longer crashes the way it once did. We still run it under a tiny supervisor as a
+# SAFETY NET — if the viewer process ever dies (a crash, an OOM), this restarts it rather
+# than leaving the dashboard dead mid-game. The supervisor runs in its own subshell: it
+# (re)starts the viewer and BLOCKS on it with `wait` — which also reaps it, so an exited
+# viewer is truly gone (no zombie that would fool a liveness check). On exit, loop and
+# restart after a short pause; in the normal case it binds on the first try and `wait`
 # blocks for the rest of the game. Writes the live viewer pid to $VPID_FILE so the
 # parent's EXIT trap can kill the actual server, not just the supervisor.
 VPID_FILE="$STATE_DIR/.viewer.pid"

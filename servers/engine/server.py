@@ -380,17 +380,32 @@ def get_state(campaign_id: str) -> dict:
         ch = c.characters.get(cid)
         if ch is None:
             continue
-        party.append(
-            {
-                "id": ch.id,
-                "name": ch.name,
-                "kind": ch.kind,
-                "hp": f"{ch.current_hp}/{ch.max_hp}",
-                "ac": ch.armor_class,
-                "conditions": [x.value for x in ch.conditions],
-                "voice_id": ch.voice_id,
+        entry = {
+            "id": ch.id,
+            "name": ch.name,
+            "kind": ch.kind,
+            "hp": f"{ch.current_hp}/{ch.max_hp}",
+            "ac": ch.armor_class,
+            "conditions": [x.value for x in ch.conditions],
+            "voice_id": ch.voice_id,
+        }
+        # Surface the two states a re-grounding DM most needs but the thin summary hid:
+        # a DYING ally (0 HP, not dead/stabilized) with their death-save tally, and any
+        # remaining class-resource pools (Rage/Ki/Channel Divinity/…) as "left/max". The
+        # dashboard reads these from the full snapshot, but a DM re-grounding via get_state
+        # shouldn't have to make a second call to learn an ally is bleeding out.
+        if ch.current_hp <= 0 and not ch.dead and not ch.stable:
+            entry["dying"] = True
+            entry["death_saves"] = {
+                "successes": ch.death_saves.successes,
+                "failures": ch.death_saves.failures,
             }
-        )
+        if ch.class_resources:
+            entry["resources"] = {
+                rid: f"{max(0, res.max - res.used)}/{res.max}"
+                for rid, res in ch.class_resources.items()
+            }
+        party.append(entry)
     return {
         "id": c.id,
         "title": c.title,

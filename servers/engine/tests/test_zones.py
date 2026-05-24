@@ -280,7 +280,10 @@ def test_no_zones_combat_runs_unchanged(fight):
     # A melee attack across "nowhere in particular" is never gated.
     res = server.attack(cid, hero, gob, attack_bonus=99, damage_dice="1d6+3")
     assert "range_warning" not in res
-    assert res["hit"] is True and res["damage"] is not None
+    # The attack RESOLVES ungated (no zones = theater-of-the-mind). Don't assert a hit: a
+    # natural 1 auto-misses even at +99 and the dice are non-deterministic per run, so a
+    # hit-assertion is ~5% flaky. The point here is "ungated + normal result", not a roll.
+    assert "hit" in res and (res["hit"] is False or res["damage"] is not None)
 
     # combatants_in_zone returns empty (nobody is in any named zone).
     assert server.combatants_in_zone(cid, "anywhere")["count"] == 0
