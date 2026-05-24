@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+import questgen
 import worldsim
 from models import Campaign, CompanionArc, Character, Faction, Location, Quest, WorldState
 
@@ -852,5 +853,12 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     # seeded off the campaign id (a fresh uuid per campaign) so a given campaign's roll is
     # stable; a separate Random instance leaves the ending roll above untouched.
     _resolve_quest_variants(c, world, random.Random(c.id))
+
+    # S7 — the quest-generation layer: assemble lore-derived quest hooks (from the resolved
+    # outcomes + world_state + roster) + a guaranteed 4-beat cold-open PRELUDE the DM weaves.
+    # Runs LAST so it can draw on everything seeded above. A SEPARATE Random instance (distinct
+    # seed) keeps it from perturbing the quest-variant roll's stream. Additive + degrade-not-
+    # abort: a world with no variants/locations yields an empty graph (today's behavior).
+    questgen.generate(c, world, random.Random(f"{c.id}:questgen"))
 
     return c

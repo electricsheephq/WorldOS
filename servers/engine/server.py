@@ -423,6 +423,17 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
             "Other campaigns already exist in this world — to CONTINUE one instead of "
             "this fresh start, call start_world(world_id, resume=<campaign_id>)."
         )
+    # S7 — surface the cold-open + quest seeds at session open so the DM opens a REAL scene
+    # (not mid-quest). The PRELUDE is the 4 guaranteed beats to weave (Arrival -> Meeting ->
+    # Inciting Incident -> Threshold); quest_hooks are lore-derived seeds to pull. Absent when
+    # the world generated none (no quest_variants/locations -> today's behavior).
+    if c.prelude:
+        result["prelude"] = [{"kind": b.kind, "note": b.note, "ref_id": b.ref_id} for b in c.prelude]
+    if c.quest_hooks:
+        result["quest_hooks_count"] = len(c.quest_hooks)
+        spine = next((h for h in c.quest_hooks if h.spine), None)
+        if spine is not None:
+            result["spine_grievance"] = spine.grievance
     return result
 
 
@@ -3291,6 +3302,86 @@ def get_quest_outcomes(campaign_id: str) -> dict:
     `{}` for a world that ships no quest_variants. Read-only."""
     c = _require(campaign_id)
     return {"quest_outcomes": dict(c.quest_outcomes), "count": len(c.quest_outcomes)}
+
+
+def _hook_view(c, h) -> dict:
+    """A DM-facing view of a quest hook with its bound nouns resolved to names (so the DM can
+    weave it without cross-referencing ids)."""
+    giver = c.characters.get(h.giver_id)
+    target = c.characters.get(h.target_id) or c.factions.get(h.target_id)
+    place = c.locations.get(h.place_id)
+    return {
+        "id": h.id, "title": h.title, "shape": h.shape, "grievance": h.grievance,
+        "motivation": h.motivation, "note": h.note, "status": h.status, "spine": h.spine,
+        "arc_back": h.arc_back, "prereq": list(h.prereq),
+        "giver": giver.name if giver else "", "giver_id": h.giver_id,
+        "target": target.name if target else "", "target_id": h.target_id,
+        "place": place.name if place else "", "place_id": h.place_id,
+        "item": h.item,
+    }
+
+
+@mcp.tool()
+def get_quest_hooks(campaign_id: str, status: str = "", spine_only: bool = False) -> dict:
+    """S7 — the lore-derived quest SEEDS the DM pulls and weaves (NOT an engine state machine:
+    the engine assembled each from the seeded world; the DM narrates/advances). Each hook is a
+    dramatic SHAPE tag bound to typed lore nouns (giver/target/place/item) + a `grievance` (a
+    wrong the lore contains), with `prereq`/`arc_back` LABELS the DM reads and a DM-set `status`.
+    The `spine` hook is the main arc; ribs `arc_back` to it. Pull a hook the party bites on into
+    a tracked Quest with add_quest, and call set_quest_status as you advance it. Optional filters:
+    `status` ('open'|'active'|'resolved') and `spine_only`. Empty for a world with no hooks.
+    Read-only."""
+    c = _require(campaign_id)
+    hooks = c.quest_hooks
+    if spine_only:
+        hooks = [h for h in hooks if h.spine]
+    if status:
+        s = status.strip().lower()
+        hooks = [h for h in hooks if h.status == s]
+    return {"quest_hooks": [_hook_view(c, h) for h in hooks], "count": len(hooks)}
+
+
+@mcp.tool()
+def get_prelude(campaign_id: str) -> dict:
+    """S7 — the guaranteed 4-beat cold-open the DM weaves so a session never opens 'mid-quest'
+    or skips 'how the party meets': Arrival (ground the PC) -> Meeting (a companion + a shared
+    stake) -> Inciting Incident (the wrong lands in front of the party) -> Threshold (commit;
+    the first thread goes live). The engine guarantees the four beats + bound nouns (ref_id);
+    the DM owns ORDER, framing, and prose — weave it, don't read it as a rail. `ref_id` resolves
+    to a location (arrival), a companion (meeting), or the spine hook (inciting/threshold).
+    Empty for a world that generated no prelude. Read-only."""
+    c = _require(campaign_id)
+    out = []
+    for b in c.prelude:
+        ref_name = ""
+        if b.ref_id:
+            ref = c.locations.get(b.ref_id) or c.characters.get(b.ref_id)
+            if ref is not None:
+                ref_name = ref.name
+            else:  # inciting/threshold bind the spine HOOK id -> show its grievance
+                hook = next((h for h in c.quest_hooks if h.id == b.ref_id), None)
+                ref_name = hook.grievance if hook else ""
+        out.append({"kind": b.kind, "note": b.note, "ref_id": b.ref_id, "ref_name": ref_name})
+    return {"prelude": out, "count": len(out)}
+
+
+@mcp.tool()
+def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
+    """S7 — advance a quest hook as the DM narrates it: 'open' (a seed not yet taken), 'active'
+    (the party is pursuing it), 'resolved' (done — its arc_back may now matter to the spine).
+    The engine does NOT auto-detect completion (only the DM judges the fiction); this is how the
+    DM records progress so the graph reflects the story. Returns the updated hook view."""
+    s = status.strip().lower()
+    if s not in ("open", "active", "resolved"):
+        raise ValueError(f"status must be open|active|resolved, got {status!r}")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        h = next((x for x in c.quest_hooks if x.id == hook_id), None)
+        if h is None:
+            raise ValueError(f"no quest hook with id {hook_id!r}")
+        h.status = s  # type: ignore[assignment]
+        save_campaign(c)
+        return _hook_view(c, h)
 
 
 @mcp.tool()

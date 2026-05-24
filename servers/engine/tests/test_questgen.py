@@ -115,3 +115,69 @@ def test_no_world_state_first_hook_is_spine_and_degrades_clean():
     assert sum(1 for h in c.quest_hooks if h.spine) == 1
     assert c.quest_hooks[0].spine  # no facts to rank by -> the first hook leads
     assert [b.kind for b in c.prelude] == ["arrival", "meeting", "inciting_incident", "threshold"]
+
+
+# --- wiring into seed_world + the MCP tools (server path) ---------------------------------
+
+
+def test_start_world_wires_s7_and_echoes_and_persists(tmp_path, monkeypatch):
+    import server
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    out = server.start_world("baldurs-gate", ending="gortash-tyranny")
+    cid = out["campaign_id"]
+    # the echo surfaces the cold-open + the seeds at session open
+    assert len(out.get("prelude", [])) == 4
+    assert [b["kind"] for b in out["prelude"]] == ["arrival", "meeting", "inciting_incident", "threshold"]
+    assert out.get("quest_hooks_count", 0) >= 1
+    assert out.get("spine_grievance")
+    # and it persisted (a re-load sees the generated graph)
+    c = server._require(cid)
+    assert c.quest_hooks and c.prelude
+
+
+def test_s7_tools_read_filter_and_advance(tmp_path, monkeypatch):
+    import pytest
+    import server
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
+
+    # get_prelude resolves ref names (location for arrival, companion for meeting, spine grievance)
+    pre = server.get_prelude(cid)
+    assert pre["count"] == 4
+    arrival = next(b for b in pre["prelude"] if b["kind"] == "arrival")
+    assert arrival["ref_name"]  # a real starting place
+
+    # get_quest_hooks: spine_only + status filters; the spine view resolves its bound nouns
+    allh = server.get_quest_hooks(cid)
+    assert allh["count"] >= 1
+    spine = server.get_quest_hooks(cid, spine_only=True)["quest_hooks"]
+    assert len(spine) == 1 and spine[0]["spine"] is True
+    hid = spine[0]["id"]
+
+    # set_quest_status advances + persists; the status filter reflects it
+    n_open = server.get_quest_hooks(cid, status="open")["count"]
+    server.set_quest_status(cid, hid, "active")
+    assert server.get_quest_hooks(cid, status="open")["count"] == n_open - 1
+    assert server.get_quest_hooks(cid, status="active")["count"] == 1
+    assert server._require(cid).quest_hooks  # persisted
+
+    # bad status + unknown hook id are rejected
+    with pytest.raises(ValueError, match="open|active|resolved"):
+        server.set_quest_status(cid, hid, "finished")
+    with pytest.raises(ValueError, match="no quest hook"):
+        server.set_quest_status(cid, "hook_nope", "active")
+
+
+def test_sundered_reach_gets_cold_open_but_no_hooks(tmp_path, monkeypatch):
+    # a world with locations but NO quest_variants: a generic cold-open prelude still generates
+    # (every world deserves an opening), but there are no lore-derived hooks. And questgen never
+    # touches c.lore, so the quest_variants additive-default (byte-identical lore) is preserved.
+    import server
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    out = server.start_world("sundered-reach")
+    cid = out["campaign_id"]
+    c = server._require(cid)
+    assert c.quest_hooks == []                      # no quest_variants -> no hooks
+    assert "quest_hooks_count" not in out           # echo omitted when none
+    assert len(c.prelude) == 4                       # but a cold-open still opens the world
+    assert not any(l.startswith("[Outcome]") or l.startswith("[Hook]") for l in c.lore)
