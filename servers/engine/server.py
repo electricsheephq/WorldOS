@@ -2165,22 +2165,25 @@ def _catalog_describe(rec: dict) -> str:
 
 
 def _apply_item_catalog(
-    item_name: str, name: str, weight: float, requires_attunement: bool, description: str
+    item_name: str, name: str, weight: float, requires_attunement: Optional[bool], description: str
 ) -> tuple[str, float, bool, str, dict | None]:
     """If `item_name` is given and resolves in the SRD catalog, fill the item's
     name/weight/attunement/description from the real record — but a caller value
-    that was explicitly set (non-default) always wins, so this stays purely
-    additive over the free-text path. Returns the (possibly enriched) tuple plus
+    that was explicitly set always wins, so this stays purely additive over the
+    free-text path. `requires_attunement` is TRI-STATE: None = take the catalog's
+    value; True/False = the caller's explicit override (so you CAN force a catalog
+    attuned item down to False — M1). Returns the (possibly enriched) tuple plus
     the catalog record (None if `item_name` empty or unresolved)."""
     if not item_name:
-        return name, weight, requires_attunement, description, None
+        return name, weight, bool(requires_attunement), description, None
     rec = itemcatalog.resolve(item_name)
     if rec is None:
-        return name, weight, requires_attunement, description, None
+        return name, weight, bool(requires_attunement), description, None
+    attune = rec.get("requires_attunement", False) if requires_attunement is None else requires_attunement
     return (
         name or rec["name"],
         weight if weight else rec.get("weight", 0.0),
-        requires_attunement or rec.get("requires_attunement", False),
+        bool(attune),
         description or _catalog_describe(rec),
         rec,
     )
@@ -2214,7 +2217,7 @@ def find_items(query: str, limit: int = 10) -> dict:
 @mcp.tool()
 def add_item(
     campaign_id: str, character_id: str, name: str = "", quantity: int = 1, weight: float = 0.0,
-    requires_attunement: bool = False, description: str = "", item_name: str = "",
+    requires_attunement: Optional[bool] = None, description: str = "", item_name: str = "",
 ) -> dict:
     """Add an item to a character's inventory (stacks with an identical unequipped,
     non-attuned item).
@@ -2286,7 +2289,7 @@ def adjust_currency(
 @mcp.tool()
 def buy_item(
     campaign_id: str, character_id: str, name: str = "", cost_gp: float = -1.0, quantity: int = 1,
-    weight: float = 0.0, requires_attunement: bool = False, description: str = "", item_name: str = "",
+    weight: float = 0.0, requires_attunement: Optional[bool] = None, description: str = "", item_name: str = "",
 ) -> dict:
     """Buy an item: pay cost_gp (making change from the purse) and add it to inventory.
     Raises if the character can't afford it.

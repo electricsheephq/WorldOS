@@ -50,9 +50,11 @@ def _agenda_triggered(character: Character, campaign: Campaign) -> bool:
         return False
     trigger = agenda.trigger
     if trigger == "attitude_below":
-        return character.attitude_value < agenda.value
+        # value is required for this trigger (model validator), but guard None defensively
+        # so a hand-built/legacy agenda can never raise on the comparison.
+        return agenda.value is not None and character.attitude_value < agenda.value
     if trigger == "day_reached":
-        return campaign.day >= agenda.value
+        return agenda.value is not None and campaign.day >= agenda.value
     if trigger == "party_vulnerable":
         return _party_vulnerable(campaign)
     if trigger == "prize_seized":

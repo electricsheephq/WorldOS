@@ -108,6 +108,18 @@ def _num(value, default: float = 0.0) -> float:
         return default
 
 
+def _int(value, default: int = 0) -> int:
+    """Integer fields (AC). Like _num but coerces to int and tolerates strings/floats/
+    None — a non-numeric value (e.g. a homebrew pack with ac_base:'plate') degrades to
+    the default instead of raising and crashing the whole catalog index (H1)."""
+    if value in (None, ""):
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 @functools.lru_cache(maxsize=None)
 def _weapon_armor_join() -> tuple[dict, dict]:
     """({weapon_pk: weapon_fields}, {armor_pk: armor_fields}) merged across all
@@ -117,13 +129,17 @@ def _weapon_armor_join() -> tuple[dict, dict]:
     armors: dict[str, dict] = {}
     for d in _dirs():
         for r in _rows(d / "Weapon.json"):
+            if not isinstance(r, dict):
+                continue
             pk = r.get("pk")
             if pk and pk not in weapons:
-                weapons[pk] = r.get("fields", {})
+                weapons[pk] = r.get("fields") or {}
         for r in _rows(d / "Armor.json"):
+            if not isinstance(r, dict):
+                continue
             pk = r.get("pk")
             if pk and pk not in armors:
-                armors[pk] = r.get("fields", {})
+                armors[pk] = r.get("fields") or {}
     return weapons, armors
 
 
@@ -168,7 +184,7 @@ def _flatten(model: str, fields: dict) -> dict:
             "cost": _num(fields.get("cost")),
             "description": fields.get("desc", "") or "",
             "properties": props,
-            "ac": int(fields.get("ac_base") or 0),
+            "ac": _int(fields.get("ac_base")),
         }
 
     # MagicItem / Item share a shape. Resolve damage/ac via the weapon/armor FK.
@@ -199,9 +215,9 @@ def _flatten(model: str, fields: dict) -> dict:
     afk = fields.get("armor")
     if afk and afk in armors:
         af = armors[afk]
-        record["ac"] = int(af.get("ac_base") or 0)
+        record["ac"] = _int(af.get("ac_base"))
     elif fields.get("armor_class"):
-        record["ac"] = int(fields.get("armor_class") or 0)
+        record["ac"] = _int(fields.get("armor_class"))
     return record
 
 
@@ -217,13 +233,18 @@ def _index() -> dict[str, dict]:
         for src in _SOURCES:
             model = src[:-5].lower()  # 'MagicItem.json' -> 'magicitem'
             for r in _rows(d / src):
-                fields = r.get("fields", {})
-                name = fields.get("name")
-                if not name:
+                if not isinstance(r, dict):
+                    continue
+                fields = r.get("fields") or {}
+                name = fields.get("name") if isinstance(fields, dict) else None
+                if not isinstance(name, str) or not name:
                     continue
                 key = name.lower()
                 if key not in out:  # FIRST-WINS — earlier dir/source takes precedence
-                    out[key] = _flatten(model, fields)
+                    try:  # one malformed record must never sink the whole catalog (H1)
+                        out[key] = _flatten(model, fields)
+                    except (TypeError, ValueError, AttributeError, KeyError):
+                        continue
     return out
 
 

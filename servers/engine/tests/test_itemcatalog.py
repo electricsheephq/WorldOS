@@ -212,6 +212,59 @@ def test_add_item_unresolved_item_name_falls_back_to_name(cid):
     assert _item(out["inventory"], "Mystery Box")["name"] == "Mystery Box"
 
 
+# --- regression: adversarial review fixes (H1 catalog robustness, M1 attunement) ---
+
+
+def test_int_helper_tolerates_non_numeric():
+    # H1: a non-numeric AC (e.g. a homebrew pack with ac_base:"plate") must DEGRADE to
+    # the default, not raise — the int() sites used to crash the whole catalog index.
+    assert itemcatalog._int("plate") == 0
+    assert itemcatalog._int(None) == 0
+    assert itemcatalog._int("") == 0
+    assert itemcatalog._int("18") == 18
+    assert itemcatalog._int(18.7) == 18
+
+
+def test_malformed_pack_record_does_not_sink_catalog(tmp_path, monkeypatch):
+    """H1: ONE malformed record (non-numeric AC, a non-dict row, a missing name) in a
+    dropped pack must not crash the ENTIRE catalog — the bestiary fault-isolation."""
+    import json as _json
+    pack = tmp_path / "badpack"
+    pack.mkdir()
+    (pack / "Item.json").write_text(_json.dumps([
+        {"model": "x.item", "pk": "x_bad", "fields": {"name": "Cursed Plate",
+                                                       "category": "armor", "armor_class": "plate"}},
+        "not-a-dict-row",                                   # a bare string row
+        {"model": "x.item", "pk": "x_empty", "fields": {}},  # no name
+        {"model": "x.item", "pk": "x_ok", "fields": {"name": "Fizz Trinket",
+                                                      "category": "wondrous-item", "weight": "0.0"}},
+    ]))
+    monkeypatch.setattr(itemcatalog, "_dirs", lambda: [itemcatalog._PRIMARY, pack])
+    itemcatalog._index.cache_clear()
+    itemcatalog._weapon_armor_join.cache_clear()
+    try:
+        # No crash: the full SRD set is intact + the good pack item loaded.
+        assert itemcatalog.resolve("Longsword")["cost"] == 15.0
+        assert itemcatalog.resolve("Fizz Trinket") is not None
+        # the non-numeric-AC record degraded gracefully (ac=0) rather than crashing
+        cursed = itemcatalog.resolve("Cursed Plate")
+        assert cursed is not None and cursed["ac"] == 0
+        # the non-dict row + the nameless row were skipped (no exception)
+        assert itemcatalog.count() == 962  # 960 SRD + Cursed Plate + Fizz Trinket
+    finally:
+        itemcatalog._index.cache_clear()
+        itemcatalog._weapon_armor_join.cache_clear()
+
+
+def test_add_item_attunement_override_can_force_off(cid):
+    # M1: requires_attunement is tri-state — passing False explicitly forces a catalog
+    # attuned item (Cloak of Protection, attunement=True) DOWN to False. The old
+    # boolean-`or` couldn't turn attunement off. (The default None → catalog True case
+    # is covered by test_add_item_catalog_carries_attunement_and_combat_tags.)
+    out = server.add_item(cid, "grett", item_name="Cloak of Protection", requires_attunement=False)
+    assert _item(out["inventory"], "Cloak of Protection")["requires_attunement"] is False
+
+
 def test_add_item_requires_a_name(cid):
     with pytest.raises(ValueError):
         server.add_item(cid, "grett")  # no name and no resolving item_name

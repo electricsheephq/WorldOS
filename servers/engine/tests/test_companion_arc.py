@@ -298,3 +298,21 @@ def test_set_flag_arms_prize_seized_agenda(camp):
     assert server.set_flag(cid, "prize_seized")["flags"]["prize_seized"] is True
     res = server.check_companion_arc(cid, comp)
     assert len(res["results"]) == 1 and res["results"][0]["agenda_fired"] is True
+
+
+def test_threshold_agenda_requires_explicit_value():
+    # M2 regression: a day_reached/attitude_below agenda with `value` OMITTED used to
+    # default to 0 and fire IMMEDIATELY (day>=0 on day 1). It's now a LOUD error at
+    # author time, so an ending-seed (C2) or a DM can't silently arm an instant betrayal.
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        CompanionAgenda(trigger="day_reached")
+    with pytest.raises(ValidationError):
+        CompanionAgenda(trigger="attitude_below")
+    # triggers that don't use a threshold stay valueless-OK
+    CompanionAgenda(trigger="party_vulnerable")
+    CompanionAgenda(trigger="prize_seized")
+    # a properly-armed day_reached fires ON its day, never before
+    comp = _companion(agenda=CompanionAgenda(trigger="day_reached", value=5))
+    assert companion_arc._agenda_triggered(comp, _campaign_with(comp, day=1)) is False
+    assert companion_arc._agenda_triggered(comp, _campaign_with(comp, day=5)) is True

@@ -185,9 +185,18 @@ class CompanionAgenda(_StrictModel):
     """
 
     trigger: Literal["attitude_below", "day_reached", "party_vulnerable", "prize_seized"]
-    value: int = 0  # threshold for attitude_below / day_reached; ignored otherwise
+    value: Optional[int] = None  # REQUIRED threshold for attitude_below/day_reached; unused otherwise
     fired: bool = False
     note: str = ""  # the agenda's intent, for the DM to dramatize when it fires
+
+    @model_validator(mode="after")
+    def _require_threshold(self):
+        # A threshold trigger needs an explicit value. Defaulting to 0 was a footgun: a
+        # `day_reached` agenda with the value omitted satisfied `day(>=1) >= 0` and fired
+        # IMMEDIATELY (M2). Fail loud at author time instead of silently arming.
+        if self.trigger in ("attitude_below", "day_reached") and self.value is None:
+            raise ValueError(f"agenda trigger {self.trigger!r} requires an explicit `value`")
+        return self
 
 
 class CompanionArc(_StrictModel):
