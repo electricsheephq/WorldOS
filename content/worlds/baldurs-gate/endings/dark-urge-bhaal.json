@@ -33,6 +33,15 @@
     "Lae'zel": {"status": "alive, blade drawn", "where": "striking at the cult wherever it surfaces", "note": "Holds murder-worship in githyanki contempt; a ruthless, uncompromising edge aimed at the Slayer's faithful."},
     "Halsin": {"status": "alive, guarding the vulnerable", "where": "the wilds and the Outer City margins", "note": "Shelters those the cult would harvest and reads the land for where the murder-liturgy has fouled it; a healer's front against the dark."}
   },
+  "companion_seeds": {
+    "npc-minsc": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "personal_quest", "threshold": 20, "note": "Name the Slayer — Minsc means to sniff out the crowned Bhaalspawn's mortal name so the cult's god-touched head can be reached; win his trust and Boo points the way to the liturgy's author."}
+        ]
+      }
+    }
+  },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
   "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
 }

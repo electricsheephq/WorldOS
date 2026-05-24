@@ -33,6 +33,15 @@
     "Lae'zel": {"status": "alive, turned against Vlaakith", "where": "leading githyanki defectors against the lich-queen's lie", "note": "Broke with Vlaakith; a hero to the freed gith and a danger to the Astral throne — her patrols now hunt tyranny, not the living."},
     "Halsin": {"status": "alive", "where": "the lifting Shadow-Cursed Lands, tending Reithwin's recovery", "note": "Stayed to heal the poisoned country as Shar's curse withdraws; a druid-anchor for anyone working in the wilds."}
   },
+  "companion_seeds": {
+    "npc-karlach": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "romance", "threshold": 40, "note": "Her engine mended at last, Karlach is making up for stolen years — and a bond that reaches this depth turns her grin your way: the most alive person in the room, choosing you to spend the borrowed time with."}
+        ]
+      }
+    }
+  },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
   "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
 }

@@ -38,6 +38,24 @@
     "Lae'zel": {"status": "alive, contemptuous of the tyrant", "where": "striking at the Watch from outside the law", "note": "Has no patience for a soft tyrant and his toy soldiers; a blade the resistance points and then gets out of the way of."},
     "Halsin": {"status": "alive, sheltering refugees", "where": "the wilds and Reithwin, beyond the Watch's reach", "note": "Runs an underground road out of the police city for the hunted and the tadpole-touched the Archduke would 'pardon' into silence."}
   },
+  "companion_seeds": {
+    "npc-astarion": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "loyalty", "threshold": 30, "note": "Astarion bets on the party as the surer predator — a deepened loyalty that holds him to the resistance even when the Watch offers him a cleaner cage."}
+        ],
+        "agenda": {"trigger": "attitude_below", "value": -30, "note": "Push his trust low enough and survival math wins: Astarion sells the party's route to the Steel Watch and slips into the regime's protection — a defection toward the Archduke's order, not a change of heart."}
+      }
+    },
+    "npc-wyll": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "personal_quest", "threshold": 25, "note": "Unseat the tyrant in his father's seat — Wyll's oath turned against the Archduke who stole the Ravengard name; earning his trust opens the move on the High Hall."}
+        ],
+        "agenda": {"trigger": "day_reached", "value": 30, "note": "The Banite order's pressure comes due: by this day the regime has named its price for Wyll's pact-bound past, and unless the party has acted, the Blade is forced to a desperate hand against the Watch on his own."}
+      }
+    }
+  },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
   "attribution": "Unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Baldur's Gate 3 elements © Larian Studios. Overlay prose © ClawDnD contributors, CC-BY-4.0."
 }

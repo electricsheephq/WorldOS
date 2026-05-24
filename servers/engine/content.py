@@ -14,7 +14,7 @@ import random
 from pathlib import Path
 
 import worldsim
-from models import Campaign, Character, Faction, Location, Quest
+from models import Campaign, CompanionArc, Character, Faction, Location, Quest
 
 
 def _content_dir() -> Path:
@@ -426,7 +426,12 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     thread keeps ticking and there are no duplicate `thread_id`s (B-LOW-1). Each `fates`
     entry lands as a memory fact on the matching npc_roster Character — plus a lore line
     so a hero who isn't in the roster is still covered. Premise gets the suffix appended.
-    (The overlay's story_seeds_append are surfaced by start_world, not here.)"""
+    (The overlay's story_seeds_append are surfaced by start_world, not here.)
+
+    ADDITIVE (S4): an optional `companion_seeds` block PRE-LOADS canon companions'
+    relationship arcs + sealed agendas onto the matching roster Character — so the chosen
+    ending shapes which companions can turn (and why). A seed for a companion not present
+    in this campaign is skipped; no `companion_seeds` key is a no-op (today's behavior)."""
     # The post-state chronology REPLACES the base era — who's alive / what happened changed.
     new_era = str(overlay.get("era") or "").strip()
     if new_era:
@@ -477,6 +482,19 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     if merged_threads:
         worldsim.seed_threads(c, merged_threads)
 
+    # Resolve a roster character by id first, then by case-insensitive name (the keying
+    # used by both `fates` and `companion_seeds`); None if no such roster figure is in
+    # this campaign (e.g. a hero who's only in lore, like Gale).
+    def _resolve_roster(key: str) -> Character | None:
+        ch = c.characters.get(key)
+        if ch is None:
+            kl = key.strip().lower()
+            ch = next(
+                (x for x in c.characters.values() if x.name.strip().lower() == kl),
+                None,
+            )
+        return ch
+
     # Each fate lands on the matching roster NPC as a memory fact (so the DM voices the
     # right post-state when they appear). Roster characters are keyed by id or name; a
     # hero who ISN'T in the roster (e.g. Gale, only in lore) is covered by a lore line.
@@ -490,20 +508,31 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 fate.get("status"), fate.get("where"), fate.get("note"),
             ) if str(p or "").strip()]
             detail = " — ".join(str(p).strip() for p in parts)
-            # Resolve the roster character by id first, then by case-insensitive name.
-            ch = c.characters.get(who)
-            if ch is None:
-                kl = who.strip().lower()
-                ch = next(
-                    (x for x in c.characters.values() if x.name.strip().lower() == kl),
-                    None,
-                )
+            ch = _resolve_roster(who)
             label = ch.name if ch is not None else who
             fact = f"[{overlay.get('name', overlay.get('id', 'ending'))}] {label}: {detail}".strip(" :—")
             if ch is not None:
                 ch.memory.append(fact)
             # Always add a lore line too, so non-roster heroes are recallable as well.
             c.lore.append(fact)
+
+    # ADDITIVE post-state seeding (S4 synthesis): the chosen ending may PRE-LOAD a
+    # canon companion's relationship arc + sealed agenda, so "the chosen ending shapes
+    # which companions betray you, and why" is a real engine fact at start_world — not
+    # something the DM has to author by hand. `companion_seeds` maps a roster companion
+    # (by id like "npc-the-emperor" OR display name) -> {"arc": {arc_gates, agenda}}.
+    # Each seed lands on the SAME roster Character `fates` resolves; a seed for a
+    # companion not present in this campaign is skipped silently. No `companion_seeds`
+    # key -> no arcs touched, so the default path is byte-for-byte today's behavior.
+    companion_seeds = overlay.get("companion_seeds") or {}
+    if isinstance(companion_seeds, dict):
+        for key, seed in companion_seeds.items():
+            if not isinstance(seed, dict) or not isinstance(seed.get("arc"), dict):
+                continue
+            ch = _resolve_roster(str(key))
+            if ch is None:
+                continue  # companion isn't in this world's roster/campaign — skip silently
+            ch.arc = CompanionArc.model_validate(seed["arc"])
 
 
 def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
@@ -517,7 +546,8 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     `ending` selects a post-state OVERLAY (content/worlds/<id>/endings/<ending>.json):
     after the base seed, the overlay OVERWRITES the era, appends its history + standing
     threads into recallable lore (and ticks them in the world-sim), appends story_seeds,
-    and lands each `fates` entry on the matching roster NPC. `ending="random"` picks one
+    lands each `fates` entry on the matching roster NPC, and PRE-LOADS any `companion_seeds`
+    arc/agenda onto the matching roster companion. `ending="random"` picks one
     of the world's overlays at random; an unknown/empty `ending` leaves the BASE world
     state untouched (today's behavior). The resolved id is stored on `Campaign.ending_id`."""
     if not isinstance(world, dict):

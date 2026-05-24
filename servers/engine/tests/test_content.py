@@ -374,6 +374,131 @@ def test_ending_overlay_tolerates_malformed_optional_field():
     assert "base fact" not in c.lore  # supersedes="base" coerced + applied -> retracted
 
 
+# --- S4 synthesis: the chosen ENDING pre-loads which companions can turn --------------
+
+def test_ending_companion_seed_preloads_arc_on_roster_companion():
+    # The S4 cross-stream synthesis: the chosen post-state PRE-LOADS a canon companion's
+    # arc + sealed agenda onto the matching roster Character (resolved by id, exactly as
+    # `fates` does). illithid-ascension arms the Emperor's prize_seized betrayal + a
+    # personal_quest gate to sever the brain's hold.
+    w = content.load_world_data("baldurs-gate")
+    il = content.seed_world(w, ending="illithid-ascension")
+    emperor = il.characters["npc-the-emperor"]
+    assert emperor.arc is not None, "the seeded companion's arc must be pre-loaded"
+    assert emperor.arc.agenda is not None
+    assert emperor.arc.agenda.trigger == "prize_seized"  # the brain's-whisper betrayal
+    assert emperor.arc.agenda.fired is False              # armed, not yet sprung
+    # a personal_quest gate is present (sever the Elder Brain's hold)
+    kinds = {g.kind for g in emperor.arc.arc_gates}
+    assert "personal_quest" in kinds
+    assert any(g.threshold == 20 for g in emperor.arc.arc_gates)
+    # a companion the overlay does NOT seed carries no arc (the seed is per-companion)
+    assert il.characters["npc-jaheira"].arc is None
+
+
+def test_ending_companion_seed_default_path_sets_no_arcs():
+    # ADDITIVE default: an overlay WITHOUT a `companion_seeds` block touches no arcs, and
+    # the base (no-ending) seed likewise leaves every companion arc-less — today's behavior.
+    w = content.load_world_data("baldurs-gate")
+    base = content.seed_world(w)
+    assert all(ch.arc is None for ch in base.characters.values())
+    # dark-urge-bhaal DOES ship a (lighter) seed, so prove the no-seed branch directly:
+    # an overlay dict with no `companion_seeds` key must leave a pre-set arc untouched and
+    # never invent one.
+    from models import Campaign, Character
+    c = Campaign(title="W", summary="s")
+    c.characters["npc-x"] = Character(id="npc-x", name="X", kind="npc")
+    content._apply_ending_overlay(c, {"id": "noend", "name": "No Seeds", "era": "later"})
+    assert c.characters["npc-x"].arc is None  # no companion_seeds key -> no-op
+
+
+def test_all_shipped_ending_companion_seeds_are_valid_m2():
+    # Every authored `companion_seeds` arc must construct WITHOUT a ValidationError —
+    # proving M2 compliance: a day_reached/attitude_below agenda carries an explicit
+    # `value`, while party_vulnerable/prize_seized need none. (CompanionArc.model_validate
+    # is exactly what `_apply_ending_overlay` calls, so a green seed here is a green seed
+    # in play.) We also confirm BOTH threshold-trigger kinds appear across the set.
+    from models import CompanionArc
+    seen_triggers: set[str] = set()
+    seeded_any = False
+    for e in content.list_endings("baldurs-gate"):
+        overlay = content.load_ending_data("baldurs-gate", e["id"])
+        seeds = overlay.get("companion_seeds") or {}
+        for who, seed in seeds.items():
+            seeded_any = True
+            arc = CompanionArc.model_validate(seed["arc"])  # raises if M2 is violated
+            if arc.agenda is not None:
+                seen_triggers.add(arc.agenda.trigger)
+                if arc.agenda.trigger in ("attitude_below", "day_reached"):
+                    assert arc.agenda.value is not None, f"{e['id']}/{who}: M2 needs a value"
+            assert arc.arc_gates, f"{e['id']}/{who}: a seed should carry at least one gate"
+    assert seeded_any, "the post-BG3 endings should ship companion seeds"
+    # the explicit-value triggers are both exercised by the shipped seeds (real M2 proof)
+    assert {"attitude_below", "day_reached"} <= seen_triggers
+
+
+def test_ending_companion_seed_skips_absent_companion():
+    # A `companion_seeds` entry for a companion NOT present in the campaign roster is
+    # skipped silently (same id/name resolution as `fates`), never raising.
+    from models import Campaign, Character
+    c = Campaign(title="W", summary="s")
+    c.characters["npc-real"] = Character(id="npc-real", name="Real", kind="npc")
+    overlay = {
+        "id": "x", "name": "X", "era": "later",
+        "companion_seeds": {
+            # present -> seeded
+            "npc-real": {"arc": {"arc_gates": [{"kind": "loyalty", "threshold": 10}]}},
+            # absent (no such id/name) -> skipped, no error
+            "npc-ghost": {"arc": {"arc_gates": [{"kind": "betrayal", "threshold": 5}],
+                                   "agenda": {"trigger": "party_vulnerable"}}},
+        },
+    }
+    content._apply_ending_overlay(c, overlay)  # must not raise
+    assert c.characters["npc-real"].arc is not None
+    assert c.characters["npc-real"].arc.arc_gates[0].kind == "loyalty"
+    assert "npc-ghost" not in c.characters  # the absent seed minted no character
+
+
+def test_ending_companion_seed_resolves_by_name_too():
+    # Resolution mirrors `fates`: a seed keyed by DISPLAY NAME (not id) lands on the
+    # matching roster Character.
+    from models import Campaign, Character
+    c = Campaign(title="W", summary="s")
+    c.characters["npc-7"] = Character(id="npc-7", name="Karlach", kind="npc")
+    overlay = {
+        "id": "x", "name": "X", "era": "later",
+        "companion_seeds": {"Karlach": {"arc": {"arc_gates": [{"kind": "romance", "threshold": 40}]}}},
+    }
+    content._apply_ending_overlay(c, overlay)
+    assert c.characters["npc-7"].arc is not None
+    assert c.characters["npc-7"].arc.arc_gates[0].kind == "romance"
+
+
+def test_start_world_ending_preloads_companion_arc_end_to_end(tmp_path, monkeypatch):
+    # The full server path: start_world(ending=…) PERSISTS a campaign whose seeded roster
+    # figure already carries the armed arc. The arc is pre-loaded at world-genesis; it
+    # surfaces in play once that figure is brought into the party as a companion (the
+    # check_companion_arc evaluator gates on kind=="companion"), exactly mirroring real
+    # play (recruit_companion / load_canon_character(kind="companion")).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
+    from store import load_campaign, save_campaign
+    c = load_campaign(cid)
+    emperor = c.characters["npc-the-emperor"]
+    assert emperor.arc is not None and emperor.arc.agenda.trigger == "prize_seized"
+    # promote the seeded roster figure to a party companion (as play would) so the engine
+    # evaluates the PRE-LOADED arc — the betrayal is armed but not yet fired at start.
+    emperor.kind = "companion"
+    save_campaign(c)
+    res = server.check_companion_arc(cid, "npc-the-emperor")
+    assert res["results"] == []  # armed, nothing newly unlocked/fired (prize not seized)
+    # seize the prize -> the pre-loaded betrayal agenda now fires through the live engine
+    server.set_flag(cid, "prize_seized")
+    fired = server.check_companion_arc(cid, "npc-the-emperor")["results"]
+    assert len(fired) == 1 and fired[0]["agenda_fired"] is True
+    assert fired[0]["agenda"]["trigger"] == "prize_seized"
+
+
 # --- S4: ingested areas become navigable Locations (additively) ----------------------
 
 def test_load_world_areas_returns_shipped_samples():
