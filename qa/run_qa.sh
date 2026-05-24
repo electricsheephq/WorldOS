@@ -18,11 +18,16 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
+# Shared beat-driver helpers — here for clawdnd_cap_score_red (honest scoring on a gate-RED run).
+# shellcheck source=lib_beat_driver.sh
+. "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-$(date +%Y%m%d-%H%M%S)}"
 BUDGET="${2:-3.00}"
 PROMPT_FILE="${3:-qa/play_prompt.txt}"
 RUBRIC_FILE="${4:-qa/rubric.md}"
+# DM model knob (default sonnet → unchanged); a one-flag flip for Opus structural-adherence tests.
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
 T="qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"          # per-run isolation -> parallel-safe
 MCP_CONFIG="$STATE_DIR/qa.mcp.json"
@@ -41,11 +46,11 @@ cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = state_dir
 json.dump(cfg, open(out, "w"))
 PY
 
-echo "[qa] playing (claude --plugin-dir, sonnet) prompt=$PROMPT_FILE…"
+echo "[qa] playing (claude --plugin-dir, $CLAWDND_DM_MODEL) prompt=$PROMPT_FILE…"
 claude -p "$(cat "$PROMPT_FILE")" \
   --plugin-dir "$ROOT" \
   --mcp-config "$MCP_CONFIG" --strict-mcp-config \
-  --model sonnet --permission-mode bypassPermissions \
+  --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions \
   --max-budget-usd "$BUDGET" \
   --output-format stream-json --verbose \
   > "$T/$RUN.jsonl" 2> "$T/$RUN.err"
@@ -77,13 +82,22 @@ fi
 # Behavioral gate — hard PASS/FAIL on a structurally broken run (no DM output, no
 # dice, combat with no attacks, no PC in party, dup companion). Treat it like software.
 echo "[qa] behavioral gate…"
-python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json"; GATE=$?
+python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 
 echo "[qa] scoring (mechanical rubric)…"
 qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" "$RUBRIC_FILE" qa/score_schema.json "$T/$RUN.score.json" 1.50
 
 echo "[qa] scoring (Tolkien story-craft lens — the north star)…"
 qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
+
+# Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
+# CAP both scorecards to ≤2.5 / INVALID and annotate WHY before they're printed/consumed.
+if [ "${GATE:-0}" != "0" ]; then
+  GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
+  GATE_REASON="${GATE_REASON:-behavioral gate RED}"
+  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON"
+  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON"
+fi
 
 echo "[qa] ===== MECHANICAL scorecard ($RUN) ====="
 jq -r '
