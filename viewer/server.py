@@ -390,7 +390,11 @@ def _monitor_campaigns() -> list[dict]:
                 cards.append(_monitor_card(label, snap, data))
             except (OSError, TypeError, ValueError):
                 continue  # one malformed campaign must never blank the whole monitor
-    cards.sort(key=lambda c: c.get("updated_at", 0), reverse=True)
+    # Order so the page is USEFUL, not a wall of dead Day-1 QA runs: LIVE first, then the owner's
+    # own play campaigns, then everything else by recency. Without this the 40-card cap fills with
+    # stale identically-titled QA snapshots and a real/live game is buried (the "locked on one
+    # day" report).
+    cards.sort(key=lambda c: (not c.get("live"), c.get("root") != "play", -c.get("updated_at", 0)))
     return cards
 
 

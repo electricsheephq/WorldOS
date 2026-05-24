@@ -69,23 +69,29 @@ function ago(sec) {
 }
 function scoreClass(v) { return v == null ? '' : (v >= 4.3 ? 'good' : v >= 3.5 ? 'mid' : 'low'); }
 function card(c, now) {
+  const root = String(c.root ?? '');
+  const isPlay = root === 'play';
+  const run = root.replace(/^qa:/, '');
   const live = c.live ? '<span class="badge live">● LIVE</span>' : '';
-  const rootCls = c.root === 'play' ? 'root-play' : 'root-qa';
-  const rootLbl = c.root === 'play' ? 'play' : c.root.replace(/^qa:/, 'QA · ');
-  // play campaigns open in the dashboard to watch/play; a FINISHED QA run opens its distilled
-  // transcript (the full played story) so you can read it and give feedback; a still-playing
-  // QA run (no transcript yet) shows live in the card and isn't yet linkable.
+  const rootCls = isPlay ? 'root-play' : 'root-qa';
+  const rootLbl = isPlay ? 'play' : 'QA · ' + run;
+  // The HEADING is the campaign's IDENTITY: a play campaign uses its world/title (the owner's
+  // game); a QA run uses its RUN NAME (e.g. "fidelity1") — every QA run shares the same world
+  // title, so showing that made the whole grid look like one frozen campaign. Play campaigns open
+  // the dashboard; a FINISHED QA run opens its distilled transcript; a still-playing run isn't yet
+  // linkable. The world title for QA moves to the meta line below.
+  const heading = isPlay ? esc(c.name || c.id) : esc(run);
   let title;
-  if (c.root === 'play') {
-    title = `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${esc(c.name)}</a>`;
+  if (isPlay) {
+    title = `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${heading}</a>`;
   } else if (c.transcript) {
-    const run = c.root.replace(/^qa:/, '');
-    title = `<a class="name" href="/transcript?run=${encodeURIComponent(run)}" target="_blank">${esc(c.name)}</a>`;
+    title = `<a class="name" href="/transcript?run=${encodeURIComponent(run)}" target="_blank">${heading}</a>`;
   } else {
-    title = `<span class="name">${esc(c.name)}</span>`;
+    title = `<span class="name">${heading}</span>`;
   }
   const meta = [
-    c.world && `<span class="k">${esc(c.world)}</span>`,
+    (!isPlay && c.name) && `<span class="k">${esc(c.name)}</span>`,  // world title (QA heading is the run)
+    c.world && esc(c.world),
     c.ending && `ending: ${esc(c.ending)}`,
     (c.day != null) && `Day ${esc(c.day)}`,
     c.tenor && `tenor: ${esc(c.tenor)}`,
@@ -122,8 +128,13 @@ async function tick() {
     emptyEl.hidden = campaigns.length > 0;
     grid.innerHTML = campaigns.map(c => card(c, now)).join('');
     const liveN = campaigns.filter(c => c.live).length;
+    const playN = campaigns.filter(c => c.root === 'play').length;
     const more = (total && total > campaigns.length) ? ` <span style="color:var(--dim)">(showing ${campaigns.length} most recent)</span>` : '';
-    summaryEl.innerHTML = `<b>${total ?? campaigns.length}</b> campaigns · <b class="pulse">${liveN}</b> live${more}`;
+    // Tell the owner when the grid is ONLY QA runs — otherwise a wall of identical QA cards reads
+    // as "my game is frozen" when really no play game has been started yet.
+    const hint = (campaigns.length > 0 && playN === 0)
+      ? ` <span style="color:var(--qa)">· no play game yet — start one in the dashboard</span>` : '';
+    summaryEl.innerHTML = `<b>${total ?? campaigns.length}</b> campaigns · <b class="pulse">${liveN}</b> live${more}${hint}`;
     document.getElementById('refresh').textContent = '↻ ' + new Date().toLocaleTimeString();
   } catch (e) {
     summaryEl.textContent = 'monitor offline (is the viewer running?)';

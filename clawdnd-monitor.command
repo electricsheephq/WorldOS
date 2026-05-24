@@ -22,11 +22,29 @@ echo "(read-only; watches every play + QA campaign. Ctrl-C or close this window 
 echo
 
 # The monitor needs ONLY the stdlib HTTP viewer — no claude, no uv, no voice backend — so this
-# starts reliably. Launch it, then open the browser to the monitor page once the port is up.
+# starts reliably.
+ready() { curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:${PORT}/monitor.json" 2>/dev/null; }
+
+# If a monitor is ALREADY running on this port, reuse it — DON'T spawn a second server that
+# fails to bind while the browser silently attaches to the stale one ("frozen on old data").
+if ready; then
+  echo "A monitor is already running on ${PORT} — opening it (close that window first if you want a fresh one)."
+  command -v open >/dev/null 2>&1 && open "$URL" || echo "Open this in your browser:  $URL"
+  exit 0
+fi
+
 "$PY" viewer/server.py '' "$PORT" &
 SV=$!
 trap 'kill "$SV" 2>/dev/null' EXIT INT TERM
-( sleep 1.5
-  if command -v open >/dev/null 2>&1; then open "$URL"
-  else echo "Open this in your browser:  $URL"; fi ) &
+# Open the browser ONLY once the server is actually accepting connections — never point it at a
+# port that never came up. Bail loudly if the server died (e.g. the port is taken by something else).
+( for _ in $(seq 1 40); do
+    if ready; then
+      command -v open >/dev/null 2>&1 && open "$URL" || echo "Open this in your browser:  $URL"
+      exit 0
+    fi
+    kill -0 "$SV" 2>/dev/null || { echo "Monitor failed to start (is port ${PORT} already in use by something else?)."; exit 1; }
+    sleep 0.25
+  done
+  echo "Monitor didn't come up on ${PORT} within 10s — check for errors above." ) &
 wait "$SV"
