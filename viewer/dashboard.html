@@ -8,7 +8,8 @@
   /* Clean-room dark-fantasy dashboard (original styling; fables-class layout). */
   :root { color-scheme: dark; --bg:#100d0a; --panel:#19140f; --panel2:#1f1912; --line:#352c20;
     --ink:#ece4d6; --dim:#a99d86; --faint:#6f6657; --gold:#e8c98a; --gold2:#caa15e;
-    --player:#8fce8f; --companion:#8fbfe0; --npc:#e0c98a; --monster:#e08f8f; }
+    --player:#8fce8f; --companion:#8fbfe0; --npc:#e0c98a; --monster:#e08f8f;
+    /* warm-gold hairline for elevated rail panels (fix #1) */ --card-line:#4a3d28; }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; }
   body { font:14px/1.55 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink);
@@ -43,8 +44,20 @@
   .msg .hd { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
   .msg .nm { font-weight:700; color:var(--gold); font-size:12.5px; letter-spacing:.01em; }
   .msg .nm.dialogue { color:#9fc0e0; } .msg .nm.combat { color:#e0a0a0; }
+  /* DM prose hierarchy (fix #3): a small caret glyph + tracked-out kicker on the
+     "Dungeon Master" byline marks the center as authored narration, and a divider
+     rule under the byline frames the prose below like a storybook passage. */
+  .msg.narration .nm.dm { font-variant:small-caps; letter-spacing:.1em; font-size:11.5px; color:var(--gold); }
+  .msg.narration .nm.dm::before { content:"❧ "; color:var(--gold2); font-size:11px; }
+  .msg.narration .hd { gap:8px; padding-bottom:6px; margin-bottom:9px; position:relative; }
+  .msg.narration .hd::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+    background:linear-gradient(90deg, rgba(202,161,94,.45), rgba(202,161,94,.04) 60%, transparent); }
+  /* a warm drop-cap opens each DM passage — the storytelling cue from the reference */
+  .msg.narration .bd.dropcap::first-letter { float:left; font:700 38px/0.86 Georgia,"Iowan Old Style",serif;
+    color:var(--gold); margin:3px 9px 0 0; text-shadow:0 1px 2px rgba(0,0,0,.5); }
   .msg.player { align-self:flex-end; max-width:660px; background:#11201a; border:1px solid #2b4a3a; border-radius:12px 12px 3px 12px; padding:9px 13px; }
-  .msg.player .nm { color:var(--player); } .av.pc { background:var(--player); }
+  .msg.player .nm { color:var(--player); }
+  .av.pc { background:radial-gradient(circle at 32% 26%,#c7ecc7 0%,var(--player) 52%,#3f7a3f 100%); border-color:#3f6b3f; }
   .msg.player .bd { color:#cfe8d8; }
   /* DM/narration prose — the centerpiece. Slightly larger, warm serif for an
      epic-storytelling feel matching the fables reference. */
@@ -53,20 +66,39 @@
   .msg .bd em, .msg.narration .bd i { color:#f0e4c8; }
   .msg.system .bd { color:var(--faint); font-size:12.5px; font-style:italic; }
   .msg.combat .bd { color:#e9c9c0; }
-  .av { width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
-    font-size:10px;font-weight:800;color:#14110e;background:var(--gold2); }
+  /* Crest-style monogram avatar (fix #3): a radial gradient (bright top-left → deep
+     edge) + a hairline ring + inset highlight reads as a struck token, not a flat
+     tan disc. DM = gold crest; .pc override (player) = green crest. */
+  .av { width:27px;height:27px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:800;color:#1a1408;
+    background:radial-gradient(circle at 32% 26%,#f4dca2 0%,var(--gold2) 52%,#8a6a32 100%);
+    border:1px solid #5a4523; box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 1px 2px rgba(0,0,0,.5);
+    text-shadow:0 1px 0 rgba(255,255,255,.18); }
   /* ---- right: scene / party / world ---- */
-  aside { min-height:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; background:#120f0b; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
-  .card h2 { margin:0 0 9px; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:#9c8e74; display:flex; align-items:center; }
+  aside { min-height:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; background:#0d0a07; }
+  /* Elevated rail panels (fix #1): a lighter fill over the near-black aside, a 1px
+     warm-gold hairline, and a layered shadow (drop + faint gold inner top edge) so
+     each card reads as a distinct stacked panel like the fables reference. */
+  .card, .ctx { background:linear-gradient(180deg,#221b12,#1b150e); border:1px solid var(--card-line);
+    border-radius:11px;
+    box-shadow:0 1px 0 rgba(232,201,138,.05) inset, 0 6px 16px -8px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.4); }
+  .card { padding:12px; }
+  .card h2 { margin:0 0 9px; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:#b39c78; display:flex; align-items:center; }
   .loc-d { color:#c4b89f; font-style:italic; font-size:12.5px; margin:-3px 0 10px; }
   svg { width:100%; height:210px; display:block; }
   .edge { stroke:#4a3e2c; stroke-width:2; } .node circle { fill:#241d14; stroke:#6b5a3e; stroke-width:2; }
   .node.cur circle { fill:#5a3d1e; stroke:var(--gold); stroke-width:3; } .node.visited circle { stroke:#8a7c5a; }
   .node text { fill:#d8ccb2; font-size:9px; text-anchor:middle; }
   .row { display:flex; align-items:center; gap:9px; padding:5px 0; }
-  .avatar { width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#14110e;background:#6b5a3e;border:2px solid #0003; }
-  .avatar.player{background:var(--player);} .avatar.companion{background:var(--companion);} .avatar.npc{background:var(--npc);} .avatar.monster{background:var(--monster);}
+  /* Party-row crest avatar (fix #3): radial gradient + ring per kind, matching the
+     feed crest treatment so empty monograms read as struck tokens. */
+  .avatar { width:31px;height:31px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#16120c;
+    background:radial-gradient(circle at 32% 26%,#a99878 0%,#6b5a3e 60%,#473a26 100%);
+    border:1px solid #5a4a32; box-shadow:0 1px 0 rgba(255,255,255,.14) inset, 0 1px 2px rgba(0,0,0,.45); text-shadow:0 1px 0 rgba(255,255,255,.14); }
+  .avatar.player{background:radial-gradient(circle at 32% 26%,#c7ecc7 0%,var(--player) 55%,#3f7a3f 100%);border-color:#3f6b3f;}
+  .avatar.companion{background:radial-gradient(circle at 32% 26%,#cfe6f7 0%,var(--companion) 55%,#3f6a8a 100%);border-color:#3f5a6b;}
+  .avatar.npc{background:radial-gradient(circle at 32% 26%,#f4dca2 0%,var(--npc) 55%,#8a6a32 100%);border-color:#5a4523;}
+  .avatar.monster{background:radial-gradient(circle at 32% 26%,#f0bcbc 0%,var(--monster) 55%,#8a3f3f 100%);border-color:#6b3f3f;}
   .row .nm { flex:1; } .row .sub { color:var(--faint); font-size:11px; }
   .hpbar { height:6px; width:84px; background:#3a2f22; border-radius:3px; overflow:hidden; flex:none; }
   .hpbar > i { display:block; height:100%; background:var(--player); } .hpbar.low > i { background:var(--monster); }
@@ -74,20 +106,45 @@
   .fac { display:flex; justify-content:space-between; padding:3px 0; } .fac .rep { color:var(--dim); }
   .empty { color:var(--faint); font-style:italic; }
 
-  /* ---- scene illustration / portrait placeholder (#34; S2.2 drops images here) ---- */
-  .art { position:relative; border-radius:9px; overflow:hidden; background:
-      repeating-linear-gradient(135deg,#161009 0 11px,#1a130b 11px 22px); border:1px dashed #3a2f1c;
+  /* ---- scene illustration / portrait placeholder (#34; fix #3 + #5 drop images here).
+     A faint painterly placeholder: warm dawn-sky gradient up top fading to a deep
+     foreground, a soft radial glow, and an inset vignette — reads as an unlit canvas
+     awaiting art rather than a bare hatch. A resolved scene image (fix #5) covers it. */
+  .art { position:relative; border-radius:9px; overflow:hidden; border:1px solid var(--card-line);
+    background:
+      radial-gradient(120% 80% at 50% 18%, rgba(232,201,138,.10), rgba(232,201,138,0) 60%),
+      linear-gradient(180deg,#2a2014 0%,#1e1710 42%,#15100a 100%);
     aspect-ratio:16/10; display:flex; align-items:center; justify-content:center; text-align:center; }
-  .art .hint { color:#6f6657; font-size:11px; font-style:italic; padding:0 18px; line-height:1.5; }
-  .art .hint b { display:block; font-style:normal; font-weight:700; color:#8a7c5a; letter-spacing:.08em; text-transform:uppercase; font-size:9px; margin-bottom:4px; }
+  /* inset vignette — darkens the corners like an oil-painting edge */
+  .art::after { content:""; position:absolute; inset:0; pointer-events:none;
+    box-shadow:inset 0 0 60px 8px rgba(0,0,0,.55), inset 0 0 0 1px rgba(232,201,138,.04);
+    background:radial-gradient(115% 90% at 50% 42%, rgba(0,0,0,0) 55%, rgba(0,0,0,.45) 100%); }
+  .art .hint { position:relative; z-index:1; color:#9a8c70; font-size:11px; font-style:italic; padding:0 18px; line-height:1.5; }
+  .art .hint b { display:block; font-style:normal; font-weight:700; color:#b39c78; letter-spacing:.08em; text-transform:uppercase; font-size:9px; margin-bottom:4px; }
+  /* the painterly glyph above the hint — a soft framed-canvas mark */
+  .art .hint .glyph { display:block; font-size:20px; color:#5e5340; margin-bottom:5px; opacity:.85; }
+  /* a resolved scene image fills the box edge-to-edge over the placeholder */
+  .art img.scene { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:2; }
 
-  /* ---- NPC portrait cards (#34) — fables-style compact stat cards ---- */
-  .npc-card { display:flex; gap:10px; padding:9px; border:1px solid var(--line); border-radius:9px; background:#171109; }
+  /* ---- NPC portrait cards (#34) — fables-style compact stat cards. Nested inside
+     the "In the scene" panel, so a touch lighter still + a warm hairline + soft
+     shadow (fix #1) to read as distinct mini-cards rather than flat list rows. ---- */
+  .npc-card { display:flex; gap:10px; padding:9px; border:1px solid var(--card-line); border-radius:9px;
+    background:linear-gradient(180deg,#241c12,#1c150d);
+    box-shadow:0 1px 0 rgba(232,201,138,.04) inset, 0 3px 8px -5px rgba(0,0,0,.7); }
   .npc-card + .npc-card { margin-top:8px; }
-  .npc-card.monster { border-color:#4a2828; background:#1a0f0f; }
-  .pavatar { width:38px; height:38px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center;
-    font-size:13px; font-weight:800; color:#14110e; background:var(--npc); border:1px solid #0004; }
-  .pavatar.monster{background:var(--monster);} .pavatar.npc{background:var(--npc);} .pavatar.companion{background:var(--companion);}
+  .npc-card.monster { border-color:#5a3232; background:linear-gradient(180deg,#241313,#1a0f0f); }
+  /* NPC-card portrait (fix #3): a radial crest gradient + ring + inset highlight so
+     the monogram reads as an intentional placeholder, not an empty tile. Replaced by
+     a real portrait when /image?scope=portrait-<id> resolves (see fix #5). */
+  .pavatar { position:relative; overflow:hidden; width:38px; height:38px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:800; color:#16120c;
+    background:radial-gradient(circle at 30% 24%,#f4dca2 0%,var(--npc) 55%,#8a6a32 100%);
+    border:1px solid #5a4523; box-shadow:0 1px 0 rgba(255,255,255,.16) inset, 0 1px 3px rgba(0,0,0,.5); text-shadow:0 1px 0 rgba(255,255,255,.16); }
+  .pavatar.monster{background:radial-gradient(circle at 30% 24%,#f0bcbc 0%,var(--monster) 55%,#8a3f3f 100%);border-color:#6b3f3f;}
+  .pavatar.companion{background:radial-gradient(circle at 30% 24%,#cfe6f7 0%,var(--companion) 55%,#3f6a8a 100%);border-color:#3f5a6b;}
+  /* a resolved portrait fills the tile edge-to-edge, hiding the monogram beneath */
+  .pavatar img.portrait { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
   .npc-body { flex:1; min-width:0; }
   .npc-top { display:flex; align-items:baseline; gap:7px; }
   .npc-name { font-weight:700; color:var(--gold); font-size:13px; }
@@ -104,11 +161,11 @@
   .att-track > i { position:absolute; top:-3px; width:10px; height:10px; border-radius:50%; background:#ece4d6; border:2px solid #14110e; transform:translateX(-50%); }
   .att-lbl { font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); flex:none; }
 
-  /* ---- collapsible context block (#34) ---- */
-  .ctx { border:1px solid var(--line); border-radius:9px; background:var(--panel); overflow:hidden; }
+  /* ---- collapsible context block (#34) — shares the elevated .card treatment above ---- */
+  .ctx { overflow:hidden; }
   .ctx + .ctx { margin-top:8px; }
   .ctx > summary { list-style:none; cursor:pointer; padding:9px 11px; display:flex; align-items:center; gap:8px;
-    font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:#9c8e74; font-weight:700; user-select:none; }
+    font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:#b39c78; font-weight:700; user-select:none; }
   .ctx > summary::-webkit-details-marker { display:none; }
   .ctx > summary .tw { transition:transform .15s; color:var(--faint); font-size:10px; }
   .ctx[open] > summary .tw { transform:rotate(90deg); }
@@ -123,15 +180,22 @@
   .loclist li .arrow { color:var(--gold2); font-size:11px; }
   .loclist li .vtag { margin-left:auto; font-size:9px; color:var(--faint); letter-spacing:.05em; text-transform:uppercase; }
 
-  /* ---- speaker (voice playback, #36) ---- */
-  .speak-btn { flex:none; width:20px; height:20px; border-radius:50%; border:1px solid #3d3119; background:#1c150d;
-    color:var(--gold); font-size:9px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
-    cursor:pointer; padding:0; opacity:.55; transition:opacity .12s,background .12s; }
-  .msg:hover .speak-btn { opacity:1; }
-  .speak-btn:hover { background:#2a1d0e; border-color:var(--gold2); }
-  .speak-btn.playing { animation:spk 1s ease-in-out infinite; background:#2a1d0e; border-color:var(--gold); }
-  .speak-btn.off { color:var(--faint); border-color:#2f281c; cursor:default; }
-  @keyframes spk { 0%,100%{ box-shadow:0 0 0 0 rgba(232,201,138,.4);} 50%{ box-shadow:0 0 0 4px rgba(232,201,138,0);} }
+  /* ---- speaker (voice playback, #36) — a legible always-visible "listen" pill
+     (fix #2). Reads as a clear ▶ speaker control on every DM/player line; gains a
+     short label on hover; carries explicit playing / ✓ played / unavailable states. */
+  .speak-btn { flex:none; display:inline-flex; align-items:center; gap:4px; height:19px; padding:0 7px 0 6px;
+    border-radius:10px; border:1px solid var(--gold2); background:#241a0d; color:var(--gold);
+    font-size:10px; font-weight:700; line-height:1; cursor:pointer; transition:background .12s,border-color .12s,color .12s,box-shadow .12s; }
+  .speak-btn .si { font-size:9px; transform:translateY(.5px); }
+  .speak-btn .sl { font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; max-width:0; overflow:hidden;
+    white-space:nowrap; opacity:0; transition:max-width .16s,opacity .16s; }
+  .msg:hover .speak-btn { box-shadow:0 0 0 1px rgba(232,201,138,.18); }
+  .msg:hover .speak-btn .sl, .speak-btn.playing .sl, .speak-btn.done .sl, .speak-btn.off .sl { max-width:56px; opacity:1; }
+  .speak-btn:hover { background:#2f2210; border-color:var(--gold); }
+  .speak-btn.playing { animation:spk 1.1s ease-in-out infinite; background:#2f2210; border-color:var(--gold); color:#ffe9a8; }
+  .speak-btn.done { border-color:#3a7a4a; color:#9fdf9f; background:#16240f; }
+  .speak-btn.off { color:var(--faint); border-color:#3a3022; background:#1a150d; cursor:default; }
+  @keyframes spk { 0%,100%{ box-shadow:0 0 0 0 rgba(232,201,138,.45);} 50%{ box-shadow:0 0 0 5px rgba(232,201,138,0);} }
   /* director / agent-activity (our differentiator) */
   #director { background:#0e1410; border-color:#274030; }
   #director h2 { color:#8fbf8f; }
@@ -263,7 +327,7 @@
   <aside>
     <div class="card" id="scenecard"><h2>The scene</h2>
       <div class="art" id="sceneart">
-        <div class="hint"><b>Scene illustration</b>Art appears here when an image provider is on.</div>
+        <div class="hint"><span class="glyph">❖</span><b>Scene illustration</b>Art appears here when an image provider is on.</div>
       </div>
       <div class="loc-d" id="loc" style="margin-top:10px"></div></div>
     <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
@@ -293,6 +357,54 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
+
+// ---- image path (#34 / S2.2; fix #5) ----------------------------------------
+// The viewer projects the engine's imagegen cache via GET /image?scope=<scope>:
+// 200 + image bytes when a provider produced art for that scope, 404 otherwise (so
+// we keep the luxe placeholder). We probe a scope ONCE per session and memoize the
+// result — a 200 yields a stable object-URL we reuse; a 404/error is remembered as
+// "no art" so the 1.5s poll never re-hammers it or spams the console. Fully
+// fail-soft: any network hiccup just leaves the placeholder in place.
+const _imgCache = new Map();   // scope -> {url} | {none:true} | "pending"
+async function probeImage(scope) {
+  if (!scope) return null;
+  const hit = _imgCache.get(scope);
+  if (hit === "pending") return null;
+  if (hit) return hit.url || null;            // resolved (url) or {none:true} -> null
+  _imgCache.set(scope, "pending");
+  try {
+    const r = await fetch("/image?scope=" + encodeURIComponent(scope));
+    if (!r.ok) { _imgCache.set(scope, { none: true }); return null; }
+    const ct = (r.headers.get("Content-Type") || "");
+    if (!ct.startsWith("image/")) { _imgCache.set(scope, { none: true }); return null; }
+    const blob = await r.blob();
+    if (!blob.size) { _imgCache.set(scope, { none: true }); return null; }
+    const url = URL.createObjectURL(blob);
+    _imgCache.set(scope, { url });
+    return url;
+  } catch (_) {
+    _imgCache.set(scope, { none: true });      // unreachable/parse error -> placeholder
+    return null;
+  }
+}
+// Swap a resolved scene image into the .art box (over the placeholder); a miss is a
+// no-op so the painterly placeholder stays. Idempotent across polls.
+async function applySceneArt(scope) {
+  const box = document.getElementById("sceneart");
+  if (!box) return;
+  if (box.dataset.scope === scope && box.querySelector("img.scene")) return;  // already shown
+  if (box.dataset.scope !== scope) {                                          // location changed
+    const old = box.querySelector("img.scene"); if (old) old.remove();
+    box.dataset.scope = scope || "";
+  }
+  const url = await probeImage(scope);
+  if (!url || box.dataset.scope !== scope) return;     // miss, or moved on while fetching
+  if (box.querySelector("img.scene")) return;
+  const img = document.createElement("img");
+  img.className = "scene"; img.alt = ""; img.src = url;
+  img.onerror = () => img.remove();                    // decode failure -> back to placeholder
+  box.appendChild(img);
+}
 const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
 const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
 // race + class line for a stat card, omitting whatever's blank (placeholder NPCs
@@ -344,27 +456,39 @@ const describeMove = (m) => m.text ? `“${m.text}”` : (m.name ? `${m.kind}: $
 let speaking = false;
 async function speak(text, btn) {
   if (speaking || !text) return; speaking = true;
-  btn.classList.add("playing"); btn.title = "Playing…";
+  btn.classList.remove("done", "off");
+  btn.classList.add("playing"); btn.title = "Playing…"; setSpeakLabel(btn, "▮▮", "Playing");
+  const reset = () => { btn.classList.remove("done", "off"); btn.title = "Play this aloud"; setSpeakLabel(btn, "▶", "Listen"); };
   try {
     const r = await fetch("/speak", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
     const j = await r.json().catch(()=>({}));
-    if (!(j && j.ok)) {
-      btn.classList.add("off"); btn.title = (j && j.reason) || "Voice unavailable";
-      setTimeout(()=>{ btn.classList.remove("off"); btn.title = "Play narration"; }, 2500);
-    } else { btn.title = "Play narration"; }
+    if (j && j.ok) {
+      btn.classList.add("done"); btn.title = "Played"; setSpeakLabel(btn, "✓", "Played");
+      setTimeout(reset, 2500);
+    } else {
+      btn.classList.add("off"); btn.title = (j && j.reason) || "Voice unavailable"; setSpeakLabel(btn, "▶", "No voice");
+      setTimeout(reset, 2500);
+    }
   } catch (_) {
-    btn.classList.add("off"); btn.title = "Voice server unreachable";
-    setTimeout(()=>{ btn.classList.remove("off"); btn.title = "Play narration"; }, 2500);
+    btn.classList.add("off"); btn.title = "Voice server unreachable"; setSpeakLabel(btn, "▶", "No voice");
+    setTimeout(reset, 2500);
   } finally {
     btn.classList.remove("playing"); speaking = false;
   }
 }
-// Attach a ▶ speaker to a message's header; clicking plays that message's prose.
+// Attach a legible ▶ "Listen" speaker pill to a message header; clicking plays that
+// message's prose via /speak. Icon + a short label (label reveals on hover / state).
 function addSpeaker(headerEl, text) {
   const b = document.createElement("button");
-  b.className = "speak-btn"; b.type = "button"; b.title = "Play narration"; b.textContent = "▶";
+  b.className = "speak-btn"; b.type = "button"; b.title = "Play this aloud";
+  b.innerHTML = `<span class="si">▶</span><span class="sl">Listen</span>`;
   b.onclick = (e) => { e.stopPropagation(); speak(text, b); };
   headerEl.appendChild(b);
+}
+// Set the pill's icon + label text together (keeps the two spans in sync per state).
+function setSpeakLabel(btn, icon, label) {
+  const si = btn.querySelector(".si"), sl = btn.querySelector(".sl");
+  if (si) si.textContent = icon; if (sl) sl.textContent = label;
 }
 
 // The standard-D&D quick-action grid. Buttons mirror the engine's player facade:
@@ -496,6 +620,9 @@ function renderState(s) {
   $("where").textContent = cur ? `· ${cur.name}` : "";
   // the scene-card byline (under the illustration placeholder)
   $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b>${cur.description?` — ${esc(cur.description)}`:""}` : "";
+  // scene illustration (fix #5): show real art for this location if a provider made
+  // some; otherwise the painterly placeholder stays. Fail-soft, probed once per scope.
+  applySceneArt(curId || "");
 
   const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
   if (party[0]) pcName = party[0].name;
@@ -510,6 +637,7 @@ function renderState(s) {
     (c.kind==="npc"||c.kind==="monster") && (c.location_id===curId || combatIds.has(c.id)));
   $("scene").innerHTML = scene.map(c => npcCard(c, combatIds.has(c.id))).join("")
     || `<div class="empty">Just the party here.</div>`;
+  wireScenePortraits();   // overlay real NPC portraits where /image has them (fix #5)
 
   // ---- World & nearby context block (#34) ----
   $("ctx-locdesc").innerHTML = cur
@@ -544,14 +672,32 @@ function npcCard(c, inCombat) {
   if ((c.armor_class||0) && hasVitals(c)) pills.push(`<span class="pstat" title="Armor class">AC ${esc(c.armor_class)}</span>`);
   if (inCombat) pills.push(`<span class="pstat dist" title="In the current fight">in fight</span>`);
   const pos = attitudePos(c.attitude);
+  // portrait scope (fix #5): wireScenePortraits() probes /image?scope=portrait-<id>
+  // and overlays a real portrait when one exists; otherwise the gradient monogram stays.
+  const pscope = c.id ? "portrait-" + c.id : "";
   return `<div class="npc-card ${k}">
-    <span class="pavatar ${k}">${esc(initials(c.name))}</span>
+    <span class="pavatar ${k}"${pscope?` data-portrait="${esc(pscope)}"`:""}>${esc(initials(c.name))}</span>
     <div class="npc-body">
       <div class="npc-top"><span class="npc-name">${esc(c.name)}</span>${rcl?`<span class="npc-rcl">${rcl}</span>`:""}</div>
       ${c.attitude?`<div class="npc-desc" title="${esc(c.attitude)}">${esc(c.attitude)}</div>`:""}
       ${pills.length?`<div class="npc-stats">${pills.join("")}</div>`:""}
       <div class="att-bar"><span class="att-lbl">hostile</span><span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span><span class="att-lbl">friendly</span></div>
     </div></div>`;
+}
+
+// Overlay real NPC portraits onto their crest monograms (fix #5). The "In the scene"
+// markup is re-rendered each poll, so we re-probe the freshly-built .pavatar tiles —
+// but probeImage() memoizes per scope, so a hit/miss is fetched only once and reused.
+function wireScenePortraits() {
+  document.querySelectorAll("#scene .pavatar[data-portrait]").forEach(async av => {
+    if (av.querySelector("img.portrait")) return;
+    const url = await probeImage(av.getAttribute("data-portrait"));
+    if (!url || av.querySelector("img.portrait")) return;
+    const img = document.createElement("img");
+    img.className = "portrait"; img.alt = ""; img.src = url;
+    img.onerror = () => img.remove();   // decode failure -> monogram stays
+    av.appendChild(img);
+  });
 }
 
 // Pan/zoom transform persists across the 1.5s re-renders so the player's view
@@ -616,8 +762,10 @@ async function poll() {
       (chat.items||[]).forEach(it=>{
         const isP = it.role==="player"; const who = isP ? (pcName||"Player") : "Dungeon Master";
         const d = document.createElement("div"); d.className = "msg "+(isP?"player":"narration");
-        d.innerHTML = `<div class="hd"><span class="av ${isP?"pc":""}">${esc(initials(who))}</span><span class="nm">${esc(who)}</span></div><div class="bd">${esc(it.text)}</div>`;
-        if (!isP && it.text) addSpeaker(d.querySelector(".hd"), it.text);  // ▶ on DM narration (#36)
+        // DM lines get the authored-prose treatment (#3): a small-caps "Dungeon Master"
+        // byline glyph + a drop-cap on the passage. Player bubbles stay plain.
+        d.innerHTML = `<div class="hd"><span class="av ${isP?"pc":""}">${esc(initials(who))}</span><span class="nm${isP?"":" dm"}">${esc(who)}</span></div><div class="bd${isP?"":" dropcap"}">${esc(it.text)}</div>`;
+        if (it.text) addSpeaker(d.querySelector(".hd"), it.text);  // ▶ on DM + player lines (#36, fix #2)
         feed.appendChild(d);
       });
       if ((chat.items||[]).length) feed.scrollTop = feed.scrollHeight;
@@ -629,8 +777,9 @@ async function poll() {
         if (!["narration","dialogue","combat","system"].includes(e.kind)) return;
         const d = document.createElement("div"); d.className = "msg "+e.kind;
         const who = e.speaker || (e.kind==="system"?"":"Dungeon Master");
-        d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}">${esc(who)}</span></div>`:"")
-          + `<div class="bd">${esc(e.text)}</div>`;
+        const isNarr = e.kind==="narration";  // DM-authored prose → byline glyph + drop-cap (#3)
+        d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}${isNarr?" dm":""}">${esc(who)}</span></div>`:"")
+          + `<div class="bd${isNarr?" dropcap":""}">${esc(e.text)}</div>`;
         if (e.kind!=="system" && e.text) { const hd=d.querySelector(".hd"); if (hd) addSpeaker(hd, e.text); }  // ▶ narration/dialogue (#36)
         feed.appendChild(d);
       });

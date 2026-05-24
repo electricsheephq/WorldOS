@@ -27,6 +27,8 @@ Usage:  python3 viewer/server.py [campaign_id] [port]
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import subprocess
@@ -88,6 +90,61 @@ def _moves_path() -> Path | None:
     *move intents* (NOT campaign state). Unset ⇒ no live game ⇒ no write path."""
     env = os.environ.get("CLAWDND_PLAYER_MOVES")
     return Path(env) if env else None
+
+
+# ---- image cache projection (#34 / S2.2) -------------------------------------
+# The engine's imagegen layer writes a small JSON *descriptor* per generated image
+# under <state_dir>/images/<scope>/<hash>.json (see servers/engine/imagegen.py),
+# carrying one of: "path" (a file on disk), "url", or "bytes_b64"+"mime_type". We
+# stay a pure downstream reader of that derived cache: stdlib only, NEVER importing
+# the engine. GET /image?scope=<scope> finds the most-recent descriptor for a scope
+# and serves the pixels; absent scope/descriptor → 404 so the dashboard falls back
+# to its luxe placeholder.
+
+def _safe_scope(scope: Optional[str]) -> str:
+    """Reduce a caller-supplied scope id to a single safe path segment, mirroring
+    imagegen._safe_scope so we resolve the same cache dir AND can't be walked out of
+    images/ via path traversal (only alnum/-/_ survive; length-capped)."""
+    if not scope:
+        return ""
+    return "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(scope))[:128]
+
+
+def _images_dir(scope: Optional[str]) -> Path:
+    """Cache dir for one scope: <state_dir>/images/<safe-scope>. Mirrors
+    imagegen._images_dir (which roots at store.state_dir()/images)."""
+    root = _state_dir() / "images"
+    seg = _safe_scope(scope)
+    return root / seg if seg else root
+
+
+def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
+    """Most-recently-written *.json descriptor under the scope's cache dir, parsed.
+    Returns None when the scope dir is absent, holds no descriptors, or the newest
+    one won't parse (the cache is rebuildable, never load-bearing — a bad entry is
+    just a miss, exactly like imagegen.cache_read)."""
+    seg = _safe_scope(scope)
+    if not seg:
+        return None
+    cdir = _images_dir(scope)
+    if not cdir.is_dir():
+        return None
+    newest: Optional[Path] = None
+    newest_mtime = -1.0
+    for p in cdir.glob("*.json"):
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest_mtime:
+            newest, newest_mtime = p, m
+    if newest is None:
+        return None
+    try:
+        d = json.loads(newest.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    return d if isinstance(d, dict) else None
 
 
 def _campaign_recency(snap_path: Path) -> float:
@@ -401,6 +458,53 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, obj) -> None:
         self._send(200, json.dumps(obj).encode("utf-8"), "application/json")
 
+    def _serve_image(self, scope: str) -> None:
+        """GET /image?scope=<scope> — serve the most-recent cached image for a scope.
+
+        Resolves the newest descriptor under <state_dir>/images/<scope>/ and serves
+        its pixels: a `path` on disk (read+send the bytes), `bytes_b64` (decode+send),
+        or a `url` (302 redirect). 404s cleanly when the scope/descriptor is absent or
+        carries no servable image, so the dashboard keeps its placeholder. Content-Type
+        comes from the descriptor's `mime_type` (default image/png). Pure reader — never
+        imports the engine, never writes."""
+        desc = _latest_descriptor(scope)
+        if not desc:
+            self._send(404, b"no image", "text/plain")
+            return
+        ctype = desc.get("mime_type")
+        ctype = ctype if isinstance(ctype, str) and ctype.strip() else "image/png"
+        # 1) a real file on disk
+        path = desc.get("path")
+        if isinstance(path, str) and path:
+            try:
+                data = Path(path).read_bytes()
+            except OSError:
+                data = None
+            if data:
+                self._send(200, data, ctype)
+                return
+        # 2) inline base64 bytes
+        b64 = desc.get("bytes_b64")
+        if isinstance(b64, str) and b64:
+            try:
+                data = base64.b64decode(b64, validate=True)
+            except (binascii.Error, ValueError):
+                data = None
+            if data:
+                self._send(200, data, ctype)
+                return
+        # 3) a remote URL — hand the browser a redirect (we don't proxy bytes)
+        url = desc.get("url")
+        if isinstance(url, str) and url:
+            self.send_response(302)
+            self.send_header("Location", url)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        # descriptor exists but carries no servable image (e.g. null placeholder)
+        self._send(404, b"no image", "text/plain")
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         route = parsed.path
@@ -427,6 +531,9 @@ class _Handler(BaseHTTPRequestHandler):
             since = int((qs.get("since") or ["0"])[0])
             items, nxt = _read_chat(since)
             self._json({"items": items, "next": nxt, "live": bool(self.chat_path)})
+        elif route == "/image":
+            qs = parse_qs(parsed.query)
+            self._serve_image((qs.get("scope") or [""])[0])
         else:
             self._send(404, b"not found", "text/plain")
 
