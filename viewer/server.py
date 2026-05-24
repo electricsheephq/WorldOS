@@ -92,6 +92,33 @@ def _moves_path() -> Path | None:
     return Path(env) if env else None
 
 
+def _live_play() -> bool:
+    """True when the dashboard's action layer (Say/Do/Continue + the dice/skill/save/
+    combat palette + click-to-travel) can actually land a move — i.e. POST /move will
+    accept it. That requires $CLAWDND_PLAYER_MOVES to be set AND its target writable
+    (the sink dir exists-or-can-be-made and is writable, or the file already exists and
+    is writable). When false the dashboard is the read-only "director's view" and grays
+    the palette out instead of letting clicks silently fail. Mirrors the do_POST /move
+    gate exactly (dest is None ⇒ refuse) plus a writability probe — no engine import."""
+    dest = _moves_path()
+    if dest is None:
+        return False
+    try:
+        if dest.exists():
+            return os.access(dest, os.W_OK)
+        # File not created yet: do_POST mkdirs the parent then appends, so the live
+        # check passes when the nearest existing ancestor is a writable directory.
+        probe = dest.parent
+        while True:
+            if probe.exists():
+                return probe.is_dir() and os.access(probe, os.W_OK)
+            if probe.parent == probe:  # reached filesystem root without an existing dir
+                return False
+            probe = probe.parent
+    except OSError:
+        return False
+
+
 # ---- image cache projection (#34 / S2.2) -------------------------------------
 # The engine's imagegen layer writes a small JSON *descriptor* per generated image
 # under <state_dir>/images/<scope>/<hash>.json (see servers/engine/imagegen.py),
@@ -543,7 +570,12 @@ class _Handler(BaseHTTPRequestHandler):
             html = (_HERE / "dashboard.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
         elif route == "/state":
-            self._json(_read_snapshot(self.campaign_id))
+            # The raw campaign snapshot, plus one viewer-only flag: `live` says whether
+            # the dashboard's action layer can land a move (POST /move accepted). The
+            # snapshot is a fresh dict per read, so this transient key never persists.
+            snap = _read_snapshot(self.campaign_id)
+            snap["live"] = _live_play()
+            self._json(snap)
         elif route == "/config":
             self._json(_viewer_config())
         elif route == "/events":

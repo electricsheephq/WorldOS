@@ -15,8 +15,6 @@
   body { font:14px/1.55 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink);
     display:grid; grid-template-columns:184px 1.55fr 1fr; height:100vh; overflow:hidden; }
   a,button { color:inherit; font:inherit; }
-  .soon { font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:#caa15e;
-    background:#2a2114; border:1px solid #4a3c22; border-radius:8px; padding:1px 6px; margin-left:6px; }
 
   /* ---- left rail ---- */
   nav { background:#15110c; border-right:1px solid var(--line); padding:14px 10px; display:flex; flex-direction:column; gap:3px; }
@@ -325,7 +323,11 @@
      Play restores them. Reuses the dark-fantasy + gold tokens above.
      ============================================================================ */
   .nav-i.tab { cursor:pointer; }                 /* implemented tabs are clickable */
-  .nav-i.tab:hover, #nav-settings:hover { background:#221708; color:var(--gold); }
+  .nav-i.jump { cursor:pointer; }                /* jump-to-rail-card rows (M1) */
+  .nav-i.tab:hover, .nav-i.jump:hover, #nav-settings:hover { background:#221708; color:var(--gold); }
+  /* brief gold ring when a jump lands on its rail card so the eye finds it */
+  @keyframes railflash { 0%{ box-shadow:0 0 0 2px rgba(232,201,138,.55); } 100%{ box-shadow:0 0 0 2px rgba(232,201,138,0); } }
+  .rail-flash { animation:railflash 1.1s ease-out; border-radius:11px; }
   #sheet { display:none; grid-column:2 / 4; min-height:0; overflow-y:auto;
     background:radial-gradient(140% 90% at 50% 0%, rgba(232,201,138,.05), rgba(232,201,138,0) 55%), var(--bg); }
   body.sheet-open #sheet { display:block; }
@@ -517,6 +519,89 @@
   .beat-who.combat { color:#e0a0a0; }
   .beat-text { font-size:12.5px; color:#c3b79e; }
   .beat-row.player .beat-text { color:var(--ink); }
+
+  /* ============================================================================
+     S2 SURFACE — render engine subsystems the dashboard maintained but never showed:
+     class-resource pools (H1a), death saves (H1b), pending consequences (H1c),
+     walk-times + region on the nearby list (H1d). Read-only; reuses the gold tokens.
+     ============================================================================ */
+  /* ---- H1a: class-resource pools (Rage / Ki / Channel Divinity / …) ---- */
+  /* One row per pool: a name, a pip strip (filled = available, hollow = spent),
+     a used/max count, and a recharge label. Lives in the Character + Spellbook tabs. */
+  .res-list { display:flex; flex-direction:column; gap:9px; }
+  .res-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .res-nm { font-size:12.5px; color:var(--ink); font-weight:600; flex:0 0 auto; min-width:118px; }
+  .res-pips { display:flex; gap:4px; flex-wrap:wrap; flex:1 1 auto; align-content:center; }
+  .res-pips .rpip { width:11px; height:11px; border-radius:50%; border:1px solid var(--gold2); }
+  .res-pips .rpip.full { background:var(--gold); box-shadow:0 0 4px rgba(232,201,138,.45); }
+  .res-pips .rpip.spent { background:#2a2014; }
+  /* big pools (Lay on Hands = 5×level HP) would overflow as pips — show a meter instead */
+  .res-meter { flex:1 1 90px; height:8px; min-width:90px; border-radius:4px; background:#2a2014;
+    border:1px solid #3a2f1c; overflow:hidden; }
+  .res-meter > i { display:block; height:100%; background:linear-gradient(90deg,var(--gold2),var(--gold)); }
+  .res-cnt { font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; flex:none; min-width:42px; text-align:right; }
+  .res-rch { font-size:9px; letter-spacing:.06em; text-transform:uppercase; flex:none;
+    border:1px solid #3a2f1c; border-radius:7px; padding:1px 6px; color:var(--faint); background:#221a10; }
+  .res-rch.short { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
+  .res-rch.long { color:#e8c08a; border-color:#5a4a20; background:#241c0c; }
+
+  /* ---- H1b: death saves (dying combatant) ---- */
+  /* Compact pip clusters: successes (gold, filled) over failures (red, filled). Rendered
+     on the party rail (inline) and the NPC/combatant card (its own line). */
+  .death { display:inline-flex; align-items:center; gap:8px; }
+  .death.inline { margin-left:2px; }
+  .ds-grp { display:inline-flex; align-items:center; gap:3px; }
+  .ds-lbl { font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
+  .ds-pip { width:8px; height:8px; border-radius:50%; border:1px solid; box-sizing:border-box; }
+  .ds-grp.succ .ds-pip { border-color:var(--gold2); } .ds-grp.succ .ds-pip.on { background:var(--gold); }
+  .ds-grp.fail .ds-pip { border-color:#6a3636; } .ds-grp.fail .ds-pip.on { background:var(--monster); }
+  /* a "Dying" flag on the party rail row + npc card */
+  .dying-tag { font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:#ff9a9a;
+    border:1px solid #6a3636; background:#2a1212; border-radius:7px; padding:1px 6px; }
+  .pstat.dying { color:#ff9a9a; border-color:#6a3636; background:#2a1212; }
+  /* party-rail dying row gets a soft red breathing pulse to flag the cinematic moment */
+  .row.is-dying { animation:dyingpulse 1.8s ease-in-out infinite; border-radius:7px; padding-left:5px;
+    margin-left:-5px; }
+  @keyframes dyingpulse { 0%,100%{ background:rgba(224,143,143,0); } 50%{ background:rgba(224,143,143,.08); } }
+  .deathrow { display:flex; align-items:center; gap:10px; margin-top:6px; }
+
+  /* ---- H1c: pending consequences ("What's coming") ---- */
+  .conseq-list { display:flex; flex-direction:column; }
+  .conseq-row { padding:11px 0; border-top:1px solid #221a10; display:flex; gap:12px; }
+  .conseq-row:first-child { border-top:none; padding-top:0; }
+  .conseq-row:last-child { padding-bottom:0; }
+  .conseq-day { flex:none; width:62px; text-align:center; align-self:flex-start; }
+  .conseq-day .cd-n { font-size:20px; font-weight:800; color:var(--gold); font-family:Georgia,serif; line-height:1; }
+  .conseq-day .cd-k { font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); display:block; margin-top:2px; }
+  .conseq-day .cd-when { font-size:9px; color:var(--gold2); display:block; margin-top:3px; }
+  .conseq-body { flex:1; min-width:0; }
+  .conseq-text { font-size:13px; color:var(--ink); line-height:1.5; }
+  .conseq-note { font-size:11.5px; color:var(--faint); font-style:italic; margin-top:4px; line-height:1.45; }
+  .conseq-thread { font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; color:#8fbf8f;
+    border:1px solid #2e5638; background:#14241a; border-radius:7px; padding:1px 6px; margin-left:7px; vertical-align:1px; }
+
+  /* ---- H1d: nearby walk-times + region grouping ---- */
+  .loclist li .walk { margin-left:auto; font-size:9.5px; color:var(--gold2); letter-spacing:.03em;
+    font-variant-numeric:tabular-nums; flex:none; }
+  /* when a row has both a walk-time and a visited tag, the visited tag follows the walk */
+  .loclist li .walk + .vtag { margin-left:8px; }
+  .loclist li.region-h { font-size:8.5px; letter-spacing:.09em; text-transform:uppercase; color:#b39c78;
+    margin:9px 0 2px; padding:0 2px; display:flex; align-items:center; gap:6px;
+    cursor:default; border:none; background:none; }
+  .loclist li.region-h:first-child { margin-top:4px; }
+  .loclist li.region-h:hover { background:none; border:none; }
+  .loclist li.region-h::after { content:""; flex:1; height:1px; background:linear-gradient(90deg, rgba(202,161,94,.28), transparent); }
+
+  /* ---- C1a: read-only "director's view" affordances ---- */
+  /* When state.live is false the action layer can't land a move, so we gray it out and
+     show one honest hint line rather than letting clicks silently 4s-flash an error. */
+  body.read-only .palette { opacity:.5; filter:grayscale(.4); pointer-events:none; }
+  body.read-only #svg { cursor:default; }
+  .ro-hint { font-size:10.5px; color:var(--faint); font-style:italic; text-align:center;
+    padding:7px 18px 9px; border-top:1px solid var(--line); background:linear-gradient(180deg,#120d08,#0c0906);
+    display:none; align-items:center; justify-content:center; gap:7px; }
+  body.read-only .ro-hint { display:flex; }
+  .ro-hint .ro-ic { color:var(--gold2); font-size:11px; font-style:normal; }
 </style>
 </head>
 <body>
@@ -529,9 +614,11 @@
     <div class="nav-i tab" data-view="progression"><span class="ic">⬙</span> Progression</div>
     <div class="nav-i tab" data-view="relationships"><span class="ic">♥</span> Relationships</div>
     <div class="nav-i tab" data-view="memories"><span class="ic">❂</span> Memories</div>
-    <div class="nav-i"><span class="ic">⚇</span> Party</div>
-    <div class="nav-i"><span class="ic">✦</span> Quests</div>
-    <div class="nav-i"><span class="ic">◈</span> World</div>
+    <!-- These three jump to their existing right-rail cards in the Play view (they used
+         to be inert placeholder rows that looked like tabs but did nothing — M1). -->
+    <div class="nav-i jump" data-jump="party"><span class="ic">⚇</span> Party</div>
+    <div class="nav-i jump" data-jump="quests"><span class="ic">✦</span> Quests</div>
+    <div class="nav-i jump" data-jump="world"><span class="ic">◈</span> World</div>
     <div class="nav-i" id="nav-settings" style="cursor:pointer"><span class="ic">⚙</span> Settings</div>
     <div class="foot">Director's view — <b>read-only</b>. The story is driven through Claude Code; this window watches it live.</div>
   </nav>
@@ -554,6 +641,9 @@
       </div>
       <div id="moveflash"></div>
     </div>
+    <!-- Shown only in read-only mode (state.live === false): the action layer above is
+         grayed + inert, so this honest line replaces the silent error-flash (C1a). -->
+    <div class="ro-hint" id="ro-hint"><span class="ro-ic">▣</span>Director's view — play your turns in Claude Code.</div>
   </main>
 
   <aside>
@@ -563,14 +653,14 @@
       </div>
       <div class="loc-d" id="loc" style="margin-top:10px"></div></div>
     <div class="card"><h2>In the scene</h2><div id="scene"></div></div>
-    <div class="card"><h2>Party</h2><div id="party"></div></div>
+    <div class="card" id="partycard"><h2>Party</h2><div id="party"></div></div>
     <details class="ctx" id="ctx-world" open><summary><span class="tw">▸</span> World &amp; nearby
         <span class="ctx-n" id="ctx-world-n"></span></summary>
       <div class="ctx-body">
         <div class="loc-desc" id="ctx-locdesc"></div>
         <ul class="loclist" id="ctx-nearby"></ul>
       </div></details>
-    <div class="card" id="mapcard" style="position:relative"><h2>Map <span class="soon">painterly soon</span></h2>
+    <div class="card" id="mapcard" style="position:relative"><h2>Map</h2>
       <svg id="svg"></svg>
       <div class="maptip" id="maptip"></div>
       <div class="maphint">scroll to zoom · drag to pan · click a place to travel</div></div>
@@ -700,6 +790,10 @@ function attitudePos(att) {
 // either outcome in the flash line. We never block the UI on it.
 let moveBusy = false;
 async function submitMove(move) {
+  // C1a: in read-only ("director's view") mode the move sink is inert, so a POST would
+  // just 4s-flash an error and look broken. Swallow it here (covers map / nearby clicks
+  // too) — the grayed palette + hint already tell the player to play in Claude Code.
+  if (_liveMode === false) return;
   const flash = $("moveflash");
   if (moveBusy) return; moveBusy = true;
   flash.className = "show"; flash.textContent = "Sending move…";
@@ -812,6 +906,28 @@ function wireSayDo() {
   // Continue (#5): a one-press nudge to let the story press on, as a free-form 'do'
   // move (the same constrained lane as Say/Do — refused cleanly when read-only).
   $("continue-btn").onclick = () => submitMove({ kind:"do", text:"continue" });
+}
+
+// ---- C1a: live vs read-only ("director's view") -----------------------------
+// The action layer (Say/Do/Continue + dice/skill/save/combat palette + map click-to-
+// travel) only lands a move when the server reports state.live (CLAWDND_PLAYER_MOVES
+// set + writable). In the default documented mode the dashboard is the read-only
+// director's view, so clicking would silently 4s-flash an error — it looks broken.
+// We instead gray + disable the whole layer and show one honest hint. `body.read-only`
+// CSS handles the palette grid (pointer-events:none + opacity) and the hint line; we
+// also hard-disable the always-present Say/Do/Continue controls + textarea so they're
+// keyboard/focus-inert, and toggle the textarea placeholder to say so. Idempotent —
+// safe to call every poll. The palette/map are NOT removed — they're real in live mode.
+let _liveMode = null;
+function applyLiveMode(live) {
+  if (live === _liveMode) return;   // only touch the DOM when the flag actually changes
+  _liveMode = live;
+  document.body.classList.toggle("read-only", !live);
+  const ta = $("saytext");
+  [$("say-btn"), $("do-btn"), $("continue-btn"), ta].forEach(el => { if (el) el.disabled = !live; });
+  if (ta) ta.placeholder = live
+    ? "Speak in-character, or describe an action…"
+    : "Director's view — play your turns in Claude Code.";
 }
 
 // ---- dice tray (#35) --------------------------------------------------------
@@ -929,6 +1045,73 @@ function getPC() {
   return id ? (lastState.characters||{})[id] || null : null;
 }
 const totalLevel = (c) => (c.classes||[]).reduce((a,cl)=>a+(cl.level||0),0) || 1;
+
+// ============================================================================
+// S2 SURFACE — shared helpers for subsystems the engine maintained but the
+// dashboard never showed. Pure read-only projections of /state fields verified
+// against the engine's pydantic models (ClassResource / DeathSaves).
+// ============================================================================
+
+// ---- H1a: class-resource pools ----------------------------------------------
+// Character.class_resources is a dict { resource_id: {max, used, recharge} } (NOT a
+// list). The resource_id is the key; we map known ids to their canonical labels (from
+// servers/engine/srd_tables.py) and Title-Case anything else. `used` is expended;
+// `max - used` is what's left. recharge ∈ {short, long, none}.
+const RESOURCE_LABELS = {
+  rage: "Rage", ki: "Ki / Focus Points", lay_on_hands: "Lay on Hands",
+  channel_divinity: "Channel Divinity", bardic_inspiration: "Bardic Inspiration",
+  sorcery_points: "Sorcery Points", second_wind: "Second Wind",
+  action_surge: "Action Surge", wild_shape: "Wild Shape",
+};
+const RECHARGE_LABEL = { short: "short rest", long: "long rest", none: "manual" };
+// A pool small enough to read as discrete pips? Big point-pools (Lay on Hands = 5×level
+// HP, Sorcery/Ki at high level) become a meter so the row doesn't wrap into 60+ dots.
+const POOL_PIP_CAP = 12;
+function resourceRow(id, r) {
+  const max = Math.max(0, r.max || 0), used = Math.max(0, Math.min(max, r.used || 0));
+  const left = max - used;
+  const label = RESOURCE_LABELS[id] || titleCase(id);
+  const rch = (r.recharge === "short" || r.recharge === "long") ? r.recharge : "";
+  const rchTag = `<span class="res-rch ${rch}" title="Recharges on a ${RECHARGE_LABEL[r.recharge] || "manual restore"}">${esc(rch || "manual")}</span>`;
+  let mid;
+  if (max > POOL_PIP_CAP) {
+    const pct = max > 0 ? Math.round(100 * left / max) : 0;
+    mid = `<span class="res-meter" title="${left} of ${max} left"><i style="width:${pct}%"></i></span>`;
+  } else {
+    let pips = "";
+    for (let i = 0; i < max; i++) pips += `<span class="rpip ${i < left ? "full" : "spent"}"></span>`;
+    mid = `<span class="res-pips">${pips}</span>`;
+  }
+  return `<div class="res-row"><span class="res-nm">${esc(label)}</span>${mid}
+    <span class="res-cnt">${left}/${max}</span>${rchTag}</div>`;
+}
+// The whole "Resources" card body, or "" when this character has no pools (casters with
+// only spell slots must NOT show an empty card — H1a). Skips zero-max pools defensively.
+function resourcePoolsHTML(c) {
+  const cr = c.class_resources || {};
+  const ids = Object.keys(cr).filter(id => cr[id] && (cr[id].max || 0) > 0);
+  if (!ids.length) return "";
+  return `<div class="res-list">${ids.map(id => resourceRow(id, cr[id])).join("")}</div>`;
+}
+const hasResourcePools = (c) => {
+  const cr = c.class_resources || {};
+  return Object.keys(cr).some(id => cr[id] && (cr[id].max || 0) > 0);
+};
+
+// ---- H1b: death saves -------------------------------------------------------
+// A combatant is *dying* (death-saving) when downed but not yet dead: current_hp <= 0
+// and not `dead`. A `stable` PC at 0 HP has stopped rolling, so we don't flash saves
+// for them. death_saves is {successes, failures}, each 0..3.
+function isDying(c) {
+  return (c.current_hp ?? 1) <= 0 && !c.dead && !c.stable;
+}
+// successes ● (gold) over failures (red), always 3 slots each; filled = recorded.
+function deathSavePips(ds, { labels = true } = {}) {
+  const s = Math.max(0, Math.min(3, (ds && ds.successes) || 0));
+  const f = Math.max(0, Math.min(3, (ds && ds.failures) || 0));
+  const strip = (n, cls) => { let o = ""; for (let i = 0; i < 3; i++) o += `<span class="ds-pip ${i < n ? "on" : ""}"></span>`; return `<span class="ds-grp ${cls}">${labels ? `<span class="ds-lbl">${cls === "succ" ? "saves" : "fails"}</span>` : ""}${o}</span>`; };
+  return `<span class="death" title="Death saves — ${s} success${s===1?"":"es"}, ${f} failure${f===1?"":"s"}">${strip(s, "succ")}${strip(f, "fail")}</span>`;
+}
 
 // ---- view switching ---------------------------------------------------------
 const SHEET_LABEL = { character:"Character", inventory:"Inventory",
@@ -1115,9 +1298,19 @@ function renderCharacter(c, wrap) {
 
   const featTags = (c.features||[]).map(f=>`<span class="tag">${esc(f)}</span>`).join("");
 
+  // H1b: when the PC is downed-but-not-dead, surface their death saves right under the
+  // vitals — the single most dramatic combat beat (hidden otherwise).
+  const deathLine = isDying(c)
+    ? `<div class="deathrow"><span class="dying-tag">Dying</span>${deathSavePips(c.death_saves)}</div>` : "";
+  // H1a: class-resource pools (Rage/Ki/Channel Divinity/…). Full card, only when present.
+  const resBody = resourcePoolsHTML(c);
+  const resCard = resBody
+    ? `<div class="scard" style="grid-column:1/-1"><h3>Resources</h3>${resBody}</div>` : "";
+
   const body = `<div class="sgrid cols2">
       <div class="scard" style="grid-column:1/-1"><h3>Abilities</h3><div class="abil-row">${abil}</div></div>
-      <div class="scard" style="grid-column:1/-1"><h3>Combat</h3><div class="vitals">${vitals}</div></div>
+      <div class="scard" style="grid-column:1/-1"><h3>Combat</h3><div class="vitals">${vitals}</div>${deathLine}</div>
+      ${resCard}
       <div class="scard"><h3>Saving throws</h3><div class="plist">${saves}</div></div>
       <div class="scard"><h3>Conditions</h3>${condBody}
         ${featTags?`<h3 style="margin-top:14px">Features</h3><div class="tags">${featTags}</div>`:""}</div>
@@ -1204,7 +1397,13 @@ function renderSpellbook(c, wrap) {
     ? `<div class="scard" style="grid-column:1/-1"><h3>Spells</h3>${prepBlock}${restBlock}</div>`
     : `<div class="scard" style="grid-column:1/-1"><h3>Spells</h3><div class="empty">Slots available, but no spell list recorded.</div></div>`;
 
-  const body = `<div class="sgrid cols2">${slotCard}${spellCard}</div>`;
+  // H1a: a caster with class-resource pools too (Bard's Bardic Inspiration, Sorcerer's
+  // Sorcery Points, Paladin's Channel Divinity) also sees them here, beside the slots.
+  const resBody = resourcePoolsHTML(c);
+  const resCard = resBody
+    ? `<div class="scard" style="grid-column:1/-1"><h3>Resources</h3>${resBody}</div>` : "";
+
+  const body = `<div class="sgrid cols2">${slotCard}${resCard}${spellCard}</div>`;
   wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Spellbook", identityLine(c), body);
 }
 
@@ -1373,7 +1572,30 @@ function renderMemories(wrap) {
         ${b.who?`<span class="beat-who ${esc(b.cls)}">${esc(b.who)}</span>`:""}
         <span class="beat-text">${esc(b.text)}</span></div>`).join("")}</div>` : "";
 
-  const anything = memCount || decisions.length || beats.length;
+  // (d) H1c: pending consequences — the SCHEDULED FUTURE the DM set up (add_consequence
+  // → check_consequences). The decisions ledger above is the PAST; this is "What's
+  // coming". A Consequence is pending while `fired` is false; we sort by trigger_day and
+  // show description + trigger day + how soon it's due. `note` is the DM's private source.
+  const today = s.day ?? 0;
+  const pending = (s.consequences || []).filter(x => x && !x.fired)
+    .filter(x => hit(x.text, x.note))
+    .sort((a,b)=>(a.trigger_day||0)-(b.trigger_day||0));
+  const whenLabel = (day) => {
+    const dd = (day ?? 0) - today;
+    if (dd <= 0) return today && day != null ? (dd === 0 ? "due now" : "overdue") : "";
+    return dd === 1 ? "in 1 day" : `in ${dd} days`;
+  };
+  const conseqBody = pending.length ? `<div class="conseq-list">${pending.map(x=>{
+    const when = whenLabel(x.trigger_day);
+    return `<div class="conseq-row">
+        <div class="conseq-day"><span class="cd-n">${esc(x.trigger_day ?? "?")}</span><span class="cd-k">Day</span>${when?`<span class="cd-when">${esc(when)}</span>`:""}</div>
+        <div class="conseq-body">
+          <div class="conseq-text">${esc(x.text || "Something stirs.")}${x.thread_id?`<span class="conseq-thread" title="A standing world-sim thread">world beat</span>`:""}</div>
+          ${x.note?`<div class="conseq-note">${esc(x.note)}</div>`:""}
+        </div></div>`;
+  }).join("")}</div>` : "";
+
+  const anything = memCount || decisions.length || beats.length || pending.length;
   let body;
   if (!anything) {
     body = q
@@ -1381,6 +1603,8 @@ function renderMemories(wrap) {
       : `<div class="sheet-empty">No memories yet — the story hasn't begun to leave its mark.</div>`;
   } else {
     body = `
+      ${conseqBody ? `<div class="mem-sec"><div class="mem-sh">What's coming <span class="mem-sn">${pending.length}</span></div>
+        <div class="scard">${conseqBody}</div></div>` : ""}
       ${memCards ? `<div class="mem-sec"><div class="mem-sh">Remembered by the cast <span class="mem-sn">${memCount}</span></div>
         <div class="sgrid cols2">${memCards}</div></div>` : ""}
       ${decBody ? `<div class="mem-sec"><div class="mem-sh">Decisions <span class="mem-sn">${decisions.length}</span></div>
@@ -1388,12 +1612,13 @@ function renderMemories(wrap) {
       ${beatBody ? `<div class="mem-sec"><div class="mem-sh">Recent beats <span class="mem-sn">${beats.length}</span></div>
         <div class="scard">${beatBody}</div></div>` : ""}`;
   }
-  wrap.innerHTML = sheetShell("Memories", "", searchBox("memories", "Search memories, decisions, and beats…") + body);
+  wrap.innerHTML = sheetShell("Memories", "", searchBox("memories", "Search memories, decisions, beats, and what's coming…") + body);
   keepSearchFocus(wasFocused, caret);
 }
 
 function renderState(s) {
   lastState = s;                              // stash for the player-sheet tabs (S2)
+  applyLiveMode(s.live !== false);            // C1a: gray the action layer when read-only
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
   $("title").textContent = s.title || "ClawDnD";
@@ -1410,9 +1635,11 @@ function renderState(s) {
 
   const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
   if (party[0]) pcName = party[0].name;
-  $("party").innerHTML = party.map(c => { const h=hp(c); return `
-    <div class="row">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
-    <span class="hpbar ${h.low?"low":""}" title="${h.txt}"><i style="width:${h.pct}%"></i></span></div>`; }).join("")
+  $("party").innerHTML = party.map(c => { const h=hp(c); const dying=isDying(c); return `
+    <div class="row${dying?" is-dying":""}">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
+    ${dying
+      ? `<span class="dying-tag">Dying</span>${deathSavePips(c.death_saves,{labels:false})}`
+      : `<span class="hpbar ${h.low?"low":""}" title="${h.txt}"><i style="width:${h.pct}%"></i></span>`}</div>`; }).join("")
     || `<div class="empty">No party yet.</div>`;
 
   // ---- "In the scene" → NPC portrait cards (#34) ----
@@ -1429,9 +1656,40 @@ function renderState(s) {
     : `<span class="empty">Location unknown.</span>`;
   const nearby = (cur && cur.connections || []).map(id => ({ id, l: locs[id] })).filter(x => x.l);
   $("ctx-world-n").textContent = nearby.length ? `${nearby.length} nearby` : "";
-  $("ctx-nearby").innerHTML = nearby.map(({id,l}) =>
-    `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(l.name||id)}"><span class="arrow">→</span>${esc(l.name||id)}${l.visited?`<span class="vtag">visited</span>`:""}</li>`).join("")
-    || (cur ? `<li class="empty" style="cursor:default;border:none">No known routes from here.</li>` : "");
+  // H1d: the DM builds Location.travel_times (connected-id → walk minutes) and
+  // Location.region; the list used to show only exit names. We append the walk time
+  // ("Sow's Ear — 8 min") and, when the nearby places carry regions, group them under
+  // a region heading. Both degrade gracefully to today's name-only behavior when absent.
+  const travel = (cur && cur.travel_times) || {};
+  const walkLabel = (mins) => {
+    if (mins == null) return "";
+    const m = Math.round(mins);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60), r = m % 60;
+    return r ? `${h} hr ${r} min` : `${h} hr`;
+  };
+  // one nearby row; data-loc drives the existing click-to-travel delegated listener.
+  const nearbyLi = ({id,l}) => {
+    const mins = travel[id];
+    const walk = walkLabel(mins);
+    return `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(l.name||id)}${walk?` (${walk})`:""}">
+      <span class="arrow">→</span>${esc(l.name||id)}${walk?`<span class="walk">${esc(walk)}</span>`:""}${l.visited?`<span class="vtag">visited</span>`:""}</li>`;
+  };
+  let nearbyHTML;
+  if (!nearby.length) {
+    nearbyHTML = cur ? `<li class="empty" style="cursor:default;border:none">No known routes from here.</li>` : "";
+  } else if (nearby.some(x => x.l.region)) {
+    // group by region; "Nearby" bucket for any neighbor without a region, listed last.
+    const groups = new Map();
+    nearby.forEach(x => { const r = x.l.region || ""; if (!groups.has(r)) groups.set(r, []); groups.get(r).push(x); });
+    const keys = [...groups.keys()].sort((a,b) => (a===""?1:b===""?-1:a.localeCompare(b)));
+    nearbyHTML = keys.map(r =>
+      `<li class="region-h" style="list-style:none">${esc(r || "Nearby")}</li>` + groups.get(r).map(nearbyLi).join("")
+    ).join("");
+  } else {
+    nearbyHTML = nearby.map(nearbyLi).join("");
+  }
+  $("ctx-nearby").innerHTML = nearbyHTML;
 
   // ---- Quests & factions context block ----
   const quests = Object.values(s.quests||{}).filter(q=>q.status==="active");
@@ -1455,6 +1713,10 @@ function npcCard(c, inCombat) {
   if (hasVitals(c)) pills.push(`<span class="pstat hp ${h.low?"low":""}" title="Hit points">HP ${esc(h.txt)}</span>`);
   if ((c.armor_class||0) && hasVitals(c)) pills.push(`<span class="pstat" title="Armor class">AC ${esc(c.armor_class)}</span>`);
   if (inCombat) pills.push(`<span class="pstat dist" title="In the current fight">in fight</span>`);
+  // H1b: a downed-but-not-dead combatant is death-saving — the most cinematic beat.
+  const dying = isDying(c);
+  if (dying) pills.push(`<span class="pstat dying" title="Making death saves">dying</span>`);
+  const deathLine = dying ? `<div class="deathrow">${deathSavePips(c.death_saves)}</div>` : "";
   const pos = attitudePos(c.attitude);
   // portrait scope (fix #5): wireScenePortraits() probes /image?scope=portrait-<id>
   // and overlays a real portrait when one exists; otherwise the gradient monogram stays.
@@ -1464,7 +1726,7 @@ function npcCard(c, inCombat) {
     <div class="npc-body">
       <div class="npc-top"><span class="npc-name">${esc(c.name)}</span>${rcl?`<span class="npc-rcl">${rcl}</span>`:""}</div>
       ${c.attitude?`<div class="npc-desc" title="${esc(c.attitude)}">${esc(c.attitude)}</div>`:""}
-      ${pills.length?`<div class="npc-stats">${pills.join("")}</div>`:""}
+      ${pills.length?`<div class="npc-stats">${pills.join("")}</div>`:""}${deathLine}
       <div class="att-bar"><span class="att-lbl">hostile</span><span class="att-track"><i style="left:${(pos*100).toFixed(0)}%"></i></span><span class="att-lbl">friendly</span></div>
     </div></div>`;
 }
@@ -1596,7 +1858,25 @@ function wireNearby() {
     submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
   });
 }
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs(); setupSettings();
+// M1: the Party / Quests / World nav rows used to be inert placeholders that looked
+// like tabs but did nothing. They now jump to their existing right-rail cards: leave
+// any open sheet (back to Play, where the rail lives), scroll the target into view, and
+// flash it so the eye lands on it.
+const JUMP_TARGET = { party:"partycard", quests:"ctx-quests", world:"ctx-world" };
+function wireJumps() {
+  document.querySelectorAll("nav .nav-i.jump").forEach(item => {
+    item.addEventListener("click", () => {
+      if (activeView !== "play") { setView("play"); history.replaceState(null,"","#play"); }
+      const el = $(JUMP_TARGET[item.dataset.jump]);
+      if (!el) return;
+      if (el.tagName === "DETAILS") el.open = true;   // expand a collapsed ctx block
+      el.scrollIntoView({ behavior:"smooth", block:"start" });
+      el.classList.remove("rail-flash"); void el.offsetWidth; el.classList.add("rail-flash");
+      setTimeout(() => el.classList.remove("rail-flash"), 1200);
+    });
+  });
+}
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); wireJumps(); renderDice(); wireTabs(); setupSettings();
 poll(); setInterval(poll, 1500);
 </script>
 </body>
