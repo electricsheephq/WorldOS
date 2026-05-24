@@ -452,12 +452,14 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
         low = str(text).lower()
         return any(sub in low for sub in supersedes)
 
-    # Record the retraction predicate on the campaign so the OTHER lore surface
-    # (lookup_lore's .md corpus) can de-conflict on the same basis (the two-surface bug:
-    # the overlay edits c.lore but never the authored .md pages, so they contradict). The
-    # server wrapper passes these to lookup_lore to drop/demote a contradicting tier-0 hit.
-    if supersedes:
-        c.lore_supersedes = list(supersedes)
+    # NOTE: the retraction predicate is recorded on the campaign (`c.lore_supersedes`)
+    # LATER — only if the world_state block validates (see the world_state setter below).
+    # The two are deliberately COUPLED: the `.md` de-confliction (lore_supersedes) and the
+    # mitigating canon header (world_state) are belt-and-suspenders; recording the redaction
+    # predicate while the header degraded to None would let lookup_lore strip authored .md
+    # canon WITHOUT the framing header that justifies it (B-LOW). The c.lore retraction just
+    # below uses the LOCAL `supersedes` list and is unconditional — base recall stays
+    # de-conflicted regardless, exactly as before (this coupling is `.md`-surface-only).
 
     # The base standing-thread texts are exactly the world-beats seed_threads already
     # scheduled (text == the thread). Capture the SURVIVING base threads (not retracted),
@@ -532,6 +534,14 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     # shape, forbidden extra key) must DEGRADE — skip it (the world keeps the base/None
     # state) — not abort start_world, exactly like the companion_seeds guard below. No
     # `world_state` key -> world_state stays None, so the default path is today's behavior.
+    #
+    # The `.md` de-confliction predicate (`c.lore_supersedes`) is recorded HERE, COUPLED to
+    # a VALID world_state (B-LOW): the redaction (which strips authored .md sentences) and
+    # its mitigating canon header are belt-and-suspenders. If the world_state block degrades
+    # to None, we must NOT drive .md redaction without that header — so we leave
+    # lore_supersedes empty and lookup_lore stays byte-identical to the no-ending path. (The
+    # base-recall c.lore retraction above already ran on the local `supersedes` list and is
+    # unaffected — this all-or-nothing coupling is the `.md` surface only.)
     ws_raw = overlay.get("world_state")
     if isinstance(ws_raw, dict):
         try:
@@ -541,6 +551,10 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 f"[content] skipping malformed world_state in ending overlay "
                 f"{overlay.get('id', overlay.get('name', '?'))!r}"
             )
+        else:
+            # world_state validated -> safe to also drive the coupled .md de-confliction.
+            if supersedes:
+                c.lore_supersedes = list(supersedes)
 
     # ADDITIVE post-state seeding (S4 synthesis): the chosen ending may PRE-LOAD a
     # canon companion's relationship arc + sealed agenda, so "the chosen ending shapes
