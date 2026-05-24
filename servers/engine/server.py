@@ -2742,10 +2742,12 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
     call this for each party member. Cannot rest while dead.
 
     A long rest is ~8 in-world hours (overnight), so it advances the campaign clock
-    to the NEXT MORNING (``day += 1``, ``time_of_day = 'morning'``) — the rollover is
-    applied once and persisted, and the new ``day``/``time_of_day`` are returned so the
-    DM narrates the new dawn. (Repeated long_rest calls for each party member on the
-    same night land on the same morning — they don't each burn a day.)"""
+    to the NEXT MORNING (``time_of_day = 'morning'``, rolling ``day`` over) and returns
+    the new ``day``/``time_of_day`` so the DM narrates the new dawn. Resting from
+    afternoon/evening/night rolls the day forward by one; resting when it is ALREADY
+    morning is a clock no-op, so calling long_rest once per party member on the same
+    night converges on a single morning instead of each member burning a day. The
+    rollover is persisted with the rest."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -2754,15 +2756,22 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         out = rests.long_rest(ch)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         # A long rest is an overnight (~8h) and ends the next morning: advance the
-        # in-world clock to the next "morning", rolling the day over. Reuse the travel
-        # helper (advance_clock) for the phase/day math rather than hand-rolling it.
-        # If the party is already at morning, this rolls a full day to the next dawn.
+        # in-world clock to "morning", rolling the day over. Reuse the travel helper
+        # (advance_clock) for the phase/day math rather than hand-rolling it.
+        #
+        # The step count is `(morning - now) mod 4`, so afternoon/evening/night roll
+        # forward into the next day's morning. When ALREADY at morning the step count
+        # is 0 (a no-op): this is deliberate so the documented "call long_rest for each
+        # party member" pattern converges on ONE morning — after the first rest sets the
+        # clock to morning, the rest of the party resting that same night doesn't each
+        # burn another day. (Trade-off: a party that explicitly long-rests during a
+        # morning won't roll to the next day; the common overnight case is correct.)
         phases = travel.PHASES
         try:
             cur = phases.index(c.time_of_day)
         except ValueError:
             cur = 0  # normalize an unknown phase to the canonical cycle
-        steps = (phases.index("morning") - cur) % len(phases) or len(phases)
+        steps = (phases.index("morning") - cur) % len(phases)
         day, tod = travel.advance_clock(c, steps)
         out["day"] = day
         out["time_of_day"] = tod

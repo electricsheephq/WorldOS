@@ -117,17 +117,18 @@ def test_rest_tools_persist(tmp_path, monkeypatch):
 
 # --- long rest advances the in-world clock (a confirmed cause of campaigns
 # frozen at day=1: the tool restored resources but never rolled the calendar) ---
-def test_long_rest_advances_clock_to_next_morning(tmp_path, monkeypatch):
+def test_long_rest_from_evening_rolls_into_next_morning(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock")["id"]
     c = server._require(cid)
-    assert (c.day, c.time_of_day) == (1, "morning")  # fresh-campaign baseline
+    c.day, c.time_of_day = 1, "evening"  # bed down at dusk on day 1
+    server.save_campaign(c)
     pc = server.create_character(cid, "Astarion", kind="player", class_name="Wizard",
                                  apply_srd_defaults=True,
                                  abilities={"intelligence": 16, "constitution": 12})["id"]
     server.cast_spell(cid, pc, "Magic Missile")  # consume a slot to prove restore still happens
     out = server.long_rest(cid, pc)
-    # morning -> next morning is a full day on (you don't rest the day away in place)
+    # evening -> next dawn rolls the day over
     assert out["day"] == 2 and out["time_of_day"] == "morning"
     persisted = server._require(cid)
     assert persisted.day == 2 and persisted.time_of_day == "morning"  # change was saved
@@ -136,13 +137,34 @@ def test_long_rest_advances_clock_to_next_morning(tmp_path, monkeypatch):
     assert sheet["current_hp"] == sheet["max_hp"]  # HP still restored
 
 
-def test_long_rest_from_evening_rolls_into_next_morning(tmp_path, monkeypatch):
+def test_long_rest_at_morning_is_a_clock_no_op(tmp_path, monkeypatch):
+    # A long rest taken when it is already morning leaves the clock at this morning —
+    # so the "call long_rest for each party member" pattern doesn't burn a day per PC.
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock2")["id"]
     c = server._require(cid)
-    c.day, c.time_of_day = 1, "evening"  # bed down at dusk
-    server.save_campaign(c)
-    pc = server.create_character(cid, "Karlach", kind="player", class_name="Fighter",
+    assert (c.day, c.time_of_day) == (1, "morning")  # fresh-campaign baseline
+    pc = server.create_character(cid, "Wyll", kind="player", class_name="Fighter",
                                  apply_srd_defaults=True, abilities={"constitution": 14})["id"]
     out = server.long_rest(cid, pc)
-    assert out["day"] == 2 and out["time_of_day"] == "morning"  # evening -> next dawn = day 2
+    assert out["day"] == 1 and out["time_of_day"] == "morning"
+
+
+def test_long_rest_whole_party_converges_on_one_morning(tmp_path, monkeypatch):
+    # The documented usage: the DM calls long_rest for EACH party member after an
+    # overnight. The first call rolls evening -> next morning; subsequent members
+    # resting that same morning must NOT each advance another day.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Clock3")["id"]
+    c = server._require(cid)
+    c.day, c.time_of_day = 3, "evening"
+    server.save_campaign(c)
+    a = server.create_character(cid, "Karlach", kind="player", class_name="Fighter",
+                                apply_srd_defaults=True)["id"]
+    b = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True)["id"]
+    out_a = server.long_rest(cid, a)
+    out_b = server.long_rest(cid, b)
+    assert (out_a["day"], out_a["time_of_day"]) == (4, "morning")
+    assert (out_b["day"], out_b["time_of_day"]) == (4, "morning")  # NOT day 5
+    assert server._require(cid).day == 4  # the whole party rested into a single dawn
