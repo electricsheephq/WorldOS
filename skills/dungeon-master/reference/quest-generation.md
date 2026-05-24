@@ -20,7 +20,18 @@ NOT a rail and NOT a read-aloud list.**
    This is the beat that was missing — don't skip it; don't have the companion just "be there."
 3. **Inciting Incident** — the **wrong lands in front of the party**, not reported third-hand
    (`ref_id` is the spine hook — its `grievance`). Make it concrete and personal. This is the Call.
-4. **Threshold** — the party *commits*; the first thread goes live. Only now does open play begin.
+4. **Threshold** — the **player commits** (the first thread goes live). This commitment is the
+   PLAYER's to make, not yours to narrate — it's the one beat that buys the whole campaign.
+
+> **Hold the silence — the Threshold is the player's, not yours.** The #1 way the cold open
+> fails: you build a gorgeous inciting incident, the companion turns and says "Or—?" … and then
+> you *narrate the hero's choice for them* ("she presses the last coin into the boy's hand; she
+> stays"). That erases the single most important decision in the session. **Stop on the open
+> question and do not write another word until the player acts.** Same for the first fork (chase
+> the enemy *or* race to the cache): name both, then STOP — the player picks, *then* you
+> `travel_to`. Resisting the urge to fill the silence beautifully is the whole job here. (This is
+> the SKILL.md non-negotiable "never play their part" at its sharpest — the cold open is where
+> it's most tempting to break.)
 
 Spend real scene-time here. A strong cold open is the difference between "a session that started"
 and "a session someone wants to keep playing." Then enter the normal beat cycle.
