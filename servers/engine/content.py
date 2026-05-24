@@ -101,6 +101,22 @@ def _as_list(adv: dict, key: str) -> list:
     return val
 
 
+def _as_list_lenient(rec: dict, key: str) -> list:
+    """Tolerant list-getter for OPTIONAL, externally-authored overlay fields (B-LOW-2).
+
+    Unlike `_as_list` (which is strict so a malformed *adventure* fails loudly at seed),
+    an ending overlay is a small, hand-edited add-on: a field that's present-but-not-a-
+    list should DEGRADE, not crash the whole start_world. Missing -> []; a list -> as-is;
+    any other scalar -> a single-element list (matching the tolerant `.get()`/`fates`-
+    non-dict handling elsewhere in `_apply_ending_overlay`)."""
+    val = rec.get(key, [])
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return val
+    return [val]
+
+
 def seed_campaign(adv: dict) -> Campaign:
     """Build a Campaign from an adventure dict. Tolerant of optional fields, but
     rejects malformed shapes and duplicate ids rather than silently dropping data."""
@@ -353,12 +369,17 @@ def load_ending_data(world_id: str, ending_id: str) -> "dict | None":
 def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     """Fold a post-state ending overlay onto an already-base-seeded Campaign (mutates).
 
-    ADDITIVE on top of the base seed: OVERWRITES `era` (the chronology guardrail moves
-    to the post-state); appends the overlay's standing_threads + history into `lore`
-    (so they're recallable) and re-runs the world-sim so the new threads tick; and lands
-    each `fates` entry as a memory fact on the matching npc_roster Character — plus a
-    lore line so a hero who isn't in the roster is still covered. Premise gets the suffix
-    appended. (The overlay's story_seeds_append are surfaced by start_world, not here.)"""
+    OVERWRITES `era` (the chronology guardrail moves to the post-state). The post-state
+    is mutually exclusive with the base facts it changes, so the overlay also RETRACTS
+    the base facts it supersedes (B-HIGH-1): an optional ``supersedes`` list of
+    case-insensitive substrings drops any base `history`/`standing_thread` line carrying
+    a match BEFORE the overlay's own `history_append` + `standing_threads` are folded
+    into recallable `lore`. The world-sim is then re-seeded ONCE from the MERGED set
+    (surviving base threads + overlay threads) — never base-then-overlay — so no retired
+    thread keeps ticking and there are no duplicate `thread_id`s (B-LOW-1). Each `fates`
+    entry lands as a memory fact on the matching npc_roster Character — plus a lore line
+    so a hero who isn't in the roster is still covered. Premise gets the suffix appended.
+    (The overlay's story_seeds_append are surfaced by start_world, not here.)"""
     # The post-state chronology REPLACES the base era — who's alive / what happened changed.
     new_era = str(overlay.get("era") or "").strip()
     if new_era:
@@ -368,19 +389,46 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     if suffix:
         c.summary = (c.summary + " " + suffix).strip() if c.summary else suffix
 
-    # Recallable post-state facts: the overlay's history + standing threads join `lore`.
+    # Which base facts this post-state RETRACTS: case-insensitive substrings. A base
+    # lore line (history or standing thread) carrying any of these is mutually exclusive
+    # with the overlay and is dropped so `recall` never returns both (B-HIGH-1).
+    supersedes = [s.lower() for s in (_as_list_lenient(overlay, "supersedes")) if str(s).strip()]
+
+    def _superseded(text: str) -> bool:
+        low = str(text).lower()
+        return any(sub in low for sub in supersedes)
+
+    # The base standing-thread texts are exactly the world-beats seed_threads already
+    # scheduled (text == the thread). Capture the SURVIVING base threads (not retracted),
+    # then clear ALL base thread-beats — we reseed once from the merged set below so no
+    # retired thread keeps ticking and ids don't collide with the overlay's (B-LOW-1).
+    surviving_base_threads = [
+        cq.text for cq in c.consequences
+        if cq.thread_id and str(cq.text).strip() and not _superseded(cq.text)
+    ]
+    c.consequences = [cq for cq in c.consequences if not cq.thread_id]
+
+    # Drop superseded base facts from recallable lore, then fold the overlay's own
+    # history + standing threads in. (Base lore was history + standing_threads; the
+    # superseded base threads are dropped here too, in lockstep with the beats above.)
+    if supersedes:
+        c.lore = [l for l in c.lore if not _superseded(l)]
     extra_lore = [
         str(x) for x in (
-            _as_list(overlay, "history_append") + _as_list(overlay, "standing_threads")
+            _as_list_lenient(overlay, "history_append") + _as_list_lenient(overlay, "standing_threads")
         ) if str(x).strip()
     ]
     if extra_lore:
         c.lore = list(c.lore) + extra_lore
 
-    # The post-state threads also tick in the background like the base standing threads.
-    new_threads = [str(t) for t in _as_list(overlay, "standing_threads") if str(t).strip()]
-    if new_threads:
-        worldsim.seed_threads(c, new_threads)
+    # Re-seed the world-sim ONCE from the MERGED set: the base threads that SURVIVED the
+    # retraction, followed by the overlay's post-state threads. This is the only call
+    # that schedules thread-beats when an ending is active, so each thread has exactly
+    # one record with a unique id and the world never ticks a thread the post-state retired.
+    overlay_threads = [str(t) for t in _as_list_lenient(overlay, "standing_threads") if str(t).strip()]
+    merged_threads = surviving_base_threads + overlay_threads
+    if merged_threads:
+        worldsim.seed_threads(c, merged_threads)
 
     # Each fate lands on the matching roster NPC as a memory fact (so the DM voices the
     # right post-state when they appear). Roster characters are keyed by id or name; a

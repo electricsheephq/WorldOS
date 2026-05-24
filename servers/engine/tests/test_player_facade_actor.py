@@ -189,3 +189,60 @@ def test_default_my_sheet_unchanged_shape_plus_additive_fields(live, monkeypatch
         assert k in sheet
     assert sheet["name"] == "Kield"
     assert sheet["attitude_value"] == 0  # player's untouched default
+
+
+# --- A-LOW-1: an actor id may bind ONLY to a live player/companion ------------------
+def test_actor_id_pointing_at_a_monster_emits_no_moves(live, monkeypatch):
+    # Seed a monster into the live campaign, then point the facade at it. The move
+    # palette is the human-play surface — it must NEVER drive a monster/npc, so _pc()
+    # resolves to no sheet and every sheet-gated move is refused (same as an unknown
+    # actor id: cast/use_item/attack all bail on "no character yet").
+    c = store.load_campaign("camp-actor")
+    c.characters["mon-ogre"] = Character(id="mon-ogre", name="Ogre", kind="monster",
+                                         inventory=[Item(name="Greatclub")])
+    store.save_campaign(c)
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "mon-ogre")
+    assert ps._pc() is None
+    assert ps.attack("Kield", "Greatclub")["ok"] is False
+    assert ps.cast_spell("Sacred Flame")["ok"] is False
+    assert ps.use_item("Greatclub")["ok"] is False
+
+
+def test_actor_id_pointing_at_a_dead_character_emits_no_moves(live, monkeypatch):
+    # A bound companion that has DIED can no longer act — a corpse drives no moves.
+    c = store.load_campaign("camp-actor")
+    c.characters["char-ally"].dead = True
+    store.save_campaign(c)
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    assert ps._pc() is None
+    assert ps.attack("Kield", "Mace")["ok"] is False
+    assert ps.cast_spell("Cure Wounds")["ok"] is False
+
+
+def test_actor_id_for_a_live_companion_still_acts(live, monkeypatch):
+    # The guard is narrow: a LIVE player/companion is unaffected (it still emits moves).
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    assert ps._pc().name == "Seraphine"
+    assert ps.say("'Ready.'")["ok"] is True
+
+
+# --- A-LOW-2: CLAWDND_ACTOR_ROLE is clamped to the allowlist -------------------------
+def test_actor_role_clamped_to_allowlist(live, monkeypatch):
+    # Unknown free text -> "companion" (the safe non-narrator peer role), never trusted
+    # verbatim onto the move stream the DM/dashboard read.
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "dungeon-master")
+    assert ps._actor_role() == "companion"
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "")
+    assert ps._actor_role() == "player"  # blank -> today's default
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "  Companion  ")
+    assert ps._actor_role() == "companion"  # trimmed + case-insensitive
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "player")
+    assert ps._actor_role() == "player"
+
+
+def test_clamped_role_is_what_lands_on_the_move(live, monkeypatch):
+    # The clamp is observable end-to-end: an injected role never reaches the move record.
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "narrator")  # bogus
+    ps.say("'Hello.'")
+    assert live.rows()[-1]["role"] == "companion"

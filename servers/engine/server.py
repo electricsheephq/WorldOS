@@ -11,6 +11,7 @@ in later epics; this server already owns dice, characters, and persistence.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -757,6 +758,37 @@ def create_character(
     return {"id": ch.id, "name": ch.name, "kind": ch.kind}
 
 
+def _find_existing_roster_match(c, canon_name: str):
+    """Find an EXISTING roster record (npc/companion) that IS this canon figure, so a
+    `pickup:` promotes it in place instead of minting a duplicate (B-MED-1). start_world
+    seeds e.g. `npc-minsc` "Minsc and Boo"; a later pickup:Minsc must reuse THAT record,
+    not create a second Minsc as the player. Monsters/other players are never matched.
+    Match (case-insensitive), most-specific first:
+      1) exact name (canon "Jaheira" -> roster "Jaheira"),
+      2) the roster-id convention npc-<slug> (canon "Minsc" -> id "npc-minsc", whose
+         display name "Minsc and Boo" wouldn't match by name),
+      3) the canon name as a leading whole word of the roster name ("Minsc and Boo")."""
+    want = (canon_name or "").strip().lower()
+    if not want:
+        return None
+    cand = [ch for ch in c.characters.values() if ch.kind in ("npc", "companion")]
+    # 1) exact name
+    for ch in cand:
+        if ch.name.strip().lower() == want:
+            return ch
+    # 2) the npc-<slug> id convention (slug = canon name, spaces/punct -> hyphens)
+    slug = re.sub(r"[^a-z0-9]+", "-", want).strip("-")
+    for ch in cand:
+        if ch.id.strip().lower() == f"npc-{slug}":
+            return ch
+    # 3) canon name is the leading whole word(s) of the roster display name
+    for ch in cand:
+        nm = ch.name.strip().lower()
+        if nm == want or nm.startswith(want + " ") or nm.startswith(want + ","):
+            return ch
+    return None
+
+
 @mcp.tool()
 def start_character(
     campaign_id: str,
@@ -794,6 +826,7 @@ def start_character(
     Returns the created PC (id, name, kind, origin, level)."""
     spec = (origin or "nobody_l1").strip()
     lower = spec.lower()
+    pickup_canon_name = ""  # set for pickup: so we can promote an existing roster NPC
 
     # Resolve the origin into concrete build params (then funnel through one builder).
     build = {
@@ -859,6 +892,7 @@ def start_character(
                 "playable_options": [x["name"] for x in (content_mod.list_canon_characters(c0.world_id, playable_only=True) if c0.world_id else [])],
             }
         resolved = f"pickup:{rec.get('name', who)}"
+        pickup_canon_name = str(rec.get("name", who) or who)  # match the roster by canon identity
         build["name"] = name or rec.get("name", who)
         build["class_name"] = class_name or str(rec.get("class", "") or "")
         build["race"] = race or rec.get("race", "")
@@ -886,6 +920,52 @@ def start_character(
         scores = AbilityScores(**(build["abilities"] or {}))
         cn = build["class_name"]
         lvl = int(build["level"])
+        rec = build["from_canon"]
+
+        # B-MED-1: start_world seeds the canon figure as a roster NPC (e.g. npc-minsc).
+        # A pickup: of that same figure must PROMOTE the existing record to the player —
+        # not mint a second one. Mirror recruit_companion's promote-in-place (flip kind,
+        # add to party, apply the SRD sheet) so the world keeps exactly one of them.
+        existing = _find_existing_roster_match(c, pickup_canon_name) if pickup_canon_name else None
+        if existing is not None:
+            ch = existing
+            ch.kind = "player"  # type: ignore[assignment]
+            if build["abilities"]:
+                ch.abilities = scores
+                ch.initiative_bonus = scores.modifier(Ability.DEX)
+            if cn:
+                ch.classes = [ClassLevel(name=cn.capitalize(), level=lvl, subclass=build["subclass"])]
+            ch.voice_id = voice_id
+            # Carry the canon identity (only fill blanks so a hand-set roster value wins).
+            for attr, key in (("race", "race"), ("alignment", "alignment"),
+                              ("appearance", "appearance"), ("personality", "personality"),
+                              ("background", "background")):
+                val = build.get(key) or (rec.get(key, "") if rec else "")
+                if val and not getattr(ch, attr, ""):
+                    setattr(ch, attr, val)
+            if rec is not None:
+                ch.mannerisms = ch.mannerisms or rec.get("mannerisms", "")
+                ch.backstory = ch.backstory or rec.get("backstory", "")
+                ch.notes = ch.notes or rec.get("voice_hint", "")
+            if build["skills"]:
+                ch.skill_proficiencies = [s.lower() for s in build["skills"] if s.lower() in SKILL_ABILITIES]
+            if cn:
+                _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
+            if ch.id not in c.party:
+                c.party.append(ch.id)
+            save_campaign(c)
+            return {
+                "id": ch.id,
+                "name": ch.name,
+                "kind": ch.kind,
+                "origin": resolved,
+                "race": ch.race,
+                "class": cn,
+                "level": ch.total_level,
+                "in_party": ch.id in c.party,
+                "promoted_existing": True,  # reused the roster record (no duplicate minted)
+            }
+
         ch = Character(
             name=build["name"],
             kind="player",
@@ -901,7 +981,6 @@ def start_character(
             initiative_bonus=scores.modifier(Ability.DEX),
         )
         # A canon pickup carries the rest of its identity for the DM to voice from.
-        rec = build["from_canon"]
         if rec is not None:
             ch.mannerisms = rec.get("mannerisms", "")
             ch.backstory = rec.get("backstory", "")
