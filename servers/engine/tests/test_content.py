@@ -156,20 +156,29 @@ def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
 # --- post-BG3 ending overlays + character origins ------------------------------------
 
 def test_seed_world_default_is_unchanged_base_state():
-    # The DEFAULT path (no ending) must reproduce today's base seed EXACTLY — no era
-    # rewrite, no extra lore, no fate facts, ending_id empty.
+    # The DEFAULT path (no ending) must reproduce today's base ENDING-overlay state EXACTLY —
+    # no era rewrite, no fate facts, ending_id empty. (baldurs-gate now also ships a
+    # quest_variants replayability layer that rolls outcome lore even on the base world —
+    # the [Outcome]/[Hook] lines below; that's a separate, deliberate feature, asserted in
+    # test_quest_variants.py. The base history + standing threads themselves are untouched.)
     w = content.load_world_data("baldurs-gate")
     base = content.seed_world(w)
     assert base.ending_id == ""
     assert base.era == str(w.get("era"))  # base chronology, untouched
-    expected_lore = [str(x) for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
-    assert base.lore == expected_lore  # exactly the base history + threads, nothing appended
+    base_lore = [str(x) for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
+    # the base history + threads are all present and unchanged (no overlay retraction)
+    assert base.lore[: len(base_lore)] == base_lore
+    # the ONLY additions are the quest-variant outcome/hook lines (no overlay fate facts)
+    extra = base.lore[len(base_lore):]
+    assert all(l.startswith("[Outcome] ") or l.startswith("[Hook] ") for l in extra)
     # each roster NPC carries only its single base hook (no overlay fate fact)
     jaheira = next(ch for ch in base.characters.values() if ch.name == "Jaheira")
     assert len(jaheira.memory) == 1
-    # an unknown/empty ending also falls through to the base state (no crash, no change)
+    # an unknown/empty ending also falls through to the base state (no crash, no overlay change);
+    # the campaign id differs so the rolled lore may differ — the base history/threads don't.
     unknown = content.seed_world(w, ending="no-such-ending")
-    assert unknown.ending_id == "" and unknown.era == base.era and unknown.lore == base.lore
+    assert unknown.ending_id == "" and unknown.era == base.era
+    assert unknown.lore[: len(base_lore)] == base_lore
 
 
 def test_seed_world_ending_rewrites_era_and_lands_fate_on_npc():
@@ -343,13 +352,22 @@ def test_ending_overlay_retracts_contradictory_base_canon():
 def test_ending_overlay_default_path_is_byte_identical():
     # The DEFAULT (no-ending) seed must be UNCHANGED by the supersedes/single-seed
     # rework: same lore, same standing-thread beats, same texts (ids/timestamps aside).
+    # A world that ships quest_variants (baldurs-gate) additionally rolls [Outcome]/[Hook]
+    # outcome lore on the base world — that's the replayability layer (a separate feature);
+    # the base history+threads remain byte-identical, only those tagged lines are appended.
     for wid in ("baldurs-gate", "sundered-reach"):
         w = content.load_world_data(wid)
         base = content.seed_world(w)
         expected_lore = [str(x) for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
-        assert base.lore == expected_lore  # exactly base history + threads, nothing dropped/added
+        # the base history+threads lead the lore unchanged; any tail is quest-variant lines
+        assert base.lore[: len(expected_lore)] == expected_lore  # nothing dropped/reordered
+        assert all(
+            l.startswith("[Outcome] ") or l.startswith("[Hook] ")
+            for l in base.lore[len(expected_lore):]
+        )
         assert base.ending_id == ""
         # one beat per base standing thread, in order, unique ids, text == the thread
+        # (quest_variants append only to lore, never to the world-sim beats)
         beats = [cq for cq in base.consequences if cq.thread_id]
         base_threads = [str(t) for t in w.get("standing_threads", []) if str(t).strip()]
         assert [b.text for b in beats] == base_threads

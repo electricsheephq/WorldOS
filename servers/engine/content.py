@@ -601,6 +601,83 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 continue
 
 
+def _resolve_quest_variants(c: Campaign, world: dict, rng: random.Random) -> None:
+    """The replayability layer (S6): resolve each MAJOR world quest's canonical OUTCOME
+    once at world-gen (mutates `c`). Mirrors the `world_state` contract — additive, setting-
+    agnostic, degrade-not-abort — and reuses the shipped lore/recall plumbing for free.
+
+    Read `world["quest_variants"]` (absent -> a no-op, today's behavior). For each quest,
+    pick ONE outcome:
+      * ENDING-TIED first — the first outcome carrying a `when` dict that is a SUBSET of the
+        world-state (all k=v must hold) wins. The match view is `world_state.facts` PLUS the
+        typed `world_tenor` dial as a virtual key (so an outcome may pin to the generic mood —
+        `when:{world_tenor:hopeful}` — or to a setting-specific fact — `when:{bhaal:ascendant}`).
+        The base/no-ending path has no world_state, so every `when` fails and everything rolls
+        random (replayability for the default world too). MUST run AFTER `_apply_ending_overlay`
+        so the facts/tenor are populated.
+      * RANDOM fallback — a SEEDED weighted roll over the outcomes carrying `random:<weight>`.
+        `rng` is derived off the campaign id (belt-and-suspenders; persistence is the real
+        reproducibility since seed_world runs once). A separate `random.Random` instance
+        (not the global `random`) leaves the ending roll at seed_world untouched.
+
+    The resolved outcome is stored on `c.quest_outcomes[quest_id]` (the structured record a
+    tool reads) AND appended to `c.lore` as `[Outcome] <lore>` + (if present) `[Hook] <hook>`
+    lines — so recall/lookup_lore surface them under the canon header, exactly like the
+    `fates` append in `_apply_ending_overlay`. Every block degrades-not-aborts per the
+    world_state guard: a malformed quest/outcome entry is SKIPPED (a valid sibling still
+    resolves), never aborting start_world."""
+    # The match view for `when`: the setting-specific facts plus the typed `world_tenor`
+    # dial as a virtual key, so an outcome can pin to either the generic mood or a fact.
+    # No world_state (base/no-ending) -> empty view -> every `when` fails and all rolls.
+    facts: dict[str, str] = {}
+    if c.world_state is not None:
+        facts = dict(c.world_state.facts)
+        facts.setdefault("world_tenor", c.world_state.world_tenor)
+    for qv in _as_list_lenient(world, "quest_variants"):
+        if not isinstance(qv, dict):
+            continue
+        qid = str(qv.get("id") or "").strip()
+        if not qid:
+            continue  # an outcome with no quest id can't be stored/recalled — skip it
+        # Only well-formed outcomes (a dict carrying a non-empty id) may resolve — an
+        # id-less outcome can't be a stored resolution, so it's dropped UP FRONT (never
+        # matches as ending-tied, never displaces a valid sibling in the random roll).
+        outcomes = [
+            o for o in _as_list_lenient(qv, "outcomes")
+            if isinstance(o, dict) and str(o.get("id") or "").strip()
+        ]
+        chosen: dict | None = None
+        # ENDING-TIED first: the first outcome whose `when` is a subset of the match view.
+        for o in outcomes:
+            when = o.get("when")
+            if isinstance(when, dict) and when and all(facts.get(k) == v for k, v in when.items()):
+                chosen = o
+                break
+        # RANDOM fallback: a seeded weighted roll over the outcomes carrying `random:<weight>`.
+        if chosen is None:
+            pool = [o for o in outcomes if o.get("when") is None and o.get("random") is not None]
+            weights: list[int] = []
+            for o in pool:
+                try:
+                    weights.append(max(1, int(o.get("random", 1))))
+                except (TypeError, ValueError):
+                    weights.append(1)  # a non-numeric weight degrades to 1, never aborts
+            if pool:
+                chosen = rng.choices(pool, weights=weights, k=1)[0]
+        if chosen is None:
+            continue  # no `when` matched and no random pool — nothing to resolve for this quest
+        c.quest_outcomes[qid] = str(chosen["id"]).strip()
+        # Append the resolved prose to recallable lore, under the same canon header as
+        # `fates`. Stable `[Outcome]`/`[Hook]` prefixes let the DM/tool spot them.
+        name = str(qv.get("name") or qid)
+        lore_text = str(chosen.get("lore") or "").strip()
+        if lore_text:
+            c.lore.append(f"[Outcome] {name}: {lore_text}")
+        hook_text = str(chosen.get("hook") or "").strip()
+        if hook_text:
+            c.lore.append(f"[Hook] {name}: {hook_text}")
+
+
 def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     """Seed a Campaign from a WORLD bible (a persistent setting the DM generates
     *within*, not a fixed plot). Unlike an adventure, a world ships its regions,
@@ -767,5 +844,13 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             # Persist the resolved id so a re-grounding / resume knows which post-state
             # this world is in (and "random" resolves to a concrete id, not re-rolled).
             c.ending_id = str(overlay.get("id", want_ending))
+
+    # The replayability layer (S6): resolve each major quest's outcome — ending-tied where
+    # the chosen ending's world_state.facts match, else a seeded random roll. Runs HERE,
+    # after the overlay, so world_state.facts is populated for `when`-matching. A world with
+    # no quest_variants is a no-op (quest_outcomes stays {}, c.lore untouched). The rng is
+    # seeded off the campaign id (a fresh uuid per campaign) so a given campaign's roll is
+    # stable; a separate Random instance leaves the ending roll above untouched.
+    _resolve_quest_variants(c, world, random.Random(c.id))
 
     return c

@@ -391,6 +391,17 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
         "lore_count": len(c.lore),
         "map_kind": c.map_kind,
     }
+    # The replayability layer (S6): echo the resolved major-quest outcomes so the DM sees
+    # which way each major thread went this world-gen (ending-tied or rolled). The full map
+    # plus a count + a few examples; the prose + follow-up hooks are recallable as
+    # [Outcome]/[Hook] lore lines. Absent when the world ships no quest_variants ({} -> []).
+    if c.quest_outcomes:
+        result["quest_outcomes"] = dict(c.quest_outcomes)
+        result["quest_outcomes_count"] = len(c.quest_outcomes)
+        result["quest_outcomes_sample"] = [
+            {"quest_id": qid, "outcome_id": oid}
+            for qid, oid in list(c.quest_outcomes.items())[:4]
+        ]
     # When an ending overlay seeded a post-state, echo its name + a one-line summary so
     # the DM can announce "the world you step into" at the table.
     if overlay is not None:
@@ -3267,6 +3278,19 @@ def generate_campaign(
 def get_house_rules(campaign_id: str) -> dict:
     """Return the campaign's house-rule configuration."""
     return _require(campaign_id).house_rules.model_dump()
+
+
+@mcp.tool()
+def get_quest_outcomes(campaign_id: str) -> dict:
+    """Return the campaign's resolved MAJOR-quest outcomes (the replayability layer) —
+    a `{quest_id: outcome_id}` map picked once at world-gen (ending-tied to the chosen
+    ending's world-state, else a seeded random roll) plus a `count`. Each resolved
+    outcome's narrative + any follow-up hook is ALSO in recallable lore as
+    `[Outcome] …` / `[Hook] …` lines (surfaced under the canon header by recall /
+    lookup_lore) — so this tool is the structured index, recall is the prose. Empty
+    `{}` for a world that ships no quest_variants. Read-only."""
+    c = _require(campaign_id)
+    return {"quest_outcomes": dict(c.quest_outcomes), "count": len(c.quest_outcomes)}
 
 
 @mcp.tool()

@@ -75,6 +75,71 @@
     "Cazador's leavings: vampire spawn abandoned in the Outer City, leaderless and starving, draw the Gur hunters and the Guild into a quiet war.",
     "Candlekeep's secret: a page the Avowed won't sell holds the truth about the Crown of Karsus — or about the Emperor's first name."
   ],
+  "quest_variants": [
+    {
+      "id": "the-emerald-grove",
+      "name": "The Fate of the Emerald Grove",
+      "outcomes": [
+        {"id": "grove-saved", "when": {"world_tenor": "hopeful"}, "lore": "The druid grove in the Western wilds still stands; the goblin warband that besieged it was broken and the tiefling refugees sheltering there lived to walk the road to the city. Grateful druids tend a sanctuary that held.", "hook": "A druid who survived the siege now travels the Risen Road looking for the scattered refugees they once sheltered — and would pay for word of where the survivors settled."},
+        {"id": "grove-massacred", "random": 2, "lore": "The grove fell. The warband poured through the gate and the refugees were slaughtered among the standing stones; the place is a burned shrine no one tends, its carvings black with old fire.", "hook": "A lone tiefling who crawled out of the grove's ashes has been seen in the Outer City, nursing a grudge and asking after anyone who profited from the massacre."},
+        {"id": "grove-druids-locked", "random": 1, "lore": "The shadow-touched faction among the druids won the grove's inner quarrel: the refugees were driven out unprotected and most never reached safety. The circle sealed itself off, turned inward, and admits no outsider now.", "hook": "The sealed grove has stopped answering the rangers who used to trade with it; a worried warden wants someone to learn what the isolationist druids are hiding behind their thorns."}
+      ]
+    },
+    {
+      "id": "the-shadow-cursed-lands",
+      "name": "The State of the Shadow-Cursed Lands",
+      "outcomes": [
+        {"id": "curse-lifted", "when": {"world_tenor": "hopeful"}, "lore": "The Shadow Curse over Reithwin is breaking. Green creeps back across poisoned ground, the dead grow quiet, and a great healer has stayed behind to shepherd the land's slow recovery and the orphans resettling there.", "hook": "The healing land keeps turning up things the curse had swallowed — a buried hamlet, a sealed crypt, a name on a gravestone someone in the city has been searching for. The warden of Reithwin needs hands he can trust."},
+        {"id": "curse-festers", "random": 2, "lore": "The curse never lifted. Reithwin and the lands around Moonrise stay drowned in unnatural dark; the things that hunt there still hunt, and a single grim warden holds a line that cannot be won, only held.", "hook": "The lone warden of the cursed lands has gone silent. The last traveler back from the dark says his lantern still burns at Last Light — but no one answers the door."},
+        {"id": "curse-quarantined", "random": 1, "lore": "The dark was contained but not cured: the Flaming Fist threw a cordon around the Shadow-Cursed Lands and call it a quarantine. Smugglers run the line, deserters hide past it, and the curse waits behind the wire.", "hook": "Something valuable was left behind the quarantine line when it went up, and more than one party is quietly hiring runners willing to cross into the dark to fetch it."}
+      ]
+    },
+    {
+      "id": "who-rules-the-gate",
+      "name": "Who Rules Baldur's Gate",
+      "outcomes": [
+        {"id": "council-restored", "when": {"baldurs_gate": "rebuilding"}, "lore": "The empty Archduke's seat sits under the restored Council of Four, who govern a grieving, rebuilding city by uneasy committee. No one tyrant holds the Gate; the patriars, the Fist, and the Guild jockey within the law, mostly.", "hook": "A council vote on the vacant Archduke's seat is coming, and every faction in the city wants a deniable pair of hands to tilt it. Someone has already approached the newcomer."},
+        {"id": "tyrant-holds", "when": {"gortash": "archduke"}, "lore": "The Archduke holds the Gate with an iron fist and a rebuilt watch of arcane constructs. The streets are orderly and afraid; dissent disappears quietly into the cells beneath Wyrm's Rock. Order, bought at the price of the city's throat.", "hook": "A resistance cell needs someone with no record and no face the watch knows to carry a message past the construct patrols into the Upper City."},
+        {"id": "vacuum-contested", "random": 1, "lore": "The seat stays empty and the city tears quietly at itself over it: the patriars, the Flaming Fist, the Guild, and the Zhentarim all maneuver for the throne by ballot, blade, and blackmail, and no one has won.", "hook": "Two factions both think they've hired the newcomer to do the same job for opposite ends — and only one of them can be paid."}
+      ]
+    },
+    {
+      "id": "the-steel-watch-foundry",
+      "name": "The Steel Watch and the Gnome Factions",
+      "outcomes": [
+        {"id": "gondians-survived", "random": 2, "lore": "The war-construct foundry beneath Wyrm's Rock lies wrecked, its automatons dead in the streets — but the enslaved artificer-smiths who were forced to build them walked free, and their craft hall is reopening in the Lower City under their own god's mark.", "hook": "The freed smiths are buying back their dead constructs' control-cores at any price — and someone has started murdering the scavengers who hold them."},
+        {"id": "ironhands-survived", "random": 2, "lore": "The foundry is wrecked and the constructs are scrap, but it was the gnome resistance-fighters who came out of the rubble alive while their rival smiths did not. Their leader walks the Lower City as a triumphant, vengeful liberator.", "hook": "The surviving gnome faction is hunting down everyone who collaborated with the construct-foundry — and the lists they're working from are not always right about who was guilty."},
+        {"id": "factions-at-peace", "random": 1, "lore": "Against all odds both gnome factions came out of the foundry's fall alive, brokered into an uneasy peace under a single reluctant leader. The dead Steel Watch hulks they pick apart together are the only thing they agree on.", "hook": "The fragile gnome peace is one incident away from a feud, and someone is staging incidents. A peace-broker wants the provocateur found before the streets run with it."}
+      ]
+    },
+    {
+      "id": "the-bhaal-murder-cult",
+      "name": "The Bhaalist Murder-Cult",
+      "outcomes": [
+        {"id": "cult-ascendant", "when": {"bhaal": "ascendant"}, "lore": "The murder-god's cult did not merely survive — it triumphed, and rules the city's nights from a temple of blood beneath the streets. The killings are no longer hidden; they are tithes, and the city has learned not to be out after dark.", "hook": "A grieving family will pay everything they have left for someone to walk into the abattoir under the city and bring back a body the cult took — or proof of who marked them for the knife."},
+        {"id": "cult-broken", "random": 2, "lore": "The Bhaalist cult was gutted: its shapeshifting matriarch dead, its temple-tribunal cleared, the murder-shrines cold. What's left are cold cases — the unsolved temple killings of the war years — and a hollyphant investigator still closing the files.", "hook": "An old murder the broken cult never finished has reopened: the same ritual marks, a copycat or a survivor, and the investigator working it has gone missing."},
+        {"id": "cult-festers", "random": 2, "lore": "The cult was driven underground but never broken. Bhaalist murder-shrines still fester in the city's underbelly and the killings have started again — quieter, patient, recruiting from the desperate the war left behind.", "hook": "A string of ritual killings shares one detail the Flaming Fist won't make public, and a frightened watch sergeant is hiring outside help because he no longer knows who in his own house to trust."}
+      ]
+    },
+    {
+      "id": "the-tiefling-survivors",
+      "name": "The Tiefling Refugee Community",
+      "outcomes": [
+        {"id": "community-thrives", "when": {"world_tenor": "hopeful"}, "lore": "The tiefling refugees who fled the western wilds reached the Gate and made it theirs: a community took root in Rivington, its survivors — a disgraced leader, an orphan-turned-operator, a gifted young smith — woven into the city's recovering life.", "hook": "The refugee community is being squeezed out of the homes it built by a patriar's land claim, and its leaders are looking for someone willing to dig up why a noble suddenly wants their corner of Rivington."},
+        {"id": "community-scattered", "random": 2, "lore": "Few of the refugees ever reached the Gate, and those who did scattered into its underside rather than a community — a thief in the Guild's debt, a beggar in the sewers, names that drift through the Outer City and don't stay anywhere long.", "hook": "One of the scattered refugees has surfaced with a story about who really doomed the others on the road — and is being hunted for telling it."},
+        {"id": "community-bitter", "random": 1, "lore": "The survivors made it, but bitter: a hard knot of refugees in the Outer City who trust no one outside their own and remember exactly who turned them away at the gates when they arrived starving. The city calls them a problem; they call it surviving.", "hook": "The bitter refugee enclave has taken to answering the city's contempt in kind, and a relief worker who still believes in them needs an outsider they might actually listen to."}
+      ]
+    },
+    {
+      "id": "the-nightsong-and-last-light",
+      "name": "The Nightsong and Last Light",
+      "outcomes": [
+        {"id": "aylin-freed", "random": 2, "lore": "The imprisoned immortal — the moon-goddess's own daughter, caged for a hundred years under the Shadow-Cursed Lands — walks free. Last Light held; the covert network that sheltered there survived; a living icon of the moon faith stands again in the world.", "hook": "The freed immortal is hunting the last of her old jailers, and her crusade has led her to the Gate — where she needs mortal hands to do the quiet work a legend cannot."},
+        {"id": "aylin-lost", "random": 2, "lore": "The cage was never opened; the imprisoned immortal was lost when the refuge at Last Light fell, and the network that sheltered there died with it. There is a goddess-shaped absence in the world's history and a massacre site no one will name.", "hook": "A relic looted from the fallen refuge at Last Light has surfaced in a Gate market, and the survivors of that network — what few there are — want it back badly enough to pay or to kill."}
+      ]
+    }
+  ],
+  "license_quest_variants": "quest_variants prose is ORIGINAL ClawDnD text describing post-BG3 world-STATE outcomes (plot-branch facts only), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced; outcomes STATE facts in our own words, like the ending overlays.",
   "starting_options": [
     {"location_id": "loc-lower-city", "framing": "Default. The player arrives in the recovering Lower City — newcomers, hired blades, or survivors of the tadpole crisis — and is pulled into a thread."},
     {"location_id": "loc-wyrms-crossing", "framing": "The player comes up the Risen Road into the Gate's front door, past Flaming Fist checkpoints and the desperate."},

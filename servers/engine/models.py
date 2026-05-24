@@ -513,6 +513,13 @@ class Campaign(_StrictModel):
     # World-state boolean flags the DM/engine set to gate events — e.g. "prize_seized"
     # drives a companion's prize_seized agenda (S4). Additive: empty == today's behavior.
     flags: dict[str, bool] = Field(default_factory=dict)
+    # The replayability layer (S6): each MAJOR world quest's resolved outcome, picked once
+    # at world-gen (ending-tied when the chosen ending's world_state.facts match, else a
+    # seeded random roll) — maps quest_id -> the resolved outcome_id. The resolved outcome's
+    # lore/hook prose is also appended to `lore` so recall/lookup_lore surface it under the
+    # canon header. Additive: empty == today's behavior (a world with no quest_variants).
+    # Mirrors `flags`/`world_state` — keys/values live in CONTENT, never engine code.
+    quest_outcomes: dict[str, str] = Field(default_factory=dict)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions
