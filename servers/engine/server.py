@@ -796,6 +796,69 @@ def get_character(campaign_id: str, character_id: str) -> dict:
 
 
 @mcp.tool()
+def list_canon_characters(campaign_id: str) -> dict:
+    """Who's available to pull into THIS world from the ingested canon roster (the
+    post-BG3 cast — Shadowheart, Astarion, Gale, …). Returns {name, race, class} each.
+    Use load_canon_character to bring one into play."""
+    c = _require(campaign_id)
+    return {
+        "world_id": c.world_id,
+        "available": content_mod.list_canon_characters(c.world_id) if c.world_id else [],
+    }
+
+
+@mcp.tool()
+def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_party: bool = False) -> dict:
+    """Pull a CANON character (e.g. Shadowheart, Astarion, Gale) from the world's ingested
+    roster into this campaign — with their real identity: race, class, and the
+    appearance / personality / mannerisms / backstory the DM voices from. Makes the
+    post-BG3 cast encounterable instead of re-invented. `kind`="npc" (default) or
+    "companion"; `add_to_party` brings a companion along. For a full COMBAT sheet, follow
+    with apply_srd_defaults / recruit_companion. Refuses a duplicate name."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        rec = content_mod.load_canon_character(c.world_id, name) if c.world_id else None
+        if rec is None:
+            avail = [x["name"] for x in (content_mod.list_canon_characters(c.world_id) if c.world_id else [])]
+            return {"error": f"no canon character {name!r} for world {c.world_id!r}", "available": avail}
+        canonical = rec.get("name", name)
+        dup = next((ch for ch in c.characters.values()
+                    if ch.name.strip().lower() == canonical.strip().lower()), None)
+        if dup is not None:
+            return {"error": f"{canonical!r} is already in this campaign", "id": dup.id}
+        classes = []
+        if rec.get("class"):
+            try:
+                lvl = max(1, int(rec.get("level") or 1))
+            except (TypeError, ValueError):
+                lvl = 1
+            classes = [ClassLevel(name=str(rec["class"]), level=lvl)]
+        ch = Character(
+            name=canonical,
+            kind=kind if kind in ("npc", "companion") else "npc",
+            race=rec.get("race", ""),
+            classes=classes,
+            alignment=rec.get("alignment", ""),
+            personality=rec.get("personality", ""),
+            appearance=rec.get("appearance", ""),
+            mannerisms=rec.get("mannerisms", ""),
+            backstory=rec.get("backstory", ""),
+            notes=rec.get("voice_hint", ""),
+            location_id=c.current_location_id,
+        )
+        c.characters[ch.id] = ch
+        if add_to_party and ch.id not in c.party:
+            c.party.append(ch.id)
+        save_campaign(c)
+        return {
+            "id": ch.id, "name": ch.name, "race": ch.race, "kind": ch.kind,
+            "class": rec.get("class", ""), "source": rec.get("source_url", ""),
+            "in_party": ch.id in c.party,
+            "note": "Identity loaded. For a full combat sheet, call apply_srd_defaults or recruit_companion.",
+        }
+
+
+@mcp.tool()
 def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
     """Apply a partial update to a character and persist it.
 

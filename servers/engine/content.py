@@ -21,6 +21,51 @@ def _content_dir() -> Path:
     return Path(raw).expanduser() if raw else Path(__file__).resolve().parents[2] / "content"
 
 
+def _characters_dirs(world_id: str) -> list[Path]:
+    """Where ingested canon characters live: content/worlds/<id>/characters/ and its
+    gitignored _private/ mirror (for locally-cached records)."""
+    base = _content_dir() / "worlds"
+    return [base / world_id / "characters", base / "_private" / world_id / "characters"]
+
+
+def list_canon_characters(world_id: str) -> list[dict]:
+    """The ingested canon characters available for a world — {name, race, class} each —
+    from content/worlds/<id>/characters/*.json. De-duplicated by name (a figure on two
+    wikis collapses to one)."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for cdir in _characters_dirs(world_id):
+        if not cdir.is_dir():
+            continue
+        for p in sorted(cdir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            nm = (rec.get("name") or p.stem).strip()
+            if nm.lower() in seen:
+                continue
+            seen.add(nm.lower())
+            out.append({"name": nm, "race": rec.get("race", ""), "class": rec.get("class", "")})
+    return out
+
+
+def load_canon_character(world_id: str, name: str) -> "dict | None":
+    """Load one ingested canon character record by name (or file slug), or None."""
+    want = name.strip().lower()
+    for cdir in _characters_dirs(world_id):
+        if not cdir.is_dir():
+            continue
+        for p in sorted(cdir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if (rec.get("name", "").strip().lower() == want) or (p.stem.lower() == want):
+                return rec
+    return None
+
+
 def load_adventure_data(adventure_id: str) -> dict:
     path = _content_dir() / "campaigns" / adventure_id / "adventure.json"
     if not path.exists():

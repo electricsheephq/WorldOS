@@ -61,6 +61,20 @@ def test_end_combat_auto_awards_xp_in_xp_mode(cid):
     assert server.get_character(cid, hero)["xp"] == xp
 
 
+def test_load_canon_character_pulls_real_identity(cid):
+    # the BG canon roster is ingested (content/worlds/baldurs-gate/characters/*.json, S2.5)
+    c = store.load_campaign(cid); c.world_id = "baldurs-gate"; store.save_campaign(c)
+    names = {a["name"] for a in server.list_canon_characters(cid)["available"]}
+    assert {"Shadowheart", "Astarion"} <= names
+    res = server.load_canon_character(cid, "Shadowheart", kind="companion", add_to_party=True)
+    assert "error" not in res, res
+    sheet = server.get_character(cid, res["id"])
+    assert sheet["race"] == "Half-elf" and sheet["classes"][0]["name"] == "Cleric"
+    assert sheet["appearance"] and sheet["backstory"]  # the prose the DM voices from
+    assert res["id"] in store.load_campaign(cid).party
+    assert "error" in server.load_canon_character(cid, "Shadowheart")  # duplicate refused
+
+
 def test_end_combat_milestone_mode_awards_nothing(cid):
     c = store.load_campaign(cid); c.leveling_mode = "milestone"; store.save_campaign(c)  # no tool yet
     hero = server.create_character(cid, "Hero", kind="player", max_hp=12)["id"]
