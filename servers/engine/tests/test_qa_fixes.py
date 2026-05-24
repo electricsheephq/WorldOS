@@ -494,6 +494,36 @@ def test_skill_check_uses_the_sheet_derived_modifier(tmp_path, monkeypatch):
         server.skill_check(cid, pid, "flossing")
 
 
+def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monkeypatch):
+    # The camp social hub (owner ask, Owlcat-style): gather EACH living party companion with a
+    # voiceable beat (voice_id + a deliberate prompt), their standing, and a read-only arc summary.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Camp")["id"]
+    server.create_character(cid, "Mira", kind="player")  # the PC is NOT a camp "companion" beat
+    j = server.create_character(cid, "Jaheira", kind="companion")["id"]
+    server.create_character(cid, "Minsc", kind="companion")
+    server.adjust_attitude(cid, j, 25)
+    server.set_companion_arc(cid, j, {"arc_gates": [{"kind": "loyalty", "threshold": 40, "note": "trust"}]})
+    out = server.camp_scene(cid)
+    assert set(out["present"]) == {"Jaheira", "Minsc"}            # companions only, not the PC
+    assert len(out["beats"]) == 2
+    assert all(b.get("prompt") and b.get("voice_id") for b in out["beats"])
+    jbeat = next(b for b in out["beats"] if b["companion"] == "Jaheira")
+    assert jbeat["attitude_value"] == 25
+    assert jbeat["arc"]["next_gate"] == {"kind": "loyalty", "threshold": 40, "points_away": 15}
+    mbeat = next(b for b in out["beats"] if b["companion"] == "Minsc")
+    assert mbeat["arc"] is None                                   # no arc -> no summary, no crash
+
+
+def test_long_rest_hints_camp_only_when_companions_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Rest")["id"]
+    pc = server.create_character(cid, "Lone", kind="player")["id"]
+    assert "camp_hint" not in server.long_rest(cid, pc)           # solo -> no camp nudge
+    server.create_character(cid, "Karlach", kind="companion")
+    assert "camp_hint" in server.long_rest(cid, pc)              # a companion in the party -> nudge
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

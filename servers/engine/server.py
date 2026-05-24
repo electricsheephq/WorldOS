@@ -2549,6 +2549,11 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         out = rests.long_rest(ch)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
+        # A long rest is the natural moment for a CAMP scene — nudge the DM to gather the party
+        # (companions breathe here) when there are companions to gather.
+        if any(c.characters.get(i) is not None and c.characters[i].kind == "companion" for i in c.party):
+            out["camp_hint"] = ("the party makes camp — call camp_scene to gather the companions "
+                                "for a character round before pressing on.")
         return out
 
 
@@ -2838,6 +2843,57 @@ def companion_advise(campaign_id: str, companion_id: str, situation: str = "") -
     comp = _char(c, companion_id)
     callbacks = ledger_mod.recall(campaign_id, situation, limit=3) if situation.strip() else []
     return companion.deliberate(comp, situation, callbacks=callbacks)
+
+
+def _camp_arc_summary(comp) -> Optional[dict]:
+    """Read-only summary of a companion's relationship arc for a camp scene: each gate + how close
+    the next LOCKED gate is to unlocking (by attitude_value). None when the companion has no arc."""
+    arc = getattr(comp, "arc", None)
+    if arc is None:
+        return None
+    gates = [{"kind": g.kind, "threshold": g.threshold, "unlocked": g.unlocked} for g in arc.arc_gates]
+    locked = [g for g in arc.arc_gates if not g.unlocked]
+    out: dict = {"attitude_value": comp.attitude_value, "gates": gates}
+    if locked:
+        nxt = min(locked, key=lambda g: g.threshold)
+        out["next_gate"] = {"kind": nxt.kind, "threshold": nxt.threshold,
+                            "points_away": max(0, nxt.threshold - comp.attitude_value)}
+    return out
+
+
+@mcp.tool()
+def camp_scene(campaign_id: str, setting: str = "") -> dict:
+    """Gather the party for a CAMP scene — the hub where companions breathe between adventures
+    (around the campfire, at the tavern bar, in a safe house). For EACH living companion in the
+    party it returns a beat to voice: their `voice_id`, current standing (`attitude` +
+    `attitude_value`), a memory-grounded prompt (the same frame as `companion_advise`), and a
+    read-only summary of their relationship `arc` (gates + how close the next is). Run it at a
+    long rest / downtime / on reaching a safe hub: voice each companion's moment in turn, let the
+    player talk to any of them, and play any arc beat that's ripe — then `check_companion_arc` to
+    fire/mark it. This is where loyalty, romance, grief, and grudges get their air; no companion
+    stays silent. Read-only (advice + state; it changes nothing)."""
+    c = _require(campaign_id)
+    companions = [c.characters[i] for i in c.party
+                  if i in c.characters and c.characters[i].kind == "companion" and not c.characters[i].dead]
+    sit = setting.strip() or "an unpressured moment in camp — the day's danger behind you, the fire low"
+    beats = []
+    for comp in companions:
+        callbacks = ledger_mod.recall(campaign_id, comp.name, limit=3)  # what's remembered about them
+        frame = companion.deliberate(comp, sit, callbacks=callbacks)
+        beats.append({**frame, "attitude": comp.attitude, "attitude_value": comp.attitude_value,
+                      "arc": _camp_arc_summary(comp)})
+    return {
+        "setting": sit,
+        "present": [comp.name for comp in companions],
+        "beats": beats,
+        "guidance": (
+            "Run a camp round: give each companion a moment IN TURN (a worry, a memory surfaced, a "
+            "question for the player, banter with another companion), grounded in their standing + "
+            "recent events. Let the player talk to any of them — this is character time, not a menu. "
+            "If an arc gate is one beat from unlocking, lean toward it; play any ripe beat and then "
+            "`check_companion_arc` to fire it. No companion present stays silent."
+        ),
+    }
 
 
 def _new_session_id() -> str:
