@@ -19,6 +19,7 @@ Exit 0 = GREEN (warnings allowed), 1 = RED (a fatal gate failed), 2 = usage.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -115,6 +116,22 @@ def main() -> int:
             bad = [t for t in unprefixed if len(t) > 700 or any(k in t.lower() for k in _OVERWRITE)]
             chk("player_in_lane", not bad,
                 f"{len(bad)} turn(s) look like over-writing: {[t[:70] for t in bad[:2]]}", fatal=False)
+
+        # 3.6) STRUCTURAL STORY-CRAFT FLOOR: the duo-h1 "log, not a scene" failure was a DM
+        # that narrated atmospheric fragments with ZERO quoted dialogue across a whole run.
+        # The rubric grades dialogue QUALITY (an LLM); this is the hard floor that flips RED
+        # on its total ABSENCE — enforced in code, like the player facade. A companion is in
+        # the party and is meant to speak every beat, so zero dialogue with one present is a
+        # broken scene (FATAL). Without a companion a scene may legitimately be wordless (WARN).
+        dm_texts = [r.get("text", "") or "" for r in chat if r.get("role") == "dm"]
+        dlg = sum(1 for t in dm_texts if re.search(r'"[^"\n]{3,}"|“[^”\n]{3,}”', t))
+        has_companion = any((c or {}).get("kind") == "companion"
+                            for c in (state.get("characters", {}) or {}).values())
+        if len(dm_texts) >= 3:
+            chk("dm_voices_characters", dlg > 0,
+                f"{dlg}/{len(dm_texts)} DM turns have quoted dialogue — zero ⇒ a log, not a scene"
+                + ("" if has_companion else " (no companion in party ⇒ WARN not fatal)"),
+                fatal=bool(has_companion))
 
     # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
     # tools. An empty moves log means the facade was blocked/unused (e.g. a missing

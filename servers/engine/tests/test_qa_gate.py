@@ -23,6 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "qa" / "assert_behavioral.py"
 PLAYER_IN_PARTY = {"characters": {"pc1": {"kind": "player", "name": "Kield"}}, "party": ["pc1"]}
+PARTY_WITH_COMPANION = {
+    "characters": {"pc1": {"kind": "player", "name": "Kield"}, "c1": {"kind": "companion", "name": "Petra"}},
+    "party": ["pc1", "c1"],
+}
 
 
 def _write(p: Path, rows: list[dict]) -> None:
@@ -110,6 +114,41 @@ def test_gate_red_on_unstructured_player_turn(tmp_path):
     )
     assert r.returncode == 1, r.stdout
     assert "[FAIL] player_turns_structured" in r.stdout
+
+
+def test_gate_red_when_dm_writes_a_log_with_no_dialogue(tmp_path):
+    # Structural story-craft FLOOR: a companion is present but the DM produced atmospheric
+    # fragments with ZERO quoted dialogue across the run — the exact duo-h1 "log, not a
+    # scene" failure. Must flip RED in code (not rely on the LLM rubric).
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["roll"],
+        chat=[{"role": "player", "text": "[do] I scan the room"}, {"role": "dm", "text": "Fourteen names. A cold cup. Your move."},
+              {"role": "player", "text": "[say] talk to me"}, {"role": "dm", "text": "Steam rising. Two names down."},
+              {"role": "player", "text": "[do] I wait"}, {"role": "dm", "text": "The candle moves. Thirty seconds."}],
+        moves=[{"role": "player", "kind": "do", "text": "scan"},
+               {"role": "player", "kind": "say", "text": "talk"},
+               {"role": "player", "kind": "do", "text": "wait"}],
+        state=PARTY_WITH_COMPANION,
+    )
+    assert r.returncode == 1, r.stdout
+    assert "[FAIL] dm_voices_characters" in r.stdout
+
+
+def test_gate_green_when_dm_voices_characters(tmp_path):
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["roll"],
+        chat=[{"role": "player", "text": "[do] I scan"}, {"role": "dm", "text": '"You\'re new here," the barkeep says, not looking up.'},
+              {"role": "player", "text": "[say] hi"}, {"role": "dm", "text": '"Three coppers." Petra mutters, "I don\'t like this place."'},
+              {"role": "player", "text": "[do] I sit"}, {"role": "dm", "text": '"Sit, then," he says, sliding the cup over.'}],
+        moves=[{"role": "player", "kind": "do", "text": "scan"},
+               {"role": "player", "kind": "say", "text": "hi"},
+               {"role": "player", "kind": "do", "text": "sit"}],
+        state=PARTY_WITH_COMPANION,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] dm_voices_characters" in r.stdout
 
 
 # --- viewer /move sanitizer (H5) -------------------------------------------------
