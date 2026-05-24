@@ -72,6 +72,16 @@ def test_ending_tied_outcome_resolves_by_world_state_subset_match():
     bhaal = content.seed_world(w, ending="dark-urge-bhaal")
     assert bhaal.quest_outcomes["the-bhaal-murder-cult"] == "cult-ascendant"
 
+    # REGRESSION (adversarial Finding 1): who-rules-the-gate must NOT fall to the random
+    # "vacuum-contested" (empty seat) under the OCCUPIED endings — that flatly contradicts
+    # the canon "a crowned Bhaalspawn rules the Gate" / "an unseen illithid power holds the
+    # reins". Both occupied endings are now pinned to a ruled-by-the-occupier outcome.
+    assert bhaal.quest_outcomes["who-rules-the-gate"] == "bhaal-throne"
+    illithid = content.seed_world(w, ending="illithid-ascension")
+    assert illithid.quest_outcomes["who-rules-the-gate"] == "shadow-overlord"
+    for occupied in (bhaal, illithid):
+        assert occupied.quest_outcomes["who-rules-the-gate"] != "vacuum-contested"
+
 
 def test_pure_random_quest_resolves_to_some_valid_outcome_seeded_deterministic():
     # A purely-random quest (no `when` matched, or no world_state at all) resolves to ONE
