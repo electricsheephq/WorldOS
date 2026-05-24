@@ -415,6 +415,55 @@ def test_seed_world_sets_typed_world_state_from_ending():
         assert ws is not None and ws.world_tenor in ("hopeful", "uneasy", "grim")
 
 
+def _flatten(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def test_ending_supersedes_substrings_are_live_against_their_targets(tmp_path, monkeypatch):
+    # MED fix: every `supersedes` substring must actually MATCH something — the .md corpus
+    # (so lookup_lore can redact it) and/or c.lore (so recall's seed-time retraction bites).
+    # Several gortash substrings were DEAD: authored against world.json/c.lore wording, they
+    # matched neither surface (e.g. "enver gortash is dead" fails — the corpus reads "Enver
+    # Gortash** is dead" with inline bold markers). This guards against that regressing: NO
+    # substring may be dead against BOTH surfaces, and the CRITICAL invariant — a .md-only
+    # substring must NOT also bite c.lore (else the seed-time c.lore retraction shifts and
+    # test_ending_overlay_retracts_contradictory_base_canon stops being byte-identical).
+    pathlib_md = content._content_dir() / "worlds" / "baldurs-gate" / "lore"
+    md_pages = {p.name: _flatten(p.read_text(encoding="utf-8")) for p in pathlib_md.glob("*.md")}
+    w = content.load_world_data("baldurs-gate")
+    clore = [str(x).lower() for x in (w.get("history", []) + w.get("standing_threads", [])) if str(x).strip()]
+
+    def in_md(s):    return [n for n, t in md_pages.items() if s in t]
+    def in_clore(s): return [i for i, l in enumerate(clore) if s in l]
+
+    for eid in ("gortash-tyranny", "illithid-ascension"):
+        ov = content.load_ending_data("baldurs-gate", eid)
+        assert ov is not None
+        md_targeting = 0
+        for raw in ov["supersedes"]:
+            s = raw.lower()
+            md_hits, clore_hits = in_md(s), in_clore(s)
+            # (1) no dead substrings: every one must bite at least one surface
+            assert md_hits or clore_hits, f"{eid}: DEAD substring (matches neither .md nor c.lore): {raw!r}"
+            if md_hits and not clore_hits:
+                md_targeting += 1
+            # (2) NOTE: a substring may legitimately be dual (e.g. "the empty archduke's seat"
+            #     hits both factions.md AND c.lore[5]); that's fine. The byte-identity guard
+            #     is the dedicated test below — here we just require every .md-targeting
+            #     substring is grep-derived from a page that actually contains it.
+        assert md_targeting >= 1, f"{eid}: expected at least one live .md-targeting substring"
+
+    # The specific gortash re-derivations the review called out, asserted concretely:
+    gortash = [s.lower() for s in content.load_ending_data("baldurs-gate", "gortash-tyranny")["supersedes"]]
+    # the two DEAD ones are gone...
+    assert "enver gortash is dead" not in gortash, "the dead 'enver gortash is dead' substring must be dropped"
+    assert "steel watch wrecked" not in gortash, "the dead 'steel watch wrecked' substring must be dropped"
+    # ...replaced by a substring that LITERALLY occurs in baldurs-gate.md (bold markers and all)
+    assert "is dead, his **steel watch** wrecked" in gortash
+    assert in_md("is dead, his **steel watch** wrecked") == ["baldurs-gate.md"]
+    assert in_clore("is dead, his **steel watch** wrecked") == [], "the new .md substring must NOT bite c.lore"
+
+
 def test_recall_and_lookup_lore_agree_under_nondefault_ending(tmp_path, monkeypatch):
     # THE acceptance criterion (none existed before): under gortash-tyranny the two
     # retrieval surfaces must AGREE about Gortash. recall reads overlay-de-conflicted
@@ -474,6 +523,35 @@ def test_world_state_default_path_is_byte_identical(tmp_path, monkeypatch):
     assert look == lorebook.lookup_lore("baldurs-gate", "Gortash", 5)
 
 
+def test_recall_kinds_filter_excludes_world_state_header(tmp_path, monkeypatch):
+    # MED fix: the synthetic world_state header is prepended AFTER ledger.recall applied
+    # `kinds`, so recall(kinds=["decision"]) used to return an UNREQUESTED world_state row
+    # ("world_state" isn't even in ledger.KINDS). The header must now honor the filter:
+    # absent when kinds is a subset that doesn't list "world_state"; present when unfiltered
+    # or when the caller explicitly asks for "world_state".
+    import ledger as ledger_mod
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
+    # log a decision so a kinds=["decision"] filter has a legitimate row to return
+    server.record_decision(cid, "Side with the resistance against the Archduke", ["comply", "resist"])
+
+    # unfiltered: header leads (today's framing behavior preserved)
+    unfiltered = server.recall(cid, "Archduke resistance")["hits"]
+    assert unfiltered and unfiltered[0]["kind"] == "world_state"
+
+    # filtered to a subset WITHOUT world_state: NO synthetic header leaks in...
+    only_decisions = server.recall(cid, "Archduke resistance", kinds=["decision"])["hits"]
+    assert only_decisions, "the decision itself should still come back"
+    assert all(h["kind"] != "world_state" for h in only_decisions), "header leaked past the kinds filter"
+    assert all(h["kind"] == "decision" for h in only_decisions)
+    # ...and the wrapper added NOTHING beyond the raw filtered ledger result
+    assert only_decisions == ledger_mod.recall(cid, "Archduke resistance", kinds=["decision"], limit=8)
+
+    # explicit opt-in: a caller that lists "world_state" gets the header back
+    opted_in = server.recall(cid, "Archduke resistance", kinds=["decision", "world_state"])["hits"]
+    assert any(h["kind"] == "world_state" for h in opted_in)
+
+
 def test_world_state_malformed_block_degrades_not_aborts(tmp_path, monkeypatch):
     # DEGRADE-not-abort: a malformed world_state block in an ending must be SKIPPED (the
     # world keeps None state), never crash start_world — mirroring the companion_seeds guard.
@@ -504,6 +582,48 @@ def test_world_state_malformed_block_degrades_not_aborts(tmp_path, monkeypatch):
     assert c.ending_id == "bad-ws"
     assert c.world_state is None, "malformed world_state must degrade to None, not partial"
     assert any("A new line of history." in l for l in c.lore)  # the rest of the overlay applied
+
+
+def test_world_state_degrade_also_skips_lore_supersedes_coupling(tmp_path, monkeypatch):
+    # B-LOW (couple world_state + supersedes): the `.md` de-confliction predicate
+    # (`lore_supersedes`) and the mitigating canon header (`world_state`) are belt-and-
+    # suspenders. If the world_state block DEGRADES to None, we must NOT still record
+    # lore_supersedes — that would let lookup_lore strip authored .md canon WITHOUT the
+    # framing header. The whole ending world-state block is all-or-nothing.
+    import shutil, lorebook
+    src = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.mkdir(parents=True)
+    for item in src.iterdir():
+        if item.name == "endings":
+            continue
+        shutil.copytree(item, dst_world / item.name) if item.is_dir() else shutil.copy2(item, dst_world / item.name)
+    endings_dir = dst_world / "endings"
+    endings_dir.mkdir()
+    (endings_dir / "bad-ws-sup.json").write_text(json.dumps({
+        "id": "bad-ws-sup", "name": "Bad WS + supersedes", "era": "1493 DR",
+        # MALFORMED world_state (bad tenor) -> degrades to None...
+        "world_state": {"world_tenor": "apocalyptic", "facts": {"x": "y"}},
+        # ...and a supersedes that WOULD redact the .md corpus if it were (wrongly) recorded
+        "supersedes": ["seat of power is contested", "is dead, his **steel watch** wrecked"],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w, ending="bad-ws-sup")  # must NOT raise
+    assert c.world_state is None, "malformed world_state degrades to None"
+    assert c.lore_supersedes == [], "lore_supersedes must NOT be recorded when world_state degraded"
+    # consequence: lookup_lore stays byte-identical to the no-ending path (no header, no
+    # redaction) — the authored .md canon is NOT stripped without a mitigating header.
+    coupled = lorebook.lookup_lore("baldurs-gate", "Gortash", 5,
+                                   supersedes=c.lore_supersedes,
+                                   canon_header=(c.world_state.canon_header() if c.world_state else ""))
+    assert coupled == lorebook.lookup_lore("baldurs-gate", "Gortash", 5)
+    # sanity: the substrings really WOULD have bitten had they been recorded (so the guard matters)
+    bitten, _, _ = lorebook._redact_superseded(
+        "Archduke Enver Gortash** is dead, his **Steel Watch** wrecked, and the seat of power is contested.",
+        ["seat of power is contested"])
+    assert "[…superseded…]" in bitten
 
 
 # --- S4 synthesis: the chosen ENDING pre-loads which companions can turn --------------

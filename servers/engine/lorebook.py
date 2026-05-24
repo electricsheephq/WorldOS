@@ -103,6 +103,54 @@ def _excerpt(text: str, tokens: list[str], width: int = 600) -> str:
     return flat[:width] + ("…" if len(flat) > width else "")
 
 
+# Sentence terminators we split a flattened page on for sentence-level redaction. Kept
+# deliberately simple + stdlib-only (no NLP): `. ! ? ;` followed by whitespace. A
+# trailing fragment with no terminator is its own sentence. (Markdown list dashes and
+# inline `**bold**` markers are left intact — substrings are matched against the page's
+# real bytes, so a `supersedes` phrase must occur as authored, embedded `**` and all.)
+# AUTHORING CONTRACT: a `supersedes` substring must fall WITHIN one such sentence — a
+# phrase straddling a `. `/`; ` boundary won't match (the two halves land in different
+# sentences). Endings derive their substrings from a grep of the real corpus, so this is
+# satisfied by construction; it only constrains future hand-authored substrings.
+_SENT_SPLIT = re.compile(r"(?<=[.!?;])\s+")
+
+
+_ELISION = "[…superseded…]"
+
+
+def _redact_superseded(text: str, subs: list[str]) -> tuple[str, bool, bool]:
+    """Drop every SENTENCE of a (flattened) page whose lowercased text contains any
+    `supersedes` substring, replacing it with an elision marker so the omission is
+    visible. Returns (redacted_flat_text, any_redacted, gutted) where ``gutted`` is True
+    only when redaction occurred AND no clean (non-elision) sentence survived.
+
+    This is the granularity fix: the de-confliction decision is made per SENTENCE, not
+    per page — a multi-fact page (e.g. ``baldurs-gate.md``: city description + "Gortash
+    is dead") keeps its valid sentences and loses ONLY the superseded one, instead of the
+    whole page being dropped (over-suppression) or escaping because the contradiction sat
+    outside a 600-char excerpt window (under-suppression). Redaction runs on the FULL page
+    so the subsequent excerpt — centered anywhere — can never surface a superseded sentence.
+
+    `subs` must already be lowercased + non-empty (the caller gates on that)."""
+    flat = " ".join(text.split())
+    out: list[str] = []
+    redacted = False
+    clean_survived = False
+    for sent in _SENT_SPLIT.split(flat):
+        if not sent:
+            continue
+        if any(sub in sent.lower() for sub in subs):
+            redacted = True
+            # Elide rather than silently delete, so the DM sees a gap (and never the
+            # superseded claim). Collapse consecutive elisions into one.
+            if not (out and out[-1] == _ELISION):
+                out.append(_ELISION)
+        else:
+            clean_survived = True
+            out.append(sent)
+    return " ".join(out).strip(), redacted, (redacted and not clean_survived)
+
+
 def lookup_lore(
     world_id: str,
     query: str,
@@ -119,14 +167,17 @@ def lookup_lore(
 
     De-confliction (additive — both args default to the no-op behavior):
     - `supersedes`: case-insensitive substrings the active ending RETRACTS (the same
-      predicate `_apply_ending_overlay` applies to `c.lore`). A retrieved excerpt that
-      asserts a superseded fact (e.g. "Gortash is dead" under the tyranny ending) is
-      DROPPED whenever any non-contradicting hit exists to take its place, and kept
-      (DEMOTED to the end) only when the entire match set is superseded — so the
-      contradiction never LEADS the result and never out-ranks the corrected canon, yet a
-      query whose only matches are superseded still returns *something*. This closes the
-      two-surface bug structurally (the .md corpus is de-conflicted on the same basis as
-      c.lore), reusing the tier machinery's "the right canon wins the top slot" guarantee.
+      predicate `_apply_ending_overlay` applies to `c.lore`). Applied at SENTENCE
+      granularity: any sentence of a returned page whose text contains a superseded
+      substring (e.g. "Gortash is dead" under the tyranny ending) is REDACTED from that
+      page's excerpt (replaced by an elision), and the PAGE IS KEPT — DEMOTED below
+      unredacted pages so clean canon leads, but never dropped. This (a) preserves a
+      multi-fact curated page's valid content instead of discarding the whole page (which
+      let an unrelated page backfill the top-5), and (b) guarantees a contradicting
+      sentence can never appear in a returned excerpt — including one that sat outside the
+      old excerpt window — because redaction runs on the full page before it is excerpted.
+      The result is never empty when there were matches. This closes the two-surface bug
+      structurally (the .md corpus is de-conflicted on the same basis as c.lore).
     - `canon_header`: when non-empty, prepended as a synthetic hit (source
       "world-state") carrying the campaign's authoritative world-state — so the DM's
       ground truth for the scene is the structured row, with the pages below framed as
@@ -169,30 +220,41 @@ def lookup_lore(
     tokens = re.findall(r"[A-Za-z0-9]+", query or "")
     subs = [s.lower() for s in (supersedes or []) if str(s).strip()]
 
-    def _contradicts(excerpt: str) -> bool:
-        low = excerpt.lower()
-        return any(sub in low for sub in subs)
-
     seen: set[int] = set()
-    clean: list[dict] = []
-    demoted: list[dict] = []
+    kept: list[dict] = []
+    gutted: list[dict] = []
     for rid in ids:
         if rid in seen:
             continue
         seen.add(rid)
         p = pages[rid]
-        hit = {"title": p["title"], "excerpt": _excerpt(p["text"], tokens), "source": p["source"], "era": p.get("era", "")}
-        # An excerpt that asserts a now-superseded fact is set aside (the page asserts a
-        # fact the chosen ending retracted — the same predicate the overlay applied to
-        # c.lore). It is DROPPED whenever any non-contradicting hit exists to take its
-        # place; it is kept (DEMOTED, ranked last) ONLY if there is no clean alternative at
-        # all, so the DM still gets *some* canon rather than an empty result. Either way it
-        # never leads, and the header (if present) leads the whole set.
-        (demoted if subs and _contradicts(hit["excerpt"]) else clean).append(hit)
+        # SENTENCE-LEVEL redaction (not whole-page drop): when an ending supersedes a fact,
+        # the page is KEPT — only the offending SENTENCE(s) are elided from its text — so a
+        # multi-fact curated page (e.g. baldurs-gate.md = city + "Gortash is dead") keeps its
+        # valid canon instead of being dropped (over-suppression → a shoe-shop page backfills
+        # the top-5) or escaping because the contradiction sat outside the excerpt window
+        # (under-suppression → the claim leaks). Redacting the FULL page before excerpting
+        # guarantees a superseded sentence can never surface in the returned snippet, wherever
+        # the excerpt centers. (subs empty → no redaction at all, so the excerpt is taken from
+        # the raw page text exactly as before: byte-identical.)
+        if subs:
+            body, _redacted, is_gutted = _redact_superseded(p["text"], subs)
+        else:
+            body, is_gutted = p["text"], False
+        hit = {"title": p["title"], "excerpt": _excerpt(body, tokens), "source": p["source"], "era": p.get("era", "")}
+        # Demote ONLY a page that redaction GUTTED (every sentence was superseded — its
+        # surviving excerpt is just an elision): a page with no real content left must not
+        # lead, but it is still kept as a fallback (never empty). A page that merely had ONE
+        # incidental sentence elided keeps its earned relevance rank — demoting it below a
+        # barely-relevant clean page would re-introduce the very over-suppression we're fixing
+        # (the curated faction page sinking under a shoe-shop page). FTS `rank` already orders
+        # within each list, and authored (tier-0) ids precede wiki (tier-1) ids in `ids`.
+        (gutted if is_gutted else kept).append(hit)
 
-    # Drop contradicting hits when shadowed by any clean hit; fall back to them only when
-    # the entire match set is superseded (else the DM would get nothing on that query).
-    out = clean[:cap] if clean else demoted[:cap]
+    # Pages with surviving content lead in their FTS/tier order; fully-gutted pages follow as
+    # a fallback (so the result is never empty when there were matches). No valid page is
+    # dropped, and a partially-redacted curated page keeps its rank above weaker clean hits.
+    out = (kept + gutted)[:cap]
     if canon_header:
         # Prepend the authoritative world-state as a synthetic leading hit. Counts toward
         # nothing the caller filters on; it just frames every page below it as background.

@@ -2742,8 +2742,16 @@ def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: in
     # No world_state (base/no-ending campaign) -> no header, byte-identical to before.
     # load_campaign (not _require) so a missing campaign stays a no-op (recall returns []),
     # never a new raise the original wrapper didn't have.
+    #
+    # `kinds` honor: the synthetic header is a SYNTHETIC row of kind "world_state" (not a
+    # real ledger.KINDS value). If the caller filtered to a kinds subset that doesn't ask
+    # for "world_state", prepending it anyway would return an UNREQUESTED row that the
+    # filter just excluded — so respect the filter and skip the header in that case. An
+    # unfiltered recall (kinds falsy) still leads with the header as before; a caller that
+    # explicitly lists "world_state" opts back in.
     c = load_campaign(campaign_id)
-    if c is not None and c.world_state is not None:
+    header_allowed = (not kinds) or ("world_state" in kinds)
+    if c is not None and c.world_state is not None and header_allowed:
         header = {
             "kind": "world_state", "who": "world",
             "text": c.world_state.canon_header(), "ref": "", "day": c.day,
