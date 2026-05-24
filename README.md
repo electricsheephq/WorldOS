@@ -20,7 +20,7 @@ Two tiers:
   - `servers/voice` — text-to-speech behind a swappable `TtsBackend` interface. **Kokoro** (local, free, multi-voice) is the default; ElevenLabs can drop in later without touching anything else.
 - **Tier 2 (later) — OpenClaw integration.** Your own persistent agent plays the companion in an isolated forked sub-session — same identity and memory, separate from your main work session. The Tier-1 design already has the seam for this: the DM only ever talks to the companion through a `CompanionProvider` interface, so swapping the in-Claude persona for an OpenClaw sub-session is an adapter change, not a rewrite.
 
-The loop is **turn-based** (Claude narrates → per-character voice plays → you speak/type → speech-to-text → Claude), not realtime speech-to-speech — that keeps Claude as the brain and gives every character a distinct voice.
+The loop is **turn-based** (Claude narrates → per-character voice plays → you type your turn → Claude), not realtime speech-to-speech — that keeps Claude as the brain and gives every character a distinct voice. Voice today is **output** (DM narration + per-character voices). Voice **input** (speech-to-text — *you speak* your turn) is a roadmap item; the seam is built but no backend is wired yet, so for now you type.
 
 ```
 .claude-plugin/   plugin.json + marketplace.json (install metadata)
@@ -48,7 +48,7 @@ The deterministic core runs in three Python MCP servers and is exercised by a fu
 - **NPCs & social** — an attitude model, persistent NPC memory, and check-gated social outcomes that *mechanically* change how an NPC responds.
 - **Encounters** — SRD CR→XP math, party XP budgets, and difficulty classification with the encounter multiplier.
 - **Rules lookup** — bundled **SRD 5.2.1** (CC-BY-4.0): hundreds of spells, monsters, items, plus feats, backgrounds, species, classes, conditions, and rules, with fuzzy search and a `dnd5eapi.co` fallback.
-- **Voice** — `speak(text, voice_id)` behind a swappable `TtsBackend` (Kokoro / ElevenLabs / null), distinct per-character voices, and a speech-to-text seam — with a reliable text-only fallback.
+- **Voice (output)** — `speak(text, voice_id)` behind a swappable `TtsBackend` (Kokoro / ElevenLabs / null), distinct per-character voices, with a reliable text-only fallback. A speech-to-text *seam* is in place (swappable `SttBackend`) but the backends are stubs — voice **input** is on the roadmap; today you type your turn.
 - **Persistence & recaps** — single-writer atomic saves, a session log, and a "Previously on…" recap so a campaign survives quit/reload and context compaction across many sessions.
 - **Content** — an original CC-BY starter adventure (**"The Cellar Rats"**), a campaign scaffold/validator, and a *private* import path for adventures you legally own.
 - **Living worlds (generative play)** — drop into a persistent **world seed** (regions, factions, a pullable cast, history, and an `era` the DM stays true to) and the DM generates the adventure *live*: grounding in canon on demand (`lookup_lore` over a per-world lore corpus — authored pages outrank ingested ones), *persisting* what it builds (`add_location`, `remember`) so the world is travelable and survives across sessions, and letting the world's **standing threads move on their own** (`world_tick`). Ships an original world (*The Sundered Reach*, CC-BY) plus a wiki-ingestion pipeline (`tools/ingest/`) for building deep lore corpora. See `content/worlds/README.md`.
