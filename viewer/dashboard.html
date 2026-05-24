@@ -517,6 +517,20 @@
   .rel-att-tag.friendly { color:#9fd49f; border-color:#2f4a2f; background:#13201a; }
   .rel-desc { font-size:12.5px; color:#c3b79e; font-style:italic; margin-top:8px; line-height:1.5; }
   .rel-desc.empty { color:var(--faint); }
+  /* Unlocked relationship-arc milestones (S4) — a companion's personal quest, romance,
+     or sworn loyalty, surfaced as small gold-trimmed badges beside the attitude bar.
+     The DM's sealed agenda (betrayal/defection) is NEVER rendered here. */
+  .rel-arc { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .arc-gate { display:inline-flex; align-items:baseline; gap:6px; max-width:100%;
+    font-size:11.5px; line-height:1.45; color:var(--gold); border:1px solid var(--gold2);
+    border-radius:8px; padding:3px 9px; background:#241a0d; }
+  .arc-gate .ag-g { font-size:11px; color:var(--gold2); flex:none; }
+  .arc-gate .ag-k { font-variant:small-caps; letter-spacing:.06em; font-weight:700; flex:none; }
+  .arc-gate .ag-note { color:#d7c8a6; font-style:italic; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .arc-gate.romance { color:#e8a8c0; border-color:#6b3f52; background:#26121a; }
+  .arc-gate.romance .ag-g, .arc-gate.romance .ag-k { color:#e8a8c0; }
+  .arc-gate.loyalty { color:#9fd4c0; border-color:#2f5a4a; background:#13201c; }
+  .arc-gate.loyalty .ag-g, .arc-gate.loyalty .ag-k { color:#9fd4c0; }
 
   /* ---- 6. Memories tab ---- */
   .mem-sec { margin-bottom:22px; }
@@ -1544,6 +1558,34 @@ function relAttClass(pos) { return pos <= 0.25 ? "hostile" : pos <= 0.42 ? "wary
 // Disposition band from the numeric value: <=-40 hostile, -39..-10 wary, -9..29 neutral,
 // >=30 friendly. Mirrors the engine's -100..+100 scale; used only when a value is set.
 function attValueClass(v) { return v <= -40 ? "hostile" : v <= -10 ? "wary" : v >= 30 ? "friendly" : "neutral"; }
+// A companion's relationship arc (S4) surfaces ONLY its UNLOCKED, player-facing milestones —
+// the personal quest, the romance beat, the sworn loyalty the player has earned. The arc's
+// `agenda` is the DM's SEALED turn (betrayal/defection) and is NEVER read here; a `betrayal`-
+// kind gate is likewise withheld even if the engine has unlocked it. No arc, or no unlocked
+// player-facing gate, renders nothing (today's view). Each badge: a glyph + label + the
+// gate's `note`. Mirrors the engine's ArcGate.kind literals.
+const ARC_GATE_KINDS = {
+  personal_quest: { cls: "", glyph: "❦", label: "Personal quest" }, // ❦
+  romance:        { cls: "romance", glyph: "♥", label: "Romance" },  // ♥
+  loyalty:        { cls: "loyalty", glyph: "⛨", label: "Sworn" },    // ⛨ (shield)
+};
+function arcGatesHTML(c) {
+  const gates = (c && c.arc && Array.isArray(c.arc.arc_gates)) ? c.arc.arc_gates : [];
+  // Only unlocked gates whose kind is an explicitly player-facing milestone. `betrayal`
+  // (and any unknown/future kind) is absent from ARC_GATE_KINDS, so it is dropped here —
+  // the sealed agenda is never touched at all.
+  const shown = gates.filter(g => g && g.unlocked === true && Object.prototype.hasOwnProperty.call(ARC_GATE_KINDS, g.kind));
+  if (!shown.length) return "";
+  return `<div class="rel-arc">${shown.map(g => {
+    const meta = ARC_GATE_KINDS[g.kind];
+    const note = (g.note || "").trim();
+    return `<span class="arc-gate ${meta.cls}" title="${esc(meta.label)}${note?" — "+esc(note):""}">`
+      + `<span class="ag-g" aria-hidden="true">${meta.glyph}</span>`
+      + `<span class="ag-k">${esc(meta.label)}</span>`
+      + (note ? `<span class="ag-note">${esc(note)}</span>` : "")
+      + `</span>`;
+  }).join("")}</div>`;
+}
 function relRow(c) {
   const rcl = raceClass(c);
   // Prefer the engine's numeric relationship when it's been moved off neutral; else the
@@ -1566,6 +1608,7 @@ function relRow(c) {
         <span class="rel-att-tag ${tag}"${hasNum?` title="${v>0?"+":""}${v}"`:""}>${tag}</span></div>
       ${att?`<div class="rel-desc">${esc(att)}</div>`
            :`<div class="rel-desc empty">No disposition recorded yet.</div>`}
+      ${arcGatesHTML(c)}
     </div></div>`;
 }
 function renderRelationships(wrap) {
