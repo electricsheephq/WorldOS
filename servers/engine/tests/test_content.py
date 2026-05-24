@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import content
@@ -581,3 +583,153 @@ def test_seed_world_without_areas_is_unchanged(tmp_path, monkeypatch):
     # exactly the authored regions, nothing more
     assert len(c.locations) == len(w["regions"])
     assert "Bloomridge Market" not in {loc.name for loc in c.locations.values()}
+    # …and with no areas to wire back, every region's connections are byte-identical to
+    # world.json (the reverse-edge wiring added for B2 must NOT touch the no-areas path).
+    by_id = {loc.id: loc for loc in c.locations.values()}
+    for reg in w["regions"]:
+        assert by_id[reg["id"]].connections == reg.get("connections", [])
+
+
+# --- B2 (HIGH): an ingested area must be REACHABLE from its parent region -------------
+# The unit test above (test_seed_world_seeds_areas_additively_with_resolved_connections)
+# asserts only the FORWARD edge area→region. travel/reachable use DIRECTED edges from the
+# CURRENT location, so a forward-only edge leaves the area unreachable while you stand in
+# the region — the exact end-to-end gap the original tests missed. These exercise the
+# travel.reachable() integration path with the SHIPPED example areas.
+
+def test_seeded_area_is_reachable_from_parent_region():
+    # The B2 repro, verbatim: standing in "Baldur's Gate — Lower City", reachable() MUST
+    # include "Bloomridge Market" (the area lists loc-lower-city among its connections, so
+    # the reverse edge region→area must exist for it to be navigable).
+    import travel
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)
+    by_name = {loc.name: loc for loc in c.locations.values()}
+    bm = by_name["Bloomridge Market"]
+    lower = by_name["Baldur's Gate — Lower City"]
+    silt = by_name["the Siltwharf Steps"]
+
+    # FAILS BEFORE THE FIX: reachable() from Lower City omits Bloomridge (forward edge only).
+    c.current_location_id = lower.id
+    reach_from_lower = {loc.id for loc in travel.reachable(c)}
+    assert bm.id in reach_from_lower, "ingested area unreachable from its parent region (B2)"
+
+    # The reverse edge is on the region itself, deduped (mirrors add_location's wiring).
+    assert bm.id in lower.connections
+    assert lower.connections.count(bm.id) == 1, "reverse edge must not be duplicated"
+    # The FORWARD edge is untouched — both directions now exist (true bidirectional).
+    assert lower.id in bm.connections
+
+    # Siltwharf resolves to Wyrm's Crossing too; that region must reach Siltwharf as well.
+    wyrm = by_name["Wyrm's Crossing & the Risen Road"]
+    c.current_location_id = wyrm.id
+    assert silt.id in {loc.id for loc in travel.reachable(c)}
+    # …and the two areas cross-link bidirectionally with each other.
+    assert silt.id in bm.connections and bm.id in silt.connections
+    # An unmatched connection name stays a verbatim hint (no spurious reverse edge minted).
+    assert "the Cloistered Quarter" in bm.connections
+    assert "the Cloistered Quarter" not in c.locations
+
+
+def test_seed_world_areas_intra_area_id_collision_guarded(tmp_path, monkeypatch):
+    # Two ingested AREA files that share an id but have DIFFERENT names (so load_world_areas'
+    # name-dedup lets both through) must NOT silently overwrite each other in c.locations.
+    # The first wins; the second is skipped. Without the guard the second would clobber the
+    # first under the same key.
+    import shutil
+    src = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.mkdir(parents=True)
+    for item in src.iterdir():
+        if item.name == "areas":
+            continue  # we author our own areas/ below
+        if item.is_dir():
+            shutil.copytree(item, dst_world / item.name)
+        else:
+            shutil.copy2(item, dst_world / item.name)
+    areas_dir = dst_world / "areas"
+    areas_dir.mkdir()
+    # Both claim id "loc-dup-area"; the region they connect to is the authored Lower City.
+    (areas_dir / "first.json").write_text(json.dumps({
+        "id": "loc-dup-area", "name": "First Area", "description": "the first",
+        "region": "Baldur's Gate", "connections": ["Baldur's Gate — Lower City"],
+    }), encoding="utf-8")
+    (areas_dir / "second.json").write_text(json.dumps({
+        "id": "loc-dup-area", "name": "Second Area", "description": "the second",
+        "region": "Baldur's Gate", "connections": ["Baldur's Gate — Lower City"],
+    }), encoding="utf-8")
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)  # must not raise; second area is skipped, not clobbering
+    # Exactly ONE location holds the shared id, and it's the FIRST file's (sorted: first<second).
+    assert "loc-dup-area" in c.locations
+    assert c.locations["loc-dup-area"].name == "First Area"
+    # "Second Area" never got seeded under that id (the dup was dropped, not overwritten).
+    assert "Second Area" not in {loc.name for loc in c.locations.values()}
+
+
+def test_seed_world_ending_malformed_companion_seed_does_not_abort(tmp_path, monkeypatch):
+    # C2 (MED): a dict-but-INVALID companion_seeds arc (a `day_reached` agenda missing its
+    # M2-required `value`) must NOT abort start_world. The original unit test only validated
+    # the SHIPPED (all-valid) seeds; nothing exercised a malformed arc reaching seed_world.
+    # This drives the full seed_world(ending=…) → _apply_ending_overlay path with a custom
+    # overlay carrying ONE malformed seed + ONE valid sibling.
+    import shutil
+    src = content._content_dir() / "worlds" / "baldurs-gate"
+    dst_world = tmp_path / "worlds" / "baldurs-gate"
+    dst_world.mkdir(parents=True)
+    for item in src.iterdir():
+        if item.name == "endings":
+            continue  # author our own endings/ below
+        if item.is_dir():
+            shutil.copytree(item, dst_world / item.name)
+        else:
+            shutil.copy2(item, dst_world / item.name)
+    endings_dir = dst_world / "endings"
+    endings_dir.mkdir()
+    (endings_dir / "broken.json").write_text(json.dumps({
+        "id": "broken", "name": "Broken Seed", "era": "1493 DR, after the crisis",
+        "companion_seeds": {
+            # MALFORMED: day_reached with no `value` -> CompanionAgenda M2 ValidationError
+            "npc-the-emperor": {"arc": {"agenda": {"trigger": "day_reached"}}},
+            # VALID sibling in the SAME overlay -> must still apply
+            "npc-karlach": {"arc": {"arc_gates": [{"kind": "romance", "threshold": 30}]}},
+        },
+    }), encoding="utf-8")
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+
+    w = content.load_world_data("baldurs-gate")
+    # FAILS BEFORE THE FIX: the unguarded CompanionArc.model_validate raises ValidationError
+    # which propagates through seed_world, aborting world creation.
+    c = content.seed_world(w, ending="broken")  # must not raise
+    # The world loaded (regions + areas seeded) and the ending resolved.
+    assert c.ending_id == "broken"
+    assert c.characters, "world must still be populated"
+    # The malformed companion got NO arc (its bad seed was skipped, not applied).
+    assert c.characters["npc-the-emperor"].arc is None
+    # The VALID sibling seed in the same overlay STILL applied.
+    karlach = c.characters["npc-karlach"]
+    assert karlach.arc is not None
+    assert karlach.arc.arc_gates and karlach.arc.arc_gates[0].kind == "romance"
+
+
+def test_apply_ending_overlay_skips_malformed_arc_keeps_valid_sibling():
+    # Unit-level companion of the above: _apply_ending_overlay tolerates a malformed arc
+    # (bad gate kind / forbidden extra key are also dict-but-invalid) and keeps the valid one.
+    from models import Campaign, Character
+    c = Campaign(title="W", summary="s")
+    c.characters["npc-bad"] = Character(id="npc-bad", name="Bad", kind="npc")
+    c.characters["npc-ok"] = Character(id="npc-ok", name="Ok", kind="npc")
+    overlay = {
+        "id": "x", "name": "X", "era": "later",
+        "companion_seeds": {
+            # dict-but-invalid: a gate kind outside the Literal set
+            "npc-bad": {"arc": {"arc_gates": [{"kind": "not-a-kind", "threshold": 10}]}},
+            "npc-ok": {"arc": {"agenda": {"trigger": "party_vulnerable"}}},  # valid (no value needed)
+        },
+    }
+    content._apply_ending_overlay(c, overlay)  # must not raise
+    assert c.characters["npc-bad"].arc is None
+    assert c.characters["npc-ok"].arc is not None
+    assert c.characters["npc-ok"].arc.agenda.trigger == "party_vulnerable"
