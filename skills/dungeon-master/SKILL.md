@@ -55,6 +55,7 @@ The mechanics + the non-negotiables above are always in force. The *craft* that 
 ## The living world (campaign continuity)
 - When the present sets up the future, **schedule it**: `add_consequence(in_days, text, note)` — a ritual that completes in 3 days, a villain you let flee who returns in a week, reinforcements marching, a debt called in. This is how a string of adventures becomes a campaign.
 - After in-world time passes (travel with `advance_time`, a long rest, downtime), call `check_consequences` — it surfaces anything now due for you to narrate, and lists what's still pending.
+- **When you NARRATE time passing in a scene — without a travel/rest/downtime call — move the clock with `advance_time`.** A "long city day", an afternoon of legwork, "by the time they're back the evening bell has rung twice": pass `phases=N` or `to="evening"`. Otherwise the world clock silently stays at morning while your prose says dusk, and the sheet, recall, and time-deferred consequences drift out of sync with the story you're telling.
 - Track quests with `add_quest` (link `giver_id` / `location_id`) and resolve them with `complete_quest`; a campaign has many quests, not just the opening hook.
 - Between adventures use `downtime(days)` — it jumps the clock forward and fires any consequences due in that span. And call `campaign_dashboard` after any gap or compaction to re-ground instantly: party vitals, active quests (with giver + location), factions, and pending events in one read.
 

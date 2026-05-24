@@ -52,6 +52,7 @@ from models import (
     Decision,
     Faction,
     HouseRules,
+    Item,
     Location,
     Quest,
     SessionLogEntry,
@@ -185,6 +186,13 @@ def _recompute_class_resources(ch: Character) -> None:
         prev = ch.class_resources.get(res_id)
         used = min(prev.used, spec["max"]) if prev else 0
         new_res[res_id] = ClassResource(max=spec["max"], used=used, recharge=spec["recharge"])
+    # Carry custom (DM-registered, non-SRD-table) pools forward verbatim — a level-up
+    # re-derive must not wipe a Battle Master's Superiority Dice or any homebrew pool the
+    # tables don't know about. A custom id never collides with a derived one (derived ids
+    # are SRD class resources); if it somehow does, the SRD derivation wins.
+    for res_id, res in ch.class_resources.items():
+        if getattr(res, "custom", False) and res_id not in new_res:
+            new_res[res_id] = res
     ch.class_resources = new_res
 
 
@@ -760,6 +768,40 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         pass  # unknown class -> keep the explicit values
 
 
+# Class -> a minimal, internally-consistent starting kit. The ARMOR matches the AC the SRD
+# default sets (Chain Mail = 16 for the heavy martials; light armor for the AC-13/14 classes)
+# so AC and inventory AGREE; Unarmored Defense classes (Barbarian/Monk) and the non-armored
+# casters (Wizard/Sorcerer) get NO armor by design. Generic item names — no SRD list copied.
+_STARTING_ARMOR = {
+    "fighter": "Chain Mail", "paladin": "Chain Mail", "cleric": "Chain Mail",
+    "ranger": "Studded Leather", "rogue": "Studded Leather", "bard": "Studded Leather",
+    "warlock": "Leather Armor", "druid": "Leather Armor",
+}
+_STARTING_WEAPON = {
+    "fighter": "Longsword", "paladin": "Longsword", "cleric": "Mace", "ranger": "Longbow",
+    "rogue": "Shortsword", "bard": "Rapier", "warlock": "Light Crossbow", "druid": "Quarterstaff",
+    "barbarian": "Greataxe", "monk": "Quarterstaff", "wizard": "Quarterstaff", "sorcerer": "Dagger",
+}
+
+
+def _seed_starting_gear(ch, class_name: str) -> None:
+    """Seed a minimal class-appropriate kit (the armor that justifies the AC, a primary
+    weapon, a pack) onto a freshly-built sheet whose inventory is EMPTY — so an armored class
+    isn't walking at AC 16 with nothing on the sheet to explain it (QA: a veteran Fighter had
+    armor_class 16 and inventory []). No-op when the character already carries anything (a
+    template or canon pickup brought its own gear) or the class is unknown."""
+    if ch.inventory:
+        return  # respect gear a template / canon record already supplied
+    cname = (class_name or "").lower()
+    if cname not in _STARTING_WEAPON:
+        return  # unknown / class-less -> leave inventory empty (today's behavior)
+    armor = _STARTING_ARMOR.get(cname)
+    if armor:
+        ch.inventory.append(Item(name=armor, equipped=True, description="Starting armor."))
+    ch.inventory.append(Item(name=_STARTING_WEAPON[cname], equipped=True, description="Starting weapon."))
+    ch.inventory.append(Item(name="Explorer's Pack", description="Bedroll, rations, rope, torches, and the like."))
+
+
 @mcp.tool()
 def create_character(
     campaign_id: str,
@@ -1031,6 +1073,7 @@ def start_character(
                 ch.skill_proficiencies = [s.lower() for s in build["skills"] if s.lower() in SKILL_ABILITIES]
             if cn:
                 _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
+                _seed_starting_gear(ch, cn)  # AC/inventory consistency (no-op if gear already present)
             if ch.id not in c.party:
                 c.party.append(ch.id)
             save_campaign(c)
@@ -1073,6 +1116,7 @@ def start_character(
         # create_character so an explicit/template AC is preserved.
         if cn:
             _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
+            _seed_starting_gear(ch, cn)  # AC/inventory consistency (no-op if gear already present)
         c.characters[ch.id] = ch
         if ch.id not in c.party:
             c.party.append(ch.id)
@@ -1343,7 +1387,9 @@ def _class_resources_view(ch: Character) -> dict:
             "max": res.max,
             "used": res.used,
             "recharge": res.recharge,
-            "label": f"{res.max - res.used}/{res.max}",
+            "size": getattr(res, "size", ""),
+            "label": f"{res.max - res.used}/{res.max}"
+            + (f" {res.size}" if getattr(res, "size", "") else ""),
         }
         for rid, res in ch.class_resources.items()
     }
@@ -2635,6 +2681,63 @@ def use_resource(campaign_id: str, character_id: str, resource: str, amount: int
 
 
 @mcp.tool()
+def set_class_resource(
+    campaign_id: str,
+    character_id: str,
+    resource: str,
+    max: int,
+    recharge: str = "short",
+    size: str = "",
+    used: int = 0,
+) -> dict:
+    """Register (or update) a CUSTOM depletable pool the SRD class tables don't seed — a
+    SUBCLASS, feat, or homebrew resource. The SRD tables only know base-class pools (Rage,
+    Ki, Second Wind, Action Surge, Sorcery Points, …), so a Battle Master's **Superiority
+    Dice**, a Psi Warrior's **Energy Dice**, an Arcane Archer's **Arcane Shots**, etc. are
+    invisible to the engine until you register them here. The engine supplies the *mechanism*
+    (a tracked pool `use_resource` spends and rests recharge); YOU supply the subclass numbers
+    (the engine stays SRD-only and ships no non-SRD subclass tables).
+
+    `resource` is an id (e.g. "superiority_dice"); `max` the pool size; `recharge` one of
+    short|long|none; `size` the die it rolls ("d8" for Superiority Dice) or "" for a point
+    pool; `used` how many are already spent (default 0 — a fresh pool). Idempotent: calling
+    again with the same id updates max/recharge/size in place and clamps `used` to the new max.
+    Marked `custom` so a level-up re-derive never wipes it. Returns the pool's new state.
+
+    Seed these at character creation for any subclassed martial/caster (a Battle Master 5 →
+    `set_class_resource(.., "superiority_dice", 6, "short", "d8")`) so the first combat has a
+    pool to track Riposte / Precision Attack / etc. against."""
+    if int(max) < 0:
+        raise ValueError("max must be >= 0")
+    rech = recharge if recharge in ("short", "long", "none") else "short"
+    rid = resource.strip().lower().replace(" ", "_").replace("-", "_")
+    if not rid:
+        raise ValueError("resource id must be non-empty")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        mx = int(max)
+        u = int(used)
+        u = mx if u > mx else (0 if u < 0 else u)  # clamp 0..mx (param `max` shadows the builtin)
+        ch.class_resources[rid] = ClassResource(
+            max=mx, used=u, recharge=rech, size=size.strip(), custom=True
+        )
+        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        save_campaign(c)
+        res = c.characters[character_id].class_resources[rid]
+        return {
+            "ok": True,
+            "resource": rid,
+            "max": res.max,
+            "used": res.used,
+            "remaining": res.max - res.used,
+            "recharge": res.recharge,
+            "size": res.size,
+            "custom": True,
+        }
+
+
+@mcp.tool()
 def learn_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
     """Set a character's known spells (replaces the list)."""
     with campaign_lock(campaign_id):
@@ -3311,6 +3414,49 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
             "days_elapsed": elapsed,
             "note": note,
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
+            "world_beats": [b.text for b in beats],
+        }
+
+
+@mcp.tool()
+def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = "") -> dict:
+    """Advance the in-world clock when you NARRATE time passing WITHOUT a travel / rest /
+    downtime call — a long city day, an afternoon of legwork, "by the time they're back the
+    evening bell has rung twice." Without this the clock silently stays put (`time_of_day`
+    frozen at 'morning') even though the fiction moved hours; this writes day/time_of_day to
+    campaign state so the sheet, recall, and time-deferred consequences agree with the story.
+
+    Pass EITHER `phases` (how many time-of-day steps to step forward: morning→afternoon→
+    evening→night, rolling `day` over at night) OR `to` (a target phase name to jump to —
+    advancing into the *next* day if that phase is already past or current, so `to='morning'`
+    at morning means the following dawn). `to` wins if both are given. Stirs at most one
+    standing thread, like travel_to. Returns {day, time_of_day, phases_advanced, world_beats}."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        phases_list = travel.PHASES
+        target = (to or "").strip().lower()
+        if target:
+            if target not in phases_list:
+                return {"error": f"unknown time-of-day {to!r}. Use one of {list(phases_list)}.",
+                        "day": c.day, "time_of_day": c.time_of_day, "phases_advanced": 0}
+            try:
+                cur = phases_list.index(c.time_of_day)
+            except ValueError:
+                cur = 0
+            tgt = phases_list.index(target)
+            steps = (tgt - cur) % len(phases_list)
+            if steps == 0:  # already at/over that phase → the NEXT occurrence (a full day on)
+                steps = len(phases_list)
+        else:
+            steps = max(0, int(phases))
+        day, tod = travel.advance_clock(c, steps)
+        beats = worldsim.tick(c, max_beats=1) if steps > 0 else []
+        save_campaign(c)
+        return {
+            "day": day,
+            "time_of_day": tod,
+            "phases_advanced": steps,
+            "note": note,
             "world_beats": [b.text for b in beats],
         }
 

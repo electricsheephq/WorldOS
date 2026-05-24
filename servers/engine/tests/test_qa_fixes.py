@@ -602,6 +602,70 @@ def test_unarmored_defense_ac_is_ability_derived(tmp_path, monkeypatch):
     assert server.get_character(cid, f)["armor_class"] >= 14    # table-based, not unarmored formula
 
 
+def test_advance_time_writes_clock_on_narrated_passage(tmp_path, monkeypatch):
+    # camp-clarify2 QA: the DM narrated a full day passing but time_of_day stayed 'morning'
+    # because nothing called a clock-advancing tool. advance_time fills that gap.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Clock")["id"]
+    assert server.get_state(cid)["time_of_day"] == "morning"
+    r = server.advance_time(cid, phases=1)
+    assert r["time_of_day"] == "afternoon" and r["phases_advanced"] == 1
+    # `to` jumps to the named phase within the day…
+    r = server.advance_time(cid, to="evening")
+    assert r["time_of_day"] == "evening" and r["day"] == 1
+    # …and `to` the same/earlier phase rolls into the next day (a full lap).
+    r = server.advance_time(cid, to="evening")
+    assert r["time_of_day"] == "evening" and r["day"] == 2 and r["phases_advanced"] == 4
+    # the write persists (recall/consequences see the moved clock).
+    assert server.get_state(cid)["day"] == 2
+    # an unknown phase is rejected without mutating the clock.
+    bad = server.advance_time(cid, to="midnight")
+    assert "error" in bad and server.get_state(cid)["day"] == 2
+
+
+def test_set_class_resource_registers_and_survives_levelup(tmp_path, monkeypatch):
+    # camp-clarify2 QA: a Battle Master's Superiority Dice were untracked — the SRD class
+    # tables only know base-class pools. set_class_resource registers the subclass pool; a
+    # level-up re-derive must not wipe it (engine = mechanism, DM = the subclass numbers).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Res")["id"]
+    f = server.create_character(cid, "Duren", kind="player", class_name="Fighter",
+                                level=5, subclass="Battle Master", apply_srd_defaults=True)["id"]
+    base = server.get_character(cid, f)["class_resources"]
+    assert "superiority_dice" not in base and "second_wind" in base  # SRD knows only base-class pools
+    r = server.set_class_resource(cid, f, "Superiority Dice", 6, "short", "d8")
+    assert r["resource"] == "superiority_dice" and r["max"] == 6 and r["size"] == "d8" and r["custom"]
+    sheet = server.get_character(cid, f)
+    assert sheet["class_resources_view"]["superiority_dice"]["label"] == "6/6 d8"  # die surfaced
+    assert server.use_resource(cid, f, "superiority_dice", 1)["remaining"] == 5  # spends like any pool
+    # a level-up re-derive preserves the custom pool (incl. used) and keeps the SRD pools.
+    ch = server._require(cid).characters[f]
+    server._recompute_class_resources(ch)
+    assert ch.class_resources["superiority_dice"].used == 1  # custom carried forward verbatim
+    assert "second_wind" in ch.class_resources                # SRD pools still derived
+
+
+def test_start_character_seeds_starting_gear_so_ac_and_inventory_agree(tmp_path, monkeypatch):
+    # camp-clarify2 QA: a veteran_l5 Fighter had armor_class 16 but inventory [] — internally
+    # inconsistent (AC implies armor that doesn't exist). start_character now seeds a kit.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Gear")["id"]
+    f = server.start_character(cid, name="Duren", origin="veteran_l5", class_name="Fighter")["id"]
+    inv = [i["name"] for i in server.get_character(cid, f)["inventory"]]
+    sheet = server.get_character(cid, f)
+    assert "Chain Mail" in inv and sheet["armor_class"] == 16  # AC 16 now has the armor to justify it
+    assert any("weapon" in i.get("description", "").lower() for i in sheet["inventory"])
+    # an Unarmored Defense class (Barbarian) gets NO armor item — its AC is ability-derived.
+    b = server.start_character(cid, name="Karlach", origin="veteran_l5", class_name="Barbarian",
+                               abilities={"dex": 14, "con": 17})["id"]
+    binv = [i["name"] for i in server.get_character(cid, b)["inventory"]]
+    assert "Chain Mail" not in binv and not any("mail" in n.lower() or "leather" in n.lower() for n in binv)
+    assert server.get_character(cid, b)["armor_class"] == 15  # 10 + DEX(2) + CON(3), unarmored
+    # a class-less nobody_l1 keeps an empty inventory (today's behavior — nothing to seed from).
+    n = server.start_character(cid, name="Drift", origin="nobody_l1")["id"]
+    assert server.get_character(cid, n)["inventory"] == []
+
+
 # --- adversarial-protagonist QA (bg brawler/operator/wildcard) engine hardening ---
 
 

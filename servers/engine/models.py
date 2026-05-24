@@ -176,6 +176,13 @@ class ClassResource(_StrictModel):
     max: int = 0
     used: int = 0
     recharge: Literal["short", "long", "none"] = "long"
+    # A die type for pools that ROLL a die rather than spend flat points — "d8" for a Battle
+    # Master's Superiority Dice, "d6" for a Psi die, etc. Empty == a point pool (Ki, Rage).
+    size: str = ""
+    # True == registered by the DM via set_class_resource for a subclass / feat / homebrew
+    # resource the SRD class tables don't seed. Custom pools are carried forward verbatim
+    # across a level-up re-derive (the engine never recomputes a value it didn't author).
+    custom: bool = False
 
 
 class DeathSaves(_StrictModel):
