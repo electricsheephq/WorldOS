@@ -673,6 +673,199 @@ def build_combat_view(snapshot: dict) -> dict:
     return view
 
 
+def _action_actor(snapshot: dict) -> dict | None:
+    """Pick the player-facing actor for the action model from snapshot facts only."""
+    chars = snapshot.get("characters") if isinstance(snapshot, dict) else None
+    party = snapshot.get("party") if isinstance(snapshot, dict) else None
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return None
+    candidates = [chars.get(cid) for cid in party if isinstance(cid, str)]
+    actor = next((c for c in candidates if isinstance(c, dict) and c.get("kind") == "player"), None)
+    if actor is None:
+        actor = next((c for c in candidates if isinstance(c, dict)), None)
+    if actor is None:
+        return None
+    aid = actor.get("id")
+    if not isinstance(aid, str) or not aid.strip():
+        for cid in party:
+            if isinstance(cid, str) and chars.get(cid) is actor:
+                aid = cid
+                break
+    if not isinstance(aid, str) or not aid.strip():
+        return None
+    return {
+        "id": aid.strip(),
+        "name": str(actor.get("name") or aid).strip() or aid.strip(),
+        "kind": str(actor.get("kind") or "").strip(),
+    }
+
+
+def _combat_current_id(combat: object) -> str | None:
+    if not isinstance(combat, dict) or not combat.get("active"):
+        return None
+    order = combat.get("order")
+    turn_index = combat.get("turn_index")
+    if not isinstance(order, list) or not isinstance(turn_index, int) or isinstance(turn_index, bool):
+        return None
+    if not 0 <= turn_index < len(order):
+        return None
+    row = order[turn_index]
+    cid = row.get("character_id") if isinstance(row, dict) else None
+    return cid.strip() if isinstance(cid, str) and cid.strip() else None
+
+
+def _combat_row(combat: object, character_id: str | None) -> dict | None:
+    if not character_id or not isinstance(combat, dict):
+        return None
+    order = combat.get("order")
+    if not isinstance(order, list):
+        return None
+    for row in order:
+        if isinstance(row, dict) and row.get("character_id") == character_id:
+            return row
+    return None
+
+
+def _action_item(
+    action_id: str,
+    label: str,
+    *,
+    kind: str | None = None,
+    name: str | None = None,
+    text: str | None = None,
+    disabled_reason: str | None = None,
+    ui: str | None = None,
+) -> dict:
+    item = {
+        "id": action_id,
+        "label": label,
+        "available": disabled_reason is None,
+        "disabled_reason": disabled_reason,
+    }
+    move = {}
+    if kind:
+        move["kind"] = kind
+    if name:
+        move["name"] = name
+    if text:
+        move["text"] = text
+    if move:
+        item["move"] = move
+    if ui:
+        item["ui"] = ui
+    return item
+
+
+def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dict:
+    """Derive a read-only dashboard action model from snapshot + move-sink facts.
+
+    This does not preview engine mutations. It only describes which existing
+    dashboard move intents are sensible to offer, and why unavailable actions are
+    disabled.
+    """
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    has_campaign = bool(snapshot) and not snapshot.get("empty")
+    actor = _action_actor(snapshot) if has_campaign else None
+    combat = snapshot.get("combat") if has_campaign else None
+    combat_active = isinstance(combat, dict) and bool(combat.get("active"))
+    current_id = _combat_current_id(combat)
+    actor_id = actor.get("id") if actor else None
+    is_current_turn = bool(actor_id and current_id and actor_id == current_id)
+    actor_row = _combat_row(combat, actor_id)
+
+    def global_reason() -> str | None:
+        if not has_campaign:
+            return "no active campaign"
+        if actor is None:
+            return "no active character"
+        if not live:
+            return "no live move sink"
+        if not is_live_view:
+            return "viewing non-live campaign"
+        return None
+
+    base_reason = global_reason()
+    action_available = False
+    bonus_available = False
+    reaction_available = False
+    if combat_active and actor is not None:
+        action_available = is_current_turn and not bool(combat.get("action_used"))
+        bonus_available = is_current_turn and not bool(combat.get("bonus_action_used"))
+        reaction_available = actor_row is not None and not bool(actor_row.get("reaction_used"))
+
+    def turn_action_reason(slot: str) -> str | None:
+        if not has_campaign:
+            return "no active campaign"
+        if not combat_active:
+            return "not in combat"
+        if actor is None:
+            return "no active character"
+        if base_reason:
+            return base_reason
+        if not is_current_turn:
+            return "not current turn"
+        if slot == "action" and not action_available:
+            return "action spent"
+        if slot == "bonus" and not bonus_available:
+            return "bonus action spent"
+        return None
+
+    def reaction_reason() -> str | None:
+        if not has_campaign:
+            return "no active campaign"
+        if not combat_active:
+            return "not in combat"
+        if actor is None:
+            return "no active character"
+        if actor_row is None:
+            return "not in combat"
+        if base_reason:
+            return base_reason
+        if not reaction_available:
+            return "reaction spent"
+        return None
+
+    model = {
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "actor": actor,
+        "combat": {
+            "active": combat_active,
+            "round": _num(combat.get("round")) if isinstance(combat, dict) else None,
+            "current_actor_id": current_id,
+            "is_current_turn": is_current_turn,
+        },
+        "economy": {
+            "action_available": action_available,
+            "bonus_available": bonus_available,
+            "reaction_available": reaction_available,
+        },
+        "groups": [
+            {
+                "id": "exploration",
+                "label": "Explore",
+                "actions": [
+                    _action_item("continue", "Continue", kind="do", text="continue", disabled_reason=base_reason),
+                    _action_item("say", "Say", disabled_reason=base_reason, ui="focus-say"),
+                    _action_item("do", "Do", disabled_reason=base_reason, ui="focus-do"),
+                    _action_item("check", "Check", disabled_reason=base_reason, ui="palette-skills"),
+                    _action_item("save", "Save", disabled_reason=base_reason, ui="palette-saves"),
+                ],
+            },
+            {
+                "id": "combat",
+                "label": "Combat",
+                "actions": [
+                    _action_item("attack", "Attack", kind="attack", name="Attack", disabled_reason=turn_action_reason("action")),
+                    _action_item("bonus-action", "Bonus", kind="combat", name="Bonus Action", disabled_reason=turn_action_reason("bonus")),
+                    _action_item("reaction", "Reaction", kind="combat", name="Reaction", disabled_reason=reaction_reason()),
+                ],
+            },
+        ],
+    }
+    return model
+
+
 def _viewer_config() -> dict:
     """Read-only runtime facts for the quick-settings modal — voice backend + whether
     the voice server is present, and whether a live move sink is configured. Pure
@@ -1093,17 +1286,26 @@ class _Handler(BaseHTTPRequestHandler):
                 # No game on disk yet — serve a graceful empty state (the dashboard shows
                 # "Waiting for the story to begin…") instead of a blank read; we attach
                 # automatically once the DM mints the campaign.
-                self._json({"empty": True, "live": _live_play(), "combat_view": build_combat_view({})})
+                live = _live_play()
+                self._json({
+                    "empty": True,
+                    "live": live,
+                    "combat_view": build_combat_view({}),
+                    "action_model": build_action_model({}, live=live, is_live_view=False),
+                })
                 return
             snap = _read_snapshot(cid)
             if not isinstance(snap, dict):
                 snap = {}
+            live = _live_play()
+            is_live_view = live and cid == self.campaign_id
             snap["combat_view"] = build_combat_view(snap)
-            snap["live"] = _live_play()
+            snap["live"] = live
             # is_live_view: the move sink (CLAWDND_PLAYER_MOVES) belongs to the ATTACHED campaign;
             # a move only makes sense when the VIEWED campaign IS that one. The dashboard grays the
             # palette when this is false, so the switcher can't send moves to the wrong run (#49).
-            snap["is_live_view"] = _live_play() and cid == self.campaign_id
+            snap["is_live_view"] = is_live_view
+            snap["action_model"] = build_action_model(snap, live=live, is_live_view=is_live_view)
             self._json(snap)
         elif route == "/config":
             self._json(_viewer_config())
