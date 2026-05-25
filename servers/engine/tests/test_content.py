@@ -230,9 +230,11 @@ def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
     by_name = {x["name"]: x for x in allc}
     assert by_name["Astarion"]["playable"] is False and by_name["Astarion"]["role"] == "hero"
     assert by_name["Minsc"]["playable"] is True
-    # the playable-only filter keeps just the minor figures a player can pick up
+    # the playable-only filter keeps just the minor figures a player can pick up;
+    # the original four plus the three new caster-party additions (Rolan, Lia, Isobel)
     play = {x["name"] for x in server.list_canon_characters(cid, playable_only=True)["available"]}
-    assert play == {"Jaheira", "Minsc", "Withers", "Jergal"}
+    assert {"Jaheira", "Minsc", "Withers", "Jergal"} <= play  # original minor figures present
+    assert {"Rolan", "Lia", "Isobel"} <= play              # new caster-party figures present
     assert "Astarion" not in play and "Gale" not in play
 
 
@@ -1209,3 +1211,130 @@ def test_apply_ending_overlay_skips_malformed_arc_keeps_valid_sibling():
     assert c.characters["npc-bad"].arc is None
     assert c.characters["npc-ok"].arc is not None
     assert c.characters["npc-ok"].arc.agenda.trigger == "party_vulnerable"
+
+
+# ---------------------------------------------------------------------------
+# Caster-party origins: Rolan / Lia / Isobel (feat-caster-party)
+# ---------------------------------------------------------------------------
+
+def test_caster_origins_json_valid_and_load():
+    """All 6 new files (3 characters + 3 origins) parse as JSON without error."""
+    import glob
+    import os
+    base = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..", "..",  # servers/engine/tests -> repo root
+        "content", "worlds", "baldurs-gate",
+    )
+    for pattern in ("characters/rolan.json", "characters/lia.json", "characters/isobel.json",
+                    "origins/rolan-evoker.json", "origins/lia-battlemaster.json", "origins/isobel-cleric.json"):
+        path = os.path.normpath(os.path.join(base, pattern))
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        assert data, f"empty or null JSON at {pattern}"
+
+
+def test_rolan_evoker_origin_has_spells_known():
+    """load_origin_template for rolan-evoker returns a non-empty spells_known list."""
+    tpl = content.load_origin_template("baldurs-gate", "rolan-evoker")
+    assert tpl is not None, "rolan-evoker template not found"
+    assert tpl.get("spells_known"), "rolan-evoker must have non-empty spells_known"
+    # cantrips present (level-0 spells)
+    assert any(s in tpl["spells_known"] for s in ("Fire Bolt", "Ray of Frost", "Mage Hand")), \
+        "expected at least one cantrip in rolan-evoker spells_known"
+    # levelled spells present
+    assert any(s in tpl["spells_known"] for s in ("Magic Missile", "Shield", "Burning Hands")), \
+        "expected at least one levelled spell in rolan-evoker spells_known"
+
+
+def test_isobel_cleric_origin_has_spells_prepared():
+    """load_origin_template for isobel-cleric returns a non-empty spells_prepared list."""
+    tpl = content.load_origin_template("baldurs-gate", "isobel-cleric")
+    assert tpl is not None, "isobel-cleric template not found"
+    assert tpl.get("spells_prepared"), "isobel-cleric must have non-empty spells_prepared"
+    assert "Cure Wounds" in tpl["spells_prepared"]
+    assert "Sacred Flame" in tpl["spells_prepared"]
+    # Light-domain spells present
+    assert "Burning Hands" in tpl["spells_prepared"] or "Flaming Sphere" in tpl["spells_prepared"], \
+        "expected at least one Light-domain spell in isobel-cleric spells_prepared"
+
+
+def test_lia_battlemaster_origin_has_no_spells():
+    """lia-battlemaster is a martial origin — no spell fields."""
+    tpl = content.load_origin_template("baldurs-gate", "lia-battlemaster")
+    assert tpl is not None, "lia-battlemaster template not found"
+    assert not tpl.get("spells_known"), "lia-battlemaster must NOT have spells_known"
+    assert not tpl.get("spells_prepared"), "lia-battlemaster must NOT have spells_prepared"
+
+
+def test_new_origins_appear_in_list_origin_templates():
+    """All three new origin ids surface in list_origin_templates for baldurs-gate."""
+    templates = content.list_origin_templates("baldurs-gate")
+    ids = {t["id"] for t in templates}
+    assert "rolan-evoker" in ids, f"rolan-evoker missing from list_origin_templates; got {ids}"
+    assert "lia-battlemaster" in ids, f"lia-battlemaster missing; got {ids}"
+    assert "isobel-cleric" in ids, f"isobel-cleric missing; got {ids}"
+
+
+def test_new_characters_appear_in_list_canon_characters(tmp_path, monkeypatch):
+    """Rolan, Lia, and Isobel are discoverable as playable canon characters."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    chars = server.list_canon_characters(cid)["available"]
+    names = {c["name"] for c in chars}
+    for expected in ("Rolan", "Lia", "Isobel"):
+        assert expected in names, f"{expected} missing from list_canon_characters"
+    by_name = {c["name"]: c for c in chars}
+    # These are minor figures (playable: true, role: "")
+    for who in ("Rolan", "Lia", "Isobel"):
+        assert by_name[who]["playable"] is True, f"{who} must be playable"
+        assert by_name[who].get("role", "") == "", f"{who} role must be empty"
+
+
+def test_start_character_rolan_evoker_template_yields_spells(tmp_path, monkeypatch):
+    """start_character with origin='template:rolan-evoker' produces a PC with non-empty
+    spell_slots AND non-empty spells_known (casts > 0 is now POSSIBLE)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    result = server.start_character(cid, origin="template:rolan-evoker")
+    assert "error" not in result, f"start_character errored: {result}"
+    assert result["level"] == 3 and result["class"] == "Wizard"
+
+    sheet = server.get_character(cid, result["id"])
+    # spell_slots populated (a level-3 Wizard has slots)
+    assert sheet.get("spell_slots"), "Wizard L3 must have spell_slots"
+    # spells_known carried from the template
+    assert sheet.get("spells_known"), "rolan-evoker template must populate spells_known on the PC"
+    assert "Magic Missile" in sheet["spells_known"] or "Fire Bolt" in sheet["spells_known"], \
+        "expected a known spell from the template on the created PC"
+
+
+def test_start_character_isobel_cleric_template_yields_spells(tmp_path, monkeypatch):
+    """start_character with origin='template:isobel-cleric' produces a Cleric with
+    non-empty spell_slots AND non-empty spells_prepared."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    result = server.start_character(cid, origin="template:isobel-cleric")
+    assert "error" not in result, f"start_character errored: {result}"
+    assert result["level"] == 3 and result["class"] == "Cleric"
+
+    sheet = server.get_character(cid, result["id"])
+    assert sheet.get("spell_slots"), "Cleric L3 must have spell_slots"
+    assert sheet.get("spells_prepared"), "isobel-cleric template must populate spells_prepared on the PC"
+    assert "Cure Wounds" in sheet["spells_prepared"] or "Sacred Flame" in sheet["spells_prepared"], \
+        "expected a prepared spell from the template on the created PC"
+
+
+def test_start_character_lia_battlemaster_template_no_spells(tmp_path, monkeypatch):
+    """start_character with origin='template:lia-battlemaster' produces a Fighter with no spells."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    result = server.start_character(cid, origin="template:lia-battlemaster")
+    assert "error" not in result, f"start_character errored: {result}"
+    assert result["level"] == 3 and result["class"] == "Fighter"
+
+    sheet = server.get_character(cid, result["id"])
+    # Fighter has no spell slots and an empty spellbook
+    assert not sheet.get("spell_slots"), "Fighter must have no spell_slots"
+    assert not sheet.get("spells_known"), "lia-battlemaster must have no spells_known"
+    assert not sheet.get("spells_prepared"), "lia-battlemaster must have no spells_prepared"

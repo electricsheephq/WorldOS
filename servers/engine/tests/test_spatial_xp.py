@@ -54,10 +54,15 @@ def test_end_combat_auto_awards_xp_in_xp_mode(cid):
     res = server.spawn_monster(cid, "Goblin Warrior")
     mid, xp = res["spawned"][0]["id"], res["xp_each"]
     server.start_combat(cid, [hero, mid])
-    server.apply_damage(cid, mid, 999)  # massive damage -> instant death
+    kill = server.apply_damage(cid, mid, 999)  # massive damage -> instant death
+    # Kill-time award fires immediately at apply_damage (hardened behavior — robust to
+    # DM sequencing). The XP lands in kill_xp, not deferred to end_combat.
+    assert kill.get("kill_xp", {}).get("xp_awarded") == xp
     out = server.end_combat(cid)
     assert out["active"] is False
-    assert out.get("xp_awarded") == xp
+    # Backstop sweep: xp_value already zeroed by kill-time award → no double-award.
+    assert out.get("xp_awarded", 0) == 0
+    # The hero still has the XP (kill-time award did the work).
     assert server.get_character(cid, hero)["xp"] == xp
 
 

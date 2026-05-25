@@ -1,0 +1,30 @@
+{
+  "name": "Isobel",
+  "playable": true,
+  "role": "",
+  "race": "Human",
+  "class": "Cleric",
+  "level": "3",
+  "alignment": "Lawful Good",
+  "appearance": "Isobel is a human woman of middle height, with dark brown skin, close-cropped natural hair, and calm brown eyes that hold a warmth she does not have to perform. She wears the vestments of Selûne — silver-white accents against practical traveling clothes — and carries a crescent-etched holy symbol at her throat. There is a quiet strength in the way she holds herself: unhurried, rooted, as though she has already decided what she believes and the world is welcome to test it.",
+  "personality": "Isobel is warm in the way that a deep fire is warm — not flashy, but sustaining. She listens before she speaks, and when she speaks she tends to mean it. She has a healer's instinct for what people actually need rather than what they say they need, and she deploys both comfort and hard truths with the same steady hand. She is not naive. She has seen the darkness the shadow curse brings and held her ground in its face, and that experience has given her a core of quiet steel that surprises people who mistake her gentleness for softness. Her faith in Selûne is genuine and unconflicted — she does not need to argue about it, only to live it.",
+  "mannerisms": "",
+  "backstory": "Isobel has made the Last Light Inn her sanctuary and her charge, holding Selûne's blessing as a ward against the shadow curse that blankets the surrounding lands. She came to the Shadowlands following a call she could not ignore — a sense that the light was needed somewhere specific and that she was the one meant to carry it. She tends the injured, counsels the frightened, and maintains the ward with a tirelessness that earns both admiration and concern from those around her.",
+  "equipment": [],
+  "relationships": [],
+  "companion_dossier": {
+    "wound": "carries the loneliness of being the anchor everyone else leans on, with few places to set down her own fears",
+    "wants": ["to see the shadow curse broken and the land healed", "to know the people she protects are safe after she's gone"],
+    "fears": ["failing the people sheltering under her ward", "that her faith will be tested beyond her strength"],
+    "values": ["compassion", "light in darkness", "steadfast hope"],
+    "approval_likes": ["protecting the vulnerable", "acts of genuine mercy", "honest courage"],
+    "approval_dislikes": ["cruelty disguised as necessity", "desecration of holy places", "abandoning the helpless"],
+    "banter_tags": ["faith_and_doubt", "healer_and_soldier", "light_in_darkness"],
+    "camp_prompts": ["tends the fire and offers to sit with anyone who can't sleep; says Selûne never minds the company"],
+    "relationships": {}
+  },
+  "voice_hint": "human cleric of Selûne — Last Light Inn warden, Light Domain",
+  "source_url": "https://bg3.wiki/wiki/Isobel",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

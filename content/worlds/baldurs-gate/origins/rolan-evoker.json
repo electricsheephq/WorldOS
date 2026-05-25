@@ -1,0 +1,22 @@
+{
+  "id": "rolan-evoker",
+  "name": "Rolan — Tiefling Evoker",
+  "blurb": "An ambitious tiefling apprentice of Ramazith's Tower who channels his frustration and pride into destructive evocations. Sharp-tongued, fiercely loyal, perpetually behind on sleep.",
+  "race": "Tiefling",
+  "class_name": "Wizard",
+  "level": 3,
+  "background": "Sage",
+  "subclass": "Evocation",
+  "alignment": "Neutral Good",
+  "abilities": {"strength": 8, "dexterity": 14, "constitution": 13, "intelligence": 16, "wisdom": 12, "charisma": 10},
+  "armor_class": 12,
+  "skills": ["arcana", "history", "investigation"],
+  "spells_known": [
+    "Fire Bolt", "Mage Hand", "Light", "Ray of Frost",
+    "Magic Missile", "Shield", "Mage Armor", "Burning Hands", "Scorching Ray", "Misty Step"
+  ],
+  "appearance": "Lean tiefling with indigo skin, swept-back horns, and amber eyes that brighten when a spell is forming. Scholar's robes, ink-stained cuffs, a satchel packed with annotated tomes.",
+  "personality": "Prickly and ambitious, with a hidden streak of protectiveness for the people he has decided matter to him. Does not waste words unless he's lecturing.",
+  "license": "Original ClawDnD fan-content origin build, CC-BY-4.0. SRD 5.2 mechanics under CC-BY-4.0. Unofficial; not endorsed by Wizards of the Coast or Larian.",
+  "attribution": "Origin build © ClawDnD contributors, CC-BY-4.0. SRD 5.2 © Wizards of the Coast LLC, used under CC-BY-4.0. Setting under the Wizards Fan Content Policy; BG3 elements © Larian Studios."
+}
