@@ -203,6 +203,54 @@ def test_deterministic_item_applies_its_effect():
     assert item.summary  # a one-line "what moved" was templated for the DM
 
 
+def test_deterministic_control_shift_sets_control_flag():
+    # A controller_id+location_id effect records a `control:loc=fac` campaign flag the DM reads
+    # (no RegionControl model — epic #60 subsumed). _apply_backlog_effect, worldsim.py ~109.
+    c = _camp(day=1)
+    item = BacklogItem(kind="faction_move", trigger_day=2, needs_llm=False,
+                       effect={"controller_id": "fac-x", "location_id": "loc-y"},
+                       title="X seizes Y")
+    c.campaign_backlog.items[item.id] = item
+    c.campaign_backlog.last_tick_day = 1
+    c.day = 5
+    worldsim.tick_backlog(c)
+    assert c.flags.get("control:loc-y=fac-x") is True  # the deterministic control marker flipped
+
+
+def test_deterministic_npc_arrival_sets_arrival_flag():
+    # An npc_name effect STUBS the arrival as an `arrival:Name at loc` flag (existence now, the
+    # voice/motive later from the DM). _apply_backlog_effect, worldsim.py ~114.
+    c = _camp(day=1)
+    item = BacklogItem(kind="npc_arrival", trigger_day=2, needs_llm=False,
+                       effect={"npc_name": "Sarevok", "location_id": "loc-y"},
+                       title="Sarevok arrives")
+    c.campaign_backlog.items[item.id] = item
+    c.campaign_backlog.last_tick_day = 1
+    c.day = 5
+    worldsim.tick_backlog(c)
+    assert c.flags.get("arrival:Sarevok at loc-y") is True  # the deterministic arrival stub flipped
+
+
+def test_reputation_delta_clamps_and_skips_missing_faction():
+    # A reputation_delta past the ceiling clamps to +100; an effect naming a faction NOT in
+    # campaign.factions is a silent no-op (degrade, never raise). _apply_backlog_effect ~96-102.
+    c = _camp(day=1)
+    c.factions["fac-a"] = Faction(id="fac-a", name="A", reputation=95)
+    over = BacklogItem(kind="faction_move", goal_ref="fac-a", trigger_day=2, needs_llm=False,
+                       effect={"faction_id": "fac-a", "reputation_delta": "50"},  # 95+50 -> clamp
+                       title="A surges")
+    ghost = BacklogItem(kind="faction_move", trigger_day=2, needs_llm=False,
+                        effect={"faction_id": "ghost", "reputation_delta": "-20"},  # unknown fac
+                        title="a ghost move")
+    c.campaign_backlog.items[over.id] = over
+    c.campaign_backlog.items[ghost.id] = ghost
+    c.campaign_backlog.last_tick_day = 1
+    c.day = 5
+    worldsim.tick_backlog(c, max_events=5)  # must NOT raise on the missing faction
+    assert c.factions["fac-a"].reputation == 100  # clamped at the +100 ceiling
+    assert "ghost" not in c.factions               # the missing faction was never created
+
+
 def test_recurring_item_rearms_in_place_without_growth():
     # A recurring development re-arms in place (status back to pending) — the record count
     # stays put no matter how long we play (mirrors worldsim.tick re-arming a thread).
