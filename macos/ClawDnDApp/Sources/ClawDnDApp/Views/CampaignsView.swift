@@ -39,7 +39,7 @@ struct CampaignsView: View {
                             CampaignRow(campaign: campaign)
                                 .tag(campaign.id)
                                 .contextMenu {
-                                    Button("Open in Dashboard") {
+                                    Button("Open in Play Surface") {
                                         open(campaign)
                                     }
                                 }

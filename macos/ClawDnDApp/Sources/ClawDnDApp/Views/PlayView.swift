@@ -64,7 +64,7 @@ struct PlayView: View {
                 Button {
                     startViewer()
                 } label: {
-                    Label("Open Dashboard", systemImage: "rectangle.on.rectangle")
+                    Label("Open Play Surface", systemImage: "rectangle.on.rectangle")
                 }
                 Button {
                     startProvider()

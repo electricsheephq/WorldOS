@@ -48,7 +48,7 @@ struct WebView: NSViewRepresentable {
         private func report(_ error: Error) {
             let nsError = error as NSError
             guard nsError.domain != NSURLErrorDomain || nsError.code != NSURLErrorCancelled else { return }
-            navigationError.wrappedValue = "Dashboard failed to load: \(error.localizedDescription)"
+            navigationError.wrappedValue = "Surface failed to load: \(error.localizedDescription)"
         }
     }
 }
@@ -62,7 +62,7 @@ struct WebViewErrorView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 42, weight: .regular))
                 .foregroundStyle(.orange)
-            Text("Dashboard Unavailable")
+            Text("Surface Unavailable")
                 .font(.title3.weight(.semibold))
             Text(message)
                 .font(.callout)
