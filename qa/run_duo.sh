@@ -191,8 +191,14 @@ jq -rs 'map((.role|ascii_upcase) + ": " + (.text // "")) | join("\n\n")' "$CHAT"
 # a lock-only dir with no snapshot, which head -1 may grab -> false "no state" RED).
 SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c -exec ls -S {} + 2>/dev/null | head -1)"
 if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
-[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
+# Three lenses, run CONCURRENTLY (background + wait) so the third pass adds no wall-clock.
+# Mechanical + Angry-DM (5e rules-fidelity) score the DM distill `$RUN.md` — the tool
+# stream (→ tool / ← result) where the MECHANICS live; Tolkien scores the two-sided $PLAY
+# (scene-craft must be judged on the actual back-and-forth).
+[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
+[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
+[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
+wait
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
 python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
@@ -201,8 +207,9 @@ python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.j
 if [ "${GATE:-0}" != "0" ]; then
   GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
   GATE_REASON="${GATE_REASON:-behavioral gate RED}"
-  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON"
-  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON"
+  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
-echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
+echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) angry-dm=$(jq -r '.overall//"?"' "$T/$RUN.angrydm.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
 exit $GATE

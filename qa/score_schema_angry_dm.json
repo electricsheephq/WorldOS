@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scores", "overall", "defects", "coverage", "verdict"],
+  "properties": {
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rules_as_written",
+        "mechanical_completeness",
+        "tool_fidelity",
+        "action_economy",
+        "combat_resolution",
+        "conditions_and_effects",
+        "coverage"
+      ],
+      "properties": {
+        "rules_as_written": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "mechanical_completeness": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "tool_fidelity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "action_economy": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "combat_resolution": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "conditions_and_effects": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "coverage": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "overall": { "type": "number", "minimum": 1, "maximum": 5 },
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "kind", "rule", "area", "evidence", "five_e_says", "suggested_fix"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "kind": { "type": "string", "enum": ["commission", "omission"] },
+          "rule": { "type": "string", "description": "the bench-card rule NAME cited, or 'unverified'" },
+          "area": { "type": "string", "description": "the checklist section, e.g. action_economy / spellcasting / combat_resolution" },
+          "evidence": { "type": "string" },
+          "five_e_says": { "type": "string", "description": "one sentence: what 5e (per the bench card) requires here" },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exercised", "gaps", "had_caster", "fights", "notes"],
+      "properties": {
+        "exercised": { "type": "array", "items": { "type": "string" }, "description": "5e subsystems actually exercised this run" },
+        "gaps": { "type": "array", "items": { "type": "string" }, "description": "conspicuous subsystems NOT exercised" },
+        "had_caster": { "type": "boolean" },
+        "fights": { "type": "integer", "minimum": 0 },
+        "notes": { "type": "string" }
+      }
+    },
+    "verdict": { "type": "string", "description": "1-2 sentences in the Angry DM's voice: would a veteran trust this table, and the single worst seam to close first" }
+  }
+}
