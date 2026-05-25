@@ -7,6 +7,7 @@ struct MonitorView: View {
     @Binding var stateDir: String
     @Binding var webURL: URL?
     @State private var alertMessage: String?
+    @State private var webViewErrorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,7 +29,13 @@ struct MonitorView: View {
             .padding(16)
             Divider()
             if let webURL {
-                WebView(url: webURL)
+                if let webViewErrorMessage {
+                    WebViewErrorView(message: webViewErrorMessage) {
+                        self.webViewErrorMessage = nil
+                    }
+                } else {
+                    WebView(url: webURL, navigationError: $webViewErrorMessage)
+                }
             } else {
                 EmptyStateView(title: "No Monitor Open", symbolName: "waveform.path.ecg.rectangle")
             }
@@ -42,6 +49,7 @@ struct MonitorView: View {
 
     private func openMonitor() {
         do {
+            webViewErrorMessage = nil
             let dashboard = try processService.startViewer(
                 repoPath: repoPath,
                 preferredPort: preferredPort,
