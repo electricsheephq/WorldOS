@@ -41,6 +41,9 @@
 #     "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding Bolt,Grok:fighter:qa/play_companion_saboteur.txt"
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+# Shared beat-driver helpers — for clawdnd_cap_score_red (honest scoring on a gate-RED run).
+# shellcheck source=lib_beat_driver.sh
+. "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-party-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
@@ -326,12 +329,25 @@ jq -rs 'map((.role|ascii_upcase) + ": " + (.text // "")) | join("\n\n")' "$CHAT"
 # a lock-only dir with no snapshot, which head -1 may grab -> false "no state" RED).
 SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c -exec ls -S {} + 2>/dev/null | head -1)"
 if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
-[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
+# Three lenses, run CONCURRENTLY (background + wait): mechanical + Angry-DM (5e rules-
+# fidelity) on the DM distill `$RUN.md` (the tool stream), Tolkien on the two-sided $PLAY.
+[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
+[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
+[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
+wait
 # Behavioral gate runs on ALL actor moves — player AND each companion. Merging them is what
 # lets the gate see an IGNORED companion move (a saboteur's [attack] the DM never resolves):
 # with only the player file, a companion attack the DM drops would false-GREEN (#54).
 ALLMOVES="$STATE_DIR/all_moves.jsonl"; cat "$PLAYER_MOVES" "${COMP_MOVES[@]}" > "$ALLMOVES" 2>/dev/null
-python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$ALLMOVES"; GATE=$?
-echo "[party] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
+python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$ALLMOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+# Honest scoring: a gate-RED run must NOT display a glossy score on ANY lens. Cap all three
+# (the two story-side cards keep world-progression wording; the Angry-DM card gets generic).
+if [ "${GATE:-0}" != "0" ]; then
+  GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
+  GATE_REASON="${GATE_REASON:-behavioral gate RED}"
+  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
+fi
+echo "[party] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) angry-dm=$(jq -r '.overall//"?"' "$T/$RUN.angrydm.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
 exit $GATE

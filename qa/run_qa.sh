@@ -84,19 +84,24 @@ fi
 echo "[qa] behavioral gate…"
 python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 
-echo "[qa] scoring (mechanical rubric)…"
-qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" "$RUBRIC_FILE" qa/score_schema.json "$T/$RUN.score.json" 1.50
-
-echo "[qa] scoring (Tolkien story-craft lens — the north star)…"
-qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
+# Three INDEPENDENT lenses on the same distill — run them CONCURRENTLY (background +
+# wait) so a third scoring pass doesn't add a third pass of wall-clock. The Angry-DM
+# lens (5e rules-fidelity: commission + omission seams) is additive — score.sh is
+# lens-agnostic and gates only on `.scores`, so the new schema passes the same gate.
+echo "[qa] scoring (mechanical + Tolkien story-craft + Angry-DM 5e rules-fidelity, concurrent)…"
+qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" "$RUBRIC_FILE" qa/score_schema.json "$T/$RUN.score.json" 1.50 &
+qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
+qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
+wait
 
 # Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
 # CAP both scorecards to ≤2.5 / INVALID and annotate WHY before they're printed/consumed.
 if [ "${GATE:-0}" != "0" ]; then
   GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
   GATE_REASON="${GATE_REASON:-behavioral gate RED}"
-  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON"
-  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON"
+  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
 
 echo "[qa] ===== MECHANICAL scorecard ($RUN) ====="
@@ -118,6 +123,16 @@ jq -r '
   "defects (\(.defects|length)):",
   (.defects[]? | "  [\(.severity)] \(.area): \(.evidence) -> \(.suggested_fix)")
 ' "$T/$RUN.tolkien.json" 2>/dev/null || { echo "(tolkien parse failed; raw:)"; cat "$T/$RUN.tolkien.json"; }
+
+echo "[qa] ===== 5e RULES-FIDELITY scorecard — the Angry DM ($RUN) ====="
+jq -r '
+  "scores: \(.scores)",
+  "overall: \(.overall)",
+  "coverage: had_caster=\(.coverage.had_caster) fights=\(.coverage.fights) gaps=\(.coverage.gaps)",
+  "verdict: \(.verdict)",
+  "defects (\(.defects|length)):",
+  (.defects[]? | "  [\(.severity)/\(.kind)] \(.area) — \(.rule): \(.evidence) -> \(.suggested_fix)")
+' "$T/$RUN.angrydm.json" 2>/dev/null || { echo "(angry-dm parse failed; raw:)"; cat "$T/$RUN.angrydm.json"; }
 
 echo "[qa] behavioral=$([ "${GATE:-0}" = 0 ] && echo GREEN || echo RED)"
 exit "${GATE:-0}"

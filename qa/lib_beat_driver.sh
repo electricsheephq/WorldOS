@@ -179,13 +179,20 @@ clawdnd_runbook_for_beat() {
 # frozen one-scene runs. Rewrite a scorecard JSON in place: cap `overall` at 2.5, stamp
 # `gate_capped=true` + `gate_status="RED"`, and prepend a critical defect explaining the cap (so
 # the cap is visible and diagnosable, not silent). No-op when the file is missing/unparseable.
+#
+# The appended defect is now DOMAIN-GENERIC: the cap is applied to several lenses (mechanical,
+# Tolkien story-craft, Angry-DM 5e-rules-fidelity), so the defect text must NOT be hard-worded for
+# world-progression — capping an Angry-DM rules card with a "the party never traveled" defect is
+# off-domain noise. The optional $3 picks lens-appropriate wording (default = generic).
 # $1 = scorecard JSON path  $2 = a short reason string (e.g. the failed checks)
+# $3 = optional domain hint: "story" (world-progression wording) | "" / anything else (generic)
 clawdnd_cap_score_red() {
-  local path="$1" reason="${2:-behavioral gate RED}"
+  local path="$1" reason="${2:-behavioral gate RED}" domain="${3:-}"
   [ -f "$path" ] || return 0
-  python3 - "$path" "$reason" <<'PY' 2>/dev/null || true
+  python3 - "$path" "$reason" "$domain" <<'PY' 2>/dev/null || true
 import json, sys
 path, reason = sys.argv[1], sys.argv[2]
+domain = sys.argv[3] if len(sys.argv) > 3 else ""
 try:
     d = json.load(open(path))
 except Exception:
@@ -202,15 +209,36 @@ d["gate_capped"] = True
 d["overall_before_cap"] = orig
 if orig is None or orig > CAP:
     d["overall"] = CAP
+# Generic by default so the cap is domain-neutral across lenses; the "story" hint keeps the
+# original world-progression phrasing for the story-craft / mechanical scorecards.
+if domain == "story":
+    area = "world-progression / behavioral gate"
+    suggested_fix = (
+        "This run FAILED the structural gate (e.g. the clock never advanced, the party never "
+        "traveled, no new face entered). A long session still stuck in one Act-1 scene is a "
+        "FAILURE TO PROGRESS, not a high score — overall CAPPED to 2.5 / INVALID. Fix the "
+        "progression, don't polish prose inside a dead scene."
+    )
+else:
+    area = "behavioral gate"
+    suggested_fix = (
+        "This run FAILED the deterministic behavioral gate, so its quality score is not "
+        "trustworthy — overall CAPPED to 2.5 / INVALID. Fix the structural failure named in the "
+        "gate reason before reading this scorecard; don't act on the capped number."
+    )
 defect = {
     "severity": "critical",
-    "area": "world-progression / behavioral gate",
+    "area": area,
     "evidence": f"behavioral gate RED ({reason}); recorded overall was {orig}",
-    "suggested_fix": "This run FAILED the structural gate (e.g. the clock never advanced, the "
-                     "party never traveled, no new face entered). A long session still stuck in "
-                     "one Act-1 scene is a FAILURE TO PROGRESS, not a high score — overall CAPPED "
-                     "to 2.5 / INVALID. Fix the progression, don't polish prose inside a dead scene.",
+    "suggested_fix": suggested_fix,
 }
+# Keep the appended defect schema-shaped for whatever lens this card is. The Angry-DM
+# scorecard's defect object also requires kind/rule/five_e_says (it carries a `coverage`
+# block — the reliable tell); add those so the capped card stays internally consistent.
+if isinstance(d.get("coverage"), dict):
+    defect.setdefault("kind", "commission")
+    defect.setdefault("rule", "unverified")
+    defect.setdefault("five_e_says", "A run that fails the deterministic structural gate cannot be trusted as a fair table; fix the gate failure first.")
 defs = d.get("defects")
 if isinstance(defs, list):
     d["defects"] = [defect] + defs
