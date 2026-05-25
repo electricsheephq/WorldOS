@@ -3,6 +3,7 @@ import pytest
 import combat
 from dice import DiceRoll
 from models import ActiveEffect, Character, Condition
+import store
 
 
 def mk(**kw) -> Character:
@@ -19,6 +20,20 @@ def _ds(total: int, natural: int) -> DiceRoll:
         crit=(natural == 20),
         fumble=(natural == 1),
     )
+
+
+def _fixed_roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed: int | None = None) -> DiceRoll:
+    if expression.startswith("1d20"):
+        return DiceRoll(
+            expression=expression,
+            total=20,
+            rolls=[15],
+            modifier=5,
+            detail=f"{expression}[15] = 20",
+            is_d20=True,
+            natural=15,
+        )
+    return DiceRoll(expression=expression, total=6, rolls=[3], detail=f"{expression}[3] = 6")
 
 
 # --- crit dice-doubling ---
@@ -175,6 +190,31 @@ def test_combat_flow_end_to_end(tmp_path, monkeypatch):
     assert nt["round"] >= 1
     server.end_combat(cid)
     assert server.get_state(cid)["in_combat"] is False
+
+
+def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll)
+
+    cid = server.create_campaign("Combat Event Cards")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=12, armor_class=12)["id"]
+    gob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    server.start_combat(cid, [hero, gob])
+    server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+
+    camp = store.load_campaign(cid)
+    entries = store.read_log(cid, camp.active_session_id)
+    attack_entry = next(e for e in entries if e.payload and e.payload.get("event") == "attack")
+
+    assert attack_entry.kind == "combat"
+    assert attack_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert attack_entry.payload["outcome"] == "hit"
+    assert attack_entry.payload["actor"] == {"id": hero, "name": "Hero"}
+    assert attack_entry.payload["target"]["id"] == gob
+    assert attack_entry.payload["damage"]["total"] == 6
 
 
 # --- hardening regressions (from adversarial review) ---
