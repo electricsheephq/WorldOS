@@ -37,6 +37,13 @@ struct ProvidersView: View {
                         ProviderCard(status: status)
                     }
 
+                    GroupBox("Current provider diagnostics") {
+                        Text(Diagnostics.providerLaunchSummary(processService.providerLaunchMetadata))
+                            .font(.caption.monospaced())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+
                     GroupBox("Configured provider commands") {
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("Codex launch command", text: $codexProviderCommand)
