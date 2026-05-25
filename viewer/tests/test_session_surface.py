@@ -208,6 +208,33 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(unsafe, [])
         self.assertEqual([row["detail"] for row in safe_tail], ["event 17", "event 18", "event 19"])
 
+    def test_session_surface_rejects_unsafe_active_session_id(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        campaign_dir = root / "campaigns" / "camp_surface"
+        (campaign_dir / "sessions").mkdir(parents=True)
+        (campaign_dir / "evil.jsonl").write_text(
+            json.dumps({"kind": "narration", "detail": "private traversal event"}) + "\n",
+            encoding="utf-8",
+        )
+        snapshot = {
+            "title": "Unsafe Session",
+            "active_session_id": "../evil",
+            "party": ["pc"],
+            "characters": {"pc": {"id": "pc", "name": "Vela", "kind": "player"}},
+        }
+        recent_events = server._session_event_tail_from_dir(campaign_dir, snapshot)
+
+        surface = server.build_session_surface(
+            snapshot,
+            campaign_id="camp_surface",
+            live=False,
+            is_live_view=False,
+            recent_events=recent_events,
+        )
+
+        self.assertEqual(surface["recentEvents"], [])
+        self.assertEqual(surface["title"], "Unsafe Session")
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",
