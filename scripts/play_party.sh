@@ -46,9 +46,19 @@
 #   CLAWDND_PLAY_MAX_TURNS        hard cap on agent turns (DM + companions)(default 40)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+COMMON="$ROOT/scripts/launch_common.sh"
+if [ -f "$COMMON" ]; then
+  # shellcheck source=launch_common.sh
+  . "$COMMON"
+fi
+if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
+  clawdnd_missing_commands python3 claude uv jq curl || exit 127
+fi
 WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
 PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
+PORT_EXPLICIT=0
+[ -n "${3:-}" ] || [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
 COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
 # Model knobs (default sonnet → unchanged behavior). The DM model is the structural-adherence
 # lever (decision §3); the actor model drives the companion facade agents. The solo path below
@@ -61,7 +71,14 @@ CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 # replaces this process, so a solo launch is indistinguishable from running play.sh
 # directly — no ensemble code path, no extra cost, no behavior drift.
 if [ -z "${COMPANION_SPEC//[[:space:]]/}" ]; then
-  exec "$ROOT/scripts/play.sh" "$WORLD" "$RUN" "$PORT"
+  # Preserve which arguments the user actually supplied. That keeps the common double-click
+  # path as an implicit/default-port launch, so play.sh can pick a clean fallback port instead
+  # of treating the internally-filled 8765 as a hard user request.
+  ARGS=()
+  [ "$#" -ge 1 ] && ARGS+=("$1")
+  [ "$#" -ge 2 ] && ARGS+=("$2")
+  [ "$#" -ge 3 ] && ARGS+=("$3")
+  exec "$ROOT/scripts/play.sh" "${ARGS[@]}"
 fi
 
 # ===========================================================================
@@ -73,6 +90,9 @@ fi
 BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per agent turn (DM or companion)
 SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"               # hard cap on agent turns (DM + companions)
+if declare -F clawdnd_choose_port >/dev/null 2>&1; then
+  PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
+fi
 AGENT_TURNS=0
 
 # Product play state under play-state/ (git-ignored), same layout as play.sh.

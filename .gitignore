@@ -35,6 +35,11 @@ venv/
 .uv/
 *.egg-info/
 
+# Native macOS app build outputs
+/dist/
+/macos/ClawDnDApp/.build/
+/macos/ClawDnDApp/.swiftpm/
+
 # TTS models / audio caches (large, regenerated locally)
 *.onnx
 *.pt
