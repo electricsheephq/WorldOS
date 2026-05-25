@@ -1,0 +1,40 @@
+name: macOS Swift
+
+on:
+  push:
+    branches:
+      - macos/native-app-shell
+      - macos/swift-ci
+    paths:
+      - ".github/workflows/*.yml"
+      - "macos/ClawDnDApp/**"
+      - "script/build_and_run.sh"
+      - "scripts/*.sh"
+      - "scripts/**/*.sh"
+  pull_request:
+    branches:
+      - macos/native-app-shell
+    paths:
+      - ".github/workflows/*.yml"
+      - "macos/ClawDnDApp/**"
+      - "script/build_and_run.sh"
+      - "scripts/*.sh"
+      - "scripts/**/*.sh"
+  workflow_dispatch:
+
+jobs:
+  swift-build:
+    name: SwiftPM build
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate launcher script syntax
+        shell: bash
+        run: |
+          bash -n script/build_and_run.sh
+          find scripts -type f -name "*.sh" -print0 | xargs -0 -n 1 bash -n
+
+      - name: Build native app
+        run: swift build --package-path macos/ClawDnDApp
