@@ -241,19 +241,104 @@ def _safe_campaign_id(campaign_id: Optional[str]) -> Optional[str]:
     return None
 
 
+def _display_location(snapshot: dict) -> str:
+    loc_id = snapshot.get("current_location_id")
+    locs = snapshot.get("locations")
+    if isinstance(locs, dict) and isinstance(loc_id, str):
+        loc = locs.get(loc_id)
+        if isinstance(loc, dict):
+            name = loc.get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        if loc_id.strip():
+            return loc_id.strip()
+    return ""
+
+
+def _party_names(snapshot: dict) -> list[str]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[str] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if not isinstance(ch, dict):
+            continue
+        name = ch.get("name")
+        out.append(str(name or cid))
+    return out
+
+
+def _active_quest_count(snapshot: dict) -> int:
+    count = 0
+    quests = snapshot.get("quests")
+    if isinstance(quests, dict):
+        for q in quests.values():
+            if not isinstance(q, dict):
+                continue
+            status = str(q.get("status") or "active").strip().lower()
+            if status in ("", "active", "open"):
+                count += 1
+    hooks = snapshot.get("quest_hooks")
+    if isinstance(hooks, list):
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            status = str(hook.get("status") or "open").strip().lower()
+            if status not in ("resolved", "completed", "failed", "closed"):
+                count += 1
+    return count
+
+
+def build_campaign_summary(
+    campaign_id: str,
+    snapshot: dict,
+    *,
+    last_played: float,
+    current: bool,
+    live: bool,
+) -> dict:
+    """Read-only picker card for one save/campaign.
+
+    This is intentionally derived from snapshot facts plus file recency only: no engine imports,
+    no campaign creation, and no writer-path assumptions. The dashboard uses it to answer
+    "which save is this?" before the player resumes or starts elsewhere.
+    """
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    party = _party_names(snapshot)
+    return {
+        "id": campaign_id,
+        "name": str(snapshot.get("title") or campaign_id),
+        "world": str(snapshot.get("world_id") or ""),
+        "day": snapshot.get("day"),
+        "time_of_day": str(snapshot.get("time_of_day") or ""),
+        "location": _display_location(snapshot),
+        "party": party,
+        "party_count": len(party),
+        "active_quest_count": _active_quest_count(snapshot),
+        "last_played": last_played,
+        "current": bool(current),
+        "live": bool(live),
+    }
+
+
 def _list_campaigns() -> list[dict]:
     """All projectable campaigns under the campaigns dir, newest-active first (#H3 switcher).
 
-    One entry per campaign: {id, name, day, last_played, current}. `current` marks the
-    one currently *attached* (_Handler.campaign_id). `name` is the snapshot's world title
-    (falling back to the dir id). Empty/unparseable snapshots are skipped — the SAME guard
-    _pick_campaign uses, so a half-written/`{}` snapshot never shows as a pickable game.
-    Sorted by recency descending. Pure reader: no writes, no engine import."""
+    One entry per campaign is a read-only save card with title, day, location, party, quest
+    count, live/current flags, and last-played recency. Empty/unparseable snapshots are
+    skipped — the SAME guard _pick_campaign uses, so a half-written/`{}` snapshot never
+    shows as a pickable game. Sorted by recency descending. Pure reader: no writes, no
+    engine import."""
     cdir = _campaigns_dir()
     out: list[dict] = []
     if not cdir.is_dir():
         return out
     attached = _Handler.campaign_id
+    now = time.time()
     for snap in cdir.glob("*/snapshot.json"):
         try:
             data = json.loads(snap.read_text(encoding="utf-8"))
@@ -262,13 +347,14 @@ def _list_campaigns() -> list[dict]:
         if not isinstance(data, dict) or not data:
             continue  # empty/`{}` snapshot — nothing to show (mirror _pick_campaign)
         cid = snap.parent.name
-        out.append({
-            "id": cid,
-            "name": str(data.get("title") or cid),
-            "day": data.get("day"),
-            "last_played": _campaign_recency(snap),
-            "current": cid == attached,
-        })
+        recency = _campaign_recency(snap)
+        out.append(build_campaign_summary(
+            cid,
+            data,
+            last_played=recency,
+            current=cid == attached,
+            live=(now - recency) < 90,
+        ))
     out.sort(key=lambda c: c["last_played"], reverse=True)
     return out
 
