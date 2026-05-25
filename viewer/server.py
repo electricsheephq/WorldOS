@@ -288,18 +288,141 @@ def _monitor_roots() -> list[tuple[str, Path]]:
     return roots
 
 
+_QA_STATUS_UNKNOWN = "UNKNOWN"
+_QA_STATUS_KEYS = ("status", "release", "fiction", "behavioral", "gate_status", "verdict")
+
+
+def _qa_transcripts_dir() -> Path:
+    return _HERE.parent / "qa" / "transcripts"
+
+
+def _qa_sidecar_paths(run: str) -> dict[str, Path]:
+    tdir = _qa_transcripts_dir()
+    return {
+        "mechanical": tdir / f"{run}.score.json",
+        "story": tdir / f"{run}.tolkien.json",
+        "behavioral_gate": tdir / f"{run}.gate.txt",
+        "fiction": tdir / f"{run}.fiction.json",
+        "release": tdir / f"{run}.release.json",
+    }
+
+
+def _qa_sidecar_signature(run: str) -> tuple[tuple[str, float], ...]:
+    """Small cache key for QA sidecars. The monitor polls often; sidecars can arrive after the
+    snapshot stops changing, so cache invalidation must include sidecar mtimes without reading
+    transcripts or any large run artifact."""
+    sig: list[tuple[str, float]] = []
+    for kind, p in _qa_sidecar_paths(run).items():
+        try:
+            sig.append((kind, p.stat().st_mtime))
+        except OSError:
+            sig.append((kind, 0.0))
+    return tuple(sig)
+
+
+def _qa_status(value: object) -> str:
+    s = str(value or "").strip().upper()
+    aliases = {
+        "OK": "PASS", "PASSED": "PASS", "READY": "PASS", "GREEN": "GREEN",
+        "FAILED": "FAIL", "BLOCKED": "FAIL", "RED": "RED",
+        "PENDING": "PENDING", "UNKNOWN": _QA_STATUS_UNKNOWN,
+    }
+    return aliases.get(s, s) if s else _QA_STATUS_UNKNOWN
+
+
+def _qa_status_from_json(data: dict, default: str = _QA_STATUS_UNKNOWN) -> str:
+    for key in _QA_STATUS_KEYS:
+        if key in data:
+            return _qa_status(data.get(key))
+    if isinstance(data.get("passed"), bool):
+        return "PASS" if data["passed"] else "FAIL"
+    if isinstance(data.get("ok"), bool):
+        return "PASS" if data["ok"] else "FAIL"
+    return default
+
+
+def _qa_blockers(data: dict) -> list[str]:
+    raw = data.get("blockers") or data.get("failures") or data.get("defects") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    out: list[str] = []
+    if isinstance(raw, list):
+        for item in raw[:8]:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict):
+                label = item.get("name") or item.get("id") or item.get("check") or item.get("title")
+                detail = item.get("evidence") or item.get("reason") or item.get("detail")
+                text = ": ".join(str(x) for x in (label, detail) if x)
+                if text:
+                    out.append(text)
+    return out
+
+
+def _read_json_sidecar(path: Path) -> tuple[dict, float]:
+    try:
+        mtime = path.stat().st_mtime
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}, 0.0
+    return (data, mtime) if isinstance(data, dict) else ({}, mtime)
+
+
+def _read_behavioral_gate(path: Path) -> tuple[str, float]:
+    try:
+        mtime = path.stat().st_mtime
+        txt = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return _QA_STATUS_UNKNOWN, 0.0
+    if "[FAIL]" in txt or "\nRED" in txt or txt.rstrip().endswith("RED"):
+        return "RED", mtime
+    if "[PASS]" in txt or "\nGREEN" in txt or txt.rstrip().endswith("GREEN"):
+        return "GREEN", mtime
+    return _QA_STATUS_UNKNOWN, mtime
+
+
 def _qa_scores(run: str) -> dict:
-    """The mechanical + story overall scores for a QA run, if its scorecards have been written
-    (post-play). Empty while the run is still playing. Read-only."""
-    out: dict = {}
-    tdir = _HERE.parent / "qa" / "transcripts"
-    for kind, fn in (("mechanical", f"{run}.score.json"), ("story", f"{run}.tolkien.json")):
-        p = tdir / fn
-        if p.exists():
-            try:
-                out[kind] = json.loads(p.read_text(encoding="utf-8")).get("overall")
-            except (json.JSONDecodeError, OSError):
-                pass
+    """Mechanical/story scores plus release-readiness statuses for a QA run. Missing readiness
+    sidecars are explicit UNKNOWN values, never treated as pass. Read-only and bounded to small
+    sidecar files; transcripts are not parsed on monitor polls."""
+    out: dict = {"behavioral": _QA_STATUS_UNKNOWN, "fiction": _QA_STATUS_UNKNOWN, "release": _QA_STATUS_UNKNOWN}
+    paths = _qa_sidecar_paths(run)
+    mechanical, _ = _read_json_sidecar(paths["mechanical"])
+    if mechanical:
+        out["mechanical"] = mechanical.get("overall")
+        out["behavioral"] = _qa_status_from_json(mechanical, out["behavioral"])
+    story, _ = _read_json_sidecar(paths["story"])
+    if story:
+        out["story"] = story.get("overall")
+    gate_status, _ = _read_behavioral_gate(paths["behavioral_gate"])
+    if gate_status != _QA_STATUS_UNKNOWN:
+        out["behavioral"] = gate_status
+    for kind in ("fiction", "release"):
+        data, _ = _read_json_sidecar(paths[kind])
+        if data:
+            out[kind] = _qa_status_from_json(data)
+    return out
+
+
+def _qa_release_readiness(run: str) -> dict:
+    paths = _qa_sidecar_paths(run)
+    out: dict = {"run_id": run, "blockers": []}
+    updated = 0.0
+    for p in paths.values():
+        try:
+            updated = max(updated, p.stat().st_mtime)
+        except OSError:
+            pass
+    release, _ = _read_json_sidecar(paths["release"])
+    fiction, _ = _read_json_sidecar(paths["fiction"])
+    blockers = _qa_blockers(release) + _qa_blockers(fiction)
+    if blockers:
+        out["blockers"] = blockers
+    cell = release.get("release_cell") or release.get("cell") or release.get("matrix_cell")
+    if cell:
+        out["release_cell"] = str(cell)
+    if updated:
+        out["readiness_updated_at"] = updated
     return out
 
 
@@ -366,6 +489,7 @@ def _monitor_card(label: str, snap: Path, data: dict) -> dict:
     if label.startswith("qa:"):
         run = label.split("qa:", 1)[1]
         card["scores"] = _qa_scores(run)
+        card.update(_qa_release_readiness(run))
         # a distilled transcript exists once the run finished playing -> the card becomes a
         # link to read the full story (the monitor's "jump in to give feedback" affordance).
         card["transcript"] = (_HERE.parent / "qa" / "transcripts" / f"{run}.md").is_file()
@@ -378,7 +502,7 @@ def _monitor_card(label: str, snap: Path, data: dict) -> dict:
 # grows linearly with QA runs. Cache the built card per snapshot path, keyed by its mtime
 # (save_campaign rewrites the snapshot on every mutation, so mtime bumps exactly when a campaign
 # advances). On a hit we skip the read/parse/glob and only refresh the time-relative `live` flag.
-_monitor_card_cache: dict[str, tuple[float, dict]] = {}
+_monitor_card_cache: dict[str, tuple[object, dict]] = {}
 
 
 def _monitor_campaigns() -> list[dict]:
@@ -397,8 +521,11 @@ def _monitor_campaigns() -> list[dict]:
             except OSError:
                 continue
             seen.add(key)
+            sig: object = mtime
+            if label.startswith("qa:"):
+                sig = (mtime, _qa_sidecar_signature(label.split("qa:", 1)[1]))
             cached = _monitor_card_cache.get(key)
-            if cached and cached[0] == mtime:
+            if cached and cached[0] == sig:
                 card = dict(cached[1])  # reuse the parsed card; only `live` is recomputed below
             else:
                 try:
@@ -411,7 +538,7 @@ def _monitor_campaigns() -> list[dict]:
                     card = _monitor_card(label, snap, data)
                 except (OSError, TypeError, ValueError):
                     continue  # one malformed campaign must never blank the whole monitor
-                _monitor_card_cache[key] = (mtime, dict(card))
+                _monitor_card_cache[key] = (sig, dict(card))
             card["live"] = (now - card.get("updated_at", 0)) < 90  # time-relative → always fresh
             cards.append(card)
     # Drop cache entries for snapshots that vanished (a deleted QA run) so it can't grow unbounded.
