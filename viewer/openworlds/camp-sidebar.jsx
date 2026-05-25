@@ -13,6 +13,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   const [recipe, setRecipe] = React.useState("hearty");
   const [healing, setHealing] = React.useState("spells");
   const [draggingHero, setDraggingHero] = React.useState(null);
+  const talkHero = talkPartner ? party.find((p) => p.id === talkPartner) : null;
 
   // Get the special-roles cards for any companion not assigned to a primary role
   const assignedIds = new Set(Object.values(roles).filter(Boolean));
@@ -243,7 +244,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       </Panel>
 
       {/* Inline conversation panel */}
-      {talkPartner && <TalkPanel hero={party.find((p) => p.id === talkPartner)} onClose={() => onTalk(null)} />}
+      {talkHero && <TalkPanel hero={talkHero} onClose={() => onTalk(null)} />}
 
       {/* Begin resting */}
       <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
@@ -478,6 +479,7 @@ function CampRadio({ value, onChange, options }) {
 }
 
 function TalkPanel({ hero, onClose }) {
+  if (!hero) return null;
   const conv = TALK_PROMPTS[hero.id] || TALK_PROMPTS._default;
   const [reply, setReply] = React.useState(null);
 

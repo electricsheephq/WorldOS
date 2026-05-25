@@ -275,8 +275,9 @@ function Slider({ label, value, onChange, min = 0, max = 100, unit = "" }) {
 }
 
 function Toggle({ label, value, onChange }) {
+  const checked = Boolean(value);
   return (
-    <button onClick={() => onChange && onChange(!value)} style={{
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange && onChange(!checked)} style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
       width: "100%",
       padding: "10px 0",
@@ -288,8 +289,8 @@ function Toggle({ label, value, onChange }) {
       <span className="body" style={{ color: "var(--ink-800)" }}>{label}</span>
       <span style={{
         width: 44, height: 22,
-        background: value ? "linear-gradient(180deg, var(--b-200), var(--b-500))" : "rgba(0,0,0,0.18)",
-        boxShadow: value
+        background: checked ? "linear-gradient(180deg, var(--b-200), var(--b-500))" : "rgba(0,0,0,0.18)",
+        boxShadow: checked
           ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.5)"
           : "inset 0 0 0 1px rgba(80,50,20,0.45)",
         position: "relative",
@@ -297,9 +298,9 @@ function Toggle({ label, value, onChange }) {
         transition: "all 180ms",
       }}>
         <span style={{
-          position: "absolute", top: 2, left: value ? 24 : 2,
+          position: "absolute", top: 2, left: checked ? 24 : 2,
           width: 18, height: 18, borderRadius: "50%",
-          background: value
+          background: checked
             ? "radial-gradient(circle at 30% 30%, var(--p-100), var(--p-400))"
             : "radial-gradient(circle at 30% 30%, var(--p-200), var(--ink-600))",
           boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.6), 0 1px 2px rgba(0,0,0,0.3)",

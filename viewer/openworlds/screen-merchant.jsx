@@ -227,7 +227,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             </span>
           </div>
           <BrassButton onClick={() => {
-            setCoins({ ...coins, gp: coins.gp + balanceDelta });
+            setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
             setCart([]);
           }} style={{ width: "100%" }} disabled={cart.length === 0 || coins.gp + balanceDelta < 0}>
             {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"}

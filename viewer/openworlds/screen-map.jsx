@@ -8,6 +8,16 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
   const [talkPartner, setTalkPartner] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
 
+  React.useEffect(() => {
+    if (locations.length === 0) {
+      if (selected) setSelected(null);
+      return;
+    }
+    if (!selected || !locations.find((l) => l.id === selected.id)) {
+      setSelected(locations.find((l) => l.current) || locations[0] || null);
+    }
+  }, [locations, selected?.id]);
+
   const beginRest = () => {
     toast({ kind: "rest", eyebrow: "Long rest", title: "The camp settles", body: "10 hours pass. Wounds knit. Spells return. The road is patient." });
     setCampMode && setCampMode(false);
