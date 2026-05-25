@@ -225,9 +225,15 @@ def tick_strategic(campaign: Campaign) -> list[dict]:
     This mutates only ``campaign.strategic_state`` and deterministic campaign fields named by
     project effects. The guard is day-based: if ``campaign.day <= last_tick_day`` it is a no-op,
     so repeated ``world_tick`` calls on the same day never double-progress or spam events.
-    Narrative ``Consequence`` records are deliberately untouched."""
+    Narrative ``Consequence`` records are deliberately untouched. Legacy/manual snapshots
+    may deserialize strategic boards without a cursor; initialize those on first tick rather
+    than retroactively advancing from day 0."""
     st = campaign.strategic_state
     last_day = st.last_tick_day
+    if last_day <= 0:
+        st.last_tick_day = campaign.day
+        return []
+
     elapsed = campaign.day - last_day
     if elapsed <= 0:
         return []

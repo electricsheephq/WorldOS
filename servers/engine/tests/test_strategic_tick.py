@@ -72,6 +72,39 @@ def test_strategic_clock_cadence_survives_daily_ticks():
     assert c.strategic_state.clocks["clock-slow"].progress == 1
 
 
+def test_legacy_strategic_board_initializes_tick_cursor_without_catchup():
+    c = _camp(day=10)
+    c.strategic_state.clocks["clock-threat"] = StrategicClock(
+        id="clock-threat",
+        title="Rivals gather leverage",
+        progress=0,
+        target=3,
+        tick_every_days=1,
+    )
+    c.strategic_state.projects["proj-quay"] = DowntimeProject(
+        id="proj-quay",
+        title="Repair the quay",
+        kind="construction",
+        status="active",
+        progress_days=0,
+        duration_days=2,
+        effect={"flag": "quay_repaired"},
+    )
+
+    assert c.strategic_state.last_tick_day == 0
+    assert worldsim.tick_strategic(c) == []
+    assert c.strategic_state.last_tick_day == 10
+    assert c.strategic_state.clocks["clock-threat"].progress == 0
+    assert c.strategic_state.projects["proj-quay"].progress_days == 0
+    assert "quay_repaired" not in c.flags
+
+    c.day = 11
+    events = worldsim.tick_strategic(c)
+    assert {e["type"] for e in events} == {"clock_advanced", "project_advanced"}
+    assert c.strategic_state.clocks["clock-threat"].progress == 1
+    assert c.strategic_state.projects["proj-quay"].progress_days == 1
+
+
 def test_world_tick_surfaces_strategic_events_without_firing_narrative_consequences(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     c = _camp(day=2)
