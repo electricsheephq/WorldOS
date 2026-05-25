@@ -114,6 +114,7 @@ def test_provider_contract_smoke_appends_one_legal_move_and_summary(tmp_path):
 
 def test_provider_contract_smoke_rejects_non_temp_move_path_without_override(tmp_path):
     moves = ROOT / "play-state" / "provider-contract-smoke-test.jsonl"
+    moves.unlink(missing_ok=True)
     result = _run(
         {
             "CLAWDND_PROVIDER": "openclaw",
@@ -122,7 +123,6 @@ def test_provider_contract_smoke_rejects_non_temp_move_path_without_override(tmp
             "CLAWDND_PLAY_PORT": "8765",
             "CLAWDND_PLAY_COMPANIONS": "",
             "CLAWDND_PLAYER_MOVES": str(moves),
-            "CLAWDND_PROVIDER_SMOKE_ALLOW_NON_TEMP": "1",
         }
     )
 
