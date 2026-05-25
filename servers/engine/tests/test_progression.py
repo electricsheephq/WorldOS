@@ -1,6 +1,7 @@
 import pytest
 
 import server
+import store
 import srd_tables
 
 
@@ -147,3 +148,139 @@ def test_multiclass_prereq_enforced():
                                      abilities={"intelligence": 16, "dexterity": 14})["id"]
     res = server.level_up(cid, nimble, "Fighter")
     assert any(cl["name"].lower() == "fighter" for cl in res["classes"])
+
+
+def _campaign_snapshot(campaign_id: str) -> dict:
+    return store.load_campaign(campaign_id).model_dump(mode="json")
+
+
+def test_preview_level_up_reports_features_and_hp_without_mutating():
+    cid = server.create_campaign("Preview")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=4,
+        apply_srd_defaults=True,
+        abilities={"constitution": 12, "strength": 16},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    out = server.preview_level_up(cid, fid, "Fighter", hp_method="average")
+
+    assert out["ok"] is True
+    assert out["character_id"] == fid
+    assert out["from"]["total_level"] == 4
+    assert out["to"]["total_level"] == 5
+    assert out["from"]["class_level"] == 4
+    assert out["to"]["class_level"] == 5
+    assert out["hp_gain"] == 7  # average d10 (6) + CON +1
+    assert any(f["name"] == "Extra Attack" for f in out["features_gained"])
+    assert out["choice_requirements"] == []
+    assert out["errors"] == []
+    assert _campaign_snapshot(cid) == before
+
+
+def test_preview_level_up_reports_spell_slot_and_resource_deltas_without_mutating():
+    cid = server.create_campaign("Preview deltas")["id"]
+    wid = server.create_character(
+        cid,
+        "Gale",
+        kind="player",
+        class_name="Wizard",
+        level=2,
+        apply_srd_defaults=True,
+        abilities={"intelligence": 16, "constitution": 12},
+    )["id"]
+    mid = server.create_character(
+        cid,
+        "Kira",
+        kind="player",
+        class_name="Monk",
+        level=1,
+        apply_srd_defaults=True,
+        abilities={"dexterity": 16, "wisdom": 14, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    wizard = server.preview_level_up(cid, wid, "Wizard")
+    monk = server.preview_level_up(cid, mid, "Monk")
+
+    assert wizard["spell_slot_deltas"]["2"] == {"from_max": 0, "to_max": 2, "delta": 2}
+    assert monk["resource_deltas"]["ki"] == {
+        "from_max": 0,
+        "to_max": 2,
+        "delta": 2,
+        "recharge": "short",
+    }
+    assert _campaign_snapshot(cid) == before
+
+
+def test_preview_level_up_reports_asi_or_feat_requirement_and_feat_house_rule_error():
+    cid = server.create_campaign("Preview choices")["id"]
+    fid = server.create_character(
+        cid,
+        "Aria",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    server.set_house_rules(cid, {"feats_allowed": False})
+    before = _campaign_snapshot(cid)
+
+    out = server.preview_level_up(cid, fid, "Fighter", feat="Lucky")
+
+    assert out["ok"] is False
+    assert out["choice_requirements"] == [
+        {"type": "asi_or_feat", "class_name": "fighter", "class_level": 4}
+    ]
+    assert "feats are disabled by campaign house rules" in out["errors"]
+    assert _campaign_snapshot(cid) == before
+
+
+def test_preview_level_up_rejects_invalid_asi_payloads_without_mutating():
+    cid = server.create_campaign("Preview invalid ASI")["id"]
+    fid = server.create_character(
+        cid,
+        "Aria",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 12, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    unknown = server.preview_level_up(cid, fid, "Fighter", asi={"strength": 1, "luck": 1})
+    over_budget = server.preview_level_up(cid, fid, "Fighter", asi={"strength": 2, "dexterity": 2})
+
+    assert unknown["ok"] is False
+    assert "unknown ability 'luck' in asi" in unknown["errors"]
+    assert unknown["applied_choice"] is None
+    assert over_budget["ok"] is False
+    assert "asi must be +2 to one ability or +1 to two abilities" in over_budget["errors"]
+    assert over_budget["applied_choice"] is None
+    assert _campaign_snapshot(cid) == before
+
+
+def test_preview_level_up_reports_multiclass_house_rule_error_without_mutating():
+    cid = server.create_campaign("Preview multiclass")["id"]
+    wid = server.create_character(
+        cid,
+        "Gale",
+        kind="player",
+        class_name="Wizard",
+        apply_srd_defaults=True,
+        abilities={"intelligence": 16, "strength": 10, "dexterity": 14},
+    )["id"]
+    server.set_house_rules(cid, {"multiclass_allowed": False})
+    before = _campaign_snapshot(cid)
+
+    out = server.preview_level_up(cid, wid, "Fighter")
+
+    assert out["ok"] is False
+    assert "multiclassing is disabled by campaign house rules" in out["errors"]
+    assert _campaign_snapshot(cid) == before

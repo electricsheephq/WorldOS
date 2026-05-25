@@ -2633,6 +2633,200 @@ def level_up(
         return sheet
 
 
+def _spell_slot_maxes(ch: Character) -> dict[int, int]:
+    return {int(level): slot.maximum for level, slot in ch.spell_slots.items()}
+
+
+def _spell_slot_deltas(before: Character, after: Character) -> dict[str, dict]:
+    before_max = _spell_slot_maxes(before)
+    after_max = _spell_slot_maxes(after)
+    deltas: dict[str, dict] = {}
+    for level in sorted(set(before_max) | set(after_max)):
+        old = before_max.get(level, 0)
+        new = after_max.get(level, 0)
+        if old != new:
+            deltas[str(level)] = {"from_max": old, "to_max": new, "delta": new - old}
+    return deltas
+
+
+def _resource_deltas(before: Character, after: Character) -> dict[str, dict]:
+    deltas: dict[str, dict] = {}
+    for rid in sorted(set(before.class_resources) | set(after.class_resources)):
+        old = before.class_resources.get(rid)
+        new = after.class_resources.get(rid)
+        old_max = old.max if old else 0
+        new_max = new.max if new else 0
+        if old_max != new_max:
+            res = new or old
+            deltas[rid] = {
+                "from_max": old_max,
+                "to_max": new_max,
+                "delta": new_max - old_max,
+                "recharge": res.recharge if res else "none",
+            }
+    return deltas
+
+
+@mcp.tool()
+def preview_level_up(
+    campaign_id: str,
+    character_id: str,
+    class_name: str,
+    hp_method: str = "average",
+    hp_roll: Optional[int] = None,
+    subclass: Optional[str] = None,
+    asi: Optional[dict] = None,
+    feat: Optional[str] = None,
+    seed: Optional[int] = None,
+) -> dict:
+    """Preview a level-up without writing campaign state.
+
+    Returns the requested class/level transition, HP gain, class features,
+    spell-slot and class-resource max deltas, required ASI/feat choices, and any
+    rule errors. This intentionally clones the persisted character and never
+    calls save_campaign, so the engine remains the sole writer for real level-ups.
+    """
+    c = _require(campaign_id)
+    original = _char(c, character_id)
+    before = Character.model_validate(original.model_dump(mode="json"))
+    preview = Character.model_validate(original.model_dump(mode="json"))
+    cname = class_name.lower()
+    errors: list[str] = []
+    choice_requirements: list[dict] = []
+    applied = None
+
+    try:
+        srd_tables.class_data(cname)
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "character_id": character_id,
+            "class_name": class_name,
+            "from": {"total_level": before.total_level, "class_level": 0, "class_name": cname},
+            "to": {"total_level": before.total_level, "class_level": 0, "class_name": cname},
+            "hp_gain": None,
+            "features_gained": [],
+            "spell_slot_deltas": {},
+            "resource_deltas": {},
+            "choice_requirements": [],
+            "errors": [str(exc)],
+        }
+
+    existing = next((cl for cl in preview.classes if cl.name.lower() == cname), None)
+    from_class_level = existing.level if existing else 0
+    multiclass = existing is None and bool(preview.classes)
+    if multiclass:
+        if not c.house_rules.multiclass_allowed:
+            errors.append("multiclassing is disabled by campaign house rules")
+        if not _meets_prereq(preview, cname):
+            errors.append(f"does not meet the multiclass prerequisite for {class_name}")
+
+    die = srd_tables.hit_die(cname)
+    con = preview.ability_modifier(Ability.CON)
+    if hp_method == "roll":
+        base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
+    else:
+        base = srd_tables.average_hp(die)
+    gain = max(1, base + con)
+
+    if existing:
+        existing.level += 1
+        if subclass:
+            existing.subclass = subclass
+        new_class_level = existing.level
+    else:
+        preview.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
+        new_class_level = 1
+
+    preview.max_hp += gain
+    preview.current_hp += gain
+    preview.hit_dice_remaining += 1
+    if len({cl.name.lower() for cl in preview.classes}) == 1:
+        preview.hit_dice = f"{sum(cl.level for cl in preview.classes)}d{die}"
+
+    if srd_tables.is_asi_level(cname, new_class_level):
+        choice_requirements.append(
+            {"type": "asi_or_feat", "class_name": cname, "class_level": new_class_level}
+        )
+        if asi and feat:
+            errors.append("choose either asi or feat, not both")
+        elif asi:
+            pending: dict[str, int] = {}
+            total_inc = 0
+            valid_asi = True
+            for ability, raw_inc in asi.items():
+                if ability not in _AB3_TO_FULL.values():
+                    errors.append(f"unknown ability {ability!r} in asi")
+                    valid_asi = False
+                    continue
+                try:
+                    inc = int(raw_inc)
+                except (TypeError, ValueError):
+                    errors.append(f"invalid ASI increment {raw_inc!r} for {ability!r}")
+                    valid_asi = False
+                    continue
+                pending[ability] = pending.get(ability, 0) + inc
+                total_inc += inc
+            if valid_asi and (
+                len(pending) > 2
+                or total_inc != 2
+                or any(inc < 1 or inc > 2 for inc in pending.values())
+            ):
+                errors.append("asi must be +2 to one ability or +1 to two abilities")
+                valid_asi = False
+            if valid_asi:
+                for ability, inc in pending.items():
+                    setattr(preview.abilities, ability, min(20, getattr(preview.abilities, ability) + inc))
+                applied = {"asi": pending}
+        elif feat:
+            if not c.house_rules.feats_allowed:
+                errors.append("feats are disabled by campaign house rules")
+            else:
+                applied = {"feat": feat}
+    elif asi or feat:
+        errors.append(f"{class_name} level {new_class_level} does not grant an ASI or feat choice")
+
+    preview.proficiency_bonus = srd_tables.proficiency_bonus(preview.total_level)
+    preview.initiative_bonus = preview.ability_modifier(Ability.DEX)
+    _recompute_spellcasting(preview)
+    _recompute_class_resources(preview)
+
+    gained = srd_tables.features_at(cname, new_class_level)
+    for f in gained:
+        if f["name"] not in preview.features:
+            preview.features.append(f["name"])
+        if "extra_attacks" in f:
+            preview.extra_attacks = max(preview.extra_attacks, int(f["extra_attacks"]))
+        if f.get("sneak_attack_dice"):
+            preview.sneak_attack_dice = f["sneak_attack_dice"]
+
+    return {
+        "ok": not errors,
+        "character_id": character_id,
+        "character_name": original.name,
+        "class_name": cname,
+        "multiclass": multiclass,
+        "from": {
+            "total_level": before.total_level,
+            "class_level": from_class_level,
+            "class_name": cname,
+        },
+        "to": {
+            "total_level": preview.total_level,
+            "class_level": new_class_level,
+            "class_name": cname,
+        },
+        "hp_gain": gain,
+        "hp_method": hp_method,
+        "features_gained": gained,
+        "spell_slot_deltas": _spell_slot_deltas(before, preview),
+        "resource_deltas": _resource_deltas(before, preview),
+        "choice_requirements": choice_requirements,
+        "applied_choice": applied,
+        "errors": errors,
+    }
+
+
 @mcp.tool()
 def spell_save_dc(campaign_id: str, character_id: str) -> dict:
     """Return a caster's spell save DC (8 + proficiency + casting modifier) and
