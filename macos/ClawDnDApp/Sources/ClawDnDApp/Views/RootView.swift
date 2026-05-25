@@ -20,19 +20,35 @@ struct RootView: View {
     @State private var webURL: URL?
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(selection: $selection)
-        } detail: {
+        ZStack {
+            OpenWorldsWindowBackground()
             VStack(spacing: 0) {
-                detailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                StatusStrip(repoPath: repoPath, stateDir: stateDir)
-                    .environmentObject(processService)
+                OpenWorldsTitleBar(
+                    campaign: currentCampaign?.title ?? "No Chronicle Selected",
+                    location: (selection ?? .play).title,
+                    day: currentCampaign?.dayLabel ?? "local"
+                )
+                HStack(spacing: 0) {
+                    SidebarView(selection: $selection)
+                    VStack(spacing: 0) {
+                        detailView
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        StatusStrip(repoPath: repoPath, stateDir: stateDir)
+                            .environmentObject(processService)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: OpenWorldsTheme.panelRadius))
+                }
             }
+            .padding(14)
         }
+        .frame(minWidth: 1120, minHeight: 720)
         .onAppear(perform: refresh)
         .onChange(of: repoPath) { _ in refresh() }
+    }
+
+    private var currentCampaign: CampaignSummary? {
+        campaignStore.campaigns.first { $0.id == processService.activeCampaignID }
+            ?? campaignStore.campaigns.first
     }
 
     @ViewBuilder
@@ -103,17 +119,102 @@ struct SidebarView: View {
     @Binding var selection: AppSection?
 
     var body: some View {
-        List(AppSection.allCases, selection: $selection) { section in
-            Label(section.title, systemImage: section.symbolName)
-                .tag(section)
-        }
-        .navigationSplitViewColumnWidth(min: 180, ideal: 210)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("ClawDnD")
-                    .font(.headline)
+        VStack(spacing: 12) {
+            ForEach(AppSection.allCases) { section in
+                Button {
+                    selection = section
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: section.symbolName)
+                            .font(.system(size: 20, weight: .medium))
+                        Text(section.title)
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    .frame(width: 58, height: 58)
+                    .foregroundStyle(selection == section ? OpenWorldsTheme.ink800 : OpenWorldsTheme.brass200)
+                    .background(selection == section ? OpenWorldsTheme.brass100.opacity(0.86) : OpenWorldsTheme.walnut100.opacity(0.58))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(selection == section ? OpenWorldsTheme.brass300 : OpenWorldsTheme.brass600.opacity(0.5), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(section.title)
+                .accessibilityLabel(section.title)
+                .accessibilityValue(selection == section ? "Selected" : "Not selected")
             }
+            Spacer(minLength: 12)
         }
+        .padding(.vertical, 12)
+        .frame(width: OpenWorldsTheme.railWidth)
+        .background(
+            LinearGradient(
+                colors: [OpenWorldsTheme.walnut300, OpenWorldsTheme.walnut400],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(OpenWorldsTheme.brass600.opacity(0.52))
+                .frame(width: 1)
+        }
+    }
+}
+
+struct OpenWorldsTitleBar: View {
+    let campaign: String
+    let location: String
+    let day: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 7) {
+                statusJewel(OpenWorldsTheme.crimson)
+                statusJewel(OpenWorldsTheme.brass300)
+                statusJewel(OpenWorldsTheme.emerald)
+            }
+            .accessibilityHidden(true)
+
+            Spacer()
+            Text("CLAWDND")
+                .font(.caption.weight(.bold))
+                .tracking(4)
+                .foregroundStyle(OpenWorldsTheme.brass100)
+            Text("·")
+                .foregroundStyle(OpenWorldsTheme.brass300)
+            Text(campaign)
+                .font(.caption.weight(.semibold))
+                .tracking(2)
+                .lineLimit(1)
+                .foregroundStyle(OpenWorldsTheme.brass200)
+            Text("·")
+                .foregroundStyle(OpenWorldsTheme.brass300)
+            Text(location)
+                .font(.caption.weight(.semibold))
+                .tracking(2)
+                .lineLimit(1)
+                .foregroundStyle(OpenWorldsTheme.brass100)
+            Spacer()
+
+            Text(day)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(OpenWorldsTheme.brass200)
+                .lineLimit(1)
+                .frame(width: 130, alignment: .trailing)
+        }
+        .frame(height: 38)
+        .padding(.horizontal, 16)
+    }
+
+    private func statusJewel(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 12, height: 12)
+            .overlay(Circle().stroke(.black.opacity(0.45), lineWidth: 1))
+            .shadow(color: color.opacity(0.35), radius: 2)
     }
 }
 
@@ -139,7 +240,13 @@ struct StatusStrip: View {
         .font(.caption)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.bar)
+        .foregroundStyle(OpenWorldsTheme.ink700)
+        .background(OpenWorldsTheme.parchment200)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(OpenWorldsTheme.parchmentEdge.opacity(0.35))
+                .frame(height: 1)
+        }
     }
 
     private func statusItem(_ label: String, _ value: String) -> some View {

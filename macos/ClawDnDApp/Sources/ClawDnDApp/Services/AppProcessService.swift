@@ -103,6 +103,7 @@ final class AppProcessService: ObservableObject {
             endpoint.status = .stopped
             viewerEndpoint = endpoint
         }
+        activeCampaignID = nil
     }
 
     func startProviderSession(
