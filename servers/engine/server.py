@@ -862,9 +862,7 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             dev = worldsim.tick_backlog(c, max_events=1)
             if dev:
                 result["world_developments"] = [_backlog_line(d) for d in dev]
-            strategic = worldsim.tick_strategic(c) if c.day > before_day else []
-            if strategic:
-                result["strategic_events"] = strategic
+            result["strategic_events"] = worldsim.tick_strategic(c) if c.day > before_day else []
             # A phase elapsed (overland travel): expire timed spell effects whose
             # duration ran out (minute/round-scale die on any phase advance).
             result["expired_effects"] = _expire_clock_effects_all(c)

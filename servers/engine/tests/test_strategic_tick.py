@@ -180,3 +180,19 @@ def test_day_rolling_travel_to_advances_strategic_projects(tmp_path, monkeypatch
     assert out["day"] == 2
     assert any(e["type"] == "project_complete" for e in out["strategic_events"])
     assert store.load_campaign(c.id).strategic_state.projects["proj-watch"].status == "complete"
+
+
+def test_day_rolling_travel_to_returns_empty_strategic_events_when_none_fire(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    c = _camp(day=1)
+    c.time_of_day = "night"
+    c.current_location_id = "loc-a"
+    c.locations = {
+        "loc-a": Location(id="loc-a", name="A", connections=["loc-b"], visited=True),
+        "loc-b": Location(id="loc-b", name="B", connections=["loc-a"]),
+    }
+    store.save_campaign(c)
+
+    out = server.travel_to(c.id, "loc-b", advance_time=True)
+    assert out["day"] == 2
+    assert out["strategic_events"] == []
