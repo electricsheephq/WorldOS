@@ -204,6 +204,95 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertFalse(by_id["qa:wave3-red:camp_qa"]["canResume"])
         self.assertEqual(by_id["qa:wave3-red:camp_qa"]["monitorUrl"], "/monitor")
 
+    def test_session_surface_route_projects_selected_campaign_safely(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_table"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_table",
+                "title": "Table Save",
+                "summary": "A quiet table scene.",
+                "world_id": "baldurs-gate",
+                "current_location_id": "lower-city",
+                "locations": {
+                    "lower-city": {
+                        "name": "Lower City",
+                        "description": "Cobbles shine after rain.",
+                        "notes": "private route note",
+                    },
+                },
+                "party": ["hero"],
+                "characters": {
+                    "hero": {
+                        "id": "hero",
+                        "name": "Tav",
+                        "kind": "player",
+                        "current_hp": 12,
+                        "max_hp": 20,
+                        "notes": "private character note",
+                    },
+                },
+                "dm_notes": "hidden route agenda",
+            },
+        )
+
+        status, ctype, body = self._get("/session-surface?campaign=camp_table")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_table")
+        self.assertEqual(surface["state_authority"], "engine")
+        self.assertEqual(surface["write_lane"], "/move")
+        self.assertEqual(surface["title"], "Table Save")
+        self.assertEqual(surface["location"]["name"], "Lower City")
+        self.assertEqual(surface["party"][0]["name"], "Tav")
+        encoded = json.dumps(surface)
+        self.assertNotIn("private route", encoded)
+        self.assertNotIn("private character", encoded)
+        self.assertNotIn("hidden route", encoded)
+        self.assert_no_private_keys(surface)
+
+    def test_session_surface_route_projects_catalog_run_read_only(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        qa_campaign = repo_root / "qa" / "state" / "wave3-red" / "campaigns" / "camp_qa"
+        self._write_snapshot(
+            qa_campaign,
+            {
+                "id": "camp_qa",
+                "title": "QA Table Save",
+                "summary": "A QA-only session surface.",
+                "world_id": "baldurs-gate",
+                "current_location_id": "qa-location",
+                "locations": {"qa-location": {"name": "QA Location"}},
+                "party": ["hero"],
+                "characters": {"hero": {"id": "hero", "name": "QA Tav", "kind": "player"}},
+            },
+        )
+        self._write_snapshot(
+            self._tmp / "campaigns" / "camp_live",
+            {
+                "id": "camp_live",
+                "title": "Live Table Save",
+                "party": [],
+                "characters": {},
+            },
+        )
+        _QuietHandler.campaign_id = "camp_live"
+
+        status, _ctype, body = self._get("/session-surface?source=qa&run=wave3-red&campaign=camp_qa")
+
+        self.assertEqual(status, 200)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_qa")
+        self.assertEqual(surface["title"], "QA Table Save")
+        self.assertEqual(surface["location"]["name"], "QA Location")
+        self.assertEqual(surface["party"][0]["name"], "QA Tav")
+        self.assertFalse(surface["can_act"])
+        self.assertFalse(surface["is_live_view"])
+
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
         (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")

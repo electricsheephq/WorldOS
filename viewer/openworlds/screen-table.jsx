@@ -1,42 +1,158 @@
 /* Screen: Campaign Table — live session: scene art + party + GM narration + actions */
 
 function ScreenTable({ onNavigate, state, setState }) {
-  const party = Array.isArray(state?.party) ? state.party : [];
-  const quests = Array.isArray(state?.quests) ? state.quests : [];
-  const stash = Array.isArray(state?.stash) ? state.stash : [];
-  const [log, setLog] = React.useState(Array.isArray(state?.tableLog) ? state.tableLog : []);
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const activeCampaign =
+    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns[0] ||
+    {};
+  const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
+  const [surface, setSurface] = React.useState(null);
+  const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
+  const demoLog = Array.isArray(state?.tableLog) ? state.tableLog : [];
+  const [log, setLog] = React.useState([]);
   const [input, setInput] = React.useState("");
-  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const logRef = React.useRef(null);
+  const inputRef = React.useRef(null);
   const toast = window.useToast ? window.useToast() : (() => {});
+  const fallbackParty = Array.isArray(state?.party) ? state.party : [];
+  const party = Array.isArray(surface?.party) && surface.party.length ? surface.party : fallbackParty;
+  const quests = Array.isArray(surface?.activeQuests) ? surface.activeQuests : (Array.isArray(state?.quests) ? state.quests : []);
+  const stash = Array.isArray(surface?.quickInventory) ? surface.quickInventory : (Array.isArray(state?.stash) ? state.stash : []);
+  const conditions = Array.isArray(surface?.conditions) ? surface.conditions : [];
+  const recentEvents = Array.isArray(surface?.recentEvents) ? surface.recentEvents : [];
+  const actions = Array.isArray(surface?.availableActions) ? surface.availableActions : [];
+  const roundOrder = Array.isArray(surface?.roundOrder) ? surface.roundOrder : [];
+  const scene = surface?.scene || {};
+  const encounter = surface?.encounter || {};
+  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
+  const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
+  const canAct = Boolean(surface?.can_act);
+  const readOnlyReason = actions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
+  const visibleLog = surface ? [...recentEvents, ...log] : [...demoLog, ...log];
+  const actionById = (id) => actions.find((a) => a.id === id);
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    const params = new URLSearchParams();
+    if (campaignId) params.set("campaign", campaignId);
+    if (activeCampaign.source) params.set("source", activeCampaign.source);
+    if (activeCampaign.runId) params.set("run", activeCampaign.runId);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    try {
+      const response = await fetch(`/session-surface${query}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`session surface ${response.status}`);
+      const payload = await response.json();
+      if (isCancelled()) return;
+      setSurface(payload);
+      setSurfaceStatus("ready");
+    } catch (error) {
+      if (isCancelled()) return;
+      setSurfaceStatus(error?.message || "unavailable");
+    }
+  }, [campaignId, activeCampaign.source, activeCampaign.runId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => {
+      if (cancelled) return;
+      await loadSurface(() => cancelled);
+    };
+    const stopPolling = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const startPolling = () => {
+      if (timer === null) {
+        timer = window.setInterval(guardedLoad, 5000);
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        guardedLoad();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => {
+      cancelled = true;
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadSurface]);
+
+  React.useEffect(() => {
+    if (!party.some((p) => p.id === activeHero)) {
+      setActiveHero(party[0]?.id || "");
+    }
+  }, [party, activeHero]);
 
   React.useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [log]);
+  }, [visibleLog]);
 
-  const sendAction = () => {
-    if (!input.trim()) return;
-    setLog((l) => [
-      ...l,
-      { kind: "action", who: hero.name, text: input },
-      { kind: "narration", text: synthNarration(input, hero) },
-    ]);
+  const postMove = async (move, label) => {
+    if (!move || !canAct) {
+      toast({ kind: "danger", title: "Action unavailable", body: readOnlyReason });
+      return;
+    }
+    const text = label || move.text || move.name || "declares an action";
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...move, campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      setLog((l) => [...l, { kind: "action", who: hero.name, text }]);
+      loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
+    }
+  };
+
+  const sendAction = async () => {
+    const text = input.trim();
+    if (!text) return;
+    const action = actionById("do");
+    if (!action?.available) {
+      toast({ kind: "danger", title: "Declare is unavailable", body: action?.disabled_reason || readOnlyReason });
+      return;
+    }
+    await postMove({ kind: "do", text }, text);
     setInput("");
   };
 
-  const roll = (sides = 20) => {
-    const r = 1 + Math.floor(Math.random() * sides);
-    setLog((l) => [
-      ...l,
-      { kind: "roll", who: hero.name, sides, text: `rolls d${sides}: ${r}${r === sides ? " — natural!" : ""}` },
-    ]);
-    toast({
-      eyebrow: `d${sides}`,
-      title: hero.name + " rolls " + r,
-      body: r === sides ? "A natural — the chronicle leans forward." : r === 1 ? "A one. The chronicle leans the other way." : null,
-      kind: r === sides ? "level" : r === 1 ? "danger" : undefined,
-    });
+  const requestRoll = (sides = 20) => {
+    const action = actionById("check");
+    if (!action?.available) {
+      toast({ kind: "danger", title: `d${sides} unavailable`, body: action?.disabled_reason || readOnlyReason });
+      return;
+    }
+    postMove({ kind: "check", name: `d${sides}`, text: `roll d${sides}` }, `requests a d${sides} roll`);
+  };
+
+  const invokeAction = (action) => {
+    if (!action?.available) {
+      toast({ kind: "danger", title: action?.label || "Action unavailable", body: action?.disabled_reason || readOnlyReason });
+      return;
+    }
+    if (action.ui) {
+      inputRef.current?.focus();
+      return;
+    }
+    if (action.move) {
+      postMove(action.move, action.label);
+    }
   };
 
   return (
@@ -45,26 +161,26 @@ function ScreenTable({ onNavigate, state, setState }) {
       {/* LEFT — Party roster */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
         <Panel framed style={{ padding: 18, flex: "0 0 auto" }}>
-          <div className="eyebrow" style={{ color: "var(--crimson)" }}>Round IV · Initiative</div>
+          <div className="eyebrow" style={{ color: "var(--crimson)" }}>{encounter.active ? encounter.summary : "Session"}</div>
           <SectionTitle>The Party</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {party.map((p) => (
+            {party.length ? party.map((p) => (
               <PartyRow
                 key={p.id}
                 p={p}
                 active={activeHero === p.id}
                 onClick={() => setActiveHero(p.id)}
               />
-            ))}
+            )) : <div className="body-sm muted">No party members in the current read model.</div>}
           </div>
         </Panel>
 
         <Panel framed style={{ padding: 18, flex: "1 1 auto", minHeight: 0, overflow: "auto" }}>
           <SectionTitle>Conditions</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <ConditionRow icon="✦" name="Blessed" who="Cassian" detail="+1 attacks · 3 rounds" />
-            <ConditionRow icon="◆" name="Shaken" who="Mira" detail="-2 saves · until camp" tone="crimson" />
-            <ConditionRow icon="◈" name="Inspired" who="Vell" detail="re-roll one d20" tone="royal" />
+            {conditions.length ? conditions.map((c) => (
+              <ConditionRow key={c.id || `${c.name}:${c.who}`} icon={c.icon || "◆"} name={c.name} who={c.who} detail={c.detail} tone={c.tone} />
+            )) : <div className="body-sm muted">No active party conditions.</div>}
           </div>
         </Panel>
       </div>
@@ -74,7 +190,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         {/* Scene plate */}
         <div style={{ position: "relative", flex: "0 0 auto" }}>
           <Placeholder
-            label="scene · isometric · Lanternrest courtyard · dusk · 7 figures"
+            label={`scene · ${scene.caption || surface?.location?.name || activeCampaign.title || "Open Worlds"}`}
             h={260}
             framed
             style={{ width: "100%" }}
@@ -87,9 +203,9 @@ function ScreenTable({ onNavigate, state, setState }) {
             pointerEvents: "none",
           }}>
             <div>
-              <Pill tone="royal" dot>Day 12 · Dusk</Pill>
+              <Pill tone="royal" dot>{surface?.dayLabel || activeCampaign.day || "Unknown time"}</Pill>
               <div className="hand" style={{ marginTop: 6, color: "var(--p-100)", fontSize: 16, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
-                The Lanternrest stands silent. A crow sits the gable, watching.
+                {scene.summary || activeCampaign.recap || "The table is waiting for a campaign snapshot."}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, pointerEvents: "auto" }}>
@@ -102,11 +218,11 @@ function ScreenTable({ onNavigate, state, setState }) {
 
         {/* Log */}
         <Panel framed style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", minHeight: 0, padding: 22 }}>
-          <SectionTitle ordinal="·" right={<Pill>AI GM · Listening</Pill>}>The Tabletop Chronicle</SectionTitle>
+          <SectionTitle ordinal="·" right={<Pill>{canAct ? "AI GM · Listening" : surfaceStatus === "ready" ? "Read Only" : "Loading"}</Pill>}>The Tabletop Chronicle</SectionTitle>
           <div ref={logRef} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
-            {log.map((entry, i) => (
+            {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={i} entry={entry} />
-            ))}
+            )) : <div className="body-sm muted">No recent table events have been written yet.</div>}
           </div>
 
           {/* Action bar */}
@@ -117,20 +233,21 @@ function ScreenTable({ onNavigate, state, setState }) {
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
-              <button onClick={() => roll(20)} className="btn ghost sm">d20</button>
-              <button onClick={() => roll(12)} className="btn ghost sm">d12</button>
-              <button onClick={() => roll(8)} className="btn ghost sm">d8</button>
-              <button onClick={() => roll(6)} className="btn ghost sm">d6</button>
+              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}>d20</button>
+              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}>d12</button>
+              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}>d8</button>
+              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}>d6</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendAction()}
-                placeholder="Describe what your hero does…"
+                placeholder={canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16 }}
               />
-              <BrassButton onClick={sendAction}>Declare</BrassButton>
+              <BrassButton onClick={sendAction} disabled={!actionById("do")?.available}>Declare</BrassButton>
             </div>
           </div>
         </Panel>
@@ -141,7 +258,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Active Quests</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {quests.filter((q) => q.status === "active").map((q) => (
+            {visibleQuests.map((q) => (
               <button key={q.id} onClick={() => onNavigate("journal")} style={{
                 textAlign: "left",
                 padding: "10px 12px",
@@ -158,6 +275,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 <div className="hand" style={{ fontSize: 13, color: "var(--ink-600)", marginTop: 2 }}>{q.objective}</div>
               </button>
             ))}
+            {!visibleQuests.length && <div className="body-sm muted">No active quests in the current read model.</div>}
           </div>
         </Panel>
 
@@ -167,27 +285,32 @@ function ScreenTable({ onNavigate, state, setState }) {
             {stash.slice(0, 8).map((it) => (
               <IconPlate key={it.id} size={48} label={it.glyph} framed />
             ))}
+            {!stash.length && <div className="body-sm muted" style={{ gridColumn: "1 / -1" }}>No quick inventory items.</div>}
           </div>
           <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between" }}>
-            <Stat label="Coin" value="232 gp" />
-            <Stat label="Fate" value="3" />
+            <Stat label="Items" value={stash.length} />
+            <Stat label="Live" value={canAct ? "yes" : "no"} />
           </div>
         </Panel>
 
         <Panel framed style={{ padding: 18, flex: 1, minHeight: 0, overflow: "auto" }}>
           <SectionTitle>Encounter</SectionTitle>
           <div className="body-sm muted" style={{ marginBottom: 10 }}>
-            The Lanternrest waits. Choose what to risk.
+            {encounter.summary || scene.summary || "Choose what to risk."}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <EncounterButton icon="◈" label="Approach the door" detail="Mira leads · Stealth DC 14" tone=""
-              onClick={() => toast({ kind: "quest", title: "Mira approaches the door", body: "Stealth check: 18 — silent." })} />
-            <EncounterButton icon="✦" label="Light the lantern" detail="Cassian, 1 ritual" tone="royal"
-              onClick={() => toast({ kind: "item", title: "The lantern is lit", body: "For the first time in seven years. Something inside the inn registers it." })} />
-            <EncounterButton icon="◆" label="Speak aloud" detail="Persuasion · invites response" tone=""
-              onClick={() => toast({ title: "You call out", body: "Silence answers. Then a single floorboard." })} />
-            <EncounterButton icon="▲" label="Force the door" detail="Vell · loud · -1 reputation" tone="crimson"
-              onClick={() => toast({ kind: "danger", title: "Vell hits the door", body: "It opens. -1 with the Road Wardens of Restov." })} />
+            {actions.slice(0, 6).map((a) => (
+              <EncounterButton
+                key={`${a.group}:${a.id}`}
+                icon={a.available ? "◈" : "◆"}
+                label={a.label}
+                detail={a.available ? a.groupLabel : a.disabled_reason}
+                tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
+                disabled={!a.available}
+                onClick={() => invokeAction(a)}
+              />
+            ))}
+            {!actions.length && <div className="body-sm muted">No actions are available until a campaign snapshot loads.</div>}
           </div>
 
           <div className="divider" style={{ margin: "14px 0" }}>
@@ -196,14 +319,8 @@ function ScreenTable({ onNavigate, state, setState }) {
 
           <SectionTitle>Round Order</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {[
-              { name: "Mira", init: 19, active: true },
-              { name: "Cassian", init: 14 },
-              { name: "The Crow", init: 11, foe: true },
-              { name: "Vell", init: 9 },
-              { name: "Linzi", init: 6 },
-            ].map((t) => (
-              <div key={t.name} style={{
+            {roundOrder.length ? roundOrder.map((t, i) => (
+              <div key={t.id || t.name || `round-${i}`} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "6px 10px",
                 background: t.active ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
@@ -217,7 +334,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 </div>
                 <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)" }}>{t.init}</span>
               </div>
-            ))}
+            )) : <div className="body-sm muted">No active combat round.</div>}
           </div>
         </Panel>
       </div>
@@ -226,7 +343,9 @@ function ScreenTable({ onNavigate, state, setState }) {
 }
 
 function PartyRow({ p, active, onClick }) {
-  const hpRatio = p.hp / p.hpMax;
+  const hp = Number.isFinite(Number(p.hp)) ? Number(p.hp) : 1;
+  const hpMax = Number.isFinite(Number(p.hpMax)) && Number(p.hpMax) > 0 ? Number(p.hpMax) : 1;
+  const hpRatio = Math.max(0, Math.min(1, hp / hpMax));
   return (
     <button onClick={onClick} style={{
       display: "grid", gridTemplateColumns: "44px 1fr", gap: 10, alignItems: "center",
@@ -254,7 +373,7 @@ function PartyRow({ p, active, onClick }) {
               background: hpRatio > 0.5 ? "linear-gradient(180deg, #5a8a3a, #3a6020)" : "linear-gradient(180deg, var(--crimson), #4a1010)",
             }} />
           </div>
-          <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-700)" }}>{p.hp}/{p.hpMax}</span>
+          <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-700)" }}>{hp}/{hpMax}</span>
         </div>
       </div>
     </button>
@@ -281,6 +400,7 @@ function ConditionRow({ icon, name, who, detail, tone }) {
 }
 
 function LogEntry({ entry }) {
+  const kind = entry.kind || "narration";
   if (entry.kind === "narration") {
     return (
       <div style={{ margin: "14px 0", display: "flex", gap: 12 }}>
@@ -326,22 +446,19 @@ function LogEntry({ entry }) {
       </div>
     );
   }
-  return null;
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)" }}>
+        {entry.label || kind}
+      </span>
+      <span className="body" style={{ marginLeft: 8, color: "var(--ink-800)" }}>{entry.text || entry.detail}</span>
+    </div>
+  );
 }
 
-function synthNarration(action, hero) {
-  const lines = [
-    `${hero.name} steps forward; the dust pauses where their boot lands. The world holds its breath for the length of a stanza.`,
-    `A floorboard answers somewhere within the Lanternrest. The crow does not move. A faint smell of beeswax and old iron crosses the threshold.`,
-    `The chronicle records: ${action.toLowerCase()}. A success — but the room is now aware of you.`,
-    `Roll persuasion, or let silence keep its grip on the door a moment longer.`,
-  ];
-  return lines[Math.floor(Math.random() * lines.length)];
-}
+Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry });
 
-Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, synthNarration });
-
-function EncounterButton({ icon, label, detail, tone, onClick }) {
+function EncounterButton({ icon, label, detail, tone, onClick, disabled }) {
   return (
     <button onClick={onClick} style={{
       display: "grid", gridTemplateColumns: "24px 1fr", gap: 8, alignItems: "center",
@@ -349,14 +466,18 @@ function EncounterButton({ icon, label, detail, tone, onClick }) {
       padding: "8px 10px",
       background: "rgba(176,141,87,0.08)",
       boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
-      cursor: "pointer",
+      cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? 0.62 : 1,
       transition: "all 140ms",
     }}
+    disabled={disabled}
     onMouseEnter={(e) => {
+      if (disabled) return;
       e.currentTarget.style.background = "linear-gradient(180deg, var(--p-100), var(--p-200))";
       e.currentTarget.style.boxShadow = "inset 0 0 0 1px var(--b-500), 0 0 16px -6px var(--gold-glow)";
     }}
     onMouseLeave={(e) => {
+      if (disabled) return;
       e.currentTarget.style.background = "rgba(176,141,87,0.08)";
       e.currentTarget.style.boxShadow = "inset 0 0 0 1px rgba(140,100,60,0.3)";
     }}>
