@@ -16,6 +16,13 @@ def _action(model, group_id, action_id):
 
 
 class ActionModelTests(unittest.TestCase):
+    def test_action_model_treats_viewer_only_empty_state_as_no_campaign(self):
+        raw_model = server.build_action_model({}, live=True, is_live_view=True)
+
+        self.assertIsNone(raw_model["actor"])
+        self.assertEqual(_action(raw_model, "exploration", "continue")["disabled_reason"], "no active campaign")
+        self.assertEqual(_action(raw_model, "combat", "attack")["disabled_reason"], "no active campaign")
+
     def test_action_model_disables_exploration_without_live_move_sink(self):
         snapshot = {
             "title": "Cellar Rats",

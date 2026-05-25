@@ -1294,18 +1294,19 @@ class _Handler(BaseHTTPRequestHandler):
                     "action_model": build_action_model({}, live=live, is_live_view=False),
                 })
                 return
-            snap = _read_snapshot(cid)
-            if not isinstance(snap, dict):
-                snap = {}
+            raw_snap = _read_snapshot(cid)
+            if not isinstance(raw_snap, dict):
+                raw_snap = {}
             live = _live_play()
             is_live_view = live and cid == self.campaign_id
-            snap["combat_view"] = build_combat_view(snap)
+            snap = dict(raw_snap)
+            snap["combat_view"] = build_combat_view(raw_snap)
             snap["live"] = live
             # is_live_view: the move sink (CLAWDND_PLAYER_MOVES) belongs to the ATTACHED campaign;
             # a move only makes sense when the VIEWED campaign IS that one. The dashboard grays the
             # palette when this is false, so the switcher can't send moves to the wrong run (#49).
             snap["is_live_view"] = is_live_view
-            snap["action_model"] = build_action_model(snap, live=live, is_live_view=is_live_view)
+            snap["action_model"] = build_action_model(raw_snap, live=live, is_live_view=is_live_view)
             self._json(snap)
         elif route == "/config":
             self._json(_viewer_config())
