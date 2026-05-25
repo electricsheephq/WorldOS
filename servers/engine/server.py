@@ -93,6 +93,32 @@ def _char(c: Campaign, character_id: str) -> Character:
     return ch
 
 
+_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+
+
+def _combatant_ref(ch: Character) -> dict:
+    return {"id": ch.id, "name": ch.name}
+
+
+def _log_session_entry(
+    c: Campaign,
+    *,
+    kind: str,
+    text: str,
+    speaker: str = "",
+    payload: Optional[dict] = None,
+) -> SessionLogEntry:
+    sid = _ensure_session(c)
+    entry = SessionLogEntry(kind=kind, text=text, speaker=speaker or None, payload=payload)
+    append_log(c.id, sid, entry)
+    return entry
+
+
+def _log_combat_event(c: Campaign, text: str, payload: dict, speaker: str = "") -> None:
+    payload.setdefault("schema", _COMBAT_EVENT_SCHEMA)
+    _log_session_entry(c, kind="combat", text=text, speaker=speaker, payload=payload)
+
+
 def _backlog_line(item: BacklogItem) -> str:
     """The DM-facing one-liner for a fired proactive-backlog development — what the world did
     off-screen, for the DM to weave into the scene (a crier's notice, a changed face, a door now
@@ -1830,6 +1856,22 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
               if c.characters.get(cid) is not None and int(getattr(c.characters[cid], "extra_attacks", 0)) > 0]
         if ea:
             view["extra_attack_reminder"] = ea
+        ordered = [
+            {
+                "id": cb.character_id,
+                "name": c.characters[cb.character_id].name,
+                "initiative": cb.initiative,
+            }
+            for cb in c.combat.order
+            if cb.character_id in c.characters
+        ]
+        names = ", ".join(item["name"] for item in ordered)
+        _log_combat_event(
+            c,
+            f"Combat begins: {names}.",
+            {"event": "combat_start", "round": c.combat.round, "combatants": ordered},
+        )
+        save_campaign(c)
         return view
 
 
@@ -2259,6 +2301,38 @@ def attack(
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
+        outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
+        if hit and result["damage"]:
+            dtype = f" {damage_type}" if damage_type else ""
+            text = (
+                f"{attacker.name} critically hits {target.name} for "
+                f"{result['damage']['total']}{dtype} damage."
+                if is_crit
+                else f"{attacker.name} hits {target.name} for {result['damage']['total']}{dtype} damage."
+            )
+        else:
+            text = f"{attacker.name} misses {target.name}."
+        _log_combat_event(
+            c,
+            text,
+            {
+                "event": "attack",
+                "outcome": outcome_label,
+                "actor": _combatant_ref(attacker),
+                "target": {**_combatant_ref(target), "ac": target.armor_class},
+                "roll": {
+                    "total": atk.total,
+                    "natural": atk.natural,
+                    "detail": atk.detail,
+                    "attack_bonus": attack_bonus,
+                    "advantage": adv,
+                    "disadvantage": dis,
+                },
+                "damage": result["damage"],
+                "target_state": result.get("target_state"),
+            },
+            speaker=attacker.name,
+        )
         # Persist regardless of hit/miss: a miss still consumed the action/reaction
         # economy above, and that bookkeeping must survive (sole-writer discipline).
         save_campaign(c)
@@ -2283,6 +2357,21 @@ def apply_damage(
         kx = _award_kill_xp(c, target)
         if kx:
             out["kill_xp"] = kx
+        dtype = f" {damage_type}" if damage_type else ""
+        _log_combat_event(
+            c,
+            f"{target.name} takes {out.get('damage_to_hp', 0)}{dtype} damage.",
+            {
+                "event": "damage",
+                "target": _combatant_ref(target),
+                "amount": amount,
+                "damage_type": damage_type,
+                "crit": crit,
+                "half": half,
+                "result": out,
+            },
+            speaker=target.name,
+        )
         save_campaign(c)
         return out
 
@@ -2293,7 +2382,19 @@ def apply_healing(campaign_id: str, target_id: str, amount: int) -> dict:
     and resets death saves. Cannot revive the dead."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        out = combat.apply_healing(_char(c, target_id), amount)
+        target = _char(c, target_id)
+        out = combat.apply_healing(target, amount)
+        _log_combat_event(
+            c,
+            f"{target.name} regains {out.get('healed', 0)} hit points.",
+            {
+                "event": "healing",
+                "target": _combatant_ref(target),
+                "amount": amount,
+                "result": out,
+            },
+            speaker=target.name,
+        )
         save_campaign(c)
         return out
 
@@ -2421,6 +2522,7 @@ def end_combat(campaign_id: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result: dict = {"active": False}
+        was_active = c.combat.active
         # Backstop sweep: award XP for any dead monsters still in the order that weren't
         # caught by the kill-time _award_kill_xp calls (their xp_value is already 0 in
         # the normal case — so this loop is mostly a no-op after kill-time awarding). It
@@ -2438,6 +2540,22 @@ def end_combat(campaign_id: str) -> dict:
             if all_total > 0:
                 result["xp_awarded"] = all_total
                 result["grants"] = all_grants
+        if was_active or c.combat.order:
+            ended_order = [
+                _combatant_ref(c.characters[cb.character_id])
+                for cb in c.combat.order
+                if cb.character_id in c.characters
+            ]
+            _log_combat_event(
+                c,
+                "Combat ends.",
+                {
+                    "event": "combat_end",
+                    "round": c.combat.round,
+                    "combatants": ended_order,
+                    "xp_awarded": result.get("xp_awarded", 0),
+                },
+            )
         c.combat = Combat()
         save_campaign(c)
         return result
@@ -3877,17 +3995,15 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
 
 
 @mcp.tool()
-def log_event(campaign_id: str, kind: str, text: str, speaker: str = "") -> dict:
+def log_event(campaign_id: str, kind: str, text: str, speaker: str = "", payload: Optional[dict] = None) -> dict:
     """Record a story beat in the current session log (kind: narration | dialogue
     | roll | system | combat). Auto-starts a session if none is active. Powers
     recaps and post-compaction recovery."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        sid = _ensure_session(c)
+        entry = _log_session_entry(c, kind=kind, text=text, speaker=speaker, payload=payload)
         save_campaign(c)
-        entry = SessionLogEntry(kind=kind, text=text, speaker=speaker or None)
-        append_log(campaign_id, sid, entry)
-        return {"session_id": sid, "logged": entry.model_dump()}
+        return {"session_id": c.active_session_id, "logged": entry.model_dump()}
 
 
 @mcp.tool()

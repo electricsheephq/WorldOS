@@ -2,6 +2,7 @@
 
 import pytest
 
+from models import SessionLogEntry
 import server
 import store
 
@@ -36,6 +37,13 @@ def test_log_event_autostarts_and_tracks_session(cid):
     camp = store.load_campaign(cid)
     assert camp.active_session_id is not None
     assert camp.session_ids == [camp.active_session_id]  # tracked in history
+
+
+def test_plain_session_log_entry_parses_without_payload():
+    entry = SessionLogEntry.model_validate(
+        {"kind": "combat", "text": "They felled the skeleton guardians."}
+    )
+    assert entry.payload is None
 
 
 def test_session_recap_falls_back_to_last_after_end(cid):
