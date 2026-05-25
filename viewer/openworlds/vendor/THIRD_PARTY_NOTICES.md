@@ -34,14 +34,15 @@ project-level `THIRD_PARTY_NOTICES.md` record why the local copy is bundled.
 
 - CSS: `google-fonts.css`
 - Font families:
-  - Cinzel
-  - Cormorant Garamond
-  - IM Fell English
-  - JetBrains Mono
-- Source: Google Fonts CSS generated from the prototype's declared font URL.
-- License: Google Fonts families are published under open font licenses. Keep
-  these files local to preserve packaged-app fidelity and avoid runtime network
-  calls.
+  - Cinzel - OFL - `https://github.com/NDISCOVER/Cinzel`
+  - Cormorant Garamond - OFL - `https://github.com/CatharsisFonts/Cormorant`
+  - IM Fell English - OFL - `https://github.com/librefonts/imfellenglish`
+  - JetBrains Mono - OFL - `https://github.com/JetBrains/JetBrainsMono`
+- Source: Google Fonts CSS generated from the prototype's declared font URL,
+  with font files stored locally under `fonts/`.
+- License: The listed font families are published under the SIL Open Font
+  License. Keep these files local to preserve packaged-app fidelity and avoid
+  runtime network calls.
 
 Release hardening may replace the development UMD/Babel runtime with a compiled
 bundle, but the packaged app must remain network-independent.

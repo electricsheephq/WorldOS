@@ -1,13 +1,14 @@
 /* Screen: Launcher / Worlds — campaign selection + new campaign */
 
 function ScreenLauncher({ onNavigate, state, setState }) {
-  const [selected, setSelected] = React.useState(state.activeCampaign || "odrun");
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
 
-  const campaigns = state.campaigns;
-
   const onResume = () => {
-    setState((s) => ({ ...s, activeCampaign: selected }));
+    const nextCampaign = selected || campaigns[0]?.id;
+    if (!nextCampaign) return;
+    setState((s) => ({ ...s, activeCampaign: nextCampaign }));
     onNavigate("table");
   };
 
@@ -96,6 +97,15 @@ function ScreenLauncher({ onNavigate, state, setState }) {
         <Panel framed style={{ padding: 0, overflow: "hidden" }}>
           {(() => {
             const c = campaigns.find((x) => x.id === selected) || campaigns[0];
+            if (!c) {
+              return (
+                <div style={{ padding: 28 }}>
+                  <SectionTitle>No chronicles</SectionTitle>
+                  <div className="hand muted">Begin a new chronicle to fill this shelf.</div>
+                </div>
+              );
+            }
+            const party = Array.isArray(c.party) ? c.party : [];
             return (
               <div>
                 {/* Top vignette with overlaid label */}
@@ -136,7 +146,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                     {[
                       { label: "Last sat", value: c.lastPlayed },
                       { label: "Sessions", value: c.sessions },
-                      { label: "Heroes", value: c.party.length },
+                      { label: "Heroes", value: party.length },
                       { label: "Region", value: c.region },
                     ].map((s, i) => (
                       <div key={s.label} style={{
@@ -155,8 +165,8 @@ function ScreenLauncher({ onNavigate, state, setState }) {
 
                   {/* Party row */}
                   <SectionTitle>The Party</SectionTitle>
-                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${c.party.length}, 1fr)`, gap: 8 }}>
-                    {c.party.map((p, i) => (
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(party.length, 1)}, 1fr)`, gap: 8 }}>
+                    {party.map((p, i) => (
                       <div key={i} style={{ textAlign: "center" }}>
                         <Placeholder label={p.short || "portrait"} w="100%" h={70} framed />
                         <div className="hand" style={{ fontSize: 12, marginTop: 4, color: "var(--ink-700)" }}>{p.name}</div>
@@ -195,7 +205,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
       </div>
 
       {showNew && <NewCampaignModal onClose={() => setShowNew(false)} onCreate={(c) => {
-        setState((s) => ({ ...s, campaigns: [c, ...s.campaigns], activeCampaign: c.id }));
+        setState((s) => ({ ...s, campaigns: [c, ...(Array.isArray(s.campaigns) ? s.campaigns : [])], activeCampaign: c.id }));
         setShowNew(false);
         onNavigate("table");
       }} />}

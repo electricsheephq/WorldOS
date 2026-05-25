@@ -1,6 +1,7 @@
 /* Screen: Forge — item & spell crafting */
 
 function ScreenForge({ onNavigate, state, setState }) {
+  const party = Array.isArray(state?.party) ? state.party : [];
   const [category, setCategory] = React.useState("smith");
   const [selected, setSelected] = React.useState(RECIPES_LIST[0]);
   const [crafter, setCrafter] = React.useState("vell");
@@ -12,11 +13,12 @@ function ScreenForge({ onNavigate, state, setState }) {
   const toast = window.useToast ? window.useToast() : (() => {});
 
   const recipes = RECIPES_LIST.filter((r) => r.category === category);
-  const hero = state.party.find((p) => p.id === crafter);
-  const skillBonus = selected ? (CRAFTER_SKILL[hero.id]?.[selected.skill] ?? 4) : 0;
+  const hero = party.find((p) => p.id === crafter) || party[0];
+  const skillBonus = selected && hero ? (CRAFTER_SKILL[hero.id]?.[selected.skill] ?? 4) : 0;
   const successChance = selected ? Math.max(5, Math.min(95, (skillBonus - selected.dc + 20) * 5)) : 0;
 
   const craft = () => {
+    if (!hero || !selected) return;
     const roll = 1 + Math.floor(Math.random() * 20);
     const total = roll + skillBonus;
     const success = total >= selected.dc;
@@ -142,7 +144,7 @@ function ScreenForge({ onNavigate, state, setState }) {
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <SectionTitle>Hands at the bench</SectionTitle>
         <div style={{ display: "flex", gap: 6 }}>
-          {state.party.map((p) => (
+          {party.map((p) => (
             <button key={p.id} onClick={() => setCrafter(p.id)} style={{
               flex: 1,
               padding: 4,
@@ -156,7 +158,7 @@ function ScreenForge({ onNavigate, state, setState }) {
           ))}
         </div>
 
-        {selected && !selected.locked && (
+        {selected && !selected.locked && hero && (
           <>
             <Divider />
 

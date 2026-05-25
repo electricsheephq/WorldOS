@@ -4,6 +4,7 @@ function ScreenDialogue({ onNavigate, state, setState }) {
   const [nodeId, setNodeId] = React.useState("start");
   const [history, setHistory] = React.useState([]);
   const node = DIALOGUE[nodeId];
+  const listener = (Array.isArray(state?.party) ? state.party : [])[0] || { short: "Hero", name: "Hero" };
 
   const choose = (choice) => {
     setHistory((h) => [...h, { node, choice }]);
@@ -143,9 +144,9 @@ function ScreenDialogue({ onNavigate, state, setState }) {
 
             {/* Listener (right) */}
             <div style={{ padding: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderLeft: "1px solid rgba(140,100,60,0.35)" }}>
-              <Placeholder label={state.party[0].short} w={120} h={150} framed />
+              <Placeholder label={listener.short} w={120} h={150} framed />
               <div style={{ marginTop: 8, fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)", textAlign: "center" }}>
-                {state.party[0].name}
+                {listener.name}
               </div>
               <div className="hand muted" style={{ fontSize: 12, textAlign: "center" }}>Player Hero</div>
             </div>

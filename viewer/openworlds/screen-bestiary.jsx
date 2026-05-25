@@ -9,10 +9,14 @@ function ScreenBestiary({ onNavigate, state, setState }) {
   const filtered = entries.filter((e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()));
 
   React.useEffect(() => {
-    if (filtered.length > 0 && !filtered.find((e) => e.id === selected?.id)) {
+    if (filtered.length === 0) {
+      if (selected) setSelected(null);
+      return;
+    }
+    if (!filtered.find((e) => e.id === selected?.id)) {
       setSelected(filtered[0]);
     }
-  }, [tab, filter]);
+  }, [filtered, selected?.id]);
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "280px 1fr", gap: 14, padding: 14 }}>

@@ -1,12 +1,27 @@
 /* Screen: Character Sheet — dense, codex/sourcebook style */
 
 function ScreenCharacter({ onNavigate, state, setState }) {
-  const [active, setActive] = React.useState(state.party[0].id);
+  const party = Array.isArray(state?.party) ? state.party : [];
+  const [active, setActive] = React.useState(() => party[0]?.id || "");
   const [tab, setTab] = React.useState("abilities");
   const [restOpen, setRestOpen] = React.useState(false);
   const toast = window.useToast ? window.useToast() : (() => {});
 
-  const hero = state.party.find((p) => p.id === active);
+  const hero = party.find((p) => p.id === active) || party[0];
+
+  React.useEffect(() => {
+    if (party.length > 0 && !party.find((p) => p.id === active)) {
+      setActive(party[0].id);
+    }
+  }, [party, active]);
+
+  if (!hero) {
+    return (
+      <div className="screen" style={{ height: "100%", padding: 14 }}>
+        <Panel framed><div className="muted">No heroes available.</div></Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "200px 1fr", gap: 14, padding: 14 }}>
@@ -14,7 +29,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
       {/* LEFT: party rail */}
       <Panel framed style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
         <SectionTitle>Roster</SectionTitle>
-        {state.party.map((p) => (
+        {party.map((p) => (
           <button key={p.id} onClick={() => setActive(p.id)} style={{
             display: "flex", gap: 8, alignItems: "center", padding: 6, cursor: "pointer",
             background: active === p.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
@@ -51,7 +66,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
 
         <div className="divider" style={{ margin: "12px 0" }}><div className="diamond"></div></div>
 
-        <BrassButton tone="dark" size="sm" onClick={() => onNavigate("map", { openCamp: true })} style={{ width: "100%" }}>
+        <BrassButton tone="dark" size="sm" onClick={() => setRestOpen(true)} style={{ width: "100%" }}>
           Rest & Prepare
         </BrassButton>
       </Panel>

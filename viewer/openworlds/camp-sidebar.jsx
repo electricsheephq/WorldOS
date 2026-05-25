@@ -1,6 +1,7 @@
 /* Camp Sidebar — Pathfinder Kingmaker-style party role assignment */
 
 function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
+  const party = Array.isArray(state?.party) ? state.party : [];
   // Role assignments (each portrait slot maps to a hero id, or null)
   const [roles, setRoles] = React.useState({
     hunting: "mira",
@@ -15,7 +16,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
 
   // Get the special-roles cards for any companion not assigned to a primary role
   const assignedIds = new Set(Object.values(roles).filter(Boolean));
-  const specialRoles = state.party
+  const specialRoles = party
     .filter((p) => !assignedIds.has(p.id))
     .map((p) => ({ hero: p, role: SPECIAL_ROLES[p.id] || { name: "Stand watch", detail: "Quiet hours." } }));
 
@@ -23,6 +24,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   const huntingHours = roles.hunting ? 2 : 0;
   const totalHours = 8 + huntingHours;
   const ration = (roles.hunting ? 0 : 5); // hunting → 0 needed; otherwise 5
+  const inPack = state?.rations ?? 6;
 
   const onDrop = (slot) => {
     if (!draggingHero) return;
@@ -65,9 +67,9 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <RationStat label="Needed" value={ration} />
-          <RationStat label="In pack" value={6} />
+          <RationStat label="In pack" value={inPack} />
         </div>
-        {ration > 6 && (
+        {ration > inPack && (
           <div className="hand" style={{ fontSize: 12, color: "var(--crimson)", marginTop: 6 }}>
             Hunting is required for a rest.
           </div>
@@ -96,7 +98,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           summary="Lore (Nature)"
           summaryValue="+6"
           detail={roles.hunting ? "Hunting will take 0–2 hours. You will recover 5 rations." : "No hunter. Rations from pack."}
-          hero={state.party.find((p) => p.id === roles.hunting)}
+          hero={party.find((p) => p.id === roles.hunting)}
           onDrop={() => onDrop("hunting")}
           onClear={() => clearSlot("hunting")}
           onDragOver={(e) => e.preventDefault()}
@@ -108,7 +110,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           summary="Stealth"
           summaryValue="+0"
           detail="Successful camouflage will reduce the probability of attack."
-          hero={state.party.find((p) => p.id === roles.camouflage)}
+          hero={party.find((p) => p.id === roles.camouflage)}
           onDrop={() => onDrop("camouflage")}
           onClear={() => clearSlot("camouflage")}
           onDragOver={(e) => e.preventDefault()}
@@ -125,7 +127,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
               <div className="hand muted" style={{ fontSize: 11, marginTop: 2 }}>{recipe ? RECIPES[recipe].bonus : ""}</div>
             </span>
           }
-          hero={state.party.find((p) => p.id === roles.cooking)}
+          hero={party.find((p) => p.id === roles.cooking)}
           onDrop={() => onDrop("cooking")}
           onClear={() => clearSlot("cooking")}
           onDragOver={(e) => e.preventDefault()}
@@ -163,7 +165,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <WatchSlot
             num="I"
-            hero={state.party.find((p) => p.id === roles.watch1)}
+            hero={party.find((p) => p.id === roles.watch1)}
             value="+8"
             onDrop={() => onDrop("watch1")}
             onClear={() => clearSlot("watch1")}
@@ -171,7 +173,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           />
           <WatchSlot
             num="II"
-            hero={state.party.find((p) => p.id === roles.watch2)}
+            hero={party.find((p) => p.id === roles.watch2)}
             value="+8"
             onDrop={() => onDrop("watch2")}
             onClear={() => clearSlot("watch2")}
@@ -189,7 +191,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           <span className="muted body-sm" style={{ fontSize: 10 }}>drag to assign</span>
         }>The Party</SectionTitle>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-          {state.party.map((p) => {
+          {party.map((p) => {
             const wantsToTalk = TALK_PROMPTS[p.id]?.openingPrompt;
             const isDragging = draggingHero === p.id;
             const isAssigned = assignedIds.has(p.id);
@@ -241,7 +243,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       </Panel>
 
       {/* Inline conversation panel */}
-      {talkPartner && <TalkPanel hero={state.party.find((p) => p.id === talkPartner)} onClose={() => onTalk(null)} />}
+      {talkPartner && <TalkPanel hero={party.find((p) => p.id === talkPartner)} onClose={() => onTalk(null)} />}
 
       {/* Begin resting */}
       <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>

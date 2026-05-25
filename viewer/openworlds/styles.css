@@ -57,7 +57,7 @@
 
   /* Type */
   --f-display: "Cinzel", "Cormorant SC", "Trajan Pro", serif;
-  --f-body: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --f-body: "Cormorant Garamond", "EB Garamond", georgia, serif;
   --f-hand: "IM Fell English", "IM Fell DW Pica", "Cormorant Garamond", serif;
   --f-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
 }
@@ -114,12 +114,18 @@ body {
     #0a0604;
   min-height: 100vh;
   overflow-x: hidden;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 a { color: inherit; text-decoration: none; cursor: pointer; }
+
+:where(button, a, .btn, .icon-btn, .nav-item):focus-visible {
+  outline: 2px solid var(--gold-glow);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(34, 48, 94, 0.45);
+}
 
 /* ===== Window frame: walnut + brass ===== */
 .window {
@@ -454,7 +460,7 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   content: "";
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, currentColor 30%, currentColor 70%, transparent);
+  background: linear-gradient(90deg, transparent, currentcolor 30%, currentcolor 70%, transparent);
 }
 .divider .diamond {
   width: 8px; height: 8px;
@@ -652,7 +658,7 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   content: "";
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: currentcolor;
   opacity: 0.7;
 }
 
@@ -726,9 +732,9 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
 
 /* ===== Modal-ish overlay & screen transitions ===== */
 .screen {
-  animation: pageIn 380ms ease both;
+  animation: page-in 380ms ease both;
 }
-@keyframes pageIn {
+@keyframes page-in {
   from { opacity: 0; transform: translateY(8px); filter: blur(1px); }
   to { opacity: 1; transform: none; filter: none; }
 }
@@ -745,14 +751,23 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   mix-blend-mode: screen;
 }
 
-@keyframes toastIn {
+@keyframes toast-in {
   from { opacity: 0; transform: translateX(40px); }
   to { opacity: 1; transform: none; }
 }
 
-@keyframes tooltipIn {
+@keyframes tooltip-in {
   from { opacity: 0; transform: translate(var(--tw-tx, 0), var(--tw-ty, -50%)) scale(0.95); }
   to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ===== Responsive collapse for narrow windows ===== */

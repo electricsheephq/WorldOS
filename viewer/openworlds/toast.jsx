@@ -45,7 +45,7 @@ function Toast({ toast }) {
       pointerEvents: "auto",
       background: "linear-gradient(180deg, var(--p-100), var(--p-300))",
       boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 12px 24px rgba(0,0,0,0.45)",
-      animation: "toastIn 280ms ease both",
+      animation: "toast-in 280ms ease both",
     }}>
       <div style={{
         width: 8,
@@ -80,12 +80,13 @@ function ContextMenu({ x, y, items, onClose }) {
   React.useEffect(() => {
     const close = () => onClose();
     const esc = (e) => e.key === "Escape" && onClose();
-    setTimeout(() => {
+    const timer = window.setTimeout(() => {
       window.addEventListener("click", close);
       window.addEventListener("contextmenu", close);
       window.addEventListener("keydown", esc);
     }, 0);
     return () => {
+      window.clearTimeout(timer);
       window.removeEventListener("click", close);
       window.removeEventListener("contextmenu", close);
       window.removeEventListener("keydown", esc);
@@ -103,7 +104,7 @@ function ContextMenu({ x, y, items, onClose }) {
         background: "linear-gradient(180deg, var(--p-100), var(--p-300))",
         boxShadow: "inset 0 0 0 1px var(--b-600), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 12px 28px rgba(0,0,0,0.5)",
         padding: 4,
-        animation: "tooltipIn 120ms ease both",
+        animation: "tooltip-in 120ms ease both",
       }}
     >
       {items.map((it, i) => {

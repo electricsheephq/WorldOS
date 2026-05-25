@@ -1,9 +1,15 @@
 /* Screen: Quest Journal — handwritten chronicle / two-page spread */
 
 function ScreenJournal({ onNavigate, state, setState }) {
-  const [activeQuest, setActiveQuest] = React.useState(state.quests[0].id);
+  const quests = Array.isArray(state?.quests) ? state.quests : [];
+  const [activeQuest, setActiveQuest] = React.useState(() => quests[0]?.id || "");
   const [tab, setTab] = React.useState("active");
-  const quest = state.quests.find((q) => q.id === activeQuest);
+  const quest = quests.find((q) => q.id === activeQuest) || quests[0] || {
+    label: "Empty",
+    title: "No quest selected",
+    entry: "No quests have been recorded yet.",
+    objectives: [],
+  };
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr", gap: 14, padding: 14 }}>
@@ -29,7 +35,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
         </div>
 
         <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-          {state.quests.filter((q) => {
+          {quests.filter((q) => {
             if (tab === "active") return q.status === "active";
             if (tab === "complete") return q.status === "complete";
             return q.status === "rumor";

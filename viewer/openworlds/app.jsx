@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 function App() {
-  const [state, setState] = React.useState(window.INITIAL_STATE);
+  const [state, setState] = React.useState(window.INITIAL_STATE || {});
   const [screen, setScreen] = React.useState("launcher");
   const [campMode, setCampMode] = React.useState(false);
   const [t, setTweak] = (window.useTweaks
@@ -21,7 +21,15 @@ function App() {
   // Keyboard shortcuts
   React.useEffect(() => {
     const onKey = (e) => {
-      if (e.target.matches("input, textarea")) return;
+      const target = e.target;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (
+        target instanceof Element &&
+        (target.closest("input, textarea, select, [contenteditable='true']") ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
       const map = {
         "t": "table",
         "x": "combat",
@@ -56,7 +64,11 @@ function App() {
     setScreen(id);
   };
 
-  const current = state.campaigns.find((c) => c.id === state.activeCampaign) || state.campaigns[0];
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const current =
+    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns[0] ||
+    { title: "Open Worlds", day: "" };
 
   return (
     <div className="window">

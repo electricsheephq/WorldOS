@@ -1,6 +1,7 @@
 /* Screen: Combat Encounter — tactical grid, initiative, action bar */
 
 function ScreenCombat({ onNavigate, state, setState }) {
+  const [tokens, setTokens] = React.useState(() => TOKENS.map((token) => ({ ...token })));
   const [selectedToken, setSelectedToken] = React.useState("cassian");
   const [activeAction, setActiveAction] = React.useState(null);
   const [round, setRound] = React.useState(2);
@@ -17,13 +18,13 @@ function ScreenCombat({ onNavigate, state, setState }) {
     { t: "act", who: "Bandit North", text: "advances. Shortbow at Vell. Misses (13 vs AC 18)." },
   ]);
 
-  const tokens = TOKENS;
-  const selected = tokens.find((t) => t.id === selectedToken);
+  const selected = tokens.find((t) => t.id === selectedToken) || tokens[0];
 
   const onMove = (gx, gy) => {
-    if (!activeAction || activeAction !== "move") return;
-    selected.x = gx;
-    selected.y = gy;
+    if (!selected || activeAction !== "move") return;
+    setTokens((current) =>
+      current.map((token) => token.id === selected.id ? { ...token, x: gx, y: gy } : token)
+    );
     setLog((l) => [...l, { t: "act", who: selected.name, text: `moves to ${String.fromCharCode(64 + gx)}${gy}.` }]);
     setAp({ ...ap, moveUsed: true });
     setActiveAction(null);
@@ -33,6 +34,7 @@ function ScreenCombat({ onNavigate, state, setState }) {
   const endTurn = () => {
     setRound(round + 1);
     setAp({ standardUsed: false, moveUsed: false, swiftUsed: false });
+    setActiveAction(null);
     toast({ eyebrow: "Round", title: "Round " + (round + 1) + " begins" });
   };
 

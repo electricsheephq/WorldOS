@@ -1,7 +1,9 @@
 /* Screen: World Map — hand-drawn cartography with location nodes */
 
 function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
-  const [selected, setSelected] = React.useState(state.locations.find((l) => l.current) || state.locations[0]);
+  const locations = Array.isArray(state?.locations) ? state.locations : [];
+  const party = Array.isArray(state?.party) ? state.party : [];
+  const [selected, setSelected] = React.useState(() => locations.find((l) => l.current) || locations[0] || null);
   const [time, setTime] = React.useState("dusk");
   const [talkPartner, setTalkPartner] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
@@ -104,9 +106,9 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
               <text x="800" y="450" textAnchor="middle" fontFamily="Cinzel" fontSize="18" fill="rgba(60, 30, 10, 0.3)" letterSpacing="3">Old Hills</text>
 
               {/* Roads/connections between locations */}
-              {state.locations.map((loc) =>
+              {locations.map((loc) =>
                 loc.connections?.map((cId) => {
-                  const target = state.locations.find((l) => l.id === cId);
+                  const target = locations.find((l) => l.id === cId);
                   if (!target) return null;
                   return (
                     <line key={`${loc.id}-${cId}`}
@@ -133,14 +135,14 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
             }} />
 
             {/* Location nodes */}
-            {state.locations.map((loc) => (
+            {locations.map((loc) => (
               <button
                 key={loc.id}
                 onClick={() => setSelected(loc)}
                 style={{
                   position: "absolute",
                   left: `${loc.x}%`,
-                  top: `${loc.y / 6 * 100}%`,
+                  top: `${loc.y}%`,
                   transform: "translate(-50%, -100%)",
                   background: "none",
                   cursor: "pointer",
@@ -163,7 +165,7 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
           zIndex: 3,
           flex: "0 0 auto",
         }}>
-          {state.party.map((p) => (
+          {party.map((p) => (
             <div key={p.id} style={{ width: 48, height: 48, position: "relative" }}>
               <Placeholder label={p.short} w="100%" h="100%" framed />
               <div style={{
@@ -227,7 +229,7 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
           <Panel framed style={{ padding: 22, flex: 1, overflow: "auto" }}>
             <SectionTitle>Discovered</SectionTitle>
             <div className="body-sm" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {state.locations.filter((l) => l.discovered).map((l) => (
+              {locations.filter((l) => l.discovered).map((l) => (
                 <button key={l.id} onClick={() => setSelected(l)} style={{
                   display: "flex", justifyContent: "space-between", textAlign: "left",
                   padding: "8px 12px", cursor: "pointer",
@@ -304,7 +306,7 @@ function LocationPin({ loc, selected, time }) {
           padding: 12,
           zIndex: 50,
           pointerEvents: "none",
-          animation: "tooltipIn 140ms ease both",
+          animation: "tooltip-in 140ms ease both",
         }}>
           <Placeholder label={loc.short || "vignette"} h={70} framed style={{ width: "100%" }} />
           <div className="eyebrow" style={{ color: "var(--crimson)", marginTop: 8, fontSize: 9 }}>

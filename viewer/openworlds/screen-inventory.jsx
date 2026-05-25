@@ -1,16 +1,25 @@
 /* Screen: Inventory & Stash */
 
 function ScreenInventory({ onNavigate, state, setState }) {
-  const [selectedItem, setSelectedItem] = React.useState(state.stash[3]);
+  const party = Array.isArray(state?.party) ? state.party : [];
+  const stash = Array.isArray(state?.stash) ? state.stash : [];
+  const [selectedItem, setSelectedItem] = React.useState(() => stash[3] || stash[0] || null);
   const [filter, setFilter] = React.useState("all");
-  const [activeHero, setActiveHero] = React.useState(state.party[0].id);
+  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const [ctxMenu, setCtxMenu] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
 
-  const hero = state.party.find((p) => p.id === activeHero);
+  const hero = party.find((p) => p.id === activeHero) || party[0] || {
+    name: "Hero",
+    short: "Hero",
+    alignment: "Unaligned",
+    level: 1,
+    class: "Adventurer",
+    equipped: [],
+  };
   const filtered = filter === "all"
-    ? state.stash
-    : state.stash.filter((i) => i.type === filter);
+    ? stash
+    : stash.filter((i) => i.type === filter);
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr 320px", gap: 14, padding: 14 }}>
@@ -130,7 +139,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
         </div>
 
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span className="muted body-sm">{filtered.length} items · {state.stash.length} total</span>
+          <span className="muted body-sm">{filtered.length} items · {stash.length} total</span>
           <div style={{ display: "flex", gap: 6 }}>
             <BrassButton tone="ghost" size="sm">Sort</BrassButton>
             <BrassButton tone="ghost" size="sm">Mark Trash</BrassButton>

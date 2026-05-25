@@ -8,11 +8,15 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
 
-  const merchant = MERCHANTS.find((m) => m.id === merchantId);
-  const cartTotal = cart.reduce((s, i) => s + i.price, 0);
-  const adjustedTotal = Math.round(cartTotal * (1 - haggle / 100));
+  const stash = Array.isArray(state?.stash) ? state.stash : [];
+  const merchant = MERCHANTS.find((m) => m.id === merchantId) || MERCHANTS[0];
+  const buyTotal = cart.reduce((s, i) => s + (i.mode === "buy" ? i.price : 0), 0);
+  const sellTotal = cart.reduce((s, i) => s + (i.mode === "sell" ? i.price : 0), 0);
+  const adjustedBuyTotal = Math.round(buyTotal * (1 - haggle / 100));
+  const balanceDelta = sellTotal - adjustedBuyTotal;
+  const displayedTotal = Math.abs(balanceDelta);
 
-  const inv = tab === "buy" ? merchant.stock : state.stash.filter((i) => i.type !== "quest");
+  const inv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, padding: 14 }}>
@@ -213,21 +217,20 @@ function ScreenMerchant({ onNavigate, state, setState }) {
           {haggle > 0 && cart.length > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
               <span className="muted body-sm">Listed price</span>
-              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12, textDecoration: "line-through", color: "var(--ink-600)" }}>{cartTotal} gp</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12, textDecoration: "line-through", color: "var(--ink-600)" }}>{buyTotal} gp</span>
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <span className="eyebrow">Total</span>
+            <span className="eyebrow">{balanceDelta > 0 ? "You receive" : "Total"}</span>
             <span style={{ fontFamily: "var(--f-display)", fontSize: 24, color: "var(--ink-900)" }}>
-              {adjustedTotal} <span className="muted" style={{ fontSize: 12 }}>gp</span>
+              {displayedTotal} <span className="muted" style={{ fontSize: 12 }}>gp</span>
             </span>
           </div>
           <BrassButton onClick={() => {
-            const sign = cart.every((c) => c.mode === "sell") ? 1 : -1;
-            setCoins({ ...coins, gp: coins.gp + sign * adjustedTotal });
+            setCoins({ ...coins, gp: coins.gp + balanceDelta });
             setCart([]);
-          }} style={{ width: "100%" }} disabled={cart.length === 0}>
-            {cart.every((c) => c.mode === "sell") && cart.length > 0 ? "Accept silver" : "Strike the bargain"}
+          }} style={{ width: "100%" }} disabled={cart.length === 0 || coins.gp + balanceDelta < 0}>
+            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"}
           </BrassButton>
         </div>
       </Panel>
@@ -277,7 +280,7 @@ const MERCHANTS = [
       { id: "m12", name: "Heavy crossbow", type: "weapon", glyph: "heavy crossbow", qty: 1, weight: "8 lb", price: 50, desc: "Reliable. Slow. The kind of weapon you have time to be sorry about firing." },
       { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged in Restov. Tested at Tines, by Oleg's brother, who is no longer with us." },
       { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. Oleg does not stock these often; he stocks them for Cassian." },
-      { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Sourced from the Old Hills. Useful against more things than you think.", price: 12 },
+      { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Sourced from the Old Hills. Useful against more things than you think." },
       { id: "m16", name: "Wax candle (×6)", type: "common", glyph: "candles", qty: 4, weight: "1 lb", price: 4, desc: "Beeswax. Burns long. Useful for vigils and for less wholesome purposes." },
     ],
   },

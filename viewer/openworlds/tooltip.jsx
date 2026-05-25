@@ -47,7 +47,7 @@ function Tooltip({ children, content, side = "right", maxWidth = 280 }) {
             pointerEvents: "none",
             boxShadow:
               "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 8px 22px rgba(0,0,0,0.4)",
-            animation: "tooltipIn 140ms ease both",
+            animation: "tooltip-in 140ms ease both",
           }}
         >
           {content}

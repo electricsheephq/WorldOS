@@ -8,6 +8,8 @@ function ScreenSeed({ onNavigate, state, setState }) {
     gmStrictness: "Standard",
     permadeath: false,
     metaCurrency: true,
+    itemDestruction: false,
+    anachronism: true,
     chronicleVoice: "First-person plural",
     aiNarration: "Florid",
   });
@@ -158,12 +160,14 @@ function ScreenSeed({ onNavigate, state, setState }) {
         <SeedToggle
           label="Item destruction"
           detail="Weapons and armour wear with use. Forge it again or find it again."
-          value={false}
+          value={seed.itemDestruction}
+          onChange={(v) => update("itemDestruction", v)}
         />
         <SeedToggle
           label="Anachronism"
           detail="The chronicle permits a small number of out-of-period words for the sake of clarity."
-          value={true}
+          value={seed.anachronism}
+          onChange={(v) => update("anachronism", v)}
         />
 
         <Divider />

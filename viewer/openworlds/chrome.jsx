@@ -215,6 +215,7 @@ function Placeholder({ label, w, h, framed, style, children, className }) {
 function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onClick, active, style }) {
   return (
     <button
+      type="button"
       className={`icon-plate ${framed ? "framed" : ""} ${active ? "active" : ""}`}
       onClick={onClick}
       style={{
@@ -232,7 +233,7 @@ function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onC
   );
 }
 
-function BrassButton({ children, onClick, tone, size, disabled, style, type }) {
+function BrassButton({ children, onClick, tone, size, disabled, style, type = "button" }) {
   const cls = ["btn", tone, size, disabled ? "disabled" : ""].filter(Boolean).join(" ");
   return (
     <button className={cls} onClick={onClick} disabled={disabled} type={type} style={style}>
@@ -264,6 +265,7 @@ function NavRail({ current, onNavigate }) {
     <nav className="nav-rail" aria-label="Codex">
       {NAV_GROUPS.map((g) => (
         <button
+          type="button"
           key={g.id}
           className={`nav-item ${currentGroup?.id === g.id ? "active" : ""}`}
           onClick={() => onNavigate(getDefaultScreen(g.id))}
@@ -276,6 +278,7 @@ function NavRail({ current, onNavigate }) {
       <div className="nav-spacer"></div>
       <div className="nav-divider"></div>
       <button
+        type="button"
         className={`nav-item ${currentGroup?.id === NAV_BOTTOM.id ? "active" : ""}`}
         onClick={() => onNavigate(getDefaultScreen(NAV_BOTTOM.id))}
         aria-current={currentGroup?.id === NAV_BOTTOM.id ? "page" : undefined}
@@ -318,6 +321,7 @@ function TabBar({ current, onNavigate }) {
       }} />
       {group.tabs.map((tab) => (
         <button
+          type="button"
           key={tab.id}
           onClick={() => onNavigate(tab.id)}
           style={{

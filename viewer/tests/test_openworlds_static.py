@@ -1,24 +1,23 @@
+import http.client
+import importlib.util
 import json
 import os
 import tempfile
 import threading
 import unittest
-import urllib.error
-import urllib.request
 from pathlib import Path
-
-import importlib.util
 
 
 _SERVER_PATH = Path(__file__).resolve().parents[1] / "server.py"
 _SPEC = importlib.util.spec_from_file_location("viewer_server", _SERVER_PATH)
+assert _SPEC is not None
 server = importlib.util.module_from_spec(_SPEC)
-assert _SPEC and _SPEC.loader
+assert _SPEC.loader is not None
 _SPEC.loader.exec_module(server)
 
 
 class _QuietHandler(server._Handler):
-    def log_message(self, fmt, *args):  # noqa: D401 - silence test HTTP logs
+    def log_message(self, fmt: str, *args: object) -> None:  # noqa: D401 - silence test HTTP logs
         return
 
 
@@ -34,8 +33,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), _QuietHandler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
-        host, port = self._httpd.server_address
-        self._base = f"http://{host}:{port}"
+        self._host, self._port = self._httpd.server_address
 
     def tearDown(self):
         self._httpd.shutdown()
@@ -46,17 +44,17 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         else:
             os.environ["CLAWDND_STATE_DIR"] = self._old_state
 
-    def _get(self, path):
-        with urllib.request.urlopen(f"{self._base}{path}", timeout=5) as response:
-            return response.status, response.headers.get("Content-Type", ""), response.read()
-
-    def _status(self, path):
+    def _get(self, path: str) -> tuple[int, str, bytes]:
+        conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
         try:
-            return self._get(path)[0]
-        except urllib.error.HTTPError as exc:
-            code = exc.code
-            exc.close()
-            return code
+            conn.request("GET", path)
+            response = conn.getresponse()
+            return response.status, response.headers.get("Content-Type", ""), response.read()
+        finally:
+            conn.close()
+
+    def _status(self, path: str) -> int:
+        return self._get(path)[0]
 
     def test_openworlds_index_uses_local_runtime_assets(self):
         status, ctype, body = self._get("/openworlds/")
@@ -87,7 +85,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertIn("text/css", ctype)
-        self.assertIn(b"font-family: 'Cinzel'", body)
+        self.assertIn(b"font-family: Cinzel", body)
         self.assertIn(b"fonts/", body)
         self.assertNotIn(b"https://", body)
 

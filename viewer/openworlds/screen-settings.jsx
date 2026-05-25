@@ -2,10 +2,11 @@
 
 function ScreenSettings({ onNavigate, state, setState }) {
   const [section, setSection] = React.useState("audio");
-  const [audio, setAudio] = React.useState({ master: 72, music: 60, sfx: 80, ambience: 50, voice: 70 });
+  const [audio, setAudio] = React.useState({ master: 72, music: 60, sfx: 80, ambience: 50, voice: 70, duckMusic: true, crossfade: true });
   const [display, setDisplay] = React.useState({ scale: 100, contrast: 50, vignette: true, paperGrain: true, candleGlow: true });
-  const [gameplay, setGameplay] = React.useState({ auto: 15, narration: "balanced", dice: "visible", dangerHints: true });
-  const [accessibility, setAccessibility] = React.useState({ dyslexic: false, reducedMotion: false, captions: true, contrast: false });
+  const [gameplay, setGameplay] = React.useState({ auto: 15, narration: "balanced", dice: "visible", dangerHints: true, confirmDestructive: true, aiPartyRolls: false });
+  const [controls, setControls] = React.useState({ twoFingerScroll: true, pinchZoom: true, forceTouchInspect: false });
+  const [accessibility, setAccessibility] = React.useState({ dyslexic: false, reducedMotion: false, captions: true, contrast: false, underlineChoices: false });
 
   const SECTIONS = [
     { id: "audio", label: "Sound" },
@@ -65,8 +66,8 @@ function ScreenSettings({ onNavigate, state, setState }) {
             <SectionTitle>Output</SectionTitle>
             <SelectRow label="Device" value="System default — MacBook Pro Speakers" options={["System default — MacBook Pro Speakers", "AirPods Pro", "Studio Monitor"]} />
             <SelectRow label="Surround mix" value="Stereo" options={["Stereo", "Spatial Audio", "Headphones (HRTF)"]} />
-            <Toggle label="Duck music during GM narration" value={true} />
-            <Toggle label="Crossfade between scenes" value={true} />
+            <Toggle label="Duck music during GM narration" value={audio.duckMusic} onChange={(v) => setAudio({ ...audio, duckMusic: v })} />
+            <Toggle label="Crossfade between scenes" value={audio.crossfade} onChange={(v) => setAudio({ ...audio, crossfade: v })} />
           </SettingsSection>
         )}
 
@@ -120,8 +121,8 @@ function ScreenSettings({ onNavigate, state, setState }) {
 
             <Divider />
             <Toggle label="Show danger hints in the world" value={gameplay.dangerHints} onChange={(v) => setGameplay({ ...gameplay, dangerHints: v })} />
-            <Toggle label="Confirm before destructive actions" value={true} />
-            <Toggle label="Permit AI GM to roll for the party" value={false} />
+            <Toggle label="Confirm before destructive actions" value={gameplay.confirmDestructive} onChange={(v) => setGameplay({ ...gameplay, confirmDestructive: v })} />
+            <Toggle label="Permit AI GM to roll for the party" value={gameplay.aiPartyRolls} onChange={(v) => setGameplay({ ...gameplay, aiPartyRolls: v })} />
           </SettingsSection>
         )}
 
@@ -136,9 +137,9 @@ function ScreenSettings({ onNavigate, state, setState }) {
 
             <Divider />
             <SectionTitle>Trackpad</SectionTitle>
-            <Toggle label="Two-finger scroll the chronicle" value={true} />
-            <Toggle label="Pinch to zoom the world map" value={true} />
-            <Toggle label="Force-touch to inspect items" value={false} />
+            <Toggle label="Two-finger scroll the chronicle" value={controls.twoFingerScroll} onChange={(v) => setControls({ ...controls, twoFingerScroll: v })} />
+            <Toggle label="Pinch to zoom the world map" value={controls.pinchZoom} onChange={(v) => setControls({ ...controls, pinchZoom: v })} />
+            <Toggle label="Force-touch to inspect items" value={controls.forceTouchInspect} onChange={(v) => setControls({ ...controls, forceTouchInspect: v })} />
           </SettingsSection>
         )}
 
@@ -153,7 +154,7 @@ function ScreenSettings({ onNavigate, state, setState }) {
             <SectionTitle>Reading</SectionTitle>
             <SelectRow label="Body font" value="Cormorant Garamond" options={["Cormorant Garamond", "Atkinson Hyperlegible", "OpenDyslexic", "System default"]} />
             <Slider label="Line spacing" value={50} min={0} max={100} />
-            <Toggle label="Underline interactive choices" value={false} />
+            <Toggle label="Underline interactive choices" value={accessibility.underlineChoices} onChange={(v) => setAccessibility({ ...accessibility, underlineChoices: v })} />
 
             <Divider />
             <SectionTitle>Colour</SectionTitle>

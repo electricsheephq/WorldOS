@@ -1,11 +1,15 @@
 /* Screen: Campaign Table — live session: scene art + party + GM narration + actions */
 
 function ScreenTable({ onNavigate, state, setState }) {
-  const [log, setLog] = React.useState(state.tableLog);
+  const party = Array.isArray(state?.party) ? state.party : [];
+  const quests = Array.isArray(state?.quests) ? state.quests : [];
+  const stash = Array.isArray(state?.stash) ? state.stash : [];
+  const [log, setLog] = React.useState(Array.isArray(state?.tableLog) ? state.tableLog : []);
   const [input, setInput] = React.useState("");
-  const [activeHero, setActiveHero] = React.useState(state.party[0].id);
+  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const logRef = React.useRef(null);
   const toast = window.useToast ? window.useToast() : (() => {});
+  const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
 
   React.useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -13,7 +17,6 @@ function ScreenTable({ onNavigate, state, setState }) {
 
   const sendAction = () => {
     if (!input.trim()) return;
-    const hero = state.party.find((p) => p.id === activeHero);
     setLog((l) => [
       ...l,
       { kind: "action", who: hero.name, text: input },
@@ -24,10 +27,9 @@ function ScreenTable({ onNavigate, state, setState }) {
 
   const roll = (sides = 20) => {
     const r = 1 + Math.floor(Math.random() * sides);
-    const hero = state.party.find((p) => p.id === activeHero);
     setLog((l) => [
       ...l,
-      { kind: "roll", who: hero.name, text: `rolls d${sides}: ${r}${r === sides ? " — natural!" : ""}` },
+      { kind: "roll", who: hero.name, sides, text: `rolls d${sides}: ${r}${r === sides ? " — natural!" : ""}` },
     ]);
     toast({
       eyebrow: `d${sides}`,
@@ -46,7 +48,7 @@ function ScreenTable({ onNavigate, state, setState }) {
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>Round IV · Initiative</div>
           <SectionTitle>The Party</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {state.party.map((p) => (
+            {party.map((p) => (
               <PartyRow
                 key={p.id}
                 p={p}
@@ -93,7 +95,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             <div style={{ display: "flex", gap: 6, pointerEvents: "auto" }}>
               <BrassButton tone="dark" size="sm" onClick={() => onNavigate("map")}>Travel</BrassButton>
               <BrassButton tone="dark" size="sm" onClick={() => onNavigate("dialogue")}>Parley</BrassButton>
-              <BrassButton tone="dark" size="sm">Camp</BrassButton>
+              <BrassButton tone="dark" size="sm" onClick={() => onNavigate("map", { openCamp: true })}>Camp</BrassButton>
             </div>
           </div>
         </div>
@@ -112,7 +114,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
               <span className="eyebrow">Active</span>
               <strong style={{ fontFamily: "var(--f-display)", color: "var(--ink-900)", letterSpacing: "0.1em" }}>
-                {state.party.find((p) => p.id === activeHero).name}
+                {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
               <button onClick={() => roll(20)} className="btn ghost sm">d20</button>
@@ -139,7 +141,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Active Quests</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {state.quests.filter((q) => q.status === "active").map((q) => (
+            {quests.filter((q) => q.status === "active").map((q) => (
               <button key={q.id} onClick={() => onNavigate("journal")} style={{
                 textAlign: "left",
                 padding: "10px 12px",
@@ -162,7 +164,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle right={<button className="btn ghost sm" onClick={() => onNavigate("inventory")}>Open</button>}>Quick Stash</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-            {state.stash.slice(0, 8).map((it) => (
+            {stash.slice(0, 8).map((it) => (
               <IconPlate key={it.id} size={48} label={it.glyph} framed />
             ))}
           </div>
@@ -307,7 +309,7 @@ function LogEntry({ entry }) {
   if (entry.kind === "roll") {
     return (
       <div style={{ margin: "8px 0", display: "flex", gap: 10, alignItems: "center" }}>
-        <Pill tone="emerald">d20</Pill>
+        <Pill tone="emerald">d{entry.sides ?? 20}</Pill>
         <span style={{ fontFamily: "var(--f-mono)", fontSize: 13, color: "var(--ink-700)" }}>
           {entry.who} {entry.text}
         </span>
