@@ -330,6 +330,25 @@ def test_combat_view_warns_for_missing_and_malformed_combatants():
     assert any("malformed combatant at index 2" in w for w in view["warnings"])
 
 
+def test_combat_view_rejects_boolean_turn_index():
+    v = _viewer()
+    snap = {
+        "characters": {"hero": {"id": "hero", "name": "Hero"}},
+        "combat": {
+            "active": True,
+            "round": 1,
+            "turn_index": True,
+            "order": [{"character_id": "hero", "initiative": 10}],
+        },
+    }
+
+    view = v.build_combat_view(snap)
+
+    assert view["turn_index"] is None
+    assert view["current"] is None
+    assert view["order"][0]["is_current"] is False
+
+
 def test_combat_view_inactive_when_no_active_combat():
     v = _viewer()
 

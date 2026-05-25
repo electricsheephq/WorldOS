@@ -489,8 +489,9 @@ def build_combat_view(snapshot: dict) -> dict:
 
     warnings: list[str] = []
     order: list[dict] = []
-    turn_index = combat.get("turn_index")
-    current_row = raw_order[turn_index] if isinstance(turn_index, int) and 0 <= turn_index < len(raw_order) else None
+    raw_turn_index = combat.get("turn_index")
+    turn_index = raw_turn_index if isinstance(raw_turn_index, int) and not isinstance(raw_turn_index, bool) else None
+    current_row = raw_order[turn_index] if turn_index is not None and 0 <= turn_index < len(raw_order) else None
     current_id = current_row.get("character_id") if isinstance(current_row, dict) else None
 
     for idx, row in enumerate(raw_order):
@@ -533,7 +534,7 @@ def build_combat_view(snapshot: dict) -> dict:
     view = {
         "active": True,
         "round": _num(combat.get("round")),
-        "turn_index": turn_index if isinstance(turn_index, int) else None,
+        "turn_index": turn_index,
         "current": current,
         "actions": actions,
         "order": order,
