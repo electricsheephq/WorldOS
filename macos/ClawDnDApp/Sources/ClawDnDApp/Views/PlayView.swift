@@ -151,6 +151,7 @@ struct PlayView: View {
                 runId: cleanRunID.isEmpty ? Self.newRunID() : cleanRunID,
                 preferredPort: preferredPort,
                 companions: companions,
+                stateDir: stateDir,
                 preferences: providerPreferences
             )
         } catch {
