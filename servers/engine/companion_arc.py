@@ -73,7 +73,7 @@ def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) 
     event = {
         "quest_arc_id": gate.quest_arc_id,
         "stage_id": gate.stage_id,
-        "status": "available",
+        "status": "",
     }
     arc = campaign.companion_quest_arcs.get(gate.quest_arc_id)
     if arc is None:
@@ -93,10 +93,21 @@ def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) 
             event["error"] = f"no stage {gate.stage_id!r} in companion quest arc {gate.quest_arc_id!r}"
             return event
 
+    changed: list[str] = []
     if arc.status == "locked":
         arc.status = "available"
+        changed.append("arc")
     if stage is not None and stage.status == "locked":
         stage.status = "available"
+        changed.append("stage")
+    if not changed:
+        event["status"] = arc.status
+        if stage is not None:
+            event["stage_status"] = stage.status
+        event["no_transition"] = True
+        return event
+    event["status"] = "available"
+    event["changed"] = changed
     return event
 
 
@@ -124,9 +135,12 @@ def evaluate(character: Character, campaign: Campaign) -> dict:
     # call that flips it (already-unlocked gates stay silent).
     for gate in arc.arc_gates:
         if not gate.unlocked and gate.threshold <= character.attitude_value:
+            quest_unlock = _unlock_companion_quest_arc(character, campaign, gate)
+            if quest_unlock is not None and quest_unlock.get("error"):
+                companion_quest_unlocks.append(quest_unlock)
+                continue
             gate.unlocked = True
             newly_unlocked.append(gate.model_dump())
-            quest_unlock = _unlock_companion_quest_arc(character, campaign, gate)
             if quest_unlock is not None:
                 companion_quest_unlocks.append(quest_unlock)
 

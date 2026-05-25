@@ -372,6 +372,7 @@ def test_personal_quest_gate_makes_linked_companion_quest_arc_available_once(cam
         "quest_arc_id": "cq_seraphine_vow",
         "stage_id": "stage_oath",
         "status": "available",
+        "changed": ["arc", "stage"],
     }]
     arc = server.get_companion_quest_arcs(cid, companion_id=comp)["companion_quest_arcs"][0]
     assert arc["status"] == "available"
@@ -380,6 +381,73 @@ def test_personal_quest_gate_makes_linked_companion_quest_arc_available_once(cam
     assert server.check_companion_arc(cid, comp)["results"] == []
     persisted = store.load_campaign(cid)
     assert persisted.companion_quest_arcs["cq_seraphine_vow"].status == "available"
+
+
+def test_set_companion_arc_rejects_missing_personal_quest_link_without_mutation(camp):
+    cid, comp = camp
+
+    with pytest.raises(ValueError, match="no companion quest arc"):
+        server.set_companion_arc(cid, comp, {
+            "arc_gates": [{
+                "kind": "personal_quest",
+                "threshold": 0,
+                "quest_arc_id": "cq_missing",
+            }],
+        })
+
+    assert store.load_campaign(cid).characters[comp].arc is None
+
+
+def test_personal_quest_gate_bad_legacy_link_does_not_burn_unlock(camp):
+    cid, comp = camp
+    c = store.load_campaign(cid)
+    c.characters[comp].arc = CompanionArc(arc_gates=[ArcGate(
+        kind="personal_quest",
+        threshold=0,
+        quest_arc_id="cq_missing",
+    )])
+    store.save_campaign(c)
+
+    out = server.check_companion_arc(cid, comp)
+    unlock = out["results"][0]["companion_quest_unlocks"][0]
+    assert "error" in unlock
+    assert store.load_campaign(cid).characters[comp].arc.arc_gates[0].unlocked is False
+
+    server.set_companion_quest_arc(cid, comp, {
+        "id": "cq_missing",
+        "title": "Recovered Link",
+    })
+    retried = server.check_companion_arc(cid, comp)
+    assert retried["results"][0]["companion_quest_unlocks"][0]["changed"] == ["arc"]
+    persisted = store.load_campaign(cid)
+    assert persisted.characters[comp].arc.arc_gates[0].unlocked is True
+    assert persisted.companion_quest_arcs["cq_missing"].status == "available"
+
+
+def test_personal_quest_gate_reports_no_transition_for_already_resolved_arc(camp):
+    cid, comp = camp
+    server.set_companion_quest_arc(cid, comp, {
+        "id": "cq_seraphine_vow",
+        "title": "Seraphine's Vow",
+        "status": "resolved",
+        "stages": [{"id": "stage_oath", "title": "Name the broken oath", "status": "resolved"}],
+    })
+    server.set_companion_arc(cid, comp, {
+        "arc_gates": [{
+            "kind": "personal_quest",
+            "threshold": 0,
+            "quest_arc_id": "cq_seraphine_vow",
+            "stage_id": "stage_oath",
+        }],
+    })
+
+    unlock = server.check_companion_arc(cid, comp)["results"][0]["companion_quest_unlocks"][0]
+    assert unlock["no_transition"] is True
+    assert unlock["status"] == "resolved"
+    assert unlock["stage_status"] == "resolved"
+    persisted = store.load_campaign(cid)
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].status == "resolved"
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].stages[0].status == "resolved"
 
 
 def test_advance_companion_quest_arc_links_and_repairs_tracked_quest(camp):
@@ -438,6 +506,55 @@ def test_advance_companion_quest_arc_rejects_inconsistent_quest_status_without_m
     arc = persisted.companion_quest_arcs["cq_seraphine_vow"]
     assert arc.status == "locked"
     assert arc.quest_ids == [qid]
+    assert persisted.quests[qid].status == "active"
+
+
+def test_advance_companion_quest_arc_rejects_quest_status_without_arc_transition(camp):
+    cid, comp = camp
+    qid = server.add_quest(cid, "Seraphine's Vow")["id"]
+    server.set_companion_quest_arc(cid, comp, {
+        "id": "cq_seraphine_vow",
+        "title": "Seraphine's Vow",
+        "quest_ids": [qid],
+    })
+
+    with pytest.raises(ValueError, match="quest_status requires status or stage_status"):
+        server.advance_companion_quest_arc(
+            cid,
+            "cq_seraphine_vow",
+            quest_id=qid,
+            quest_status="completed",
+        )
+
+    persisted = store.load_campaign(cid)
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].status == "locked"
+    assert persisted.quests[qid].status == "active"
+
+
+def test_advance_companion_quest_arc_rejects_conflicting_arc_and_stage_projection(camp):
+    cid, comp = camp
+    qid = server.add_quest(cid, "Seraphine's Vow")["id"]
+    server.set_companion_quest_arc(cid, comp, {
+        "id": "cq_seraphine_vow",
+        "title": "Seraphine's Vow",
+        "status": "active",
+        "stages": [{"id": "stage_oath", "title": "Recover the oath-name", "status": "active"}],
+        "quest_ids": [qid],
+    })
+
+    with pytest.raises(ValueError, match="conflicting quest projections"):
+        server.advance_companion_quest_arc(
+            cid,
+            "cq_seraphine_vow",
+            status="resolved",
+            stage_id="stage_oath",
+            stage_status="active",
+            quest_id=qid,
+        )
+
+    persisted = store.load_campaign(cid)
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].status == "active"
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].stages[0].status == "active"
     assert persisted.quests[qid].status == "active"
 
 
