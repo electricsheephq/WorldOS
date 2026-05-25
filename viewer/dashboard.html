@@ -473,6 +473,33 @@
   .maplegend .cur i { background:var(--gold); }
   .maplegend .quest i { background:var(--gold2); }
   .maplegend .hook i { background:#8fbfe0; }
+  [data-inspect-id] { cursor:help; }
+  .node.loc[data-inspect-id], .loclist li[data-inspect-id] { cursor:pointer; }
+  .inspect-popover { position:fixed; z-index:70; width:min(340px, calc(100vw - 24px));
+    max-height:min(440px, calc(100vh - 24px)); overflow:auto; padding:12px 13px;
+    background:linear-gradient(180deg,#231b12,#17110b); border:1px solid var(--gold2);
+    border-radius:10px; box-shadow:0 20px 52px rgba(0,0,0,.72),0 1px 0 rgba(232,201,138,.08) inset; }
+  .inspect-popover[hidden] { display:none; }
+  .insp-top { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .insp-k { flex:none; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78;
+    border:1px solid #4a3c22; background:#1a140d; border-radius:8px; padding:2px 7px; }
+  .insp-title { margin:0; color:var(--gold); font:600 14px/1.25 var(--font-display); letter-spacing:.02em; }
+  .insp-summary { margin:0 0 9px; color:#d8ccb2; font-size:12px; line-height:1.45; }
+  .insp-rows { display:grid; gap:5px; margin-top:7px; }
+  .insp-row { display:grid; grid-template-columns:86px 1fr; gap:8px; align-items:baseline;
+    padding-top:5px; border-top:1px solid #302517; }
+  .insp-row:first-child { border-top:none; padding-top:0; }
+  .insp-row span { color:var(--faint); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; }
+  .insp-row b { color:var(--ink); font-size:12px; font-weight:650; overflow-wrap:anywhere; }
+  .insp-tags, .insp-objectives { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .insp-tag { font-size:10.5px; color:var(--dim); border:1px solid #3a2f1c; background:#1b150d;
+    border-radius:7px; padding:2px 7px; }
+  .insp-objectives { display:block; list-style:none; padding:0; }
+  .insp-objectives li { display:flex; gap:7px; color:#d8ccb2; font-size:12px; line-height:1.4; margin-top:5px; }
+  .insp-objectives .box { width:11px; height:11px; margin-top:3px; border:1px solid #5a4a2c; border-radius:3px; flex:none; }
+  .insp-objectives li.done { color:var(--faint); text-decoration:line-through; }
+  .insp-objectives li.done .box { background:#2f4a2f; border-color:#5f8a5f; }
+  .insp-empty { color:var(--faint); font-style:italic; font-size:12px; }
 
   /* ============================================================================
      PLAYER SHEET VIEWS (S2 tabs) — Character / Inventory / Spellbook / Progression.
@@ -897,6 +924,7 @@
       <div class="modal-foot" id="settings-foot">Change these from Claude Code — the engine is the sole writer of campaign state.</div>
     </div>
   </div>
+  <div class="inspect-popover" id="inspect-popover" role="dialog" aria-modal="false" aria-label="Inspect details" hidden></div>
 
 <script>
 let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
@@ -1089,7 +1117,7 @@ function questCard(s, q, opts = {}) {
     const isDone = (o && typeof o === "object" && !!o.done) || done.has(text);
     return text ? `<li class="${isDone?"done":""}"><span class="box"></span><span>${esc(text)}</span></li>` : "";
   }).filter(Boolean).join("");
-  return `<div class="scard quest-card ${esc(kind)} ${esc(statusClass(status))}">
+  return `<div class="scard quest-card ${esc(kind)} ${esc(statusClass(status))}"${inspectAttrs("quest", q, { state: s, kind })}>
     <h3><span class="qtitle">${esc(title)}</span><span class="h3n${duplicate?" qid":""}">${esc(h3n || idTag)}</span></h3>
     ${meta.length ? `<div class="kv-tags">${meta.map(m => `<span class="tag">${esc(m)}</span>`).join("")}</div>` : ""}
     ${desc ? `<div class="kv-line" style="color:var(--dim)">${esc(desc)}</div>` : ""}
@@ -1723,6 +1751,181 @@ function deathSavePips(ds, { labels = true } = {}) {
   return `<span class="death" title="Death saves — ${s} success${s===1?"":"es"}, ${f} failure${f===1?"":"s"}">${strip(s, "succ")}${strip(f, "fail")}</span>`;
 }
 
+// ---- Rich inspect popovers (#78 Sprint 2) ----------------------------------
+// This is still a pure projection of the latest /state snapshot. The popover store
+// holds already-rendered, player-facing facts only; it never reads DM-only notes or
+// writes campaign state. Narrative/user-authored strings are escaped at render time.
+const _inspectStore = new Map();
+let _inspectSeq = 0, _inspectAnchor = null;
+function resetInspectStore() {
+  closeInspect();
+  _inspectStore.clear();
+  _inspectSeq = 0;
+}
+function cleanList(items, limit = 6) {
+  return (Array.isArray(items) ? items : []).map(x => (x ?? "").toString().trim()).filter(Boolean).slice(0, limit);
+}
+function inspectAddRow(rows, label, value) {
+  if (value === undefined || value === null || value === "") return;
+  rows.push([label, value]);
+}
+function inspectResourceSummary(c) {
+  const cr = (c && c.class_resources) || {};
+  return Object.keys(cr).filter(id => cr[id] && (cr[id].max || 0) > 0).map(id => {
+    const r = cr[id], max = Math.max(0, r.max || 0), used = Math.max(0, Math.min(max, r.used || 0));
+    return `${RESOURCE_LABELS[id] || titleCase(id)} ${max - used}/${max}`;
+  }).join(", ");
+}
+function inspectSpellSlots(slots) {
+  return Object.keys(slots || {}).map(Number).filter(n => (slots[n]?.maximum || 0) > 0).sort((a,b)=>a-b)
+    .map(lv => {
+      const s = slots[lv], open = Math.max(0, (s.maximum || 0) - (s.used || 0));
+      return `L${lv} ${open}/${s.maximum || 0}`;
+    }).join(", ");
+}
+function inspectWalkLabel(mins) {
+  if (mins == null || mins === "") return "";
+  const m = Math.round(Number(mins));
+  if (!Number.isFinite(m)) return "";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} hr ${r} min` : `${h} hr`;
+}
+function buildInspectPayload(kind, raw, ctx = {}) {
+  const state = ctx.state || lastState || {};
+  const rows = [], tags = [], objectives = [];
+  const data = raw || {};
+  if (kind === "character") {
+    const h = hp(data);
+    const status = data.dead ? "fallen" : (isDying(data) ? "dying" : (data.stable ? "stable" : ""));
+    const conds = cleanList(data.conditions, 4);
+    inspectAddRow(rows, "HP", hasVitals(data) ? h.txt : "");
+    inspectAddRow(rows, "AC", hasVitals(data) ? data.armor_class : "");
+    inspectAddRow(rows, "Saves", cleanList(data.saving_throw_proficiencies).map(x => x.toUpperCase()).join(", "));
+    inspectAddRow(rows, "Resources", inspectResourceSummary(data));
+    if (status) tags.push(status);
+    tags.push(...conds);
+    return { kind, title: data.name || "Unknown character", kicker: titleCase(data.kind || "character"),
+      summary: raceClass(data), rows, tags };
+  }
+  if (kind === "item") {
+    inspectAddRow(rows, "Qty", data.quantity ?? 1);
+    inspectAddRow(rows, "Equipped", data.equipped ? "yes" : "");
+    if (data.requires_attunement) inspectAddRow(rows, "Attunement", data.attuned ? "attuned" : "needs attunement");
+    inspectAddRow(rows, "Weight", data.weight ? `${data.weight} lb each` : "");
+    return { kind, title: data.name || "Item", kicker: "Inventory item", summary: data.description || "", rows, tags };
+  }
+  if (kind === "spell") {
+    const spell = typeof data === "string" ? { name: data } : data;
+    const level = spell.level === 0 ? "Cantrip" : spell.level;
+    inspectAddRow(rows, "Level", level);
+    inspectAddRow(rows, "Casting", spell.casting_time || spell.casting || spell.action);
+    inspectAddRow(rows, "Range", spell.range);
+    inspectAddRow(rows, "Prepared", spell.prepared === true ? "yes" : (spell.prepared === false ? "no" : ""));
+    inspectAddRow(rows, "Slots", spell.slots);
+    return { kind, title: spell.name || "Spell", kicker: "Spell", summary: spell.description || "", rows,
+      tags: cleanList([spell.school, spell.duration, spell.concentration ? "concentration" : ""]) };
+  }
+  if (kind === "quest") {
+    const locCounts = countNames(Object.values(state.locations || {}), l => l.name || "");
+    const title = data.title || data.grievance || (ctx.kind === "hook" ? "Quest hook" : "A quest");
+    inspectAddRow(rows, "Status", data.status || (ctx.kind === "hook" ? "open" : "active"));
+    inspectAddRow(rows, "Giver", entityName(state, data.giver_id || data.giver) || (data.giver_id ? "#" + shortId(data.giver_id) : ""));
+    inspectAddRow(rows, "Target", entityName(state, data.target_id || data.target) || (data.target_id ? "#" + shortId(data.target_id) : ""));
+    inspectAddRow(rows, "Location", locLabel(state, data.location_id || data.place_id, locCounts));
+    inspectAddRow(rows, "Item", data.item);
+    const done = new Set(data.completed_objectives || []);
+    (Array.isArray(data.objectives) ? data.objectives : []).forEach(o => {
+      const text = (o && typeof o === "object") ? (o.text || o.name || "") : o;
+      if (text) objectives.push({ text, done: (o && typeof o === "object" && !!o.done) || done.has(text) });
+    });
+    return { kind, title, kicker: ctx.kind === "hook" ? "Quest hook" : "Quest",
+      summary: data.description || (data.title ? data.grievance || "" : ""), rows, tags: data.spine ? ["main arc"] : [], objectives };
+  }
+  if (kind === "location") {
+    const id = ctx.id || data.id || "";
+    const cur = id && id === state.current_location_id;
+    const connections = cleanList(data.connections, 6).map(cid => {
+      const loc = (state.locations || {})[cid] || {};
+      const walk = inspectWalkLabel((data.travel_times || {})[cid]);
+      return `${loc.name || cid}${walk ? " (" + walk + ")" : ""}`;
+    });
+    inspectAddRow(rows, "Region", data.region);
+    inspectAddRow(rows, "Status", cur ? "current" : (data.visited ? "visited" : "unvisited"));
+    inspectAddRow(rows, "Connected", connections.join(", "));
+    return { kind, title: data.name || id || "Location", kicker: "Map location", summary: data.description || "", rows, tags };
+  }
+  return null;
+}
+function inspectPopoverHTML(payload) {
+  if (!payload) return `<div class="insp-empty">No details available.</div>`;
+  const rows = (payload.rows || []).map(([k, v]) => `<div class="insp-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
+  const tags = (payload.tags || []).filter(Boolean).length
+    ? `<div class="insp-tags">${payload.tags.filter(Boolean).map(t => `<span class="insp-tag">${esc(t)}</span>`).join("")}</div>` : "";
+  const objectives = (payload.objectives || []).length
+    ? `<ul class="insp-objectives">${payload.objectives.map(o => `<li class="${o.done ? "done" : ""}"><span class="box"></span><span>${esc(o.text)}</span></li>`).join("")}</ul>` : "";
+  return `<div class="insp-top"><span class="insp-k">${esc(payload.kicker || payload.kind || "inspect")}</span><h3 class="insp-title">${esc(payload.title || "Details")}</h3></div>
+    ${payload.summary ? `<p class="insp-summary">${esc(payload.summary)}</p>` : ""}
+    ${rows ? `<div class="insp-rows">${rows}</div>` : `<div class="insp-empty">No extra metadata recorded.</div>`}
+    ${tags}${objectives}`;
+}
+function inspectAttrs(kind, raw, ctx = {}) {
+  const payload = buildInspectPayload(kind, raw, ctx);
+  if (!payload) return "";
+  const id = "inspect-" + (++_inspectSeq);
+  _inspectStore.set(id, payload);
+  return ` data-inspect-id="${esc(id)}" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Inspect ${esc(payload.title || kind)}"`;
+}
+function openInspect(anchor) {
+  const id = anchor && anchor.getAttribute("data-inspect-id");
+  const payload = id ? _inspectStore.get(id) : null;
+  const pop = $("inspect-popover");
+  if (!pop || !payload) return;
+  _inspectAnchor = anchor;
+  pop.innerHTML = inspectPopoverHTML(payload);
+  pop.hidden = false;
+  positionInspect(anchor);
+}
+function closeInspect() {
+  const pop = $("inspect-popover");
+  if (pop) pop.hidden = true;
+  _inspectAnchor = null;
+}
+function positionInspect(anchor) {
+  const pop = $("inspect-popover");
+  if (!pop || pop.hidden || !anchor) return;
+  if (!anchor.isConnected) { closeInspect(); return; }
+  const a = anchor.getBoundingClientRect();
+  const p = pop.getBoundingClientRect();
+  const gap = 8;
+  let left = Math.min(window.innerWidth - p.width - 12, Math.max(12, a.left + Math.min(24, a.width / 2)));
+  let top = a.bottom + gap;
+  if (top + p.height > window.innerHeight - 12) top = Math.max(12, a.top - p.height - gap);
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+}
+function wireInspect() {
+  document.addEventListener("click", e => {
+    const anchor = e.target.closest && e.target.closest("[data-inspect-id]");
+    const pop = $("inspect-popover");
+    if (anchor) openInspect(anchor);
+    else if (!pop || !pop.contains(e.target)) closeInspect();
+  });
+  document.addEventListener("focusin", e => {
+    const anchor = e.target.closest && e.target.closest("[data-inspect-id]");
+    if (anchor) openInspect(anchor);
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeInspect(); return; }
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest) {
+      const anchor = e.target.closest("[data-inspect-id]");
+      if (anchor) { e.preventDefault(); openInspect(anchor); }
+    }
+  });
+  window.addEventListener("resize", () => { if (_inspectAnchor) positionInspect(_inspectAnchor); });
+  document.addEventListener("scroll", () => { if (_inspectAnchor) positionInspect(_inspectAnchor); }, true);
+}
+
 // ---- view switching ---------------------------------------------------------
 const SHEET_LABEL = { character:"Character", inventory:"Inventory",
   spellbook:"Abilities", progression:"Progression",
@@ -1804,6 +2007,7 @@ function setupSettings() {
 function renderSheet() {
   const wrap = $("sheet-wrap");
   if (!wrap || activeView === "play") return;
+  resetInspectStore();
   const pc = getPC();
   if (!lastState) { wrap.innerHTML = sheetShell("Loading…", "", `<div class="sheet-empty">Waiting for the story to begin…</div>`); return; }
   // These project the whole world/cast — they don't need a PC.
@@ -1944,7 +2148,7 @@ function renderInventory(c, wrap) {
   const rows = inv.map(it => {
     const marks = (it.equipped?`<span class="eqmark">equipped</span>`:"")
       + (it.requires_attunement?`<span class="att">${it.attuned?"attuned":"needs attunement"}</span>`:"");
-    return `<tr class="${it.equipped?"eq":""}">
+    return `<tr class="${it.equipped?"eq":""}"${inspectAttrs("item", it, { state: lastState, character: c })}>
       <td>${esc(it.name)}${marks}${it.description?`<span class="it-desc">${esc(it.description)}</span>`:""}</td>
       <td class="num">${it.quantity ?? 1}</td>
       ${anyWeight?`<td class="num">${it.weight?esc(it.weight):"—"}</td>`:""}</tr>`;
@@ -2021,7 +2225,7 @@ function renderSpellbook(c, wrap) {
   // Prepared spells are starred; the rest of the known list follows.
   const prep = known.filter(s=>prepared.has(s));
   const rest = known.filter(s=>!prepared.has(s));
-  const chip = (s,isPrep) => `<span class="spell ${isPrep?"prep":""}">${isPrep?`<span class="star">★</span>`:""}${esc(s)}</span>`;
+  const chip = (s,isPrep) => `<span class="spell ${isPrep?"prep":""}"${inspectAttrs("spell", { name: s, prepared: isPrep, slots: inspectSpellSlots(c.spell_slots || {}) }, { state: lastState, character: c })}>${isPrep?`<span class="star">★</span>`:""}${esc(s)}</span>`;
   const prepBlock = prep.length ? `<div class="spell-lv"><div class="lv-h">Prepared <span style="color:var(--faint)">(${prep.length})</span></div>
       <div class="spell-chips">${prep.map(s=>chip(s,true)).join("")}</div></div>` : "";
   const restBlock = rest.length ? `<div class="spell-lv"><div class="lv-h">Known <span style="color:var(--faint)">(${rest.length})</span></div>
@@ -2398,7 +2602,7 @@ function renderPartyView(wrap) {
     const tag = c.kind === "player" ? "You" : (c.kind === "companion" ? "Companion" : esc(c.kind));
     const conds = (c.conditions || []).length
       ? `<div class="kv-tags">${c.conditions.map(x => `<span class="tag cond">${esc(x)}</span>`).join("")}</div>` : "";
-    return `<div class="scard"><h3>${esc(c.name)} <span class="h3n">${tag}</span></h3>
+    return `<div class="scard"${inspectAttrs("character", c, { state: s })}><h3>${esc(c.name)} <span class="h3n">${tag}</span></h3>
       <div class="kv-line">${esc(c.race || "")} ${esc(klass(c) || "")}</div>
       <div class="kv-tags"><span class="tag">❤ ${esc(c.current_hp ?? "?")}/${esc(c.max_hp ?? "?")}</span>
         <span class="tag">⛨ AC ${esc(c.armor_class ?? "?")}</span>${c.dead ? `<span class="tag cond">fallen</span>` : ""}</div>${conds}</div>`;
@@ -2450,6 +2654,7 @@ function renderWorldView(wrap) {
 }
 
 function renderState(s) {
+  resetInspectStore();
   lastState = s;                              // stash for the player-sheet tabs (S2)
   if (s && s.empty) {
     // No campaign on disk yet (#M2): show a waiting message and keep the action layer off —
@@ -2497,7 +2702,7 @@ function renderState(s) {
   const party = (s.party||[]).map(id => (s.characters||{})[id]).filter(Boolean);
   if (party[0]) pcName = party[0].name;
   $("party").innerHTML = party.map(c => { const h=hp(c); const dying=isDying(c); return `
-    <div class="row${dying?" is-dying":""}">${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
+    <div class="row${dying?" is-dying":""}"${inspectAttrs("character", c, { state: s })}>${avatar(c,"avatar")}<span class="nm">${esc(c.name)}<div class="sub">${esc(klass(c)||c.kind)}</div></span>
     ${dying
       ? `<span class="dying-tag">Dying</span>${deathSavePips(c.death_saves,{labels:false})}`
       : `<span class="hpbar ${h.low?"low":""}" title="${h.txt}"><i style="width:${h.pct}%"></i></span>`}</div>`; }).join("")
@@ -2534,7 +2739,7 @@ function renderState(s) {
     const mins = travel[id];
     const walk = walkLabel(mins);
     const label = locLabel(s, id, locCounts);
-    return `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(label)}${walk?` (${walk})`:""}">
+    return `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(label)}${walk?` (${walk})`:""}"${inspectAttrs("location", l, { state: s, id })}>
       <span class="arrow">→</span>${esc(label)}${walk?`<span class="walk">${esc(walk)}</span>`:""}${l.visited?`<span class="vtag">visited</span>`:""}</li>`;
   };
   let nearbyHTML;
@@ -2564,7 +2769,7 @@ function renderState(s) {
     const duplicate = nameCount(titleCounts, title) > 1;
     const meta = questMeta(s, q, locCounts);
     if (duplicate && q.id) meta.push("#" + shortId(q.id));
-    return `<div class="quest"><div class="qt"><span class="qn">${esc(title)}</span><span class="qs ${esc(kind)}">${esc(q.status || (kind==="hook"?"open":"active"))}</span></div>
+    return `<div class="quest"${inspectAttrs("quest", q, { state: s, kind })}><div class="qt"><span class="qn">${esc(title)}</span><span class="qs ${esc(kind)}">${esc(q.status || (kind==="hook"?"open":"active"))}</span></div>
       ${meta.length ? `<div class="g">${esc(meta.join(" · "))}</div>` : ""}</div>`;
   };
   $("quests").innerHTML = [
@@ -2596,7 +2801,7 @@ function npcCard(c, inCombat) {
   // portrait scope (fix #5): wireScenePortraits() probes /image?scope=portrait-<id>
   // and overlays a real portrait when one exists; otherwise the gradient monogram stays.
   const pscope = c.id ? "portrait-" + c.id : "";
-  return `<div class="npc-card ${k}">
+  return `<div class="npc-card ${k}"${inspectAttrs("character", c, { state: lastState })}>
     <span class="pavatar ${k}"${pscope?` data-portrait="${esc(pscope)}"`:""}>${esc(initials(c.name))}</span>
     <div class="npc-body">
       <div class="npc-top"><span class="npc-name">${esc(c.name)}</span>${rcl?`<span class="npc-rcl">${rcl}</span>`:""}</div>
@@ -2647,7 +2852,7 @@ function drawMap(state) {
     const p=pos[id]||[W/2,H/2], loc=locs[id]||{}, nm=loc.name||id, label=locLabel(s, id, locCounts);
     const cls=(id===curId?"cur ":"")+(loc.visited?"visited ":"unvisited ")+(questLocs.has(id)?"quest ":"")+(hookLocs.has(id)?"hook ":"")+"loc";
     const pin = questLocs.has(id) || hookLocs.has(id) ? `<circle class="pin" cx="10" cy="-10" r="4"/>` : "";
-    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" data-label="${esc(label)}" transform="translate(${p[0]},${p[1]})"><title>${esc(label)}</title><circle r="13"/>${pin}<text y="24">${esc(label).slice(0,18)}</text></g>`;
+    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" data-label="${esc(label)}"${inspectAttrs("location", loc, { state: s, id })} transform="translate(${p[0]},${p[1]})"><title>${esc(label)}</title><circle r="13"/>${pin}<text y="24">${esc(label).slice(0,18)}</text></g>`;
   });
   // wrap content in a single transform group so zoom/pan apply uniformly
   svg.innerHTML = `<g id="mapview" transform="translate(${mapXf.x},${mapXf.y}) scale(${mapXf.k})">${e+n}</g>`;
@@ -2884,7 +3089,7 @@ function wireNearby() {
     submitMove({ kind:"do", text:"travel to "+li.getAttribute("data-loc") });
   });
 }
-renderPalette(); wireSayDo(); wireMap(); wireNearby(); renderDice(); wireTabs(); setupSettings(); wireSwitcher();
+renderPalette(); wireSayDo(); wireMap(); wireNearby(); wireInspect(); renderDice(); wireTabs(); setupSettings(); wireSwitcher();
 loadCampaigns();                 // populate the topbar switcher up front (H3)
 poll(); setInterval(poll, 1500);
 </script>
