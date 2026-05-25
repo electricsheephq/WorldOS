@@ -160,6 +160,12 @@
   svg { width:100%; height:210px; display:block; }
   .edge { stroke:#4a3e2c; stroke-width:2; } .node circle { fill:#241d14; stroke:#6b5a3e; stroke-width:2; }
   .node.cur circle { fill:#5a3d1e; stroke:var(--gold); stroke-width:3; } .node.visited circle { stroke:#8a7c5a; }
+  .node.quest circle { stroke:#e8c98a; }
+  .node.hook circle { stroke:#8fbfe0; }
+  .node.unvisited { opacity:.72; }
+  .node .pin { stroke:#100d0a; stroke-width:1; }
+  .node.quest .pin { fill:var(--gold); }
+  .node.hook .pin { fill:#8fbfe0; }
   .node text { fill:#d8ccb2; font-size:9px; text-anchor:middle; }
   .row { display:flex; align-items:center; gap:9px; padding:5px 0; }
   /* Party-row crest avatar (fix #3): radial gradient + ring per kind, matching the
@@ -174,7 +180,14 @@
   .row .nm { flex:1; } .row .sub { color:var(--faint); font-size:11px; }
   .hpbar { height:6px; width:84px; background:#3a2f22; border-radius:3px; overflow:hidden; flex:none; }
   .hpbar > i { display:block; height:100%; background:var(--player); } .hpbar.low > i { background:var(--monster); }
-  .quest { padding:5px 0; border-bottom:1px solid #241d14; } .quest .g { color:var(--faint); font-size:11px; }
+  .quest { padding:7px 0; border-bottom:1px solid #241d14; }
+  .quest:last-child { border-bottom:none; }
+  .quest .qt { display:flex; align-items:baseline; gap:7px; }
+  .quest .qn { color:var(--ink); font-weight:650; min-width:0; }
+  .quest .qs { margin-left:auto; flex:none; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--gold); border:1px solid #4a3c22; background:#241a0d; border-radius:8px; padding:1px 6px; }
+  .quest .qs.hook { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
+  .quest .g { color:var(--faint); font-size:11px; line-height:1.45; margin-top:2px; }
   .fac { display:flex; justify-content:space-between; padding:3px 0; } .fac .rep { color:var(--dim); }
   .empty { color:var(--faint); font-style:italic; }
 
@@ -368,6 +381,12 @@
   .node.loc:hover text { fill:var(--gold); }
   .maptip { position:absolute; pointer-events:none; background:#1a140d; border:1px solid #4a3c22; color:var(--gold); font-size:11px; padding:2px 7px; border-radius:6px; opacity:0; transform:translate(-50%,-130%); transition:opacity .1s; white-space:nowrap; }
   .maphint { font-size:9px; color:var(--faint); margin-top:3px; text-align:right; }
+  .maplegend { display:flex; flex-wrap:wrap; gap:7px; margin-top:7px; font-size:9.5px; color:var(--faint); }
+  .maplegend span { display:inline-flex; align-items:center; gap:4px; }
+  .maplegend i { width:7px; height:7px; border-radius:50%; display:inline-block; background:#6b5a3e; }
+  .maplegend .cur i { background:var(--gold); }
+  .maplegend .quest i { background:var(--gold2); }
+  .maplegend .hook i { background:#8fbfe0; }
 
   /* ============================================================================
      PLAYER SHEET VIEWS (S2 tabs) — Character / Inventory / Spellbook / Progression.
@@ -444,6 +463,23 @@
   .kv-line { font-size:13px; color:var(--ink); line-height:1.55; margin-top:2px; }
   .kv-line + .kv-line { margin-top:5px; }
   .kv-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .quest-card.tracked { border-color:#6a5330; }
+  .quest-card.hook { border-color:#2e4456; background:linear-gradient(180deg,#17202a,#121821); }
+  .quest-card.failed { border-color:#5a3030; }
+  .quest-card.completed { border-color:#2f4a2f; }
+  .quest-card h3 { min-width:0; }
+  .quest-card .qtitle { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .quest-card .qid { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:none; }
+  .obj-list { list-style:none; margin:9px 0 0; padding:0; display:flex; flex-direction:column; gap:5px; }
+  .obj-list li { display:flex; gap:7px; color:#d8ccb2; font-size:12.5px; line-height:1.45; }
+  .obj-list .box { width:12px; height:12px; margin-top:3px; border:1px solid #5a4a2c; border-radius:3px; flex:none; }
+  .obj-list li.done { color:var(--faint); text-decoration:line-through; }
+  .obj-list li.done .box { background:#2f4a2f; border-color:#5f8a5f; }
+  .journal-group { margin-top:16px; }
+  .journal-group:first-child { margin-top:0; }
+  .journal-head { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:11px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--gold2); }
+  .journal-head .count { color:var(--faint); letter-spacing:0; text-transform:none; }
   /* prose blocks (appearance / backstory) */
   .prose-blk + .prose-blk { margin-top:12px; }
   .prose-blk .pb-k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; margin-bottom:3px; }
@@ -737,6 +773,7 @@
     <div class="card" id="mapcard" style="position:relative"><h2>Map</h2>
       <svg id="svg"></svg>
       <div class="maptip" id="maptip"></div>
+      <div class="maplegend" id="maplegend"></div>
       <div class="maphint">scroll to zoom · drag to pan · click a place to travel</div></div>
     <details class="ctx" id="ctx-quests" open><summary><span class="tw">▸</span> Quests &amp; factions
         <span class="ctx-n" id="ctx-quests-n"></span></summary>
@@ -793,6 +830,80 @@ const $ = (id) => document.getElementById(id);
 // title="..."/data-loc="..." — an unescaped " breaks out of the attribute → DOM/attr injection).
 const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const shortId = (id) => {
+  const s = (id ?? "").toString();
+  if (!s) return "";
+  const tail = s.includes("_") ? s.split("_").filter(Boolean).pop() : s;
+  return (tail || s).slice(-7);
+};
+const statusClass = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "unknown";
+const countNames = (items, nameOf) => items.reduce((m, item) => {
+  const k = (nameOf(item) || "").trim().toLowerCase();
+  if (k) m.set(k, (m.get(k) || 0) + 1);
+  return m;
+}, new Map());
+const nameCount = (counts, name) => counts.get((name || "").trim().toLowerCase()) || 0;
+const entityName = (s, id) => {
+  if (!id) return "";
+  const ch = (s.characters || {})[id];
+  const fac = (s.factions || {})[id];
+  return (ch && ch.name) || (fac && fac.name) || "";
+};
+function locLabel(s, id, counts) {
+  if (!id) return "";
+  const loc = (s.locations || {})[id] || {};
+  const name = loc.name || id;
+  const bits = [];
+  if (loc.region) bits.push(loc.region);
+  if (loc.visited === false) bits.push("unvisited");
+  if (nameCount(counts || new Map(), name) > 1) bits.push("#" + shortId(id));
+  return bits.length ? `${name} (${bits.join(" · ")})` : name;
+}
+function questTitleCounts(s) {
+  const tracked = Object.values(s.quests || {});
+  const hooks = (s.quest_hooks || []).map(h => ({ title: h.title || h.grievance || h.note || "Quest hook" }));
+  return countNames([...tracked, ...hooks], q => q.title || q.grievance || q.note || "Quest hook");
+}
+function questMeta(s, q, locCounts) {
+  const parts = [];
+  const giverId = q.giver_id || q.giver;
+  const targetId = q.target_id || q.target;
+  const giver = entityName(s, giverId);
+  const target = entityName(s, targetId);
+  const place = locLabel(s, q.location_id || q.place_id, locCounts);
+  if (giver) parts.push("from " + giver);
+  else if (giverId) parts.push("from #" + shortId(giverId));
+  if (target) parts.push("target " + target);
+  else if (targetId) parts.push("target #" + shortId(targetId));
+  if (place) parts.push("at " + place);
+  return parts;
+}
+function questCard(s, q, opts = {}) {
+  const locCounts = opts.locCounts || countNames(Object.values(s.locations || {}), l => l.name || "");
+  const titleCounts = opts.titleCounts || questTitleCounts(s);
+  const kind = opts.kind || "tracked";
+  const title = q.title || q.grievance || q.note || (kind === "hook" ? "Quest hook" : "A quest");
+  const status = q.status || (kind === "hook" ? "open" : "active");
+  const duplicate = nameCount(titleCounts, title) > 1;
+  const idTag = q.id ? `#${shortId(q.id)}` : "";
+  const h3n = [status, duplicate && idTag].filter(Boolean).join(" · ");
+  const meta = questMeta(s, q, locCounts);
+  if (q.item) meta.push("item " + q.item);
+  if (q.spine) meta.push("main arc");
+  const desc = q.description || q.note || q.grievance || "";
+  const done = new Set(q.completed_objectives || []);
+  const objectives = (q.objectives || []).map(o => {
+    const text = (o && typeof o === "object") ? (o.text || o.name || "") : o;
+    const isDone = (o && typeof o === "object" && !!o.done) || done.has(text);
+    return text ? `<li class="${isDone?"done":""}"><span class="box"></span><span>${esc(text)}</span></li>` : "";
+  }).filter(Boolean).join("");
+  return `<div class="scard quest-card ${esc(kind)} ${esc(statusClass(status))}">
+    <h3><span class="qtitle">${esc(title)}</span><span class="h3n${duplicate?" qid":""}">${esc(h3n || idTag)}</span></h3>
+    ${meta.length ? `<div class="kv-tags">${meta.map(m => `<span class="tag">${esc(m)}</span>`).join("")}</div>` : ""}
+    ${desc ? `<div class="kv-line" style="color:var(--dim)">${esc(desc)}</div>` : ""}
+    ${objectives ? `<ul class="obj-list">${objectives}</ul>` : ""}
+  </div>`;
+}
 const avatar = (c, cls) => `<span class="${cls} ${esc(c.kind)}" title="${esc(c.kind)}">${esc(initials(c.name))}</span>`;
 
 // ---- campaign switcher (H3) -------------------------------------------------
@@ -1815,24 +1926,31 @@ function renderPartyView(wrap) {
 }
 function renderQuestsView(wrap) {
   const s = lastState || {};
-  const order = { active: 0, completed: 1, failed: 2 };
-  const qs = Object.values(s.quests || {}).sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
-  const nm = id => ((s.characters || {})[id] || {}).name || "";
-  const loc = id => ((s.locations || {})[id] || {}).name || "";
+  const order = { active: 0, open: 1, completed: 2, resolved: 2, failed: 3 };
+  const locCounts = countNames(Object.values(s.locations || {}), l => l.name || "");
+  const titleCounts = questTitleCounts(s);
+  const tracked = Object.values(s.quests || {})
+    .sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (a.title || "").localeCompare(b.title || ""));
+  const hooks = (s.quest_hooks || [])
+    .sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (a.title || a.grievance || "").localeCompare(b.title || b.grievance || ""));
+  const groups = [
+    ["Tracked quests", tracked, "tracked"],
+    ["Open hooks", hooks.filter(h => (h.status || "open") !== "resolved"), "hook"],
+    ["Resolved hooks", hooks.filter(h => (h.status || "open") === "resolved"), "hook"],
+  ].filter(([, items]) => items.length);
   let body;
-  if (!qs.length) body = `<div class="sheet-empty">No quests yet — they're out there, waiting to be stumbled into.</div>`;
-  else body = `<div class="sgrid">${qs.map(q => {
-    const meta = [q.giver_id && ("from " + nm(q.giver_id)), q.location_id && ("at " + loc(q.location_id))].filter(Boolean).join(" · ");
-    return `<div class="scard"><h3>${esc(q.title || "A quest")} <span class="h3n">${esc(q.status || "active")}</span></h3>
-      ${meta ? `<div class="kv-line">${esc(meta)}</div>` : ""}
-      ${q.description ? `<div class="kv-line" style="color:var(--dim)">${esc(q.description)}</div>` : ""}</div>`;
-  }).join("")}</div>`;
+  if (!groups.length) body = `<div class="sheet-empty">No quests or hooks yet — they're out there, waiting to be stumbled into.</div>`;
+  else body = groups.map(([label, items, kind]) => `<section class="journal-group">
+    <div class="journal-head">${esc(label)} <span class="count">${items.length}</span></div>
+    <div class="sgrid cols2">${items.map(q => questCard(s, q, { kind, locCounts, titleCounts })).join("")}</div>
+  </section>`).join("");
   wrap.innerHTML = sheetShell("Quests", "", body);
 }
 function renderWorldView(wrap) {
   const s = lastState || {};
   const locs = s.locations || {};
   const cur = locs[s.current_location_id];
+  const locCounts = countNames(Object.values(locs), l => l.name || "");
   const visited = Object.values(locs).filter(l => l.visited);
   const factions = Object.values(s.factions || {});
   const wmeta = [s.era && ("Era: " + s.era), (s.day != null) && ("Day " + s.day + (s.time_of_day ? ", " + s.time_of_day : ""))].filter(Boolean).map(esc).join(" · ");
@@ -1842,7 +1960,7 @@ function renderWorldView(wrap) {
   const here = cur ? `<div class="scard"><h3>You are here <span class="h3n">${esc(cur.name)}</span></h3>
     ${cur.description ? `<div class="kv-line" style="color:var(--dim)">${esc(cur.description)}</div>` : ""}</div>` : "";
   const placesList = visited.length
-    ? visited.map(l => `<span class="tag${l.id === s.current_location_id ? " cond" : ""}">${esc(l.name)}</span>`).join("")
+    ? visited.map(l => `<span class="tag${l.id === s.current_location_id ? " cond" : ""}">${esc(locLabel(s, l.id, locCounts))}</span>`).join("")
     : `<span style="color:var(--faint)">Nowhere charted yet.</span>`;
   const places = `<div class="scard"><h3>Places known <span class="h3n">${visited.length}</span></h3><div class="kv-tags">${placesList}</div></div>`;
   const facBody = factions.length ? `<div class="scard"><h3>Factions <span class="h3n">${factions.length}</span></h3>
@@ -1873,6 +1991,7 @@ function renderState(s) {
   $("mode-badge").textContent = (s.pacing_mode === "downtime") ? "Downtime Mode" : "Adventure Mode";
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
   const curId = s.current_location_id, locs = s.locations||{}, cur = locs[curId];
+  const locCounts = countNames(Object.values(locs), l => l.name || "");
   $("where").textContent = cur ? `· ${cur.name}` : "";
   // the scene-card byline (under the illustration placeholder)
   $("loc").innerHTML = cur ? `<b>${esc(cur.name)}</b>${cur.description?` — ${esc(cur.description)}`:""}` : "";
@@ -1919,8 +2038,9 @@ function renderState(s) {
   const nearbyLi = ({id,l}) => {
     const mins = travel[id];
     const walk = walkLabel(mins);
-    return `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(l.name||id)}${walk?` (${walk})`:""}">
-      <span class="arrow">→</span>${esc(l.name||id)}${walk?`<span class="walk">${esc(walk)}</span>`:""}${l.visited?`<span class="vtag">visited</span>`:""}</li>`;
+    const label = locLabel(s, id, locCounts);
+    return `<li data-loc="${esc(l.name||id)}" title="Travel to ${esc(label)}${walk?` (${walk})`:""}">
+      <span class="arrow">→</span>${esc(label)}${walk?`<span class="walk">${esc(walk)}</span>`:""}${l.visited?`<span class="vtag">visited</span>`:""}</li>`;
   };
   let nearbyHTML;
   if (!nearby.length) {
@@ -1939,14 +2059,27 @@ function renderState(s) {
   $("ctx-nearby").innerHTML = nearbyHTML;
 
   // ---- Quests & factions context block ----
-  const quests = Object.values(s.quests||{}).filter(q=>q.status==="active");
-  $("ctx-quests-n").textContent = quests.length ? `${quests.length} active` : "";
-  $("quests").innerHTML = quests.map(q=>`<div class="quest">${esc(q.title)}${q.giver_id?`<div class="g">from ${esc(q.giver_id)}</div>`:""}</div>`).join("")
-    || `<div class="empty">No active quests.</div>`;
+  const activeQuests = Object.values(s.quests||{}).filter(q=>(q.status||"active")==="active");
+  const openHooks = (s.quest_hooks||[]).filter(h=>(h.status||"open")!=="resolved");
+  const titleCounts = questTitleCounts(s);
+  $("ctx-quests-n").textContent = activeQuests.length || openHooks.length
+    ? `${activeQuests.length} active · ${openHooks.length} hooks` : "";
+  const miniQuest = (q, kind) => {
+    const title = q.title || q.grievance || q.note || (kind === "hook" ? "Quest hook" : "A quest");
+    const duplicate = nameCount(titleCounts, title) > 1;
+    const meta = questMeta(s, q, locCounts);
+    if (duplicate && q.id) meta.push("#" + shortId(q.id));
+    return `<div class="quest"><div class="qt"><span class="qn">${esc(title)}</span><span class="qs ${esc(kind)}">${esc(q.status || (kind==="hook"?"open":"active"))}</span></div>
+      ${meta.length ? `<div class="g">${esc(meta.join(" · "))}</div>` : ""}</div>`;
+  };
+  $("quests").innerHTML = [
+    ...activeQuests.map(q => miniQuest(q, "tracked")),
+    ...openHooks.map(h => miniQuest(h, "hook")),
+  ].join("") || `<div class="empty">No active quests or open hooks.</div>`;
   const fac = Object.values(s.factions||{});
   $("factions").innerHTML = fac.map(f=>`<div class="fac"><span>${esc(f.name)}</span><span class="rep">${f.reputation>0?"+":""}${f.reputation}</span></div>`).join("")
     || `<div class="empty">—</div>`;
-  drawMap(locs, curId, s.map_kind);
+  drawMap(s);
 }
 
 // A fables-style compact NPC stat card: portrait initials, name, race·class, a
@@ -1996,18 +2129,40 @@ function wireScenePortraits() {
 // Pan/zoom transform persists across the 1.5s re-renders so the player's view
 // doesn't snap back while they're exploring the map.
 let mapXf = { k:1, x:0, y:0 };
-function drawMap(locs, curId, kind) {
+function drawMap(state) {
+  const s = state || {};
+  const locs = s.locations || {};
+  const curId = s.current_location_id;
+  const kind = s.map_kind;
   const ids = Object.keys(locs), svg = $("svg"), W = svg.clientWidth||420, H = 210, pos = {};
+  const locCounts = countNames(Object.values(locs), l => l.name || "");
+  const questLocs = new Set(Object.values(s.quests || {})
+    .filter(q => (q.status || "active") === "active" && q.location_id)
+    .map(q => q.location_id));
+  const hookLocs = new Set((s.quest_hooks || [])
+    .filter(h => (h.status || "open") !== "resolved" && h.place_id)
+    .map(h => h.place_id));
   // --- existing hex / circular-fallback layout logic (unchanged) ---
   if (kind==="hex" && ids.some(id=>locs[id].hex)) {
     const SZ=26; ids.forEach(id=>{const h=locs[id].hex; if(h) pos[id]=[W/2+h[0]*1.5*SZ, H/2+(h[1]+h[0]/2)*Math.sqrt(3)*SZ];});
   } else ids.forEach((id,i)=>{const a=2*Math.PI*i/Math.max(1,ids.length); pos[id]=[W/2+0.36*W*Math.cos(a), H/2+0.34*H*Math.sin(a)];});
   let e="",n="";
   ids.forEach(id=>(locs[id].connections||[]).forEach(c=>{ if(pos[id]&&pos[c]) e+=`<line class="edge" x1="${pos[id][0]}" y1="${pos[id][1]}" x2="${pos[c][0]}" y2="${pos[c][1]}"/>`; }));
-  ids.forEach(id=>{const p=pos[id]||[W/2,H/2]; const nm=locs[id].name||id; const cls=(id===curId?"cur ":"")+(locs[id].visited?"visited ":"")+"loc";
-    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" transform="translate(${p[0]},${p[1]})"><circle r="13"/><text y="24">${esc(nm).slice(0,15)}</text></g>`;});
+  ids.forEach(id=>{
+    const p=pos[id]||[W/2,H/2], loc=locs[id]||{}, nm=loc.name||id, label=locLabel(s, id, locCounts);
+    const cls=(id===curId?"cur ":"")+(loc.visited?"visited ":"unvisited ")+(questLocs.has(id)?"quest ":"")+(hookLocs.has(id)?"hook ":"")+"loc";
+    const pin = questLocs.has(id) || hookLocs.has(id) ? `<circle class="pin" cx="10" cy="-10" r="4"/>` : "";
+    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" data-label="${esc(label)}" transform="translate(${p[0]},${p[1]})"><title>${esc(label)}</title><circle r="13"/>${pin}<text y="24">${esc(label).slice(0,18)}</text></g>`;
+  });
   // wrap content in a single transform group so zoom/pan apply uniformly
   svg.innerHTML = `<g id="mapview" transform="translate(${mapXf.x},${mapXf.y}) scale(${mapXf.k})">${e+n}</g>`;
+  const legend = $("maplegend");
+  if (legend) legend.innerHTML = ids.length ? [
+    `<span class="cur"><i></i>Current</span>`,
+    questLocs.size ? `<span class="quest"><i></i>Active quest</span>` : "",
+    hookLocs.size ? `<span class="hook"><i></i>Open hook</span>` : "",
+    `<span><i></i>${ids.length} places</span>`,
+  ].filter(Boolean).join("") : `<span>No mapped locations yet</span>`;
 }
 
 // Interactions are wired ONCE on the live <svg>; redraws only replace inner nodes.
@@ -2031,7 +2186,7 @@ function wireMap() {
   svg.addEventListener("pointermove", e => {
     if (dragging) { const dx=e.clientX-sx, dy=e.clientY-sy; moved=Math.max(moved,Math.abs(dx)+Math.abs(dy)); mapXf.x=ox+dx; mapXf.y=oy+dy; apply(); return; }
     const g = e.target.closest && e.target.closest(".node.loc");
-    if (g) { const r=svg.getBoundingClientRect(); tip.textContent="Travel to "+g.getAttribute("data-loc"); tip.style.left=(e.clientX-r.left)+"px"; tip.style.top=(e.clientY-r.top)+"px"; tip.style.opacity="1"; }
+    if (g) { const r=svg.getBoundingClientRect(); tip.textContent=g.getAttribute("data-label") || g.getAttribute("data-loc"); tip.style.left=(e.clientX-r.left)+"px"; tip.style.top=(e.clientY-r.top)+"px"; tip.style.opacity="1"; }
     else tip.style.opacity="0";
   });
   const endDrag = () => { dragging=false; svg.classList.remove("grabbing"); };
