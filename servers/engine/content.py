@@ -17,7 +17,16 @@ from pydantic import ValidationError
 
 import questgen
 import worldsim
-from models import Campaign, CompanionArc, Character, Faction, Location, Quest, WorldState
+from models import (
+    Campaign,
+    CompanionArc,
+    CompanionDossier,
+    Character,
+    Faction,
+    Location,
+    Quest,
+    WorldState,
+)
 from store import safe_path_segment  # path-containment guard for world/adventure ids
 
 
@@ -149,6 +158,26 @@ def _as_list_lenient(rec: dict, key: str) -> list:
     if isinstance(val, list):
         return val
     return [val]
+
+
+def _coerce_dossier(raw, *, where: str) -> "CompanionDossier | None":
+    """Validate an OPTIONAL companion-dossier block into a CompanionDossier, or DEGRADE.
+
+    #68: a dossier is externally-authored content (npc_roster / canon JSON / ending
+    companion_seeds). A present-but-malformed block (wrong shape, bad type, a forbidden
+    extra key) must SKIP — the companion simply gets no dossier — never abort start_world,
+    exactly like the `companion_seeds` arc and `world_state` guards. A missing/None block
+    returns None (today's behavior). `where` is a short diagnostic label for the skip log."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        print(f"[content] skipping malformed companion_dossier in {where} (not an object)")
+        return None
+    try:
+        return CompanionDossier.model_validate(raw)
+    except (ValidationError, ValueError, TypeError):
+        print(f"[content] skipping malformed companion_dossier in {where}")
+        return None
 
 
 def seed_campaign(adv: dict) -> Campaign:
@@ -596,32 +625,47 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     # canon companion's relationship arc + sealed agenda, so "the chosen ending shapes
     # which companions betray you, and why" is a real engine fact at start_world — not
     # something the DM has to author by hand. `companion_seeds` maps a roster companion
-    # (by id like "npc-the-emperor" OR display name) -> {"arc": {arc_gates, agenda}}.
-    # Each seed lands on the SAME roster Character `fates` resolves; a seed for a
-    # companion not present in this campaign is skipped silently. No `companion_seeds`
-    # key -> no arcs touched, so the default path is byte-for-byte today's behavior.
+    # (by id like "npc-the-emperor" OR display name) -> {"arc": {arc_gates, agenda},
+    # "dossier"?: {wound, wants, values, ...}}. Each seed lands on the SAME roster
+    # Character `fates` resolves; a seed for a companion not present in this campaign is
+    # skipped silently. No `companion_seeds` key -> nothing touched, so the default path
+    # is byte-for-byte today's behavior.
     companion_seeds = overlay.get("companion_seeds") or {}
     if isinstance(companion_seeds, dict):
+        ov_id = overlay.get("id", overlay.get("name", "?"))
         for key, seed in companion_seeds.items():
-            if not isinstance(seed, dict) or not isinstance(seed.get("arc"), dict):
+            if not isinstance(seed, dict):
                 continue
             ch = _resolve_roster(str(key))
             if ch is None:
                 continue  # companion isn't in this world's roster/campaign — skip silently
-            # A dict-but-INVALID arc (e.g. a `day_reached` agenda missing its M2-required
-            # `value`, a bad gate kind, a forbidden extra key) raises pydantic at validate
-            # time. An ending overlay is a small hand-edited add-on (like `fates` above):
-            # a single bad seed must DEGRADE — skip it (the companion gets no arc) — not
-            # abort the whole start_world. (The strict adventure-seed path stays loud.)
-            try:
-                ch.arc = CompanionArc.model_validate(seed["arc"])
-            except (ValidationError, ValueError, TypeError):
-                # skip the malformed seed; a valid sibling seed in the same overlay still applies
-                print(
-                    f"[content] skipping malformed companion_seeds arc for {key!r} "
-                    f"in ending overlay {overlay.get('id', overlay.get('name', '?'))!r}"
-                )
-                continue
+            # The relationship arc + sealed agenda (S4). A dict-but-INVALID arc (e.g. a
+            # `day_reached` agenda missing its M2-required `value`, a bad gate kind, a
+            # forbidden extra key) raises pydantic at validate time. An ending overlay is a
+            # small hand-edited add-on (like `fates` above): a single bad arc must DEGRADE —
+            # skip it (the companion gets no arc) — not abort the whole start_world. (The
+            # strict adventure-seed path stays loud.) A seed may legitimately carry only a
+            # dossier (no `arc`), so a missing/non-dict `arc` just skips the arc, not the seed.
+            if isinstance(seed.get("arc"), dict):
+                try:
+                    ch.arc = CompanionArc.model_validate(seed["arc"])
+                except (ValidationError, ValueError, TypeError):
+                    # skip the malformed arc; a valid sibling seed in the same overlay still applies
+                    print(
+                        f"[content] skipping malformed companion_seeds arc for {key!r} "
+                        f"in ending overlay {ov_id!r}"
+                    )
+            # ADDITIVE (#68): the same seed may PRE-LOAD the companion's operational dossier
+            # (wound/wants/values/banter/approval causes/relationships) so the chosen ending
+            # also shapes who the companion IS to the living-world systems, not just whether
+            # they turn. Degrades independently of the arc — a malformed dossier is skipped,
+            # a valid arc on the same seed still applies (and vice-versa).
+            dossier = _coerce_dossier(
+                seed.get("companion_dossier", seed.get("dossier")),
+                where=f"companion_seeds {key!r} in ending overlay {ov_id!r}",
+            )
+            if dossier is not None:
+                ch.companion_dossier = dossier
 
 
 def _resolve_quest_variants(c: Campaign, world: dict, rng: random.Random) -> None:
@@ -843,6 +887,17 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             ch.id = npc["id"]
         if npc.get("hook"):
             ch.memory.append(npc["hook"])
+        # ADDITIVE (#68): a roster entry may carry an OPTIONAL companion dossier — the
+        # operational identity (wound/wants/values/banter/approval causes/relationships) the
+        # living-world systems act on. A malformed block DEGRADES (the NPC gets no dossier),
+        # it never aborts the world seed; no `dossier` key -> dossier stays None (today's
+        # behavior). Accepts `dossier` or the full `companion_dossier` alias.
+        dossier = _coerce_dossier(
+            npc.get("companion_dossier", npc.get("dossier")),
+            where=f"npc_roster entry {ch.name!r}",
+        )
+        if dossier is not None:
+            ch.companion_dossier = dossier
         c.characters[ch.id] = ch
 
     # World facts the DM recalls to stay consistent (indexed into the ledger as lore).

@@ -48,6 +48,7 @@ from models import (
     Combat,
     Combatant,
     CompanionArc,
+    CompanionDossier,
     Condition,
     DeathSaves,
     Decision,
@@ -1250,12 +1251,32 @@ def recruit_companion(
             ch.arc = CompanionArc.model_validate({"arc_gates": [
                 {"kind": "loyalty", "threshold": 25,
                  "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
+        # A companion also needs a DOSSIER for the living-world systems (camp scheduling,
+        # banter selection, approval causes) to have operational state to act on (#68). If
+        # none was seeded (i.e. not an ending/roster/canon dossier), synthesize a MINIMAL
+        # one from what the record ALREADY carries — the personality/backstory hint and the
+        # memory facts become terse camp prompts, so a freshly-recruited companion isn't a
+        # blank slate at camp. Guarded on None so a seeded dossier is NEVER overwritten; the
+        # DM can flesh it out via update_character. We don't invent wants/values/approval
+        # causes the record doesn't imply — the DM authors those as the bond develops.
+        if ch.companion_dossier is None:
+            seed_hint = (ch.backstory or ch.personality or "").strip()
+            camp_prompts: list[str] = []
+            if seed_hint:
+                # one short clause, not the whole biography — keep the dossier operational
+                clause = seed_hint.replace("\n", " ").split(". ")[0].strip()
+                if clause:
+                    camp_prompts.append(clause[:200])
+            # the NPC's seeded hook / remembered facts make good, character-specific camp talk
+            camp_prompts.extend(m.strip() for m in ch.memory if m.strip())
+            ch.companion_dossier = CompanionDossier(camp_prompts=camp_prompts[:4])
         ch.met = True  # joining the party means the party has met them
         if ch.id not in c.party:
             c.party.append(ch.id)
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party),
-                "arc_seeded": ch.arc is not None}
+                "arc_seeded": ch.arc is not None,
+                "dossier_seeded": ch.companion_dossier is not None}
 
 
 @mcp.tool()
@@ -1565,6 +1586,16 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             backstory=rec.get("backstory", ""),
             notes=rec.get("voice_hint", ""),
             location_id=c.current_location_id,
+        )
+        # ADDITIVE (#68): a canon record may carry a structured companion dossier — the
+        # operational identity (wound/wants/values/banter/approval causes/relationships) the
+        # living-world systems act on, kept out of the long appearance/backstory prose. Pulled
+        # ONLY from an explicit `companion_dossier`/`dossier` block (NOT the canon `relationships`
+        # field, which is a different list-shaped notion). A malformed block DEGRADES to no
+        # dossier — the canon load never fails on a hand-edit typo. Absent -> None (today's behavior).
+        ch.companion_dossier = content_mod._coerce_dossier(
+            rec.get("companion_dossier", rec.get("dossier")),
+            where=f"canon character {canonical!r}",
         )
         # The Character default HP is a placeholder max_hp=1 (the model's bare default). An identity
         # stub left at 1 HP is an INSTANT-KILL combatant: the first hit trips combat's SRD massive-

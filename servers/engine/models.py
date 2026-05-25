@@ -245,6 +245,44 @@ class CompanionArc(_StrictModel):
     agenda: Optional[CompanionAgenda] = None
 
 
+class CompanionDossier(_StrictModel):
+    """A companion's structured identity — the OPERATIONAL state the engine's living-world
+    systems act on (camp scheduling, banter selection, approval causes, companion quest
+    arcs). It is NOT a second copy of the long biographical prose: `personality`/`backstory`
+    stay where they are; the dossier holds TERSE, machine-usable tags/summaries so a wound,
+    want, value, or banter hook is a real engine fact rather than a line buried in prompt
+    prose or a one-off `ArcGate.note` (#68 / epic #58).
+
+    Every field is empty by default, so a Character with `companion_dossier=None` (and a
+    seeded dossier with any subset of fields) behaves exactly as today — the additive-
+    default contract that keeps every existing snapshot loadable unchanged. Attached to a
+    Character via `companion_dossier`; seeded from `npc_roster`, canon character JSON, and
+    ending `companion_seeds`; a minimal one is synthesized at `recruit_companion` only when
+    none exists.
+
+    Keep entries short (a tag or one clause). Do NOT paste long copied wiki/proprietary
+    lore here — the licensing/content guard (no long copied prose in committed content)
+    applies; the dossier is for systems to act on, not a biography."""
+
+    # The defining hurt that shapes the companion — kept to a clause, not a chapter.
+    wound: str = ""
+    # What the companion is pulling toward / pushing away from — short goal/aversion tags.
+    wants: list[str] = Field(default_factory=list)
+    fears: list[str] = Field(default_factory=list)
+    # The moral spine the approval system rewards against ("mercy", "duty", "freedom").
+    values: list[str] = Field(default_factory=list)
+    # Concrete causes that move the approval gauge — what wins/loses this companion's regard.
+    approval_likes: list[str] = Field(default_factory=list)
+    approval_dislikes: list[str] = Field(default_factory=list)
+    # Themes the (future) deterministic banter scheduler draws on, so camp talk isn't generic.
+    banter_tags: list[str] = Field(default_factory=list)
+    # Seed prompts the DM can voice at camp — terse situational hooks, not authored prose.
+    camp_prompts: list[str] = Field(default_factory=list)
+    # Standing ties to other figures: id-or-name -> a short relationship tag ("old ally",
+    # "estranged sister"). Keys live in CONTENT (the seed files), never engine code.
+    relationships: dict[str, str] = Field(default_factory=dict)
+
+
 class Character(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("char"))
     name: str
@@ -341,6 +379,12 @@ class Character(_StrictModel):
     # existing snapshot with no `arc` deserializes unchanged. Evaluated by
     # companion_arc.evaluate; populated by set_companion_arc / the ending-seed loader.
     arc: Optional["CompanionArc"] = None
+    # Structured companion identity — the OPERATIONAL state (wound/wants/values/banter/
+    # approval causes/relationships) the living-world systems act on, kept out of the long
+    # `personality`/`backstory` prose (#68). None == today's behavior, so an existing
+    # snapshot with no `companion_dossier` deserializes unchanged. Seeded from npc_roster /
+    # canon JSON / ending companion_seeds; a minimal one is synthesized at recruit_companion.
+    companion_dossier: Optional["CompanionDossier"] = None
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
