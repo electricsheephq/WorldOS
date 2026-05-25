@@ -595,6 +595,58 @@ class Decision(_StrictModel):
     actor_ids: list[str] = Field(default_factory=list)  # who weighed in / decided
 
 
+CampBeatKind = Literal["solo", "pair_banter", "arc", "decision_callback"]
+
+
+class CampBeatRecord(_StrictModel):
+    """A camp beat that actually fired at the table.
+
+    Camp prompt generation is read-only; the engine persists history only when an explicit
+    recording tool/API appends this record. Cooldown keys are deterministic so a saved campaign
+    and a reloaded campaign suppress the same recently-used beats."""
+
+    id: str
+    day: int
+    companion_ids: list[str]
+    kind: CampBeatKind
+    tags: list[str] = Field(default_factory=list)
+    resolved: bool = False
+    note: str = ""
+    cooldown_key: str = ""
+    pair_key: str = ""
+
+
+class CampBeatCandidate(_StrictModel):
+    """A deterministic frame the DM/companion agents can voice at camp.
+
+    This is a prompt/frame, not final authored dialogue. It deliberately carries only
+    player-facing hooks; sealed agendas and private DM notes stay out of this shape."""
+
+    beat_id: str
+    kind: CampBeatKind
+    priority: int = 0
+    companion_ids: list[str]
+    prompt: str
+    tags: list[str] = Field(default_factory=list)
+    cooldown_key: str
+    pair_key: str = ""
+    cooldown_reason: str = "none"
+
+
+class CampBeatState(_StrictModel):
+    """Persistent camp-beat memory owned by the engine.
+
+    `camp_scene` reads this to avoid recent repeats, but never mutates it. Only
+    `record_camp_beat` or another explicit record path should append records. The
+    history is compacted by cooldown key and capped so a long campaign cannot grow
+    snapshots without bound."""
+
+    records: list[CampBeatRecord] = Field(default_factory=list)
+    solo_cooldown_days: int = Field(2, ge=0)
+    pair_cooldown_days: int = Field(3, ge=0)
+    max_records: int = Field(200, ge=1, le=1000)
+
+
 class HouseRules(_StrictModel):
     """Campaign-level rule toggles the DM honors when adjudicating. Most are
     advisory (the DM applies them); a few may be wired into the engine over time."""
@@ -890,6 +942,9 @@ class Campaign(_StrictModel):
     # strict sibling of consequences/worldsim threads (never consumed by consequences.due).
     campaign_backlog: CampaignBacklog = Field(default_factory=CampaignBacklog)
     strategic_state: StrategicState = Field(default_factory=StrategicState)
+    # Persistent camp-beat memory (#69). Read by camp_scene/scheduler, written only by an
+    # explicit record path so prompt generation never advances campaign state by accident.
+    camp_beats: CampBeatState = Field(default_factory=CampBeatState)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions
