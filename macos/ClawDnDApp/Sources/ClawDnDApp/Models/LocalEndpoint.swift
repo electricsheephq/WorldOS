@@ -22,6 +22,10 @@ struct LocalEndpoint: Identifiable, Equatable {
         url.appendingPathComponent("dashboard")
     }
 
+    var openWorldsURL: URL {
+        url.appendingPathComponent("openworlds")
+    }
+
     var monitorURL: URL {
         url.appendingPathComponent("monitor")
     }

@@ -50,13 +50,13 @@ struct MonitorView: View {
     private func openMonitor() {
         do {
             webViewErrorMessage = nil
-            let dashboard = try processService.startViewer(
+            let surface = try processService.startViewer(
                 repoPath: repoPath,
                 preferredPort: preferredPort,
                 stateDir: stateDir
             )
             webURL = processService.viewerEndpoint?.monitorURL
-                ?? dashboard.deletingLastPathComponent().appendingPathComponent("monitor")
+                ?? surface.deletingLastPathComponent().appendingPathComponent("monitor")
         } catch {
             alertMessage = error.localizedDescription
         }

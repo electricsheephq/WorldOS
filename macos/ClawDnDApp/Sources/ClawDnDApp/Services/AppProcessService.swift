@@ -70,7 +70,6 @@ final class AppProcessService: ObservableObject {
             try throwAndRecord("Could not find a free viewer port near \(preferredPort).")
         }
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
-        let dashboard = baseURL.appendingPathComponent("dashboard")
         var env: [String: String] = [:]
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
@@ -86,14 +85,15 @@ final class AppProcessService: ObservableObject {
         )
         viewerProcess = managed
         activeCampaignID = campaignID
-        viewerEndpoint = LocalEndpoint(
+        let endpoint = LocalEndpoint(
             name: "Viewer",
             url: baseURL,
             healthPath: "/state",
             status: .running
         )
-        append("Started viewer pid \(managed.pid) on \(dashboard.absoluteString)", stream: .supervisor)
-        return dashboard
+        viewerEndpoint = endpoint
+        append("Started viewer pid \(managed.pid) on \(endpoint.openWorldsURL.absoluteString)", stream: .supervisor)
+        return endpoint.openWorldsURL
     }
 
     func stopViewer() {
@@ -177,15 +177,15 @@ final class AppProcessService: ObservableObject {
         providerProcess = managed
         runningProvider = kind
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
-        let dashboard = baseURL.appendingPathComponent("dashboard")
-        viewerEndpoint = LocalEndpoint(
+        let endpoint = LocalEndpoint(
             name: "Provider viewer",
             url: baseURL,
             healthPath: "/state",
             status: .starting
         )
+        viewerEndpoint = endpoint
         append("\(request.message) pid \(managed.pid)", stream: .provider)
-        return dashboard
+        return endpoint.openWorldsURL
     }
 
     func stopProvider() {
