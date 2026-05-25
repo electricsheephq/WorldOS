@@ -4469,7 +4469,11 @@ def _validate_companion_quest_arc_links(c: Campaign, arc: CompanionQuestArc) -> 
 
 def _validate_companion_arc_quest_links(c: Campaign, companion_id: str, arc: CompanionArc) -> None:
     for gate in arc.arc_gates:
-        if gate.kind != "personal_quest" or not gate.quest_arc_id:
+        if gate.kind != "personal_quest":
+            continue
+        if gate.stage_id and not gate.quest_arc_id:
+            raise ValueError("personal_quest gate stage_id requires quest_arc_id")
+        if not gate.quest_arc_id:
             continue
         quest_arc = c.companion_quest_arcs.get(gate.quest_arc_id)
         if quest_arc is None:
@@ -4481,6 +4485,25 @@ def _validate_companion_arc_quest_links(c: Campaign, companion_id: str, arc: Com
             )
         if gate.stage_id and not any(stage.id == gate.stage_id for stage in quest_arc.stages):
             raise ValueError(f"no stage {gate.stage_id!r} in companion quest arc {gate.quest_arc_id!r}")
+
+
+def _validate_replacing_companion_quest_arc(c: Campaign, arc: CompanionQuestArc) -> None:
+    for ch in c.characters.values():
+        if ch.arc is None:
+            continue
+        for gate in ch.arc.arc_gates:
+            if gate.kind != "personal_quest" or gate.quest_arc_id != arc.id:
+                continue
+            if arc.companion_id and arc.companion_id != ch.id:
+                raise ValueError(
+                    f"existing personal_quest gate on {ch.id!r} references companion quest arc {arc.id!r}, "
+                    f"which would belong to {arc.companion_id!r}"
+                )
+            if gate.stage_id and not any(stage.id == gate.stage_id for stage in arc.stages):
+                raise ValueError(
+                    f"existing personal_quest gate on {ch.id!r} references missing stage {gate.stage_id!r} "
+                    f"in companion quest arc {arc.id!r}"
+                )
 
 
 def _companion_quest_arc_view(c: Campaign, arc: CompanionQuestArc) -> dict:
@@ -4561,6 +4584,7 @@ def set_companion_quest_arc(campaign_id: str, companion_id: str, arc: dict) -> d
         data["companion_id"] = companion_id
         parsed = CompanionQuestArc.model_validate(data)
         _validate_companion_quest_arc_links(c, parsed)
+        _validate_replacing_companion_quest_arc(c, parsed)
         c.companion_quest_arcs[parsed.id] = parsed
         save_campaign(c)
         return {"companion_quest_arc": _companion_quest_arc_view(c, parsed)}
@@ -4609,17 +4633,19 @@ def advance_companion_quest_arc(
     if next_quest_status and not (next_status or next_stage_status):
         raise ValueError("quest_status requires status or stage_status so Quest projection follows companion arc state")
 
-    derived_from = next_status or next_stage_status
-    derived_quest_status = _quest_projection_status(derived_from) if derived_from else ""
+    arc_projection = _quest_projection_status(next_status) if next_status else ""
+    stage_projection = _quest_projection_status(next_stage_status) if next_stage_status else ""
+    if next_status == "locked" and stage_projection:
+        raise ValueError(f"stage_status {next_stage_status!r} cannot advance while companion quest status is 'locked'")
+    if arc_projection and stage_projection and arc_projection != stage_projection:
+        raise ValueError(
+            f"status {next_status!r} and stage_status {next_stage_status!r} imply conflicting "
+            f"quest projections {arc_projection!r} and {stage_projection!r}"
+        )
+    derived_quest_status = arc_projection or stage_projection
+    derived_from = next_status if arc_projection or (next_status and not stage_projection) else next_stage_status
     if next_quest_status and derived_from and not derived_quest_status:
         raise ValueError(f"quest_status cannot project from companion quest status {derived_from!r}")
-    if next_status and next_stage_status:
-        stage_projection = _quest_projection_status(next_stage_status)
-        if stage_projection and derived_quest_status and stage_projection != derived_quest_status:
-            raise ValueError(
-                f"status {next_status!r} and stage_status {next_stage_status!r} imply conflicting "
-                f"quest projections {derived_quest_status!r} and {stage_projection!r}"
-            )
     if next_quest_status and derived_quest_status and next_quest_status != derived_quest_status:
         raise ValueError(
             f"quest_status {next_quest_status!r} is inconsistent with companion quest status "
@@ -4666,6 +4692,11 @@ def advance_companion_quest_arc(
         if final_quest_status:
             if quest_id:
                 quest_targets = [quest_id]
+            elif stage_data is not None:
+                stage_quest_id = str(stage_data.get("quest_id") or "")
+                if not stage_quest_id:
+                    raise ValueError("stage quest projection requires quest_id or a linked stage quest_id")
+                quest_targets = [stage_quest_id]
             else:
                 quest_targets = list(next_arc.quest_ids)
             if not quest_targets:

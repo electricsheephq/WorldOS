@@ -106,7 +106,9 @@ def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) 
             event["stage_status"] = stage.status
         event["no_transition"] = True
         return event
-    event["status"] = "available"
+    event["status"] = arc.status
+    if stage is not None:
+        event["stage_status"] = stage.status
     event["changed"] = changed
     return event
 
