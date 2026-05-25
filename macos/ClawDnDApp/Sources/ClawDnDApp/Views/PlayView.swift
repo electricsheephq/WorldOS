@@ -18,6 +18,7 @@ struct PlayView: View {
     @State private var runID: String = PlayView.newRunID()
     @State private var companions: String = ""
     @State private var alertMessage: String?
+    @State private var webViewErrorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -102,7 +103,13 @@ struct PlayView: View {
     @ViewBuilder
     private var webSurface: some View {
         if let webURL {
-            WebView(url: webURL)
+            if let webViewErrorMessage {
+                WebViewErrorView(message: webViewErrorMessage) {
+                    self.webViewErrorMessage = nil
+                }
+            } else {
+                WebView(url: webURL, navigationError: $webViewErrorMessage)
+            }
         } else {
             VStack(spacing: 18) {
                 Image(systemName: "gamecontroller")
@@ -121,6 +128,7 @@ struct PlayView: View {
 
     private func startViewer() {
         do {
+            webViewErrorMessage = nil
             webURL = try processService.startViewer(
                 repoPath: repoPath,
                 preferredPort: preferredPort,
@@ -133,6 +141,7 @@ struct PlayView: View {
 
     private func startProvider() {
         do {
+            webViewErrorMessage = nil
             let provider = ProviderKind(rawValue: selectedProviderRaw) ?? .claude
             let cleanRunID = runID.trimmingCharacters(in: .whitespacesAndNewlines)
             webURL = try processService.startProviderSession(
