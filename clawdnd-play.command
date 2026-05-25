@@ -25,4 +25,16 @@ cd "$(dirname "$0")" || exit 1
 # play_party.sh == solo play.sh when no companion spec is given, and adds the opt-in party
 # when one is (via the 4th arg or $CLAWDND_PLAY_COMPANIONS). Routing through it keeps the
 # double-click solo experience identical while enabling companions for those who want them.
-exec "$PWD/scripts/play_party.sh" "$@"
+"$PWD/scripts/play_party.sh" "$@"
+status=$?
+if [ "$status" -ne 0 ] && [ "$status" -ne 130 ]; then
+  echo
+  echo "ClawDnD did not start cleanly (exit $status)."
+  echo "The message above should say what was missing or which port was busy."
+  if [ -t 0 ]; then
+    echo
+    echo "Press Return to close this window."
+    read -r _
+  fi
+fi
+exit "$status"
