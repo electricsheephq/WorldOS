@@ -191,8 +191,12 @@
   .combat-card-main { margin-top:6px; color:#dfc5b8; font-size:13px; }
   .combat-card-meta { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; color:#bda997; font-size:11px; }
   .combat-card-meta span { border:1px solid #3d3027; background:#18110d; border-radius:7px; padding:2px 6px; }
+  .combat-card-meta span.warn { border-color:#5f4b2a; color:#e8c878; }
   .combat-card.outcome-crit { border-color:#9b5d3b; }
   .combat-card.outcome-miss { border-color:#3f3a35; }
+  .combat-card.outcome-move { border-color:#5b4c2f; }
+  .combat-card.outcome-turn { border-color:#4b5368; }
+  .combat-card.outcome-death-save { border-color:#72505f; }
   /* "The DM is narrating…" — a pending bubble while the DM's turn is in flight (the
      player has acted; the response is composing). Perception fix: turn latency read as
      "the DM isn't engaging". Three breathing dots under the DM byline. */
@@ -904,6 +908,16 @@ function hpText(state) {
   if (Number.isFinite(Number(state.current_hp))) return `${state.current_hp} HP`;
   return "";
 }
+function refName(ref, fallback = "") {
+  return ref && ref.name ? ref.name : fallback;
+}
+function combatMeta(meta, label, value, cls = "") {
+  if (value === undefined || value === null || value === "") return;
+  meta.push({ label, value, cls });
+}
+function combatList(items) {
+  return (Array.isArray(items) ? items : []).map(i => refName(i)).filter(Boolean).join(", ");
+}
 function combatEventCard(e) {
   const p = e && e.payload;
   if (!p || p.schema !== COMBAT_EVENT_SCHEMA) return "";
@@ -918,32 +932,62 @@ function combatEventCard(e) {
     const roll = p.roll || {};
     const ac = p.target && p.target.ac ? ` vs AC ${p.target.ac}` : "";
     main = `Attack ${roll.total ?? "?"}${ac}`;
-    if (roll.natural) meta.push(`d20 ${roll.natural}`);
-    if (p.damage) meta.push(`Damage ${p.damage.total ?? 0}${p.damage.type ? " " + p.damage.type : ""}`);
+    combatMeta(meta, "d20", roll.natural);
+    combatMeta(meta, "Damage", p.damage ? `${p.damage.total ?? 0}${p.damage.type ? " " + p.damage.type : ""}` : "");
     const hp = hpText(p.target_state);
-    if (hp) meta.push(`HP ${hp}`);
+    combatMeta(meta, "HP", hp);
   } else if (p.event === "damage") {
     outcome = "damage";
     main = `${target || "Target"} takes ${p.result && p.result.damage_to_hp !== undefined ? p.result.damage_to_hp : p.amount || 0}${p.damage_type ? " " + p.damage_type : ""} damage`;
     const hp = hpText(p.result);
-    if (hp) meta.push(`HP ${hp}`);
+    combatMeta(meta, "HP", hp);
   } else if (p.event === "healing") {
     outcome = "healing";
     main = `${target || "Target"} regains ${p.result && p.result.healed !== undefined ? p.result.healed : p.amount || 0} hit points`;
     const hp = hpText(p.result);
-    if (hp) meta.push(`HP ${hp}`);
+    combatMeta(meta, "HP", hp);
   } else if (p.event === "combat_start") {
     outcome = "start";
     const names = (p.combatants || []).map(c => c.name).filter(Boolean).join(", ");
     main = names ? `Initiative: ${names}` : (e.text || "Combat begins");
-    if (p.round) meta.push(`Round ${p.round}`);
+    combatMeta(meta, "Round", p.round);
   } else if (p.event === "combat_end") {
     outcome = "end";
     main = e.text || "Combat ends";
-    if (p.round) meta.push(`Ended in round ${p.round}`);
-    if (p.xp_awarded) meta.push(`${p.xp_awarded} XP`);
+    combatMeta(meta, "Ended", p.round ? `round ${p.round}` : "");
+    combatMeta(meta, "XP", p.xp_awarded);
+  } else if (p.event === "zone_movement") {
+    outcome = "move";
+    main = `${actor || "Combatant"} moves from ${p.from_zone || "an unset zone"} to ${p.to_zone || "an unset zone"}`;
+    const provokers = combatList(p.provokers);
+    combatMeta(meta, "OA", p.opportunity_attack ? (provokers || "provoked") : "none");
+    (Array.isArray(p.warnings) ? p.warnings : []).forEach(w => combatMeta(meta, "Warn", w, "warn"));
+  } else if (p.event === "turn_advanced") {
+    outcome = "turn";
+    const current = refName(p.current, "no living combatant");
+    main = `Turn advances to ${current}`;
+    combatMeta(meta, "Round", p.round);
+    combatMeta(meta, "Index", Number.isFinite(Number(p.turn_index)) ? p.turn_index : "");
+    combatMeta(meta, "New round", p.new_round ? "yes" : "");
+    combatMeta(meta, "Death save", p.death_save_due ? "due" : "");
+    const expired = combatList(p.expired_effects);
+    combatMeta(meta, "Expired", expired);
+  } else if (p.event === "death_save") {
+    outcome = "death-save";
+    const roll = p.roll || {};
+    const who = target || "Combatant";
+    const result = (p.result || "rolled").toString().replace(/_/g, " ");
+    main = `${who} rolls ${roll.total ?? "?"}: ${result}`;
+    combatMeta(meta, "d20", roll.natural);
+    combatMeta(meta, "Saves", `${p.successes ?? 0} success / ${p.failures ?? 0} fail`);
+    if (p.state) {
+      combatMeta(meta, "HP", hpText(p.state));
+      combatMeta(meta, "State", p.state.dead ? "dead" : (p.state.stable ? "stable" : (p.state.dying ? "dying" : "")));
+    }
+  } else {
+    return "";
   }
-  return `<div class="combat-card outcome-${statusClass(outcome)}"><div class="combat-card-top"><span class="combat-chip">${esc(outcome)}</span><span class="combat-title">${esc(title)}</span></div><div class="combat-card-main">${esc(main)}</div>${meta.length ? `<div class="combat-card-meta">${meta.map(m=>`<span>${esc(m)}</span>`).join("")}</div>` : ""}</div>`;
+  return `<div class="combat-card outcome-${statusClass(outcome)}"><div class="combat-card-top"><span class="combat-chip">${esc(outcome)}</span><span class="combat-title">${esc(title)}</span></div><div class="combat-card-main">${esc(main)}</div>${meta.length ? `<div class="combat-card-meta">${meta.map(m=>`<span${m.cls?` class="${esc(m.cls)}"`:""}>${esc(m.label)} ${esc(m.value)}</span>`).join("")}</div>` : ""}</div>`;
 }
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const shortId = (id) => {
