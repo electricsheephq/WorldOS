@@ -637,11 +637,14 @@ class CampBeatState(_StrictModel):
     """Persistent camp-beat memory owned by the engine.
 
     `camp_scene` reads this to avoid recent repeats, but never mutates it. Only
-    `record_camp_beat` or another explicit record path should append records."""
+    `record_camp_beat` or another explicit record path should append records. The
+    history is compacted by cooldown key and capped so a long campaign cannot grow
+    snapshots without bound."""
 
     records: list[CampBeatRecord] = Field(default_factory=list)
     solo_cooldown_days: int = Field(2, ge=0)
     pair_cooldown_days: int = Field(3, ge=0)
+    max_records: int = Field(200, ge=1, le=1000)
 
 
 class HouseRules(_StrictModel):

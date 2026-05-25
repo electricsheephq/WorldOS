@@ -4095,6 +4095,7 @@ def camp_scene(campaign_id: str, setting: str = "") -> dict:
             "records": len(c.camp_beats.records),
             "solo_cooldown_days": c.camp_beats.solo_cooldown_days,
             "pair_cooldown_days": c.camp_beats.pair_cooldown_days,
+            "max_records": c.camp_beats.max_records,
         },
         "guidance": (
             "Run a camp round: give each companion a moment IN TURN (a worry, a memory surfaced, a "
@@ -4105,6 +4106,43 @@ def camp_scene(campaign_id: str, setting: str = "") -> dict:
             "reading this scene alone does not advance beat history."
         ),
     }
+
+
+def _camp_beat_keys(record: CampBeatRecord) -> set[str]:
+    keys = {record.id, record.cooldown_key}
+    if record.pair_key:
+        keys.add(f"pair:{record.pair_key}")
+    return {key for key in keys if key}
+
+
+def _camp_beat_cooldown_days(c: Campaign, record: CampBeatRecord) -> int:
+    if record.kind == "pair_banter":
+        return c.camp_beats.pair_cooldown_days
+    return c.camp_beats.solo_cooldown_days
+
+
+def _raise_if_camp_beat_on_cooldown(c: Campaign, record: CampBeatRecord) -> None:
+    keys = _camp_beat_keys(record)
+    cooldown_days = max(0, _camp_beat_cooldown_days(c, record))
+    for existing in c.camp_beats.records:
+        if not keys.intersection(_camp_beat_keys(existing)):
+            continue
+        if existing.day == c.day:
+            raise ValueError(f"camp beat {record.id!r} was already recorded today")
+        if cooldown_days > 0 and c.day - existing.day < cooldown_days:
+            ready_day = existing.day + cooldown_days
+            raise ValueError(f"camp beat {record.id!r} is on cooldown until day {ready_day}")
+
+
+def _compact_camp_beat_records(c: Campaign) -> None:
+    latest_by_key: dict[str, tuple[int, int, CampBeatRecord]] = {}
+    for index, record in enumerate(c.camp_beats.records):
+        key = record.cooldown_key or record.id
+        current = latest_by_key.get(key)
+        if current is None or (record.day, index) >= (current[0], current[1]):
+            latest_by_key[key] = (record.day, index, record)
+    retained = sorted(latest_by_key.values(), key=lambda item: (item[0], item[1]))
+    c.camp_beats.records = [record for _, _, record in retained[-c.camp_beats.max_records :]]
 
 
 @mcp.tool()
@@ -4162,7 +4200,9 @@ def record_camp_beat(
             cooldown_key=cooldown_key,
             pair_key=pkey,
         )
+        _raise_if_camp_beat_on_cooldown(c, record)
         c.camp_beats.records.append(record)
+        _compact_camp_beat_records(c)
         save_campaign(c)
         return {"record": record.model_dump(mode="json"), "history_count": len(c.camp_beats.records)}
 
