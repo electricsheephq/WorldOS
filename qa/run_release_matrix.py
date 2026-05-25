@@ -103,19 +103,38 @@ def _severe_defects(data: Any) -> list[str]:
     return severe
 
 
-def _numeric_score(data: Any) -> float | None:
+def _overall_score(data: Any) -> float | None:
     if not isinstance(data, dict):
         return None
-    value = data.get("overall")
-    if value is None and isinstance(data.get("scores"), dict):
-        scores = data["scores"]
-        numeric = [score for score in scores.values() if isinstance(score, (int, float))]
-        if numeric:
-            value = sum(numeric) / len(numeric)
     try:
-        return float(value)
+        return float(data["overall"])
     except (TypeError, ValueError):
         return None
+    except KeyError:
+        return None
+
+
+def _threshold(value: Any, field: str, cell_id: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"invalid {field} for cell '{cell_id}': {value!r}") from exc
+
+
+def _relative_artifact_prefix(value: str, cell_id: str, artifacts: Path) -> Path:
+    prefix = Path(value)
+    if prefix.is_absolute() or ".." in prefix.parts:
+        raise SystemExit(f"invalid artifact_prefix for cell '{cell_id}': {value!r}")
+    base = artifacts / prefix
+    try:
+        base.resolve(strict=False).relative_to(artifacts.resolve(strict=False))
+    except ValueError as exc:
+        raise SystemExit(f"artifact_prefix escapes artifacts root for cell '{cell_id}': {value!r}") from exc
+    return prefix
+
+
+def _sidecar_path(base: Path, kind: str) -> Path:
+    return base.with_name(base.name + SIDECARS[kind])
 
 
 def _score_sidecar(kind: str, path: Path, minimum: float) -> SidecarStatus:
@@ -136,10 +155,9 @@ def _score_sidecar(kind: str, path: Path, minimum: float) -> SidecarStatus:
     if severe:
         return SidecarStatus(kind, path, "FAIL", "; ".join(severe[:3]))
 
-    score = _numeric_score(data)
+    score = _overall_score(data)
     if score is None:
-        token = next((_status_token(data.get(key)) for key in ("gate_status", "status", "verdict") if _status_token(data.get(key))), None)
-        return SidecarStatus(kind, path, token or "UNKNOWN", "no overall score")
+        return SidecarStatus(kind, path, "FAIL", "missing numeric overall")
     if score >= minimum:
         return SidecarStatus(kind, path, "PASS", f"overall={score:g} >= {minimum:g}")
     return SidecarStatus(kind, path, "FAIL", f"overall={score:g} < {minimum:g}")
@@ -193,14 +211,14 @@ def _artifact_root(matrix: dict[str, Any], override: Path | None) -> Path:
 def _inspect_cell(cell: dict[str, Any], defaults: dict[str, Any], artifacts: Path) -> dict[str, Any]:
     cell_id = str(cell.get("id") or "")
     prefix = str(cell.get("artifact_prefix") or cell_id)
-    base = artifacts / prefix
-    mechanical_min = float(cell.get("mechanical_min", defaults.get("mechanical_min", 4.5)))
-    story_min = float(cell.get("story_min", defaults.get("story_min", 4.3)))
+    base = artifacts / _relative_artifact_prefix(prefix, cell_id, artifacts)
+    mechanical_min = _threshold(cell.get("mechanical_min", defaults.get("mechanical_min", 4.5)), "mechanical_min", cell_id)
+    story_min = _threshold(cell.get("story_min", defaults.get("story_min", 4.3)), "story_min", cell_id)
     sidecars = {
-        "mechanical": _score_sidecar("mechanical", base.with_suffix(SIDECARS["mechanical"]), mechanical_min),
-        "story": _score_sidecar("story", base.with_suffix(SIDECARS["story"]), story_min),
-        "fiction": _status_sidecar("fiction", base.with_suffix(SIDECARS["fiction"])),
-        "release": _status_sidecar("release", base.with_suffix(SIDECARS["release"])),
+        "mechanical": _score_sidecar("mechanical", _sidecar_path(base, "mechanical"), mechanical_min),
+        "story": _score_sidecar("story", _sidecar_path(base, "story"), story_min),
+        "fiction": _status_sidecar("fiction", _sidecar_path(base, "fiction")),
+        "release": _status_sidecar("release", _sidecar_path(base, "release")),
     }
     statuses = [sidecar.status for sidecar in sidecars.values()]
     if any(status == "FAIL" for status in statuses):
