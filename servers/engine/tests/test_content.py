@@ -105,6 +105,115 @@ def test_start_world_seeds_living_world_and_lore_is_recallable(tmp_path, monkeyp
     assert hits and any(h["kind"] == "lore" for h in hits)
 
 
+def test_seed_world_seeds_strategic_state_additively(capsys):
+    world = {
+        "id": "strategy-test",
+        "name": "Strategy Test",
+        "premise": "A compact strategic fixture.",
+        "era": "now",
+        "regions": [
+            {"id": "loc-harbor", "name": "Harbor", "description": "docks", "connections": []},
+            {"id": "loc-hill", "name": "Hill", "description": "watchpost", "connections": []},
+        ],
+        "factions": [
+            {"id": "fac-civic", "name": "Civic League", "description": "wardens", "reputation": 3},
+            {"id": "fac-rivals", "name": "Rival Compact", "description": "claimants", "reputation": -2},
+        ],
+        "npc_roster": [],
+        "history": [],
+        "standing_threads": [],
+        "starting_options": [{"location_id": "loc-harbor", "framing": "Start at the harbor."}],
+        "strategic": {
+            "regions": [
+                {
+                    "location_id": "loc-harbor",
+                    "controller_id": "fac-civic",
+                    "influence": {"fac-civic": 70, "fac-rivals": 20},
+                    "stability": 55,
+                    "unrest": 20,
+                },
+                {
+                    "location_id": "loc-missing",
+                    "controller_id": "fac-civic",
+                    "influence": {"fac-civic": 10},
+                },
+            ],
+            "assets": [
+                {
+                    "id": "asset-wardens",
+                    "faction_id": "fac-civic",
+                    "name": "Harbor Wardens",
+                    "kind": "army",
+                    "location_id": "loc-harbor",
+                    "strength": 2,
+                },
+                {
+                    "id": "asset-unknown",
+                    "faction_id": "fac-missing",
+                    "name": "Unbound Asset",
+                    "kind": "army",
+                    "location_id": "loc-harbor",
+                },
+                {"id": "asset-bad-kind", "faction_id": "fac-civic", "name": "Bad", "kind": "fleet"},
+            ],
+            "clocks": [
+                {
+                    "id": "clock-rivals",
+                    "title": "Rivals gather leverage",
+                    "kind": "threat",
+                    "scope": "region",
+                    "region_id": "loc-hill",
+                    "progress": 1,
+                    "target": 6,
+                    "tick_every_days": 4,
+                },
+                {
+                    "id": "clock-unbound",
+                    "title": "Missing place",
+                    "kind": "threat",
+                    "scope": "region",
+                    "region_id": "loc-missing",
+                },
+            ],
+            "projects": [
+                {
+                    "id": "proj-repair",
+                    "title": "Repair the quay",
+                    "kind": "construction",
+                    "location_id": "loc-harbor",
+                    "duration_days": 7,
+                },
+                {
+                    "id": "proj-unbound",
+                    "title": "Unknown sponsor",
+                    "kind": "research",
+                    "faction_id": "fac-missing",
+                    "duration_days": 3,
+                },
+            ],
+        },
+    }
+
+    c = content.seed_world(world)
+
+    assert set(c.strategic_state.regions) == {"loc-harbor"}
+    region = c.strategic_state.regions["loc-harbor"]
+    assert region.controller_id == "fac-civic"
+    assert region.influence == {"fac-civic": 70, "fac-rivals": 20}
+    assert c.strategic_state.assets["asset-wardens"].strength == 2
+    assert set(c.strategic_state.assets) == {"asset-wardens"}
+    assert c.strategic_state.clocks["clock-rivals"].target == 6
+    assert set(c.strategic_state.clocks) == {"clock-rivals"}
+    assert c.strategic_state.projects["proj-repair"].duration_days == 7
+    assert set(c.strategic_state.projects) == {"proj-repair"}
+
+    out = capsys.readouterr().out
+    assert "skipping strategic region" in out
+    assert "skipping strategic asset" in out
+    assert "skipping strategic clock" in out
+    assert "skipping strategic project" in out
+
+
 def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
     w = content.load_world_data("sundered-reach")
     with pytest.raises(ValueError, match="not a region"):

@@ -24,9 +24,13 @@ from models import (
     CompanionArc,
     CompanionDossier,
     Character,
+    DowntimeProject,
     Faction,
+    FactionAsset,
     Location,
     Quest,
+    RegionControl,
+    StrategicClock,
     WorldState,
 )
 from store import safe_path_segment  # path-containment guard for world/adventure ids
@@ -670,6 +674,113 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 ch.companion_dossier = dossier
 
 
+def _seed_strategic_state(c: Campaign, world: dict) -> None:
+    """Seed optional strategic board data from world.json.
+
+    The block is additive and externally-authored, so it mirrors the existing
+    world_state/companion_seeds contract: malformed entries or references to
+    missing factions/locations are skipped with diagnostics, never partially bound.
+    """
+    raw = world.get("strategic")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        print("[content] skipping malformed strategic block (not an object)")
+        return
+
+    def _missing_locations(ids: list[str]) -> list[str]:
+        return [x for x in ids if x and x not in c.locations]
+
+    def _missing_factions(ids: list[str]) -> list[str]:
+        return [x for x in ids if x and x not in c.factions]
+
+    for entry in _as_list_lenient(raw, "regions"):
+        if not isinstance(entry, dict):
+            print("[content] skipping strategic region (not an object)")
+            continue
+        try:
+            region = RegionControl.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed strategic region")
+            continue
+        missing_locs = _missing_locations([region.location_id])
+        missing_factions = _missing_factions([region.controller_id, *region.influence.keys()])
+        if missing_locs or missing_factions:
+            print(
+                "[content] skipping strategic region "
+                f"{region.location_id!r}: unknown refs "
+                f"locations={missing_locs} factions={missing_factions}"
+            )
+            continue
+        c.strategic_state.regions[region.location_id] = region
+
+    for entry in _as_list_lenient(raw, "assets"):
+        if not isinstance(entry, dict):
+            print("[content] skipping strategic asset (not an object)")
+            continue
+        try:
+            asset = FactionAsset.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed strategic asset")
+            continue
+        missing_locs = _missing_locations([asset.location_id])
+        missing_factions = _missing_factions([asset.faction_id])
+        if missing_locs or missing_factions:
+            print(
+                "[content] skipping strategic asset "
+                f"{asset.id!r}: unknown refs "
+                f"locations={missing_locs} factions={missing_factions}"
+            )
+            continue
+        c.strategic_state.assets[asset.id] = asset
+
+    for entry in _as_list_lenient(raw, "clocks"):
+        if not isinstance(entry, dict):
+            print("[content] skipping strategic clock (not an object)")
+            continue
+        try:
+            clock = StrategicClock.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed strategic clock")
+            continue
+        if clock.scope == "region" and not clock.region_id:
+            print(f"[content] skipping strategic clock {clock.id!r}: missing region_id")
+            continue
+        if clock.scope == "faction" and not clock.faction_id:
+            print(f"[content] skipping strategic clock {clock.id!r}: missing faction_id")
+            continue
+        missing_locs = _missing_locations([clock.region_id])
+        missing_factions = _missing_factions([clock.faction_id])
+        if missing_locs or missing_factions:
+            print(
+                "[content] skipping strategic clock "
+                f"{clock.id!r}: unknown refs "
+                f"locations={missing_locs} factions={missing_factions}"
+            )
+            continue
+        c.strategic_state.clocks[clock.id] = clock
+
+    for entry in _as_list_lenient(raw, "projects"):
+        if not isinstance(entry, dict):
+            print("[content] skipping strategic project (not an object)")
+            continue
+        try:
+            project = DowntimeProject.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed strategic project")
+            continue
+        missing_locs = _missing_locations([project.location_id])
+        missing_factions = _missing_factions([project.faction_id])
+        if missing_locs or missing_factions:
+            print(
+                "[content] skipping strategic project "
+                f"{project.id!r}: unknown refs "
+                f"locations={missing_locs} factions={missing_factions}"
+            )
+            continue
+        c.strategic_state.projects[project.id] = project
+
+
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
     """Seed the PROACTIVE living-world backlog (P0) — the world's own off-screen to-do, so the
     campaign advances when in-fiction time passes (P1 tick_backlog) instead of only reacting to
@@ -980,6 +1091,8 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
         if fac.get("id"):
             faction.id = fac["id"]
         c.factions[faction.id] = faction
+
+    _seed_strategic_state(c, world)
 
     # Roster NPCs exist in state (recallable, voiced) but are not party members — the
     # DM pulls them in or invents freely. Each NPC's hook is stored as a memory fact.
