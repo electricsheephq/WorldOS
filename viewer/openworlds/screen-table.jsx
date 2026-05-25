@@ -27,6 +27,7 @@ function ScreenTable({ onNavigate, state, setState }) {
   const encounter = surface?.encounter || {};
   const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
+  const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
   const readOnlyReason = actions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
   const visibleLog = surface ? [...recentEvents, ...log] : [...demoLog, ...log];
@@ -53,15 +54,36 @@ function ScreenTable({ onNavigate, state, setState }) {
 
   React.useEffect(() => {
     let cancelled = false;
+    let timer = null;
     const guardedLoad = async () => {
       if (cancelled) return;
       await loadSurface(() => cancelled);
     };
-    guardedLoad();
-    const timer = window.setInterval(guardedLoad, 5000);
+    const stopPolling = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const startPolling = () => {
+      if (timer === null) {
+        timer = window.setInterval(guardedLoad, 5000);
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        guardedLoad();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadSurface]);
 
@@ -236,7 +258,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Active Quests</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {quests.filter((q) => !q.status || q.status === "active" || q.status === "open").map((q) => (
+            {visibleQuests.map((q) => (
               <button key={q.id} onClick={() => onNavigate("journal")} style={{
                 textAlign: "left",
                 padding: "10px 12px",
@@ -253,7 +275,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 <div className="hand" style={{ fontSize: 13, color: "var(--ink-600)", marginTop: 2 }}>{q.objective}</div>
               </button>
             ))}
-            {!quests.length && <div className="body-sm muted">No active quests in the current read model.</div>}
+            {!visibleQuests.length && <div className="body-sm muted">No active quests in the current read model.</div>}
           </div>
         </Panel>
 
@@ -297,8 +319,8 @@ function ScreenTable({ onNavigate, state, setState }) {
 
           <SectionTitle>Round Order</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {roundOrder.length ? roundOrder.map((t) => (
-              <div key={t.id || t.name} style={{
+            {roundOrder.length ? roundOrder.map((t, i) => (
+              <div key={t.id || t.name || `round-${i}`} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "6px 10px",
                 background: t.active ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",

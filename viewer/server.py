@@ -870,23 +870,55 @@ def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
     return out
 
 
+def _safe_session_id(session_id: object) -> str:
+    if not isinstance(session_id, str):
+        return ""
+    sid = session_id.strip()
+    if not sid or "/" in sid or "\\" in sid or ".." in sid:
+        return ""
+    if Path(sid).name != sid:
+        return ""
+    if not all(ch.isalnum() or ch in "._-" for ch in sid):
+        return ""
+    return sid
+
+
+def _tail_text_lines(path: Path, limit: int, chunk_size: int = 8192) -> list[str]:
+    if limit <= 0:
+        return []
+    try:
+        with path.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
+            data = b""
+            while pos > 0 and data.count(b"\n") <= limit:
+                size = min(chunk_size, pos)
+                pos -= size
+                f.seek(pos)
+                data = f.read(size) + data
+    except OSError:
+        return []
+    return data.decode("utf-8", errors="replace").splitlines()[-limit:]
+
+
 def _session_event_tail_from_dir(campaign_dir: Path, snapshot: dict, limit: int = 12) -> list[dict]:
     sid = snapshot.get("active_session_id")
     if not sid:
         session_ids = snapshot.get("session_ids")
         if isinstance(session_ids, list) and session_ids:
             sid = session_ids[-1]
-    if not isinstance(sid, str) or not sid.strip():
-        return []
-    log = campaign_dir / "sessions" / f"{sid}.jsonl"
-    if not log.exists():
+    sid = _safe_session_id(sid)
+    if not sid:
         return []
     try:
-        lines = log.read_text(encoding="utf-8").splitlines()
+        sessions_dir = (campaign_dir / "sessions").resolve()
+        log = (sessions_dir / f"{sid}.jsonl").resolve()
     except OSError:
         return []
+    if log.parent != sessions_dir or not log.is_file():
+        return []
     out: list[dict] = []
-    for raw in lines[-limit:]:
+    for raw in _tail_text_lines(log, limit):
         try:
             row = json.loads(raw)
         except json.JSONDecodeError:

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -184,6 +185,28 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertTrue(surface["roundOrder"][0]["active"])
         self.assertEqual(_find_action(surface, "attack")["disabled_reason"], "action spent")
         self.assertEqual(_find_action(surface, "reaction")["disabled_reason"], "reaction spent")
+
+    def test_session_event_tail_rejects_unsafe_active_session_id(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        campaign_dir = root / "campaigns" / "camp_safe"
+        (campaign_dir / "sessions").mkdir(parents=True)
+        (campaign_dir / "evil.jsonl").write_text(
+            json.dumps({"kind": "narration", "detail": "private traversal event"}) + "\n",
+            encoding="utf-8",
+        )
+        (campaign_dir / "sessions" / "sess_1.jsonl").write_text(
+            "".join(
+                json.dumps({"kind": "narration", "detail": f"event {i}"}) + "\n"
+                for i in range(20)
+            ),
+            encoding="utf-8",
+        )
+
+        unsafe = server._session_event_tail_from_dir(campaign_dir, {"active_session_id": "../evil"})
+        safe_tail = server._session_event_tail_from_dir(campaign_dir, {"active_session_id": "sess_1"}, limit=3)
+
+        self.assertEqual(unsafe, [])
+        self.assertEqual([row["detail"] for row in safe_tail], ["event 17", "event 18", "event 19"])
 
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
