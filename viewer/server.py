@@ -44,7 +44,7 @@ import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 _HERE = Path(__file__).resolve().parent
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
@@ -528,6 +528,268 @@ def _list_campaigns() -> list[dict]:
         ))
     out.sort(key=lambda c: c["last_played"], reverse=True)
     return out
+
+
+def _resolved(path: Path) -> str:
+    try:
+        return str(path.resolve())
+    except OSError:
+        return str(path)
+
+
+def _session_count(campaign_dir: Path) -> int:
+    sessions = campaign_dir / "sessions"
+    if not sessions.is_dir():
+        return 0
+    return sum(1 for p in sessions.glob("*.jsonl") if p.is_file())
+
+
+def _catalog_run_id(state_root: Path) -> str:
+    """Stable display id for a state root.
+
+    Product runs live under play-state/<run-id> and QA under qa/state/<run-id>.
+    A bare CLAWDND_STATE_DIR (for example ~/.clawdnd/state, or a temp dir in
+    tests) is the viewer's active state root rather than a named run, so expose it
+    as "state" instead of leaking a random local folder name into the UI.
+    """
+    if state_root.parent.name in ("play-state", "state"):
+        return state_root.name
+    return "state"
+
+
+def _campaign_catalog_roots() -> list[dict]:
+    """Read-only roots for the OpenWorlds campaign shelf.
+
+    The native app and the exact OpenWorlds surface need the same product answer:
+    "what local play or QA runs exist?"  We scan the viewer's active state dir,
+    repo-local play-state/*, and repo-local qa/state/* without importing the
+    engine and without opening any write path.
+    """
+    roots: list[dict] = []
+    seen: set[str] = set()
+
+    def add(source: str, run_id: str, state_root: Path, campaigns_dir: Path, *, current_state: bool = False) -> None:
+        key = _resolved(campaigns_dir)
+        if key in seen:
+            return
+        seen.add(key)
+        roots.append({
+            "source": source,
+            "run_id": run_id,
+            "state_root": state_root,
+            "campaigns_dir": campaigns_dir,
+            "current_state": current_state,
+        })
+
+    state_root = _state_dir()
+    add("play", _catalog_run_id(state_root), state_root, state_root / "campaigns", current_state=True)
+
+    play_state = _HERE.parent / "play-state"
+    if play_state.is_dir():
+        for run in sorted(play_state.iterdir()):
+            cdir = run / "campaigns"
+            if cdir.is_dir():
+                add("play", run.name, run, cdir)
+
+    qa_state = _HERE.parent / "qa" / "state"
+    if qa_state.is_dir():
+        for run in sorted(qa_state.iterdir()):
+            cdir = run / "campaigns"
+            if cdir.is_dir():
+                add("qa", run.name, run, cdir)
+    return roots
+
+
+def _text(value: object, default: str = "") -> str:
+    if value is None:
+        return default
+    s = str(value).strip()
+    return s if s else default
+
+
+def _openworlds_day_label(snapshot: dict) -> str:
+    day = snapshot.get("day")
+    time_of_day = _text(snapshot.get("time_of_day"))
+    if isinstance(day, int):
+        return f"Day {day}" + (f" · {time_of_day}" if time_of_day else "")
+    return time_of_day or "Unknown time"
+
+
+def _party_cards(snapshot: dict) -> list[dict]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[dict] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if not isinstance(ch, dict):
+            out.append({"id": cid, "name": cid, "short": "portrait"})
+            continue
+        card = {
+            "id": cid,
+            "name": _text(ch.get("name"), cid),
+            "short": "portrait",
+            "kind": _text(ch.get("kind")),
+        }
+        hp = ch.get("current_hp")
+        hp_max = ch.get("max_hp")
+        if isinstance(hp, int) and isinstance(hp_max, int):
+            card["hp"] = f"{hp}/{hp_max}"
+        if ch.get("dead"):
+            card["dead"] = True
+        out.append(card)
+    return out
+
+
+def _relative_time_label(ts: float, *, now: float) -> str:
+    if ts <= 0:
+        return "unknown"
+    delta = max(0, now - ts)
+    if delta < 90:
+        return "just now"
+    if delta < 3600:
+        minutes = max(1, int(delta // 60))
+        return f"{minutes} min ago"
+    if delta < 86400:
+        hours = max(1, int(delta // 3600))
+        return f"{hours} hr ago"
+    if delta < 86400 * 7:
+        days = max(1, int(delta // 86400))
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    return time.strftime("%Y-%m-%d", time.localtime(ts))
+
+
+def _infer_catalog_provider(state_root: Path, source: str) -> str:
+    if source == "qa":
+        return "QA"
+    if (state_root / "codex-provider").is_dir():
+        return "Codex"
+    if any(state_root.glob("companion_*.mcp.json")):
+        return "Claude party"
+    if (state_root / "dm.mcp.json").is_file():
+        return "Claude"
+    return "Local"
+
+
+def build_openworlds_campaign_summary(
+    source: str,
+    run_id: str,
+    campaign_id: str,
+    snapshot: dict,
+    *,
+    campaign_dir: Path,
+    state_root: Path,
+    last_played: float,
+    current: bool,
+    can_resume: bool,
+    now: float,
+) -> dict:
+    """Browser-safe OpenWorlds launcher row for one campaign.
+
+    This deliberately projects only player-facing fields. It never includes local
+    absolute paths, scene `dm_notes`, lore recall input, sealed agendas, or raw
+    session transcripts; follow-on surfaces can add explicit read models when they
+    need more data.
+    """
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    live = (now - last_played) < 90
+    location = _display_location(snapshot)
+    world = _text(snapshot.get("world_id"), "unknown")
+    title = _text(snapshot.get("title"), campaign_id)
+    ruleset = _text(snapshot.get("ruleset"), "D&D 5e")
+    day = _openworlds_day_label(snapshot)
+    party = _party_cards(snapshot)
+    active_quests = _active_quest_count(snapshot)
+    source_label = "QA run" if source == "qa" else "Play save"
+    where = location or world
+    subtitle = f"{source_label} · {where}" if where else source_label
+    recap = _text(snapshot.get("summary"))
+    if not recap:
+        if active_quests:
+            recap = f"{active_quests} active quest{'s' if active_quests != 1 else ''} remain in motion."
+        elif location:
+            recap = f"The party is gathered near {location}."
+        else:
+            recap = "This chronicle is ready to continue."
+
+    resume_url = f"/dashboard?campaign={quote(campaign_id)}" if can_resume else ""
+    return {
+        "id": f"{source}:{run_id}:{campaign_id}",
+        "campaign_id": campaign_id,
+        "source": source,
+        "sourceLabel": "QA" if source == "qa" else "Play",
+        "runId": run_id,
+        "title": title,
+        "subtitle": subtitle,
+        "system": ruleset,
+        "chapter": str(snapshot.get("day") or "I"),
+        "lastPlayed": _relative_time_label(last_played, now=now),
+        "last_played": last_played,
+        "sessions": _session_count(campaign_dir),
+        "region": location or world,
+        "day": day,
+        "world": world,
+        "location": location,
+        "party": party,
+        "partyCount": len(party),
+        "activeQuestCount": active_quests,
+        "provider": _infer_catalog_provider(state_root, source),
+        "live": live,
+        "liveStatus": "live" if live else "stale",
+        "current": bool(current),
+        "canResume": bool(can_resume),
+        "resumeUrl": resume_url,
+        "dashboardUrl": resume_url,
+        "monitorUrl": "/monitor",
+        "recap": recap,
+    }
+
+
+def _openworlds_campaigns(attached_campaign: str = "") -> dict:
+    now = time.time()
+    out: list[dict] = []
+    current_campaign = attached_campaign
+    current_campaigns_dir = _resolved(_campaigns_dir())
+    for root in _campaign_catalog_roots():
+        cdir = root["campaigns_dir"]
+        if not isinstance(cdir, Path) or not cdir.is_dir():
+            continue
+        for snap in cdir.glob("*/snapshot.json"):
+            try:
+                data = json.loads(snap.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(data, dict) or not data:
+                continue
+            campaign_id = snap.parent.name
+            root_is_current = bool(root["current_state"]) and _resolved(cdir) == current_campaigns_dir
+            try:
+                summary = build_openworlds_campaign_summary(
+                    str(root["source"]),
+                    str(root["run_id"]),
+                    campaign_id,
+                    data,
+                    campaign_dir=snap.parent,
+                    state_root=root["state_root"],
+                    last_played=_campaign_recency(snap),
+                    current=root_is_current and campaign_id == current_campaign,
+                    can_resume=root_is_current,
+                    now=now,
+                )
+            except (OSError, TypeError, ValueError):
+                continue
+            out.append(summary)
+    out.sort(key=lambda c: (not c.get("current"), not c.get("live"), c.get("source") != "play", -c.get("last_played", 0)))
+    return {
+        "campaigns": out[:80],
+        "total": len(out),
+        "now": now,
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
 
 
 def _monitor_roots() -> list[tuple[str, Path]]:
@@ -1420,18 +1682,20 @@ def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
 def _openworlds_config() -> dict:
     """Browser-safe metadata for the OpenWorlds shell.
 
-    The UI bundle is currently a local-fidelity prototype backed by demo data;
-    later PRs bind it to read-only viewer APIs. This endpoint lets the macOS
-    app/browser confirm the route contract without reading files directly.
+    The UI bundle preserves the exported OpenWorlds surface, then binds the
+    launcher to read-only viewer APIs. The remaining game screens still keep the
+    prototype seed as a fallback until their own read models land.
     """
     return {
         "surface": "openworlds",
         "source": "OpenWorlds.zip",
-        "mode": "prototype-demo-data",
+        "mode": "viewer-read-model",
         "api_base": "",
+        "campaign_catalog": "/openworlds/campaigns.json",
         "state_authority": "engine",
         "write_lane": "/move",
-        "demo_data": True,
+        "demo_data": False,
+        "demo_data_fallback": True,
     }
 
 
@@ -1579,6 +1843,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
         elif route == "/openworlds/config.json":
             self._json(_openworlds_config())
+        elif route == "/openworlds/campaigns.json":
+            self._json(_openworlds_campaigns(self.campaign_id))
         elif route == _OPENWORLDS_ROUTE or route.startswith(f"{_OPENWORLDS_ROUTE}/"):
             asset = _openworlds_asset(route)
             if asset is None:
