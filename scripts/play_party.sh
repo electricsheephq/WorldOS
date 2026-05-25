@@ -50,6 +50,11 @@ WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
 PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
 COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
+# Model knobs (default sonnet → unchanged behavior). The DM model is the structural-adherence
+# lever (decision §3); the actor model drives the companion facade agents. The solo path below
+# delegates to play.sh, which honors CLAWDND_DM_MODEL on its own (the env var carries through).
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 
 # --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
 # Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
@@ -190,14 +195,14 @@ turn() {
   if [ "$kind" = "dm" ]; then
     out="$DM_LOG.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   else
     out="$STATE_DIR/companion.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err"
     cat "$out" >> "$COMBINED"   # companion tool-call cost counts toward the session ceiling
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null

@@ -16,12 +16,22 @@
 # Example: qa/run_duo.sh duo1 baldurs-gate qa/play_player_duo.txt 6 0.80
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+# Shared beat-driver helpers: the C soft clock-tick backstop + the A beat-aware runbooks.
+# Sourced (not forked) so the duo + play loops share ONE implementation and can't drift.
+# shellcheck source=lib_beat_driver.sh
+. "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-duo-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
 PLAYER_PROMPT_FILE="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-6}"
 BUDGET="${5:-0.80}"
+# The DM model is an env var so A/B-testing Opus vs sonnet for structural adherence is a
+# one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default sonnet.
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+# The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
+# so behavior is unchanged) kept consistent with the party harness's CLAWDND_ACTOR_MODEL.
+CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
@@ -61,13 +71,13 @@ turn() {
   if [ "$role" = "dm" ]; then
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format json 2>> "$T/$RUN.player.err" \
       | jq -r '.result // ""' 2>/dev/null
   fi
@@ -128,8 +138,18 @@ echo "[duo] DM opened: ${DMSG:0:120}…"
 [ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 chatlog dm "$DMSG"
 
-# Alternate player <-> DM for BEATS rounds.
+# Alternate player <-> DM for BEATS rounds. Each beat is now BEAT-AWARE (decision §A):
+# read the clock + location at the START of the beat, pick the ONE moment-specific runbook
+# for this beat (scene-intro / reversal / climax / travel-peopling / rising-action) instead
+# of the old constant "keep the world moving" paragraph, then after the DM beat run the soft
+# clock-tick backstop (decision §C) so a frozen clock advances ONE phase via the engine.
 for b in $(seq 1 "$BEATS"); do
+  # Progression snapshot at the START of this beat (drives both the runbook + the tick).
+  PROG_PRE="$(clawdnd_read_progress "$STATE_DIR")"
+  PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
+  PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
+  PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
+
   PMSG="$(player_move 0 "The DM says:
 
 $DMSG
@@ -138,14 +158,23 @@ Take your next action(s) for this beat using your tools — say / do / request_c
   echo "[duo] beat $b player: ${PMSG:0:100}…"
   [ -z "$PMSG" ] && { echo "[duo] player went silent at beat $b; stopping early"; break; }
   chatlog player "$PMSG"
+
+  RUNBOOK="$(clawdnd_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_DIR")"
+  echo "[duo] beat $b runbook: ${RUNBOOK%% (*}…"
   DMSG="$(turn_retry dm "$DSID" 0 "The player does:
 
 $PMSG
 
-Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line. KEEP THE WORLD MOVING: if this scene has run its course, don't linger — advance the clock (advance_time / travel_to(advance_time=True) / long_rest), move the party to a NEW location (travel_to along a connection, or add_location(make_current=True)) and narrate that new place's tone yourself, or bring a NEW named NPC on-screen who speaks. Don't run the whole session in one room at one hour.")"
+Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line.
+
+$RUNBOOK")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
   chatlog dm "$DMSG"
+
+  # C — soft clock-tick backstop: if the DM didn't move the clock this beat, advance one
+  # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.
+  clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
 done
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
@@ -165,6 +194,15 @@ if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"
 [ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50
 [ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
-python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES"; GATE=$?
+python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+# Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
+# CAP both recorded scorecards to ≤2.5 / INVALID and annotate WHY (the failed checks), so a dead
+# scene can't masquerade as prestige play. Engine/scoring untouched on a GREEN run.
+if [ "${GATE:-0}" != "0" ]; then
+  GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
+  GATE_REASON="${GATE_REASON:-behavioral gate RED}"
+  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON"
+  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON"
+fi
 echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
 exit $GATE

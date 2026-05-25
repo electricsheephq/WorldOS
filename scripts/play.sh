@@ -24,12 +24,19 @@
 #   CLAWDND_PLAY_MAX_TURNS        hard cap on DM turns                  (default 40)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+# Shared beat-driver helpers: the C soft clock-tick backstop + the A beat-aware runbooks —
+# the SAME implementation the QA duo loop sources, so the human-paced and QA loops can't drift.
+# shellcheck source=../qa/lib_beat_driver.sh
+. "$ROOT/qa/lib_beat_driver.sh"
 WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
 PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
 BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per DM turn
 SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
+# The DM model is an env var (default sonnet) so Opus-vs-sonnet structural-adherence testing
+# is a one-flag flip — mirrors qa/run_duo.sh (decision-dm-driver.md §3).
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
 DM_TURNS=0
 
 # Product play state lives under the repo's play-state/ (git-ignored), one dir per game,
@@ -73,7 +80,7 @@ dm_turn() {
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
   out="$DM_LOG.$(date +%s%N).jsonl"
   claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-    --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+    --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
     --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
   cat "$out" >> "$COMBINED"
   jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
@@ -157,12 +164,28 @@ while true; do
     [ -z "$PMSG" ] && continue
     echo "[play] you: ${PMSG:0:100}"
     chatlog player "$PMSG"
+    # Beat-aware (decision §A): the "beat" is each resolved player move; the session's beat
+    # budget is MAX_TURNS, so the midpoint/climax windows scale to the play cap. Read the clock
+    # + location BEFORE the DM turn (for the runbook + the soft tick), pick the ONE runbook for
+    # this beat, then run the soft clock-tick backstop after.
+    PROG_PRE="$(clawdnd_read_progress "$STATE_DIR")"
+    PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
+    PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
+    PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
+    BEAT_NO=$((DM_TURNS + 1))
+    RUNBOOK="$(clawdnd_runbook_for_beat "$BEAT_NO" "$MAX_TURNS" "$PREV_LOC" "$STATE_DIR")"
+    echo "[play] beat $BEAT_NO runbook: ${RUNBOOK%% (*}…"
     DMSG="$(dm_turn 0 "The player does:
 
 $PMSG
 
-Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. KEEP THE WORLD MOVING: when a scene has run its course, advance the clock (advance_time / travel_to(advance_time=True) / long_rest — don't leave the day frozen at morning), move the party to new locations (travel_to / add_location(make_current=True), narrating the new place's tone yourself first), and bring new named NPCs on-screen as they explore — the seeded roster is a starting cast, not the whole world.")"
+Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player.
+
+$RUNBOOK")"
     chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))
+    # C — soft clock-tick backstop: advance one phase via the engine only if the DM left the
+    # clock frozen this beat (engine stays the sole writer; defers to the DM's in-fiction pacing).
+    clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
   else
     sleep 2
   fi

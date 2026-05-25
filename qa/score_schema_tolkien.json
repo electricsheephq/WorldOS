@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["scope", "acts", "scores", "overall", "defects", "highlights", "verdict"],
+  "required": ["scope", "progressed", "acts", "scores", "overall", "defects", "highlights", "verdict"],
   "properties": {
     "scores": {
       "type": "object",
@@ -43,6 +43,7 @@
     "highlights": { "type": "array", "items": { "type": "string" } },
     "verdict": { "type": "string" },
     "scope": { "type": "string", "description": "the arc scope this transcript represents: setup-slice | one-shot | short-3act | campaign-arc" },
+    "progressed": { "type": "boolean", "description": "did the world MOVE over the session (clock advanced / party traveled to a new place / a new named face entered)? false for a long session frozen in one Act-1 scene — the failure-to-progress cap then binds overall <= 3.0" },
     "acts": {
       "type": "array",
       "description": "per-act assessment of the structure PRESENT (don't invent acts a short slice doesn't reach)",

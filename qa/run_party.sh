@@ -50,6 +50,10 @@ COMPANION_SPEC="${5:-Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding 
 PLAYER_PROMPT_FILE="${CLAWDND_PLAYER_PROMPT:-qa/play_player_duo.txt}"
 SESSION_BUDGET="${CLAWDND_PARTY_SESSION_BUDGET:-30.00}"  # aggregate ceiling for the whole scene
 MAX_TURNS="${CLAWDND_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (safety net)
+# Model knobs (default sonnet, so behavior is unchanged): the DM model is the structural-
+# adherence lever (decision §3); the actor model drives the player/companion facade agents.
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
@@ -167,14 +171,14 @@ turn() {
   if [ "$kind" = "dm" ]; then
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   else
     out="$T/$RUN.actor.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model sonnet --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.actor.err"
     cat "$out" >> "$COMBINED"   # actor tool-call cost counts toward the session ceiling
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
