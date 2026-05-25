@@ -84,39 +84,33 @@ struct CodexProvider: ProviderAdapter {
 
     func detect(repoPath: URL, preferences: ProviderPreferences) -> ProviderStatus {
         let cli = Shell.which("codex")
-        let appExists = Shell.fileExists("/Applications/Codex.app")
-        let homeConfig = Shell.fileExists("~/.codex")
+        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
+        let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let launchCommand = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
 
-        if preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if let cli {
-                return ProviderStatus(
-                    kind: kind,
-                    availability: .installed,
-                    detail: "Codex CLI found, but no ClawDnD launch command is configured yet.",
-                    detectedPath: cli
-                )
-            }
-            if appExists || homeConfig {
-                return ProviderStatus(
-                    kind: kind,
-                    availability: .installed,
-                    detail: "Codex app/config detected, but no ClawDnD launch command is configured yet.",
-                    detectedPath: appExists ? "/Applications/Codex.app" : "~/.codex"
-                )
-            }
+        guard let cli else {
             return ProviderStatus(
                 kind: kind,
                 availability: .missing,
-                detail: "Codex was not found. Install Codex or configure a provider command.",
+                detail: "Codex CLI was not found. The Codex provider fails closed until codex is available.",
                 detectedPath: nil
+            )
+        }
+
+        guard FileManager.default.fileExists(atPath: wrapper.path) else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .error,
+                detail: "Codex CLI found, but scripts/play_codex_actor.sh is missing from this checkout.",
+                detectedPath: cli
             )
         }
 
         return ProviderStatus(
             kind: kind,
             availability: .configured,
-            detail: "Configured. The app will launch your command with ClawDnD provider environment variables.",
-            detectedPath: cli
+            detail: "Ready. Launches \(launchCommand) with the ClawDnD provider environment and player-facade-only Codex wrapper.",
+            detectedPath: configuredCommand.isEmpty ? wrapper.path : cli
         )
     }
 
@@ -128,10 +122,17 @@ struct CodexProvider: ProviderAdapter {
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
-        let command = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty else {
-            throw ProviderError.configuration("Codex provider is detected but not launch-configured. Set a Codex provider command in Settings.")
+        guard Shell.which("codex") != nil else {
+            throw ProviderError.missingDependency("Codex CLI is missing. Install codex before starting a Codex provider session.")
         }
+
+        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
+        guard FileManager.default.fileExists(atPath: wrapper.path) else {
+            throw ProviderError.configuration("Codex provider wrapper is missing: scripts/play_codex_actor.sh")
+        }
+
+        let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let command = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
         return ProviderLaunchRequest(
             name: "Codex game",
             executable: "/bin/zsh",
@@ -152,7 +153,11 @@ struct CodexProvider: ProviderAdapter {
     func stop(runId: String) {}
 
     func tailLogs(runId: String) -> String {
-        "Codex provider output is captured through the app supervisor."
+        "Codex provider output is captured through the app supervisor and play-state/<run-id>/codex-provider/."
+    }
+
+    private var defaultCodexCommand: String {
+        "scripts/play_codex_actor.sh"
     }
 }
 
