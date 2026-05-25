@@ -1,8 +1,10 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
 import store
-from models import Ability, Campaign, Character, Condition
+from models import Ability, Campaign, Character, Condition, StrategicClock
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +20,28 @@ def test_campaign_roundtrip():
     assert loaded is not None
     assert loaded.title == "Test Hold"
     assert loaded.id == c.id
+
+
+def test_campaign_roundtrips_with_empty_strategic_state():
+    c = Campaign(title="Strategic Default")
+    assert c.strategic_state.model_dump(mode="json") == {
+        "regions": {},
+        "assets": {},
+        "clocks": {},
+        "projects": {},
+    }
+
+    store.save_campaign(c)
+    loaded = store.load_campaign(c.id)
+    assert loaded is not None
+    assert loaded.strategic_state.model_dump(mode="json") == c.strategic_state.model_dump(mode="json")
+    snapshot = store._campaign_dir(c.id) / "snapshot.json"
+    assert "strategic_state" in json.loads(snapshot.read_text(encoding="utf-8"))
+
+    old = c.model_dump(mode="json")
+    old.pop("strategic_state")
+    reloaded = Campaign.model_validate(old)
+    assert reloaded.strategic_state.model_dump(mode="json") == c.strategic_state.model_dump(mode="json")
 
 
 def test_load_missing_returns_none():
@@ -99,6 +123,12 @@ def test_condition_enum_validates():
     assert Condition("prone") == Condition.PRONE
     with pytest.raises(ValueError):
         Condition("bogus")
+
+
+def test_strategic_clock_enum_validates():
+    assert StrategicClock(title="A threat", kind="threat", scope="region").kind == "threat"
+    with pytest.raises(ValidationError):
+        StrategicClock(title="Bad", kind="rumor", scope="region")
 
 
 def test_engine_tools_end_to_end():
