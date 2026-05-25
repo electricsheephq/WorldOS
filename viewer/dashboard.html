@@ -1758,6 +1758,7 @@ function deathSavePips(ds, { labels = true } = {}) {
 const _inspectStore = new Map();
 let _inspectSeq = 0, _inspectAnchor = null;
 function resetInspectStore() {
+  closeInspect();
   _inspectStore.clear();
   _inspectSeq = 0;
 }
@@ -1893,6 +1894,7 @@ function closeInspect() {
 function positionInspect(anchor) {
   const pop = $("inspect-popover");
   if (!pop || pop.hidden || !anchor) return;
+  if (!anchor.isConnected) { closeInspect(); return; }
   const a = anchor.getBoundingClientRect();
   const p = pop.getBoundingClientRect();
   const gap = 8;

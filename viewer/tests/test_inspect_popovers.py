@@ -10,8 +10,14 @@ _DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.html"
 
 def _renderer_source() -> str:
     html = _DASHBOARD_PATH.read_text(encoding="utf-8")
-    start = html.index("const esc =")
-    end = html.index("// ---- campaign switcher wiring", start)
+    try:
+        start = html.index("const esc =")
+        end = html.index("// ---- campaign switcher wiring", start)
+    except ValueError as exc:
+        raise AssertionError(
+            'test_inspect_popovers.py could not extract dashboard renderer source; '
+            'missing "const esc =" or "// ---- campaign switcher wiring" marker'
+        ) from exc
     return html[start:end]
 
 
@@ -91,6 +97,7 @@ console.log(JSON.stringify(fixtures));
             input=program,
             text=True,
             capture_output=True,
+            check=False,
         )
         if proc.returncode:
             self.fail(proc.stderr)
