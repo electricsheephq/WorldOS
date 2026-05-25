@@ -119,6 +119,30 @@
   .cc-unit .init { color:var(--gold); font-weight:800; font-variant-numeric:tabular-nums; flex:none; }
   .cc-unit .name { color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cc-unit .meta { font-size:10.5px; color:var(--faint); margin-top:3px; display:flex; gap:6px; flex-wrap:wrap; }
+  .cc-board { grid-column:1 / -1; border-top:1px solid #302517; padding-top:10px; display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .cc-board-head { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .cc-board-title { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; font-weight:800; }
+  .cc-board-note { font-size:11px; color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-zones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; }
+  .cc-zone { border:1px solid #3a2f1c; background:#18120b; border-radius:8px; padding:8px; min-width:0; }
+  .cc-zone.current { border-color:var(--gold2); background:#23180c; box-shadow:0 0 0 1px rgba(232,201,138,.08) inset; }
+  .cc-zone.empty { opacity:.86; }
+  .cc-zone-top { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .cc-zone-name { color:var(--gold); font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-zone-count { margin-left:auto; color:var(--faint); font-size:10px; flex:none; }
+  .cc-zone-desc { color:#c8b894; font-size:11.5px; line-height:1.35; margin-top:4px; min-height:1.35em; }
+  .cc-adj { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+  .cc-adj span { font-size:9.5px; color:#bcd4ec; border:1px solid #2e4456; background:#16222e; border-radius:7px; padding:1px 6px; }
+  .cc-adj span.missing { color:#e4b17f; border-color:#5a4020; background:#2a1c0e; }
+  .cc-occ { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+  .cc-token { display:inline-flex; align-items:center; gap:5px; max-width:100%; font-size:10.5px; color:var(--ink); border:1px solid #3a2f1c; background:#21180f; border-radius:8px; padding:2px 7px; }
+  .cc-token.current { color:#111; border-color:var(--gold); background:linear-gradient(180deg,#f2d89e,#d4a75f); font-weight:800; }
+  .cc-token .tok-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-token .tok-init { color:var(--faint); font-variant-numeric:tabular-nums; }
+  .cc-token.current .tok-init { color:#6a4a16; }
+  .cc-unplaced { display:flex; flex-wrap:wrap; gap:6px; align-items:center; color:#e4b17f; font-size:11px; }
+  .cc-unplaced .lbl { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#b39c78; font-weight:800; }
+  .cc-unplaced-item { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
   .cc-warn { grid-column:1 / -1; color:#e4b17f; font-size:11px; display:flex; gap:6px; flex-wrap:wrap; }
   .cc-warn span { border:1px solid #5a4020; background:#2a1c0e; border-radius:7px; padding:2px 7px; }
   .action-bar { border-bottom:1px solid var(--line); background:#120d08; padding:8px 18px;
@@ -1071,6 +1095,85 @@ async function applySceneArt(scope) {
 }
 const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
 const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
+function zoneTacticsBoardHTML(view) {
+  const rawZones = Array.isArray(view.zones) ? view.zones : [];
+  if (!rawZones.length) return "";
+  const boardWarnings = [];
+  const seen = new Set();
+  const zones = [];
+  rawZones.forEach((z, idx) => {
+    if (!z || typeof z !== "object") {
+      boardWarnings.push(`malformed zone at index ${idx}`);
+      return;
+    }
+    const name = (z.name || "").toString().trim();
+    if (!name) {
+      boardWarnings.push(`missing zone name at index ${idx}`);
+      return;
+    }
+    if (seen.has(name)) {
+      boardWarnings.push(`duplicate zone "${name}" ignored`);
+      return;
+    }
+    seen.add(name);
+    const adjacent = Array.isArray(z.adjacent)
+      ? z.adjacent.map(a => (a || "").toString().trim()).filter(Boolean)
+      : [];
+    if (z.adjacent !== undefined && !Array.isArray(z.adjacent)) {
+      boardWarnings.push(`malformed adjacency in zone "${name}"`);
+    }
+    zones.push({ name, description:(z.description || "").toString().trim(), adjacent, occupants:[] });
+  });
+  if (!zones.length) {
+    return `<div class="cc-board"><div class="cc-board-head"><span class="cc-board-title">Zones</span><span class="cc-board-note">No valid tactical zones to draw.</span></div>
+      <div class="cc-warn">${boardWarnings.map(w => `<span>${esc(w)}</span>`).join("")}</div></div>`;
+  }
+  const zoneByName = new Map(zones.map(z => [z.name, z]));
+  const order = Array.isArray(view.order) ? view.order : [];
+  const unplaced = [];
+  order.forEach(u => {
+    const zoneName = (u && u.zone ? u.zone : "").toString().trim();
+    if (!zoneName) {
+      unplaced.push({ unit:u, reason:"not placed" });
+      return;
+    }
+    const zone = zoneByName.get(zoneName);
+    if (!zone) {
+      unplaced.push({ unit:u, reason:`unknown zone: ${zoneName}` });
+      boardWarnings.push(`${u.name || u.id || "Combatant"} is in undeclared zone "${zoneName}"`);
+      return;
+    }
+    zone.occupants.push(u);
+  });
+  const token = (u, reason = "") => `<span class="cc-token${u.is_current ? " current" : ""}" title="${esc(reason || u.kind || "combatant")}">
+    <span class="tok-name">${esc(u.name || u.id || "Unknown")}</span><span class="tok-init">${esc(u.initiative ?? "-")}</span></span>`;
+  const zoneCards = zones.map(z => {
+    const current = z.occupants.some(u => u.is_current);
+    const adj = z.adjacent.length
+      ? `<div class="cc-adj">${z.adjacent.map(a => `<span class="${zoneByName.has(a) ? "" : "missing"}">${esc(a)}</span>`).join("")}</div>`
+      : `<div class="cc-adj"><span>isolated</span></div>`;
+    z.adjacent.forEach(a => { if (!zoneByName.has(a)) boardWarnings.push(`${z.name} links to missing zone "${a}"`); });
+    return `<div class="cc-zone${current ? " current" : ""}${z.occupants.length ? "" : " empty"}">
+      <div class="cc-zone-top"><span class="cc-zone-name">${esc(z.name)}</span><span class="cc-zone-count">${z.occupants.length ? `${z.occupants.length} here` : "empty"}</span></div>
+      <div class="cc-zone-desc">${esc(z.description || "No description yet.")}</div>
+      ${adj}
+      <div class="cc-occ">${z.occupants.length ? z.occupants.map(u => token(u)).join("") : `<span class="cc-pill">empty zone</span>`}</div>
+    </div>`;
+  }).join("");
+  const placedCount = order.length - unplaced.length;
+  const unplacedHTML = unplaced.length
+    ? `<div class="cc-unplaced"><span class="lbl">Unplaced</span>${unplaced.map(x => `<span class="cc-unplaced-item">${token(x.unit || {}, x.reason)}<span class="cc-pill off">${esc(x.reason)}</span></span>`).join("")}</div>`
+    : "";
+  const warningHTML = boardWarnings.length
+    ? `<div class="cc-warn">${[...new Set(boardWarnings)].map(w => `<span>${esc(w)}</span>`).join("")}</div>`
+    : "";
+  return `<div class="cc-board">
+    <div class="cc-board-head"><span class="cc-board-title">Zone tactics</span><span class="cc-board-note">${zones.length} zone${zones.length===1?"":"s"} · ${placedCount}/${order.length} placed</span></div>
+    <div class="cc-zones">${zoneCards}</div>
+    ${unplacedHTML}
+    ${warningHTML}
+  </div>`;
+}
 function renderCombatCenter(s) {
   const box = $("combat-center");
   if (!box) return;
@@ -1103,6 +1206,7 @@ function renderCombatCenter(s) {
   const warnings = (view.warnings || []).length
     ? `<div class="cc-warn">${view.warnings.map(w => `<span>${esc(w)}</span>`).join("")}</div>`
     : "";
+  const board = zoneTacticsBoardHTML(view);
   box.innerHTML = `
     <div class="cc-head">
       <div class="cc-k">Round ${esc(view.round ?? "?")} · Current turn</div>
@@ -1113,6 +1217,7 @@ function renderCombatCenter(s) {
       <div class="cc-actions">${actionPill("action_available", "Action")}${actionPill("bonus_available", "Bonus")}${actionPill("reaction_available", "Reaction")}</div>
     </div>
     <div class="cc-order">${order || `<div class="empty">No initiative order.</div>`}</div>
+    ${board}
     ${warnings}`;
   box.hidden = false;
 }
