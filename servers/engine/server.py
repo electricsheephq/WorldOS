@@ -19,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 import bestiary
 import combat
 import companion
+import companion_banter
 import companion_arc
 import consequences as consequences_mod
 import content as content_mod
@@ -43,6 +44,8 @@ from models import (
     AbilityScores,
     ActiveEffect,
     BacklogItem,
+    CampBeatCandidate,
+    CampBeatRecord,
     Campaign,
     Character,
     ClassLevel,
@@ -4041,39 +4044,127 @@ def _camp_arc_summary(comp) -> Optional[dict]:
     return out
 
 
+def _camp_beat_view(c: Campaign, beat: CampBeatCandidate) -> dict:
+    out = beat.model_dump(mode="json")
+    participants = [c.characters[cid] for cid in beat.companion_ids if cid in c.characters]
+    out["participants"] = [
+        {"id": comp.id, "name": comp.name, "voice_id": comp.voice_id} for comp in participants
+    ]
+    if beat.kind == "solo" and participants:
+        comp = participants[0]
+        out.update(
+            {
+                "companion": comp.name,
+                "voice_id": comp.voice_id,
+                "personality": comp.personality,
+                "attitude": comp.attitude,
+                "attitude_value": comp.attitude_value,
+                "arc": _camp_arc_summary(comp),
+            }
+        )
+    return out
+
+
 @mcp.tool()
 def camp_scene(campaign_id: str, setting: str = "") -> dict:
     """Gather the party for a CAMP scene — the hub where companions breathe between adventures
-    (around the campfire, at the tavern bar, in a safe house). For EACH living companion in the
-    party it returns a beat to voice: their `voice_id`, current standing (`attitude` +
-    `attitude_value`), a memory-grounded prompt (the same frame as `companion_advise`), and a
-    read-only summary of their relationship `arc` (gates + how close the next is). Run it at a
-    long rest / downtime / on reaching a safe hub: voice each companion's moment in turn, let the
-    player talk to any of them, and play any arc beat that's ripe — then `check_companion_arc` to
-    fire/mark it. This is where loyalty, romance, grief, and grudges get their air; no companion
-    stays silent. Read-only (advice + state; it changes nothing)."""
+    (around the campfire, at the tavern bar, in a safe house). It returns deterministic
+    scheduled frames for living companions: `voice_id`/participants, current standing
+    (`attitude` + `attitude_value` for solo beats), player-facing prompts, and read-only
+    relationship `arc` summaries. Run it at a long rest / downtime / on reaching a safe hub:
+    voice the returned frames, let the player talk to any of them, and play any arc beat that's
+    ripe — then `check_companion_arc` to fire/mark it and `record_camp_beat` to persist that the
+    camp beat happened. Read-only (advice + state; it changes nothing)."""
     c = _require(campaign_id)
-    companions = [c.characters[i] for i in c.party
-                  if i in c.characters and c.characters[i].kind == "companion" and not c.characters[i].dead]
+    companions = [
+        c.characters[i]
+        for i in c.party
+        if i in c.characters
+        and c.characters[i].kind == "companion"
+        and not c.characters[i].dead
+        and c.characters[i].current_hp > 0
+    ]
     sit = setting.strip() or "an unpressured moment in camp — the day's danger behind you, the fire low"
-    beats = []
-    for comp in companions:
-        callbacks = ledger_mod.recall(campaign_id, comp.name, limit=3)  # what's remembered about them
-        frame = companion.deliberate(comp, sit, callbacks=callbacks)
-        beats.append({**frame, "attitude": comp.attitude, "attitude_value": comp.attitude_value,
-                      "arc": _camp_arc_summary(comp)})
+    scheduled = companion_banter.schedule_camp_beats(c, max_beats=len(companions))
+    beats = [_camp_beat_view(c, beat) for beat in scheduled]
     return {
         "setting": sit,
         "present": [comp.name for comp in companions],
         "beats": beats,
+        "camp_beat_history": {
+            "records": len(c.camp_beats.records),
+            "solo_cooldown_days": c.camp_beats.solo_cooldown_days,
+            "pair_cooldown_days": c.camp_beats.pair_cooldown_days,
+        },
         "guidance": (
             "Run a camp round: give each companion a moment IN TURN (a worry, a memory surfaced, a "
             "question for the player, banter with another companion), grounded in their standing + "
             "recent events. Let the player talk to any of them — this is character time, not a menu. "
             "If an arc gate is one beat from unlocking, lean toward it; play any ripe beat and then "
-            "`check_companion_arc` to fire it. No companion present stays silent."
+            "`check_companion_arc` to fire it. Record a played camp beat with `record_camp_beat`; "
+            "reading this scene alone does not advance beat history."
         ),
     }
+
+
+@mcp.tool()
+def record_camp_beat(
+    campaign_id: str,
+    beat_id: str,
+    companion_ids: Optional[list] = None,
+    kind: str = "",
+    tags: Optional[list] = None,
+    note: str = "",
+    resolved: bool = False,
+) -> dict:
+    """Persist that a camp beat actually fired.
+
+    This is the explicit write path for camp-beat history. `camp_scene` and the pure scheduler
+    are read-only; they only propose frames. For normal use, pass a `beat_id` returned by
+    `camp_scene`. The optional explicit fields support recording an externally-framed beat
+    without letting prompt generation mutate state."""
+    if not beat_id.strip():
+        raise ValueError("beat_id is required")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        candidates = companion_banter.schedule_camp_beats(c, max_beats=100)
+        candidate = next((beat for beat in candidates if beat.beat_id == beat_id), None)
+        if candidate is not None:
+            ids = list(candidate.companion_ids)
+            record_kind = candidate.kind
+            record_tags = list(candidate.tags)
+            cooldown_key = candidate.cooldown_key
+            pkey = candidate.pair_key
+        else:
+            ids = sorted({str(cid) for cid in (companion_ids or []) if str(cid).strip()})
+            if not ids:
+                raise ValueError(f"beat_id {beat_id!r} is not currently scheduled; provide companion_ids to record explicitly")
+            for cid in ids:
+                comp = _char(c, cid)
+                if comp.kind != "companion" or comp.dead or comp.current_hp <= 0:
+                    raise ValueError(f"{cid!r} is not a living companion")
+            record_kind = kind or ("pair_banter" if len(ids) == 2 else "solo")
+            if record_kind == "pair_banter" and len(ids) != 2:
+                raise ValueError("pair_banter records require exactly two living companions")
+            if record_kind == "solo" and len(ids) != 1:
+                raise ValueError("solo records require exactly one living companion")
+            record_tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+            pkey = companion_banter.pair_key(*ids) if record_kind == "pair_banter" else ""
+            cooldown_key = f"pair:{pkey}:{beat_id}" if pkey else f"solo:{ids[0]}:{beat_id}"
+        record = CampBeatRecord(
+            id=beat_id,
+            day=c.day,
+            companion_ids=ids,
+            kind=record_kind,  # type: ignore[arg-type]
+            tags=record_tags,
+            resolved=resolved,
+            note=note,
+            cooldown_key=cooldown_key,
+            pair_key=pkey,
+        )
+        c.camp_beats.records.append(record)
+        save_campaign(c)
+        return {"record": record.model_dump(mode="json"), "history_count": len(c.camp_beats.records)}
 
 
 def _new_session_id() -> str:
