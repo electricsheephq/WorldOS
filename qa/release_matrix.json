@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "description": "Deterministic Owlcat-comparison release matrix. Sprint 1 is list/dry-run only; cells declare intended QA coverage and inspect existing sidecars without launching live harnesses.",
+  "defaults": {
+    "mechanical_min": 4.5,
+    "story_min": 4.3,
+    "budget": 1.2,
+    "max_parallel": 1,
+    "artifact_root": "qa/transcripts"
+  },
+  "cells": [
+    {
+      "id": "postbg3-hopeful-rebuild",
+      "harness": "run_qa",
+      "prompt": "qa/play_prompt_postbg3.txt",
+      "world": "baldurs-gate",
+      "ending": "hopeful-rebuild",
+      "tags": ["postbg3", "world_state", "canon", "quest_outcomes"],
+      "expect": {
+        "world_state_contains": ["baldurs_gate=rebuilding"],
+        "forbidden_text": ["Gortash rules as archduke"]
+      }
+    },
+    {
+      "id": "postbg3-gortash-tyranny",
+      "harness": "run_qa",
+      "prompt": "qa/play_prompt_postbg3.txt",
+      "world": "baldurs-gate",
+      "ending": "gortash-tyranny",
+      "tags": ["postbg3", "world_state", "canon", "quest_outcomes"],
+      "expect": {
+        "world_state_contains": ["gortash=archduke", "baldurs_gate=occupied"],
+        "forbidden_text": ["Gortash is dead", "city is rebuilding"]
+      }
+    },
+    {
+      "id": "postbg3-illithid-ascension",
+      "harness": "run_qa",
+      "prompt": "qa/play_prompt_postbg3_illithid.txt",
+      "world": "baldurs-gate",
+      "ending": "illithid-ascension",
+      "tags": ["postbg3", "world_state", "canon", "identity"],
+      "expect": {
+        "world_state_contains": ["player=illithid"],
+        "forbidden_text": ["the tadpole was removed cleanly"]
+      }
+    },
+    {
+      "id": "s7-coldopen-hooks",
+      "harness": "run_qa",
+      "prompt": "qa/play_prompt_s7_coldopen.txt",
+      "world": "homebrew",
+      "ending": "season-seven-cold-open",
+      "tags": ["s7", "hooks", "coldopen", "story"],
+      "expect": {
+        "required_tools": ["lookup_lore", "recall"],
+        "forbidden_text": ["nothing happens"]
+      }
+    },
+    {
+      "id": "camp-companion",
+      "harness": "run_party",
+      "prompt": "qa/play_prompt_camp.txt",
+      "world": "camp",
+      "ending": "companion-camp",
+      "tags": ["camp", "companion", "relationships", "party"],
+      "expect": {
+        "required_tools": ["companion_status"],
+        "forbidden_text": ["duplicate companion"]
+      }
+    },
+    {
+      "id": "combat-reroll",
+      "harness": "run_qa",
+      "prompt": "qa/play_prompt_bg_brawler.txt",
+      "world": "baldurs-gate",
+      "ending": "combat-reroll",
+      "tags": ["combat", "reroll", "rules", "action_economy"],
+      "expect": {
+        "required_tools": ["roll", "attack"],
+        "forbidden_text": ["reroll without spending"]
+      }
+    }
+  ]
+}
