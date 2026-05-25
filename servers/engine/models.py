@@ -645,6 +645,90 @@ class WorldState(_StrictModel):
         )
 
 
+class StrategicClock(_StrictModel):
+    """A setting-agnostic strategic pressure clock.
+
+    Inert in this slice: content may seed it and snapshots persist it, but no engine
+    tick/advancement logic consumes it yet (#75 owns advancement)."""
+
+    id: str = Field(default_factory=lambda: _new_id("clock"))
+    title: str
+    kind: Literal["threat", "opportunity", "mystery", "faction", "project"] = "threat"
+    scope: Literal["world", "region", "faction"] = "world"
+    region_id: str = ""  # ref into Campaign.locations when scope/binding is regional
+    faction_id: str = ""  # ref into Campaign.factions when scope/binding is factional
+    progress: int = Field(0, ge=0)
+    target: int = Field(6, ge=1)
+    tick_every_days: int = Field(0, ge=0)  # 0 = manual/no schedule in this first slice
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _progress_cannot_exceed_target(self) -> "StrategicClock":
+        self.progress = min(self.progress, self.target)
+        return self
+
+
+class FactionAsset(_StrictModel):
+    """A compact strategic asset owned by a faction.
+
+    The engine stores ownership/location/strength only; authored names and notes carry
+    the flavor so the model stays portable across settings."""
+
+    id: str = Field(default_factory=lambda: _new_id("asset"))
+    faction_id: str
+    name: str
+    kind: Literal["army", "agent", "holding", "resource", "influence", "supply", "special"] = "special"
+    location_id: str = ""  # optional ref into Campaign.locations
+    strength: int = Field(1, ge=0)
+    tags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class RegionControl(_StrictModel):
+    """Strategic control state for one seeded Location/region."""
+
+    location_id: str
+    controller_id: str = ""  # optional ref into Campaign.factions
+    influence: dict[str, int] = Field(default_factory=dict)  # faction_id -> 0..100-ish authored score
+    stability: int = Field(50, ge=0, le=100)
+    unrest: int = Field(0, ge=0, le=100)
+    tags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class DowntimeProject(_StrictModel):
+    """A strategic downtime project record.
+
+    This slice persists authored projects only; project advancement is out of scope."""
+
+    id: str = Field(default_factory=lambda: _new_id("proj"))
+    title: str
+    kind: Literal["research", "construction", "training", "diplomacy", "recovery", "crafting", "other"] = "other"
+    location_id: str = ""  # optional ref into Campaign.locations
+    faction_id: str = ""  # optional ref into Campaign.factions
+    progress_days: int = Field(0, ge=0)
+    duration_days: int = Field(1, ge=1)
+    status: Literal["planned", "active", "paused", "complete", "failed"] = "planned"
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _progress_cannot_exceed_duration(self) -> "DowntimeProject":
+        self.progress_days = min(self.progress_days, self.duration_days)
+        return self
+
+
+class StrategicState(_StrictModel):
+    """The campaign's optional strategic board.
+
+    Empty defaults are additive: old snapshots that lack this field deserialize with an
+    empty board, and worlds without a `strategic` block seed unchanged."""
+
+    regions: dict[str, RegionControl] = Field(default_factory=dict)  # location_id -> control
+    assets: dict[str, FactionAsset] = Field(default_factory=dict)  # asset id -> asset
+    clocks: dict[str, StrategicClock] = Field(default_factory=dict)  # clock id -> clock
+    projects: dict[str, DowntimeProject] = Field(default_factory=dict)  # project id -> project
+
+
 class BacklogItem(_StrictModel):
     """A goal-traced unit of PROACTIVE world-work — the world's own to-do, so the campaign
     advances off-screen when in-fiction time passes instead of only reacting to the player.
@@ -800,6 +884,7 @@ class Campaign(_StrictModel):
     # spine quest_hooks (so item #1 traces to a real arc anchor). Engine sole-writer; kept a
     # strict sibling of consequences/worldsim threads (never consumed by consequences.due).
     campaign_backlog: CampaignBacklog = Field(default_factory=CampaignBacklog)
+    strategic_state: StrategicState = Field(default_factory=StrategicState)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions

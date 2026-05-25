@@ -121,6 +121,17 @@
   .cc-unit .meta { font-size:10.5px; color:var(--faint); margin-top:3px; display:flex; gap:6px; flex-wrap:wrap; }
   .cc-warn { grid-column:1 / -1; color:#e4b17f; font-size:11px; display:flex; gap:6px; flex-wrap:wrap; }
   .cc-warn span { border:1px solid #5a4020; background:#2a1c0e; border-radius:7px; padding:2px 7px; }
+  .action-bar { border-bottom:1px solid var(--line); background:#120d08; padding:8px 18px;
+    display:flex; align-items:center; gap:8px; overflow-x:auto; box-shadow:0 1px 0 rgba(232,201,138,.04) inset; }
+  .action-bar[hidden] { display:none; }
+  .action-group { display:flex; align-items:center; gap:6px; flex:none; }
+  .action-group + .action-group { border-left:1px solid #2e2416; padding-left:8px; }
+  .action-label { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; font-weight:800; }
+  .context-action { border:1px solid #3d3119; background:#1a140d; color:var(--ink); border-radius:8px;
+    padding:5px 9px; font-size:11.5px; line-height:1.1; cursor:pointer; white-space:nowrap; }
+  .context-action:hover { background:#2a1d0e; border-color:var(--gold2); }
+  .context-action:disabled { color:#9b8773; border-color:#32281a; background:#120e09; cursor:not-allowed; opacity:.72; }
+  .context-action .why { color:#c89084; font-size:10px; margin-left:5px; }
   .msg { max-width:760px; }
   .msg.narration, .msg.dialogue, .msg.combat, .msg.system { animation:msgin .25s ease; }
   @keyframes msgin { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
@@ -769,6 +780,7 @@
       <span class="meta" id="when"></span><span class="meta" id="where"></span>
       <button class="gear-btn" id="gear-btn" title="Settings (read-only)" aria-label="Settings">⚙</button></div>
     <section class="combat-center" id="combat-center" hidden></section>
+    <section class="action-bar" id="action-bar" hidden></section>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
     <div class="dice empty-state" id="dice"><span class="empty">No rolls yet — the dice are still.</span></div>
     <div class="palette">
@@ -1103,6 +1115,68 @@ function renderCombatCenter(s) {
     <div class="cc-order">${order || `<div class="empty">No initiative order.</div>`}</div>
     ${warnings}`;
   box.hidden = false;
+}
+
+function actionDisabledReason(action) {
+  if (!action) return "unavailable";
+  return action.disabled_reason || (action.available === false ? "unavailable" : "");
+}
+function handleContextAction(action) {
+  if (!action || action.available === false) return;
+  if (action.move) {
+    submitMove(action.move);
+    return;
+  }
+  if (action.ui === "focus-say" || action.ui === "focus-do") {
+    const ta = $("saytext");
+    if (ta) {
+      ta.focus();
+      if (action.ui === "focus-do" && !ta.value.trim()) ta.placeholder = "Describe a free-form action…";
+    }
+    return;
+  }
+  if (action.ui === "palette-skills") {
+    activeTab = "skills";
+    renderPalette();
+  } else if (action.ui === "palette-saves") {
+    activeTab = "saves";
+    renderPalette();
+  }
+}
+function renderActionBar(s) {
+  const bar = $("action-bar");
+  if (!bar) return;
+  const model = (s && s.action_model) || {};
+  const groups = (model.groups || []).filter(g => g && (g.id !== "combat" || (model.combat || {}).active));
+  if (!groups.length) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  bar.innerHTML = "";
+  groups.forEach(group => {
+    const actions = (group.actions || []).filter(Boolean);
+    if (!actions.length) return;
+    const wrap = document.createElement("div");
+    wrap.className = "action-group";
+    const label = document.createElement("span");
+    label.className = "action-label";
+    label.textContent = group.label || group.id || "Actions";
+    wrap.appendChild(label);
+    actions.forEach(action => {
+      const reason = actionDisabledReason(action);
+      const btn = document.createElement("button");
+      btn.className = "context-action";
+      btn.type = "button";
+      btn.disabled = !!reason;
+      btn.title = reason || (action.move ? describeMove(action.move) : action.label || "Action");
+      btn.innerHTML = `${esc(action.label || "Action")}${reason ? ` <span class="why">${esc(reason)}</span>` : ""}`;
+      btn.onclick = () => handleContextAction(action);
+      wrap.appendChild(btn);
+    });
+    bar.appendChild(wrap);
+  });
+  bar.hidden = !bar.children.length;
 }
 // race + class line for a stat card, omitting whatever's blank (placeholder NPCs
 // carry empty race / [] classes — we don't want to print "Level 0" noise).
@@ -2101,6 +2175,7 @@ function renderState(s) {
     $("title").textContent = "ClawDnD";
     applyLiveMode(false);
     renderCombatCenter(s);
+    renderActionBar(s);
     const feed = $("feed");
     if (feed && !feed.children.length) feed.innerHTML = '<div class="empty">Waiting for the story to begin…</div>';
     return;
@@ -2111,6 +2186,7 @@ function renderState(s) {
   // server didn't send is_live_view.
   applyLiveMode((s.is_live_view !== undefined ? s.is_live_view : s.live) !== false);
   renderCombatCenter(s);
+  renderActionBar(s);
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
   $("title").textContent = s.title || "ClawDnD";
