@@ -13,6 +13,7 @@ final class AppProcessService: ObservableObject {
 
     private var viewerProcess: ManagedProcess?
     private var providerProcess: ManagedProcess?
+    private var intentionallyStoppingProviderPIDs: Set<Int32> = []
     private let registry = ProviderRegistry()
     private let maxLogCharacters = 120_000
 
@@ -123,6 +124,9 @@ final class AppProcessService: ObservableObject {
             try throwAndRecord("Could not find a free provider viewer port near \(preferredPort).")
         }
         let adapter = registry.adapter(for: kind)
+        if providerProcess == nil {
+            providerLaunchMetadata = nil
+        }
         let request: ProviderLaunchRequest
         do {
             request = try adapter.startSession(
@@ -140,7 +144,10 @@ final class AppProcessService: ObservableObject {
             throw error
         }
 
-        providerProcess?.terminate()
+        if let providerProcess {
+            intentionallyStoppingProviderPIDs.insert(providerProcess.pid)
+            providerProcess.terminate()
+        }
         providerProcess = nil
         runningProvider = nil
         providerLaunchMetadata = nil
@@ -182,11 +189,15 @@ final class AppProcessService: ObservableObject {
     }
 
     func stopProvider() {
-        providerProcess?.terminate()
+        if let providerProcess {
+            intentionallyStoppingProviderPIDs.insert(providerProcess.pid)
+            providerProcess.terminate()
+        }
         providerProcess = nil
         runningProvider = nil
         if var metadata = providerLaunchMetadata, metadata.exitStatus == nil {
             metadata.exitedAt = Date()
+            metadata.lastError = nil
             providerLaunchMetadata = metadata
         }
         stopProviderViewerEndpointIfNeeded()
@@ -229,7 +240,9 @@ final class AppProcessService: ObservableObject {
                 managed?.close()
                 self?.append("\(name) exited with status \(process.terminationStatus)", stream: stream)
                 if stream == .provider {
-                    self?.recordProviderExit(status: process.terminationStatus)
+                    let processID = process.processIdentifier
+                    let stoppedByUser = self?.intentionallyStoppingProviderPIDs.remove(processID) != nil
+                    self?.recordProviderExit(status: process.terminationStatus, stoppedByUser: stoppedByUser, processID: processID)
                     if self?.providerProcess === managed {
                         self?.providerProcess = nil
                         self?.runningProvider = nil
@@ -268,7 +281,8 @@ final class AppProcessService: ObservableObject {
     }
 
     private func append(_ text: String, stream: LogStream, prefix: String? = nil) {
-        let line = prefix.map { "[\($0)] \(text)" } ?? text
+        let safeText = stream == .provider ? Diagnostics.redactedText(text) : text
+        let line = prefix.map { "[\($0)] \(safeText)" } ?? safeText
         switch stream {
         case .supervisor:
             supervisorLog += line.hasSuffix("\n") ? line : line + "\n"
@@ -296,11 +310,14 @@ final class AppProcessService: ObservableObject {
         viewerEndpoint = endpoint
     }
 
-    private func recordProviderExit(status: Int32) {
+    private func recordProviderExit(status: Int32, stoppedByUser: Bool, processID: Int32) {
         guard var metadata = providerLaunchMetadata else { return }
+        guard metadata.processID == processID else { return }
         metadata.exitStatus = status
         metadata.exitedAt = Date()
-        if status != 0 {
+        if stoppedByUser {
+            metadata.lastError = nil
+        } else if status != 0 {
             let message = "\(metadata.processName) exited with status \(status)"
             metadata.lastError = message
             lastError = message

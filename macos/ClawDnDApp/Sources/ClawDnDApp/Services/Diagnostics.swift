@@ -3,6 +3,16 @@ import Foundation
 
 enum Diagnostics {
     static let sensitiveKeyFragments = ["KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "COOKIE"]
+    private static let sensitiveFlags = [
+        "--api-key",
+        "--apikey",
+        "--auth",
+        "--authorization",
+        "--cookie",
+        "--password",
+        "--secret",
+        "--token"
+    ]
 
     @MainActor
     static func copy(processService: AppProcessService) {
@@ -20,6 +30,22 @@ enum Diagnostics {
                 "\(key)=\(redactedValue(forKey: key, value: environment[key] ?? ""))"
             }
             .joined(separator: "\n")
+    }
+
+    static func redactedText(_ text: String) -> String {
+        var redacted = text
+        let replacements = [
+            (#"(?i)\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|AUTH|COOKIE)[A-Z0-9_]*)=(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1=<redacted>"),
+            (#"(?i)(--(?:api[-_]?key|auth(?:orization)?|cookie|password|secret|token)(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1<redacted>"),
+            (#"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"#, "$1 <redacted>"),
+            (#"\b(sk-[A-Za-z0-9_-]{8,})\b"#, "<redacted>"),
+            (#"\b(gh[pousr]_[A-Za-z0-9_]{20,})\b"#, "<redacted>"),
+            (#"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b"#, "<redacted>")
+        ]
+        for (pattern, template) in replacements {
+            redacted = replacing(pattern: pattern, in: redacted, with: template)
+        }
+        return redacted
     }
 
     static func providerLaunchSummary(_ metadata: ProviderLaunchMetadata?) -> String {
@@ -43,8 +69,8 @@ enum Diagnostics {
         Repo path: \(metadata.workingDirectory.path)
         State path: \(statePath)
         Executable: \(metadata.executable)
-        Arguments: \(metadata.arguments.joined(separator: " "))
-        Command: \(metadata.commandLine)
+        Arguments: \(redactedArguments(metadata.arguments).joined(separator: " "))
+        Command: \(redactedCommandLine(executable: metadata.executable, arguments: metadata.arguments))
         Environment overrides:
         \(redactedEnvironmentSummary(metadata.environment))
         Launched at: \(launchedAt)
@@ -66,7 +92,34 @@ enum Diagnostics {
         if sensitiveKeyFragments.contains(where: { uppercasedKey.contains($0) }) {
             return "<redacted>"
         }
-        return value
+        return redactedText(value)
+    }
+
+    private static func redactedArguments(_ arguments: [String]) -> [String] {
+        var shouldRedactNext = false
+        return arguments.map { argument in
+            if shouldRedactNext {
+                shouldRedactNext = false
+                return "<redacted>"
+            }
+            if sensitiveFlags.contains(argument.lowercased()) {
+                shouldRedactNext = true
+                return argument
+            }
+            return redactedText(argument)
+        }
+    }
+
+    private static func redactedCommandLine(executable: String, arguments: [String]) -> String {
+        ([executable] + redactedArguments(arguments)).joined(separator: " ")
+    }
+
+    private static func replacing(pattern: String, in text: String, with template: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: template)
     }
 
     private static func normalizedOptional(_ value: String?) -> String {
