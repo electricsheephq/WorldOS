@@ -2740,8 +2740,16 @@ def level_up(
         cname = class_name.lower()
         srd_tables.class_data(cname)  # validate the class exists
         existing = next((cl for cl in ch.classes if cl.name.lower() == cname), None)
-        if existing is None and ch.classes and not _meets_prereq(ch, cname):
-            raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
+        multiclass = existing is None and bool(ch.classes)
+        if multiclass:
+            if not c.house_rules.multiclass_allowed:
+                raise ValueError("multiclassing is disabled by campaign house rules")
+            if not _meets_prereq(ch, cname):
+                raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
+
+        new_class_level = existing.level + 1 if existing else 1
+        if feat and srd_tables.is_asi_level(cname, new_class_level) and not c.house_rules.feats_allowed:
+            raise ValueError("feats are disabled by campaign house rules")
 
         die = srd_tables.hit_die(cname)
         con = ch.ability_modifier(Ability.CON)
@@ -2755,10 +2763,8 @@ def level_up(
             existing.level += 1
             if subclass:
                 existing.subclass = subclass
-            new_class_level = existing.level
         else:
             ch.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
-            new_class_level = 1
 
         ch.max_hp += gain
         ch.current_hp += gain
@@ -2996,6 +3002,82 @@ def preview_level_up(
         "choice_requirements": choice_requirements,
         "applied_choice": applied,
         "errors": errors,
+    }
+
+
+def _build_option_from_preview(preview: dict, feats_allowed: bool, multiclass_allowed: bool) -> dict:
+    asi_required = any(req.get("type") == "asi_or_feat" for req in preview["choice_requirements"])
+    return {
+        "class_name": preview["class_name"],
+        "legal": preview["ok"],
+        "multiclass": preview["multiclass"],
+        "from": {"level": preview["from"]["total_level"], "class_level": preview["from"]["class_level"]},
+        "to": {"level": preview["to"]["total_level"], "class": preview["class_name"]},
+        "hp_gain": preview["hp_gain"],
+        "features_gained": preview["features_gained"],
+        "spell_slots_delta": preview["spell_slot_deltas"],
+        "resources_delta": preview["resource_deltas"],
+        "choices": {
+            "asi_required": asi_required,
+            "feat_allowed": feats_allowed and asi_required,
+            "multiclass_allowed": multiclass_allowed if preview["multiclass"] else True,
+        },
+        "errors": list(preview["errors"]),
+        "preview": preview,
+    }
+
+
+@mcp.tool()
+def build_options(campaign_id: str, character_id: str) -> dict:
+    """Return legal one-level build paths for a character without mutating state.
+
+    This is the engine-owned build-planner surface: it derives each candidate by
+    calling preview_level_up, exposes legal options for the dashboard to render,
+    and keeps illegal multiclass/rule-blocked paths in blocked_options for
+    diagnostics instead of offering them as actionable choices.
+    """
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    before = Character.model_validate(ch.model_dump(mode="json"))
+    current_classes = [cl.name.lower() for cl in before.classes]
+    available_classes = sorted(
+        name for name, data in srd_tables.classes().items() if isinstance(data, dict)
+    )
+    class_names = list(dict.fromkeys(current_classes + available_classes))
+    options: list[dict] = []
+    blocked_options: list[dict] = []
+
+    for cname in class_names:
+        preview = preview_level_up(campaign_id, character_id, cname)
+        option = _build_option_from_preview(
+            preview,
+            c.house_rules.feats_allowed,
+            c.house_rules.multiclass_allowed,
+        )
+        if option["legal"]:
+            options.append(option)
+        else:
+            blocked_options.append(option)
+
+    asi_required = any(option["choices"]["asi_required"] for option in options)
+    return {
+        "character_id": character_id,
+        "character_name": before.name,
+        "from": {
+            "level": before.total_level,
+            "classes": [
+                {"name": cl.name.lower(), "level": cl.level, "subclass": cl.subclass}
+                for cl in before.classes
+            ],
+        },
+        "choices": {
+            "asi_required": asi_required,
+            "feat_allowed": c.house_rules.feats_allowed,
+            "multiclass_allowed": c.house_rules.multiclass_allowed,
+        },
+        "options": options,
+        "blocked_options": blocked_options,
+        "errors": [],
     }
 
 
