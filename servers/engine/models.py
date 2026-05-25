@@ -84,6 +84,7 @@ class Condition(str, Enum):
 
 
 CharacterKind = Literal["player", "companion", "npc", "monster"]
+CompanionQuestStatus = Literal["locked", "available", "active", "resolved", "failed"]
 
 
 class _StrictModel(BaseModel):
@@ -202,6 +203,10 @@ class ArcGate(_StrictModel):
     threshold: int  # the attitude_value at/above which this gate unlocks
     unlocked: bool = False
     note: str = ""  # what the unlock means, for the DM to play
+    # Optional link into first-class companion quest arcs (#70). A personal_quest gate may
+    # make the linked arc/stage available once; it never decides success or failure.
+    quest_arc_id: str = ""
+    stage_id: str = ""
 
 
 class CompanionAgenda(_StrictModel):
@@ -243,6 +248,49 @@ class CompanionArc(_StrictModel):
 
     arc_gates: list[ArcGate] = Field(default_factory=list)
     agenda: Optional[CompanionAgenda] = None
+
+
+class CompanionQuestStage(_StrictModel):
+    """One engine-owned stage inside a companion's personal quest arc.
+
+    The status is a bounded lifecycle enum, not free prose; an optional `quest_id` points
+    at the player-facing tracked Quest projection when the DM explicitly links one."""
+
+    id: str = Field(default_factory=lambda: _new_id("cqstage"))
+    title: str
+    status: CompanionQuestStatus = "locked"
+    unlock_gate_id: str = ""
+    location_id: str = ""
+    quest_id: str = ""
+    note: str = ""
+
+
+class CompanionQuestArc(_StrictModel):
+    """First-class companion personal quest lifecycle (#70).
+
+    This is the character-owned campaign state machine. `Quest` remains the optional
+    player-facing tracker; sync is one-way from this arc when an explicit engine API says
+    to link/update a Quest."""
+
+    id: str = Field(default_factory=lambda: _new_id("cqarc"))
+    companion_id: str = ""
+    title: str
+    status: CompanionQuestStatus = "locked"
+    stages: list[CompanionQuestStage] = Field(default_factory=list)
+    quest_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _collect_stage_quest_ids(self) -> "CompanionQuestArc":
+        seen: list[str] = []
+        for qid in self.quest_ids:
+            if qid and qid not in seen:
+                seen.append(qid)
+        for stage in self.stages:
+            if stage.quest_id and stage.quest_id not in seen:
+                seen.append(stage.quest_id)
+        self.quest_ids = seen
+        return self
 
 
 class CompanionDossier(_StrictModel):
@@ -945,6 +993,10 @@ class Campaign(_StrictModel):
     # Persistent camp-beat memory (#69). Read by camp_scene/scheduler, written only by an
     # explicit record path so prompt generation never advances campaign state by accident.
     camp_beats: CampBeatState = Field(default_factory=CampBeatState)
+    # First-class companion personal quest arcs (#70). These complement, but do not replace,
+    # tracked Quest objects; explicit server APIs advance them and optionally project status
+    # into linked Quests. Empty == old snapshots load unchanged.
+    companion_quest_arcs: dict[str, CompanionQuestArc] = Field(default_factory=dict)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions
