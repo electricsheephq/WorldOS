@@ -217,6 +217,54 @@ def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
     assert attack_entry.payload["damage"]["total"] == 6
 
 
+def test_turn_advance_logs_structured_combat_event_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Turn Event Cards")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=12, armor_class=12)["id"]
+    gob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    before = server.start_combat(cid, [hero, gob])
+    advanced = server.next_turn(cid)
+
+    camp = store.load_campaign(cid)
+    entries = store.read_log(cid, camp.active_session_id)
+    turn_entry = next(e for e in entries if e.payload and e.payload.get("event") == "turn_advanced")
+
+    assert turn_entry.kind == "combat"
+    assert turn_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert turn_entry.payload["previous"]["id"] == before["current"]
+    assert turn_entry.payload["current"]["id"] == advanced["current"]
+    assert turn_entry.payload["round"] == advanced["round"]
+    assert turn_entry.payload["death_save_due"] == advanced["death_save_due"]
+
+
+def test_death_save_logs_structured_combat_event_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll)
+
+    cid = server.create_campaign("Death Save Event Cards")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=12, armor_class=12)["id"]
+    server.apply_damage(cid, hero, 12)
+
+    out = server.roll_death_save(cid, hero)
+
+    camp = store.load_campaign(cid)
+    entries = store.read_log(cid, camp.active_session_id)
+    death_entry = next(e for e in entries if e.payload and e.payload.get("event") == "death_save")
+
+    assert death_entry.kind == "combat"
+    assert death_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert death_entry.payload["target"] == {"id": hero, "name": "Hero"}
+    assert death_entry.payload["roll"]["natural"] == 15
+    assert death_entry.payload["result"] == out["result"] == "pending"
+    assert death_entry.payload["successes"] == 1
+    assert death_entry.payload["state"]["dying"] is True
+
+
 # --- hardening regressions (from adversarial review) ---
 def test_death_save_guard_on_stable():  # C1
     ch = mk(max_hp=10, current_hp=0, stable=True)
