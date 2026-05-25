@@ -435,6 +435,116 @@ def _read_snapshot(campaign_id: str) -> dict:
         return {}
 
 
+def _num(value: object) -> int | float | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _combatant_status(ch: dict) -> dict:
+    """Small read-only status slice for the viewer command center."""
+    out: dict = {
+        "id": str(ch.get("id") or ""),
+        "name": str(ch.get("name") or "Unknown"),
+        "kind": str(ch.get("kind") or ""),
+    }
+    cur_hp = _num(ch.get("current_hp"))
+    max_hp = _num(ch.get("max_hp"))
+    if cur_hp is not None or max_hp is not None:
+        out["hp"] = {"current": cur_hp, "max": max_hp}
+    ac = _num(ch.get("armor_class"))
+    if ac is not None:
+        out["ac"] = ac
+    conditions = ch.get("conditions")
+    if isinstance(conditions, list):
+        out["conditions"] = [str(c) for c in conditions if str(c)]
+    if bool(ch.get("dead")):
+        out["dead"] = True
+    if bool(ch.get("stable")):
+        out["stable"] = True
+    death_saves = ch.get("death_saves")
+    if isinstance(death_saves, dict):
+        out["death_saves"] = {
+            "successes": _num(death_saves.get("successes")),
+            "failures": _num(death_saves.get("failures")),
+        }
+    return out
+
+
+def build_combat_view(snapshot: dict) -> dict:
+    """Derive the dashboard's read-only combat command center projection.
+
+    The engine snapshot remains the source of truth; this helper only repackages
+    the current combat block and character sheets into a stable UI read model.
+    Malformed combat rows become warnings so one bad combatant cannot 500 /state.
+    """
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    if not isinstance(combat, dict) or not combat.get("active"):
+        return {"active": False, "order": [], "warnings": []}
+
+    chars = snapshot.get("characters") or {}
+    if not isinstance(chars, dict):
+        chars = {}
+    raw_order = combat.get("order") or []
+    if not isinstance(raw_order, list):
+        raw_order = []
+
+    warnings: list[str] = []
+    order: list[dict] = []
+    turn_index = combat.get("turn_index")
+    current_row = raw_order[turn_index] if isinstance(turn_index, int) and 0 <= turn_index < len(raw_order) else None
+    current_id = current_row.get("character_id") if isinstance(current_row, dict) else None
+
+    for idx, row in enumerate(raw_order):
+        if not isinstance(row, dict):
+            warnings.append(f"malformed combatant at index {idx}")
+            continue
+        cid = row.get("character_id")
+        if not isinstance(cid, str) or not cid.strip():
+            warnings.append(f"missing character_id at index {idx}")
+            continue
+        cid = cid.strip()
+        ch = chars.get(cid)
+        entry = {
+            "id": cid,
+            "initiative": _num(row.get("initiative")),
+            "is_current": cid == current_id,
+            "reaction_available": not bool(row.get("reaction_used")),
+        }
+        zone = row.get("zone")
+        if isinstance(zone, str) and zone.strip():
+            entry["zone"] = zone.strip()
+        if isinstance(ch, dict):
+            entry.update(_combatant_status({**ch, "id": ch.get("id") or cid}))
+        else:
+            entry.update({"name": "Missing combatant", "kind": "", "conditions": []})
+            warnings.append(f"missing character {cid}")
+        order.append(entry)
+
+    current = next((dict(o) for o in order if o.get("is_current")), None)
+    if current is not None:
+        current.pop("is_current", None)
+    actions = {}
+    if current is not None:
+        actions = {
+            "action_available": not bool(combat.get("action_used")),
+            "bonus_available": not bool(combat.get("bonus_action_used")),
+            "reaction_available": bool(current.get("reaction_available")),
+        }
+
+    view = {
+        "active": True,
+        "round": _num(combat.get("round")),
+        "turn_index": turn_index if isinstance(turn_index, int) else None,
+        "current": current,
+        "actions": actions,
+        "order": order,
+        "warnings": warnings,
+    }
+    zones = combat.get("zones")
+    if isinstance(zones, list) and zones:
+        view["zones"] = zones
+    return view
+
+
 def _viewer_config() -> dict:
     """Read-only runtime facts for the quick-settings modal — voice backend + whether
     the voice server is present, and whether a live move sink is configured. Pure
@@ -855,9 +965,12 @@ class _Handler(BaseHTTPRequestHandler):
                 # No game on disk yet — serve a graceful empty state (the dashboard shows
                 # "Waiting for the story to begin…") instead of a blank read; we attach
                 # automatically once the DM mints the campaign.
-                self._json({"empty": True, "live": _live_play()})
+                self._json({"empty": True, "live": _live_play(), "combat_view": build_combat_view({})})
                 return
             snap = _read_snapshot(cid)
+            if not isinstance(snap, dict):
+                snap = {}
+            snap["combat_view"] = build_combat_view(snap)
             snap["live"] = _live_play()
             # is_live_view: the move sink (CLAWDND_PLAYER_MOVES) belongs to the ATTACHED campaign;
             # a move only makes sense when the VIEWED campaign IS that one. The dashboard grays the

@@ -256,3 +256,82 @@ def test_sanitize_move_drops_unknown_fields_and_caps_length():
     assert "evil" not in m and m["role"] == "player"
     long_m, _ = v.sanitize_move({"kind": "say", "text": "z" * 5000})
     assert len(long_m["text"]) <= 2000
+
+
+# --- viewer combat projection (#65) --------------------------------------------
+def test_combat_view_projects_active_combat_read_model():
+    v = _viewer()
+    snap = {
+        "characters": {
+            "hero": {
+                "id": "hero", "name": "Hero", "kind": "player",
+                "current_hp": 8, "max_hp": 12, "armor_class": 15,
+                "conditions": ["prone"],
+            },
+            "gob": {
+                "id": "gob", "name": "Goblin", "kind": "monster",
+                "current_hp": 3, "max_hp": 7, "armor_class": 13,
+                "conditions": [],
+            },
+        },
+        "combat": {
+            "active": True, "round": 2, "turn_index": 0,
+            "action_used": False, "bonus_action_used": True,
+            "order": [
+                {"character_id": "hero", "initiative": 17, "reaction_used": False, "zone": "doorway"},
+                {"character_id": "gob", "initiative": 11, "reaction_used": True},
+            ],
+        },
+    }
+
+    view = v.build_combat_view(snap)
+
+    assert view["active"] is True
+    assert view["round"] == 2
+    assert view["current"]["id"] == "hero"
+    assert view["current"]["name"] == "Hero"
+    assert view["actions"] == {
+        "action_available": True,
+        "bonus_available": False,
+        "reaction_available": True,
+    }
+    assert view["order"][0]["is_current"] is True
+    assert view["order"][0]["hp"] == {"current": 8, "max": 12}
+    assert view["order"][0]["ac"] == 15
+    assert view["order"][0]["conditions"] == ["prone"]
+    assert view["order"][0]["zone"] == "doorway"
+    assert view["order"][1]["reaction_available"] is False
+    assert view["warnings"] == []
+
+
+def test_combat_view_warns_for_missing_and_malformed_combatants():
+    v = _viewer()
+    snap = {
+        "characters": {},
+        "combat": {
+            "active": True, "round": 1, "turn_index": 4,
+            "order": [
+                {"character_id": "ghost", "initiative": 9},
+                {"initiative": 7},
+                "bad-row",
+            ],
+        },
+    }
+
+    view = v.build_combat_view(snap)
+
+    assert view["active"] is True
+    assert view["current"] is None
+    assert view["order"][0]["id"] == "ghost"
+    assert view["order"][0]["name"] == "Missing combatant"
+    assert len(view["warnings"]) == 3
+    assert any("missing character ghost" in w for w in view["warnings"])
+    assert any("missing character_id" in w for w in view["warnings"])
+    assert any("malformed combatant at index 2" in w for w in view["warnings"])
+
+
+def test_combat_view_inactive_when_no_active_combat():
+    v = _viewer()
+
+    assert v.build_combat_view({}) == {"active": False, "order": [], "warnings": []}
+    assert v.build_combat_view({"combat": {"active": False, "order": []}})["active"] is False

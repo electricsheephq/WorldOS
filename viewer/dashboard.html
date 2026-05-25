@@ -99,6 +99,28 @@
   .modal-foot { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:10.5px; color:var(--faint); }
   #feed { flex:1; min-height:0; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:18px;
     scroll-behavior:smooth; }
+  .combat-center { border-bottom:1px solid var(--line); background:linear-gradient(180deg,#20170f,#18110b);
+    padding:10px 18px 12px; display:grid; grid-template-columns:minmax(170px,.65fr) minmax(260px,1.35fr); gap:12px;
+    box-shadow:0 1px 0 rgba(232,201,138,.04) inset; }
+  .combat-center[hidden] { display:none; }
+  .cc-head { display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .cc-k { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#b39c78; font-weight:700; }
+  .cc-current { display:flex; align-items:center; gap:9px; min-width:0; }
+  .cc-current .nm { font-weight:800; color:var(--gold); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-current .sub { font-size:11px; color:var(--faint); }
+  .cc-actions, .cc-tags { display:flex; gap:6px; flex-wrap:wrap; }
+  .cc-pill { font-size:10px; color:var(--dim); border:1px solid #3a2f1c; background:#1b150d; border-radius:7px; padding:2px 7px; }
+  .cc-pill.on { color:#bfe6c4; border-color:#2e5638; background:#14241a; }
+  .cc-pill.off { color:#d69a90; border-color:#5a3030; background:#241414; }
+  .cc-order { display:flex; gap:7px; overflow-x:auto; padding-bottom:1px; }
+  .cc-unit { flex:0 0 152px; border:1px solid #3a2f1c; background:#1b150d; border-radius:8px; padding:7px 8px; min-width:0; }
+  .cc-unit.current { border-color:var(--gold2); background:#24190c; }
+  .cc-unit .top { display:flex; align-items:baseline; gap:6px; min-width:0; }
+  .cc-unit .init { color:var(--gold); font-weight:800; font-variant-numeric:tabular-nums; flex:none; }
+  .cc-unit .name { color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-unit .meta { font-size:10.5px; color:var(--faint); margin-top:3px; display:flex; gap:6px; flex-wrap:wrap; }
+  .cc-warn { grid-column:1 / -1; color:#e4b17f; font-size:11px; display:flex; gap:6px; flex-wrap:wrap; }
+  .cc-warn span { border:1px solid #5a4020; background:#2a1c0e; border-radius:7px; padding:2px 7px; }
   .msg { max-width:760px; }
   .msg.narration, .msg.dialogue, .msg.combat, .msg.system { animation:msgin .25s ease; }
   @keyframes msgin { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
@@ -701,6 +723,7 @@
       <span class="badge" id="mode-badge">Adventure Mode</span>
       <span class="meta" id="when"></span><span class="meta" id="where"></span>
       <button class="gear-btn" id="gear-btn" title="Settings (read-only)" aria-label="Settings">⚙</button></div>
+    <section class="combat-center" id="combat-center" hidden></section>
     <div id="feed"><div class="empty">Waiting for the story to begin…</div></div>
     <div class="dice empty-state" id="dice"><span class="empty">No rolls yet — the dice are still.</span></div>
     <div class="palette">
@@ -868,6 +891,51 @@ async function applySceneArt(scope) {
 }
 const hp = (c) => { const b=c.max_hp||1, a=c.current_hp??0; return {pct:Math.max(0,100*a/b), low:a/b<=0.35, txt:`${a}/${b}`}; };
 const klass = (c) => (c.classes||[]).map(cl=>`${cl.name} ${cl.level}`).join(" / ");
+function renderCombatCenter(s) {
+  const box = $("combat-center");
+  if (!box) return;
+  const view = (s && s.combat_view) || {};
+  if (!view.active) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  const cur = view.current || {};
+  const actions = view.actions || {};
+  const actionPill = (key, label) => {
+    if (actions[key] === undefined) return "";
+    return `<span class="cc-pill ${actions[key] ? "on" : "off"}">${esc(label)} ${actions[key] ? "ready" : "spent"}</span>`;
+  };
+  const statLine = (u) => {
+    const bits = [];
+    if (u.hp) bits.push(`HP ${esc(u.hp.current ?? "?")}/${esc(u.hp.max ?? "?")}`);
+    if (u.ac !== undefined && u.ac !== null) bits.push(`AC ${esc(u.ac)}`);
+    if (u.reaction_available !== undefined) bits.push(`Reaction ${u.reaction_available ? "ready" : "spent"}`);
+    if (u.zone) bits.push(esc(u.zone));
+    return bits.map(b => `<span>${b}</span>`).join("");
+  };
+  const conds = (u) => (u.conditions || []).map(c => `<span class="cc-pill off">${esc(c)}</span>`).join("");
+  const order = (view.order || []).map(u => `<div class="cc-unit${u.is_current ? " current" : ""}">
+    <div class="top"><span class="init">${esc(u.initiative ?? "-")}</span><span class="name">${esc(u.name || u.id || "Unknown")}</span></div>
+    <div class="meta">${statLine(u)}</div>
+    ${conds(u) ? `<div class="cc-tags">${conds(u)}</div>` : ""}
+  </div>`).join("");
+  const warnings = (view.warnings || []).length
+    ? `<div class="cc-warn">${view.warnings.map(w => `<span>${esc(w)}</span>`).join("")}</div>`
+    : "";
+  box.innerHTML = `
+    <div class="cc-head">
+      <div class="cc-k">Round ${esc(view.round ?? "?")} · Current turn</div>
+      <div class="cc-current">
+        <span class="avatar ${esc(cur.kind || "")}">${esc(initials(cur.name || "?"))}</span>
+        <div style="min-width:0"><div class="nm">${esc(cur.name || "Unknown")}</div><div class="sub">${esc(cur.kind || "combatant")}</div></div>
+      </div>
+      <div class="cc-actions">${actionPill("action_available", "Action")}${actionPill("bonus_available", "Bonus")}${actionPill("reaction_available", "Reaction")}</div>
+    </div>
+    <div class="cc-order">${order || `<div class="empty">No initiative order.</div>`}</div>
+    ${warnings}`;
+  box.hidden = false;
+}
 // race + class line for a stat card, omitting whatever's blank (placeholder NPCs
 // carry empty race / [] classes — we don't want to print "Level 0" noise).
 const raceClass = (c) => [esc(c.race||""), klass(c)].filter(Boolean).join(" · ");
@@ -1857,6 +1925,7 @@ function renderState(s) {
     // do NOT run the full render below, which would paint the scene/title with empty data.
     $("title").textContent = "ClawDnD";
     applyLiveMode(false);
+    renderCombatCenter(s);
     const feed = $("feed");
     if (feed && !feed.children.length) feed.innerHTML = '<div class="empty">Waiting for the story to begin…</div>';
     return;
@@ -1866,6 +1935,7 @@ function renderState(s) {
   // palette instead of letting moves land in the wrong run (#49). Falls back to `live` if the
   // server didn't send is_live_view.
   applyLiveMode((s.is_live_view !== undefined ? s.is_live_view : s.live) !== false);
+  renderCombatCenter(s);
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
   $("title").textContent = s.title || "ClawDnD";
