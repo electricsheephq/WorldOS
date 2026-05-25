@@ -9,6 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+fail() {
+  echo "[codex-provider] $*" >&2
+  exit 2
+}
+
 MODE="run"
 case "${1:-}" in
   --dry-run) MODE="dry-run"; shift ;;
@@ -35,12 +40,9 @@ Optional:
 EOF
     exit 0
     ;;
+  --*) fail "unknown option: $1" ;;
 esac
-
-fail() {
-  echo "[codex-provider] $*" >&2
-  exit 2
-}
+[ "$#" -eq 0 ] || fail "unexpected argument: $1"
 
 require_env() {
   local name="$1" value="${!1:-}"

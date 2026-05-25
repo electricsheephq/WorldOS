@@ -86,7 +86,6 @@ struct CodexProvider: ProviderAdapter {
         let cli = Shell.which("codex")
         let wrapper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
         let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let launchCommand = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
 
         guard let cli else {
             return ProviderStatus(
@@ -109,7 +108,9 @@ struct CodexProvider: ProviderAdapter {
         return ProviderStatus(
             kind: kind,
             availability: .configured,
-            detail: "Ready. Launches \(launchCommand) with the ClawDnD provider environment and player-facade-only Codex wrapper.",
+            detail: configuredCommand.isEmpty
+                ? "Ready. Launches the checked-in Codex wrapper with the ClawDnD provider environment and player-facade-only tool surface."
+                : "Ready. Launches your configured Codex command with the ClawDnD provider environment and player-facade-only tool surface.",
             detectedPath: configuredCommand.isEmpty ? wrapper.path : cli
         )
     }

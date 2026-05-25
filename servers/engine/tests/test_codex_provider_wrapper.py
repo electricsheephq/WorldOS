@@ -58,6 +58,13 @@ def test_codex_wrapper_rejects_non_codex_provider(tmp_path):
     assert "CLAWDND_PROVIDER must be codex" in result.stderr
 
 
+def test_codex_wrapper_rejects_unknown_options_before_run_mode(tmp_path):
+    result = _run(["--dryrun"], _env(tmp_path))
+
+    assert result.returncode != 0
+    assert "unknown option: --dryrun" in result.stderr
+
+
 def test_codex_wrapper_smoke_generates_player_facade_config_only(tmp_path):
     result = _run(["--smoke"], _env(tmp_path))
 
