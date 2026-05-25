@@ -644,6 +644,362 @@ def _party_cards(snapshot: dict) -> list[dict]:
     return out
 
 
+def _class_summary(ch: dict) -> tuple[str, int | None]:
+    classes = ch.get("classes")
+    if isinstance(classes, list) and classes:
+        names: list[str] = []
+        levels: list[int] = []
+        for row in classes:
+            if not isinstance(row, dict):
+                continue
+            name = _text(row.get("name") or row.get("class_name"))
+            if name:
+                names.append(name)
+            level = row.get("level")
+            if isinstance(level, int) and not isinstance(level, bool):
+                levels.append(level)
+        if names:
+            return " / ".join(names), sum(levels) if levels else None
+    klass = _text(ch.get("class") or ch.get("klass"), "Adventurer")
+    level = ch.get("level")
+    return klass, level if isinstance(level, int) and not isinstance(level, bool) else None
+
+
+def _session_location(snapshot: dict) -> dict:
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    loc = loc if isinstance(loc, dict) else {}
+    name = _text(loc.get("name"), loc_id or "Unknown location")
+    return {
+        "id": loc_id,
+        "name": name,
+        "region": _text(loc.get("region"), name),
+        "description": _text(loc.get("description")),
+    }
+
+
+def _session_party_cards(snapshot: dict) -> list[dict]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[dict] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if not isinstance(ch, dict):
+            continue
+        klass, level = _class_summary(ch)
+        cur_hp = _num(ch.get("current_hp"))
+        max_hp = _num(ch.get("max_hp"))
+        hp = cur_hp if cur_hp is not None else (max_hp if max_hp is not None else 1)
+        hp_max = max_hp if max_hp is not None else (cur_hp if cur_hp is not None else 1)
+        card = {
+            "id": cid,
+            "name": _text(ch.get("name"), cid),
+            "short": "portrait",
+            "level": level or 1,
+            "class": klass,
+            "hp": hp,
+            "hpMax": hp_max if hp_max else 1,
+            "kind": _text(ch.get("kind")),
+            "conditions": [str(c) for c in ch.get("conditions", []) if str(c)]
+            if isinstance(ch.get("conditions"), list)
+            else [],
+        }
+        ac = _num(ch.get("armor_class"))
+        if ac is not None:
+            card["ac"] = ac
+        if bool(ch.get("dead")):
+            card["dead"] = True
+        out.append(card)
+    return out
+
+
+def _session_conditions(party: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for card in party:
+        for condition in card.get("conditions", []):
+            name = _text(condition).replace("_", " ").title()
+            if not name:
+                continue
+            out.append({
+                "id": f"{card.get('id', '')}:{name.lower().replace(' ', '-')}",
+                "icon": "◆",
+                "name": name,
+                "who": _text(card.get("name"), "Unknown"),
+                "detail": "Active condition",
+                "tone": "royal" if name.lower() in {"blessed", "inspired"} else "",
+            })
+    return out
+
+
+def _session_active_quests(snapshot: dict) -> list[dict]:
+    quests = snapshot.get("quests")
+    locs = snapshot.get("locations")
+    out: list[dict] = []
+    if not isinstance(quests, dict):
+        return out
+    for qid, row in quests.items():
+        if not isinstance(row, dict):
+            continue
+        status = _text(row.get("status"), "active").lower()
+        if status in {"completed", "complete", "resolved", "failed", "closed"}:
+            continue
+        objectives = row.get("objectives")
+        completed = row.get("completed_objectives")
+        completed_set = {str(o) for o in completed} if isinstance(completed, list) else set()
+        objective = ""
+        if isinstance(objectives, list):
+            for item in objectives:
+                item_text = _text(item)
+                if item_text and item_text not in completed_set:
+                    objective = item_text
+                    break
+        if not objective:
+            objective = _text(row.get("description"), "Continue the investigation.")
+        location_id = _text(row.get("location_id"))
+        location = ""
+        if isinstance(locs, dict) and location_id:
+            loc = locs.get(location_id)
+            if isinstance(loc, dict):
+                location = _text(loc.get("name"), location_id)
+        out.append({
+            "id": _text(qid),
+            "title": _text(row.get("title"), _text(qid, "Quest")),
+            "label": status.title() if status else "Active",
+            "objective": objective,
+            "status": status or "active",
+            "tone": "royal",
+            "location": location,
+        })
+    return out[:8]
+
+
+def _session_quick_inventory(snapshot: dict) -> list[dict]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[dict] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if not isinstance(ch, dict):
+            continue
+        inventory = ch.get("inventory")
+        if not isinstance(inventory, list):
+            continue
+        for idx, item in enumerate(inventory):
+            if not isinstance(item, dict):
+                continue
+            name = _text(item.get("name"))
+            if not name:
+                continue
+            qty = item.get("quantity", item.get("qty", item.get("count", 1)))
+            qty = qty if isinstance(qty, int) and not isinstance(qty, bool) else 1
+            out.append({
+                "id": f"{cid}:{idx}:{name}",
+                "name": name,
+                "glyph": _text(item.get("glyph"), "item"),
+                "qty": qty,
+                "type": _text(item.get("type"), "item"),
+            })
+            if len(out) >= 12:
+                return out
+    return out
+
+
+def _session_available_actions(action_model: dict) -> list[dict]:
+    out: list[dict] = []
+    groups = action_model.get("groups")
+    if not isinstance(groups, list):
+        return out
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        group_id = _text(group.get("id"))
+        group_label = _text(group.get("label"))
+        actions = group.get("actions")
+        if not isinstance(actions, list):
+            continue
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            item = {
+                "id": _text(action.get("id")),
+                "label": _text(action.get("label")),
+                "group": group_id,
+                "groupLabel": group_label,
+                "available": bool(action.get("available")),
+                "disabled_reason": action.get("disabled_reason") if isinstance(action.get("disabled_reason"), str) else None,
+            }
+            move = action.get("move")
+            if isinstance(move, dict):
+                item["move"] = {
+                    k: v for k, v in move.items()
+                    if k in _MOVE_FIELDS or k == "kind"
+                    if isinstance(v, (str, int, float)) and not isinstance(v, bool)
+                }
+            ui = action.get("ui")
+            if isinstance(ui, str) and ui.strip():
+                item["ui"] = ui.strip()
+            out.append(item)
+    return out
+
+
+def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
+    out: list[dict] = []
+    for row in raw_events or []:
+        if not isinstance(row, dict):
+            continue
+        kind = _text(row.get("kind") or row.get("type"), "narration")
+        label = _text(row.get("label") or row.get("who") or row.get("source"))
+        text = _text(row.get("text") or row.get("detail") or row.get("summary"))
+        if not text:
+            continue
+        item = {"kind": kind, "text": text[:1000]}
+        if label:
+            item["label"] = label[:120]
+        out.append(item)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _session_event_tail_from_dir(campaign_dir: Path, snapshot: dict, limit: int = 12) -> list[dict]:
+    sid = snapshot.get("active_session_id")
+    if not sid:
+        session_ids = snapshot.get("session_ids")
+        if isinstance(session_ids, list) and session_ids:
+            sid = session_ids[-1]
+    if not isinstance(sid, str) or not sid.strip():
+        return []
+    log = campaign_dir / "sessions" / f"{sid}.jsonl"
+    if not log.exists():
+        return []
+    try:
+        lines = log.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict] = []
+    for raw in lines[-limit:]:
+        try:
+            row = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out
+
+
+def _session_event_tail(campaign_id: str, limit: int = 12) -> list[dict]:
+    snapshot = _read_snapshot(campaign_id)
+    return _session_event_tail_from_dir(_campaign_dir(campaign_id), snapshot, limit)
+
+
+def _session_surface_catalog_ref(query: dict) -> tuple[str, dict, Path, bool] | None:
+    source = _text((query.get("source") or [""])[0])
+    run_id = _text((query.get("run") or [""])[0])
+    campaign_id = _text((query.get("campaign") or [""])[0])
+    if not source or not run_id or not campaign_id:
+        return None
+    for root in _campaign_catalog_roots():
+        if str(root.get("source")) != source or str(root.get("run_id")) != run_id:
+            continue
+        cdir = root.get("campaigns_dir")
+        if not isinstance(cdir, Path) or not cdir.is_dir():
+            return None
+        try:
+            campaign_dir = (cdir / campaign_id).resolve()
+            if not campaign_dir.is_dir() or campaign_dir.parent != cdir.resolve():
+                return None
+            snap = campaign_dir / "snapshot.json"
+            data = json.loads(snap.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        root_is_current = bool(root.get("current_state")) and _resolved(cdir) == _resolved(_campaigns_dir())
+        return campaign_dir.name, data, campaign_dir, root_is_current
+    return None
+
+
+def build_session_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+    recent_events: list[dict] | None = None,
+) -> dict:
+    """Project a browser-safe OpenWorlds table surface from engine-owned state.
+
+    This read model intentionally copies only player-facing fields into a stable
+    shape for the OpenWorlds session screen. The browser may render it and submit
+    enabled player intents to `/move`; it must never infer or write campaign
+    state directly.
+    """
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    location = _session_location(snapshot)
+    party = _session_party_cards(snapshot)
+    action_model = build_action_model(snapshot, live=live, is_live_view=is_live_view)
+    combat_view = build_combat_view(snapshot)
+    actions = _session_available_actions(action_model)
+    combat_active = bool(combat_view.get("active"))
+    round_no = combat_view.get("round")
+    summary = _text(snapshot.get("summary"))
+    if not summary:
+        summary = _text(location.get("description"), f"The party is gathered near {location['name']}.")
+
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "world": _text(snapshot.get("world_id"), "unknown"),
+        "day": snapshot.get("day") if isinstance(snapshot.get("day"), int) else None,
+        "time_of_day": _text(snapshot.get("time_of_day")),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "location": location,
+        "scene": {
+            "summary": summary,
+            "caption": location["name"],
+            "imageScope": f"location:{location['id']}" if location["id"] else "",
+        },
+        "party": party,
+        "conditions": _session_conditions(party),
+        "activeQuests": _session_active_quests(snapshot),
+        "quickInventory": _session_quick_inventory(snapshot),
+        "encounter": {
+            "active": combat_active,
+            "summary": f"Combat round {round_no}" if combat_active and round_no else ("Combat" if combat_active else summary),
+            "actions": actions[:8],
+        },
+        "roundOrder": [
+            {
+                "id": _text(row.get("id")),
+                "name": _text(row.get("name"), "Unknown"),
+                "init": row.get("initiative"),
+                "active": bool(row.get("is_current")),
+                "foe": _text(row.get("kind")).lower() in {"monster", "enemy", "foe"},
+            }
+            for row in combat_view.get("order", [])
+            if isinstance(row, dict)
+        ],
+        "availableActions": actions,
+        "recentEvents": _session_recent_events(recent_events),
+        "actionModel": action_model,
+        "combatView": combat_view,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
 def _relative_time_label(ts: float, *, now: float) -> str:
     if ts <= 0:
         return "unknown"
@@ -1913,6 +2269,34 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(_openworlds_config())
         elif route == "/openworlds/campaigns.json":
             self._json(_openworlds_campaigns(self.campaign_id))
+        elif route == "/session-surface":
+            qs = parse_qs(parsed.query)
+            live = _live_play()
+            catalog_ref = _session_surface_catalog_ref(qs)
+            if catalog_ref is not None:
+                cid, raw_snap, campaign_dir, root_is_current = catalog_ref
+                self._json(build_session_surface(
+                    raw_snap,
+                    campaign_id=cid,
+                    live=live,
+                    is_live_view=bool(live and root_is_current and cid == self.campaign_id),
+                    recent_events=_session_event_tail_from_dir(campaign_dir, raw_snap),
+                ))
+                return
+            cid = self._view_campaign(qs)
+            if not cid:
+                self._json(build_session_surface({}, campaign_id="", live=live, is_live_view=False))
+                return
+            raw_snap = _read_snapshot(cid)
+            if not isinstance(raw_snap, dict):
+                raw_snap = {}
+            self._json(build_session_surface(
+                raw_snap,
+                campaign_id=cid,
+                live=live,
+                is_live_view=live and cid == self.campaign_id,
+                recent_events=_session_event_tail(cid),
+            ))
         elif route == _OPENWORLDS_ROUTE or route.startswith(f"{_OPENWORLDS_ROUTE}/"):
             asset = _openworlds_asset(route)
             if asset is None:
