@@ -39,6 +39,7 @@ enum Diagnostics {
             (#"(?i)(--[A-Za-z0-9_-]*(?:api[-_]?key|auth(?:orization)?|cookie|password|secret|token)[A-Za-z0-9_-]*(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1<redacted>"),
             (#"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"#, "$1 <redacted>"),
             (#"\b(sk-[A-Za-z0-9_-]{8,})\b"#, "<redacted>"),
+            (#"\b(github_pat_[A-Za-z0-9_]{20,})\b"#, "<redacted>"),
             (#"\b(gh[pousr]_[A-Za-z0-9_]{20,})\b"#, "<redacted>"),
             (#"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b"#, "<redacted>")
         ]
