@@ -596,6 +596,36 @@ def _combatant_status(ch: dict) -> dict:
     return out
 
 
+def _combat_zones_view(zones: object, warnings: list[str]) -> list[dict]:
+    """Return dashboard-safe tactical zones without trusting malformed snapshot rows."""
+    if not isinstance(zones, list):
+        return []
+    out: list[dict] = []
+    for idx, row in enumerate(zones):
+        if not isinstance(row, dict):
+            warnings.append(f"malformed zone at index {idx}")
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip():
+            warnings.append(f"missing zone name at index {idx}")
+            continue
+        zone = {"name": name.strip()}
+        description = row.get("description")
+        if isinstance(description, str):
+            zone["description"] = description.strip()
+        adjacent = row.get("adjacent")
+        if isinstance(adjacent, list):
+            clean_adjacent = [a.strip() for a in adjacent if isinstance(a, str) and a.strip()]
+            if len(clean_adjacent) != len(adjacent):
+                warnings.append(f"malformed adjacency in zone {name.strip()!r}")
+            if clean_adjacent:
+                zone["adjacent"] = clean_adjacent
+        elif adjacent not in (None, ""):
+            warnings.append(f"malformed adjacency in zone {name.strip()!r}")
+        out.append(zone)
+    return out
+
+
 def build_combat_view(snapshot: dict) -> dict:
     """Derive the dashboard's read-only combat command center projection.
 
@@ -667,8 +697,8 @@ def build_combat_view(snapshot: dict) -> dict:
         "order": order,
         "warnings": warnings,
     }
-    zones = combat.get("zones")
-    if isinstance(zones, list) and zones:
+    zones = _combat_zones_view(combat.get("zones"), warnings)
+    if zones:
         view["zones"] = zones
     return view
 

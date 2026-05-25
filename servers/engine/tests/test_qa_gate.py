@@ -277,6 +277,10 @@ def test_combat_view_projects_active_combat_read_model():
         "combat": {
             "active": True, "round": 2, "turn_index": 0,
             "action_used": False, "bonus_action_used": True,
+            "zones": [
+                {"name": "doorway", "description": "a narrow stone arch", "adjacent": ["hall"]},
+                {"name": "hall", "description": "", "adjacent": ["doorway"]},
+            ],
             "order": [
                 {"character_id": "hero", "initiative": 17, "reaction_used": False, "zone": "doorway"},
                 {"character_id": "gob", "initiative": 11, "reaction_used": True},
@@ -301,6 +305,10 @@ def test_combat_view_projects_active_combat_read_model():
     assert view["order"][0]["conditions"] == ["prone"]
     assert view["order"][0]["zone"] == "doorway"
     assert view["order"][1]["reaction_available"] is False
+    assert view["zones"] == [
+        {"name": "doorway", "description": "a narrow stone arch", "adjacent": ["hall"]},
+        {"name": "hall", "description": "", "adjacent": ["doorway"]},
+    ]
     assert view["warnings"] == []
 
 
@@ -328,6 +336,31 @@ def test_combat_view_warns_for_missing_and_malformed_combatants():
     assert any("missing character ghost" in w for w in view["warnings"])
     assert any("missing character_id" in w for w in view["warnings"])
     assert any("malformed combatant at index 2" in w for w in view["warnings"])
+
+
+def test_combat_view_normalizes_zone_board_data_and_warns_on_malformed_zones():
+    v = _viewer()
+    snap = {
+        "characters": {"hero": {"id": "hero", "name": "Hero", "kind": "player"}},
+        "combat": {
+            "active": True,
+            "round": 1,
+            "turn_index": 0,
+            "zones": [
+                {"name": "doorway", "description": "a narrow arch", "adjacent": ["hall", 42]},
+                {"description": "no name"},
+                "bad-zone",
+            ],
+            "order": [{"character_id": "hero", "initiative": 17, "zone": "doorway"}],
+        },
+    }
+
+    view = v.build_combat_view(snap)
+
+    assert view["zones"] == [{"name": "doorway", "description": "a narrow arch", "adjacent": ["hall"]}]
+    assert any("malformed zone at index 2" in w for w in view["warnings"])
+    assert any("missing zone name at index 1" in w for w in view["warnings"])
+    assert any("malformed adjacency in zone 'doorway'" in w for w in view["warnings"])
 
 
 def test_combat_view_rejects_boolean_turn_index():
