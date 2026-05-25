@@ -648,8 +648,9 @@ class WorldState(_StrictModel):
 class StrategicClock(_StrictModel):
     """A setting-agnostic strategic pressure clock.
 
-    Inert in this slice: content may seed it and snapshots persist it, but no engine
-    tick/advancement logic consumes it yet (#75 owns advancement)."""
+    Advanced by the engine's explicit strategic tick paths. ``tick_every_days`` is
+    evaluated against ``StrategicState.last_tick_day`` so repeated calls on the same
+    in-world day never double-progress it."""
 
     id: str = Field(default_factory=lambda: _new_id("clock"))
     title: str
@@ -699,7 +700,8 @@ class RegionControl(_StrictModel):
 class DowntimeProject(_StrictModel):
     """A strategic downtime project record.
 
-    This slice persists authored projects only; project advancement is out of scope."""
+    Active projects advance on strategic day ticks. A completed project's authored
+    ``effect`` is applied exactly once when status transitions to ``complete``."""
 
     id: str = Field(default_factory=lambda: _new_id("proj"))
     title: str
@@ -709,6 +711,7 @@ class DowntimeProject(_StrictModel):
     progress_days: int = Field(0, ge=0)
     duration_days: int = Field(1, ge=1)
     status: Literal["planned", "active", "paused", "complete", "failed"] = "planned"
+    effect: dict[str, str] = Field(default_factory=dict)
     note: str = ""
 
     @model_validator(mode="after")
@@ -721,12 +724,14 @@ class StrategicState(_StrictModel):
     """The campaign's optional strategic board.
 
     Empty defaults are additive: old snapshots that lack this field deserialize with an
-    empty board, and worlds without a `strategic` block seed unchanged."""
+    empty board, and worlds without a `strategic` block seed unchanged. ``last_tick_day``
+    is the day cursor for engine-owned strategic advancement."""
 
     regions: dict[str, RegionControl] = Field(default_factory=dict)  # location_id -> control
     assets: dict[str, FactionAsset] = Field(default_factory=dict)  # asset id -> asset
     clocks: dict[str, StrategicClock] = Field(default_factory=dict)  # clock id -> clock
     projects: dict[str, DowntimeProject] = Field(default_factory=dict)  # project id -> project
+    last_tick_day: int = 0
 
 
 class BacklogItem(_StrictModel):

@@ -780,6 +780,8 @@ def _seed_strategic_state(c: Campaign, world: dict) -> None:
             continue
         c.strategic_state.projects[project.id] = project
 
+    c.strategic_state.last_tick_day = c.day
+
 
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
     """Seed the PROACTIVE living-world backlog (P0) — the world's own off-screen to-do, so the

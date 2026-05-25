@@ -845,6 +845,7 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        before_day = c.day
         result = travel.travel_to(c, destination_id, advance_time=advance_time)
         # The PARTY travels together: co-locate every party member (PC + companions) with
         # the new location so companions don't carry a stale location_id (QA state_integrity
@@ -861,6 +862,9 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             dev = worldsim.tick_backlog(c, max_events=1)
             if dev:
                 result["world_developments"] = [_backlog_line(d) for d in dev]
+            strategic = worldsim.tick_strategic(c) if c.day > before_day else []
+            if strategic:
+                result["strategic_events"] = strategic
             # A phase elapsed (overland travel): expire timed spell effects whose
             # duration ran out (minute/round-scale die on any phase advance).
             result["expired_effects"] = _expire_clock_effects_all(c)
@@ -4265,6 +4269,7 @@ def world_tick(campaign_id: str) -> dict:
         c = _require(campaign_id)
         beats = worldsim.tick(c)
         dev = worldsim.tick_backlog(c)
+        strategic = worldsim.tick_strategic(c)
         save_campaign(c)
         return {
             "current_day": c.day,
@@ -4277,6 +4282,7 @@ def world_tick(campaign_id: str) -> dict:
                 {"id": p.id, "kind": p.kind, "goal_ref": p.goal_ref, "trigger_day": p.trigger_day}
                 for p in worldsim.pending_backlog(c)
             ],
+            "strategic_events": strategic,
         }
 
 
@@ -4458,6 +4464,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
         due = consequences_mod.due(c)
         beats = worldsim.tick(c, max_beats=2)  # a long span → a couple of threads stirred
         dev = worldsim.tick_backlog(c, max_events=2)  # ...and the backlog advances over the span
+        strategic = worldsim.tick_strategic(c) if elapsed > 0 else []
         # The clock jumped forward days — expire timed effects like every sibling time-seam
         # (advance_time/travel_to/long_rest/short_rest). A multi-day downtime clears hour/day-scale
         # buffs (Mage Armor) and any sub-hour leftover; this was the only seam that omitted it.
@@ -4470,6 +4477,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
             "world_beats": [b.text for b in beats],
             "world_developments": [_backlog_line(d) for d in dev],
+            "strategic_events": strategic,
             "expired_effects": expired,
         }
 
