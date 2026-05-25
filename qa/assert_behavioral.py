@@ -282,6 +282,39 @@ def main() -> int:
             f"combat ran but neither award_xp nor end_combat fired ({tools.get('award_xp', 0)}/{tools.get('end_combat', 0)}) — no XP for the fight?",
             fatal=False)
 
+    # XP STATE-TRUTH CHECK: in "xp" leveling mode, a defeated monster that still
+    # carries xp_value > 0 after combat ends means XP was silently lost — the
+    # kill-time awarding should have zeroed it. FATAL: this was the exact wave2-b
+    # failure (xp=0 on the party despite a real kill). The check is unconditional
+    # (not scoped to "start_combat was called") so it fires on post-combat kills too.
+    lm = state.get("leveling_mode", "xp")
+    if lm == "xp":
+        combat_active = (state.get("combat") or {}).get("active", False)
+        chars_all = state.get("characters", {}) or {}
+        party = state.get("party", []) or []
+        # Only FATAL when a LIVING party member existed to receive the XP. After a TPK
+        # or total party flee (no living PC), a dead monster keeping its xp_value is a
+        # legitimate "awarded to no one" state — not silent progression loss — so the
+        # kill-time helper correctly leaves it unzeroed. Don't punish that as a defect.
+        party_alive = any(
+            (chars_all.get(pid) or {}).get("dead") is not True
+            for pid in party if pid in chars_all
+        )
+        if not combat_active and party_alive:
+            orphaned = [
+                ch for ch in chars_all.values()
+                if ch.get("kind") == "monster" and ch.get("dead") is True
+                and (ch.get("xp_value") or 0) > 0
+            ]
+            for ch in orphaned:
+                chk(
+                    "xp_not_orphaned",
+                    False,
+                    f"defeated monster '{ch.get('name', '?')}' kept xp_value={ch.get('xp_value')} — "
+                    f"progression silently lost (kill-time award never fired or was bypassed)",
+                    fatal=True,
+                )
+
     # 6) a player character exists in the party (state integrity)
     chars = state.get("characters", {}) or {}
     party = state.get("party", []) or []

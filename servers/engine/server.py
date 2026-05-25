@@ -1088,6 +1088,8 @@ def start_character(
         "personality": "",
         "alignment": "",
         "from_canon": None,  # set for pickup: so we carry the full identity over
+        "spells_known": [],
+        "spells_prepared": [],
     }
 
     if lower in ("nobody_l1", "nobody", "l1", ""):
@@ -1119,6 +1121,8 @@ def start_character(
         build["appearance"] = tpl.get("appearance", "")
         build["personality"] = tpl.get("personality", "")
         build["alignment"] = tpl.get("alignment", "")
+        build["spells_known"] = list(tpl.get("spells_known", []) or [])
+        build["spells_prepared"] = list(tpl.get("spells_prepared", []) or [])
     elif lower.startswith("pickup:"):
         who = spec.split(":", 1)[1].strip()
         c0 = _require(campaign_id)
@@ -1241,6 +1245,11 @@ def start_character(
         if cn:
             _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
             _seed_starting_gear(ch, cn)  # AC/inventory consistency (no-op if gear already present)
+        # Apply template-supplied spellbooks (additive: empty list == today's behavior).
+        if build.get("spells_known"):
+            ch.spells_known = list(build["spells_known"])
+        if build.get("spells_prepared"):
+            ch.spells_prepared = list(build["spells_prepared"])
         c.characters[ch.id] = ch
         if ch.id not in c.party:
             c.party.append(ch.id)
@@ -1779,8 +1788,12 @@ def set_hp(
         # a negative input that clamps to 0 still triggers the downed transition.
         combat.apply_hp_set_transition(ch, was_down)
         c.characters[character_id] = ch
+        kx = _award_kill_xp(c, ch)
+        out = c.characters[character_id].model_dump(mode="json")
+        if kx:
+            out["kill_xp"] = kx
         save_campaign(c)
-        return c.characters[character_id].model_dump(mode="json")
+        return out
 
 
 @mcp.tool()
@@ -2243,6 +2256,9 @@ def attack(
             outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
             result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             result["target_state"] = outcome
+            kx = _award_kill_xp(c, target)
+            if kx:
+                result["kill_xp"] = kx
         # Persist regardless of hit/miss: a miss still consumed the action/reaction
         # economy above, and that bookkeeping must survive (sole-writer discipline).
         save_campaign(c)
@@ -2262,7 +2278,11 @@ def apply_damage(
     any concentration_dc to roll."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        out = combat.apply_damage(_char(c, target_id), amount, crit=crit, half=half, damage_type=damage_type)
+        target = _char(c, target_id)
+        out = combat.apply_damage(target, amount, crit=crit, half=half, damage_type=damage_type)
+        kx = _award_kill_xp(c, target)
+        if kx:
+            out["kill_xp"] = kx
         save_campaign(c)
         return out
 
@@ -2363,6 +2383,31 @@ def stabilize(campaign_id: str, actor_id: str, target_id: str, dc: int = 10) -> 
         }
 
 
+def _award_kill_xp(c, monster) -> "dict | None":
+    """Award a single defeated monster's XP to the living party THE MOMENT it dies
+    (robust to DM sequencing — see end_combat). Idempotent: zeroes xp_value, so a
+    re-call (or end_combat's backstop sweep) never double-awards. No-op outside 'xp'
+    leveling mode, for non-monsters, the living, or zero-value foes."""
+    if c.leveling_mode != "xp":
+        return None
+    if getattr(monster, "kind", "") != "monster" or not monster.dead or monster.xp_value <= 0:
+        return None
+    recipients = [c.characters[i] for i in c.party if i in c.characters and not c.characters[i].dead]
+    if not recipients:
+        return None
+    total = monster.xp_value
+    each, rem = divmod(total, len(recipients))
+    grants = []
+    for idx, ch in enumerate(recipients):
+        amt = each + (rem if idx == 0 else 0)
+        ch.xp = max(0, ch.xp + amt)
+        available = srd_tables.level_for_xp(ch.xp)
+        grants.append({"id": ch.id, "name": ch.name, "xp_gained": amt, "xp": ch.xp,
+                       "level_available": available, "can_level_up": available > ch.total_level})
+    monster.xp_value = 0  # consumed — idempotent guard against double-award
+    return {"xp_awarded": total, "grants": grants}
+
+
 @mcp.tool()
 def end_combat(campaign_id: str) -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
@@ -2376,32 +2421,23 @@ def end_combat(campaign_id: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result: dict = {"active": False}
+        # Backstop sweep: award XP for any dead monsters still in the order that weren't
+        # caught by the kill-time _award_kill_xp calls (their xp_value is already 0 in
+        # the normal case — so this loop is mostly a no-op after kill-time awarding). It
+        # still catches any death path not yet wired to the helper.
         if c.leveling_mode == "xp":
             combat_ids = {cb.character_id for cb in c.combat.order}
-            defeated = [
-                ch for ch in c.characters.values()
-                if ch.id in combat_ids and ch.kind == "monster" and ch.dead and ch.xp_value > 0
-            ]
-            total = sum(ch.xp_value for ch in defeated)
-            recipients = [
-                c.characters[i] for i in c.party
-                if i in c.characters and not c.characters[i].dead
-            ]
-            if total > 0 and recipients:
-                each, rem = divmod(total, len(recipients))
-                grants = []
-                for idx, ch in enumerate(recipients):
-                    amt = each + (rem if idx == 0 else 0)
-                    ch.xp = max(0, ch.xp + amt)
-                    available = srd_tables.level_for_xp(ch.xp)
-                    grants.append({
-                        "id": ch.id, "name": ch.name, "xp_gained": amt, "xp": ch.xp,
-                        "level_available": available, "can_level_up": available > ch.total_level,
-                    })
-                for m in defeated:
-                    m.xp_value = 0  # XP consumed — a reused corpse can't re-award (review #3)
-                result["xp_awarded"] = total
-                result["grants"] = grants
+            all_total = 0
+            all_grants: list[dict] = []
+            for ch in list(c.characters.values()):
+                if ch.id in combat_ids:
+                    kx = _award_kill_xp(c, ch)
+                    if kx:
+                        all_total += kx["xp_awarded"]
+                        all_grants.extend(kx["grants"])
+            if all_total > 0:
+                result["xp_awarded"] = all_total
+                result["grants"] = all_grants
         c.combat = Combat()
         save_campaign(c)
         return result
