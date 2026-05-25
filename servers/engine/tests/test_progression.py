@@ -284,3 +284,162 @@ def test_preview_level_up_reports_multiclass_house_rule_error_without_mutating()
     assert out["ok"] is False
     assert "multiclassing is disabled by campaign house rules" in out["errors"]
     assert _campaign_snapshot(cid) == before
+
+
+def test_build_options_reports_legal_level_up_paths_without_mutating():
+    cid = server.create_campaign("Build options")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 14, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    out = server.build_options(cid, fid)
+
+    assert out["character_id"] == fid
+    assert out["from"]["level"] == 3
+    assert out["from"]["classes"] == [{"name": "fighter", "level": 3, "subclass": None}]
+    assert out["choices"] == {"asi_required": True, "feat_allowed": True, "multiclass_allowed": True}
+    assert out["errors"] == []
+    fighter = next(option for option in out["options"] if option["class_name"] == "fighter")
+    assert fighter["legal"] is True
+    assert fighter["to"] == {"level": 4, "class": "fighter"}
+    assert fighter["choices"]["asi_required"] is True
+    assert fighter["choices"]["feat_allowed"] is True
+    assert fighter["preview"]["choice_requirements"] == [
+        {"type": "asi_or_feat", "class_name": "fighter", "class_level": 4}
+    ]
+    assert _campaign_snapshot(cid) == before
+
+
+def test_build_options_omits_illegal_multiclass_paths_without_mutating():
+    cid = server.create_campaign("Build options house rules")["id"]
+    wid = server.create_character(
+        cid,
+        "Gale",
+        kind="player",
+        class_name="Wizard",
+        apply_srd_defaults=True,
+        abilities={"intelligence": 16, "strength": 10, "dexterity": 14},
+    )["id"]
+    server.set_house_rules(cid, {"multiclass_allowed": False})
+    before = _campaign_snapshot(cid)
+
+    out = server.build_options(cid, wid)
+
+    assert out["choices"]["multiclass_allowed"] is False
+    assert [option["class_name"] for option in out["options"]] == ["wizard"]
+    assert out["blocked_options"]
+    assert all(option["class_name"] != "fighter" for option in out["options"])
+    assert any(
+        option["class_name"] == "fighter"
+        and "multiclassing is disabled by campaign house rules" in option["errors"]
+        for option in out["blocked_options"]
+    )
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_disabled_feat_without_mutating():
+    cid = server.create_campaign("Commit feat rules")["id"]
+    fid = server.create_character(
+        cid,
+        "Aria",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    server.set_house_rules(cid, {"feats_allowed": False})
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="feats are disabled by campaign house rules"):
+        server.level_up(cid, fid, "Fighter", feat="Lucky")
+
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_invalid_asi_payloads_without_mutating():
+    cid = server.create_campaign("Commit ASI rules")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 12, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="unknown ability"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 1, "luck": 1})
+    assert _campaign_snapshot(cid) == before
+
+    with pytest.raises(Exception, match="asi must be"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2, "dexterity": 2})
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_asi_and_feat_together_without_mutating():
+    cid = server.create_campaign("Commit ASI feat exclusivity")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="choose either asi or feat"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2}, feat="Lucky")
+
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_asi_or_feat_on_non_asi_level_without_mutating():
+    cid = server.create_campaign("Commit non-ASI choice")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="does not grant an ASI or feat choice"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2})
+    assert _campaign_snapshot(cid) == before
+
+    with pytest.raises(Exception, match="does not grant an ASI or feat choice"):
+        server.level_up(cid, fid, "Fighter", feat="Lucky")
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_disabled_multiclass_without_mutating():
+    cid = server.create_campaign("Commit multiclass rules")["id"]
+    wid = server.create_character(
+        cid,
+        "Gale",
+        kind="player",
+        class_name="Wizard",
+        apply_srd_defaults=True,
+        abilities={"intelligence": 16, "strength": 10, "dexterity": 14},
+    )["id"]
+    server.set_house_rules(cid, {"multiclass_allowed": False})
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="multiclassing is disabled by campaign house rules"):
+        server.level_up(cid, wid, "Fighter")
+
+    assert _campaign_snapshot(cid) == before

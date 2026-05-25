@@ -219,6 +219,23 @@ def _meets_prereq(ch: Character, class_name: str) -> bool:
     return False
 
 
+def _validated_asi_choice(asi: dict) -> dict[str, int]:
+    pending: dict[str, int] = {}
+    total_inc = 0
+    for ability, raw_inc in asi.items():
+        if ability not in _AB3_TO_FULL.values():
+            raise ValueError(f"unknown ability {ability!r} in asi")
+        try:
+            inc = int(raw_inc)
+        except (TypeError, ValueError):
+            raise ValueError(f"invalid ASI increment {raw_inc!r} for {ability!r}") from None
+        pending[ability] = pending.get(ability, 0) + inc
+        total_inc += inc
+    if len(pending) > 2 or total_inc != 2 or any(inc < 1 or inc > 2 for inc in pending.values()):
+        raise ValueError("asi must be +2 to one ability or +1 to two abilities")
+    return pending
+
+
 def _recompute_spellcasting(ch: Character) -> None:
     """Recompute spell-slot maximums from class levels, preserving used slots.
     Single-class Warlock uses Pact Magic; multiclass Warlock merging is deferred."""
@@ -2740,8 +2757,25 @@ def level_up(
         cname = class_name.lower()
         srd_tables.class_data(cname)  # validate the class exists
         existing = next((cl for cl in ch.classes if cl.name.lower() == cname), None)
-        if existing is None and ch.classes and not _meets_prereq(ch, cname):
-            raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
+        multiclass = existing is None and bool(ch.classes)
+        if multiclass:
+            if not c.house_rules.multiclass_allowed:
+                raise ValueError("multiclassing is disabled by campaign house rules")
+            if not _meets_prereq(ch, cname):
+                raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
+
+        new_class_level = existing.level + 1 if existing else 1
+        is_asi_level = srd_tables.is_asi_level(cname, new_class_level)
+        pending_asi = None
+        if is_asi_level:
+            if asi and feat:
+                raise ValueError("choose either asi or feat, not both")
+            if asi:
+                pending_asi = _validated_asi_choice(asi)
+            elif feat and not c.house_rules.feats_allowed:
+                raise ValueError("feats are disabled by campaign house rules")
+        elif asi or feat:
+            raise ValueError(f"{class_name} level {new_class_level} does not grant an ASI or feat choice")
 
         die = srd_tables.hit_die(cname)
         con = ch.ability_modifier(Ability.CON)
@@ -2755,10 +2789,8 @@ def level_up(
             existing.level += 1
             if subclass:
                 existing.subclass = subclass
-            new_class_level = existing.level
         else:
             ch.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
-            new_class_level = 1
 
         ch.max_hp += gain
         ch.current_hp += gain
@@ -2768,13 +2800,11 @@ def level_up(
             ch.hit_dice = f"{sum(cl.level for cl in ch.classes)}d{die}"
 
         applied = None
-        if srd_tables.is_asi_level(cname, new_class_level):
-            if asi:
-                for ability, inc in asi.items():
-                    if ability not in _AB3_TO_FULL.values():
-                        raise ValueError(f"unknown ability {ability!r} in asi")
+        if is_asi_level:
+            if pending_asi:
+                for ability, inc in pending_asi.items():
                     setattr(ch.abilities, ability, min(20, getattr(ch.abilities, ability) + inc))
-                applied = {"asi": asi}
+                applied = {"asi": pending_asi}
             elif feat:
                 applied = {"feat": feat}
                 ch.notes = (ch.notes + f" | feat: {feat}").strip(" |")
@@ -2923,30 +2953,11 @@ def preview_level_up(
         if asi and feat:
             errors.append("choose either asi or feat, not both")
         elif asi:
-            pending: dict[str, int] = {}
-            total_inc = 0
-            valid_asi = True
-            for ability, raw_inc in asi.items():
-                if ability not in _AB3_TO_FULL.values():
-                    errors.append(f"unknown ability {ability!r} in asi")
-                    valid_asi = False
-                    continue
-                try:
-                    inc = int(raw_inc)
-                except (TypeError, ValueError):
-                    errors.append(f"invalid ASI increment {raw_inc!r} for {ability!r}")
-                    valid_asi = False
-                    continue
-                pending[ability] = pending.get(ability, 0) + inc
-                total_inc += inc
-            if valid_asi and (
-                len(pending) > 2
-                or total_inc != 2
-                or any(inc < 1 or inc > 2 for inc in pending.values())
-            ):
-                errors.append("asi must be +2 to one ability or +1 to two abilities")
-                valid_asi = False
-            if valid_asi:
+            try:
+                pending = _validated_asi_choice(asi)
+            except ValueError as exc:
+                errors.append(str(exc))
+            else:
                 for ability, inc in pending.items():
                     setattr(preview.abilities, ability, min(20, getattr(preview.abilities, ability) + inc))
                 applied = {"asi": pending}
@@ -2996,6 +3007,82 @@ def preview_level_up(
         "choice_requirements": choice_requirements,
         "applied_choice": applied,
         "errors": errors,
+    }
+
+
+def _build_option_from_preview(preview: dict, feats_allowed: bool, multiclass_allowed: bool) -> dict:
+    asi_required = any(req.get("type") == "asi_or_feat" for req in preview["choice_requirements"])
+    return {
+        "class_name": preview["class_name"],
+        "legal": preview["ok"],
+        "multiclass": preview["multiclass"],
+        "from": {"level": preview["from"]["total_level"], "class_level": preview["from"]["class_level"]},
+        "to": {"level": preview["to"]["total_level"], "class": preview["class_name"]},
+        "hp_gain": preview["hp_gain"],
+        "features_gained": preview["features_gained"],
+        "spell_slots_delta": preview["spell_slot_deltas"],
+        "resources_delta": preview["resource_deltas"],
+        "choices": {
+            "asi_required": asi_required,
+            "feat_allowed": feats_allowed and asi_required,
+            "multiclass_allowed": multiclass_allowed if preview["multiclass"] else True,
+        },
+        "errors": list(preview["errors"]),
+        "preview": preview,
+    }
+
+
+@mcp.tool()
+def build_options(campaign_id: str, character_id: str) -> dict:
+    """Return legal one-level build paths for a character without mutating state.
+
+    This is the engine-owned build-planner surface: it derives each candidate by
+    calling preview_level_up, exposes legal options for the dashboard to render,
+    and keeps illegal multiclass/rule-blocked paths in blocked_options for
+    diagnostics instead of offering them as actionable choices.
+    """
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    before = Character.model_validate(ch.model_dump(mode="json"))
+    current_classes = [cl.name.lower() for cl in before.classes]
+    available_classes = sorted(
+        name for name, data in srd_tables.classes().items() if isinstance(data, dict)
+    )
+    class_names = list(dict.fromkeys(current_classes + available_classes))
+    options: list[dict] = []
+    blocked_options: list[dict] = []
+
+    for cname in class_names:
+        preview = preview_level_up(campaign_id, character_id, cname)
+        option = _build_option_from_preview(
+            preview,
+            c.house_rules.feats_allowed,
+            c.house_rules.multiclass_allowed,
+        )
+        if option["legal"]:
+            options.append(option)
+        else:
+            blocked_options.append(option)
+
+    asi_required = any(option["choices"]["asi_required"] for option in options)
+    return {
+        "character_id": character_id,
+        "character_name": before.name,
+        "from": {
+            "level": before.total_level,
+            "classes": [
+                {"name": cl.name.lower(), "level": cl.level, "subclass": cl.subclass}
+                for cl in before.classes
+            ],
+        },
+        "choices": {
+            "asi_required": asi_required,
+            "feat_allowed": c.house_rules.feats_allowed,
+            "multiclass_allowed": c.house_rules.multiclass_allowed,
+        },
+        "options": options,
+        "blocked_options": blocked_options,
+        "errors": [],
     }
 
 
