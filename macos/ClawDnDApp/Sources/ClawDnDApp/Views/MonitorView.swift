@@ -47,7 +47,8 @@ struct MonitorView: View {
                 preferredPort: preferredPort,
                 stateDir: stateDir
             )
-            webURL = processService.viewerEndpoint?.monitorURL ?? dashboard
+            webURL = processService.viewerEndpoint?.monitorURL
+                ?? dashboard.deletingLastPathComponent().appendingPathComponent("monitor")
         } catch {
             alertMessage = error.localizedDescription
         }

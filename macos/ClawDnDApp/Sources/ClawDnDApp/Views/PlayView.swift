@@ -168,6 +168,8 @@ struct PlayView: View {
 
     private static let runIDFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()

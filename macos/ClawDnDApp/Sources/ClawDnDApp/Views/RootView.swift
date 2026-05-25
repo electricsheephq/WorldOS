@@ -4,7 +4,7 @@ struct RootView: View {
     @EnvironmentObject private var processService: AppProcessService
     @EnvironmentObject private var campaignStore: CampaignStore
 
-    @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath()
+    @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
     @AppStorage("stateDir") private var stateDir: String = ""
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue

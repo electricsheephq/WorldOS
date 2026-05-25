@@ -155,6 +155,7 @@ final class AppProcessService: ObservableObject {
         providerProcess?.terminate()
         providerProcess = nil
         runningProvider = nil
+        stopProviderViewerEndpointIfNeeded()
     }
 
     private func launchManagedProcess(
@@ -196,6 +197,7 @@ final class AppProcessService: ObservableObject {
                     if self?.providerProcess === managed {
                         self?.providerProcess = nil
                         self?.runningProvider = nil
+                        self?.stopProviderViewerEndpointIfNeeded()
                     }
                 } else if self?.viewerProcess === managed {
                     self?.viewerProcess = nil
@@ -232,10 +234,19 @@ final class AppProcessService: ObservableObject {
 
     private func trimLogIfNeeded(_ log: inout String) {
         guard log.count > maxLogCharacters else { return }
-        log.removeFirst(log.count - maxLogCharacters)
-        if let newline = log.firstIndex(of: "\n") {
-            log.removeSubrange(...newline)
+        let suffix = String(log.suffix(maxLogCharacters))
+        if let newline = suffix.firstIndex(of: "\n"),
+           suffix.index(after: newline) < suffix.endIndex {
+            log = String(suffix[suffix.index(after: newline)...])
+        } else {
+            log = suffix
         }
+    }
+
+    private func stopProviderViewerEndpointIfNeeded() {
+        guard var endpoint = viewerEndpoint, endpoint.name == "Provider viewer" else { return }
+        endpoint.status = .stopped
+        viewerEndpoint = endpoint
     }
 
     private func throwAndRecord(_ message: String) throws -> Never {

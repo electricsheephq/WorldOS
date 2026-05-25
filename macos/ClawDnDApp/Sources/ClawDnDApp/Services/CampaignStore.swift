@@ -5,9 +5,12 @@ final class CampaignStore: ObservableObject {
     @Published var campaigns: [CampaignSummary] = []
     @Published var lastError: String?
 
+    private var reloadTask: Task<Void, Never>?
+
     func reload(repoPath: String) {
+        reloadTask?.cancel()
         let repoURL = URL(fileURLWithPath: repoPath)
-        Task.detached(priority: .userInitiated) { [weak self] in
+        reloadTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let play = try Self.loadCampaigns(
                     root: repoURL.appendingPathComponent("play-state"),
@@ -18,8 +21,10 @@ final class CampaignStore: ObservableObject {
                     source: .qa
                 )
                 let merged = (play + qa).sorted { $0.lastUpdate > $1.lastUpdate }
+                guard !Task.isCancelled else { return }
                 await self?.finishReload(campaigns: merged, lastError: nil)
             } catch {
+                guard !Task.isCancelled else { return }
                 await self?.finishReload(campaigns: [], lastError: error.localizedDescription)
             }
         }

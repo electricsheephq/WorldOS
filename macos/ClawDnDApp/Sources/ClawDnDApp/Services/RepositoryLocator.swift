@@ -1,7 +1,7 @@
 import Foundation
 
 enum RepositoryLocator {
-    static func defaultRepoPath() -> String {
+    static func defaultRepoPath() -> String? {
         if let env = ProcessInfo.processInfo.environment["CLAWDND_REPO_ROOT"] {
             let expanded = (env as NSString).expandingTildeInPath
             if looksLikeRepo(URL(fileURLWithPath: expanded)) {
@@ -29,7 +29,7 @@ enum RepositoryLocator {
             return cwd.path
         }
 
-        return ""
+        return nil
     }
 
     static func looksLikeRepo(_ url: URL) -> Bool {
