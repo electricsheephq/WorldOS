@@ -25,6 +25,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
@@ -43,6 +44,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_STATE_DIR", None)
         else:
             os.environ["CLAWDND_STATE_DIR"] = self._old_state
+        server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
@@ -78,7 +80,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(config["surface"], "openworlds")
         self.assertEqual(config["state_authority"], "engine")
         self.assertEqual(config["write_lane"], "/move")
-        self.assertTrue(config["demo_data"])
+        self.assertEqual(config["campaign_catalog"], "/openworlds/campaigns.json")
+        self.assertFalse(config["demo_data"])
+        self.assertTrue(config["demo_data_fallback"])
 
     def test_openworlds_static_assets_are_same_origin_and_local(self):
         status, ctype, body = self._get("/openworlds/vendor/google-fonts.css")
@@ -93,6 +97,126 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)
         self.assertEqual(self._status("/openworlds/vendor/../../server.py"), 404)
+
+    def test_openworlds_campaigns_projects_current_state_without_private_fields(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_live"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_live",
+                "title": "Road After Moonrise",
+                "ruleset": "SRD 5.2",
+                "world_id": "baldurs-gate",
+                "day": 12,
+                "time_of_day": "dusk",
+                "current_location_id": "last-light",
+                "summary": "The party reached the inn and caught its breath.",
+                "locations": {"last-light": {"name": "Last Light Inn"}},
+                "party": ["hero", "jaheira"],
+                "characters": {
+                    "hero": {"name": "Tav", "kind": "player", "current_hp": 22, "max_hp": 30},
+                    "jaheira": {"name": "Jaheira", "kind": "companion", "current_hp": 34, "max_hp": 34},
+                },
+                "quests": {"q1": {"status": "active"}},
+                "notes": "private note must not leave the snapshot",
+                "scenes": [{"dm_notes": "hidden agenda"}],
+                "lore": ["private canon recall input"],
+            },
+        )
+        (campaign_dir / "sessions").mkdir()
+        (campaign_dir / "sessions" / "sess_1.jsonl").write_text("{}", encoding="utf-8")
+        _QuietHandler.campaign_id = "camp_live"
+
+        status, ctype, body = self._get("/openworlds/campaigns.json")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        catalog = json.loads(body.decode("utf-8"))
+        self.assertEqual(catalog["state_authority"], "engine")
+        self.assertEqual(catalog["write_lane"], "/move")
+        self.assertEqual(catalog["total"], 1)
+        campaign = catalog["campaigns"][0]
+        self.assertEqual(campaign["id"], "play:state:camp_live")
+        self.assertEqual(campaign["campaign_id"], "camp_live")
+        self.assertEqual(campaign["source"], "play")
+        self.assertEqual(campaign["runId"], "state")
+        self.assertEqual(campaign["title"], "Road After Moonrise")
+        self.assertEqual(campaign["world"], "baldurs-gate")
+        self.assertEqual(campaign["day"], "Day 12 · dusk")
+        self.assertEqual(campaign["location"], "Last Light Inn")
+        self.assertEqual(campaign["region"], "Last Light Inn")
+        self.assertEqual(campaign["system"], "SRD 5.2")
+        self.assertEqual(campaign["sessions"], 1)
+        self.assertTrue(campaign["current"])
+        self.assertTrue(campaign["canResume"])
+        self.assertFalse(campaign["readOnly"])
+        self.assertEqual(campaign["resumeUrl"], "/dashboard?campaign=camp_live")
+        self.assertEqual([p["name"] for p in campaign["party"]], ["Tav", "Jaheira"])
+        self.assertEqual(campaign["recap"], "The party reached the inn and caught its breath.")
+        encoded = json.dumps(campaign)
+        self.assertNotIn("private note", encoded)
+        self.assertNotIn("hidden agenda", encoded)
+        self.assertNotIn("private canon", encoded)
+        self.assert_no_private_keys(json.loads(encoded))
+
+    def test_openworlds_campaigns_includes_repo_play_state_and_qa_runs_read_only(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        play_campaign = repo_root / "play-state" / "play-20260525" / "campaigns" / "camp_play"
+        qa_campaign = repo_root / "qa" / "state" / "wave3-red" / "campaigns" / "camp_qa"
+        self._write_snapshot(
+            play_campaign,
+            {
+                "id": "camp_play",
+                "title": "Owner Save",
+                "world_id": "baldurs-gate",
+                "current_location_id": "baldurs-gate",
+                "locations": {"baldurs-gate": {"name": "Baldur's Gate"}},
+                "party": [],
+                "characters": {},
+            },
+        )
+        self._write_snapshot(
+            qa_campaign,
+            {
+                "id": "camp_qa",
+                "title": "QA Save",
+                "world_id": "baldurs-gate",
+                "day": 3,
+                "party": [],
+                "characters": {},
+            },
+        )
+
+        status, _ctype, body = self._get("/openworlds/campaigns.json")
+
+        self.assertEqual(status, 200)
+        campaigns = json.loads(body.decode("utf-8"))["campaigns"]
+        by_id = {c["id"]: c for c in campaigns}
+        self.assertIn("play:play-20260525:camp_play", by_id)
+        self.assertIn("qa:wave3-red:camp_qa", by_id)
+        self.assertEqual(by_id["play:play-20260525:camp_play"]["provider"], "Local")
+        self.assertEqual(by_id["qa:wave3-red:camp_qa"]["provider"], "QA")
+        self.assertTrue(by_id["play:play-20260525:camp_play"]["readOnly"])
+        self.assertTrue(by_id["qa:wave3-red:camp_qa"]["readOnly"])
+        self.assertFalse(by_id["play:play-20260525:camp_play"]["canResume"])
+        self.assertFalse(by_id["qa:wave3-red:camp_qa"]["canResume"])
+        self.assertEqual(by_id["qa:wave3-red:camp_qa"]["monitorUrl"], "/monitor")
+
+    def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
+        campaign_dir.mkdir(parents=True)
+        (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def assert_no_private_keys(self, value) -> None:
+        private_keys = {"notes", "scenes", "lore", "dm_notes", "sealed_agenda", "agenda"}
+        if isinstance(value, dict):
+            for key, child in value.items():
+                self.assertNotIn(key, private_keys)
+                self.assert_no_private_keys(child)
+        elif isinstance(value, list):
+            for child in value:
+                self.assert_no_private_keys(child)
 
 
 if __name__ == "__main__":

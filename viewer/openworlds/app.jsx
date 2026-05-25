@@ -18,6 +18,52 @@ function App() {
     document.documentElement.setAttribute("data-palette", t.palette || "warm");
   }, [t.palette]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadCampaignCatalog() {
+      try {
+        const response = await fetch("/openworlds/campaigns.json", { cache: "no-store" });
+        if (!response.ok) throw new Error(`campaign catalog ${response.status}`);
+        const payload = await response.json();
+        if (cancelled) return;
+
+        const nextCampaigns = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
+        setState((s) => {
+          const activeStillExists = nextCampaigns.some((c) => c.id === s?.activeCampaign);
+          const preferred =
+            nextCampaigns.find((c) => c.current)?.id ||
+            nextCampaigns.find((c) => c.live)?.id ||
+            nextCampaigns[0]?.id ||
+            "";
+          return {
+            ...s,
+            campaigns: nextCampaigns,
+            activeCampaign: activeStillExists ? s.activeCampaign : preferred,
+            campaignCatalog: {
+              loaded: true,
+              total: payload?.total ?? nextCampaigns.length,
+              source: "viewer",
+            },
+          };
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setState((s) => ({
+          ...s,
+          campaignCatalog: {
+            loaded: false,
+            source: "demo-fallback",
+            error: error?.message || "campaign catalog unavailable",
+          },
+        }));
+      }
+    }
+
+    loadCampaignCatalog();
+    return () => { cancelled = true; };
+  }, []);
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const onKey = (e) => {

@@ -5,10 +5,27 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
 
+  React.useEffect(() => {
+    if (campaigns.some((c) => c.id === selected)) return;
+    const fallback = campaigns.some((c) => c.id === state?.activeCampaign)
+      ? state.activeCampaign
+      : campaigns[0]?.id || "";
+    setSelected(fallback);
+  }, [campaigns, selected, state?.activeCampaign]);
+
   const onResume = () => {
-    const nextCampaign = selected || campaigns[0]?.id;
+    const nextCampaign = campaigns.some((c) => c.id === selected) ? selected : campaigns[0]?.id;
     if (!nextCampaign) return;
+    const campaign = campaigns.find((c) => c.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
+    if (campaign?.resumeUrl) {
+      window.location.assign(campaign.resumeUrl);
+      return;
+    }
+    if (campaign?.monitorUrl) {
+      window.location.assign(campaign.monitorUrl);
+      return;
+    }
     onNavigate("table");
   };
 
@@ -105,12 +122,15 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                 </div>
               );
             }
-            const party = Array.isArray(c.party) ? c.party : [];
+            const party = normalizeCampaignParty(c.party);
+            const dayBadge = campaignDayBadge(c);
+            const chapter = campaignChapter(c);
+            const region = campaignRegion(c);
             return (
               <div>
                 {/* Top vignette with overlaid label */}
                 <div style={{ position: "relative" }}>
-                  <Placeholder label={`vignette · ${c.region.toLowerCase()}`} h={140} style={{ width: "100%", boxShadow: "none" }} />
+                  <Placeholder label={`vignette · ${region.toLowerCase()}`} h={140} style={{ width: "100%", boxShadow: "none" }} />
                   <div style={{
                     position: "absolute", inset: 0,
                     background: "linear-gradient(180deg, transparent 40%, rgba(40, 25, 10, 0.85) 100%)",
@@ -121,18 +141,18 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                   }}>
                     <div>
                       <div className="eyebrow" style={{ color: "var(--gold-glow)", textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>
-                        {c.system} · Chapter {c.chapter}
+                        {c.system || "D&D 5e"} · Chapter {chapter}
                       </div>
                       <div style={{ fontFamily: "var(--f-display)", fontSize: 22, color: "var(--p-100)", letterSpacing: "0.04em", marginTop: 2, textShadow: "0 1px 2px rgba(0,0,0,0.7)" }}>
                         {c.title}
                       </div>
                     </div>
-                    <Pill tone="royal">{c.day.split(" · ")[0] || c.day}</Pill>
+                    <Pill tone={c.live ? "emerald" : "royal"}>{c.live ? "Live" : dayBadge}</Pill>
                   </div>
                 </div>
 
                 <div style={{ padding: "20px 28px 28px" }}>
-                  <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{c.subtitle}</div>
+                  <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{c.subtitle || region}</div>
 
                   {/* Stat strip with vertical brass dividers */}
                   <div style={{
@@ -147,7 +167,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                       { label: "Last sat", value: c.lastPlayed },
                       { label: "Sessions", value: c.sessions },
                       { label: "Heroes", value: party.length },
-                      { label: "Region", value: c.region },
+                      { label: "Region", value: region },
                     ].map((s, i) => (
                       <div key={s.label} style={{
                         padding: "10px 12px",
@@ -172,6 +192,11 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                         <div className="hand" style={{ fontSize: 12, marginTop: 4, color: "var(--ink-700)" }}>{p.name}</div>
                       </div>
                     ))}
+                    {party.length === 0 && (
+                      <div className="hand muted" style={{ fontSize: 14, padding: "18px 8px", textAlign: "center" }}>
+                        No party recorded yet.
+                      </div>
+                    )}
                   </div>
 
                   {/* Recap with side sketch */}
@@ -181,7 +206,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                       <Placeholder label="sketch · last scene" w={100} h={120} framed />
                     </div>
                     <p className="body dropcap" style={{ marginTop: 0, fontSize: 15 }}>
-                      {c.recap}
+                      {c.recap || "This chronicle is ready to continue."}
                     </p>
                   </div>
 
@@ -192,7 +217,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                     display: "flex", gap: 8,
                   }}>
                     <BrassButton onClick={onResume} size="lg" style={{ flex: 1 }}>
-                      Resume Chronicle
+                      {c.canResume ? "Resume Chronicle" : "View Chronicle"}
                     </BrassButton>
                     <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")}>Roster</BrassButton>
                     <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")}>Journal</BrassButton>
@@ -213,6 +238,37 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   );
 }
 
+function normalizeCampaignParty(party) {
+  if (!Array.isArray(party)) return [];
+  return party.map((p) => {
+    if (typeof p === "string") return { name: p, short: "portrait" };
+    return {
+      name: p?.name || "Unknown",
+      short: p?.short || "portrait",
+      kind: p?.kind || "",
+      hp: p?.hp || "",
+    };
+  });
+}
+
+function campaignRegion(c) {
+  const value = c?.region ?? c?.location ?? c?.world;
+  if (value === undefined || value === null) return "Unknown";
+  const trimmed = String(value).trim();
+  return trimmed || "Unknown";
+}
+
+function campaignDayBadge(c) {
+  const day = typeof c?.day === "string" ? c.day : "";
+  return day.split(" · ")[0] || day || "Stale";
+}
+
+function campaignChapter(c) {
+  const chapter = c?.chapter;
+  if (chapter === undefined || chapter === null || chapter === "") return "I";
+  return String(chapter);
+}
+
 function Stat({ label, value }) {
   return (
     <div style={{
@@ -227,6 +283,7 @@ function Stat({ label, value }) {
 }
 
 function CampaignRow({ c, selected, onSelect }) {
+  const status = c?.live ? "Live" : (c?.sourceLabel || "Saved");
   return (
     <button
       onClick={onSelect}
@@ -252,12 +309,12 @@ function CampaignRow({ c, selected, onSelect }) {
         <div style={{ fontFamily: "var(--f-display)", fontSize: 17, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
           {c.title}
         </div>
-        <div className="hand" style={{ fontSize: 14, color: "var(--ink-600)" }}>{c.subtitle}</div>
+        <div className="hand" style={{ fontSize: 14, color: "var(--ink-600)" }}>{c.subtitle || campaignRegion(c)}</div>
       </div>
       <div style={{ textAlign: "right" }}>
-        <div className="eyebrow">{c.lastPlayed}</div>
+        <div className="eyebrow">{status} · {c.lastPlayed || "unknown"}</div>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)", marginTop: 4 }}>
-          Ch. {c.chapter}
+          Ch. {campaignChapter(c)}
         </div>
       </div>
     </button>
