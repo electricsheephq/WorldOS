@@ -38,11 +38,15 @@ Score each criterion 1–5 (5 = excellent, 1 = broken). Be skeptical; reserve 5s
 4. **companion_agency** — Did the AI companion act as a first-class party member
    (its own turns/actions through the engine, proactive roleplay, opinions) rather
    than being ignored or puppeted?
-5. **exploration** — Did look_around / travel_to work coherently (movement only
+5. **player_agency** — Did the PLAYER act as a curious character — asking the DM
+   clarifying questions (clarify), probing NPCs/scene, pursuing its own goals — or
+   passively narrate along and accept every outcome? A player that never
+   clarifies/probes is a flat 2.
+6. **exploration** — Did look_around / travel_to work coherently (movement only
    along connected locations, visited tracking, sensible scene flow)?
-6. **narrative_pacing** — Was narration vivid but brisk, in-voice, spotlighting
+7. **narrative_pacing** — Was narration vivid but brisk, in-voice, spotlighting
    the player + companion, without stalling or rambling?
-7. **robustness** — Free of tool errors, confusing/empty outputs, dead-ends,
+8. **robustness** — Free of tool errors, confusing/empty outputs, dead-ends,
    missing capabilities, or awkward workarounds? Note anything that broke.
 
 For `defects`: list concrete, fixable problems. Severity:

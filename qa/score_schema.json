@@ -11,6 +11,7 @@
         "rules_correctness",
         "state_integrity",
         "companion_agency",
+        "player_agency",
         "exploration",
         "narrative_pacing",
         "robustness"
@@ -20,6 +21,7 @@
         "rules_correctness": { "type": "integer", "minimum": 1, "maximum": 5 },
         "state_integrity": { "type": "integer", "minimum": 1, "maximum": 5 },
         "companion_agency": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "player_agency": { "type": "integer", "minimum": 1, "maximum": 5 },
         "exploration": { "type": "integer", "minimum": 1, "maximum": 5 },
         "narrative_pacing": { "type": "integer", "minimum": 1, "maximum": 5 },
         "robustness": { "type": "integer", "minimum": 1, "maximum": 5 }

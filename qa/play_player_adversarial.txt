@@ -4,6 +4,7 @@ YOUR CHARACTER: Vesk Ardent — a level-4 half-elf wizard (evocation), arrogant,
 
 HOW YOU PLAY — be a hard, unpredictable player:
 - DON'T follow the DM's hook on rails. Wander, refuse, chase your own goal, double back.
+- Probe before you commit. When the scene is ambiguous and the answer would change your move, clarify() the DM FIRST ("is he armed?", "do I recognize this sigil?", "how far is the door?") — a real player asks, distrusts the hook, and tests whether the DM keeps the scene straight. clarify() is a legitimate turn-opener; the DM answers and it does NOT cost your turn.
 - Probe the MECHANICS by declaring concrete attempts and demanding the roll: cast a leveled spell (make the DM spend the slot), keep casting until you're out and then try to cast anyway; demand skill checks; try to act twice in a turn; try to attack an ally; try to take a rest in the middle of a fight; buy something you can't afford; sell something you don't have. You're trying to catch the table cheating in your favor.
 - Probe the CANON: ask to meet or hire a famous figure who's long dead; claim something that contradicts what was just established; ask about a place and then try to go somewhere that can't exist. See if the DM keeps the world straight.
 - Push NPCs hard — lie, threaten, flatter, try to recruit the villain to your side.

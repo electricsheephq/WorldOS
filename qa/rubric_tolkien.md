@@ -88,6 +88,8 @@ matter how lovely the writing — and the HARD CAP below then binds `overall ≤
   happened, stalling on atmosphere while nothing changes and nothing is chosen.
 - **Described-not-spoken NPCs** — NPCs summarized ("Rolph explains he copied the list") instead
   of speaking in quoted voice. (Already under scene_craft; it caps here too.)
+- **Passive protagonist** — the player only ever reacts to DM prompts; never asks, probes, or
+  drives the scene. Forces `scene_craft ≤ 2`.
 
 ## Output (JSON only)
 `scope` = the arc scope this transcript represents (`setup-slice` | `one-shot` | `short-3act` | `campaign-arc`). Label honestly — do NOT call a long, gone-nowhere session a `setup-slice`.

@@ -82,6 +82,10 @@ def main() -> int:
     move_kinds = Counter(
         (m.get("kind") or "").lower() for m in mv if m.get("role") in ("player", "companion")
     )
+    # A "substantial" session threshold, shared by the player-agency, combat-integrity, and
+    # world-progression floors below (so a short smoke/scene test isn't penalized). Defined
+    # here (not at first use) because the has_facade block needs it too. (#agency)
+    MIN_BEATS = 6
     try:
         sp = Path(sys.argv[2])
         state = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}
@@ -175,6 +179,82 @@ def main() -> int:
         # session as a WARNING (not every short run is broken — so not fatal).
         chk("player_engaged", len(mv) >= 3,
             f"only {len(mv)} move(s) recorded — a trivially short session?", fatal=False)
+        # PLAYER-AGENCY FLOOR (#agency). Two audits found the AI player has NEVER called
+        # clarify across 387 moves — it "plays along" (declares an action every turn) and
+        # never asks the DM a question or requests a check. Nothing scored it. A real player
+        # at a table PROBES: asks the DM ("is he armed?", "do I recognize this sigil?") and
+        # requests checks. A substantial session with ZERO of either is a passive plot-passenger,
+        # not a played character. WARN (not fatal) — it's an agency smell, not a broken run.
+        if len(mv) >= MIN_BEATS:
+            probes = move_kinds.get("clarify", 0) + move_kinds.get("check", 0)
+            chk("player_probed", probes > 0,
+                f"player asked 0 questions + requested 0 checks across {len(mv)} moves — "
+                f"played along, never probed (clarify/request_check).", fatal=False)
+
+        # COMBAT-INTEGRITY INVARIANTS (#agency). The engine persists a `combat` block in
+        # state but the gate ignored it. Assert its integrity ONLY when combat data is present
+        # (state.get("combat") truthy) — a non-combat session has no block and these skip.
+        combat = state.get("combat") or {}
+        if combat:
+            # FATAL: combat left active at end-of-run is a state-integrity failure — a clean run
+            # ends_combat. Only for a substantial session (a short smoke test cut off mid-fight
+            # is not a real defect).
+            if len(mv) >= MIN_BEATS:
+                chk("combat_not_left_active", not combat.get("active"),
+                    f"combat.active={combat.get('active')!r} at end-of-run — combat left active "
+                    f"(state-integrity fail: a finished session should end_combat)")
+            # WARN: if a fight started, the action economy should have engaged at some point —
+            # an action was consumed / an attack was made. The final snapshot does not reliably
+            # expose mid-fight action use (it may have been reset on end_combat), so probe the
+            # fields that MIGHT carry it and only WARN when we can affirmatively see none — never
+            # false-fire when the data simply isn't in the snapshot.
+            if tools.get("start_combat", 0) > 0:
+                econ_fields = ("action_used", "action_attacks_made", "attacks_made", "actions_taken")
+                present = [f for f in econ_fields if f in combat]
+                if present:
+                    engaged = any(combat.get(f) for f in present)
+                    chk("action_economy_engaged", engaged,
+                        f"start_combat fired but combat shows no action consumed "
+                        f"({{{', '.join(f'{f}={combat.get(f)!r}' for f in present)}}}) — action economy never engaged?",
+                        fatal=False)
+                # else: snapshot doesn't carry action-economy data -> skip rather than false-WARN.
+
+        # PARTY-LOCATION COHERENCE (#agency, WARN, NULL-GUARDED). Every party member with a
+        # known location should be co-located with the current scene. Skip members whose
+        # location_id is absent/empty (serialization sometimes omits it) — never false-fire on
+        # a null. Only meaningful when current_location_id is set.
+        cur_loc = state.get("current_location_id")
+        if cur_loc:
+            chars_by_id = state.get("characters", {}) or {}
+            stray = []
+            for pid in (state.get("party") or []):
+                ch = chars_by_id.get(pid) or {}
+                loc = ch.get("location_id")
+                if loc and loc != cur_loc:  # null/empty -> skipped
+                    stray.append(f"{ch.get('name', pid)}@{loc}")
+            chk("party_location_coherence", not stray,
+                f"party member(s) not at current_location_id={cur_loc!r}: {stray} — party split / "
+                f"stale location (a coherent scene keeps the party together unless intentionally split)",
+                fatal=False)
+
+        # DURATION-EXPIRY (#agency, WARN, NULL-GUARDED). Combat-grained effects (durations
+        # measured in rounds/minutes) must NOT outlive combat — once combat is over, a character
+        # still carrying a rounds/minutes effect means an expiry tick was missed. Only checked
+        # when combat is NOT active; skips cleanly if active_effects are absent on a character.
+        if not combat.get("active"):
+            lingering = []
+            for cid, ch in (state.get("characters", {}) or {}).items():
+                if not isinstance(ch, dict):
+                    continue
+                for eff in (ch.get("active_effects") or []):  # absent -> [] -> skipped
+                    if not isinstance(eff, dict):
+                        continue
+                    unit = (eff.get("duration_unit") or eff.get("unit") or "").lower()
+                    if unit in ("round", "rounds", "minute", "minutes"):
+                        lingering.append(f"{ch.get('name', cid)}:{eff.get('name', '?')}({unit})")
+            chk("duration_expiry", not lingering,
+                f"combat over but combat-grained active_effect(s) linger: {lingering} — a "
+                f"rounds/minutes effect outlived combat (missed expiry tick)", fatal=False)
 
     # 4) dice actually fired somewhere (a whole session with zero rolls is broken). social_check
     # AND skill_check roll a d20 too — count them, so a valid non-combat / social + exploration
@@ -219,7 +299,6 @@ def main() -> int:
     # A living-world session that runs a full arc MUST advance time and travel; one that ends
     # frozen at the start is broken, however pretty the prose. Applied only to a SUBSTANTIAL
     # session (>= MIN_BEATS player beats) so a short smoke/scene test isn't penalized.
-    MIN_BEATS = 6
     if chat:
         session_beats = sum(1 for r in chat if r.get("role") == "player")
     elif has_facade:
