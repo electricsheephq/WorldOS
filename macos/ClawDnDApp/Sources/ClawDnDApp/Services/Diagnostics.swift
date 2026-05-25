@@ -36,7 +36,7 @@ enum Diagnostics {
         var redacted = text
         let replacements = [
             (#"(?i)\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|AUTH|COOKIE)[A-Z0-9_]*)=(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1=<redacted>"),
-            (#"(?i)(--(?:api[-_]?key|auth(?:orization)?|cookie|password|secret|token)(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1<redacted>"),
+            (#"(?i)(--[A-Za-z0-9_-]*(?:api[-_]?key|auth(?:orization)?|cookie|password|secret|token)[A-Za-z0-9_-]*(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s'"]+)"#, "$1<redacted>"),
             (#"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"#, "$1 <redacted>"),
             (#"\b(sk-[A-Za-z0-9_-]{8,})\b"#, "<redacted>"),
             (#"\b(gh[pousr]_[A-Za-z0-9_]{20,})\b"#, "<redacted>"),
@@ -97,10 +97,19 @@ enum Diagnostics {
 
     private static func redactedArguments(_ arguments: [String]) -> [String] {
         var shouldRedactNext = false
+        var shouldRedactShellCommand = false
         return arguments.map { argument in
+            if shouldRedactShellCommand {
+                shouldRedactShellCommand = false
+                return "<configured command redacted>"
+            }
             if shouldRedactNext {
                 shouldRedactNext = false
                 return "<redacted>"
+            }
+            if argument == "-c" || argument == "-lc" {
+                shouldRedactShellCommand = true
+                return argument
             }
             if sensitiveFlags.contains(argument.lowercased()) {
                 shouldRedactNext = true
