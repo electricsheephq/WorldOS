@@ -35,6 +35,7 @@ import base64
 import binascii
 import importlib.util
 import json
+import mimetypes
 import os
 import subprocess
 import sys
@@ -43,11 +44,22 @@ import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 _HERE = Path(__file__).resolve().parent
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
+_OPENWORLDS_DIR = _HERE / "openworlds"
+_OPENWORLDS_ROUTE = "/openworlds"
+_OPENWORLDS_MIME_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".jsx": "text/babel; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".ttf": "font/ttf",
+}
 
 # The constrained move palette — the SAME lane the engine facade enforces. A human
 # acting via the dashboard must not be able to POST DM-side narration ("the dragon
@@ -1405,6 +1417,51 @@ def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
     return {"ok": False, "reason": reason, "backend": nm}
 
 
+def _openworlds_config() -> dict:
+    """Browser-safe metadata for the OpenWorlds shell.
+
+    The UI bundle is currently a local-fidelity prototype backed by demo data;
+    later PRs bind it to read-only viewer APIs. This endpoint lets the macOS
+    app/browser confirm the route contract without reading files directly.
+    """
+    return {
+        "surface": "openworlds",
+        "source": "OpenWorlds.zip",
+        "mode": "prototype-demo-data",
+        "api_base": "",
+        "state_authority": "engine",
+        "write_lane": "/move",
+        "demo_data": True,
+    }
+
+
+def _openworlds_mime(path: Path) -> str:
+    ctype = _OPENWORLDS_MIME_TYPES.get(path.suffix.lower())
+    if ctype:
+        return ctype
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed or "application/octet-stream"
+
+
+def _openworlds_asset(route: str) -> Path | None:
+    """Resolve a /openworlds asset path without allowing traversal outside the bundle."""
+    if route in (_OPENWORLDS_ROUTE, f"{_OPENWORLDS_ROUTE}/"):
+        index = _OPENWORLDS_DIR / "index.html"
+        return index if index.is_file() else None
+    if not route.startswith(f"{_OPENWORLDS_ROUTE}/"):
+        return None
+    rel = unquote(route[len(_OPENWORLDS_ROUTE) + 1:])
+    if not rel or rel.endswith("/"):
+        rel = f"{rel}index.html"
+    try:
+        root = _OPENWORLDS_DIR.resolve()
+        target = (root / rel).resolve()
+        target.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return target if target.is_file() else None
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
@@ -1520,6 +1577,14 @@ class _Handler(BaseHTTPRequestHandler):
         elif route in ("/dashboard", "/dashboard.html"):
             html = (_HERE / "dashboard.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
+        elif route == "/openworlds/config.json":
+            self._json(_openworlds_config())
+        elif route == _OPENWORLDS_ROUTE or route.startswith(f"{_OPENWORLDS_ROUTE}/"):
+            asset = _openworlds_asset(route)
+            if asset is None:
+                self._send(404, b"not found", "text/plain")
+            else:
+                self._send(200, asset.read_bytes(), _openworlds_mime(asset))
         elif route == "/campaigns":
             # Read-only list for the topbar switcher (#H3): every projectable campaign,
             # newest-active first, with the attached one marked `current`. Lets the
