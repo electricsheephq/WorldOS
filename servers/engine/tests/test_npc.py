@@ -1,7 +1,9 @@
 import pytest
 
+import combat
 import npc as npc_mod
 import server
+from models import Character
 
 
 def test_shift_attitude():
@@ -221,3 +223,53 @@ def test_scene_extra_social_check_marks_nobody(campaign):
     out = server.social_check(campaign, pc, "", "persuasion", dc=1, target_name="a fishmonger")
     assert out.get("ephemeral") is True
     assert len(server._require(campaign).characters) == before  # nobody added
+
+
+def test_recruit_companion_clears_dead_state_from_stub_killed_in_combat(campaign):
+    # Regression (live-QA): a recruited companion was stuck dead=true. Trace: an identity
+    # STUB (e.g. load_canon_character) starts at the placeholder max_hp=1, so the FIRST hit
+    # in combat trips the SRD massive-damage instant-death rule (damage >= max_hp) and flags
+    # it dead. recruit_companion then filled a real sheet but NEVER cleared ch.dead — leaving
+    # an "alive" companion who couldn't act and for whom long_rest raised "cannot rest while
+    # dead". Recruiting with living HP must clear the death state.
+    npc_id = server.create_character(campaign, "Bram", kind="npc")["id"]
+
+    # Force the dead=true state through the engine's OWN combat death path (faithful to the
+    # bug): a max_hp=1 stub takes a hit and dies via the massive-damage rule.
+    c = server._require(campaign)
+    ch = c.characters[npc_id]
+    ch.max_hp = 1
+    ch.current_hp = 1
+    combat.apply_damage(ch, 4)  # 4 >= max_hp 1 -> instant death
+    server.save_campaign(c)
+    assert server.get_character(campaign, npc_id)["dead"] is True  # the bug's precondition
+
+    # Recruit with a real sheet (the clean promote-to-companion path).
+    server.recruit_companion(campaign, npc_id, class_name="fighter", level=3, max_hp=28)
+
+    sheet = server.get_character(campaign, npc_id)
+    assert sheet["dead"] is False  # a recruited, living-HP companion is NOT dead
+    assert sheet["stable"] is False
+    assert sheet["current_hp"] > 0
+    assert sheet["death_saves"]["failures"] == 0 and sheet["death_saves"]["successes"] == 0
+    # Condition.UNCONSCIOUS must not linger from the dying state.
+    assert "unconscious" not in sheet["conditions"]
+
+    # The payoff: a subsequent long_rest now SUCCEEDS (previously raised "cannot rest while dead").
+    rest = server.long_rest(campaign, npc_id)
+    assert rest["hp"] == f"{sheet['max_hp']}/{sheet['max_hp']}"  # rested to full, no exception
+    assert server.get_character(campaign, npc_id)["current_hp"] == sheet["max_hp"]
+
+
+def test_load_canon_stub_is_not_a_one_hit_kill(campaign):
+    # Regression: the identity-stub Character default is max_hp=1 — an INSTANT-KILL combatant
+    # (one hit trips the massive-damage rule before the stub is ever fleshed out). A freshly
+    # built identity stub must take a swing without dying. Exercised on a plain stub-shaped
+    # Character (no world-ingested canon roster needed in this fixture's empty campaign).
+    stub = Character(name="Freshly Loaded", kind="npc")  # model default: max_hp=1
+    # The fix gives load_canon_character's stub a sane floor (>=10); mirror that here and prove
+    # the floor survives a normal hit.
+    stub.max_hp = max(stub.max_hp, 10)
+    stub.current_hp = stub.max_hp
+    out = combat.apply_damage(stub, 4)  # a routine hit
+    assert stub.dead is False and out["dead"] is False  # survives — not one-shot

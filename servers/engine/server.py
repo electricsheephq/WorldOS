@@ -49,6 +49,7 @@ from models import (
     Combatant,
     CompanionArc,
     Condition,
+    DeathSaves,
     Decision,
     Faction,
     HouseRules,
@@ -1227,6 +1228,18 @@ def recruit_companion(
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
             _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class <= 0))
+        # Recruiting fleshes out a real combat sheet — so a candidate who was flagged dead while
+        # still a bare identity STUB (the load_canon_character stub spawns at max_hp=1, and one hit
+        # in combat trips the SRD massive-damage instant-death rule) must NOT stay dead once they
+        # have living HP. QA found a recruited companion stuck dead=true: inert, unable to act, and
+        # long_rest raised "cannot rest while dead". An alive-HP companion is, by definition, alive —
+        # clear the death state (dead/stable + death saves). Guarded on current_hp>0 so this can
+        # never silently resurrect a 0-HP record.
+        if ch.current_hp > 0 and (ch.dead or ch.stable or ch.death_saves.successes or ch.death_saves.failures):
+            ch.dead = False
+            ch.stable = False
+            ch.death_saves = DeathSaves()
+            ch.conditions = [cond for cond in ch.conditions if cond != Condition.UNCONSCIOUS]
         # A companion needs an ARC for the relationship system (camp_scene / check_companion_arc)
         # to have anything to track — QA found a freshly-recruited canon companion with arc=null,
         # so camp + the gates were inert. If none was seeded (i.e. not an ending-tied
@@ -1553,6 +1566,19 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             notes=rec.get("voice_hint", ""),
             location_id=c.current_location_id,
         )
+        # The Character default HP is a placeholder max_hp=1 (the model's bare default). An identity
+        # stub left at 1 HP is an INSTANT-KILL combatant: the first hit trips combat's SRD massive-
+        # damage rule (damage >= max_hp at 0 HP) and flags it dead before it's ever fleshed out
+        # (QA: a canon NPC pulled into a fight pre-recruit died in one hit, then stayed dead). Give
+        # the stub a SANE floor so a fresh canon figure can take a swing while awaiting its real
+        # sheet: honor a canon HP hint if the record carries one, else a modest default. (The full
+        # combat sheet still comes from apply_srd_defaults / recruit_companion.)
+        try:
+            canon_hp = int(rec.get("max_hp") or rec.get("hit_points") or 0)
+        except (TypeError, ValueError):
+            canon_hp = 0
+        ch.max_hp = max(canon_hp, 10)
+        ch.current_hp = ch.max_hp  # a fresh identity stub stands at full (placeholder) health
         if add_to_party:
             ch.met = True  # brought into the party => met
             if ch.id not in c.party:
