@@ -903,6 +903,7 @@ let evCursor = 0, actCursor = 0, chatCursor = 0, pcName = "";
 let lastFeedCampaign = undefined;  // the campaign the feed cursors belong to (reset on a switch)
 let lastChatRole = null;           // role of the newest chat line → drives the "DM is narrating…" bubble
 let lastState = null, activeView = "play";   // S2 player-sheet tabs
+const buildPlannerCache = new Map();          // campaign+character+snapshot signature -> planner response
 // Ring buffer of recent story beats captured off the SAME /chat or /events feed the
 // Play view polls, so the Memories journal (parity 6.1) can show logged beats without
 // re-fetching. Capped so a long session can't grow it unbounded.
@@ -2041,6 +2042,106 @@ function renderSpellbook(c, wrap) {
 }
 
 // ---- 4. PROGRESSION ---------------------------------------------------------
+function plannerCampaignId() {
+  return (lastState && lastState.id) || selectedCampaignId || "";
+}
+function plannerSignature(c) {
+  const classes = (c.classes||[]).map(cl => [cl.name||"", cl.level||0, cl.subclass||""]);
+  return JSON.stringify({
+    campaign: plannerCampaignId(),
+    character: c.id || "",
+    updated: lastState && lastState.updated_at,
+    xp: c.xp || 0,
+    level: totalLevel(c),
+    classes,
+  });
+}
+function requestBuildPlanner(c) {
+  const campaign = plannerCampaignId();
+  const character = c && c.id;
+  if (!campaign || !character) {
+    return { ok:false, code:"missing_scope", errors:["campaign or character id is missing"] };
+  }
+  const key = plannerSignature(c);
+  const hit = buildPlannerCache.get(key);
+  if (hit) return hit;
+  const pending = { pending:true, ok:false, code:"loading", errors:[] };
+  buildPlannerCache.set(key, pending);
+  fetch(`/build-options?campaign=${encodeURIComponent(campaign)}&character=${encodeURIComponent(character)}`)
+    .then(r => r.ok ? r.json() : { ok:false, code:"http_error", errors:[`planner HTTP ${r.status}`] })
+    .then(data => { buildPlannerCache.set(key, data); if (activeView === "progression") renderSheet(); })
+    .catch(err => {
+      buildPlannerCache.set(key, { ok:false, code:"network_error", errors:[err && err.message ? err.message : String(err)] });
+      if (activeView === "progression") renderSheet();
+    });
+  return pending;
+}
+function deltaTags(deltas, prefix) {
+  const rows = [];
+  Object.entries(deltas || {}).forEach(([id, d]) => {
+    const delta = Number(d && d.delta);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const label = prefix === "slot" ? `slot L${id}` : titleCase(id);
+    const recharge = d && d.recharge ? ` ${d.recharge}` : "";
+    rows.push(`<span class="tag">${esc(label)} ${signed(delta)}${esc(recharge)}</span>`);
+  });
+  return rows.join("");
+}
+function featureTags(features) {
+  const rows = (features || []).map(f => typeof f === "string" ? f : (f && f.name) || "").filter(Boolean);
+  return rows.length
+    ? rows.slice(0, 6).map(f => `<span class="tag">${esc(f)}</span>`).join("")
+    : `<span class="tag">no new features</span>`;
+}
+function optionChoiceTags(option) {
+  const choices = option.choices || {};
+  const tags = [];
+  if (choices.asi_required) tags.push(`<span class="tag cond">ASI required</span>`);
+  if (choices.asi_required && choices.feat_allowed) tags.push(`<span class="tag">Feat available</span>`);
+  if (choices.asi_required && choices.feat_allowed === false) tags.push(`<span class="tag warn">Feat blocked</span>`);
+  if (option.multiclass) tags.push(`<span class="tag">multiclass</span>`);
+  return tags.join("");
+}
+function buildPlannerHTML(response) {
+  if (!response || response.pending) {
+    return `<div class="scard" style="grid-column:1/-1"><h3>Engine build planner</h3>
+      <div class="empty">Loading planner preview…</div></div>`;
+  }
+  if (!response.ok) {
+    const code = response.code || "planner_error";
+    const errors = (response.errors || ["planner unavailable"]).map(e => `<li>${esc(e)}</li>`).join("");
+    return `<div class="scard" style="grid-column:1/-1"><h3>Engine build planner <span class="h3n">${esc(code)}</span></h3>
+      <ul class="obj-list">${errors}</ul></div>`;
+  }
+  const planner = response.planner || {};
+  const options = planner.options || [];
+  const blocked = planner.blocked_options || [];
+  const optionHTML = options.length ? options.map(option => {
+    const title = titleCase(option.class_name || (option.to && option.to.class) || "class");
+    const to = option.to || {};
+    const hp = option.hp_gain == null ? "" : `<span class="tag cond">+${esc(option.hp_gain)} HP</span>`;
+    const slots = deltaTags(option.spell_slots_delta || option.spell_slot_deltas, "slot");
+    const resources = deltaTags(option.resources_delta || option.resource_deltas, "resource");
+    const choices = optionChoiceTags(option);
+    return `<div class="pitem" style="align-items:flex-start;gap:10px">
+      <span class="p-nm"><b>${esc(title)}</b><br><span style="color:var(--dim)">level ${esc(to.level || "")}</span>
+        <div class="kv-tags" style="margin-top:7px">${hp}${choices}${slots}${resources}</div>
+        <div class="kv-tags" style="margin-top:7px">${featureTags(option.features_gained)}</div>
+      </span>
+      <span class="p-bonus" title="Engine-owned preview only">preview</span>
+    </div>`;
+  }).join("") : `<div class="empty">No legal build options returned.</div>`;
+  const blockedHTML = blocked.length
+    ? `<div class="kv-line" style="margin-top:10px;color:var(--dim)">Blocked</div>
+      <div class="plist">${blocked.slice(0, 8).map(option => {
+        const errors = (option.errors || ["blocked by engine planner"]).join("; ");
+        return `<div class="pitem"><span class="p-nm">${esc(titleCase(option.class_name || "class"))}<br>
+          <span style="color:var(--faint)">${esc(errors)}</span></span><span class="p-bonus">blocked</span></div>`;
+      }).join("")}</div>`
+    : "";
+  return `<div class="scard" style="grid-column:1/-1"><h3>Engine build planner <span class="h3n">${esc(response.source||"")}</span></h3>
+    <div class="plist">${optionHTML}</div>${blockedHTML}</div>`;
+}
 function renderProgression(c, wrap) {
   const lvl = totalLevel(c), xp = c.xp ?? 0;
   // Bracket the current XP within the 5e thresholds, anchored on the character's
@@ -2087,7 +2188,8 @@ function renderProgression(c, wrap) {
       `<div class="pitem"><span class="p-nm">${esc(cl.name)}${cl.subclass?` — ${esc(cl.subclass)}`:""}</span><span class="p-bonus">${cl.level}</span></div>`).join("")}</div>`
     : `<div class="empty">Unclassed.</div>`}</div>`;
 
-  const body = `<div class="sgrid cols2">${xpCard}${hdCard}${clsCard}</div>`;
+  const plannerCard = buildPlannerHTML(requestBuildPlanner(c));
+  const body = `<div class="sgrid cols2">${xpCard}${hdCard}${clsCard}${plannerCard}</div>`;
   wrap.innerHTML = sheetShell((c.name?c.name+"'s ":"")+"Progression", identityLine(c), body);
 }
 

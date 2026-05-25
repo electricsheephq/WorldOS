@@ -5,7 +5,9 @@ Run it for the PLAYER to *see* the adventure while they play through Claude Code
 the current location/map, party vitals, who's in the scene (with voices), the
 quest log, and a live roll/event feed. The AI never reads this — it reads the
 same state via the engine's MCP tools. This server is a **pure downstream
-reader**: stdlib only (no deps, runs anywhere). It has exactly two side effects,
+reader**. It starts with stdlib only; the optional `/build-options` endpoint
+imports the engine planner lazily and degrades to JSON errors if unavailable.
+It has exactly two side effects,
 both opt-in and local:
 - `POST /move` appends a player *move intent* (NOT campaign state) to the
   append-only log at $CLAWDND_PLAYER_MOVES — inert (refuses, writes nothing)
@@ -20,6 +22,8 @@ It reads the engine's on-disk truth directly:
   a whole, valid file — no lock needed.
 - the active session's `sessions/<id>.jsonl` is append-only; we tolerate a
   half-written trailing line (skip it; it completes on the next poll).
+- `GET /build-options` validates campaign/character scope and calls the
+  engine-owned read-only build planner; it never calls level_up or saves.
 
 Usage:  python3 viewer/server.py [campaign_id] [port]
         (CLAWDND_STATE_DIR is honored, mirroring the engine's store.state_dir())
@@ -29,11 +33,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 import time
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
@@ -239,6 +245,159 @@ def _safe_campaign_id(campaign_id: Optional[str]) -> Optional[str]:
     except OSError:
         return None
     return None
+
+
+_ENGINE_SERVER = None
+_ENGINE_IMPORT_ERROR = ""
+
+
+def _install_fastmcp_shim() -> None:
+    """Let the plain-stdlib viewer import engine/server.py for direct function calls.
+
+    The dashboard command runs with system python, not the engine's MCP dependency
+    environment. engine.server only needs FastMCP at import time to decorate tools;
+    for this read-only bridge a no-op decorator is enough and keeps the planner code
+    itself engine-owned.
+    """
+    if "mcp.server.fastmcp" in sys.modules:
+        return
+
+    class FastMCP:  # noqa: D401 - tiny import shim, not the real MCP server.
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def tool(self, *args, **_kwargs):
+            if args and callable(args[0]):
+                return args[0]
+            return lambda fn: fn
+
+    mcp_mod = sys.modules.get("mcp") or types.ModuleType("mcp")
+    server_mod = sys.modules.get("mcp.server") or types.ModuleType("mcp.server")
+    fastmcp_mod = types.ModuleType("mcp.server.fastmcp")
+    fastmcp_mod.FastMCP = FastMCP
+    mcp_mod.server = server_mod
+    server_mod.fastmcp = fastmcp_mod
+    sys.modules["mcp"] = mcp_mod
+    sys.modules["mcp.server"] = server_mod
+    sys.modules["mcp.server.fastmcp"] = fastmcp_mod
+
+
+def _load_engine_server():
+    global _ENGINE_SERVER, _ENGINE_IMPORT_ERROR
+    if _ENGINE_SERVER is not None:
+        return _ENGINE_SERVER
+    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
+    try:
+        try:
+            from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
+        except ModuleNotFoundError:
+            _install_fastmcp_shim()
+        if str(engine_dir) not in sys.path:
+            sys.path.insert(0, str(engine_dir))
+        spec = importlib.util.spec_from_file_location("_clawdnd_engine_server_for_viewer", engine_dir / "server.py")
+        if spec is None or spec.loader is None:
+            raise RuntimeError("could not load engine server module")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _ENGINE_SERVER = module
+        _ENGINE_IMPORT_ERROR = ""
+        return module
+    except Exception as exc:  # import/dependency failures become explicit JSON degradation
+        _ENGINE_IMPORT_ERROR = str(exc)
+        return None
+
+
+def _engine_server():
+    """Test-visible accessor for the engine-owned planner module."""
+    return _load_engine_server()
+
+
+def _clean_character_id(character_id: Optional[str]) -> Optional[str]:
+    if not isinstance(character_id, str):
+        return None
+    cid = character_id.strip()
+    if not cid or len(cid) > 160 or "\x00" in cid:
+        return None
+    return cid
+
+
+def _progression_error(code: str, message: str, *, campaign_id: str = "", character_id: str = "") -> dict:
+    return {
+        "ok": False,
+        "code": code,
+        "campaign_id": campaign_id,
+        "character_id": character_id,
+        "source": "engine.build_options",
+        "planner": None,
+        "errors": [message],
+    }
+
+
+def build_options_response(campaign_id: Optional[str], character_id: Optional[str]) -> dict:
+    """GET /build-options read model.
+
+    The viewer validates the campaign path and character id, then calls the
+    engine-owned read-only build_options planner. It never writes a snapshot and
+    does not expose the mutating level_up path.
+    """
+    safe_campaign = _safe_campaign_id(campaign_id)
+    if not safe_campaign:
+        return _progression_error("invalid_campaign", "missing or unsafe campaign id")
+
+    safe_character = _clean_character_id(character_id)
+    if not safe_character:
+        return _progression_error(
+            "invalid_character",
+            "missing or unsafe character id",
+            campaign_id=safe_campaign,
+        )
+
+    snapshot = _read_snapshot(safe_campaign)
+    if not snapshot:
+        return _progression_error(
+            "state_unavailable",
+            "campaign snapshot is unavailable",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+    chars = snapshot.get("characters")
+    if not isinstance(chars, dict) or safe_character not in chars:
+        return _progression_error(
+            "invalid_character",
+            "character is not present in this campaign snapshot",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+
+    engine = _load_engine_server()
+    if engine is None or not hasattr(engine, "build_options"):
+        detail = _ENGINE_IMPORT_ERROR or "engine build_options is unavailable"
+        return _progression_error(
+            "engine_unavailable",
+            f"engine build planner unavailable: {detail}",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+
+    try:
+        planner = engine.build_options(safe_campaign, safe_character)
+    except Exception as exc:
+        return _progression_error(
+            "engine_error",
+            str(exc),
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+    return {
+        "ok": True,
+        "code": "ok",
+        "campaign_id": safe_campaign,
+        "character_id": safe_character,
+        "source": "engine.build_options",
+        "planner": planner,
+        "errors": [],
+    }
 
 
 def _display_location(snapshot: dict) -> str:
@@ -1366,6 +1525,14 @@ class _Handler(BaseHTTPRequestHandler):
             # newest-active first, with the attached one marked `current`. Lets the
             # dashboard offer a picker instead of silently auto-following recency.
             self._json({"campaigns": _list_campaigns()})
+        elif route == "/build-options":
+            # Read-only progression planner bridge: path-safe campaign scope +
+            # character id, then engine.build_options. It returns disabled/error
+            # data for the dashboard to render and never exposes level_up.
+            qs = parse_qs(parsed.query)
+            cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
+            character_id = (qs.get("character") or [""])[0]
+            self._json(build_options_response(cid, character_id))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).
