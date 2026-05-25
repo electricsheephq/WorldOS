@@ -18,7 +18,9 @@ from pydantic import ValidationError
 import questgen
 import worldsim
 from models import (
+    BacklogItem,
     Campaign,
+    CampaignBacklog,
     CompanionArc,
     CompanionDossier,
     Character,
@@ -668,6 +670,114 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
                 ch.companion_dossier = dossier
 
 
+def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
+    """Seed the PROACTIVE living-world backlog (P0) — the world's own off-screen to-do, so the
+    campaign advances when in-fiction time passes (P1 tick_backlog) instead of only reacting to
+    the player. Mutates `c.campaign_backlog`. Mirrors the additive / degrade-not-abort contract
+    (the lenient companion_seeds/world_state path, NOT the loud `_as_list` adventure path): a
+    malformed source is SKIPPED with a diagnostic, never aborting start_world.
+
+    Items are DERIVED from the world's EXISTING arc anchors (already seeded above), so every
+    item's `goal_ref` traces to a real "why" (Paperclip's goal-ancestry borrow) — no free-
+    floating noise:
+      * STANDING THREADS (the thread_id-tagged Consequences worldsim.seed_threads scheduled) ->
+        one `thread_beat` item each, `needs_llm=True` (escalating a thread into narrated prose
+        needs a voice — the engine only ENQUEUES it for the later DM/agent), goal_ref=thread_id,
+        recurring so an ignored thread keeps escalating.
+      * FACTIONS (c.factions) -> one `faction_move` item each, DETERMINISTIC (`needs_llm=False`):
+        a small mechanical reputation drift the engine applies itself (F2 — a number, not prose),
+        goal_ref=faction_id, recurring.
+      * SPINE QUEST HOOKS (c.quest_hooks where spine) -> one `world_event` item each,
+        `needs_llm=True` (the main arc advancing off-screen needs narration), goal_ref=hook.id.
+
+    Trigger days are STAGGERED over the first in-world days (like seed_threads) so developments
+    don't all land at once. `last_tick_day` is initialized to `c.day` so a freshly-seeded world
+    doesn't immediately owe a backlog of ticks on its first advance.
+
+    A world MAY also author explicit items under a `campaign_backlog` block (a list of item
+    dicts); each is validated against BacklogItem and SKIPPED-not-aborted on failure, exactly
+    like the derived items. Absent/empty -> only the derived items seed (the default path)."""
+    bl = c.campaign_backlog
+    base = c.day
+    day = base + 3  # stagger the first development a few days out, then space them
+    step = 2
+
+    def _add(item: BacklogItem) -> None:
+        nonlocal day
+        item.trigger_day = day
+        bl.items[item.id] = item
+        day += step
+
+    # (1) Standing threads -> recurring creative escalations, traced to the thread.
+    for cq in c.consequences:
+        if not cq.thread_id:
+            continue  # plain consequences belong to consequences.due, never the backlog
+        text = str(cq.text).strip()
+        if not text:
+            continue
+        try:
+            _add(BacklogItem(
+                kind="thread_beat",
+                title=text[:80],
+                goal_ref=cq.thread_id,
+                cadence_days=6,        # an ignored thread keeps escalating
+                needs_llm=True,        # narrated escalation — enqueue for the DM/agent
+                note=text,
+            ))
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed backlog thread_beat for {cq.thread_id!r}")
+
+    # (2) Factions -> recurring DETERMINISTIC reputation drift (a number the engine applies).
+    for fac in c.factions.values():
+        try:
+            _add(BacklogItem(
+                kind="faction_move",
+                title=f"{fac.name} maneuvers",
+                goal_ref=fac.id,
+                cadence_days=8,
+                needs_llm=False,                         # mechanical — no prose
+                effect={"faction_id": fac.id, "reputation_delta": "-1"},
+                note=f"{fac.name} advances its agenda off-screen.",
+            ))
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed backlog faction_move for {fac.id!r}")
+
+    # (3) Spine quest hooks -> the main arc advances off-screen (creative).
+    for hook in c.quest_hooks:
+        if not getattr(hook, "spine", False):
+            continue
+        try:
+            _add(BacklogItem(
+                kind="world_event",
+                title=(hook.title or "The main arc stirs")[:80],
+                goal_ref=hook.id,
+                cadence_days=0,        # one-shot: the spine moves once, then the DM picks it up
+                needs_llm=True,
+                note=(hook.arc_back or hook.note or hook.grievance or ""),
+            ))
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed backlog world_event for {hook.id!r}")
+
+    # (4) Optional authored override items (degrade-not-abort, like companion_seeds).
+    for raw in _as_list_lenient(world, "campaign_backlog"):
+        if not isinstance(raw, dict):
+            print("[content] skipping malformed authored campaign_backlog item (not an object)")
+            continue
+        try:
+            item = BacklogItem.model_validate(raw)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed authored campaign_backlog item")
+            continue
+        # An authored item may pin its own trigger_day; if it left the default 0, stagger it in.
+        if item.trigger_day <= 0:
+            item.trigger_day = day
+            day += step
+        bl.items[item.id] = item
+
+    # The cursor starts at today so the first advance only fires what is genuinely due.
+    bl.last_tick_day = base
+
+
 def _resolve_quest_variants(c: Campaign, world: dict, rng: random.Random) -> None:
     """The replayability layer (S6): resolve each MAJOR world quest's canonical OUTCOME
     once at world-gen (mutates `c`). Mirrors the `world_state` contract — additive, setting-
@@ -937,5 +1047,12 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     # seed) keeps it from perturbing the quest-variant roll's stream. Additive + degrade-not-
     # abort: a world with no variants/locations yields an empty graph (today's behavior).
     questgen.generate(c, world, random.Random(f"{c.id}:questgen"))
+
+    # The PROACTIVE living-world backlog (P0): derive the world's own off-screen to-do from the
+    # arc anchors seeded above (standing threads, factions, spine hooks) so the campaign advances
+    # when in-fiction time passes (P1). Runs LAST so factions/threads/spine-hooks all exist for
+    # goal_ref binding. Additive + degrade-not-abort: a world with no anchors yields an empty
+    # backlog (today's behavior); `last_tick_day` is set to c.day so the first advance owes nothing.
+    _seed_campaign_backlog(c, world)
 
     return c

@@ -635,6 +635,86 @@ class WorldState(_StrictModel):
         )
 
 
+class BacklogItem(_StrictModel):
+    """A goal-traced unit of PROACTIVE world-work — the world's own to-do, so the campaign
+    advances off-screen when in-fiction time passes instead of only reacting to the player.
+    (Epic #60's StrategicClock is SUBSUMED: a clock advance is just one `kind` of deterministic
+    backlog development.)
+
+    Two classes of item, split by COST and deliberately so:
+      * DETERMINISTIC (`needs_llm=False`) — a number, flag, or graph edge the engine resolves
+        for free, unforgettably, on the in-world day clock: flip a campaign flag, shift faction
+        control/reputation, advance a clock, stub a scheduled NPC arrival. `tick_backlog`
+        resolves these in place (status -> "resolved") and templates a one-line `summary`.
+      * CREATIVE (`needs_llm=True`) — anything that needs a VOICE, a name, narrated prose: the
+        engine only ENQUEUES it (status -> "fired") and leaves the voicing/authoring to the
+        later DM digest (P2) / world-agent (P3). The engine NEVER invents prose.
+
+    `goal_ref` is the load-bearing field (Paperclip's "every task carries its why"): it points
+    at an existing arc anchor — a worldsim `thread_id`, a `QuestHook.id` (esp. spine), a
+    `faction_id`, or a free arc note from `c.summary` — so a faction's move is *"advances the
+    Pale Choir's recruiting thread,"* never random noise.
+
+    Additive + setting-agnostic: ids/`kind`/`goal_ref` values come from CONTENT (the seeded
+    world), never engine code. Idempotency is by ELAPSED DAYS via the parent block's cursor,
+    never a call counter (mirrors worldsim.tick / the #60 StrategicState contract). Kept
+    STRICTLY separate from Consequence/worldsim threads — its own typed block, never consumed
+    by consequences.due."""
+
+    id: str = Field(default_factory=lambda: _new_id("blog"))
+    # What kind of off-screen development this is — a closed Literal so a typo'd kind is
+    # rejected by pydantic (degrade-not-abort drops it at seed). `clock` SUBSUMES epic #60's
+    # StrategicClock as one deterministic class of backlog development.
+    kind: Literal[
+        "faction_move", "thread_beat", "npc_arrival", "clock", "world_event"
+    ] = "world_event"
+    title: str = ""                       # short DM/operator-facing label
+    # The "why": a thread_id / quest(_hook) id / faction id / arc anchor so the move TRACES to
+    # the campaign's premise. Keys live in content + generated refs, never engine code.
+    goal_ref: str = ""
+    # The in-world day this comes due (like Consequence.trigger_day). A recurring development
+    # re-arms `cadence_days` out after it fires (0 = one-shot).
+    trigger_day: int = 0
+    cadence_days: int = Field(0, ge=0)    # 0 = one-shot; >0 = re-arm this many days out on fire
+    # The lifecycle: pending (armed, not yet due) -> fired (a creative item ENQUEUED for the
+    # later DM/agent) | resolved (a deterministic item the engine already applied). A creative
+    # item stops at `fired`; a deterministic one goes straight to `resolved`.
+    status: Literal["pending", "fired", "resolved"] = "pending"
+    # False = a purely MECHANICAL development the engine resolves itself (no agent wake);
+    # True = a creative one the engine only enqueues (left for P2/P3 — do NOT invent prose).
+    needs_llm: bool = False
+    # The structured payload a deterministic tick applies ONCE: e.g. {"flag": "concord_split"},
+    # {"faction_id": "fac-choir", "reputation_delta": "-5"}, {"controller_id": "fac-league",
+    # "location_id": "loc-brassmoor"}, {"npc_name": "A Choir emissary", "location_id": "..."}.
+    # All keys/values live in CONTENT, never engine code (mirrors WorldState.facts). Empty = a
+    # marker-only development (the DM reads `summary`/`goal_ref` and plays it).
+    effect: dict[str, str] = Field(default_factory=dict)
+    summary: str = ""                     # the one-line "what the world did" the DM weaves
+    note: str = ""                        # why / source seed (authored), for the DM/agent
+
+
+class CampaignBacklog(_StrictModel):
+    """The world's PROACTIVE work queue — what the world is doing off-screen, so the player
+    returns to a world that changed without them. One additive block on Campaign, present by
+    default (an EMPTY backlog == today's behavior exactly, and an old snapshot lacking the key
+    deserializes to this empty default — round-trips byte-identically).
+
+    Engine is SOLE WRITER (mutate under campaign_lock, then save_campaign); the viewer projects
+    it read-only. `last_tick_day` drives IDEMPOTENT mechanical advancement (P1): the in-world
+    day the deterministic tick last advanced through, so repeated advance_time/world_tick/
+    downtime/travel_to on the SAME day never double-advance (exactly the #60 StrategicState
+    pattern — idempotency by elapsed days, never a call counter). Initialized to `c.day` at
+    seed so a freshly-seeded world doesn't immediately owe a backlog of ticks on its first
+    advance.
+
+    Deliberately a SIBLING of Consequence/worldsim threads, never merged: those are authored
+    narrative beats on the per-day clock consumed by consequences.due / worldsim.tick; this is
+    the goal-traced proactive layer, its own typed block, never consumed by either."""
+
+    items: dict[str, BacklogItem] = Field(default_factory=dict)  # item id -> item
+    last_tick_day: int = 0  # the Campaign.day the mechanical backlog tick last advanced through
+
+
 class QuestHook(_StrictModel):
     """S7 — a lore-derived quest SEED the DM pulls and weaves. The engine ASSEMBLES it at
     world-gen (a dramatic SHAPE tag bound to typed lore nouns + a `grievance` — a wrong the
@@ -701,6 +781,15 @@ class Campaign(_StrictModel):
     # outcomes + facts + roster). Additive: empty == today's behavior. Mirrors quest_outcomes.
     quest_hooks: list[QuestHook] = Field(default_factory=list)
     prelude: list[PreludeBeat] = Field(default_factory=list)
+    # The PROACTIVE living-world core (epic #60 SUBSUMED): the world's own backlog of off-screen
+    # developments, advanced MECHANICALLY for free on the in-world day clock (P1 tick_backlog) so
+    # factions maneuver / NPCs arrive / ignored threads escalate even when the party isn't
+    # watching. Present-by-default (not Optional) so the viewer projection and tick logic always
+    # see a dict-bearing object; EMPTY == today's behavior, and an old snapshot lacking the key
+    # round-trips to this empty default. Seeded in content.py from standing_threads/factions/
+    # spine quest_hooks (so item #1 traces to a real arc anchor). Engine sole-writer; kept a
+    # strict sibling of consequences/worldsim threads (never consumed by consequences.due).
+    campaign_backlog: CampaignBacklog = Field(default_factory=CampaignBacklog)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions

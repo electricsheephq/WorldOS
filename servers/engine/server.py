@@ -42,6 +42,7 @@ from models import (
     Ability,
     AbilityScores,
     ActiveEffect,
+    BacklogItem,
     Campaign,
     Character,
     ClassLevel,
@@ -90,6 +91,28 @@ def _char(c: Campaign, character_id: str) -> Character:
     if ch is None:
         raise ValueError(f"no character {character_id!r} in campaign")
     return ch
+
+
+def _backlog_line(item: BacklogItem) -> str:
+    """The DM-facing one-liner for a fired proactive-backlog development — what the world did
+    off-screen, for the DM to weave into the scene (a crier's notice, a changed face, a door now
+    barred). A deterministic item carries its applied `summary`; a creative (needs_llm) item is
+    only ENQUEUED for the later DM digest / world-agent, so it surfaces its authored seed
+    (`note`/`title`) here — the engine still never invents prose for it."""
+    return (item.summary or item.note or item.title or item.kind).strip()
+
+
+def _backlog_dict(item: BacklogItem) -> dict:
+    """A structured rollup of a fired proactive-backlog development (for world_tick), carrying its
+    goal trace so the DM/agent sees the 'why' behind the move."""
+    return {
+        "id": item.id,
+        "kind": item.kind,
+        "goal_ref": item.goal_ref,
+        "status": item.status,
+        "needs_llm": item.needs_llm,
+        "line": _backlog_line(item),
+    }
 
 
 def _combat_view(c: Campaign) -> dict:
@@ -697,6 +720,7 @@ def add_location(
         # here in this one call (the recurring QA gap was a created-but-never-traveled-to scene
         # — current_location stuck at the previous place while the prose described the new one).
         world_beats: list[str] = []
+        world_developments: list[str] = []
         arrived = False
         if make_current and c.current_location_id != loc.id:
             c.current_location_id = loc.id
@@ -706,6 +730,8 @@ def add_location(
             if advance_time:
                 travel.advance_clock(c, 1)
                 world_beats = [b.text for b in worldsim.tick(c, max_beats=1)]
+                # The proactive backlog rides the same arrival time-passage (idempotent by day).
+                world_developments = [_backlog_line(d) for d in worldsim.tick_backlog(c, max_events=1)]
         # Orphan guard: a non-current location with no edges can never be reached.
         if loc.id != c.current_location_id and not loc.connections:
             warnings.append(
@@ -723,6 +749,7 @@ def add_location(
         "day": c.day,
         "time_of_day": c.time_of_day,
         "world_beats": world_beats,
+        "world_developments": world_developments,
         "location_count": len(c.locations),
         "warnings": warnings,
     }
@@ -748,6 +775,11 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             beats = worldsim.tick(c, max_beats=1)
             if beats:
                 result["world_beats"] = [b.text for b in beats]
+            # ...and the proactive backlog advances on the SAME time-passage seam (idempotent by
+            # elapsed days — a non-day-rolling phase move is a no-op).
+            dev = worldsim.tick_backlog(c, max_events=1)
+            if dev:
+                result["world_developments"] = [_backlog_line(d) for d in dev]
             # A phase elapsed (overland travel): expire timed spell effects whose
             # duration ran out (minute/round-scale die on any phase advance).
             result["expired_effects"] = _expire_clock_effects_all(c)
@@ -3598,11 +3630,19 @@ def world_tick(campaign_id: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         beats = worldsim.tick(c)
+        dev = worldsim.tick_backlog(c)
         save_campaign(c)
         return {
             "current_day": c.day,
             "world_beats": [{"thread_id": b.thread_id, "text": b.text} for b in beats],
             "pending": [{"thread_id": b.thread_id, "trigger_day": b.trigger_day} for b in worldsim.pending_threads(c)],
+            # The proactive backlog's off-screen developments that fired this tick, plus what's
+            # still queued (the goal-traced living-world layer, distinct from the thread beats).
+            "world_developments": [_backlog_dict(d) for d in dev],
+            "pending_developments": [
+                {"id": p.id, "kind": p.kind, "goal_ref": p.goal_ref, "trigger_day": p.trigger_day}
+                for p in worldsim.pending_backlog(c)
+            ],
         }
 
 
@@ -3783,6 +3823,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
         c.time_of_day = "morning"
         due = consequences_mod.due(c)
         beats = worldsim.tick(c, max_beats=2)  # a long span → a couple of threads stirred
+        dev = worldsim.tick_backlog(c, max_events=2)  # ...and the backlog advances over the span
         save_campaign(c)
         return {
             "day": c.day,
@@ -3790,6 +3831,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
             "note": note,
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
             "world_beats": [b.text for b in beats],
+            "world_developments": [_backlog_line(d) for d in dev],
         }
 
 
@@ -3826,6 +3868,10 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
             steps = max(0, int(phases))
         day, tod = travel.advance_clock(c, steps)
         beats = worldsim.tick(c, max_beats=1) if steps > 0 else []
+        # The proactive backlog rides this same time-passage seam (the harness soft-tick drives
+        # advance_time(phases=1) every idle beat → the world advances for free). Idempotent by
+        # elapsed days: a phase move that doesn't roll a new day is a no-op.
+        dev = worldsim.tick_backlog(c, max_events=1) if steps > 0 else []
         # The clock moved — expire any timed spell effect whose duration has elapsed
         # (minute/round-scale die on any phase advance; hour/day-scale at their deadline).
         expired = _expire_clock_effects_all(c) if steps > 0 else []
@@ -3836,6 +3882,7 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
             "phases_advanced": steps,
             "note": note,
             "world_beats": [b.text for b in beats],
+            "world_developments": [_backlog_line(d) for d in dev],
             "expired_effects": expired,
         }
 
