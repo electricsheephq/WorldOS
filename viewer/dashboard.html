@@ -473,6 +473,39 @@
   .maplegend .cur i { background:var(--gold); }
   .maplegend .quest i { background:var(--gold2); }
   .maplegend .hook i { background:#8fbfe0; }
+  .maplegend .control i { background:#d8a65f; }
+  .maplegend .urgent i { background:#e08f8f; }
+  .node.ctrl-controlled circle { stroke:#9fcf8f; }
+  .node.ctrl-contested circle { stroke:#e8c98a; stroke-dasharray:4 3; }
+  .node.ctrl-hostile circle { stroke:#e08f8f; fill:#2a1412; }
+  .node.ctrl-unclaimed circle { stroke:#8a7f6c; stroke-dasharray:2 4; }
+  .node.has-strategy-urgent circle { filter:drop-shadow(0 0 5px rgba(224,143,143,.55)); }
+  .node .strat-badge rect { fill:#1a140d; stroke:#4a3c22; stroke-width:1; }
+  .node .strat-badge text { fill:#e8c98a; font-size:7.5px; text-anchor:start; font-family:var(--font-ui); }
+  .node .strat-badge.b-urgent rect { fill:#2a1212; stroke:#6a3636; }
+  .node .strat-badge.b-urgent text { fill:#ffb0a8; }
+  .node .strat-badge.b-asset rect { fill:#16222e; stroke:#2e4456; }
+  .node .strat-badge.b-asset text { fill:#bcd4ec; }
+  .strat-summary { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px; }
+  .strat-pill { font-size:10px; color:var(--dim); border:1px solid #3a2f1c; background:#1b150d;
+    border-radius:8px; padding:2px 7px; }
+  .strat-pill.urgent { color:#ffb0a8; border-color:#6a3636; background:#2a1212; }
+  .strat-sec + .strat-sec { margin-top:10px; padding-top:9px; border-top:1px solid #241d14; }
+  .strat-sec-h { font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:#b39c78;
+    margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+  .strat-row { padding:7px 0; border-top:1px solid #241d14; min-width:0; }
+  .strat-row:first-child { border-top:none; padding-top:0; }
+  .strat-top { display:flex; align-items:baseline; gap:7px; min-width:0; }
+  .strat-title { color:var(--ink); font-weight:650; min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+  .strat-tag { margin-left:auto; flex:none; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--gold); border:1px solid #4a3c22; background:#241a0d; border-radius:8px; padding:1px 6px; }
+  .strat-tag.contested, .strat-tag.urgent { color:#ffb0a8; border-color:#6a3636; background:#2a1212; }
+  .strat-tag.hostile, .strat-tag.failed { color:#e89090; border-color:#5a3030; background:#241414; }
+  .strat-tag.controlled, .strat-tag.active { color:#bfe6c4; border-color:#2e5638; background:#14241a; }
+  .strat-tag.planned, .strat-tag.paused { color:#bcd4ec; border-color:#2e4456; background:#16222e; }
+  .strat-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; color:var(--faint); font-size:10.5px; }
+  .strat-meta span { border:1px solid #3a2f1c; background:#1b150d; border-radius:7px; padding:1px 6px; }
+  .strat-note { margin-top:4px; color:#b6aa92; font-size:11px; font-style:italic; line-height:1.4; overflow-wrap:anywhere; }
   [data-inspect-id] { cursor:help; }
   .node.loc[data-inspect-id], .loclist li[data-inspect-id] { cursor:pointer; }
   .inspect-popover { position:fixed; z-index:70; width:min(340px, calc(100vw - 24px));
@@ -890,6 +923,9 @@
       <div class="maptip" id="maptip"></div>
       <div class="maplegend" id="maplegend"></div>
       <div class="maphint">scroll to zoom · drag to pan · click a place to travel</div></div>
+    <details class="ctx" id="ctx-strategy" open><summary><span class="tw">▸</span> Strategic board
+        <span class="ctx-n" id="ctx-strategy-n"></span></summary>
+      <div class="ctx-body" id="strategy"></div></details>
     <details class="ctx" id="ctx-quests" open><summary><span class="tw">▸</span> Quests &amp; factions
         <span class="ctx-n" id="ctx-quests-n"></span></summary>
       <div class="ctx-body">
@@ -1749,6 +1785,228 @@ function deathSavePips(ds, { labels = true } = {}) {
   const f = Math.max(0, Math.min(3, (ds && ds.failures) || 0));
   const strip = (n, cls) => { let o = ""; for (let i = 0; i < 3; i++) o += `<span class="ds-pip ${i < n ? "on" : ""}"></span>`; return `<span class="ds-grp ${cls}">${labels ? `<span class="ds-lbl">${cls === "succ" ? "saves" : "fails"}</span>` : ""}${o}</span>`; };
   return `<span class="death" title="Death saves — ${s} success${s===1?"":"es"}, ${f} failure${f===1?"":"s"}">${strip(s, "succ")}${strip(f, "fail")}</span>`;
+}
+
+// ---- Strategic dashboard (#76) ---------------------------------------------
+// The engine owns every strategic mutation. These helpers only project raw
+// `strategic_state` from /state: region control, faction assets, typed clocks, and
+// downtime projects. Everything is optional so old/non-strategy worlds remain readable.
+function strategicState(s) {
+  return (s && s.strategic_state && typeof s.strategic_state === "object") ? s.strategic_state : {};
+}
+const strategicValues = (obj) => Object.values((obj && typeof obj === "object") ? obj : {});
+function strategicLocationName(s, id) {
+  if (!id) return "";
+  const l = (s.locations || {})[id] || {};
+  return l.name || id;
+}
+function strategicFactionName(s, id) {
+  if (!id) return "";
+  const f = (s.factions || {})[id] || {};
+  return f.name || id;
+}
+function strategicHasState(s) {
+  const st = strategicState(s);
+  return ["regions", "assets", "clocks", "projects"].some(k => strategicValues(st[k]).length);
+}
+function strategicControlStatus(region) {
+  if (!region) return "";
+  const explicit = (region.status || "").toString().trim().toLowerCase();
+  if (explicit) return statusClass(explicit);
+  const tags = (region.tags || []).join(" ").toLowerCase();
+  if (/\bhostile\b/.test(tags)) return "hostile";
+  if ((region.unrest || 0) >= 60 || (region.stability || 100) <= 35) return "contested";
+  if (region.controller_id) return "controlled";
+  return "unclaimed";
+}
+function strategicClockLocation(clock) {
+  return clock.region_id || clock.location_id || "";
+}
+function strategicClockRemaining(clock) {
+  return Math.max(0, (Number(clock.target) || 1) - (Number(clock.progress) || 0));
+}
+function strategicClockUrgent(clock) {
+  const target = Math.max(1, Number(clock.target) || 1);
+  const progress = Math.max(0, Number(clock.progress) || 0);
+  return strategicClockRemaining(clock) <= 1 || (progress / target) >= 0.75;
+}
+function strategicClockSort(a, b) {
+  const ar = strategicClockRemaining(a), br = strategicClockRemaining(b);
+  const ap = (Number(a.progress) || 0) / Math.max(1, Number(a.target) || 1);
+  const bp = (Number(b.progress) || 0) / Math.max(1, Number(b.target) || 1);
+  return ar - br || bp - ap || (a.title || "").localeCompare(b.title || "");
+}
+function strategicProjectRemaining(project) {
+  return Math.max(0, (Number(project.duration_days) || 1) - (Number(project.progress_days) || 0));
+}
+function strategicProjectUrgent(project) {
+  const status = project.status || "planned";
+  return (status === "active" || status === "paused") && strategicProjectRemaining(project) <= 2;
+}
+function strategicProjectSort(a, b) {
+  const order = { active: 0, paused: 1, planned: 2, failed: 3, complete: 4 };
+  const ao = order[a.status || "planned"] ?? 9, bo = order[b.status || "planned"] ?? 9;
+  const ap = (Number(a.progress_days) || 0) / Math.max(1, Number(a.duration_days) || 1);
+  const bp = (Number(b.progress_days) || 0) / Math.max(1, Number(b.duration_days) || 1);
+  return ao - bo || strategicProjectRemaining(a) - strategicProjectRemaining(b) || bp - ap || (a.title || "").localeCompare(b.title || "");
+}
+function strategicAssetsAt(s, locId) {
+  return strategicValues(strategicState(s).assets).filter(a => (a.location_id || "") === locId);
+}
+function strategicProjectsAt(s, locId) {
+  return strategicValues(strategicState(s).projects).filter(p => (p.location_id || "") === locId);
+}
+function strategicClocksAt(s, locId) {
+  return strategicValues(strategicState(s).clocks).filter(c => strategicClockLocation(c) === locId);
+}
+function strategicUrgentAt(s, locId) {
+  return [
+    ...strategicClocksAt(s, locId).filter(strategicClockUrgent),
+    ...strategicProjectsAt(s, locId).filter(strategicProjectUrgent),
+  ];
+}
+function strategicLocationClasses(s, locId) {
+  const st = strategicState(s);
+  const classes = [];
+  const region = (st.regions || {})[locId];
+  if (region) classes.push("ctrl-" + strategicControlStatus(region));
+  if (strategicAssetsAt(s, locId).length) classes.push("has-strategy-assets");
+  if (strategicProjectsAt(s, locId).length || strategicClocksAt(s, locId).length) classes.push("has-strategy-work");
+  if (strategicUrgentAt(s, locId).length) classes.push("has-strategy-urgent");
+  return classes.join(" ");
+}
+function strategicLocationBadges(s, locId) {
+  const st = strategicState(s);
+  const badges = [];
+  const region = (st.regions || {})[locId];
+  if (region) badges.push({ text: strategicControlStatus(region), kind: strategicControlStatus(region) });
+  const assetCount = strategicAssetsAt(s, locId).length;
+  if (assetCount) badges.push({ text: `assets ${assetCount}`, kind: "asset" });
+  const urgentCount = strategicUrgentAt(s, locId).length;
+  if (urgentCount) badges.push({ text: `urgent ${urgentCount}`, kind: "urgent" });
+  return badges.map((b, i) => {
+    const text = b.text || "";
+    const w = Math.max(34, Math.min(74, Math.round(text.length * 4.8 + 9)));
+    return `<g class="strat-badge b-${esc(statusClass(b.kind))}" transform="translate(${-w/2},${-36 - i*13})"><rect width="${w}" height="11" rx="4" ry="4"/><text x="4" y="8">${esc(text)}</text></g>`;
+  }).join("");
+}
+function strategicMetaTag(text, cls = "") {
+  return text ? `<span${cls ? ` class="${esc(cls)}"` : ""}>${esc(text)}</span>` : "";
+}
+function strategicBoardSummaryHTML(s) {
+  const st = strategicState(s);
+  const regions = strategicValues(st.regions).length;
+  const assets = strategicValues(st.assets).length;
+  const clocks = strategicValues(st.clocks);
+  const projects = strategicValues(st.projects);
+  const urgent = clocks.filter(strategicClockUrgent).length + projects.filter(strategicProjectUrgent).length;
+  return `<div class="strat-summary">
+    <span class="strat-pill">${regions} region${regions===1?"":"s"}</span>
+    <span class="strat-pill">${assets} asset${assets===1?"":"s"}</span>
+    <span class="strat-pill">${clocks.length} clock${clocks.length===1?"":"s"}</span>
+    <span class="strat-pill">${projects.length} project${projects.length===1?"":"s"}</span>
+    ${urgent ? `<span class="strat-pill urgent">${urgent} urgent</span>` : ""}
+  </div>`;
+}
+function strategicRegionHTML(s, region) {
+  const status = strategicControlStatus(region);
+  const place = strategicLocationName(s, region.location_id);
+  const controller = strategicFactionName(s, region.controller_id);
+  const meta = [
+    controller && `controller ${controller}`,
+    region.stability != null && `stability ${region.stability}`,
+    region.unrest != null && `unrest ${region.unrest}`,
+  ].map(x => strategicMetaTag(x)).join("");
+  return `<div class="strat-row">
+    <div class="strat-top"><span class="strat-title">${esc(place)}</span><span class="strat-tag ${esc(status)}">${esc(status)}</span></div>
+    ${meta ? `<div class="strat-meta">${meta}</div>` : ""}
+    ${region.note ? `<div class="strat-note">${esc(region.note)}</div>` : ""}
+  </div>`;
+}
+function strategicAssetHTML(s, asset) {
+  const faction = strategicFactionName(s, asset.faction_id);
+  const loc = strategicLocationName(s, asset.location_id);
+  const meta = [
+    faction && `faction ${faction}`,
+    loc && `location ${loc}`,
+    asset.kind && `kind ${asset.kind}`,
+    `strength ${asset.strength ?? 0}`,
+  ].map(x => strategicMetaTag(x)).join("");
+  return `<div class="strat-row">
+    <div class="strat-top"><span class="strat-title">${esc(asset.name || asset.id || "Asset")}</span><span class="strat-tag">${esc(asset.kind || "asset")}</span></div>
+    <div class="strat-meta">${meta}</div>
+    ${asset.note ? `<div class="strat-note">${esc(asset.note)}</div>` : ""}
+  </div>`;
+}
+function strategicClockHTML(s, clock) {
+  const target = Math.max(1, Number(clock.target) || 1);
+  const progress = Math.max(0, Number(clock.progress) || 0);
+  const remaining = strategicClockRemaining(clock);
+  const loc = strategicLocationName(s, strategicClockLocation(clock));
+  const faction = strategicFactionName(s, clock.faction_id);
+  const urgent = strategicClockUrgent(clock);
+  const meta = [
+    `${progress}/${target}`,
+    `${remaining} step${remaining===1?"":"s"} left`,
+    clock.kind && `type ${clock.kind}`,
+    clock.scope && `scope ${clock.scope}`,
+    loc && `region ${loc}`,
+    faction && `faction ${faction}`,
+  ].map(x => strategicMetaTag(x)).join("");
+  return `<div class="strat-row">
+    <div class="strat-top"><span class="strat-title">${esc(clock.title || clock.id || "Clock")}</span><span class="strat-tag ${urgent ? "urgent" : ""}">${urgent ? "urgent" : esc(clock.kind || "clock")}</span></div>
+    <div class="strat-meta">${meta}</div>
+    ${clock.note ? `<div class="strat-note">${esc(clock.note)}</div>` : ""}
+  </div>`;
+}
+function strategicProjectHTML(s, project) {
+  const duration = Math.max(1, Number(project.duration_days) || 1);
+  const progress = Math.max(0, Math.min(duration, Number(project.progress_days) || 0));
+  const remaining = strategicProjectRemaining(project);
+  const status = project.status || "planned";
+  const loc = strategicLocationName(s, project.location_id);
+  const faction = strategicFactionName(s, project.faction_id);
+  const meta = [
+    `${progress}/${duration} days`,
+    `${remaining} day${remaining===1?"":"s"} left`,
+    project.kind && `type ${project.kind}`,
+    loc && `location ${loc}`,
+    faction && `faction ${faction}`,
+  ].map(x => strategicMetaTag(x)).join("");
+  return `<div class="strat-row">
+    <div class="strat-top"><span class="strat-title">${esc(project.title || project.id || "Project")}</span><span class="strat-tag ${esc(status)}">${esc(status)}</span></div>
+    <div class="strat-meta">${meta}</div>
+    ${project.note ? `<div class="strat-note">${esc(project.note)}</div>` : ""}
+  </div>`;
+}
+function strategicSectionHTML(label, items, render) {
+  if (!items.length) return "";
+  return `<div class="strat-sec"><div class="strat-sec-h">${esc(label)} <span class="ctx-n">${items.length}</span></div>${items.map(render).join("")}</div>`;
+}
+function strategicDashboardHTML(s) {
+  const st = strategicState(s);
+  if (!strategicHasState(s)) {
+    return `<div class="empty">No strategic board yet — this world is still adventure-scale.</div>`;
+  }
+  const regions = strategicValues(st.regions)
+    .sort((a, b) => (strategicLocationName(s, a.location_id) || "").localeCompare(strategicLocationName(s, b.location_id) || ""));
+  const assets = strategicValues(st.assets)
+    .sort((a, b) => (strategicLocationName(s, a.location_id) || "").localeCompare(strategicLocationName(s, b.location_id) || "") || (a.name || "").localeCompare(b.name || ""));
+  const clocks = strategicValues(st.clocks).sort(strategicClockSort);
+  const projects = strategicValues(st.projects).sort(strategicProjectSort);
+  return `<div class="strat-board"><div class="strat-sec-h">Strategic board</div>${strategicBoardSummaryHTML(s)}
+    ${strategicSectionHTML("Region control", regions, r => strategicRegionHTML(s, r))}
+    ${strategicSectionHTML("Faction assets", assets, a => strategicAssetHTML(s, a))}
+    ${strategicSectionHTML("Clocks", clocks, c => strategicClockHTML(s, c))}
+    ${strategicSectionHTML("Downtime projects", projects, p => strategicProjectHTML(s, p))}
+  </div>`;
+}
+function strategicContextCount(s) {
+  if (!strategicHasState(s)) return "";
+  const st = strategicState(s);
+  const urgent = strategicValues(st.clocks).filter(strategicClockUrgent).length
+    + strategicValues(st.projects).filter(strategicProjectUrgent).length;
+  return urgent ? `${urgent} urgent` : "active";
 }
 
 // ---- Rich inspect popovers (#78 Sprint 2) ----------------------------------
@@ -2665,6 +2923,8 @@ function renderState(s) {
     applyLiveMode(false);
     renderCombatCenter(s);
     renderActionBar(s);
+    if ($("ctx-strategy-n")) $("ctx-strategy-n").textContent = "";
+    if ($("strategy")) $("strategy").innerHTML = strategicDashboardHTML(s);
     const feed = $("feed");
     if (feed) feed.innerHTML = `<div class="empty-onboarding">
       <h2>No saved campaign loaded</h2>
@@ -2758,6 +3018,12 @@ function renderState(s) {
   }
   $("ctx-nearby").innerHTML = nearbyHTML;
 
+  // ---- Strategic board (#76) ----
+  // Raw /state projection only: region control, faction assets, strategic clocks, and
+  // downtime projects. No buttons, no POSTs, no engine writes.
+  $("ctx-strategy-n").textContent = strategicContextCount(s);
+  $("strategy").innerHTML = strategicDashboardHTML(s);
+
   // ---- Quests & factions context block ----
   const activeQuests = Object.values(s.quests||{}).filter(q=>(q.status||"active")==="active");
   const openHooks = (s.quest_hooks||[]).filter(h=>(h.status||"open")!=="resolved");
@@ -2850,9 +3116,11 @@ function drawMap(state) {
   ids.forEach(id=>(locs[id].connections||[]).forEach(c=>{ if(pos[id]&&pos[c]) e+=`<line class="edge" x1="${pos[id][0]}" y1="${pos[id][1]}" x2="${pos[c][0]}" y2="${pos[c][1]}"/>`; }));
   ids.forEach(id=>{
     const p=pos[id]||[W/2,H/2], loc=locs[id]||{}, nm=loc.name||id, label=locLabel(s, id, locCounts);
-    const cls=(id===curId?"cur ":"")+(loc.visited?"visited ":"unvisited ")+(questLocs.has(id)?"quest ":"")+(hookLocs.has(id)?"hook ":"")+"loc";
+    const stratCls = strategicLocationClasses(s, id);
+    const cls=(id===curId?"cur ":"")+(loc.visited?"visited ":"unvisited ")+(questLocs.has(id)?"quest ":"")+(hookLocs.has(id)?"hook ":"")+(stratCls?stratCls+" ":"")+"loc";
     const pin = questLocs.has(id) || hookLocs.has(id) ? `<circle class="pin" cx="10" cy="-10" r="4"/>` : "";
-    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" data-label="${esc(label)}"${inspectAttrs("location", loc, { state: s, id })} transform="translate(${p[0]},${p[1]})"><title>${esc(label)}</title><circle r="13"/>${pin}<text y="24">${esc(label).slice(0,18)}</text></g>`;
+    const stratBadges = strategicLocationBadges(s, id);
+    n+=`<g class="node ${cls}" data-loc="${esc(nm)}" data-label="${esc(label)}"${inspectAttrs("location", loc, { state: s, id })} transform="translate(${p[0]},${p[1]})"><title>${esc(label)}</title><circle r="13"/>${pin}${stratBadges}<text y="24">${esc(label).slice(0,18)}</text></g>`;
   });
   // wrap content in a single transform group so zoom/pan apply uniformly
   svg.innerHTML = `<g id="mapview" transform="translate(${mapXf.x},${mapXf.y}) scale(${mapXf.k})">${e+n}</g>`;
@@ -2861,6 +3129,8 @@ function drawMap(state) {
     `<span class="cur"><i></i>Current</span>`,
     questLocs.size ? `<span class="quest"><i></i>Active quest</span>` : "",
     hookLocs.size ? `<span class="hook"><i></i>Open hook</span>` : "",
+    strategicValues(strategicState(s).regions).length ? `<span class="control"><i></i>Control badge</span>` : "",
+    strategicValues(strategicState(s).clocks).filter(strategicClockUrgent).length || strategicValues(strategicState(s).projects).filter(strategicProjectUrgent).length ? `<span class="urgent"><i></i>Urgent strategy</span>` : "",
     `<span><i></i>${ids.length} places</span>`,
   ].filter(Boolean).join("") : `<span>No mapped locations yet</span>`;
 }
