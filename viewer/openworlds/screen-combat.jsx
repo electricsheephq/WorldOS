@@ -1,169 +1,233 @@
-/* Screen: Combat Encounter — tactical grid, initiative, action bar */
+/* Screen: Combat Encounter - engine-owned tactical projection */
 
-function ScreenCombat({ onNavigate, state, setState }) {
-  const [tokens, setTokens] = React.useState(() => TOKENS.map((token) => ({ ...token })));
-  const [selectedToken, setSelectedToken] = React.useState("cassian");
-  const [activeAction, setActiveAction] = React.useState(null);
-  const [round, setRound] = React.useState(2);
-  const [ap, setAp] = React.useState({ standardUsed: false, moveUsed: false, swiftUsed: false });
+function combatSurfaceFromCampaign(activeCampaign, state) {
+  const campaignId = activeCampaign?.campaign_id || state?.activeCampaign || activeCampaign?.id || "";
+  const params = new URLSearchParams();
+  if (campaignId) params.set("campaign", campaignId);
+  if (activeCampaign?.source) params.set("source", activeCampaign.source);
+  if (activeCampaign?.runId) params.set("run", activeCampaign.runId);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function ScreenCombat({ onNavigate, state }) {
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const activeCampaign =
+    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns[0] ||
+    {};
+  const surfaceQuery = window.combatSurfaceFromCampaign(activeCampaign, state);
+  const campaignId = activeCampaign?.campaign_id || state?.activeCampaign || activeCampaign?.id || "";
+  const [surface, setSurface] = React.useState(null);
+  const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
+  const [selectedToken, setSelectedToken] = React.useState("");
+  const [localLog, setLocalLog] = React.useState([]);
+  const [busyAction, setBusyAction] = React.useState("");
   const toast = window.useToast ? window.useToast() : (() => {});
-  const [log, setLog] = React.useState([
-    { t: "round", text: "Round 1 — initiative." },
-    { t: "act", who: "Mira", text: "moves to G4 and looses a crossbow bolt at the south bandit." },
-    { t: "roll", text: "Attack roll: d20+5 = 19. Hit." },
-    { t: "dmg", text: "1d8+2 piercing = 6. Bandit south staggered." },
-    { t: "act", who: "Cassian", text: "casts shocking grasp, charges the courtyard." },
-    { t: "roll", text: "Concentration check: 18. Spell held." },
-    { t: "round", text: "Round 2 — initiative continues." },
-    { t: "act", who: "Bandit North", text: "advances. Shortbow at Vell. Misses (13 vs AC 18)." },
-  ]);
 
-  const selected = tokens.find((t) => t.id === selectedToken) || tokens[0];
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/combat-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`combat surface ${response.status}`);
+      const payload = await response.json();
+      if (isCancelled()) return;
+      setSurface(payload);
+      setSurfaceStatus("ready");
+    } catch (error) {
+      if (isCancelled()) return;
+      setSurfaceStatus(error?.message || "unavailable");
+    }
+  }, [surfaceQuery]);
 
-  const onMove = (gx, gy) => {
-    if (!selected || activeAction !== "move") return;
-    setTokens((current) =>
-      current.map((token) => token.id === selected.id ? { ...token, x: gx, y: gy } : token)
-    );
-    setLog((l) => [...l, { t: "act", who: selected.name, text: `moves to ${String.fromCharCode(64 + gx)}${gy}.` }]);
-    setAp({ ...ap, moveUsed: true });
-    setActiveAction(null);
-    toast({ kind: "rest", eyebrow: "Action", title: selected.name + " moves", body: `to ${String.fromCharCode(64 + gx)}${gy}` });
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => {
+      if (cancelled) return;
+      await loadSurface(() => cancelled);
+    };
+    const stopPolling = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const startPolling = () => {
+      if (timer === null) timer = window.setInterval(guardedLoad, 5000);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        guardedLoad();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => {
+      cancelled = true;
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadSurface]);
+
+  const tokens = Array.isArray(surface?.tokens) ? surface.tokens : [];
+  const initiative = Array.isArray(surface?.initiative) ? surface.initiative : [];
+  const actions = Array.isArray(surface?.actionBar) ? surface.actionBar : [];
+  const zones = Array.isArray(surface?.zones) ? surface.zones : [];
+  const battleLog = Array.isArray(surface?.battleLog) ? surface.battleLog : [];
+  const encounter = surface?.encounter || { active: false, name: "No active encounter" };
+  const economy = surface?.actionEconomy || {};
+  const canAct = Boolean(surface?.can_act);
+  const selected =
+    tokens.find((t) => t.id === selectedToken) ||
+    tokens.find((t) => t.id === surface?.selectedTokenId) ||
+    tokens[0] ||
+    null;
+  const visibleLog = [...battleLog, ...localLog];
+
+  React.useEffect(() => {
+    if (!selectedToken || !tokens.some((t) => t.id === selectedToken)) {
+      setSelectedToken(surface?.selectedTokenId || tokens[0]?.id || "");
+    }
+  }, [surface?.selectedTokenId, selectedToken, tokens]);
+
+  const actionById = (id) => actions.find((a) => a.id === id) || {};
+  const actionHint = (action) => {
+    if (!action) return "unavailable";
+    if (action.disabled_reason) return action.disabled_reason;
+    if (action.move?.name) return action.move.name;
+    if (action.move?.kind) return action.move.kind;
+    return action.available ? "ready" : "unavailable";
   };
 
-  const endTurn = () => {
-    setRound(round + 1);
-    setAp({ standardUsed: false, moveUsed: false, swiftUsed: false });
-    setActiveAction(null);
-    toast({ eyebrow: "Round", title: "Round " + (round + 1) + " begins" });
+  const postMove = async (action) => {
+    if (!action?.available || !action?.move || !canAct) {
+      toast({
+        kind: "danger",
+        eyebrow: "Combat",
+        title: action?.label ? `${action.label} unavailable` : "Action unavailable",
+        body: action?.disabled_reason || "This surface is read-only.",
+      });
+      return;
+    }
+    setBusyAction(action.id);
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...action.move, campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      setLocalLog((rows) => [
+        ...rows,
+        {
+          event: "player-intent",
+          title: "Player intent sent",
+          text: action.label || action.move.name || action.move.kind,
+          meta: [{ label: "lane", value: "/move" }],
+        },
+      ]);
+      await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const actionTile = (id, fallbackIcon, fallbackLabel) => {
+    const action = actionById(id);
+    return (
+      <ActionTile
+        key={id}
+        icon={action.icon || fallbackIcon}
+        label={action.label || fallbackLabel}
+        hint={actionHint(action)}
+        active={busyAction === id}
+        disabled={!action.available || !action.move || !canAct || Boolean(busyAction)}
+        onClick={() => postMove(action)}
+      />
+    );
   };
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 280px", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 14, padding: 14 }}>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
-        {/* Battle map */}
         <Panel framed style={{ padding: 18, position: "relative", flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <div>
-              <div className="eyebrow" style={{ color: "var(--crimson)" }}>Encounter · Round {round}</div>
-              <h2 className="h1" style={{ fontSize: 22 }}>Lanternrest Courtyard</h2>
-            </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <Pill tone="emerald" dot>Surprise broken</Pill>
-              <Pill dot>Cover: light</Pill>
-              <BrassButton size="sm" tone="ghost">↩ Undo</BrassButton>
-              <BrassButton size="sm" onClick={() => onNavigate("table")}>End encounter</BrassButton>
-            </div>
-          </div>
-
-          <CombatMap tokens={tokens} selected={selectedToken} onSelect={setSelectedToken} activeAction={activeAction} onMove={onMove} />
-        </Panel>
-
-        {/* Action bar */}
-        <Panel framed style={{ padding: 14, flex: "0 0 auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "center" }}>
-            <div style={{
-              display: "flex", gap: 10, alignItems: "center",
-              padding: "8px 12px",
-              background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
-              boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)",
-            }}>
-              <Placeholder label={selected.short || "token"} w={40} h={48} framed />
-              <div>
-                <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
-                  {selected.name}
-                </div>
-                <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-700)", marginTop: 2 }}>
-                  HP {selected.hp}/{selected.hpMax} · AC {selected.ac}
-                </div>
-                <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
-                  <ApBadge used={ap.standardUsed} label="Std" />
-                  <ApBadge used={ap.moveUsed} label="Move" />
-                  <ApBadge used={ap.swiftUsed} label="Sw" />
-                </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="eyebrow" style={{ color: "var(--crimson)" }}>
+                Encounter {encounter.round ? `- Round ${encounter.round}` : ""}
+              </div>
+              <h2 className="h1" style={{ fontSize: 22, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {encounter.name || "No active encounter"}
+              </h2>
+              <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 4 }}>
+                {encounter.summary || surfaceStatus}
               </div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
-              <ActionTile icon="↗" label="Move" hint={ap.moveUsed ? "spent" : "6 squares"} onClick={() => !ap.moveUsed && setActiveAction("move")} active={activeAction === "move"} spent={ap.moveUsed} />
-              <ActionTile icon="⚔" label="Attack" hint={ap.standardUsed ? "spent" : "d20+5 · 1d8+2"} onClick={() => !ap.standardUsed && (setActiveAction("attack"), setAp({ ...ap, standardUsed: true }), toast({ eyebrow: "Attack", title: selected.name + " attacks", body: "d20+5 vs AC 15: 18 — hit. 7 piercing." }))} active={activeAction === "attack"} spent={ap.standardUsed} />
-              <ActionTile icon="✦" label="Cast" hint={ap.standardUsed ? "spent" : "Shocking Grasp"} onClick={() => !ap.standardUsed && (setActiveAction("cast"), setAp({ ...ap, standardUsed: true }), toast({ kind: "item", eyebrow: "Spell", title: selected.name + " casts Shocking Grasp", body: "Held in the off hand. Touch attack next." }))} active={activeAction === "cast"} spent={ap.standardUsed} />
-              <ActionTile icon="◈" label="Defend" hint="+4 AC, end turn" onClick={() => { toast({ eyebrow: "Stance", title: selected.name + " defends", body: "+4 AC until next turn." }); endTurn(); }} />
-              <ActionTile icon="◊" label="Item" hint="3 in belt" />
-              <ActionTile icon="✺" label="Dodge" hint={ap.swiftUsed ? "spent" : "opt-out reactions"} onClick={() => !ap.swiftUsed && setAp({ ...ap, swiftUsed: true })} spent={ap.swiftUsed} />
-              <ActionTile icon="⊘" label="End turn" hint="advance order" onClick={endTurn} />
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Pill tone={canAct ? "emerald" : "crimson"} dot>{canAct ? "Live" : "Read-only"}</Pill>
+              <Pill dot>{surface?.grid?.mode === "grid" ? "Grid" : "Zones"}</Pill>
+              <BrassButton size="sm" tone="ghost" onClick={() => loadSurface()}>Refresh</BrassButton>
+              <BrassButton size="sm" onClick={() => onNavigate("table")}>Back to table</BrassButton>
             </div>
           </div>
 
-          {activeAction === "move" && (
-            <div className="hand" style={{ marginTop: 10, fontSize: 14, color: "var(--crimson)" }}>
-              Pick a tile within 6 squares. Yellow = within reach. Esc to cancel.
-            </div>
+          {encounter.active ? (
+            <CombatMap tokens={tokens} zones={zones} selected={selected?.id} onSelect={setSelectedToken} />
+          ) : (
+            <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
           )}
+        </Panel>
+
+        <Panel framed style={{ padding: 14, flex: "0 0 auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 220px) 1fr", gap: 16, alignItems: "center" }}>
+            <CombatantSummary token={selected} economy={economy} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
+              {actionTile("move", "↗", "Move")}
+              {actionTile("attack", "⚔", "Attack")}
+              {actionTile("cast", "✦", "Cast")}
+              {actionTile("bonus-action", "◈", "Bonus")}
+              {actionTile("item", "◊", "Item")}
+              {actionTile("reaction", "✺", "Reaction")}
+              {actionTile("end-turn", "⊘", "End turn")}
+            </div>
+          </div>
         </Panel>
       </div>
 
-      {/* RIGHT — initiative + log */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Initiative</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {INITIATIVE.map((t) => {
-              const tok = tokens.find((x) => x.id === t.id) || t;
-              const isFoe = tok.team === "foe";
-              const isActive = t.active;
-              const hpRatio = tok.hp ? tok.hp / tok.hpMax : 1;
+            {initiative.length ? initiative.map((row) => {
+              const tok = tokens.find((x) => x.id === row.id) || row;
               return (
-                <button key={t.id} onClick={() => setSelectedToken(t.id)} style={{
-                  display: "grid", gridTemplateColumns: "28px 36px 1fr auto", gap: 8, alignItems: "center",
-                  padding: "6px 10px",
-                  background: isActive
-                    ? "linear-gradient(180deg, var(--p-100), var(--p-200))"
-                    : selectedToken === t.id ? "rgba(176,141,87,0.18)" : "transparent",
-                  boxShadow: isActive
-                    ? "inset 0 0 0 1px var(--b-500), 0 0 16px -6px var(--gold-glow)"
-                    : "inset 0 -1px 0 rgba(140,100,60,0.2)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}>
-                  <span style={{
-                    fontFamily: "var(--f-display)",
-                    fontSize: 14,
-                    color: isFoe ? "var(--crimson)" : "var(--ink-900)",
-                    fontWeight: 600,
-                  }}>{t.init}</span>
-                  <Placeholder label={tok.short || "?"} w={36} h={36} framed />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: "var(--f-display)",
-                      fontSize: 11,
-                      letterSpacing: "0.06em",
-                      color: isFoe ? "var(--crimson)" : "var(--ink-900)",
-                      fontStyle: isFoe ? "italic" : "normal",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}>{tok.name}</div>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 3 }}>
-                      <div style={{ flex: 1, height: 4, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.3)" }}>
-                        <div style={{
-                          position: "absolute", inset: 0, right: `${(1 - hpRatio) * 100}%`,
-                          background: isFoe ? "linear-gradient(180deg, var(--crimson), #4a1010)" :
-                            (hpRatio > 0.5 ? "linear-gradient(180deg, #5a8a3a, #3a6020)" : "linear-gradient(180deg, var(--crimson), #4a1010)"),
-                        }} />
-                      </div>
-                    </div>
-                  </div>
-                  {isActive && <span style={{ color: "var(--crimson)", fontFamily: "var(--f-display)", fontSize: 14 }}>▶</span>}
-                </button>
+                <InitiativeRow
+                  key={row.id}
+                  row={row}
+                  token={tok}
+                  selected={selected?.id === row.id}
+                  onClick={() => setSelectedToken(row.id)}
+                />
               );
-            })}
+            }) : <div className="body-sm" style={{ color: "var(--ink-600)" }}>No initiative order.</div>}
           </div>
         </Panel>
 
         <Panel framed style={{ padding: 18, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <SectionTitle>Battle Log</SectionTitle>
-          <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-            {log.map((l, i) => <BattleLogLine key={i} l={l} />)}
+          <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+            {visibleLog.length
+              ? visibleLog.map((row, i) => <BattleLogLine key={`${row.event || "log"}-${i}`} l={row} />)
+              : <div className="body-sm" style={{ color: "var(--ink-600)" }}>Combat events will appear here.</div>}
           </div>
         </Panel>
       </div>
@@ -171,18 +235,68 @@ function ScreenCombat({ onNavigate, state, setState }) {
   );
 }
 
-function CombatMap({ tokens, selected, onSelect, activeAction, onMove }) {
-  const COLS = 16, ROWS = 10;
-  const selectedToken = tokens.find((t) => t.id === selected);
+function CombatantSummary({ token, economy }) {
+  if (!token) {
+    return (
+      <div style={{ padding: "8px 12px", background: "rgba(176,141,87,0.08)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)" }}>
+        <div style={{ fontFamily: "var(--f-display)", fontSize: 12, color: "var(--ink-800)" }}>No token selected</div>
+        <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)", marginTop: 2 }}>Open a live combat to act.</div>
+      </div>
+    );
+  }
+  const hpText = token.hpKnown ? `HP ${token.hp}/${token.hpMax}` : token.health || "unknown";
+  const acText = token.ac ? ` · AC ${token.ac}` : "";
+  return (
+    <div style={{
+      display: "flex", gap: 10, alignItems: "center",
+      padding: "8px 12px",
+      background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
+      boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)",
+    }}>
+      <Placeholder label={token.short || token.initial || "token"} w={40} h={48} framed />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {token.name}
+        </div>
+        <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-700)", marginTop: 2 }}>
+          {hpText}{acText}
+        </div>
+        <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
+          <ApBadge used={economy.action_available === false} label="Act" />
+          <ApBadge used={economy.bonus_available === false} label="Bonus" />
+          <ApBadge used={economy.reaction_available === false} label="React" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  // Determine which tiles are within reach (movement = 6 squares)
-  const inRange = (gx, gy) => {
-    if (!selectedToken || activeAction !== "move") return false;
-    const dx = Math.abs(gx - selectedToken.x);
-    const dy = Math.abs(gy - selectedToken.y);
-    return Math.max(dx, dy) <= 6 && Math.max(dx, dy) > 0;
-  };
+function CombatEmptyState({ status, onNavigate }) {
+  return (
+    <div style={{
+      height: "calc(100% - 50px)",
+      display: "grid",
+      placeItems: "center",
+      background: "linear-gradient(135deg, rgba(58,36,24,0.55), rgba(37,22,14,0.65))",
+      boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.45)",
+    }}>
+      <div style={{ textAlign: "center", maxWidth: 360 }}>
+        <div className="eyebrow" style={{ color: "var(--crimson)" }}>No active initiative</div>
+        <h3 className="h1" style={{ fontSize: 22, marginTop: 6 }}>Return to the table</h3>
+        <p className="body-sm" style={{ color: "var(--ink-700)", marginTop: 8 }}>{status === "ready" ? "The engine has no active combat board for this campaign." : status}</p>
+        <div style={{ marginTop: 14 }}>
+          <BrassButton size="sm" onClick={() => onNavigate("table")}>Open table</BrassButton>
+        </div>
+      </div>
+    </div>
+  );
+}
 
+function CombatMap({ tokens, zones, selected, onSelect }) {
+  const cols = 16, rows = 10;
+  const terrain = zones.length
+    ? zones.map((z) => z.name).filter(Boolean).join(" · ")
+    : "tactical field";
   return (
     <div style={{
       position: "relative",
@@ -193,66 +307,53 @@ function CombatMap({ tokens, selected, onSelect, activeAction, onMove }) {
       boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.6)",
       overflow: "hidden",
     }}>
-      {/* Painted scene backdrop */}
       <div style={{ position: "absolute", inset: 12 }}>
-        <Placeholder label="terrain · courtyard · packed earth · stable wall north · gate south" h="100%" style={{ width: "100%", height: "100%", opacity: 0.5 }} />
+        <Placeholder label={terrain} h="100%" style={{ width: "100%", height: "100%", opacity: 0.5 }} />
       </div>
 
-      {/* Grid overlay */}
       <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
         <defs>
-          <pattern id="gridPattern" x="0" y="0" width={`${100 / COLS}%`} height={`${100 / ROWS}%`} patternUnits="userSpaceOnUse">
+          <pattern id="openworldsCombatGrid" x="0" y="0" width={`${100 / cols}%`} height={`${100 / rows}%`} patternUnits="userSpaceOnUse">
             <rect width="100%" height="100%" fill="none" stroke="rgba(176, 141, 87, 0.18)" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#gridPattern)" />
-
-        {/* Column labels */}
-        {Array.from({ length: COLS }).map((_, i) => (
-          <text key={`c${i}`} x={`${(i + 0.5) * (100 / COLS)}%`} y="12" textAnchor="middle"
+        <rect width="100%" height="100%" fill="url(#openworldsCombatGrid)" />
+        {Array.from({ length: cols }).map((_, i) => (
+          <text key={`c${i}`} x={`${(i + 0.5) * (100 / cols)}%`} y="12" textAnchor="middle"
             fontFamily="Cinzel" fontSize="9" fill="rgba(212, 185, 122, 0.4)" letterSpacing="1">
             {String.fromCharCode(65 + i)}
           </text>
         ))}
-        {/* Row labels */}
-        {Array.from({ length: ROWS }).map((_, i) => (
-          <text key={`r${i}`} x="6" y={`${(i + 0.5) * (100 / ROWS) + 3}%`}
+        {Array.from({ length: rows }).map((_, i) => (
+          <text key={`r${i}`} x="6" y={`${(i + 0.5) * (100 / rows) + 3}%`}
             fontFamily="Cinzel" fontSize="9" fill="rgba(212, 185, 122, 0.4)">{i + 1}</text>
         ))}
       </svg>
 
-      {/* Tile click overlay */}
-      <div style={{
-        position: "absolute", inset: 0,
-        display: "grid",
-        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-        gridTemplateRows: `repeat(${ROWS}, 1fr)`,
-      }}>
-        {Array.from({ length: COLS * ROWS }).map((_, idx) => {
-          const gx = (idx % COLS) + 1;
-          const gy = Math.floor(idx / COLS) + 1;
-          const reach = inRange(gx, gy);
-          return (
-            <div
-              key={idx}
-              onClick={() => reach && onMove(gx, gy)}
-              style={{
-                background: reach ? "rgba(244, 210, 123, 0.16)" : "transparent",
-                boxShadow: reach ? "inset 0 0 0 1px rgba(244, 210, 123, 0.4)" : "none",
-                cursor: reach ? "pointer" : "default",
-                transition: "background 100ms",
-              }}
-            />
-          );
-        })}
-      </div>
+      {zones.map((z, i) => (
+        <div key={z.name || i} style={{
+          position: "absolute",
+          left: `${4 + (i % 4) * 24}%`,
+          top: `${8 + Math.floor(i / 4) * 28}%`,
+          padding: "4px 7px",
+          fontFamily: "var(--f-display)",
+          fontSize: 9,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "rgba(244, 210, 123, 0.68)",
+          background: "rgba(30,18,10,0.32)",
+          boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.18)",
+        }}>
+          {z.name}
+        </div>
+      ))}
 
-      {/* Tokens */}
       {tokens.map((t) => (
         <CombatToken
           key={t.id}
           t={t}
-          cols={COLS} rows={ROWS}
+          cols={cols}
+          rows={rows}
           selected={selected === t.id}
           onClick={() => onSelect(t.id)}
         />
@@ -261,10 +362,21 @@ function CombatMap({ tokens, selected, onSelect, activeAction, onMove }) {
   );
 }
 
+function healthRatio(t) {
+  if (t.hpKnown && Number.isFinite(Number(t.hp)) && Number.isFinite(Number(t.hpMax)) && Number(t.hpMax) > 0) {
+    return Math.max(0, Math.min(1, Number(t.hp) / Number(t.hpMax)));
+  }
+  if (t.health === "down") return 0.08;
+  if (t.health === "bloodied") return 0.38;
+  if (t.health === "wounded") return 0.68;
+  return 1;
+}
+
 function CombatToken({ t, cols, rows, selected, onClick }) {
-  const xPct = ((t.x - 0.5) / cols) * 100;
-  const yPct = ((t.y - 0.5) / rows) * 100;
+  const xPct = (((Number(t.x) || 1) - 0.5) / cols) * 100;
+  const yPct = (((Number(t.y) || 1) - 0.5) / rows) * 100;
   const isFoe = t.team === "foe";
+  const hpRatio = healthRatio(t);
   return (
     <button onClick={onClick} style={{
       position: "absolute",
@@ -293,7 +405,6 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
       }}>
         {t.initial}
       </div>
-      {/* Floating HP bar */}
       <div style={{
         position: "absolute", left: "50%", bottom: -10, transform: "translateX(-50%)",
         width: 44, height: 4,
@@ -302,11 +413,10 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
       }}>
         <div style={{
           position: "absolute", left: 0, top: 0, bottom: 0,
-          width: `${(t.hp / t.hpMax) * 100}%`,
+          width: `${hpRatio * 100}%`,
           background: isFoe ? "linear-gradient(180deg, #d63a3a, #8a1a1a)" : "linear-gradient(180deg, #5cd56a, #2a8c39)",
         }} />
       </div>
-      {/* Name label */}
       <div style={{
         position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)",
         fontFamily: "var(--f-display)", fontSize: 8, letterSpacing: "0.15em",
@@ -318,27 +428,73 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
   );
 }
 
-function ActionTile({ icon, label, hint, onClick, active, spent }) {
+function InitiativeRow({ row, token, selected, onClick }) {
+  const isFoe = row.team === "foe";
+  const hpRatio = healthRatio(token);
   return (
-    <button onClick={onClick} disabled={spent} style={{
+    <button onClick={onClick} style={{
+      display: "grid", gridTemplateColumns: "28px 36px 1fr auto", gap: 8, alignItems: "center",
+      padding: "6px 10px",
+      background: row.active
+        ? "linear-gradient(180deg, var(--p-100), var(--p-200))"
+        : selected ? "rgba(176,141,87,0.18)" : "transparent",
+      boxShadow: row.active
+        ? "inset 0 0 0 1px var(--b-500), 0 0 16px -6px var(--gold-glow)"
+        : "inset 0 -1px 0 rgba(140,100,60,0.2)",
+      cursor: "pointer",
+      textAlign: "left",
+    }}>
+      <span style={{
+        fontFamily: "var(--f-display)",
+        fontSize: 14,
+        color: isFoe ? "var(--crimson)" : "var(--ink-900)",
+        fontWeight: 600,
+      }}>{row.init ?? "-"}</span>
+      <Placeholder label={token.short || "?"} w={36} h={36} framed />
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontFamily: "var(--f-display)",
+          fontSize: 11,
+          letterSpacing: "0.06em",
+          color: isFoe ? "var(--crimson)" : "var(--ink-900)",
+          fontStyle: isFoe ? "italic" : "normal",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{row.name}</div>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 3 }}>
+          <div style={{ flex: 1, height: 4, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.3)" }}>
+            <div style={{
+              position: "absolute", left: 0, top: 0, bottom: 0, width: `${hpRatio * 100}%`,
+              background: isFoe ? "linear-gradient(180deg, var(--crimson), #4a1010)" :
+                (hpRatio > 0.5 ? "linear-gradient(180deg, #5a8a3a, #3a6020)" : "linear-gradient(180deg, var(--crimson), #4a1010)"),
+            }} />
+          </div>
+        </div>
+      </div>
+      {row.active && <span style={{ color: "var(--crimson)", fontFamily: "var(--f-display)", fontSize: 14 }}>▶</span>}
+    </button>
+  );
+}
+
+function ActionTile({ icon, label, hint, onClick, active, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled} title={hint || label} style={{
       padding: "10px 8px",
       textAlign: "center",
       background: active
         ? "linear-gradient(180deg, var(--b-200), var(--b-400))"
-        : spent ? "rgba(0,0,0,0.18)" : "rgba(176,141,87,0.08)",
-      color: active ? "var(--w-300)" : spent ? "var(--ink-500)" : "var(--ink-800)",
+        : disabled ? "rgba(0,0,0,0.18)" : "rgba(176,141,87,0.08)",
+      color: active ? "var(--w-300)" : disabled ? "var(--ink-500)" : "var(--ink-800)",
       boxShadow: active
         ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6), 0 0 16px -4px var(--gold-glow)"
         : "inset 0 0 0 1px rgba(140,100,60,0.3)",
-      cursor: spent ? "not-allowed" : "pointer",
+      cursor: disabled ? "not-allowed" : "pointer",
       transition: "all 140ms",
-      opacity: spent ? 0.5 : 1,
-    }}
-    onMouseEnter={(e) => { if (!active && !spent) e.currentTarget.style.background = "rgba(176,141,87,0.18)"; }}
-    onMouseLeave={(e) => { if (!active && !spent) e.currentTarget.style.background = "rgba(176,141,87,0.08)"; }}>
+      opacity: disabled ? 0.55 : 1,
+      minWidth: 0,
+    }}>
       <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4 }}>{icon}</div>
-      <div style={{ fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      {hint && <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, color: active ? "var(--w-300)" : "var(--ink-600)", marginTop: 2 }}>{hint}</div>}
+      <div style={{ fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+      {hint && <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, color: active ? "var(--w-300)" : "var(--ink-600)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hint}</div>}
     </button>
   );
 }
@@ -357,48 +513,39 @@ function ApBadge({ used, label }) {
 }
 
 function BattleLogLine({ l }) {
-  if (l.t === "round") return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", margin: "6px 0", borderTop: "1px solid rgba(140,100,60,0.3)", borderBottom: "1px solid rgba(140,100,60,0.3)" }}>
-      <span style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--crimson)" }}>{l.text}</span>
+  const meta = Array.isArray(l.meta) ? l.meta : [];
+  return (
+    <div style={{ padding: "5px 0", borderBottom: "1px solid rgba(140,100,60,0.16)" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+        <span style={{ fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-900)" }}>
+          {l.title || l.event || "Combat"}
+        </span>
+        <span className="body-sm" style={{ color: "var(--ink-700)" }}>{l.text}</span>
+      </div>
+      {meta.length > 0 && (
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
+          {meta.map((m, i) => (
+            <span key={`${m.label}-${i}`} style={{
+              fontFamily: "var(--f-mono)",
+              fontSize: 10,
+              color: "var(--ink-600)",
+              padding: "1px 5px",
+              background: "rgba(176,141,87,0.12)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.18)",
+            }}>{m.label}: {m.value}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
-  if (l.t === "act") return (
-    <div style={{ padding: "4px 0", fontSize: 13 }}>
-      <span style={{ fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-900)", marginRight: 6 }}>
-        {l.who}
-      </span>
-      <span className="body-sm" style={{ color: "var(--ink-700)" }}>{l.text}</span>
-    </div>
-  );
-  if (l.t === "roll") return (
-    <div style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", padding: "2px 12px" }}>
-      ▷ {l.text}
-    </div>
-  );
-  if (l.t === "dmg") return (
-    <div style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--crimson)", padding: "2px 12px" }}>
-      ▷ {l.text}
-    </div>
-  );
-  return null;
 }
 
-const TOKENS = [
-  { id: "cassian", name: "Cassian", initial: "C", short: "C·portrait", team: "ally", x: 5, y: 7, hp: 22, hpMax: 24, ac: 17, standardUsed: false, moveUsed: false, swiftUsed: false },
-  { id: "mira", name: "Mira", initial: "M", short: "M·portrait", team: "ally", x: 7, y: 8, hp: 18, hpMax: 22, ac: 15 },
-  { id: "vell", name: "Vell", initial: "V", short: "V·portrait", team: "ally", x: 4, y: 8, hp: 28, hpMax: 30, ac: 18 },
-  { id: "bandit-n", name: "Bandit N", initial: "♠", team: "foe", x: 11, y: 3, hp: 14, hpMax: 16, ac: 15 },
-  { id: "bandit-s", name: "Bandit S", initial: "♠", team: "foe", x: 13, y: 6, hp: 8, hpMax: 16, ac: 15 },
-  { id: "bandit-e", name: "Sgt.", initial: "♣", team: "foe", x: 13, y: 4, hp: 22, hpMax: 22, ac: 16 },
-];
-
-const INITIATIVE = [
-  { id: "mira", init: 19 },
-  { id: "cassian", init: 14, active: true },
-  { id: "bandit-e", init: 12 },
-  { id: "bandit-n", init: 11 },
-  { id: "vell", init: 9 },
-  { id: "bandit-s", init: 4 },
-];
-
-Object.assign(window, { ScreenCombat, CombatMap, CombatToken, ActionTile, ApBadge, BattleLogLine, TOKENS, INITIATIVE });
+Object.assign(window, {
+  ScreenCombat,
+  CombatMap,
+  CombatToken,
+  ActionTile,
+  ApBadge,
+  BattleLogLine,
+  combatSurfaceFromCampaign,
+});

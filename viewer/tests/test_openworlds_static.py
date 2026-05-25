@@ -93,6 +93,18 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn(b"fonts/", body)
         self.assertNotIn(b"https://", body)
 
+    def test_openworlds_combat_screen_binds_viewer_combat_surface(self):
+        status, ctype, body = self._get("/openworlds/screen-combat.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('fetch("/combat-surface', source)
+        self.assertIn('fetch("/move"', source)
+        self.assertIn("window.combatSurfaceFromCampaign", source)
+        self.assertNotIn("TOKENS.map", source)
+        self.assertNotIn("setTokens", source)
+
     def test_openworlds_rejects_path_traversal(self):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)
@@ -290,6 +302,117 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(surface["title"], "QA Table Save")
         self.assertEqual(surface["location"]["name"], "QA Location")
         self.assertEqual(surface["party"][0]["name"], "QA Tav")
+        self.assertFalse(surface["can_act"])
+        self.assertFalse(surface["is_live_view"])
+
+    def test_combat_surface_route_projects_selected_campaign_safely(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_combat"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_combat",
+                "title": "Combat Save",
+                "summary": "A fight at the gate.",
+                "current_location_id": "gate",
+                "locations": {
+                    "gate": {"name": "Basilisk Gate", "notes": "private map bypass"},
+                },
+                "party": ["hero"],
+                "characters": {
+                    "hero": {
+                        "id": "hero",
+                        "name": "Tav",
+                        "kind": "player",
+                        "current_hp": 12,
+                        "max_hp": 20,
+                        "armor_class": 16,
+                    },
+                    "gob": {
+                        "id": "gob",
+                        "name": "Goblin",
+                        "kind": "monster",
+                        "armor_class": 13,
+                        "notes": "private monster note",
+                    },
+                },
+                "combat": {
+                    "active": True,
+                    "round": 2,
+                    "turn_index": 0,
+                    "order": [
+                        {"character_id": "hero", "initiative": 18},
+                        {"character_id": "gob", "initiative": 9},
+                    ],
+                },
+                "dm_notes": "private route agenda",
+            },
+        )
+
+        status, ctype, body = self._get("/combat-surface?campaign=camp_combat")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_combat")
+        self.assertEqual(surface["state_authority"], "engine")
+        self.assertEqual(surface["write_lane"], "/move")
+        self.assertEqual(surface["encounter"]["name"], "Basilisk Gate")
+        self.assertTrue(surface["encounter"]["active"])
+        self.assertEqual([t["id"] for t in surface["tokens"]], ["hero", "gob"])
+        self.assertNotIn("ac", surface["tokens"][1])
+        encoded = json.dumps(surface)
+        self.assertNotIn("private map", encoded)
+        self.assertNotIn("private monster", encoded)
+        self.assertNotIn("private route", encoded)
+        self.assert_no_private_keys(surface)
+
+    def test_combat_surface_route_projects_catalog_run_read_only(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        qa_campaign = repo_root / "qa" / "state" / "wave3-red" / "campaigns" / "camp_qa"
+        self._write_snapshot(
+            qa_campaign,
+            {
+                "id": "camp_qa",
+                "title": "QA Combat Save",
+                "current_location_id": "qa-arena",
+                "locations": {"qa-arena": {"name": "QA Arena"}},
+                "party": ["hero"],
+                "characters": {
+                    "hero": {"id": "hero", "name": "QA Tav", "kind": "player"},
+                    "gob": {"id": "gob", "name": "QA Goblin", "kind": "monster"},
+                },
+                "combat": {
+                    "active": True,
+                    "round": 4,
+                    "turn_index": 1,
+                    "order": [
+                        {"character_id": "hero", "initiative": 18},
+                        {"character_id": "gob", "initiative": 9},
+                    ],
+                },
+            },
+        )
+        self._write_snapshot(
+            self._tmp / "campaigns" / "camp_live",
+            {
+                "id": "camp_live",
+                "title": "Live Combat Save",
+                "party": [],
+                "characters": {},
+            },
+        )
+        _QuietHandler.campaign_id = "camp_live"
+
+        status, _ctype, body = self._get("/combat-surface?source=qa&run=wave3-red&campaign=camp_qa")
+
+        self.assertEqual(status, 200)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_qa")
+        self.assertEqual(surface["title"], "QA Combat Save")
+        self.assertEqual(surface["encounter"]["round"], 4)
+        self.assertEqual(surface["selectedTokenId"], "gob")
         self.assertFalse(surface["can_act"])
         self.assertFalse(surface["is_live_view"])
 
