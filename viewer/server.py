@@ -1032,6 +1032,342 @@ def build_session_surface(
     }
 
 
+def _combat_team(kind: object) -> str:
+    value = _text(kind).lower()
+    if value in {"monster", "enemy", "foe", "hostile"}:
+        return "foe"
+    return "ally"
+
+
+def _combat_initial(name: str, fallback: str = "?") -> str:
+    for part in name.replace("-", " ").split():
+        if part:
+            return part[0].upper()
+    return fallback[:1].upper() if fallback else "?"
+
+
+def _combat_health_label(cur_hp: object, max_hp: object) -> str:
+    cur = _num(cur_hp)
+    maxv = _num(max_hp)
+    if cur is None or maxv is None or maxv <= 0:
+        return "unknown"
+    if cur <= 0:
+        return "down"
+    ratio = cur / maxv
+    if ratio <= 0.5:
+        return "bloodied"
+    if ratio < 1:
+        return "wounded"
+    return "steady"
+
+
+def _combat_public_stat(ch: dict, *names: str) -> bool:
+    return any(bool(ch.get(name)) for name in names)
+
+
+def _combat_row_positions(snapshot: dict) -> dict[str, dict]:
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    order = combat.get("order") if isinstance(combat, dict) else None
+    if not isinstance(order, list):
+        return {}
+    out: dict[str, dict] = {}
+    for row in order:
+        if not isinstance(row, dict):
+            continue
+        cid = row.get("character_id")
+        if isinstance(cid, str) and cid.strip():
+            out[cid.strip()] = row
+    return out
+
+
+def _combat_display_position(
+    row: dict,
+    *,
+    idx: int,
+    zones: list[dict],
+    zone_offsets: dict[str, int],
+) -> tuple[int, int, str]:
+    x = _num(row.get("x") or row.get("col") or row.get("grid_x"))
+    y = _num(row.get("y") or row.get("row") or row.get("grid_y"))
+    if x is not None and y is not None:
+        return max(1, min(16, int(x))), max(1, min(10, int(y))), "grid"
+    zone_name = _text(row.get("zone"))
+    zone_index = next((i for i, z in enumerate(zones) if z.get("name") == zone_name), idx)
+    offset = zone_offsets.get(zone_name, 0)
+    zone_offsets[zone_name] = offset + 1
+    base_x = 3 + (zone_index % 4) * 4
+    base_y = 3 + (zone_index // 4) * 3
+    return max(1, min(16, base_x + offset)), max(1, min(10, base_y + (offset % 2))), "zone"
+
+
+def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[dict], list[dict], str, str]:
+    chars = snapshot.get("characters") if isinstance(snapshot, dict) else {}
+    chars = chars if isinstance(chars, dict) else {}
+    raw_rows = _combat_row_positions(snapshot)
+    zones = [dict(z) for z in combat_view.get("zones", []) if isinstance(z, dict)]
+    zone_occupants: dict[str, list[str]] = {z.get("name", ""): [] for z in zones}
+    zone_offsets: dict[str, int] = {}
+    tokens: list[dict] = []
+    initiative: list[dict] = []
+    position_sources: set[str] = set()
+
+    for idx, row in enumerate(combat_view.get("order", [])):
+        if not isinstance(row, dict):
+            continue
+        cid = _text(row.get("id"))
+        raw = raw_rows.get(cid, {})
+        name = _text(row.get("name"), cid or "Unknown")
+        kind = _text(row.get("kind"))
+        team = _combat_team(kind)
+        token = {
+            "id": cid,
+            "name": name,
+            "initial": _combat_initial(name, cid),
+            "short": f"{_combat_initial(name, cid)} portrait",
+            "team": team,
+            "initiative": row.get("initiative"),
+            "isCurrent": bool(row.get("is_current")),
+            "reactionAvailable": bool(row.get("reaction_available")),
+            "conditions": [str(c) for c in row.get("conditions", []) if str(c)]
+            if isinstance(row.get("conditions"), list)
+            else [],
+        }
+        zone = _text(row.get("zone"))
+        if zone:
+            token["zone"] = zone
+            if zone in zone_occupants:
+                zone_occupants[zone].append(cid)
+        x, y, source = _combat_display_position(raw, idx=idx, zones=zones, zone_offsets=zone_offsets)
+        token["x"] = x
+        token["y"] = y
+        position_sources.add(source)
+
+        ch = chars.get(cid)
+        ch = ch if isinstance(ch, dict) else {}
+        hp = row.get("hp") if isinstance(row.get("hp"), dict) else {}
+        cur_hp = hp.get("current") if isinstance(hp, dict) else None
+        max_hp = hp.get("max") if isinstance(hp, dict) else None
+        hp_known = team != "foe" or _combat_public_stat(ch, "hp_known", "known_hp", "player_known_hp")
+        token["hpKnown"] = bool(hp_known)
+        token["health"] = _combat_health_label(cur_hp, max_hp)
+        if hp_known:
+            token["hp"] = cur_hp if cur_hp is not None else 1
+            token["hpMax"] = max_hp if max_hp not in (None, 0) else token["hp"] or 1
+        ac = row.get("ac")
+        if team != "foe" or _combat_public_stat(ch, "ac_known", "known_ac", "player_known_ac"):
+            if ac is not None:
+                token["ac"] = ac
+        tokens.append(token)
+        initiative.append({
+            "id": cid,
+            "name": name,
+            "init": row.get("initiative"),
+            "active": bool(row.get("is_current")),
+            "team": team,
+            "health": token["health"],
+            "reactionAvailable": token["reactionAvailable"],
+        })
+
+    for zone in zones:
+        name = _text(zone.get("name"))
+        zone["occupants"] = zone_occupants.get(name, [])
+    mode = "grid" if "grid" in position_sources else "zones"
+    selected = next((t["id"] for t in tokens if t.get("isCurrent")), tokens[0]["id"] if tokens else "")
+    return tokens, initiative, zones, selected, mode
+
+
+def _combat_action_bar(action_model: dict, combat_active: bool) -> list[dict]:
+    by_id = {a["id"]: a for a in _session_available_actions(action_model) if a.get("id")}
+    live = bool(action_model.get("live"))
+    is_live_view = bool(action_model.get("is_live_view"))
+    actor = action_model.get("actor")
+    combat = action_model.get("combat") if isinstance(action_model.get("combat"), dict) else {}
+
+    def base_reason() -> str | None:
+        if not combat_active:
+            return "not in combat"
+        if actor is None:
+            return "no active character"
+        if not live:
+            return "no live move sink"
+        if not is_live_view:
+            return "viewing non-live campaign"
+        if not combat.get("is_current_turn"):
+            return "not current turn"
+        return None
+
+    def from_model(action_id: str, label: str, icon: str, fallback_reason: str | None = None) -> dict:
+        item = dict(by_id.get(action_id) or {
+            "id": action_id,
+            "label": label,
+            "available": False,
+            "disabled_reason": fallback_reason or base_reason() or "not engine-backed yet",
+        })
+        item.setdefault("id", action_id)
+        item.setdefault("label", label)
+        item["icon"] = icon
+        item.setdefault("available", False)
+        item.setdefault("disabled_reason", None if item.get("available") else fallback_reason or base_reason())
+        return item
+
+    end_reason = base_reason()
+    end_turn = {
+        "id": "end-turn",
+        "label": "End turn",
+        "icon": "⊘",
+        "available": end_reason is None,
+        "disabled_reason": end_reason,
+    }
+    if end_reason is None:
+        end_turn["move"] = {"kind": "combat", "name": "End Turn"}
+
+    return [
+        {
+            "id": "move",
+            "label": "Move",
+            "icon": "↗",
+            "available": False,
+            "disabled_reason": "movement destinations not projected yet",
+        },
+        from_model("attack", "Attack", "⚔", base_reason()),
+        {
+            "id": "cast",
+            "label": "Cast",
+            "icon": "✦",
+            "available": False,
+            "disabled_reason": "spell choices not projected yet",
+        },
+        from_model("bonus-action", "Bonus", "◈", base_reason()),
+        {
+            "id": "item",
+            "label": "Item",
+            "icon": "◊",
+            "available": False,
+            "disabled_reason": "inventory combat actions not projected yet",
+        },
+        from_model("reaction", "Reaction", "✺", base_reason()),
+        end_turn,
+    ]
+
+
+def _combat_ref(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    rid = _text(value.get("id"))
+    name = _text(value.get("name"), rid)
+    if not rid and not name:
+        return None
+    out = {"name": name}
+    if rid:
+        out["id"] = rid
+    return out
+
+
+def _combat_log_meta(label: str, value: object) -> dict | None:
+    if value in (None, ""):
+        return None
+    return {"label": label, "value": value}
+
+
+def _combat_battle_log(raw_events: list[dict] | None) -> list[dict]:
+    out: list[dict] = []
+    for row in raw_events or []:
+        if not isinstance(row, dict):
+            continue
+        payload = row.get("payload")
+        text = _text(row.get("text") or row.get("detail") or row.get("summary"))
+        item = {"event": _text(row.get("kind") or row.get("type"), "combat"), "text": text[:1000]}
+        if isinstance(payload, dict) and payload.get("schema") == "clawdnd.combat_event.v1":
+            event = _text(payload.get("event"), "combat")
+            actor = _combat_ref(payload.get("actor"))
+            target = _combat_ref(payload.get("target"))
+            title = "Combat"
+            if actor and target:
+                title = f"{actor['name']} -> {target['name']}"
+            elif actor or target:
+                title = (actor or target or {}).get("name", "Combat")
+            meta: list[dict] = []
+            roll = payload.get("roll")
+            if isinstance(roll, dict):
+                meta.extend(x for x in [
+                    _combat_log_meta("d20", roll.get("natural")),
+                    _combat_log_meta("roll", roll.get("total")),
+                ] if x)
+            damage = payload.get("damage")
+            if isinstance(damage, dict):
+                dmg = damage.get("total")
+                dtype = _text(damage.get("type"))
+                meta.append({"label": "Damage", "value": f"{dmg}{' ' + dtype if dtype else ''}"})
+            item = {
+                "event": event,
+                "title": title,
+                "text": text[:1000] if text else title,
+                "actor": actor,
+                "target": target,
+                "meta": meta[:5],
+            }
+        if item.get("text") or item.get("title"):
+            out.append(item)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def build_combat_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+    recent_events: list[dict] | None = None,
+) -> dict:
+    """Project a browser-safe OpenWorlds combat board from engine-owned state."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    location = _session_location(snapshot)
+    combat_view = build_combat_view(snapshot)
+    action_model = build_action_model(snapshot, live=live, is_live_view=is_live_view)
+    combat_active = bool(combat_view.get("active"))
+    tokens, initiative, zones, selected, mode = _combat_tokens(snapshot, combat_view)
+    action_bar = _combat_action_bar(action_model, combat_active)
+    can_act = bool(live and is_live_view and combat_active)
+    battle_log = _combat_battle_log(recent_events)
+    summary = _text(snapshot.get("summary"))
+    if not summary:
+        summary = (
+            f"Combat round {combat_view.get('round')}"
+            if combat_active and combat_view.get("round") else
+            _text(location.get("description"), "No active combat.")
+        )
+
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "world": _text(snapshot.get("world_id"), "unknown"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "location": location,
+        "encounter": {
+            "active": combat_active,
+            "name": location["name"] if combat_active else "No active encounter",
+            "summary": summary,
+            "round": combat_view.get("round") if combat_active else None,
+            "warnings": combat_view.get("warnings", []),
+        },
+        "grid": {"mode": mode, "cols": 16, "rows": 10},
+        "tokens": tokens,
+        "initiative": initiative,
+        "zones": zones,
+        "selectedTokenId": selected,
+        "actionEconomy": (combat_view.get("actions") if combat_active else {}) or {},
+        "actionBar": action_bar,
+        "battleLog": battle_log,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": can_act,
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
 def _relative_time_label(ts: float, *, now: float) -> str:
     if ts <= 0:
         return "unknown"
@@ -2148,6 +2484,8 @@ def _openworlds_config() -> dict:
         "mode": "viewer-read-model",
         "api_base": "",
         "campaign_catalog": "/openworlds/campaigns.json",
+        "session_surface": "/session-surface",
+        "combat_surface": "/combat-surface",
         "state_authority": "engine",
         "write_lane": "/move",
         "demo_data": False,
@@ -2323,6 +2661,34 @@ class _Handler(BaseHTTPRequestHandler):
             if not isinstance(raw_snap, dict):
                 raw_snap = {}
             self._json(build_session_surface(
+                raw_snap,
+                campaign_id=cid,
+                live=live,
+                is_live_view=live and cid == self.campaign_id,
+                recent_events=_session_event_tail(cid),
+            ))
+        elif route == "/combat-surface":
+            qs = parse_qs(parsed.query)
+            live = _live_play()
+            catalog_ref = _session_surface_catalog_ref(qs)
+            if catalog_ref is not None:
+                cid, raw_snap, campaign_dir, root_is_current = catalog_ref
+                self._json(build_combat_surface(
+                    raw_snap,
+                    campaign_id=cid,
+                    live=live,
+                    is_live_view=bool(live and root_is_current and cid == self.campaign_id),
+                    recent_events=_session_event_tail_from_dir(campaign_dir, raw_snap),
+                ))
+                return
+            cid = self._view_campaign(qs)
+            if not cid:
+                self._json(build_combat_surface({}, campaign_id="", live=live, is_live_view=False))
+                return
+            raw_snap = _read_snapshot(cid)
+            if not isinstance(raw_snap, dict):
+                raw_snap = {}
+            self._json(build_combat_surface(
                 raw_snap,
                 campaign_id=cid,
                 live=live,
