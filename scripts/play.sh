@@ -24,6 +24,14 @@
 #   CLAWDND_PLAY_MAX_TURNS        hard cap on DM turns                  (default 40)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+COMMON="$ROOT/scripts/launch_common.sh"
+if [ -f "$COMMON" ]; then
+  # shellcheck source=launch_common.sh
+  . "$COMMON"
+fi
+if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
+  clawdnd_missing_commands python3 claude uv jq curl || exit 127
+fi
 # Shared beat-driver helpers: the C soft clock-tick backstop + the A beat-aware runbooks —
 # the SAME implementation the QA duo loop sources, so the human-paced and QA loops can't drift.
 # shellcheck source=../qa/lib_beat_driver.sh
@@ -31,6 +39,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
 PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
+PORT_EXPLICIT=0
+[ -n "${3:-}" ] || [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
+if declare -F clawdnd_choose_port >/dev/null 2>&1; then
+  PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
+fi
 BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per DM turn
 SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
