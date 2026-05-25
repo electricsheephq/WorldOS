@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -564,6 +564,7 @@ class SessionLogEntry(_StrictModel):
     kind: str = "narration"  # narration | dialogue | roll | system | combat
     text: str
     speaker: Optional[str] = None  # character id or name
+    payload: Optional[dict[str, Any]] = None
 
 
 class Consequence(_StrictModel):

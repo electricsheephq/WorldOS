@@ -160,6 +160,15 @@
   .msg .bd em, .msg.narration .bd i { color:#f0e4c8; }
   .msg.system .bd { color:var(--faint); font-size:12.5px; font-style:italic; }
   .msg.combat .bd { color:#e9c9c0; }
+  .combat-card { max-width:520px; border:1px solid #4f302b; background:#211713; border-radius:8px; padding:9px 10px; color:#ead5ca; white-space:normal; box-shadow:0 1px 0 rgba(255,255,255,.03) inset; }
+  .combat-card-top { display:flex; align-items:center; gap:8px; min-width:0; }
+  .combat-chip { flex:none; border:1px solid #6b4540; background:#2e1d19; color:#f0c3b8; border-radius:7px; padding:2px 7px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+  .combat-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:800; color:#f3dfc6; }
+  .combat-card-main { margin-top:6px; color:#dfc5b8; font-size:13px; }
+  .combat-card-meta { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; color:#bda997; font-size:11px; }
+  .combat-card-meta span { border:1px solid #3d3027; background:#18110d; border-radius:7px; padding:2px 6px; }
+  .combat-card.outcome-crit { border-color:#9b5d3b; }
+  .combat-card.outcome-miss { border-color:#3f3a35; }
   /* "The DM is narrating…" — a pending bubble while the DM's turn is in flight (the
      player has acted; the response is composing). Perception fix: turn latency read as
      "the DM isn't engaging". Three breathing dots under the DM byline. */
@@ -864,6 +873,54 @@ const $ = (id) => document.getElementById(id);
 // Escape for BOTH text nodes AND double-quoted attributes (LLM-authored names land in
 // title="..."/data-loc="..." — an unescaped " breaks out of the attribute → DOM/attr injection).
 const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1";
+function hpText(state) {
+  if (!state) return "";
+  if (state.hp) return state.hp;
+  if (Number.isFinite(Number(state.current_hp))) return `${state.current_hp} HP`;
+  return "";
+}
+function combatEventCard(e) {
+  const p = e && e.payload;
+  if (!p || p.schema !== COMBAT_EVENT_SCHEMA) return "";
+  const actor = p.actor && p.actor.name ? p.actor.name : "";
+  const target = p.target && p.target.name ? p.target.name : "";
+  const title = actor && target ? `${actor} -> ${target}` : (target || actor || "Combat");
+  const meta = [];
+  let outcome = p.outcome || p.event || "combat";
+  let main = e.text || "";
+  if (p.event === "attack") {
+    outcome = p.outcome || (p.damage ? "hit" : "miss");
+    const roll = p.roll || {};
+    const ac = p.target && p.target.ac ? ` vs AC ${p.target.ac}` : "";
+    main = `Attack ${roll.total ?? "?"}${ac}`;
+    if (roll.natural) meta.push(`d20 ${roll.natural}`);
+    if (p.damage) meta.push(`Damage ${p.damage.total ?? 0}${p.damage.type ? " " + p.damage.type : ""}`);
+    const hp = hpText(p.target_state);
+    if (hp) meta.push(`HP ${hp}`);
+  } else if (p.event === "damage") {
+    outcome = "damage";
+    main = `${target || "Target"} takes ${p.result && p.result.damage_to_hp !== undefined ? p.result.damage_to_hp : p.amount || 0}${p.damage_type ? " " + p.damage_type : ""} damage`;
+    const hp = hpText(p.result);
+    if (hp) meta.push(`HP ${hp}`);
+  } else if (p.event === "healing") {
+    outcome = "healing";
+    main = `${target || "Target"} regains ${p.result && p.result.healed !== undefined ? p.result.healed : p.amount || 0} hit points`;
+    const hp = hpText(p.result);
+    if (hp) meta.push(`HP ${hp}`);
+  } else if (p.event === "combat_start") {
+    outcome = "start";
+    const names = (p.combatants || []).map(c => c.name).filter(Boolean).join(", ");
+    main = names ? `Initiative: ${names}` : (e.text || "Combat begins");
+    if (p.round) meta.push(`Round ${p.round}`);
+  } else if (p.event === "combat_end") {
+    outcome = "end";
+    main = e.text || "Combat ends";
+    if (p.round) meta.push(`Ended in round ${p.round}`);
+    if (p.xp_awarded) meta.push(`${p.xp_awarded} XP`);
+  }
+  return `<div class="combat-card outcome-${statusClass(outcome)}"><div class="combat-card-top"><span class="combat-chip">${esc(outcome)}</span><span class="combat-title">${esc(title)}</span></div><div class="combat-card-main">${esc(main)}</div>${meta.length ? `<div class="combat-card-meta">${meta.map(m=>`<span>${esc(m)}</span>`).join("")}</div>` : ""}</div>`;
+}
 const initials = (n) => (n||"?").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const shortId = (id) => {
   const s = (id ?? "").toString();
@@ -2481,8 +2538,9 @@ async function poll() {
         const d = document.createElement("div"); d.className = "msg "+e.kind;
         const who = e.speaker || (e.kind==="system"?"":"Dungeon Master");
         const isNarr = e.kind==="narration";  // DM-authored prose → byline glyph + drop-cap (#3)
+        const combatCard = e.kind==="combat" ? combatEventCard(e) : "";
         d.innerHTML = (who?`<div class="hd">${e.kind==="system"?"":`<span class="av">${esc(initials(who))}</span>`}<span class="nm ${e.kind}${isNarr?" dm":""}">${esc(who)}</span></div>`:"")
-          + `<div class="bd${isNarr?" dropcap":""}">${esc(e.text)}</div>`;
+          + `<div class="bd${isNarr?" dropcap":""}">${combatCard || esc(e.text)}</div>`;
         if (e.kind!=="system" && e.text) { const hd=d.querySelector(".hd"); if (hd) addSpeaker(hd, e.text); }  // ▶ narration/dialogue (#36)
         pushBeat(e.kind, who, e.text);  // feed the Memories journal (6.1)
         feed.appendChild(d);
