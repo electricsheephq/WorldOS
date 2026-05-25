@@ -14,7 +14,11 @@ _SPEC.loader.exec_module(server)
 
 
 def _find_action(surface: dict, action_id: str) -> dict:
-    return next(a for a in surface["availableActions"] if a["id"] == action_id)
+    found = next((a for a in surface["availableActions"] if a["id"] == action_id), None)
+    if found is None:
+        available = [a.get("id") for a in surface["availableActions"] if isinstance(a, dict)]
+        raise AssertionError(f"action {action_id!r} not found in availableActions: {available}")
+    return found
 
 
 class SessionSurfaceTests(unittest.TestCase):
@@ -202,10 +206,21 @@ class SessionSurfaceTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        unsafe = server._session_event_tail_from_dir(campaign_dir, {"active_session_id": "../evil"})
+        unsafe_values = [
+            "../evil",
+            "../../evil",
+            "sessions/../evil",
+            "/etc/passwd",
+            "evil\x00sid",
+            "evil/界",
+        ]
+        unsafe = [
+            server._session_event_tail_from_dir(campaign_dir, {"active_session_id": sid})
+            for sid in unsafe_values
+        ]
         safe_tail = server._session_event_tail_from_dir(campaign_dir, {"active_session_id": "sess_1"}, limit=3)
 
-        self.assertEqual(unsafe, [])
+        self.assertEqual(unsafe, [[] for _ in unsafe_values])
         self.assertEqual([row["detail"] for row in safe_tail], ["event 17", "event 18", "event 19"])
 
     def test_session_surface_rejects_unsafe_active_session_id(self):
