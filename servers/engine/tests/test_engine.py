@@ -29,6 +29,7 @@ def test_campaign_roundtrips_with_empty_strategic_state():
         "assets": {},
         "clocks": {},
         "projects": {},
+        "last_tick_day": 0,
     }
 
     store.save_campaign(c)

@@ -75,14 +75,12 @@ def pending_threads(campaign: Campaign) -> list[Consequence]:
 # consequences.due). Mirrors the tick/pending shape of the thread helpers; pure (no I/O).
 
 
-def _apply_backlog_effect(campaign: Campaign, item: BacklogItem) -> str:
-    """Apply a DETERMINISTIC backlog item's structured `effect` to the campaign (mutates) and
-    return the one-line `summary` of what changed, for the DM to weave. A number, flag, or stub
-    only — NEVER prose generation (that's the later DM/agent for needs_llm items). Setting-
-    agnostic: every key/value comes from CONTENT (the seeded `effect` dict), never engine code.
-    Unknown/empty effect keys fall through to a generic marker so a malformed effect degrades to
-    a no-op development rather than raising — the engine stays the unbreakable, always-on tick."""
-    eff = item.effect or {}
+def _apply_structured_effect(campaign: Campaign, effect: dict, *, fallback: str) -> str:
+    """Apply a deterministic strategic/backlog effect (mutates) and return a DM-facing line.
+
+    The payload is intentionally tiny and setting-agnostic: flags, faction reputation,
+    faction control markers, and NPC-arrival stubs. Unknown keys are harmless no-ops."""
+    eff = effect or {}
 
     # A campaign flag the DM/engine gates events on (e.g. {"flag": "concord_split"}).
     flag = str(eff.get("flag") or "").strip()
@@ -116,12 +114,24 @@ def _apply_backlog_effect(campaign: Campaign, item: BacklogItem) -> str:
         where = f" at {loc_id}" if loc_id else ""
         campaign.flags[f"arrival:{npc_name}{where}"] = True
 
+    return fallback.strip() or "A structured world-state effect resolved."
+
+
+def _apply_backlog_effect(campaign: Campaign, item: BacklogItem) -> str:
+    """Apply a DETERMINISTIC backlog item's structured `effect` to the campaign (mutates) and
+    return the one-line `summary` of what changed, for the DM to weave. A number, flag, or stub
+    only — NEVER prose generation (that's the later DM/agent for needs_llm items). Setting-
+    agnostic: every key/value comes from CONTENT (the seeded `effect` dict), never engine code.
+    Unknown/empty effect keys fall through to a generic marker so a malformed effect degrades to
+    a no-op development rather than raising — the engine stays the unbreakable, always-on tick."""
     # The DM-facing one-liner: prefer an authored summary, else a terse template of what moved.
     if item.summary.strip():
-        return item.summary.strip()
-    if item.title.strip():
-        return item.title.strip()
-    return f"An off-screen development ({item.kind}) advanced the world."
+        fallback = item.summary.strip()
+    elif item.title.strip():
+        fallback = item.title.strip()
+    else:
+        fallback = f"An off-screen development ({item.kind}) advanced the world."
+    return _apply_structured_effect(campaign, item.effect, fallback=fallback)
 
 
 def tick_backlog(campaign: Campaign, max_events: int = 2) -> list[BacklogItem]:
@@ -195,3 +205,91 @@ def pending_backlog(campaign: Campaign) -> list[BacklogItem]:
         (i for i in bl.items.values() if i.status == "pending" and i.trigger_day > campaign.day),
         key=lambda i: (i.trigger_day, i.id),
     )
+
+
+# --- Typed strategic board advancement (#75) --------------------------------------------------
+
+
+def _cadence_ticks(last_day: int, current_day: int, cadence_days: int) -> int:
+    """How many cadence boundaries were crossed between two campaign days."""
+    cadence = max(0, int(cadence_days))
+    if cadence <= 0 or current_day <= last_day:
+        return 0
+    # Day 1 with cadence 3 ticks after three elapsed days: on day 4, then 7, 10, ...
+    return max(0, (current_day - 1) // cadence - (last_day - 1) // cadence)
+
+
+def tick_strategic(campaign: Campaign) -> list[dict]:
+    """Advance typed strategic clocks and active downtime projects for elapsed days.
+
+    This mutates only ``campaign.strategic_state`` and deterministic campaign fields named by
+    project effects. The guard is day-based: if ``campaign.day <= last_tick_day`` it is a no-op,
+    so repeated ``world_tick`` calls on the same day never double-progress or spam events.
+    Narrative ``Consequence`` records are deliberately untouched. Legacy/manual snapshots
+    may deserialize strategic boards without a cursor; initialize those on first tick rather
+    than retroactively advancing from day 0."""
+    st = campaign.strategic_state
+    last_day = st.last_tick_day
+    if last_day <= 0:
+        st.last_tick_day = campaign.day
+        return []
+
+    elapsed = campaign.day - last_day
+    if elapsed <= 0:
+        return []
+
+    events: list[dict] = []
+
+    for clock in sorted(st.clocks.values(), key=lambda x: x.id):
+        if clock.progress >= clock.target:
+            continue
+        delta = _cadence_ticks(last_day, campaign.day, clock.tick_every_days)
+        if delta <= 0:
+            continue
+        before = clock.progress
+        clock.progress = min(clock.target, clock.progress + delta)
+        due = before < clock.target and clock.progress >= clock.target
+        events.append(
+            {
+                "type": "clock_due" if due else "clock_advanced",
+                "id": clock.id,
+                "title": clock.title,
+                "kind": clock.kind,
+                "scope": clock.scope,
+                "progress": clock.progress,
+                "target": clock.target,
+                "delta": clock.progress - before,
+                "due": due,
+                "line": clock.note or clock.title,
+            }
+        )
+
+    for project in sorted(st.projects.values(), key=lambda x: x.id):
+        if project.status != "active":
+            continue
+        before = project.progress_days
+        project.progress_days = min(project.duration_days, project.progress_days + elapsed)
+        if project.progress_days <= before:
+            continue
+        complete = before < project.duration_days and project.progress_days >= project.duration_days
+        event_type = "project_complete" if complete else "project_advanced"
+        line = project.note or project.title
+        if complete:
+            project.status = "complete"
+            line = _apply_structured_effect(campaign, project.effect, fallback=line)
+        events.append(
+            {
+                "type": event_type,
+                "id": project.id,
+                "title": project.title,
+                "kind": project.kind,
+                "progress_days": project.progress_days,
+                "duration_days": project.duration_days,
+                "delta": project.progress_days - before,
+                "complete": complete,
+                "line": line,
+            }
+        )
+
+    st.last_tick_day = campaign.day
+    return events
