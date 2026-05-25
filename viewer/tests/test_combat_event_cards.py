@@ -11,13 +11,16 @@ _DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard.html"
 def _renderer_source() -> str:
     html = _DASHBOARD_PATH.read_text(encoding="utf-8")
     start = html.index("const esc =")
-    end = html.index("const countNames =", start)
+    status_start = html.index("const statusClass =", start)
+    end = html.index("const countNames =", status_start)
     return html[start:end]
 
 
 @unittest.skipIf(shutil.which("node") is None, "node is required for dashboard renderer fixture tests")
 class CombatEventCardTests(unittest.TestCase):
-    def _render_cards(self):
+    NODE_BIN = shutil.which("node")
+
+    def _render_cards(self) -> dict:
         fixtures = {
             "attack": {
                 "kind": "combat",
@@ -89,7 +92,7 @@ class CombatEventCardTests(unittest.TestCase):
             + ";\nconst out = Object.fromEntries(Object.entries(fixtures).map(([k, v]) => [k, combatEventCard(v)]));\nconsole.log(JSON.stringify(out));\n"
         )
         proc = subprocess.run(
-            ["node"],
+            [self.NODE_BIN],
             input=program,
             text=True,
             capture_output=True,
