@@ -258,6 +258,54 @@ def test_sanitize_move_drops_unknown_fields_and_caps_length():
     assert len(long_m["text"]) <= 2000
 
 
+def test_campaign_summary_explains_resume_target_without_writes():
+    v = _viewer()
+    snap = {
+        "title": "Sundered Reach",
+        "world_id": "sundered-reach",
+        "day": 4,
+        "time_of_day": "dusk",
+        "current_location_id": "market",
+        "locations": {"market": {"name": "Lantern Market"}},
+        "characters": {
+            "pc": {"name": "Kield", "kind": "player"},
+            "ally": {"name": "Petra", "kind": "companion"},
+        },
+        "party": ["pc", "ally"],
+        "quests": {
+            "q1": {"title": "Find the bell", "status": "active"},
+            "q2": {"title": "Old debt", "status": "completed"},
+        },
+        "quest_hooks": [
+            {"title": "Smoke over the mill", "status": "open"},
+            {"title": "Spent rumor", "status": "resolved"},
+        ],
+    }
+
+    card = v.build_campaign_summary(
+        "camp_same_name_abc123",
+        snap,
+        last_played=1234.5,
+        current=True,
+        live=True,
+    )
+
+    assert card == {
+        "id": "camp_same_name_abc123",
+        "name": "Sundered Reach",
+        "world": "sundered-reach",
+        "day": 4,
+        "time_of_day": "dusk",
+        "location": "Lantern Market",
+        "party": ["Kield", "Petra"],
+        "party_count": 2,
+        "active_quest_count": 2,
+        "last_played": 1234.5,
+        "current": True,
+        "live": True,
+    }
+
+
 # --- viewer combat projection (#65) --------------------------------------------
 def test_combat_view_projects_active_combat_read_model():
     v = _viewer()

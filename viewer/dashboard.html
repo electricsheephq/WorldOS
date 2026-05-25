@@ -66,10 +66,26 @@
     color:var(--ink); font-size:13px; }
   .sw-item:hover { background:#241a0d; }
   .sw-item.current { background:#2a1d0e; }
-  .sw-item .sw-i-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gold); }
+  .sw-item .sw-i-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .sw-item .sw-i-top { display:flex; align-items:baseline; gap:7px; min-width:0; }
+  .sw-item .sw-i-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gold); }
+  .sw-id { color:#bcd4ec; border:1px solid #2e4456; background:#16222e; border-radius:7px; padding:0 5px;
+    font-size:9px; letter-spacing:.04em; flex:none; }
+  .sw-live { color:#bfe6c4; border:1px solid #2e5638; background:#14241a; border-radius:7px; padding:0 5px;
+    font-size:9px; letter-spacing:.05em; text-transform:uppercase; flex:none; }
+  .sw-item .sw-i-meta, .sw-item .sw-i-sub { color:var(--faint); font-size:10.5px; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sw-item .sw-i-day { color:var(--faint); font-size:10.5px; letter-spacing:.04em; flex:none; }
   .sw-item .sw-i-tick { color:var(--gold2); font-size:11px; flex:none; width:12px; text-align:center; }
   .sw-empty { padding:8px 10px; color:var(--faint); font-size:11.5px; }
+  .empty-onboarding { max-width:560px; margin:auto; align-self:center; border:1px solid var(--card-line);
+    background:linear-gradient(180deg,#221b12,#18120c); border-radius:11px; padding:20px 22px;
+    box-shadow:0 10px 28px -16px rgba(0,0,0,.9),0 1px 0 rgba(232,201,138,.06) inset; color:var(--dim); }
+  .empty-onboarding h2 { margin:0 0 6px; color:var(--gold); font:600 18px/1.25 var(--font-display); letter-spacing:.03em; }
+  .empty-onboarding p { margin:0 0 12px; }
+  .empty-onboarding .steps { display:grid; gap:7px; margin-top:12px; }
+  .empty-onboarding .step { display:flex; gap:8px; align-items:flex-start; }
+  .empty-onboarding .num { flex:none; width:18px; height:18px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    color:#15110c; background:var(--gold2); font-size:11px; font-weight:800; }
   /* gear affordance: opens the read-only quick-settings modal. Pushed to the right edge. */
   .gear-btn { margin-left:auto; background:#1a140d; border:1px solid var(--line); color:var(--dim);
     border-radius:8px; width:30px; height:26px; font-size:14px; cursor:pointer; line-height:1;
@@ -996,6 +1012,21 @@ const shortId = (id) => {
   const tail = s.includes("_") ? s.split("_").filter(Boolean).pop() : s;
   return (tail || s).slice(-7);
 };
+const joinParts = (parts, sep = " · ") => parts.filter(v => v !== undefined && v !== null && v !== "").join(sep);
+function lastPlayedLabel(ts) {
+  const n = Number(ts || 0);
+  if (!n) return "unknown";
+  const delta = Date.now() - n * 1000;
+  if (delta < 0) return new Date(n * 1000).toLocaleString();
+  const min = Math.floor(delta / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(n * 1000).toLocaleDateString();
+}
 const statusClass = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "unknown";
 const countNames = (items, nameOf) => items.reduce((m, item) => {
   const k = (nameOf(item) || "").trim().toLowerCase();
@@ -2322,11 +2353,21 @@ function renderState(s) {
     // No campaign on disk yet (#M2): show a waiting message and keep the action layer off —
     // do NOT run the full render below, which would paint the scene/title with empty data.
     $("title").textContent = "ClawDnD";
+    $("when").textContent = "";
+    $("where").textContent = "";
     applyLiveMode(false);
     renderCombatCenter(s);
     renderActionBar(s);
     const feed = $("feed");
-    if (feed && !feed.children.length) feed.innerHTML = '<div class="empty">Waiting for the story to begin…</div>';
+    if (feed) feed.innerHTML = `<div class="empty-onboarding">
+      <h2>No saved campaign loaded</h2>
+      <p>This viewer is read-only. It attaches automatically when the engine writes a campaign snapshot.</p>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><span>Resume an existing run from Claude Code or launch the dashboard command for a new adventure.</span></div>
+        <div class="step"><span class="num">2</span><span>Once a save exists, the picker above shows day, location, party, quests, and which save is live.</span></div>
+        <div class="step"><span class="num">3</span><span>Use this page to watch and choose saves; campaign creation stays in the engine flow.</span></div>
+      </div>
+    </div>`;
     return;
   }
   // Gate the action layer on whether the VIEWED campaign is the LIVE one (is_live_view) — not
@@ -2573,15 +2614,31 @@ function renderSwitcher() {
     ? _campaignList.find(c => c.id === selectedCampaignId)
     : _campaignList.find(c => c.current);
   const cur = viewing || _campaignList[0];
-  $("switcher-name").textContent = cur.name || cur.id;
-  $("switcher-day").textContent = (cur.day != null) ? ("Day " + cur.day) : "";
-  // Build the dropdown: one row per campaign (name + "Day N"), the viewed one ticked.
+  const nameCounts = countNames(_campaignList, c => c.name || c.id || "");
+  const duplicateCur = nameCount(nameCounts, cur.name || cur.id) > 1;
+  $("switcher-name").textContent = (cur.name || cur.id) + (duplicateCur ? ` #${shortId(cur.id)}` : "");
+  $("switcher-day").textContent = joinParts([cur.live && "live", cur.day != null ? ("Day " + cur.day) : ""], " · ");
+  $("switcher-btn").title = joinParts([
+    "Switch the campaign being viewed",
+    cur.location || "",
+    cur.party_count ? `${cur.party_count} party` : "",
+    cur.id ? `id ${cur.id}` : "",
+  ]);
+  // Build the dropdown: one row per campaign, with enough save metadata to disambiguate.
   $("switcher-menu").innerHTML = _campaignList.map(c => {
     const sel = c.id === cur.id;
+    const duplicate = nameCount(nameCounts, c.name || c.id) > 1;
+    const when = c.day != null ? ("Day " + c.day + (c.time_of_day ? `, ${c.time_of_day}` : "")) : "";
+    const questText = c.active_quest_count === 1 ? "1 active quest" : `${c.active_quest_count || 0} active quests`;
+    const partyText = c.party_count === 1 ? "1 party member" : `${c.party_count || 0} party members`;
+    const meta = joinParts([when, c.location || "Location unknown"]);
+    const sub = joinParts([partyText, questText, c.world || "", `last ${lastPlayedLabel(c.last_played)}`]);
     return `<div class="sw-item${sel?" current":""}" role="option" aria-selected="${sel}" data-cid="${esc(c.id)}">`
       + `<span class="sw-i-tick">${sel?"✓":""}</span>`
-      + `<span class="sw-i-name">${esc(c.name || c.id)}</span>`
-      + `<span class="sw-i-day">${c.day != null ? ("Day " + esc(c.day)) : ""}</span></div>`;
+      + `<span class="sw-i-main"><span class="sw-i-top"><span class="sw-i-name">${esc(c.name || c.id)}</span>`
+      + `${duplicate ? `<span class="sw-id">#${esc(shortId(c.id))}</span>` : ""}${c.live ? `<span class="sw-live">live</span>` : ""}</span>`
+      + `<span class="sw-i-meta">${esc(meta)}</span><span class="sw-i-sub">${esc(sub)}</span></span>`
+      + `<span class="sw-i-day">${c.current ? "current" : ""}</span></div>`;
   }).join("") || `<div class="sw-empty">No campaigns found.</div>`;
 }
 function openSwitcher() { const sw=$("switcher"); sw.classList.add("open"); $("switcher-btn").setAttribute("aria-expanded","true"); }
