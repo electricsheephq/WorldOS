@@ -219,6 +219,23 @@ def _meets_prereq(ch: Character, class_name: str) -> bool:
     return False
 
 
+def _validated_asi_choice(asi: dict) -> dict[str, int]:
+    pending: dict[str, int] = {}
+    total_inc = 0
+    for ability, raw_inc in asi.items():
+        if ability not in _AB3_TO_FULL.values():
+            raise ValueError(f"unknown ability {ability!r} in asi")
+        try:
+            inc = int(raw_inc)
+        except (TypeError, ValueError):
+            raise ValueError(f"invalid ASI increment {raw_inc!r} for {ability!r}") from None
+        pending[ability] = pending.get(ability, 0) + inc
+        total_inc += inc
+    if len(pending) > 2 or total_inc != 2 or any(inc < 1 or inc > 2 for inc in pending.values()):
+        raise ValueError("asi must be +2 to one ability or +1 to two abilities")
+    return pending
+
+
 def _recompute_spellcasting(ch: Character) -> None:
     """Recompute spell-slot maximums from class levels, preserving used slots.
     Single-class Warlock uses Pact Magic; multiclass Warlock merging is deferred."""
@@ -2748,8 +2765,17 @@ def level_up(
                 raise ValueError(f"does not meet the multiclass prerequisite for {class_name}")
 
         new_class_level = existing.level + 1 if existing else 1
-        if feat and srd_tables.is_asi_level(cname, new_class_level) and not c.house_rules.feats_allowed:
-            raise ValueError("feats are disabled by campaign house rules")
+        is_asi_level = srd_tables.is_asi_level(cname, new_class_level)
+        pending_asi = None
+        if is_asi_level:
+            if asi and feat:
+                raise ValueError("choose either asi or feat, not both")
+            if asi:
+                pending_asi = _validated_asi_choice(asi)
+            elif feat and not c.house_rules.feats_allowed:
+                raise ValueError("feats are disabled by campaign house rules")
+        elif asi or feat:
+            raise ValueError(f"{class_name} level {new_class_level} does not grant an ASI or feat choice")
 
         die = srd_tables.hit_die(cname)
         con = ch.ability_modifier(Ability.CON)
@@ -2774,13 +2800,11 @@ def level_up(
             ch.hit_dice = f"{sum(cl.level for cl in ch.classes)}d{die}"
 
         applied = None
-        if srd_tables.is_asi_level(cname, new_class_level):
-            if asi:
-                for ability, inc in asi.items():
-                    if ability not in _AB3_TO_FULL.values():
-                        raise ValueError(f"unknown ability {ability!r} in asi")
+        if is_asi_level:
+            if pending_asi:
+                for ability, inc in pending_asi.items():
                     setattr(ch.abilities, ability, min(20, getattr(ch.abilities, ability) + inc))
-                applied = {"asi": asi}
+                applied = {"asi": pending_asi}
             elif feat:
                 applied = {"feat": feat}
                 ch.notes = (ch.notes + f" | feat: {feat}").strip(" |")
@@ -2929,30 +2953,11 @@ def preview_level_up(
         if asi and feat:
             errors.append("choose either asi or feat, not both")
         elif asi:
-            pending: dict[str, int] = {}
-            total_inc = 0
-            valid_asi = True
-            for ability, raw_inc in asi.items():
-                if ability not in _AB3_TO_FULL.values():
-                    errors.append(f"unknown ability {ability!r} in asi")
-                    valid_asi = False
-                    continue
-                try:
-                    inc = int(raw_inc)
-                except (TypeError, ValueError):
-                    errors.append(f"invalid ASI increment {raw_inc!r} for {ability!r}")
-                    valid_asi = False
-                    continue
-                pending[ability] = pending.get(ability, 0) + inc
-                total_inc += inc
-            if valid_asi and (
-                len(pending) > 2
-                or total_inc != 2
-                or any(inc < 1 or inc > 2 for inc in pending.values())
-            ):
-                errors.append("asi must be +2 to one ability or +1 to two abilities")
-                valid_asi = False
-            if valid_asi:
+            try:
+                pending = _validated_asi_choice(asi)
+            except ValueError as exc:
+                errors.append(str(exc))
+            else:
                 for ability, inc in pending.items():
                     setattr(preview.abilities, ability, min(20, getattr(preview.abilities, ability) + inc))
                 applied = {"asi": pending}

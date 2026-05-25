@@ -364,6 +364,68 @@ def test_level_up_rejects_disabled_feat_without_mutating():
     assert _campaign_snapshot(cid) == before
 
 
+def test_level_up_rejects_invalid_asi_payloads_without_mutating():
+    cid = server.create_campaign("Commit ASI rules")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 12, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="unknown ability"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 1, "luck": 1})
+    assert _campaign_snapshot(cid) == before
+
+    with pytest.raises(Exception, match="asi must be"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2, "dexterity": 2})
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_asi_and_feat_together_without_mutating():
+    cid = server.create_campaign("Commit ASI feat exclusivity")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        level=3,
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="choose either asi or feat"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2}, feat="Lucky")
+
+    assert _campaign_snapshot(cid) == before
+
+
+def test_level_up_rejects_asi_or_feat_on_non_asi_level_without_mutating():
+    cid = server.create_campaign("Commit non-ASI choice")["id"]
+    fid = server.create_character(
+        cid,
+        "Ren",
+        kind="player",
+        class_name="Fighter",
+        apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 12},
+    )["id"]
+    before = _campaign_snapshot(cid)
+
+    with pytest.raises(Exception, match="does not grant an ASI or feat choice"):
+        server.level_up(cid, fid, "Fighter", asi={"strength": 2})
+    assert _campaign_snapshot(cid) == before
+
+    with pytest.raises(Exception, match="does not grant an ASI or feat choice"):
+        server.level_up(cid, fid, "Fighter", feat="Lucky")
+    assert _campaign_snapshot(cid) == before
+
+
 def test_level_up_rejects_disabled_multiclass_without_mutating():
     cid = server.create_campaign("Commit multiclass rules")["id"]
     wid = server.create_character(
