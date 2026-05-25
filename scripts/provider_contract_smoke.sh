@@ -15,13 +15,14 @@ from pathlib import Path
 
 
 ALLOWED_PROVIDERS = {"claude", "codex", "openclaw"}
-REQUIRED_ENV = (
+REQUIRED_NONEMPTY_ENV = (
     "CLAWDND_PROVIDER",
     "CLAWDND_WORLD",
     "CLAWDND_RUN_ID",
     "CLAWDND_PLAY_PORT",
     "CLAWDND_PLAYER_MOVES",
 )
+REQUIRED_PRESENT_ENV = ("CLAWDND_PLAY_COMPANIONS",)
 SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "COOKIE")
 
 
@@ -57,7 +58,8 @@ def is_temp_child(path: Path) -> bool:
     return False
 
 
-missing = [name for name in REQUIRED_ENV if not os.environ.get(name, "").strip()]
+missing = [name for name in REQUIRED_NONEMPTY_ENV if not os.environ.get(name, "").strip()]
+missing.extend(name for name in REQUIRED_PRESENT_ENV if name not in os.environ)
 if missing:
     fail("missing required env: " + ", ".join(missing))
 
@@ -78,10 +80,9 @@ if not (1 <= port <= 65535):
 moves_path = Path(env_required("CLAWDND_PLAYER_MOVES"))
 if moves_path.exists() and moves_path.is_dir():
     fail(f"CLAWDND_PLAYER_MOVES points at a directory: {moves_path}")
-if not is_temp_child(moves_path) and os.environ.get("CLAWDND_PROVIDER_SMOKE_ALLOW_NON_TEMP") != "1":
+if not is_temp_child(moves_path):
     fail(
         "CLAWDND_PLAYER_MOVES must be under a temp directory for smoke mode "
-        "(set CLAWDND_PROVIDER_SMOKE_ALLOW_NON_TEMP=1 only for controlled local debugging)"
     )
 
 move = {
@@ -99,7 +100,7 @@ summary = {
     "world": world,
     "run_id": run_id,
     "port": port,
-    "companions": [item.strip() for item in companions.split(",") if item.strip()],
+    "companion_count": len([item for item in companions.split(",") if item.strip()]),
     "move_path": str(moves_path.expanduser().resolve(strict=False)),
     "redacted_env_keys": sorted(
         key for key in os.environ if any(marker in key.upper() for marker in SECRET_MARKERS)

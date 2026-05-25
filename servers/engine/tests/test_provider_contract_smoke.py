@@ -22,10 +22,11 @@ def _run(env: dict[str, str]) -> subprocess.CompletedProcess:
     }
     merged.update(env)
     return subprocess.run(
-        ["bash", str(SCRIPT)],
+        ["/bin/bash", str(SCRIPT)],
         cwd=ROOT,
         env=merged,
         capture_output=True,
+        check=False,
         text=True,
     )
 
@@ -44,12 +45,39 @@ def test_provider_contract_smoke_rejects_unknown_provider(tmp_path):
             "CLAWDND_WORLD": "baldurs-gate",
             "CLAWDND_RUN_ID": "smoke",
             "CLAWDND_PLAY_PORT": "8765",
+            "CLAWDND_PLAY_COMPANIONS": "",
             "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
         }
     )
 
     assert result.returncode != 0
     assert "unknown provider" in result.stderr
+
+
+def test_provider_contract_smoke_requires_companions_key_even_when_empty(tmp_path):
+    missing = _run(
+        {
+            "CLAWDND_PROVIDER": "codex",
+            "CLAWDND_WORLD": "baldurs-gate",
+            "CLAWDND_RUN_ID": "smoke",
+            "CLAWDND_PLAY_PORT": "8765",
+            "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
+        }
+    )
+    present_empty = _run(
+        {
+            "CLAWDND_PROVIDER": "codex",
+            "CLAWDND_WORLD": "baldurs-gate",
+            "CLAWDND_RUN_ID": "smoke",
+            "CLAWDND_PLAY_PORT": "8765",
+            "CLAWDND_PLAY_COMPANIONS": "",
+            "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
+        }
+    )
+
+    assert missing.returncode != 0
+    assert "CLAWDND_PLAY_COMPANIONS" in missing.stderr
+    assert present_empty.returncode == 0, present_empty.stdout + present_empty.stderr
 
 
 def test_provider_contract_smoke_appends_one_legal_move_and_summary(tmp_path):
@@ -78,7 +106,8 @@ def test_provider_contract_smoke_appends_one_legal_move_and_summary(tmp_path):
     assert summary["world"] == "baldurs-gate"
     assert summary["run_id"] == "smoke"
     assert summary["port"] == 8765
-    assert summary["companions"] == ["Astarion:rogue", "Minsc:ranger"]
+    assert summary["companion_count"] == 2
+    assert "Astarion" not in result.stdout
     assert "OPENAI_API_KEY" in summary["redacted_env_keys"]
     assert "must-not-print" not in result.stdout
 
@@ -91,7 +120,9 @@ def test_provider_contract_smoke_rejects_non_temp_move_path_without_override(tmp
             "CLAWDND_WORLD": "baldurs-gate",
             "CLAWDND_RUN_ID": "smoke",
             "CLAWDND_PLAY_PORT": "8765",
+            "CLAWDND_PLAY_COMPANIONS": "",
             "CLAWDND_PLAYER_MOVES": str(moves),
+            "CLAWDND_PROVIDER_SMOKE_ALLOW_NON_TEMP": "1",
         }
     )
 
