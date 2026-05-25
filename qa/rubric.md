@@ -20,6 +20,17 @@ Score each criterion 1–5 (5 = excellent, 1 = broken). Be skeptical; reserve 5s
 2. **rules_correctness** — Were 5e rules applied correctly: initiative order,
    attack roll vs AC, damage application, conditions, saving throws, death saves,
    short/long rest effects, XP award?
+   **Ruleset: the world is SRD 5.2 (the 2024 revision), loaded from `data/srd/srd524/`.**
+   Grade rules-correctness against **5.2, not 5.1**, and treat the engine's LOADED
+   creature stat block — its HP/AC, attacks, and damage resistances/immunities (e.g.
+   `data/srd/srd524/Creature.json`) — as AUTHORITATIVE. Do NOT dock the engine for
+   applying 5.2 as written when it differs from a remembered 5.1-era rule. In
+   particular, the 2024 revision REMOVED several legacy traits: e.g. a **Vampire Spawn
+   no longer resists nonmagical bludgeoning/piercing/slashing** (its loaded resistances
+   are just `['necrotic']`) — flagging that as a missing resistance is a FALSE defect
+   and systematically under-scores correct 5.2 mechanics. If a stat block looks "wrong"
+   versus your memory, assume the 2024 SRD changed it and verify against the loaded
+   data before penalizing.
 3. **state_integrity** — Does the FINAL engine state match the story? (party
    contains the PC + companion; combat was started and ended; monster HP at 0 if
    "defeated"; PC HP/XP consistent with events; current_location advanced). Flag
