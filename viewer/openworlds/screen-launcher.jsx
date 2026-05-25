@@ -7,11 +7,14 @@ function ScreenLauncher({ onNavigate, state, setState }) {
 
   React.useEffect(() => {
     if (campaigns.some((c) => c.id === selected)) return;
-    setSelected(state?.activeCampaign || campaigns[0]?.id || "");
+    const fallback = campaigns.some((c) => c.id === state?.activeCampaign)
+      ? state.activeCampaign
+      : campaigns[0]?.id || "";
+    setSelected(fallback);
   }, [campaigns, selected, state?.activeCampaign]);
 
   const onResume = () => {
-    const nextCampaign = selected || campaigns[0]?.id;
+    const nextCampaign = campaigns.some((c) => c.id === selected) ? selected : campaigns[0]?.id;
     if (!nextCampaign) return;
     const campaign = campaigns.find((c) => c.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
@@ -249,7 +252,10 @@ function normalizeCampaignParty(party) {
 }
 
 function campaignRegion(c) {
-  return c?.region || c?.location || c?.world || "Unknown";
+  const value = c?.region ?? c?.location ?? c?.world;
+  if (value === undefined || value === null) return "Unknown";
+  const trimmed = String(value).trim();
+  return trimmed || "Unknown";
 }
 
 function campaignDayBadge(c) {

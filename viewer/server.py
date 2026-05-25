@@ -741,6 +741,7 @@ def build_openworlds_campaign_summary(
         "liveStatus": "live" if live else "stale",
         "current": bool(current),
         "canResume": bool(can_resume),
+        "readOnly": not bool(can_resume),
         "resumeUrl": resume_url,
         "dashboardUrl": resume_url,
         "monitorUrl": "/monitor",
@@ -748,22 +749,88 @@ def build_openworlds_campaign_summary(
     }
 
 
-def _openworlds_campaigns(attached_campaign: str = "") -> dict:
-    now = time.time()
-    out: list[dict] = []
-    current_campaign = attached_campaign
+_openworlds_catalog_cache: tuple[object, list[dict]] | None = None
+
+
+def _openworlds_catalog_index(
+    roots: list[dict],
+    attached_campaign: str,
+) -> tuple[object, list[tuple[dict, Path, float]]]:
+    """Return a small stat-based signature plus snapshots to project.
+
+    The OpenWorlds launcher fetches once today, but this endpoint is a natural
+    future poll target. Match the monitor's cache pattern: stat snapshots and
+    session logs cheaply, then only re-read JSON when mtimes change.
+    """
     current_campaigns_dir = _resolved(_campaigns_dir())
-    for root in _campaign_catalog_roots():
+    sig_entries: list[tuple] = [("attached", attached_campaign), ("current", current_campaigns_dir)]
+    snapshots: list[tuple[dict, Path, float]] = []
+    for root in roots:
         cdir = root["campaigns_dir"]
         if not isinstance(cdir, Path) or not cdir.is_dir():
             continue
         for snap in cdir.glob("*/snapshot.json"):
+            try:
+                snap_mtime = snap.stat().st_mtime
+                recency = _campaign_recency(snap)
+            except OSError:
+                continue
+            sig_entries.append((
+                str(root["source"]),
+                str(root["run_id"]),
+                _resolved(cdir),
+                snap.parent.name,
+                snap_mtime,
+                recency,
+            ))
+            snapshots.append((root, snap, recency))
+    return tuple(sig_entries), snapshots
+
+
+def _refresh_openworlds_campaign_times(cards: list[dict], *, now: float) -> list[dict]:
+    refreshed: list[dict] = []
+    for card in cards:
+        c = dict(card)
+        last_played = c.get("last_played")
+        last_played = (
+            last_played
+            if isinstance(last_played, (int, float)) and not isinstance(last_played, bool)
+            else 0
+        )
+        live = (now - last_played) < 90
+        c["live"] = live
+        c["liveStatus"] = "live" if live else "stale"
+        c["lastPlayed"] = _relative_time_label(last_played, now=now)
+        refreshed.append(c)
+    refreshed.sort(
+        key=lambda c: (
+            not c.get("current"),
+            not c.get("live"),
+            c.get("source") != "play",
+            -c.get("last_played", 0),
+        )
+    )
+    return refreshed
+
+
+def _openworlds_campaigns(attached_campaign: str = "") -> dict:
+    global _openworlds_catalog_cache
+    now = time.time()
+    roots = _campaign_catalog_roots()
+    current_campaigns_dir = _resolved(_campaigns_dir())
+    signature, snapshots = _openworlds_catalog_index(roots, attached_campaign)
+    if _openworlds_catalog_cache and _openworlds_catalog_cache[0] == signature:
+        out = _refresh_openworlds_campaign_times(_openworlds_catalog_cache[1], now=now)
+    else:
+        built: list[dict] = []
+        for root, snap, recency in snapshots:
             try:
                 data = json.loads(snap.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
             if not isinstance(data, dict) or not data:
                 continue
+            cdir = root["campaigns_dir"]
             campaign_id = snap.parent.name
             root_is_current = bool(root["current_state"]) and _resolved(cdir) == current_campaigns_dir
             try:
@@ -774,15 +841,16 @@ def _openworlds_campaigns(attached_campaign: str = "") -> dict:
                     data,
                     campaign_dir=snap.parent,
                     state_root=root["state_root"],
-                    last_played=_campaign_recency(snap),
-                    current=root_is_current and campaign_id == current_campaign,
+                    last_played=recency,
+                    current=root_is_current and campaign_id == attached_campaign,
                     can_resume=root_is_current,
                     now=now,
                 )
             except (OSError, TypeError, ValueError):
                 continue
-            out.append(summary)
-    out.sort(key=lambda c: (not c.get("current"), not c.get("live"), c.get("source") != "play", -c.get("last_played", 0)))
+            built.append(summary)
+        _openworlds_catalog_cache = (signature, built)
+        out = _refresh_openworlds_campaign_times(built, now=now)
     return {
         "campaigns": out[:80],
         "total": len(out),

@@ -149,6 +149,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(campaign["sessions"], 1)
         self.assertTrue(campaign["current"])
         self.assertTrue(campaign["canResume"])
+        self.assertFalse(campaign["readOnly"])
         self.assertEqual(campaign["resumeUrl"], "/dashboard?campaign=camp_live")
         self.assertEqual([p["name"] for p in campaign["party"]], ["Tav", "Jaheira"])
         self.assertEqual(campaign["recap"], "The party reached the inn and caught its breath.")
@@ -156,6 +157,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("private note", encoded)
         self.assertNotIn("hidden agenda", encoded)
         self.assertNotIn("private canon", encoded)
+        self.assert_no_private_keys(json.loads(encoded))
 
     def test_openworlds_campaigns_includes_repo_play_state_and_qa_runs_read_only(self):
         repo_root = self._tmp / "repo"
@@ -196,6 +198,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("qa:wave3-red:camp_qa", by_id)
         self.assertEqual(by_id["play:play-20260525:camp_play"]["provider"], "Local")
         self.assertEqual(by_id["qa:wave3-red:camp_qa"]["provider"], "QA")
+        self.assertTrue(by_id["play:play-20260525:camp_play"]["readOnly"])
+        self.assertTrue(by_id["qa:wave3-red:camp_qa"]["readOnly"])
         self.assertFalse(by_id["play:play-20260525:camp_play"]["canResume"])
         self.assertFalse(by_id["qa:wave3-red:camp_qa"]["canResume"])
         self.assertEqual(by_id["qa:wave3-red:camp_qa"]["monitorUrl"], "/monitor")
@@ -203,6 +207,16 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
         (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def assert_no_private_keys(self, value) -> None:
+        private_keys = {"notes", "scenes", "lore", "dm_notes", "sealed_agenda", "agenda"}
+        if isinstance(value, dict):
+            for key, child in value.items():
+                self.assertNotIn(key, private_keys)
+                self.assert_no_private_keys(child)
+        elif isinstance(value, list):
+            for child in value:
+                self.assert_no_private_keys(child)
 
 
 if __name__ == "__main__":
