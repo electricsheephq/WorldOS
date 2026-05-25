@@ -62,6 +62,57 @@ def _agenda_triggered(character: Character, campaign: Campaign) -> bool:
     return False
 
 
+def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) -> dict | None:
+    """Mark a linked companion quest arc/stage available for a personal_quest gate.
+
+    This is deliberately narrow: the relationship gate can surface availability once,
+    but success/failure stays behind the explicit companion quest advancement API."""
+    if gate.kind != "personal_quest" or not gate.quest_arc_id:
+        return None
+
+    event = {
+        "quest_arc_id": gate.quest_arc_id,
+        "stage_id": gate.stage_id,
+        "status": "",
+    }
+    arc = campaign.companion_quest_arcs.get(gate.quest_arc_id)
+    if arc is None:
+        event["error"] = f"no companion quest arc {gate.quest_arc_id!r}"
+        return event
+    if arc.companion_id and arc.companion_id != character.id:
+        event["error"] = (
+            f"companion quest arc {gate.quest_arc_id!r} belongs to "
+            f"{arc.companion_id!r}, not {character.id!r}"
+        )
+        return event
+
+    stage = None
+    if gate.stage_id:
+        stage = next((s for s in arc.stages if s.id == gate.stage_id), None)
+        if stage is None:
+            event["error"] = f"no stage {gate.stage_id!r} in companion quest arc {gate.quest_arc_id!r}"
+            return event
+
+    changed: list[str] = []
+    if arc.status == "locked":
+        arc.status = "available"
+        changed.append("arc")
+    if stage is not None and stage.status == "locked":
+        stage.status = "available"
+        changed.append("stage")
+    if not changed:
+        event["status"] = arc.status
+        if stage is not None:
+            event["stage_status"] = stage.status
+        event["no_transition"] = True
+        return event
+    event["status"] = arc.status
+    if stage is not None:
+        event["stage_status"] = stage.status
+    event["changed"] = changed
+    return event
+
+
 def evaluate(character: Character, campaign: Campaign) -> dict:
     """Advance ONE companion's arc against the current state (mutates in place).
 
@@ -74,6 +125,7 @@ def evaluate(character: Character, campaign: Campaign) -> dict:
     the moments that just became live, for the DM to dramatize. A character with no `arc`
     is a no-op (empty result)."""
     newly_unlocked: list[dict] = []
+    companion_quest_unlocks: list[dict] = []
     agenda_fired = False
     agenda_dump = None
 
@@ -85,8 +137,14 @@ def evaluate(character: Character, campaign: Campaign) -> dict:
     # call that flips it (already-unlocked gates stay silent).
     for gate in arc.arc_gates:
         if not gate.unlocked and gate.threshold <= character.attitude_value:
+            quest_unlock = _unlock_companion_quest_arc(character, campaign, gate)
+            if quest_unlock is not None and quest_unlock.get("error"):
+                companion_quest_unlocks.append(quest_unlock)
+                continue
             gate.unlocked = True
             newly_unlocked.append(gate.model_dump())
+            if quest_unlock is not None:
+                companion_quest_unlocks.append(quest_unlock)
 
     # The sealed agenda fires once, when its trigger holds.
     agenda = arc.agenda
@@ -95,4 +153,7 @@ def evaluate(character: Character, campaign: Campaign) -> dict:
         agenda_fired = True
         agenda_dump = agenda.model_dump()
 
-    return {"newly_unlocked": newly_unlocked, "agenda_fired": agenda_fired, "agenda": agenda_dump}
+    out = {"newly_unlocked": newly_unlocked, "agenda_fired": agenda_fired, "agenda": agenda_dump}
+    if companion_quest_unlocks:
+        out["companion_quest_unlocks"] = companion_quest_unlocks
+    return out

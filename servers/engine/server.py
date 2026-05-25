@@ -54,6 +54,7 @@ from models import (
     Combatant,
     CompanionArc,
     CompanionDossier,
+    CompanionQuestArc,
     Condition,
     DeathSaves,
     Decision,
@@ -4424,6 +4425,99 @@ def _require_companion(c: Campaign, companion_id: str) -> Character:
     return ch
 
 
+_COMPANION_QUEST_STATUSES = {"locked", "available", "active", "resolved", "failed"}
+_TRACKED_QUEST_STATUSES = {"active", "completed", "failed"}
+
+
+def _companion_quest_status(status: str, field: str) -> str:
+    s = (status or "").strip().lower()
+    if s not in _COMPANION_QUEST_STATUSES:
+        raise ValueError(f"{field} must be locked|available|active|resolved|failed, got {status!r}")
+    return s
+
+
+def _tracked_quest_status(status: str) -> str:
+    s = (status or "").strip().lower()
+    s = {"resolved": "completed", "open": "active", "available": "active"}.get(s, s)
+    if s not in _TRACKED_QUEST_STATUSES:
+        raise ValueError(f"quest_status must be active|completed|failed (or resolved), got {status!r}")
+    return s
+
+
+def _quest_projection_status(companion_status: str) -> str:
+    return {
+        "available": "active",
+        "active": "active",
+        "resolved": "completed",
+        "failed": "failed",
+    }.get(companion_status, "")
+
+
+def _validate_companion_quest_arc_links(c: Campaign, arc: CompanionQuestArc) -> None:
+    seen_stages: set[str] = set()
+    for stage in arc.stages:
+        if stage.id in seen_stages:
+            raise ValueError(f"duplicate companion quest stage id {stage.id!r}")
+        seen_stages.add(stage.id)
+    for qid in arc.quest_ids:
+        if qid not in c.quests:
+            raise ValueError(f"no tracked quest {qid!r} for companion quest arc {arc.id!r}")
+    for stage in arc.stages:
+        if stage.quest_id and stage.quest_id not in c.quests:
+            raise ValueError(f"no tracked quest {stage.quest_id!r} for companion quest stage {stage.id!r}")
+
+
+def _validate_companion_arc_quest_links(c: Campaign, companion_id: str, arc: CompanionArc) -> None:
+    for gate in arc.arc_gates:
+        if gate.kind != "personal_quest":
+            continue
+        if gate.stage_id and not gate.quest_arc_id:
+            raise ValueError("personal_quest gate stage_id requires quest_arc_id")
+        if not gate.quest_arc_id:
+            continue
+        quest_arc = c.companion_quest_arcs.get(gate.quest_arc_id)
+        if quest_arc is None:
+            raise ValueError(f"no companion quest arc {gate.quest_arc_id!r}")
+        if quest_arc.companion_id and quest_arc.companion_id != companion_id:
+            raise ValueError(
+                f"companion quest arc {gate.quest_arc_id!r} belongs to "
+                f"{quest_arc.companion_id!r}, not {companion_id!r}"
+            )
+        if gate.stage_id and not any(stage.id == gate.stage_id for stage in quest_arc.stages):
+            raise ValueError(f"no stage {gate.stage_id!r} in companion quest arc {gate.quest_arc_id!r}")
+
+
+def _validate_replacing_companion_quest_arc(c: Campaign, arc: CompanionQuestArc) -> None:
+    for ch in c.characters.values():
+        if ch.arc is None:
+            continue
+        for gate in ch.arc.arc_gates:
+            if gate.kind != "personal_quest" or gate.quest_arc_id != arc.id:
+                continue
+            if arc.companion_id and arc.companion_id != ch.id:
+                raise ValueError(
+                    f"existing personal_quest gate on {ch.id!r} references companion quest arc {arc.id!r}, "
+                    f"which would belong to {arc.companion_id!r}"
+                )
+            if gate.stage_id and not any(stage.id == gate.stage_id for stage in arc.stages):
+                raise ValueError(
+                    f"existing personal_quest gate on {ch.id!r} references missing stage {gate.stage_id!r} "
+                    f"in companion quest arc {arc.id!r}"
+                )
+
+
+def _companion_quest_arc_view(c: Campaign, arc: CompanionQuestArc) -> dict:
+    companion = c.characters.get(arc.companion_id)
+    out = arc.model_dump()
+    out["companion_name"] = companion.name if companion else ""
+    out["linked_quests"] = [
+        {"id": q.id, "title": q.title, "status": q.status}
+        for qid in arc.quest_ids
+        if (q := c.quests.get(qid)) is not None
+    ]
+    return out
+
+
 @mcp.tool()
 def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
     """Advance companions' relationship arcs against the CURRENT state and surface the
@@ -4449,7 +4543,7 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
             if ch.arc is None:
                 continue
             res = companion_arc.evaluate(ch, c)
-            if res["newly_unlocked"] or res["agenda_fired"]:
+            if res["newly_unlocked"] or res["agenda_fired"] or res.get("companion_quest_unlocks"):
                 results.append({"companion_id": ch.id, "name": ch.name, **res})
         save_campaign(c)
         return {"results": results}
@@ -4466,9 +4560,164 @@ def set_companion_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _require_companion(c, companion_id)
-        ch.arc = CompanionArc.model_validate(arc)
+        parsed = CompanionArc.model_validate(arc)
+        _validate_companion_arc_quest_links(c, companion_id, parsed)
+        ch.arc = parsed
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "arc": ch.arc.model_dump()}
+
+
+@mcp.tool()
+def set_companion_quest_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
+    """Create or replace an engine-owned companion personal quest arc.
+
+    CompanionQuestArc is the lifecycle owner for personal quests. Linked tracked Quests
+    remain optional player-facing projections and must already exist when referenced."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        _require_companion(c, companion_id)
+        data = dict(arc or {})
+        if data.get("companion_id") and data["companion_id"] != companion_id:
+            raise ValueError(
+                f"companion quest arc companion_id {data['companion_id']!r} does not match {companion_id!r}"
+            )
+        data["companion_id"] = companion_id
+        parsed = CompanionQuestArc.model_validate(data)
+        _validate_companion_quest_arc_links(c, parsed)
+        _validate_replacing_companion_quest_arc(c, parsed)
+        c.companion_quest_arcs[parsed.id] = parsed
+        save_campaign(c)
+        return {"companion_quest_arc": _companion_quest_arc_view(c, parsed)}
+
+
+@mcp.tool()
+def get_companion_quest_arcs(campaign_id: str, companion_id: str = "", status: str = "") -> dict:
+    """Read companion personal quest arcs, optionally filtered by companion and lifecycle
+    status. Read-only; does not evaluate gates or advance quests."""
+    c = _require(campaign_id)
+    if companion_id:
+        _require_companion(c, companion_id)
+    wanted_status = _companion_quest_status(status, "status") if status else ""
+    arcs = list(c.companion_quest_arcs.values())
+    if companion_id:
+        arcs = [a for a in arcs if a.companion_id == companion_id]
+    if wanted_status:
+        arcs = [a for a in arcs if a.status == wanted_status]
+    arcs.sort(key=lambda a: (a.companion_id, a.title, a.id))
+    return {"companion_quest_arcs": [_companion_quest_arc_view(c, a) for a in arcs], "count": len(arcs)}
+
+
+@mcp.tool()
+def advance_companion_quest_arc(
+    campaign_id: str,
+    arc_id: str,
+    status: str = "",
+    stage_id: str = "",
+    stage_status: str = "",
+    quest_id: str = "",
+    quest_status: str = "",
+) -> dict:
+    """Explicitly advance a companion personal quest arc and optionally project that
+    change into linked tracked Quests.
+
+    `status` updates the CompanionQuestArc. `stage_id` + `stage_status` updates one
+    stage. `quest_id` links a tracked Quest to the arc (and stage when provided).
+    If a quest is linked and no `quest_status` is given, the engine derives a one-way
+    projection from the companion status: available/active -> active, resolved ->
+    completed, failed -> failed. Prose never advances this state."""
+    next_status = _companion_quest_status(status, "status") if status else ""
+    next_stage_status = _companion_quest_status(stage_status, "stage_status") if stage_status else ""
+    next_quest_status = _tracked_quest_status(quest_status) if quest_status else ""
+    if not any((next_status, next_stage_status, quest_id, next_quest_status)):
+        raise ValueError("advance_companion_quest_arc requires status, stage_status, quest_id, or quest_status")
+    if next_quest_status and not (next_status or next_stage_status):
+        raise ValueError("quest_status requires status or stage_status so Quest projection follows companion arc state")
+
+    arc_projection = _quest_projection_status(next_status) if next_status else ""
+    stage_projection = _quest_projection_status(next_stage_status) if next_stage_status else ""
+    if next_status == "locked" and stage_projection:
+        raise ValueError(f"stage_status {next_stage_status!r} cannot advance while companion quest status is 'locked'")
+    if arc_projection and stage_projection and arc_projection != stage_projection:
+        raise ValueError(
+            f"status {next_status!r} and stage_status {next_stage_status!r} imply conflicting "
+            f"quest projections {arc_projection!r} and {stage_projection!r}"
+        )
+    derived_quest_status = arc_projection or stage_projection
+    derived_from = next_status if arc_projection or (next_status and not stage_projection) else next_stage_status
+    if next_quest_status and derived_from and not derived_quest_status:
+        raise ValueError(f"quest_status cannot project from companion quest status {derived_from!r}")
+    if next_quest_status and derived_quest_status and next_quest_status != derived_quest_status:
+        raise ValueError(
+            f"quest_status {next_quest_status!r} is inconsistent with companion quest status "
+            f"{derived_from!r}; use {derived_quest_status!r}"
+        )
+    final_quest_status = next_quest_status or derived_quest_status
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        current = c.companion_quest_arcs.get(arc_id)
+        if current is None:
+            raise ValueError(f"no companion quest arc {arc_id!r}")
+        data = current.model_dump(mode="json")
+        if next_status:
+            data["status"] = next_status
+
+        stage_data = None
+        if stage_id:
+            for stage in data.get("stages", []):
+                if stage.get("id") == stage_id:
+                    stage_data = stage
+                    break
+            if stage_data is None:
+                raise ValueError(f"no stage {stage_id!r} in companion quest arc {arc_id!r}")
+            if next_stage_status:
+                stage_data["status"] = next_stage_status
+        elif next_stage_status:
+            raise ValueError("stage_status requires stage_id")
+
+        if quest_id:
+            if quest_id not in c.quests:
+                raise ValueError(f"no tracked quest {quest_id!r}")
+            quest_ids = list(data.get("quest_ids", []))
+            if quest_id not in quest_ids:
+                quest_ids.append(quest_id)
+            data["quest_ids"] = quest_ids
+            if stage_data is not None:
+                stage_data["quest_id"] = quest_id
+
+        next_arc = CompanionQuestArc.model_validate(data)
+        _validate_companion_quest_arc_links(c, next_arc)
+
+        quest_targets: list[str] = []
+        if final_quest_status:
+            if quest_id:
+                quest_targets = [quest_id]
+            elif stage_data is not None:
+                stage_quest_id = str(stage_data.get("quest_id") or "")
+                if not stage_quest_id:
+                    raise ValueError("stage quest projection requires quest_id or a linked stage quest_id")
+                quest_targets = [stage_quest_id]
+            else:
+                quest_targets = list(next_arc.quest_ids)
+            if not quest_targets:
+                raise ValueError("quest_status or projected quest status requires quest_id or an existing linked quest")
+
+        quest_updates = []
+        for qid in quest_targets:
+            q = c.quests.get(qid)
+            if q is None:
+                raise ValueError(f"no tracked quest {qid!r}")
+            if q.status != final_quest_status:
+                quest_updates.append({"quest_id": q.id, "previous_status": q.status, "status": final_quest_status})
+
+        c.companion_quest_arcs[next_arc.id] = next_arc
+        for update in quest_updates:
+            c.quests[update["quest_id"]].status = update["status"]  # type: ignore[assignment]
+        save_campaign(c)
+        return {
+            "companion_quest_arc": _companion_quest_arc_view(c, next_arc),
+            "quest_updates": quest_updates,
+        }
 
 
 @mcp.tool()
