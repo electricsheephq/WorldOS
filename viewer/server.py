@@ -764,7 +764,8 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
     disabled.
     """
     snapshot = snapshot if isinstance(snapshot, dict) else {}
-    has_campaign = bool(snapshot) and not snapshot.get("empty")
+    viewer_keys = {"action_model", "combat_view", "empty", "is_live_view", "live"}
+    has_campaign = any(k not in viewer_keys for k in snapshot) and not snapshot.get("empty")
     actor = _action_actor(snapshot) if has_campaign else None
     combat = snapshot.get("combat") if has_campaign else None
     combat_active = isinstance(combat, dict) and bool(combat.get("active"))

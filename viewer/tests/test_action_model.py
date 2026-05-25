@@ -38,6 +38,15 @@ class ActionModelTests(unittest.TestCase):
         self.assertEqual(_action(model, "exploration", "continue")["disabled_reason"], "no live move sink")
         self.assertEqual(_action(model, "combat", "attack")["disabled_reason"], "not in combat")
 
+    def test_action_model_does_not_treat_viewer_only_keys_as_campaign(self):
+        model = server.build_action_model(
+            {"combat_view": {"active": False}, "live": False, "is_live_view": False},
+            live=False,
+            is_live_view=False,
+        )
+
+        self.assertEqual(_action(model, "exploration", "continue")["disabled_reason"], "no active campaign")
+
     def test_action_model_uses_combat_turn_and_action_economy(self):
         snapshot = {
             "party": ["pc"],
