@@ -10,16 +10,19 @@ enum EndpointStatus: String, Equatable {
 struct LocalEndpoint: Identifiable, Equatable {
     let id = UUID()
     var name: String
-    var port: Int
     var url: URL
     var healthPath: String
     var status: EndpointStatus
 
+    var port: Int {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.port ?? 0
+    }
+
     var dashboardURL: URL {
-        URL(string: "http://127.0.0.1:\(port)/dashboard")!
+        url.appendingPathComponent("dashboard")
     }
 
     var monitorURL: URL {
-        URL(string: "http://127.0.0.1:\(port)/monitor")!
+        url.appendingPathComponent("monitor")
     }
 }

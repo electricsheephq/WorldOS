@@ -47,8 +47,7 @@ struct MonitorView: View {
                 preferredPort: preferredPort,
                 stateDir: stateDir
             )
-            let port = processService.viewerEndpoint?.port ?? URLComponents(url: dashboard, resolvingAgainstBaseURL: false)?.port ?? preferredPort
-            webURL = URL(string: "http://127.0.0.1:\(port)/monitor")
+            webURL = processService.viewerEndpoint?.monitorURL ?? dashboard
         } catch {
             alertMessage = error.localizedDescription
         }

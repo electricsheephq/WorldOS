@@ -166,9 +166,13 @@ struct PlayView: View {
         )
     }
 
-    private static func newRunID() -> String {
+    private static let runIDFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return "play-\(formatter.string(from: Date()))"
+        return formatter
+    }()
+
+    private static func newRunID() -> String {
+        return "play-\(runIDFormatter.string(from: Date()))"
     }
 }

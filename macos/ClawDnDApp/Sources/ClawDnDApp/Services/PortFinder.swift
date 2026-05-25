@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 enum PortFinder {
-    static func firstFreePort(startingAt preferredPort: Int) -> Int {
+    static func firstFreePort(startingAt preferredPort: Int) -> Int? {
         let start = max(1, min(preferredPort, 65535))
         if isAvailable(start) {
             return start
@@ -16,7 +16,7 @@ enum PortFinder {
         for port in 8765...8805 where isAvailable(port) {
             return port
         }
-        return start
+        return nil
     }
 
     static func isAvailable(_ port: Int) -> Bool {

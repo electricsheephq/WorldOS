@@ -2,9 +2,11 @@ import Foundation
 
 enum RepositoryLocator {
     static func defaultRepoPath() -> String {
-        if let env = ProcessInfo.processInfo.environment["CLAWDND_REPO_ROOT"],
-           looksLikeRepo(URL(fileURLWithPath: env)) {
-            return env
+        if let env = ProcessInfo.processInfo.environment["CLAWDND_REPO_ROOT"] {
+            let expanded = (env as NSString).expandingTildeInPath
+            if looksLikeRepo(URL(fileURLWithPath: expanded)) {
+                return expanded
+            }
         }
 
         let bundleURL = Bundle.main.bundleURL
@@ -16,9 +18,10 @@ enum RepositoryLocator {
             cursor.deleteLastPathComponent()
         }
 
-        let lexar = URL(fileURLWithPath: "/Volumes/LEXAR/repos/ClawDnD")
-        if looksLikeRepo(lexar) {
-            return lexar.path
+        let homeRepo = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("repos/ClawDnD")
+        if looksLikeRepo(homeRepo) {
+            return homeRepo.path
         }
 
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -26,7 +29,7 @@ enum RepositoryLocator {
             return cwd.path
         }
 
-        return lexar.path
+        return ""
     }
 
     static func looksLikeRepo(_ url: URL) -> Bool {

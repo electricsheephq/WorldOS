@@ -7,23 +7,30 @@ final class CampaignStore: ObservableObject {
 
     func reload(repoPath: String) {
         let repoURL = URL(fileURLWithPath: repoPath)
-        do {
-            let play = try loadCampaigns(
-                root: repoURL.appendingPathComponent("play-state"),
-                source: .play
-            )
-            let qa = try loadCampaigns(
-                root: repoURL.appendingPathComponent("qa/state"),
-                source: .qa
-            )
-            campaigns = (play + qa).sorted { $0.lastUpdate > $1.lastUpdate }
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let play = try Self.loadCampaigns(
+                    root: repoURL.appendingPathComponent("play-state"),
+                    source: .play
+                )
+                let qa = try Self.loadCampaigns(
+                    root: repoURL.appendingPathComponent("qa/state"),
+                    source: .qa
+                )
+                let merged = (play + qa).sorted { $0.lastUpdate > $1.lastUpdate }
+                await self?.finishReload(campaigns: merged, lastError: nil)
+            } catch {
+                await self?.finishReload(campaigns: [], lastError: error.localizedDescription)
+            }
         }
     }
 
-    private func loadCampaigns(root: URL, source: CampaignSource) throws -> [CampaignSummary] {
+    private func finishReload(campaigns: [CampaignSummary], lastError: String?) {
+        self.campaigns = campaigns
+        self.lastError = lastError
+    }
+
+    private nonisolated static func loadCampaigns(root: URL, source: CampaignSource) throws -> [CampaignSummary] {
         guard FileManager.default.fileExists(atPath: root.path) else { return [] }
         let runDirectories = try FileManager.default.contentsOfDirectory(
             at: root,
@@ -40,7 +47,7 @@ final class CampaignStore: ObservableObject {
                 options: [.skipsHiddenFiles]
             )) ?? []
             return campaignDirectories.compactMap { campaignURL in
-                loadSnapshot(
+                Self.loadSnapshot(
                     snapshotURL: campaignURL.appendingPathComponent("snapshot.json"),
                     stateRoot: runURL,
                     source: source
@@ -49,7 +56,7 @@ final class CampaignStore: ObservableObject {
         }
     }
 
-    private func loadSnapshot(
+    private nonisolated static func loadSnapshot(
         snapshotURL: URL,
         stateRoot: URL,
         source: CampaignSource
@@ -61,15 +68,15 @@ final class CampaignStore: ObservableObject {
         }
 
         let runID = stateRoot.lastPathComponent
-        let title = (root["title"] as? String).flatMap(nonEmpty) ?? id
-        let world = (root["world_id"] as? String).flatMap(nonEmpty) ?? "unknown"
-        let timeOfDay = (root["time_of_day"] as? String).flatMap(nonEmpty) ?? ""
+        let title = (root["title"] as? String).flatMap(Self.nonEmpty) ?? id
+        let world = (root["world_id"] as? String).flatMap(Self.nonEmpty) ?? "unknown"
+        let timeOfDay = (root["time_of_day"] as? String).flatMap(Self.nonEmpty) ?? ""
         let day = root["day"] as? Int
-        let location = currentLocationName(root)
-        let party = partyNames(root)
-        let lastUpdate = campaignRecency(snapshotURL: snapshotURL)
+        let location = Self.currentLocationName(root)
+        let party = Self.partyNames(root)
+        let lastUpdate = Self.campaignRecency(snapshotURL: snapshotURL)
         let isLive = Date().timeIntervalSince(lastUpdate) < 120
-        let provider = inferProvider(stateRoot: stateRoot, source: source)
+        let provider = Self.inferProvider(stateRoot: stateRoot, source: source)
 
         return CampaignSummary(
             id: id,
@@ -89,7 +96,7 @@ final class CampaignStore: ObservableObject {
         )
     }
 
-    private func currentLocationName(_ root: [String: Any]) -> String {
+    private nonisolated static func currentLocationName(_ root: [String: Any]) -> String {
         guard let locID = root["current_location_id"] as? String else {
             return "Unknown location"
         }
@@ -102,18 +109,18 @@ final class CampaignStore: ObservableObject {
         return locID
     }
 
-    private func partyNames(_ root: [String: Any]) -> [String] {
+    private nonisolated static func partyNames(_ root: [String: Any]) -> [String] {
         guard let party = root["party"] as? [String],
               let characters = root["characters"] as? [String: Any] else {
             return []
         }
         return party.compactMap { id in
             guard let character = characters[id] as? [String: Any] else { return id }
-            return (character["name"] as? String).flatMap(nonEmpty) ?? id
+            return (character["name"] as? String).flatMap(Self.nonEmpty) ?? id
         }
     }
 
-    private func inferProvider(stateRoot: URL, source: CampaignSource) -> String {
+    private nonisolated static func inferProvider(stateRoot: URL, source: CampaignSource) -> String {
         switch source {
         case .qa:
             return "QA"
@@ -128,8 +135,8 @@ final class CampaignStore: ObservableObject {
         }
     }
 
-    private func campaignRecency(snapshotURL: URL) -> Date {
-        var best = fileDate(snapshotURL)
+    private nonisolated static func campaignRecency(snapshotURL: URL) -> Date {
+        var best = Self.fileDate(snapshotURL)
         let sessionsURL = snapshotURL
             .deletingLastPathComponent()
             .appendingPathComponent("sessions")
@@ -141,7 +148,7 @@ final class CampaignStore: ObservableObject {
             return best
         }
         for log in logs where log.pathExtension == "jsonl" {
-            let date = fileDate(log)
+            let date = Self.fileDate(log)
             if date > best {
                 best = date
             }
@@ -149,12 +156,12 @@ final class CampaignStore: ObservableObject {
         return best
     }
 
-    private func fileDate(_ url: URL) -> Date {
+    private nonisolated static func fileDate(_ url: URL) -> Date {
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
         return values?.contentModificationDate ?? .distantPast
     }
 
-    private func nonEmpty(_ value: String) -> String? {
+    private nonisolated static func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }

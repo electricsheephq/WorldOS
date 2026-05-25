@@ -34,7 +34,7 @@ struct CampaignSummary: Identifiable, Equatable {
 
     var dayLabel: String {
         if let day {
-            return "Day \(day), \(timeOfDay)"
+            return timeOfDay.isEmpty ? "Day \(day)" : "Day \(day), \(timeOfDay)"
         }
         return timeOfDay.isEmpty ? "Unknown time" : timeOfDay
     }

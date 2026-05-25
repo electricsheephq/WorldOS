@@ -13,6 +13,7 @@ final class AppProcessService: ObservableObject {
     private var viewerProcess: ManagedProcess?
     private var providerProcess: ManagedProcess?
     private let registry = ProviderRegistry()
+    private let maxLogCharacters = 120_000
 
     var diagnostics: String {
         """
@@ -58,8 +59,11 @@ final class AppProcessService: ObservableObject {
 
         stopViewer()
 
-        let port = PortFinder.firstFreePort(startingAt: preferredPort)
-        let dashboard = URL(string: "http://127.0.0.1:\(port)/dashboard")!
+        guard let port = PortFinder.firstFreePort(startingAt: preferredPort) else {
+            try throwAndRecord("Could not find a free viewer port near \(preferredPort).")
+        }
+        let baseURL = URL(string: "http://127.0.0.1:\(port)")!
+        let dashboard = baseURL.appendingPathComponent("dashboard")
         var env: [String: String] = [:]
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
@@ -77,8 +81,7 @@ final class AppProcessService: ObservableObject {
         activeCampaignID = campaignID
         viewerEndpoint = LocalEndpoint(
             name: "Viewer",
-            port: port,
-            url: dashboard,
+            url: baseURL,
             healthPath: "/state",
             status: .running
         )
@@ -109,7 +112,9 @@ final class AppProcessService: ObservableObject {
             try throwAndRecord("Repo path is not a ClawDnD checkout: \(repoPath)")
         }
 
-        let port = PortFinder.firstFreePort(startingAt: preferredPort)
+        guard let port = PortFinder.firstFreePort(startingAt: preferredPort) else {
+            try throwAndRecord("Could not find a free provider viewer port near \(preferredPort).")
+        }
         let adapter = registry.adapter(for: kind)
         let request = try adapter.startSession(
             world: world,
@@ -121,6 +126,8 @@ final class AppProcessService: ObservableObject {
         )
 
         providerProcess?.terminate()
+        providerProcess = nil
+        runningProvider = nil
         providerLog = ""
         let managed = try launchManagedProcess(
             name: request.name,
@@ -132,11 +139,11 @@ final class AppProcessService: ObservableObject {
         )
         providerProcess = managed
         runningProvider = kind
-        let dashboard = URL(string: "http://127.0.0.1:\(port)/dashboard")!
+        let baseURL = URL(string: "http://127.0.0.1:\(port)")!
+        let dashboard = baseURL.appendingPathComponent("dashboard")
         viewerEndpoint = LocalEndpoint(
             name: "Provider viewer",
-            port: port,
-            url: dashboard,
+            url: baseURL,
             healthPath: "/state",
             status: .starting
         )
@@ -186,7 +193,16 @@ final class AppProcessService: ObservableObject {
                 managed?.close()
                 self?.append("\(name) exited with status \(process.terminationStatus)", stream: stream)
                 if stream == .provider {
-                    self?.runningProvider = nil
+                    if self?.providerProcess === managed {
+                        self?.providerProcess = nil
+                        self?.runningProvider = nil
+                    }
+                } else if self?.viewerProcess === managed {
+                    self?.viewerProcess = nil
+                    if var endpoint = self?.viewerEndpoint {
+                        endpoint.status = .stopped
+                        self?.viewerEndpoint = endpoint
+                    }
                 }
             }
         }
@@ -207,8 +223,18 @@ final class AppProcessService: ObservableObject {
         switch stream {
         case .supervisor:
             supervisorLog += line.hasSuffix("\n") ? line : line + "\n"
+            trimLogIfNeeded(&supervisorLog)
         case .provider:
             providerLog += line.hasSuffix("\n") ? line : line + "\n"
+            trimLogIfNeeded(&providerLog)
+        }
+    }
+
+    private func trimLogIfNeeded(_ log: inout String) {
+        guard log.count > maxLogCharacters else { return }
+        log.removeFirst(log.count - maxLogCharacters)
+        if let newline = log.firstIndex(of: "\n") {
+            log.removeSubrange(...newline)
         }
     }
 

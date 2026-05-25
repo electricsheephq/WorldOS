@@ -238,7 +238,10 @@ struct ProviderRegistry {
     ]
 
     func adapter(for kind: ProviderKind) -> ProviderAdapter {
-        adapters[kind] ?? ClaudeProvider()
+        guard let adapter = adapters[kind] else {
+            preconditionFailure("No ProviderAdapter registered for \(kind.rawValue)")
+        }
+        return adapter
     }
 
     func detectAll(repoPath: URL, preferences: ProviderPreferences) -> [ProviderStatus] {
