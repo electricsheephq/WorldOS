@@ -231,3 +231,195 @@ def test_remove_combatant_after_many_rounds_keeps_current_and_round_sane(tmp_pat
     assert after["current"] == order[2], "removing an earlier combatant skipped the current turn"
     assert after["round"] == round_before
     assert 0 <= after["turn_index"] < len(after["order"])  # normalized, not monotonic
+
+
+# --- turn ownership + action economy (mechanical-correctness defect 1) ------
+# Pure-helper rules (attacks-per-action) tested first, then end-to-end through attack().
+
+
+@pytest.mark.parametrize(
+    "extra,surge,expected",
+    [
+        (0, 0, 1),   # vanilla: one attack per Attack action
+        (1, 0, 2),   # Extra Attack (fighter L5): two attacks under one action
+        (2, 0, 3),   # higher Extra Attack
+        (0, 1, 2),   # Action Surge: a 2nd whole action -> 2 attacks total
+        (1, 1, 4),   # Extra Attack + Action Surge: (1+1) * (1+1)
+        (-3, -3, 1), # negatives clamp to 0 -> one action's single attack
+    ],
+)
+def test_attacks_allowed_formula(extra, surge, expected):
+    assert combat.attacks_allowed(extra, surge) == expected
+
+
+def test_check_action_attack_rejects_non_current():
+    ok, reason = combat.check_action_attack(
+        is_current=False, attacks_made=0, extra_attacks=0, surge_actions=0
+    )
+    assert ok is False and "not this creature's turn" in reason
+
+
+def test_check_action_attack_first_attack_ok_second_rejected_without_extra():
+    # one Attack action, no Extra Attack: first attack ok, second has no basis.
+    ok1, _ = combat.check_action_attack(
+        is_current=True, attacks_made=0, extra_attacks=0, surge_actions=0
+    )
+    ok2, reason2 = combat.check_action_attack(
+        is_current=True, attacks_made=1, extra_attacks=0, surge_actions=0
+    )
+    assert ok1 is True
+    assert ok2 is False and "already attacked this turn" in reason2
+
+
+def test_check_action_attack_extra_attack_allows_multiple_then_blocks():
+    # extra_attacks=1 -> 2 attacks allowed under the one action; the 3rd is blocked.
+    assert combat.check_action_attack(
+        is_current=True, attacks_made=1, extra_attacks=1, surge_actions=0
+    )[0] is True
+    blocked, reason = combat.check_action_attack(
+        is_current=True, attacks_made=2, extra_attacks=1, surge_actions=0
+    )
+    assert blocked is False and "no attacks left" in reason
+
+
+def test_check_action_attack_action_surge_grants_more():
+    # 2 attacks already made, no Extra Attack, but an Action Surge was spent -> a 2nd
+    # action's attack is allowed (budget (0+1)*(1+1)=2 -> wait: with surge, attacks_made=1
+    # leaves room). Verify the surge raises the ceiling.
+    assert combat.attacks_allowed(0, 1) == 2
+    assert combat.check_action_attack(
+        is_current=True, attacks_made=1, extra_attacks=0, surge_actions=1
+    )[0] is True
+
+
+def _combat_with_known_current(server):
+    """Start a 3-combatant fight and return (cid, current_id, other_id). Initiative is
+    random, so we read who's current from get_state rather than assume it."""
+    cid = server.create_campaign("turn-order")["id"]
+    ids = [
+        server.create_character(cid, n, kind=k, max_hp=30, armor_class=12)["id"]
+        for n, k in (("A", "player"), ("B", "player"), ("M", "monster"))
+    ]
+    server.start_combat(cid, ids)
+    cur = server.get_state(cid)["current_turn"]
+    other = next(i for i in ids if i != cur)
+    return cid, cur, other, ids
+
+
+def test_attack_by_non_current_combatant_is_rejected_after_reaction_spent(tmp_path, monkeypatch):
+    # An off-turn action-attack is treated as a reaction (an opportunity attack): it
+    # resolves ONCE this round, then a further off-turn attack by the same creature is
+    # rejected (reaction already used). This both ALLOWS the legitimate OA and stops a
+    # non-current creature from taking a free action-attack (the QA defect: Kield
+    # attacked on Renn's turn).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    # `other` is NOT the current combatant. First off-turn strike = a reaction, resolves.
+    first = server.attack(cid, other, cur, attack_bonus=5, damage_dice="1d6")
+    assert first.get("reaction_used") is True
+    # Reaction spent -> a second off-turn attack by `other` this round is rejected, no state change.
+    hp_before = server.get_character(cid, cur)["current_hp"]
+    with pytest.raises(ValueError, match="reaction"):
+        server.attack(cid, other, cur, attack_bonus=5, damage_dice="1d6")
+    assert server.get_character(cid, cur)["current_hp"] == hp_before  # rejected attack rolled nothing
+
+
+def test_explicit_opportunity_attack_off_turn_is_allowed(tmp_path, monkeypatch):
+    # A reaction (opportunity attack) legitimately happens off-turn — is_reaction=True is
+    # accepted for a non-current combatant and gated only by reaction_used.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    oa = server.attack(cid, other, cur, attack_bonus=5, damage_dice="1d6", is_reaction=True)
+    assert oa.get("reaction_used") is True and "hit" in oa  # resolved off-turn
+    # And the reaction is now spent (one per round).
+    with pytest.raises(ValueError, match="reaction"):
+        server.attack(cid, other, cur, attack_bonus=5, damage_dice="1d6", is_reaction=True)
+
+
+def test_second_attack_same_turn_rejected_without_extra_attack(tmp_path, monkeypatch):
+    # The current combatant attacks on its own turn: the FIRST attack consumes the Attack
+    # action; a SECOND with no Extra Attack and no Action Surge is rejected (the QA defect:
+    # two full attacks in one round with no mechanical basis).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    first = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    assert first.get("attacks_made_this_turn") == 1
+    assert first.get("attacks_allowed_this_turn") == 1
+    with pytest.raises(ValueError, match="already attacked this turn"):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    # The Attack action was consumed, so use_action(action) also reflects it.
+    assert server.use_action(cid, cur, "action")["ok"] is False
+
+
+def test_fighter_with_extra_attacks_makes_its_attacks_under_one_action(tmp_path, monkeypatch):
+    # A fighter with Extra Attack (extra_attacks=1) makes its TWO attacks under one action;
+    # the third is rejected. The bonus action stays available (Extra Attack is all one action).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    server.update_character(cid, cur, {"extra_attacks": 1})  # grant Extra Attack to the current combatant
+    a1 = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    assert a1["attacks_allowed_this_turn"] == 2 and a1["attacks_made_this_turn"] == 1
+    a2 = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    assert a2["attacks_made_this_turn"] == 2  # second attack of the multiattack
+    with pytest.raises(ValueError, match="no attacks left"):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # third has no basis
+    # Bonus action untouched by spending the Attack action.
+    assert server.use_action(cid, cur, "bonus")["ok"] is True
+
+
+def test_action_surge_grants_a_second_attack_action(tmp_path, monkeypatch):
+    # A fighter with no Extra Attack: one attack, then the second is blocked — UNTIL an
+    # Action Surge is spent (a fresh action), which grants another attack.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    # Give the current combatant an action_surge pool (1 use).
+    server.set_class_resource(cid, cur, "action_surge", max=1, recharge="short")
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # first attack ok
+    with pytest.raises(ValueError, match="already attacked|no attacks left"):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    # Spend Action Surge — a fresh action -> another attack is now allowed.
+    surge = server.use_resource(cid, cur, "action_surge")
+    assert surge["ok"] is True
+    after = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    assert after["attacks_allowed_this_turn"] == 2 and after["attacks_made_this_turn"] == 2
+
+
+def test_next_turn_resets_attack_economy(tmp_path, monkeypatch):
+    # The attack budget refreshes each turn: after exhausting it, advancing the turn lets
+    # the new current combatant attack again.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    with pytest.raises(ValueError):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # exhausted
+    server.next_turn(cid)
+    new_cur = server.get_state(cid)["current_turn"]
+    new_other = next(i for i in _ids if i != new_cur)
+    fresh = server.attack(cid, new_cur, new_other, attack_bonus=5, damage_dice="1d6")
+    assert fresh.get("attacks_made_this_turn") == 1  # fresh turn, fresh budget
+
+
+def test_cast_spell_by_non_current_caster_is_rejected_after_reaction_spent(tmp_path, monkeypatch):
+    # cast_spell mirrors attack: an off-turn cast is a reaction (resolves once), then a
+    # second off-turn cast the same round is rejected (turn ownership for action-casts).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    # `other` casts a cantrip (no slot needed) off-turn -> resolves as a reaction.
+    first = server.cast_spell(cid, other, "Fire Bolt", target_id=cur)
+    assert "spell" in first  # resolved
+    with pytest.raises(ValueError, match="reaction"):
+        server.cast_spell(cid, other, "Fire Bolt", target_id=cur)  # reaction spent

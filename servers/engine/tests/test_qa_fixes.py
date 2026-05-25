@@ -9,6 +9,8 @@ The self-play QA run (qa/transcripts/play1) and an independent scorer both flagg
 import json
 from pathlib import Path
 
+import pytest
+
 import combat
 import companion
 import content
@@ -145,10 +147,15 @@ def test_award_party_xp_splits_evenly(tmp_path, monkeypatch):
     assert sum(g["granted"] for g in out["grants"]) == 150
 
 
-# --- iteration 3: off-turn attack warning ----------------------------------
+# --- iteration 3: off-turn attack is a reaction (turn-order enforcement) -----
 
 
-def test_attack_flags_off_turn_action(tmp_path, monkeypatch):
+def test_attack_off_turn_is_a_reaction_then_blocked(tmp_path, monkeypatch):
+    # Was: an off-turn attack only got an advisory `off_turn_warning`. Now the engine
+    # ENFORCES turn order — an off-turn attack is treated as a reaction (an opportunity
+    # attack): it resolves once (consuming the combatant's reaction), but a SECOND
+    # off-turn attack the same round is REJECTED. An on-turn attack by the current
+    # combatant is unaffected. (mechanical-correctness defect 1)
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     ids = [
@@ -159,9 +166,17 @@ def test_attack_flags_off_turn_action(tmp_path, monkeypatch):
     cur = server.get_state(cid)["current_turn"]
     off = next(x for x in ids if x != cur)
     tgt_off = next(x for x in ids if x != off)
-    assert "off_turn_warning" in server.attack(cid, off, tgt_off, attack_bonus=0, damage_dice="1d4")
+    # First off-turn strike resolves as a reaction (no advisory key anymore).
+    first = server.attack(cid, off, tgt_off, attack_bonus=0, damage_dice="1d4")
+    assert first.get("reaction_used") is True
+    assert "off_turn_warning" not in first  # superseded by hard enforcement
+    # The reaction is now spent — a second off-turn attack the same round is rejected.
+    with pytest.raises(ValueError, match="reaction"):
+        server.attack(cid, off, tgt_off, attack_bonus=0, damage_dice="1d4")
+    # The current combatant attacking on its OWN turn is fine.
     tgt_cur = next(x for x in ids if x != cur)
-    assert "off_turn_warning" not in server.attack(cid, cur, tgt_cur, attack_bonus=0, damage_dice="1d4")
+    on_turn = server.attack(cid, cur, tgt_cur, attack_bonus=0, damage_dice="1d4")
+    assert "off_turn_warning" not in on_turn and on_turn.get("attacks_made_this_turn") == 1
 
 
 # --- iteration 4: class baseline AC + companion heal triage ----------------
