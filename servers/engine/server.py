@@ -1993,6 +1993,20 @@ def move_to_zone(campaign_id: str, combatant_id: str, zone: str) -> dict:
                 )
 
         cb.zone = zone
+        _log_combat_event(
+            c,
+            f"{mover.name if mover else combatant_id} moves from {from_zone or 'an unset zone'} to {zone}.",
+            {
+                "event": "zone_movement",
+                "actor": _combatant_ref(mover) if mover else {"id": combatant_id, "name": "?"},
+                "from_zone": from_zone,
+                "to_zone": zone,
+                "opportunity_attack": bool(provokers),
+                "provokers": provokers,
+                "warnings": list(warnings),
+            },
+            speaker=mover.name if mover else "",
+        )
         save_campaign(c)
         view = _combat_view(c)
     view["from"] = from_zone
@@ -2038,6 +2052,7 @@ def next_turn(campaign_id: str) -> dict:
         order = c.combat.order
         if not c.combat.active or not order:
             raise ValueError("no active combat")
+        previous = c.characters.get(c.combat.current_combatant_id)
         n = len(order)
         cur = None
         new_round = False
@@ -2078,11 +2093,26 @@ def next_turn(campaign_id: str) -> dict:
                     continue
                 for name in combat.tick_round_effects(holder):
                     expired.append({"character_id": holder.id, "name": name})
-        save_campaign(c)
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
         view["expired_effects"] = expired
+        _log_combat_event(
+            c,
+            f"Turn advances to {cur.name}." if cur else "Turn advances with no living combatant.",
+            {
+                "event": "turn_advanced",
+                "round": c.combat.round,
+                "new_round": new_round,
+                "previous": _combatant_ref(previous) if previous else None,
+                "current": _combatant_ref(cur) if cur else None,
+                "turn_index": c.combat.turn_index,
+                "death_save_due": view["death_save_due"],
+                "expired_effects": expired,
+            },
+            speaker=cur.name if cur else "",
+        )
+        save_campaign(c)
         return view
 
 
@@ -2446,7 +2476,31 @@ def roll_death_save(campaign_id: str, character_id: str) -> dict:
         ch = _char(c, character_id)
         if ch.current_hp != 0 or ch.dead or ch.stable:
             raise ValueError("death saves apply only to a downed (0 HP), unstable, living character")
-        out = combat.resolve_death_save(ch, dice_mod.roll("1d20"))
+        roll = dice_mod.roll("1d20")
+        out = combat.resolve_death_save(ch, roll)
+        _log_combat_event(
+            c,
+            f"{ch.name} rolls a death save: {out.get('result')}.",
+            {
+                "event": "death_save",
+                "target": _combatant_ref(ch),
+                "roll": {
+                    "total": roll.total,
+                    "natural": roll.natural,
+                    "detail": roll.detail,
+                },
+                "result": out.get("result"),
+                "successes": ch.death_saves.successes,
+                "failures": ch.death_saves.failures,
+                "state": {
+                    "current_hp": ch.current_hp,
+                    "stable": ch.stable,
+                    "dead": ch.dead,
+                    "dying": ch.current_hp == 0 and not ch.dead and not ch.stable,
+                },
+            },
+            speaker=ch.name,
+        )
         save_campaign(c)
         return out
 

@@ -117,6 +117,28 @@ def test_move_leaving_zone_with_hostile_flags_opportunity_attack(fight):
     assert server._combatant(c, hero).zone == "dais"
 
 
+def test_move_to_zone_logs_structured_combat_event_payload(fight):
+    cid, hero, gob = fight
+    _scene(cid)
+    server.place_combatant(cid, hero, "doorway")
+    server.place_combatant(cid, gob, "doorway")
+
+    res = server.move_to_zone(cid, hero, "dais")
+
+    camp = store.load_campaign(cid)
+    entries = store.read_log(cid, camp.active_session_id)
+    move_entry = next(e for e in entries if e.payload and e.payload.get("event") == "zone_movement")
+
+    assert move_entry.kind == "combat"
+    assert move_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert move_entry.payload["actor"] == {"id": hero, "name": "Hero"}
+    assert move_entry.payload["from_zone"] == "doorway"
+    assert move_entry.payload["to_zone"] == "dais"
+    assert move_entry.payload["opportunity_attack"] is True
+    assert move_entry.payload["provokers"] == [{"id": gob, "name": "Goblin"}]
+    assert move_entry.payload["warnings"] == res["warnings"]
+
+
 def test_move_no_oa_when_no_hostile_in_left_zone(fight):
     cid, hero, gob = fight
     _scene(cid)
