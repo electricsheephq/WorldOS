@@ -22,6 +22,23 @@ ClawDnD's MCP servers depend on these packages:
 - **httpx** (BSD-3-Clause) — HTTP client for the dnd5eapi.co fallback.
 - **kokoro** (Apache-2.0) — local text-to-speech (added with the voice backend).
 
+## Bundled browser runtime assets
+
+The local OpenWorlds viewer surface vendors these files under
+`viewer/openworlds/vendor/` so the packaged macOS app can render without live CDN
+dependencies:
+
+- **React 18.3.1** (`react-18.3.1.development.js`, MIT)
+- **ReactDOM 18.3.1** (`react-dom-18.3.1.development.js`, MIT)
+- **Babel Standalone 7.29.0** (`babel-standalone-7.29.0.min.js`, MIT)
+- **Google Fonts families** (`Cinzel`, `Cormorant Garamond`,
+  `IM Fell English`, `JetBrains Mono`, open font licenses)
+
+See `viewer/openworlds/vendor/THIRD_PARTY_NOTICES.md` for source URLs and file
+hashes. These development-mode runtime files are a fidelity bridge for the first
+local packaged surface; release hardening should replace Babel-in-browser with a
+compiled bundle while keeping all assets local.
+
 ## Structural references — learn-from only (NO code copied)
 
 These projects informed ClawDnD's design. After verifying their licensing

@@ -1,0 +1,307 @@
+/* Screen: Inventory & Stash */
+
+function ScreenInventory({ onNavigate, state, setState }) {
+  const [selectedItem, setSelectedItem] = React.useState(state.stash[3]);
+  const [filter, setFilter] = React.useState("all");
+  const [activeHero, setActiveHero] = React.useState(state.party[0].id);
+  const [ctxMenu, setCtxMenu] = React.useState(null);
+  const toast = window.useToast ? window.useToast() : (() => {});
+
+  const hero = state.party.find((p) => p.id === activeHero);
+  const filtered = filter === "all"
+    ? state.stash
+    : state.stash.filter((i) => i.type === filter);
+
+  return (
+    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr 320px", gap: 14, padding: 14 }}>
+
+      {/* LEFT — Hero & equipped */}
+      <Panel framed style={{ padding: 22, overflow: "auto" }}>
+        <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
+        <h2 className="h1" style={{ fontSize: 22 }}>{hero.name}</h2>
+        <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>Lv {hero.level} {hero.class}</div>
+
+        {/* Hero portrait + slots */}
+        <div style={{ position: "relative", marginTop: 16, padding: "0 8px" }}>
+          <Placeholder label={`${hero.short} · full art`} h={220} framed style={{ width: "100%" }} />
+
+          {/* Equipment slots ringing portrait */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginTop: 10 }}>
+            {EQUIP_SLOTS.map((s) => {
+              const equipped = hero.equipped.find((e) => e.slot === s.label);
+              return (
+                <div key={s.label} style={{ textAlign: "center" }}>
+                  <Placeholder label={equipped ? equipped.glyph : s.label} w="100%" h={44} framed />
+                  <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, marginTop: 2, color: "var(--ink-600)" }}>
+                    {s.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Divider />
+
+        <SectionTitle>Weapon Set</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+          {[1,2,3,4].map((n) => (
+            <div key={n} style={{ textAlign: "center" }}>
+              <Placeholder label={n === 1 ? "longsword" : ""} w="100%" h={44} framed />
+              <div className="eyebrow" style={{ fontSize: 8, marginTop: 4 }}>{toRoman(n)}</div>
+            </div>
+          ))}
+        </div>
+
+        <Divider />
+
+        <div className="eyebrow">Encumbrance</div>
+        <div style={{ marginTop: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span className="hand" style={{ fontSize: 13 }}>Medium load</span>
+            <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-700)" }}>123.7 / 240 lb</span>
+          </div>
+          <div style={{ height: 10, marginTop: 6, background: "rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)", position: "relative" }}>
+            <div style={{ position: "absolute", inset: 0, right: "48%", background: "linear-gradient(180deg, var(--b-200), var(--b-500))", boxShadow: "inset 0 1px 0 rgba(255,250,220,0.6)" }} />
+          </div>
+        </div>
+
+        <div className="eyebrow" style={{ marginTop: 14 }}>Coin Purse</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
+          <CoinSlot tone="#d4b97a" label="GP" val="232" />
+          <CoinSlot tone="#c0c0c0" label="SP" val="68" />
+          <CoinSlot tone="#b08860" label="CP" val="14" />
+        </div>
+      </Panel>
+
+      {/* CENTER — Shared Stash */}
+      <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <SectionTitle ordinal="II.">Shared Stash</SectionTitle>
+        </div>
+
+        {/* Filter chips */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, marginTop: -8 }}>
+          {[
+            { id: "all", label: "All" },
+            { id: "weapon", label: "Arms" },
+            { id: "armor", label: "Armor" },
+            { id: "spell", label: "Reagents" },
+            { id: "quest", label: "Quest" },
+            { id: "rare", label: "Relics" },
+            { id: "common", label: "Sundries" },
+          ].map((f) => (
+            <button key={f.id} onClick={() => setFilter(f.id)} className={`pill ${filter === f.id ? "" : "muted"}`} style={{
+              cursor: "pointer",
+              background: filter === f.id ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.1)",
+              color: filter === f.id ? "var(--w-300)" : "var(--ink-700)",
+              boxShadow: filter === f.id ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
+            }}>{f.label}</button>
+          ))}
+        </div>
+
+        {/* Stash grid */}
+        <div style={{
+          flex: 1, overflow: "auto",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
+          gap: 8,
+          padding: 12,
+          background: "rgba(80,50,20,0.06)",
+          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+          alignContent: "start",
+        }}>
+          {filtered.map((it) => (
+            <ItemSlot
+              key={it.id}
+              item={it}
+              selected={selectedItem?.id === it.id}
+              onClick={() => setSelectedItem(it)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setSelectedItem(it);
+                setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
+              }}
+            />
+          ))}
+          {Array.from({ length: Math.max(0, 60 - filtered.length) }).map((_, i) => (
+            <Placeholder key={`e${i}`} w="100%" h={68} label="" />
+          ))}
+        </div>
+
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="muted body-sm">{filtered.length} items · {state.stash.length} total</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <BrassButton tone="ghost" size="sm">Sort</BrassButton>
+            <BrassButton tone="ghost" size="sm">Mark Trash</BrassButton>
+            <BrassButton size="sm">Loot Pile</BrassButton>
+          </div>
+        </div>
+      </Panel>
+
+      {/* RIGHT — Item detail */}
+      <Panel framed style={{ padding: 22, overflow: "auto" }}>
+        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} /> : <div className="muted">Select an item.</div>}
+      </Panel>
+
+      {ctxMenu && (
+        <window.ContextMenu
+          x={ctxMenu.x} y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={[
+            { label: "Examine", icon: "◈", hint: "E", onClick: () => toast({ kind: "item", title: ctxMenu.item.name, body: ctxMenu.item.desc }) },
+            { label: "Equip", icon: "⚔", hint: "Q", disabled: !ctxMenu.item.slot, onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
+            { label: "Use", icon: "✦", disabled: ctxMenu.item.type !== "spell", onClick: () => toast({ kind: "item", title: "Used: " + ctxMenu.item.name }) },
+            { divider: true },
+            { label: "Give to " + hero.name.split(" ")[0], icon: "→", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " given to " + hero.name }) },
+            { label: "Mark as trash", icon: "◌", onClick: () => toast({ title: "Marked: " + ctxMenu.item.name }) },
+            { divider: true },
+            { label: "Drop", icon: "▾", tone: "crimson", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+const EQUIP_SLOTS = [
+  { label: "Head" }, { label: "Neck" }, { label: "Body" },
+  { label: "Hands" }, { label: "Ring" }, { label: "Boots" },
+];
+
+function CoinSlot({ tone, label, val }) {
+  return (
+    <div style={{
+      padding: 8, textAlign: "center",
+      background: "rgba(176,141,87,0.08)",
+      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+    }}>
+      <div style={{
+        width: 24, height: 24, borderRadius: "50%", margin: "0 auto",
+        background: `radial-gradient(circle at 30% 30%, ${tone}, color-mix(in oklab, ${tone}, black 40%))`,
+        boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
+      }} />
+      <div className="eyebrow" style={{ fontSize: 9, marginTop: 4 }}>{label}</div>
+      <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>{val}</div>
+    </div>
+  );
+}
+
+function ItemSlot({ item, selected, onClick, onContextMenu }) {
+  const tone = item.type === "rare" ? "var(--royal)" :
+               item.type === "quest" ? "var(--crimson)" :
+               item.type === "spell" ? "var(--royal-bright)" :
+               item.type === "weapon" ? "var(--ink-700)" :
+               "var(--b-500)";
+  return (
+    <window.Tooltip content={<window.ItemTooltip item={item} />} side="top">
+      <button onClick={onClick} onContextMenu={onContextMenu} style={{
+      position: "relative",
+      padding: 0,
+      height: 68,
+      cursor: "pointer",
+      background:
+        item.type === "rare" ? "linear-gradient(180deg, color-mix(in oklab, var(--royal) 18%, var(--p-100)), color-mix(in oklab, var(--royal) 30%, var(--p-200)))" :
+        item.type === "quest" ? "linear-gradient(180deg, color-mix(in oklab, var(--crimson) 12%, var(--p-100)), color-mix(in oklab, var(--crimson) 22%, var(--p-200)))" :
+        "linear-gradient(180deg, var(--p-100), var(--p-200))",
+      boxShadow: selected
+        ? `inset 0 0 0 1px var(--b-600), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-300), 0 0 16px -2px var(--gold-glow)`
+        : `inset 0 0 0 1px ${tone}`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      transition: "all 120ms",
+    }}>
+      <span style={{
+        fontFamily: "var(--f-mono)", fontSize: 8.5,
+        color: "var(--ink-700)",
+        textAlign: "center",
+        padding: 2,
+        lineHeight: 1.15,
+      }}>{item.glyph}</span>
+      {item.qty > 1 && (
+        <span style={{
+          position: "absolute", bottom: 2, right: 4,
+          fontFamily: "var(--f-display)", fontSize: 11,
+          color: "var(--ink-900)",
+          textShadow: "0 1px 0 var(--p-100)",
+        }}>{item.qty}</span>
+      )}
+      </button>
+    </window.Tooltip>
+  );
+}
+
+function ItemDetail({ item, hero, toast }) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <Placeholder label={item.glyph} w={72} h={72} framed />
+        <div>
+          <div className="eyebrow" style={{ color:
+            item.type === "rare" ? "var(--royal)" :
+            item.type === "quest" ? "var(--crimson)" :
+            "var(--ink-600)" }}>
+            {ITEM_TYPES[item.type] || item.type}
+          </div>
+          <h2 className="h1" style={{ fontSize: 20, lineHeight: 1.1, marginTop: 2 }}>{item.name}</h2>
+        </div>
+      </div>
+
+      <Divider />
+
+      <p className="body dropcap" style={{ marginTop: 0, fontSize: 15 }}>
+        {item.desc}
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 14 }}>
+        <StatLine k="Weight" v={item.weight || "—"} />
+        <StatLine k="Value" v={item.value || "—"} />
+        <StatLine k="Slot" v={item.slot || "—"} />
+        <StatLine k="Origin" v={item.origin || "Unknown"} />
+      </div>
+
+      {item.properties && (
+        <>
+          <Divider />
+          <div className="eyebrow">Properties</div>
+          <div className="tag-row" style={{ marginTop: 6 }}>
+            {item.properties.map((p) => <Pill key={p}>{p}</Pill>)}
+          </div>
+        </>
+      )}
+
+      {item.lore && (
+        <>
+          <Divider />
+          <div className="eyebrow">Marginalia</div>
+          <div className="hand" style={{ fontSize: 14, marginTop: 6, color: "var(--ink-700)" }}>
+            "{item.lore}"
+            <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
+              — {item.loreBy || "Linzi, scribe"}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>
+        <BrassButton size="sm" onClick={() => toast && toast({ kind: "item", title: item.name + " given to " + hero.name, body: hero.name.split(" ")[0] + " stows it in their pack." })}>
+          Give to {hero.name.split(" ")[0]}
+        </BrassButton>
+        <BrassButton tone="ghost" size="sm">Examine</BrassButton>
+        <BrassButton tone="ghost" size="sm">Drop</BrassButton>
+      </div>
+    </div>
+  );
+}
+
+const ITEM_TYPES = {
+  weapon: "Arms",
+  armor: "Armor",
+  spell: "Reagent",
+  quest: "Quest Item",
+  rare: "Relic",
+  common: "Sundry",
+};
+
+function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
+
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, ITEM_TYPES, toRoman });
