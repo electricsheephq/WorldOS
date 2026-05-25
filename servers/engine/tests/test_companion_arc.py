@@ -531,6 +531,29 @@ def test_advance_companion_quest_arc_rejects_quest_status_without_arc_transition
     assert persisted.quests[qid].status == "active"
 
 
+def test_advance_companion_quest_arc_rejects_locked_status_quest_projection(camp):
+    cid, comp = camp
+    qid = server.add_quest(cid, "Seraphine's Vow")["id"]
+    server.set_companion_quest_arc(cid, comp, {
+        "id": "cq_seraphine_vow",
+        "title": "Seraphine's Vow",
+        "quest_ids": [qid],
+    })
+
+    with pytest.raises(ValueError, match="cannot project"):
+        server.advance_companion_quest_arc(
+            cid,
+            "cq_seraphine_vow",
+            status="locked",
+            quest_id=qid,
+            quest_status="completed",
+        )
+
+    persisted = store.load_campaign(cid)
+    assert persisted.companion_quest_arcs["cq_seraphine_vow"].status == "locked"
+    assert persisted.quests[qid].status == "active"
+
+
 def test_advance_companion_quest_arc_rejects_conflicting_arc_and_stage_projection(camp):
     cid, comp = camp
     qid = server.add_quest(cid, "Seraphine's Vow")["id"]

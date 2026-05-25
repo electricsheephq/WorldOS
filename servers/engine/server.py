@@ -4611,6 +4611,8 @@ def advance_companion_quest_arc(
 
     derived_from = next_status or next_stage_status
     derived_quest_status = _quest_projection_status(derived_from) if derived_from else ""
+    if next_quest_status and derived_from and not derived_quest_status:
+        raise ValueError(f"quest_status cannot project from companion quest status {derived_from!r}")
     if next_status and next_stage_status:
         stage_projection = _quest_projection_status(next_stage_status)
         if stage_projection and derived_quest_status and stage_projection != derived_quest_status:
