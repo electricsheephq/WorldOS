@@ -283,6 +283,51 @@ class CompanionDossier(_StrictModel):
     relationships: dict[str, str] = Field(default_factory=dict)
 
 
+class ActiveEffect(_StrictModel):
+    """A timed spell effect the ENGINE tracks so it auto-expires instead of relying
+    on the DM to remember (Bless for 10 rounds, Hex for 1 hour, Mage Armor for 8
+    hours). Set by `cast_spell` when the cast spell has a trackable duration; counted
+    down by `next_turn` (combat) and the clock-advance tools (`advance_time`,
+    `long_rest`, `short_rest`, `travel_to`) out of combat; reported in those tools'
+    returns as `expired_effects` so the DM narrates "Bless fades".
+
+    DURATION is stored as a NORMALIZED remaining time, split by granularity (`scale`):
+      * "rounds"  — `rounds_remaining` counts combat rounds (1 round = 6s). Decremented
+                    per `next_turn`; out of combat, any time-of-day phase advance (a
+                    phase ≫ a round) expires it.
+      * "minutes" — same field, pre-converted (1 minute = 10 rounds), so combat decrements
+                    it naturally; out of combat a phase advance expires it (a phase ≫ a minute).
+      * "hours"   — clock-based: expires when the in-world clock reaches/passes
+                    (`expires_day`, `expires_phase_index`), AND on a long rest
+                    (`until_long_rest=True`) — covers Mage Armor surviving combat but
+                    ending overnight.
+      * "days"    — clock-based (`expires_day`/`expires_phase_index`); survives a long rest.
+
+    CONCENTRATION: when `concentration=True` this effect is the engine-tracked twin of
+    `Character.concentration` (one source of truth) — it is removed the instant
+    concentration breaks (failed save / incapacitation / drop to 0 HP / death), via
+    `combat.expire_concentration_effects`.
+
+    ADDITIVE: `Character.active_effects` defaults to `[]`, so every existing snapshot
+    deserializes unchanged and a campaign that never casts a timed spell behaves exactly
+    as today. Conditions-with-durations are OUT OF SCOPE here (spells only)."""
+
+    name: str  # the spell's canonical name
+    source_id: str = ""  # the caster's character id (who cast it)
+    concentration: bool = False  # mirrors Character.concentration; ends when it breaks
+    scale: Literal["rounds", "minutes", "hours", "days"] = "rounds"
+    # combat-grained remainder (meaningful for "rounds"/"minutes"; minutes pre-converted
+    # to rounds at cast). Decremented per turn in combat.
+    rounds_remaining: int = 0
+    # clock deadline for hour/day-scale effects, computed at cast from the campaign
+    # clock + duration; the effect expires once (day, phase) reaches/passes this.
+    expires_day: int = 0
+    expires_phase_index: int = 0
+    # hour-scale buffs also end on a long rest (an overnight ~8h) regardless of the
+    # phase math; day-scale ones survive it.
+    until_long_rest: bool = False
+
+
 class Character(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("char"))
     name: str
@@ -319,6 +364,10 @@ class Character(_StrictModel):
     conditions: list[Condition] = Field(default_factory=list)
     exhaustion: int = 0  # 0-6
     concentration: Optional[str] = None  # spell currently concentrated on
+    # Engine-tracked timed spell effects (Bless 10 rounds, Hex 1 hour, Mage Armor 8h)
+    # that auto-expire via next_turn / clock-advance tools instead of relying on the DM
+    # to remember. Empty == today's behavior. See ActiveEffect; set by cast_spell.
+    active_effects: list[ActiveEffect] = Field(default_factory=list)
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from pathlib import Path
+from typing import Optional
 
 _SPELLS_PATH = Path(__file__).resolve().parents[2] / "data" / "srd" / "spells.json"
 
@@ -124,3 +126,69 @@ def resolve_effect(spell: dict, slot_level: int, caster_level: int, casting_mod:
         }
 
     return {"kind": kind, "effect": m.get("effect", "")}  # buff / utility
+
+
+# --- duration parsing (engine-tracked effect lifetimes) -----------------------
+#
+# BOTH spell data sources already carry a `duration` field, but in two formats:
+#   * the srd524 dump (data/srd/srd524/Spell.json) normalizes it to "<n> <unit>"
+#     with a SINGULAR unit — "1 minute", "10 minute", "8 hour", "1 round";
+#   * the hand-authored curated set (data/srd/spells.json) uses human prose —
+#     "8 hours", "Concentration, up to 1 minute", "Instantaneous".
+# `parse_duration` reads either: it strips a leading "Concentration, up to "
+# qualifier, then pulls the trailing "<n> <unit>" pair (plural tolerated). Durations
+# the engine does NOT count down — instantaneous / until dispelled / special / "" —
+# return None (those are resolved-and-done or DM-managed, exactly today's behavior).
+#
+# Unit mapping (documented once, here):
+#   1 round   = 6 seconds                          -> scale "rounds"
+#   1 minute  = 10 rounds                           -> scale "minutes" (stored as rounds)
+#   1 hour / day                                    -> scale "hours" / "days" (clock-based)
+# Combat decrements rounds/minutes per turn; out of combat a single time-of-day
+# phase advance (a phase ≫ a minute) expires all minute/round-scale effects, and
+# hour/day-scale effects expire when the in-world clock passes their computed
+# deadline (and hour-scale also ends on a long rest — see ActiveEffect).
+_DURATION_RE = re.compile(r"(\d+)\s*(round|minute|min|hour|hr|day)s?\b", re.IGNORECASE)
+
+# units the engine never counts down (resolved instantly or DM-managed)
+_UNTIMED = {"instantaneous", "instant", "until dispelled", "until dispelled or triggered",
+            "special", "permanent", ""}
+
+# minutes -> rounds (SRD: a round is 6 seconds, so 1 minute = 10 rounds)
+ROUNDS_PER_MINUTE = 10
+
+
+def parse_duration(duration: Optional[str]) -> Optional[dict]:
+    """Normalize a spell's free-text `duration` into a timed-effect descriptor, or
+    None when the spell carries no engine-trackable timed duration.
+
+    Returns a dict ``{scale, rounds, hours, days}`` where exactly one of the
+    magnitude fields is meaningful for the chosen ``scale``:
+      * scale "rounds"  -> ``rounds`` = round count
+      * scale "minutes" -> ``rounds`` = minutes * 10 (pre-converted for combat decrement)
+      * scale "hours"   -> ``hours``  = hour count
+      * scale "days"    -> ``days``   = day count
+    """
+    if not duration:
+        return None
+    text = duration.strip().lower()
+    if text in _UNTIMED:
+        return None
+    # Drop a "Concentration, up to ..." (curated) qualifier before matching.
+    text = re.sub(r"^concentration,?\s*(up to\s*)?", "", text).strip()
+    m = _DURATION_RE.search(text)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if n <= 0:
+        return None
+    unit = m.group(2)
+    if unit in ("round",):
+        return {"scale": "rounds", "rounds": n, "hours": 0, "days": 0}
+    if unit in ("minute", "min"):
+        return {"scale": "minutes", "rounds": n * ROUNDS_PER_MINUTE, "hours": 0, "days": 0}
+    if unit in ("hour", "hr"):
+        return {"scale": "hours", "rounds": 0, "hours": n, "days": 0}
+    if unit in ("day",):
+        return {"scale": "days", "rounds": 0, "hours": 0, "days": n}
+    return None

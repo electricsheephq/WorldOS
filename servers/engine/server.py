@@ -41,6 +41,7 @@ from models import (
     SKILL_ABILITIES,
     Ability,
     AbilityScores,
+    ActiveEffect,
     Campaign,
     Character,
     ClassLevel,
@@ -747,6 +748,9 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             beats = worldsim.tick(c, max_beats=1)
             if beats:
                 result["world_beats"] = [b.text for b in beats]
+            # A phase elapsed (overland travel): expire timed spell effects whose
+            # duration ran out (minute/round-scale die on any phase advance).
+            result["expired_effects"] = _expire_clock_effects_all(c)
         save_campaign(c)
         return result
 
@@ -1667,6 +1671,7 @@ def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
             ch.conditions.append(cond)
         if cond in combat.INCAPACITATING:
             ch.concentration = None  # SRD: incapacitation breaks concentration
+            combat.expire_concentration_effects(ch)  # ...and its engine-tracked effect
         save_campaign(c)
         return {**ch.model_dump(mode="json"), "immune": False, "added": added}
 
@@ -1903,6 +1908,7 @@ def next_turn(campaign_id: str) -> dict:
             raise ValueError("no active combat")
         n = len(order)
         cur = None
+        new_round = False
         for _ in range(n):  # at most one full lap; skip dead/removed combatants
             # Keep turn_index NORMALIZED to [0, n) — it's a position, not a running
             # tally. (A monotonic counter desynced remove_combatant's index math,
@@ -1911,6 +1917,7 @@ def next_turn(campaign_id: str) -> dict:
             c.combat.turn_index = (c.combat.turn_index + 1) % n
             if c.combat.turn_index == 0:
                 c.combat.round += 1
+                new_round = True
             candidate = c.characters.get(c.combat.current_combatant_id)
             if candidate is not None and not candidate.dead:
                 cur = candidate
@@ -1924,10 +1931,22 @@ def next_turn(campaign_id: str) -> dict:
                 if cb.character_id == cur.id:
                     cb.reaction_used = False
                     break
+        # Tick round/minute-scale timed effects ONCE per new round (a "10 rounds"
+        # effect lasts 10 rounds, not 10 turns) and auto-expire those that hit 0.
+        # We decrement every combatant's effects (an effect can sit on any of them).
+        expired: list[dict] = []
+        if new_round:
+            for cb in order:
+                holder = c.characters.get(cb.character_id)
+                if holder is None:
+                    continue
+                for name in combat.tick_round_effects(holder):
+                    expired.append({"character_id": holder.id, "name": name})
         save_campaign(c)
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
+        view["expired_effects"] = expired
         return view
 
 
@@ -2140,8 +2159,11 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
         ch = _char(c, character_id)
         r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
         maintained = r.total >= dc
+        expired: list[str] = []
         if not maintained:
             ch.concentration = None
+            # The engine-tracked concentration effect ends with the concentration.
+            expired = combat.expire_concentration_effects(ch)
         save_campaign(c)
         return {
             "roll": r.total,
@@ -2149,6 +2171,7 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
             "dc": dc,
             "maintained": maintained,
             "concentration": ch.concentration,
+            "expired_effects": expired,
         }
 
 
@@ -2444,6 +2467,49 @@ def spell_save_dc(campaign_id: str, character_id: str) -> dict:
     return {"spell_save_dc": 8 + ch.proficiency_bonus + mod, "spell_attack_bonus": ch.proficiency_bonus + mod}
 
 
+# A time-of-day phase is a coarse ~6h slice (24h / 4 phases). Hour/day-scale spell
+# durations are quantized onto that grid for their clock deadline: an N-hour spell
+# lasts ceil(N/6) phases (min 1, so a 1-hour Hex outlives the current phase but ends
+# on the next phase boundary), an N-day spell lasts N*4 phases. Minute/round-scale
+# effects don't use this — they're round-decremented and die on any phase advance.
+_HOURS_PER_PHASE = 6
+
+
+def _effect_clock_deadline(c: Campaign, hours: int, days: int) -> tuple[int, int]:
+    """The (day, phase_index) at which an hour/day-scale effect cast NOW expires —
+    the current clock advanced by the duration, quantized to whole phases. Pure
+    arithmetic over travel.PHASES; doesn't mutate the campaign."""
+    phases = travel.PHASES
+    try:
+        cur_idx = phases.index(c.time_of_day)
+    except ValueError:
+        cur_idx = 0
+    if days > 0:
+        steps = days * len(phases)
+    else:
+        steps = max(1, -(-hours // _HOURS_PER_PHASE))  # ceil(hours / 6), min 1
+    total = cur_idx + steps
+    return c.day + total // len(phases), total % len(phases)
+
+
+def _expire_clock_effects_all(c: Campaign, *, long_rest: bool = False) -> list[dict]:
+    """Expire every character's clock-elapsed timed effects at the campaign's CURRENT
+    clock (call AFTER advancing it). Returns ``[{character_id, name}, ...]`` for the DM
+    to narrate ("Bless fades"). `long_rest=True` also ends hour-scale buffs (Mage Armor).
+    Mutates the campaign's characters; the caller persists."""
+    try:
+        phase_idx = travel.PHASES.index(c.time_of_day)
+    except ValueError:
+        phase_idx = 0
+    report: list[dict] = []
+    for ch in c.characters.values():
+        if not ch.active_effects:
+            continue
+        for name in combat.expire_clock_effects(ch, c.day, phase_idx, long_rest=long_rest):
+            report.append({"character_id": ch.id, "name": name})
+    return report
+
+
 @mcp.tool()
 def cast_spell(
     campaign_id: str,
@@ -2483,6 +2549,9 @@ def cast_spell(
     canonical = (curated or srd).get("name", spell_name)
     spell_level = int((curated.get("level", 0) if curated else srd.get("level", 0)) or 0)
     concentrates = bool(curated.get("concentration") if curated else srd.get("concentration"))
+    # The spell's timed duration (if any), normalized from whichever data source carries
+    # it — both curated and srd524 records have a `duration` string (see spells.parse_duration).
+    duration = spells.parse_duration(curated.get("duration") if curated else srd.get("duration"))
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -2506,10 +2575,47 @@ def cast_spell(
             slot.used += 1
             slot_used = lvl
         if concentrates:
+            # A caster concentrates on ONE spell at a time, so casting a concentration
+            # spell breaks any prior concentration — and its engine-tracked effect, so the
+            # two stay one source of truth. Drop ALL prior concentration effects (covers
+            # both replacing a different spell and recasting the same one — the fresh
+            # effect registered below is authoritative). Do it BEFORE setting the field.
+            combat.expire_concentration_effects(ch)
             ch.concentration = canonical  # replaces (breaks) any prior concentration
+        # Register an engine-tracked timed effect so the spell auto-expires (instead of
+        # relying on the DM to remember it). Concentration spells hold the effect on the
+        # CASTER (so it stays the twin of ch.concentration, one source of truth); a
+        # non-concentration buff with an explicit target holds it on that target.
+        effect_holder = ch
+        if duration is not None:
+            if not concentrates and target_id and target_id != character_id:
+                tgt = c.characters.get(target_id)
+                if tgt is not None:
+                    effect_holder = tgt
+            eff = ActiveEffect(
+                name=canonical,
+                source_id=character_id,
+                concentration=concentrates,
+                scale=duration["scale"],
+                rounds_remaining=duration["rounds"],
+                until_long_rest=(duration["scale"] == "hours"),
+            )
+            if duration["scale"] in ("hours", "days"):
+                eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
+                    c, duration["hours"], duration["days"]
+                )
+            # Recasting the SAME spell on a holder refreshes (doesn't stack) it.
+            effect_holder.active_effects = [
+                e for e in effect_holder.active_effects if e.name != canonical
+            ]
+            effect_holder.active_effects.append(eff)
         mod = _casting_mod(ch)
         prof = ch.proficiency_bonus
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        if effect_holder is not ch:
+            c.characters[effect_holder.id] = Character.model_validate(
+                effect_holder.model_dump(mode="json")
+            )
         save_campaign(c)
         updated = c.characters[character_id]
         result = {
@@ -2523,6 +2629,16 @@ def cast_spell(
                 str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
             },
         }
+        # Surface the engine-tracked timed effect (if any) so the DM knows it'll
+        # auto-expire — and on whom it's tracked.
+        if duration is not None:
+            result["active_effect"] = {
+                "name": canonical,
+                "holder_id": effect_holder.id,
+                "scale": duration["scale"],
+                "rounds_remaining": duration["rounds"],
+                "concentration": concentrates,
+            }
         if curated is not None:
             result["automated"] = True
             result["effect"] = spells.resolve_effect(
@@ -2788,6 +2904,19 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
         ch = _char(c, character_id)
         out = rests.short_rest(ch, hit_dice_to_spend, dice_mod.roll)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        # A short rest is ~1 in-world hour: expire sub-hour (minute/round-scale) timed
+        # effects and any whose absolute clock deadline already passed. Hour-scale buffs
+        # not yet due (e.g. 8h Mage Armor) survive. The clock isn't advanced by a short rest.
+        try:
+            phase_idx = travel.PHASES.index(c.time_of_day)
+        except ValueError:
+            phase_idx = 0
+        expired: list[dict] = []
+        for who in c.characters.values():
+            if who.active_effects:
+                for name in combat.expire_short_rest_effects(who, c.day, phase_idx):
+                    expired.append({"character_id": who.id, "name": name})
+        out["expired_effects"] = expired
         save_campaign(c)
         return out
 
@@ -2832,6 +2961,10 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         day, tod = travel.advance_clock(c, steps)
         out["day"] = day
         out["time_of_day"] = tod
+        # An overnight (~8h) ends timed spell effects: minute/round-scale, hour/day-scale
+        # past their deadline, AND every hour-scale buff (Mage Armor/Aid/Longstrider) via
+        # long_rest=True — even when resting in the morning is a clock no-op (steps == 0).
+        out["expired_effects"] = _expire_clock_effects_all(c, long_rest=True)
         save_campaign(c)
         # A long rest is the natural moment for a CAMP scene — nudge the DM to gather the party
         # (companions breathe here) when there are companions to gather.
@@ -3693,6 +3826,9 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
             steps = max(0, int(phases))
         day, tod = travel.advance_clock(c, steps)
         beats = worldsim.tick(c, max_beats=1) if steps > 0 else []
+        # The clock moved — expire any timed spell effect whose duration has elapsed
+        # (minute/round-scale die on any phase advance; hour/day-scale at their deadline).
+        expired = _expire_clock_effects_all(c) if steps > 0 else []
         save_campaign(c)
         return {
             "day": day,
@@ -3700,6 +3836,7 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
             "phases_advanced": steps,
             "note": note,
             "world_beats": [b.text for b in beats],
+            "expired_effects": expired,
         }
 
 

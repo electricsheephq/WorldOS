@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from models import Character, Condition, DeathSaves, Zone
+from models import ActiveEffect, Character, Condition, DeathSaves, Zone
 
 _DICE = re.compile(r"(\d*)d(\d+)", re.IGNORECASE)
 
@@ -107,6 +107,7 @@ def _die(ch: Character) -> None:
     ch.dead = True
     ch.stable = False
     ch.concentration = None
+    ch.active_effects = [eff for eff in ch.active_effects if not eff.concentration]
     ch.conditions = []
 
 
@@ -187,6 +188,8 @@ def apply_damage(
     conc_dc = None
     if ch.current_hp == 0:
         ch.concentration = None  # unconsciousness or death ends concentration (no save)
+        # ...and its engine-tracked effect (kept consistent: one source of truth).
+        ch.active_effects = [eff for eff in ch.active_effects if not eff.concentration]
     elif damage_taken > 0 and ch.concentration:
         # DC is half the damage TAKEN (min 10) — temp HP absorbing it doesn't dodge the check.
         conc_dc = max(10, damage_taken // 2)
@@ -303,3 +306,104 @@ def melee_range_warning(
         f"nor adjacent. A melee attack normally requires closing the distance "
         f"(move_to_zone) first; this is advisory, the attack was still resolved."
     )
+
+
+# --- Timed spell effects (auto-expiry) -------------------------------------
+# The engine tracks Character.active_effects so timed spells (Bless 10 rounds,
+# Hex 1 hour, Mage Armor 8h) auto-expire instead of relying on the DM. Pure
+# helpers operating on a Character; the MCP tools (next_turn, advance_time,
+# long/short_rest, travel_to) wrap them with the lock + persistence and surface
+# the returned names as `expired_effects`. See models.ActiveEffect for the shape
+# and the unit mapping (1 round = 6s; 1 minute = 10 rounds; hour/day = clock).
+
+# in-world phases per day — mirrors travel.PHASES; combat.py stays I/O-free, so we
+# take the *index* of the current phase from the caller rather than import travel.
+PHASES_PER_DAY = 4
+
+
+def _commit_expiry(ch: Character, surviving: list[ActiveEffect], expired: list[ActiveEffect]) -> list[str]:
+    """Apply an expiry result: keep `surviving`, and if any `expired` effect was the
+    concentration twin, clear `ch.concentration` too — when a concentration spell's
+    DURATION runs out the spell is over, so the field and the effect stay one source of
+    truth (the inverse of expire_concentration_effects). Returns the expired names."""
+    ch.active_effects = surviving
+    if any(eff.concentration for eff in expired):
+        ch.concentration = None
+    return [eff.name for eff in expired]
+
+
+def tick_round_effects(ch: Character) -> list[str]:
+    """Decrement every round/minute-scale effect by ONE combat round and drop those
+    that hit 0. Hour/day-scale effects (clock-based) are untouched here. Returns the
+    names of effects that just expired (for the DM to narrate). Mutates ch — and clears
+    concentration if the expiring effect was a concentration spell."""
+    expired: list[ActiveEffect] = []
+    surviving: list[ActiveEffect] = []
+    for eff in ch.active_effects:
+        if eff.scale in ("rounds", "minutes"):
+            eff.rounds_remaining -= 1
+            if eff.rounds_remaining <= 0:
+                expired.append(eff)
+                continue
+        surviving.append(eff)
+    return _commit_expiry(ch, surviving, expired)
+
+
+def expire_clock_effects(
+    ch: Character, day: int, phase_index: int, *, long_rest: bool = False
+) -> list[str]:
+    """Expire effects whose in-world time has elapsed, given the NEW clock
+    (`day`, `phase_index` into the 4-phase day). Mutates ch; returns expired names.
+
+    Rules (a time-of-day phase ≫ minutes, so anything finer than an hour ends the
+    moment the clock moves at all):
+      * round/minute-scale  -> expire on ANY phase advance out of combat;
+      * hour/day-scale      -> expire when (day, phase_index) reaches/passes the
+                               effect's stored (expires_day, expires_phase_index);
+      * `long_rest=True` (an overnight ~8h) additionally expires every effect flagged
+        `until_long_rest` (the hour-scale buffs — Mage Armor, Aid, Longstrider)."""
+    expired: list[ActiveEffect] = []
+    surviving: list[ActiveEffect] = []
+    for eff in ch.active_effects:
+        gone = False
+        if eff.scale in ("rounds", "minutes"):
+            gone = True  # a phase passed; minute/round effects don't survive it
+        elif long_rest and eff.until_long_rest:
+            gone = True  # the overnight ends hour-scale buffs regardless of phase math
+        elif (day, phase_index) >= (eff.expires_day, eff.expires_phase_index):
+            gone = True  # the clock has reached/passed the effect's deadline
+        if gone:
+            expired.append(eff)
+        else:
+            surviving.append(eff)
+    return _commit_expiry(ch, surviving, expired)
+
+
+def expire_short_rest_effects(ch: Character, day: int, phase_index: int) -> list[str]:
+    """Expire effects that a SHORT REST (~1 in-world hour) ends: every minute/round-scale
+    effect (sub-hour — it can't survive an hour of rest) plus any hour/day-scale effect
+    whose absolute clock deadline has ALREADY passed. Hour-scale buffs not yet at their
+    deadline (e.g. an 8h Mage Armor) SURVIVE a short rest. Mutates ch; returns expired
+    names. (A short rest doesn't move the campaign clock, so it can't cross a phase
+    boundary on its own — hence the explicit sub-hour rule.)"""
+    expired: list[ActiveEffect] = []
+    surviving: list[ActiveEffect] = []
+    for eff in ch.active_effects:
+        if eff.scale in ("rounds", "minutes"):
+            expired.append(eff)
+        elif (day, phase_index) >= (eff.expires_day, eff.expires_phase_index):
+            expired.append(eff)
+        else:
+            surviving.append(eff)
+    return _commit_expiry(ch, surviving, expired)
+
+
+def expire_concentration_effects(ch: Character) -> list[str]:
+    """Drop every concentration-flagged ActiveEffect — call this the instant
+    `ch.concentration` is cleared (failed save / incapacitation / 0 HP / death) so the
+    engine-tracked effect stays a faithful twin of the concentration field (one source
+    of truth). Mutates ch; returns the names removed. A no-op when there are none."""
+    expired = [eff.name for eff in ch.active_effects if eff.concentration]
+    if expired:
+        ch.active_effects = [eff for eff in ch.active_effects if not eff.concentration]
+    return expired
