@@ -9,6 +9,7 @@ final class AppProcessService: ObservableObject {
     @Published var supervisorLog: String = ""
     @Published var providerLog: String = ""
     @Published var lastError: String?
+    @Published var providerLaunchMetadata: ProviderLaunchMetadata?
 
     private var viewerProcess: ManagedProcess?
     private var providerProcess: ManagedProcess?
@@ -23,6 +24,11 @@ final class AppProcessService: ObservableObject {
         Active campaign: \(activeCampaignID ?? "none")
         Running provider: \(runningProvider?.rawValue ?? "none")
         Last error: \(lastError ?? "none")
+
+        \(Diagnostics.providerLaunchSummary(providerLaunchMetadata))
+
+        Provider last log lines:
+        \(Diagnostics.lastLines(providerLog))
 
         Dependencies:
         \(dependencies.map { "\($0.command): \($0.path ?? "missing")" }.joined(separator: "\n"))
@@ -105,6 +111,7 @@ final class AppProcessService: ObservableObject {
         runId: String,
         preferredPort: Int,
         companions: String,
+        stateDir: String,
         preferences: ProviderPreferences
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
@@ -116,26 +123,49 @@ final class AppProcessService: ObservableObject {
             try throwAndRecord("Could not find a free provider viewer port near \(preferredPort).")
         }
         let adapter = registry.adapter(for: kind)
-        let request = try adapter.startSession(
-            world: world,
-            runId: runId,
-            port: port,
-            companions: companions,
-            repoPath: repoURL,
-            preferences: preferences
-        )
+        let request: ProviderLaunchRequest
+        do {
+            request = try adapter.startSession(
+                world: world,
+                runId: runId,
+                port: port,
+                companions: companions,
+                repoPath: repoURL,
+                preferences: preferences
+            )
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            append(message, stream: .provider)
+            throw error
+        }
 
         providerProcess?.terminate()
         providerProcess = nil
         runningProvider = nil
+        providerLaunchMetadata = nil
         providerLog = ""
+        let metadata = ProviderLaunchMetadata(
+            kind: kind,
+            processName: request.name,
+            executable: request.executable,
+            arguments: request.arguments,
+            workingDirectory: request.workingDirectory,
+            environment: request.environment,
+            world: world,
+            runId: runId,
+            port: port,
+            statePath: expandedPathIfPresent(stateDir),
+            message: request.message
+        )
         let managed = try launchManagedProcess(
             name: request.name,
             executable: request.executable,
             arguments: request.arguments,
             workingDirectory: request.workingDirectory,
             environment: request.environment,
-            stream: .provider
+            stream: .provider,
+            providerMetadata: metadata
         )
         providerProcess = managed
         runningProvider = kind
@@ -155,6 +185,10 @@ final class AppProcessService: ObservableObject {
         providerProcess?.terminate()
         providerProcess = nil
         runningProvider = nil
+        if var metadata = providerLaunchMetadata, metadata.exitStatus == nil {
+            metadata.exitedAt = Date()
+            providerLaunchMetadata = metadata
+        }
         stopProviderViewerEndpointIfNeeded()
     }
 
@@ -164,7 +198,8 @@ final class AppProcessService: ObservableObject {
         arguments: [String],
         workingDirectory: URL,
         environment: [String: String],
-        stream: LogStream
+        stream: LogStream,
+        providerMetadata: ProviderLaunchMetadata? = nil
     ) throws -> ManagedProcess {
         var mergedEnvironment = ProcessInfo.processInfo.environment
         environment.forEach { key, value in mergedEnvironment[key] = value }
@@ -194,6 +229,7 @@ final class AppProcessService: ObservableObject {
                 managed?.close()
                 self?.append("\(name) exited with status \(process.terminationStatus)", stream: stream)
                 if stream == .provider {
+                    self?.recordProviderExit(status: process.terminationStatus)
                     if self?.providerProcess === managed {
                         self?.providerProcess = nil
                         self?.runningProvider = nil
@@ -211,10 +247,21 @@ final class AppProcessService: ObservableObject {
 
         do {
             try process.run()
+            if var providerMetadata {
+                providerMetadata.processID = process.processIdentifier
+                providerMetadata.launchedAt = Date()
+                providerLaunchMetadata = providerMetadata
+                append(Diagnostics.providerLaunchSummary(providerMetadata), stream: .provider)
+            }
             return managed
         } catch {
             let message = "\(name) failed to launch: \(error.localizedDescription)"
             lastError = message
+            if var providerMetadata {
+                providerMetadata.lastError = message
+                providerLaunchMetadata = providerMetadata
+                append(Diagnostics.providerLaunchSummary(providerMetadata), stream: stream)
+            }
             append(message, stream: stream)
             throw error
         }
@@ -247,6 +294,24 @@ final class AppProcessService: ObservableObject {
         guard var endpoint = viewerEndpoint, endpoint.name == "Provider viewer" else { return }
         endpoint.status = .stopped
         viewerEndpoint = endpoint
+    }
+
+    private func recordProviderExit(status: Int32) {
+        guard var metadata = providerLaunchMetadata else { return }
+        metadata.exitStatus = status
+        metadata.exitedAt = Date()
+        if status != 0 {
+            let message = "\(metadata.processName) exited with status \(status)"
+            metadata.lastError = message
+            lastError = message
+        }
+        providerLaunchMetadata = metadata
+    }
+
+    private func expandedPathIfPresent(_ path: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return (trimmed as NSString).expandingTildeInPath
     }
 
     private func throwAndRecord(_ message: String) throws -> Never {

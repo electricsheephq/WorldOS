@@ -26,6 +26,11 @@ struct LogsView: View {
                     .tabItem { Text("Viewer") }
                 LogText(title: "Provider", text: processService.providerLog)
                     .tabItem { Text("Provider") }
+                LogText(
+                    title: "Provider Diagnostics",
+                    text: Diagnostics.providerLaunchSummary(processService.providerLaunchMetadata)
+                )
+                .tabItem { Text("Provider Diagnostics") }
                 LogText(title: "Diagnostics", text: processService.diagnostics)
                     .tabItem { Text("Diagnostics") }
             }

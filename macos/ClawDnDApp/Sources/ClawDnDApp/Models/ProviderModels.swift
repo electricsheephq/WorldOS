@@ -68,6 +68,29 @@ struct ProviderLaunchRequest {
     let message: String
 }
 
+struct ProviderLaunchMetadata: Equatable {
+    let kind: ProviderKind
+    let processName: String
+    let executable: String
+    let arguments: [String]
+    let workingDirectory: URL
+    let environment: [String: String]
+    let world: String
+    let runId: String
+    let port: Int
+    let statePath: String?
+    let message: String
+    var processID: Int32?
+    var launchedAt: Date?
+    var exitedAt: Date?
+    var exitStatus: Int32?
+    var lastError: String?
+
+    var commandLine: String {
+        ([executable] + arguments).joined(separator: " ")
+    }
+}
+
 enum ProviderError: LocalizedError {
     case missingDependency(String)
     case configuration(String)
