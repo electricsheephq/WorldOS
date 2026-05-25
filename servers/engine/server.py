@@ -147,6 +147,29 @@ def _combatant(c: Campaign, character_id: str) -> Combatant:
     return cb
 
 
+def _move_party_to(c: Campaign, location_id: str) -> list[str]:
+    """Co-locate the whole PARTY with the location the party just moved to: set
+    `current_location_id` AND every party member's `location_id` to `location_id`.
+
+    The party (`c.party`) is the PC plus any recruited companions — they travel
+    together, so when the party moves they're all in the new scene. Standalone NPCs
+    and monsters (not in the party) keep their own `location_id` (they stay put). This
+    keeps "who's in the scene" honest: the QA state_integrity defect was companions
+    left carrying a stale location_id (a burned-down tavern) after the party moved on,
+    and a denouement narrated somewhere the party's pointer didn't reflect.
+
+    Returns the ids of party members whose `location_id` was changed (for surfacing).
+    Caller persists (sole-writer)."""
+    c.current_location_id = location_id
+    moved: list[str] = []
+    for pid in c.party:
+        member = c.characters.get(pid)
+        if member is not None and member.location_id != location_id:
+            member.location_id = location_id
+            moved.append(pid)
+    return moved
+
+
 def _deep_update(base: dict, patch: dict) -> dict:
     for k, v in patch.items():
         if isinstance(v, dict) and isinstance(base.get(k), dict):
@@ -722,9 +745,14 @@ def add_location(
         world_beats: list[str] = []
         world_developments: list[str] = []
         arrived = False
+        party_relocated: list[str] = []
         if make_current and c.current_location_id != loc.id:
             c.current_location_id = loc.id
             arrived = True
+            # The party arrives together at the generated scene — co-locate every party
+            # member (PC + companions) so none is left at the place they just departed
+            # (QA state_integrity defect). Standalone NPCs/monsters stay put.
+            party_relocated = _move_party_to(c, loc.id)
         if make_current:
             loc.visited = True  # arriving (or already here) marks it visited, like travel_to
             if advance_time:
@@ -745,6 +773,7 @@ def add_location(
         "connections": loc.connections,
         "is_current": c.current_location_id == loc.id,
         "arrived": arrived,
+        "party_relocated": party_relocated,
         "visited": loc.visited,
         "day": c.day,
         "time_of_day": c.time_of_day,
@@ -771,6 +800,12 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result = travel.travel_to(c, destination_id, advance_time=advance_time)
+        # The PARTY travels together: co-locate every party member (PC + companions) with
+        # the new location so companions don't carry a stale location_id (QA state_integrity
+        # defect). travel.travel_to already set current_location_id; this moves the members.
+        moved = _move_party_to(c, destination_id)
+        if moved:
+            result["party_relocated"] = moved
         if advance_time:  # time passed → ONE standing thread may stir (one discrete beat, not a list)
             beats = worldsim.tick(c, max_beats=1)
             if beats:
@@ -1958,6 +1993,10 @@ def next_turn(campaign_id: str) -> dict:
         # recharges at the start of their turn.
         c.combat.action_used = False
         c.combat.bonus_action_used = False
+        # Reset the per-turn attack-action economy too: a new turn starts with one
+        # Attack action's worth of strikes and no Action Surge spent yet.
+        c.combat.action_attacks_made = 0
+        c.combat.surge_actions = 0
         if cur is not None:
             for cb in order:
                 if cb.character_id == cur.id:
@@ -2078,13 +2117,25 @@ def attack(
     advantage: bool = False,
     disadvantage: bool = False,
     is_ranged: bool = False,
+    is_reaction: bool = False,
 ) -> dict:
     """Resolve an attack. The DM supplies attack_bonus and damage_dice (e.g.
     '1d8+3'); the engine rolls 1d20+bonus vs the target's AC, auto-hits on a
     natural 20 and auto-misses on a natural 1, doubles damage dice on a crit, and
     applies the damage. Condition-based advantage/disadvantage is detected (set
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
-    combined with the explicit flags (they cancel if both apply)."""
+    combined with the explicit flags (they cancel if both apply).
+
+    TURN ORDER + ACTION ECONOMY (enforced while a combat is active and the attacker
+    is in the initiative order): an attack as your ACTION is legal only on your own
+    turn, and only up to one Attack action's worth of strikes — 1 attack, or
+    `extra_attacks + 1` with the Extra Attack feature. A further attack needs another
+    Attack action: spend Action Surge (use_resource(resource='action_surge')) first.
+    OFF-TURN attacks are treated as a REACTION (an opportunity attack): legal once
+    per round and gated by the combatant's reaction — pass is_reaction=True to mark
+    an opportunity attack explicitly. An illegal attack (wrong turn / out of attacks /
+    no reaction left) is REJECTED with a clear error and NO state change (no roll,
+    no damage). Inert when no combat is active or the attacker isn't a combatant."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
@@ -2094,6 +2145,46 @@ def attack(
         if combat.is_incapacitated(attacker):
             incap = ", ".join(cn.value for cn in attacker.conditions if cn in combat.INCAPACITATING)
             raise ValueError(f"{attacker.name} is incapacitated ({incap}) and cannot attack")
+        # Turn ownership + action economy. Only enforced while combat is active AND the
+        # attacker is actually in the initiative order (a non-combatant strike — an
+        # environmental hazard, an out-of-initiative scene — is left to the DM). The
+        # gate runs BEFORE the roll so a rejected attack changes NOTHING (no roll, no
+        # damage, no economy spend) — the QA defect was an attack by the wrong creature
+        # / a second attack with no mechanical basis silently resolving.
+        attacker_cb = next(
+            (cb for cb in c.combat.order if cb.character_id == attacker_id), None
+        ) if c.combat.active else None
+        consume_reaction = False
+        if attacker_cb is not None:
+            is_current = c.combat.current_combatant_id == attacker_id
+            # Off-turn, or an explicitly-declared opportunity attack, is a REACTION:
+            # legal once per round, gated by reaction_used (so OAs legitimately happen
+            # off-turn) — never blocked by the per-action attack budget.
+            if is_reaction or not is_current:
+                if attacker_cb.reaction_used:
+                    cur = c.characters.get(c.combat.current_combatant_id)
+                    cur_name = cur.name if cur else c.combat.current_combatant_id
+                    detail = (
+                        "an opportunity attack" if is_reaction
+                        else f"acting off-turn (it is {cur_name}'s turn)"
+                    )
+                    raise ValueError(
+                        f"{attacker.name} has already used its reaction this round and "
+                        f"cannot attack again until its next turn ({detail}). "
+                        f"Advance with next_turn so the order stays in sync."
+                    )
+                consume_reaction = True
+            else:
+                # An attack as the current combatant's ACTION: enforce one Attack
+                # action's worth of strikes (Extra Attack / Action Surge aware).
+                ok, reason = combat.check_action_attack(
+                    is_current=True,
+                    attacks_made=c.combat.action_attacks_made,
+                    extra_attacks=getattr(attacker, "extra_attacks", 0),
+                    surge_actions=c.combat.surge_actions,
+                )
+                if not ok:
+                    raise ValueError(f"{attacker.name} cannot attack: {reason}")
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
@@ -2112,15 +2203,20 @@ def attack(
             "target_ac": target.armor_class,
             "damage": None,
         }
-        # Non-breaking turn-order signal: off-turn attacks are legal (reactions),
-        # but an unintended one desyncs the tracker — surface it so the DM can tell.
-        if c.combat.active and c.combat.current_combatant_id not in (None, attacker_id):
-            cur = c.characters.get(c.combat.current_combatant_id)
-            result["off_turn_warning"] = (
-                f"{attacker.name} is acting, but it is "
-                f"{cur.name if cur else c.combat.current_combatant_id}'s turn — "
-                f"a reaction? Otherwise advance with next_turn so the order stays in sync."
-            )
+        # Commit the action economy now — an attack spends its action/reaction whether
+        # or not it lands (a missed swing still used your action). The gate above already
+        # proved it legal; record it so a second attack this turn is judged correctly.
+        if attacker_cb is not None:
+            if consume_reaction:
+                attacker_cb.reaction_used = True
+                result["reaction_used"] = True
+            else:
+                c.combat.action_used = True  # an Attack action consumes the turn's action
+                c.combat.action_attacks_made += 1
+                result["attacks_made_this_turn"] = c.combat.action_attacks_made
+                result["attacks_allowed_this_turn"] = combat.attacks_allowed(
+                    getattr(attacker, "extra_attacks", 0), c.combat.surge_actions
+                )
         # Zone-aware range (S2.7): a MELEE attack needs attacker & target in the same
         # or an adjacent zone; ranged reaches any zone. Advisory only — surface a
         # warning, never hard-block. Inert when no zones are declared. Position lives
@@ -2135,9 +2231,11 @@ def attack(
             expr = combat.double_dice(damage_dice) if is_crit else damage_dice
             dmg = dice_mod.roll(expr)
             outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
-            save_campaign(c)
             result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             result["target_state"] = outcome
+        # Persist regardless of hit/miss: a miss still consumed the action/reaction
+        # economy above, and that bookkeeping must survive (sole-writer discipline).
+        save_campaign(c)
         return result
 
 
@@ -2550,6 +2648,7 @@ def cast_spell(
     slot_level: Optional[int] = None,
     target_id: str = "",
     is_melee: bool = False,
+    is_reaction: bool = False,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -2593,6 +2692,30 @@ def cast_spell(
         if combat.is_incapacitated(ch):
             incap = ", ".join(cn.value for cn in ch.conditions if cn in combat.INCAPACITATING)
             raise ValueError(f"{ch.name} is incapacitated ({incap}) and cannot cast a spell")
+        # Turn ownership (mirrors attack()): while combat is active and the caster is in
+        # the initiative order, an action-cast is legal only on the caster's own turn.
+        # An off-turn cast (or an explicitly-declared reaction spell — Shield, Counterspell,
+        # an Absorb Elements) is a REACTION: legal once per round, gated by reaction_used.
+        # A rejected cast spends NOTHING (no slot, no concentration). Inert with no combat
+        # or for a non-combatant caster. Spells aren't subject to the per-Attack-action
+        # budget, so this enforces ownership only (not an attack count).
+        caster_cb = next(
+            (cb for cb in c.combat.order if cb.character_id == character_id), None
+        ) if c.combat.active else None
+        cast_consumes_reaction = False
+        if caster_cb is not None:
+            is_current = c.combat.current_combatant_id == character_id
+            if is_reaction or not is_current:
+                if caster_cb.reaction_used:
+                    cur = c.characters.get(c.combat.current_combatant_id)
+                    cur_name = cur.name if cur else c.combat.current_combatant_id
+                    where = "as a reaction" if is_reaction else f"off-turn (it is {cur_name}'s turn)"
+                    raise ValueError(
+                        f"{ch.name} has already used its reaction this round and cannot "
+                        f"cast {where}. A non-reaction spell is an action on your own turn — "
+                        f"advance with next_turn so the order stays in sync."
+                    )
+                cast_consumes_reaction = True
         known = set(ch.spells_known) | set(ch.spells_prepared)
         if known and canonical not in known:
             raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
@@ -2648,6 +2771,10 @@ def cast_spell(
             c.characters[effect_holder.id] = Character.model_validate(
                 effect_holder.model_dump(mode="json")
             )
+        # An off-turn / reaction cast spends the caster's reaction (the combatant record
+        # is separate from the character, so the re-validation above didn't touch it).
+        if cast_consumes_reaction and caster_cb is not None:
+            caster_cb.reaction_used = True
         save_campaign(c)
         updated = c.characters[character_id]
         result = {
@@ -3037,6 +3164,16 @@ def use_resource(campaign_id: str, character_id: str, resource: str, amount: int
                 "max": res.max,
             }
         res.used += amount
+        # Action Surge grants a fresh Action this turn — so the Attack-action economy
+        # (attack()) must allow another Attack action's worth of strikes. Record it on
+        # the combat when spent mid-fight by the CURRENT combatant (resets each turn in
+        # next_turn). Additive: out of combat, or for any other resource, this is inert.
+        if (
+            resource == "action_surge"
+            and c.combat.active
+            and c.combat.current_combatant_id == character_id
+        ):
+            c.combat.surge_actions += amount
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         new = ch.class_resources[resource]

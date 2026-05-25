@@ -4,6 +4,7 @@ import pytest
 
 import content
 import server
+import store
 import travel
 from models import Campaign, Location
 
@@ -242,3 +243,70 @@ def test_location_hex_roundtrips_and_map_kind_derived():
 def test_map_kind_none_without_coords():
     c = content.seed_campaign({"title": "M", "locations": [{"id": "a", "name": "A"}]})
     assert c.map_kind == "none" and c.locations["a"].hex is None
+
+
+# --- party-location propagation on travel (state_integrity defect 2) --------
+# When the PARTY moves, current_location_id AND every party member's location_id
+# (the PC + companions, who travel together) move to the new place; a standalone
+# NPC not in the party stays put.
+
+
+@pytest.fixture
+def party_world(tmp_path, monkeypatch):
+    """A campaign with two connected locations, a PC + a companion in the party, and a
+    standalone NPC anchored at the start. Returns (cid, pc, companion, npc, dest_id)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Party Travel")["id"]
+    # Start location, then a connected destination.
+    start = server.add_location(cid, "Undercroft")["id"]  # becomes current (first location)
+    dest = server.add_location(cid, "Quay", connections=[start])["id"]
+    pc = server.create_character(cid, "Renn", kind="player")["id"]  # add_to_party default True
+    comp = server.create_character(cid, "Cinder", kind="companion")["id"]
+    npc = server.create_character(cid, "Barkeep", kind="npc", add_to_party=False)["id"]
+    # Anchor everyone at the start so "stale location" is meaningful, and confirm the NPC
+    # is NOT in the party.
+    server.update_character(cid, pc, {"location_id": start})
+    server.update_character(cid, comp, {"location_id": start})
+    server.update_character(cid, npc, {"location_id": start})
+    return cid, pc, comp, npc, start, dest
+
+
+def test_travel_to_moves_party_members_and_leaves_npc(party_world):
+    cid, pc, comp, npc, start, dest = party_world
+    out = server.travel_to(cid, dest)
+    assert out["to"] == dest
+    # The party (PC + companion) is co-located with the new current location...
+    assert server.get_state(cid)["location"]["id"] == dest
+    assert server.get_character(cid, pc)["location_id"] == dest
+    assert server.get_character(cid, comp)["location_id"] == dest
+    assert set(out.get("party_relocated", [])) == {pc, comp}
+    # ...but the standalone NPC stays where they were.
+    assert server.get_character(cid, npc)["location_id"] == start
+
+
+def test_travel_to_updates_current_location_id(party_world):
+    cid, _pc, _comp, _npc, _start, dest = party_world
+    server.travel_to(cid, dest)
+    c = store.load_campaign(cid)
+    assert c.current_location_id == dest
+
+
+def test_add_location_make_current_propagates_party(party_world):
+    cid, pc, comp, npc, _start, _dest = party_world
+    # Generate a brand-new scene and arrive there in one call (the live-gen pattern).
+    res = server.add_location(cid, "Siltwharf Steps", make_current=True)
+    new_id = res["id"]
+    assert res["arrived"] is True
+    assert set(res.get("party_relocated", [])) == {pc, comp}
+    assert server.get_character(cid, pc)["location_id"] == new_id
+    assert server.get_character(cid, comp)["location_id"] == new_id
+    # The standalone NPC didn't follow the party into the new scene.
+    assert server.get_character(cid, npc)["location_id"] != new_id
+
+
+def test_travel_party_propagation_pure_no_party_is_noop():
+    # The pure travel.travel_to still works on a party-less Campaign graph (the engine
+    # wrapper adds propagation; the pure layer just moves the pointer).
+    c = _camp("a")
+    travel.travel_to(c, "b")
+    assert c.current_location_id == "b"  # unchanged behavior for the pure helper

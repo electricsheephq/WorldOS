@@ -288,12 +288,15 @@ def test_no_zones_combat_runs_unchanged(fight):
     # combatants_in_zone returns empty (nobody is in any named zone).
     assert server.combatants_in_zone(cid, "anywhere")["count"] == 0
 
-    # The action economy / turn flow is untouched.
-    cur = server.get_state(cid)["current_turn"]
-    assert server.use_action(cid, cur, "action")["ok"] is True
+    # The turn flow is untouched. (attack() now wires into the action economy — an
+    # Attack action by the current combatant consumes that turn's action — so we assert
+    # the budget against the combatant whose turn it freshly is after next_turn, which is
+    # deterministic regardless of who won initiative.)
     nxt = server.next_turn(cid)
     assert nxt["active"] is True
     assert "zones" not in nxt  # view stays clean
+    new_cur = server.get_state(cid)["current_turn"]
+    assert server.use_action(cid, new_cur, "action")["ok"] is True  # fresh turn, action available
 
 
 def test_no_zones_move_to_zone_still_safe(fight):

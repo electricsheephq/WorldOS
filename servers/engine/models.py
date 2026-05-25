@@ -539,6 +539,15 @@ class Combat(_StrictModel):
     order: list[Combatant] = Field(default_factory=list)  # sorted desc by initiative
     action_used: bool = False  # current turn's action economy
     bonus_action_used: bool = False
+    # Attack-action economy for the CURRENT turn (additive; resets every next_turn):
+    #  * action_attacks_made — how many attack() calls have resolved under the
+    #    current combatant's Attack action(s) this turn. One Attack action grants
+    #    `extra_attacks + 1` attacks; a second action (Action Surge) grants another.
+    #  * surge_actions — how many EXTRA Attack actions Action Surge has granted this
+    #    turn (incremented when use_resource spends "action_surge" mid-combat for the
+    #    current combatant). attacks allowed = (extra_attacks + 1) * (1 + surge_actions).
+    action_attacks_made: int = 0
+    surge_actions: int = 0
     # Tactical regions for THIS fight (S2.7). Empty = theater-of-the-mind: range/
     # movement gating is inert and nothing changes. Additive default.
     zones: list[Zone] = Field(default_factory=list)

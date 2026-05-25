@@ -72,6 +72,68 @@ def clears_concentration(conditions) -> bool:
     return bool(INCAPACITATING & set(conditions))
 
 
+# --- Attack-action economy (turn ownership + attacks-per-action) -----------
+# Pure helpers the attack() tool wraps. They answer: given whose turn it is and
+# how many attacks have already resolved this turn, is THIS attack legal, and if
+# so does it consume a fresh Attack action? Reactions (opportunity attacks) are
+# NOT routed through here — they act off-turn and are gated by reaction_used.
+
+
+def attacks_allowed(extra_attacks: int, surge_actions: int) -> int:
+    """How many ATTACK ROLLS the current combatant may make this turn under the
+    Attack action(s) available. One Attack action grants ``extra_attacks + 1``
+    attacks (a level-1 fighter -> 1, an Extra-Attack fighter -> 2); each Action
+    Surge spent this turn (``surge_actions``) grants another whole Attack action,
+    i.e. another ``extra_attacks + 1`` attacks. Clamps negatives to 0."""
+    per_action = max(0, int(extra_attacks)) + 1
+    return per_action * (1 + max(0, int(surge_actions)))
+
+
+def check_action_attack(
+    *,
+    is_current: bool,
+    attacks_made: int,
+    extra_attacks: int,
+    surge_actions: int,
+) -> tuple[bool, str]:
+    """Decide whether a NON-reaction (action) attack by ``is_current`` combatant is
+    legal given how many attacks already resolved this turn. Returns
+    ``(ok, reason)``; reason is "" when ok. The caller (attack()) only invokes this
+    for an on/off-turn action attack — reactions bypass it entirely (gated by
+    reaction_used so opportunity attacks legitimately happen off-turn).
+
+    Rules enforced:
+      * an action attack must be made by the CURRENT combatant (turn ownership) —
+        otherwise rejected (the QA defect: Kield attacked on Renn's turn);
+      * the total attacks this turn may not exceed ``attacks_allowed`` — a 2nd
+        attack with no Extra Attack and no Action Surge is rejected (the QA defect:
+        two full attacks in one round); a fighter with extra_attacks makes its
+        allowed multiple attacks under the one action; a spent Action Surge
+        (surge_actions>0) grants the extra attacks for a 2nd action."""
+    if not is_current:
+        return False, (
+            "it is not this creature's turn — an attack as your action is only legal "
+            "on your own turn (an off-turn melee strike is a reaction/opportunity "
+            "attack; track it with use_action(kind='reaction'))"
+        )
+    allowed = attacks_allowed(extra_attacks, surge_actions)
+    if attacks_made >= allowed:
+        if surge_actions <= 0 and int(extra_attacks) <= 0:
+            return False, (
+                "already attacked this turn — one Attack action grants a single "
+                "attack without the Extra Attack feature. Make another action "
+                "available first (Action Surge via use_resource(resource="
+                "'action_surge')) to attack again."
+            )
+        return False, (
+            f"no attacks left this turn — {allowed} attack(s) allowed "
+            f"(extra_attacks={int(extra_attacks)}, action surges={int(surge_actions)}), "
+            f"{attacks_made} already made. Spend an Action Surge "
+            f"(use_resource(resource='action_surge')) for another Attack action."
+        )
+    return True, ""
+
+
 def is_incapacitated(ch: Character) -> bool:
     """True if the creature can take no actions, bonus actions, or reactions — the SRD
     Incapacitated condition and the conditions that include it (Stunned, Paralyzed,
