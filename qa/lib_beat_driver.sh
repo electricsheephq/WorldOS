@@ -32,8 +32,9 @@ clawdnd_snapshot_path() {
 
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
 # TAB-separated line:  day <TAB> time_of_day <TAB> visited_count <TAB> npcs_met <TAB>
-# current_location_id <TAB> current_location_visited(0/1)
-# Echoes nothing when there's no snapshot yet (pre-first-beat). Read-only.
+# current_location_id <TAB> current_location_visited(0/1) <TAB> combat_active(0/1)
+# (combat_active is field 7, appended additively — fields 1-6 are unchanged for callers that
+# cut -f1..6). Echoes nothing when there's no snapshot yet (pre-first-beat). Read-only.
 # $1 = STATE_DIR
 clawdnd_read_progress() {
   local snap; snap="$(clawdnd_snapshot_path "$1")"
@@ -56,7 +57,10 @@ cur_visited = 0
 cl = locs.get(cur) if cur else None
 if isinstance(cl, dict) and cl.get("visited"):
     cur_visited = 1
-print("\t".join([str(day), tod, str(visited), str(npcs_met), str(cur), str(cur_visited)]))
+combat = s.get("combat") or {}
+combat_active = 1 if isinstance(combat, dict) and combat.get("active") else 0
+print("\t".join([str(day), tod, str(visited), str(npcs_met), str(cur),
+                 str(cur_visited), str(combat_active)]))
 PY
 }
 
@@ -67,12 +71,21 @@ PY
 # $1 = ROOT (repo root)  $2 = STATE_DIR  $3 = prev_day  $4 = prev_tod
 clawdnd_soft_tick() {
   local root="$1" state_dir="$2" prev_day="$3" prev_tod="$4"
-  local snap cur cur_day cur_tod
+  local snap cur cur_day cur_tod cur_combat
   snap="$(clawdnd_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
   cur="$(clawdnd_read_progress "$state_dir")"
   cur_day="$(printf '%s' "$cur" | cut -f1)"
   cur_tod="$(printf '%s' "$cur" | cut -f2)"
+  cur_combat="$(printf '%s' "$cur" | cut -f7)"
+  # In COMBAT the clock is measured in rounds (6s) via next_turn, NOT world phases. Advancing a
+  # phase here would expire every round/minute-scale buff at once (Bless, Hex) and drop
+  # concentration mid-fight (combat.expire_clock_effects). A frozen world-clock during combat is
+  # CORRECT — combat doesn't burn time-of-day phases — so SKIP the tick entirely while active.
+  if [ "$cur_combat" = "1" ]; then
+    printf '%s\n' "[tick] combat active -> world clock not advanced (combat runs in rounds; use next_turn)" >&2
+    return 0
+  fi
   # The DM already moved the clock this beat → defer to its pacing, do nothing.
   if [ "$cur_day" != "$prev_day" ] || [ "$cur_tod" != "$prev_tod" ]; then
     return 0

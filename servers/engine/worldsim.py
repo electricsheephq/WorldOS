@@ -154,11 +154,19 @@ def tick_backlog(campaign: Campaign, max_events: int = 2) -> list[BacklogItem]:
         return []  # idempotent: same day (or clock not yet rolled a day) -> no-op
     fired: list[BacklogItem] = []
     cap = max(1, max_events)
+    capped = False
+    # The highest trigger_day among items we ACTUALLY fired (captured BEFORE a recurring item
+    # re-arms its trigger_day forward). When the cap stops us with due items still pending, we
+    # only advance last_tick_day to here — not all the way to campaign.day — so a subsequent tick
+    # on the same/next day still drains the remainder. Already-fired items are status-guarded
+    # (status != "pending"), so they are never re-fired.
+    last_fired_trigger_day = bl.last_tick_day
     # Deterministic order (by trigger_day then id) so a capped tick fires the most-overdue first
     # and is reproducible regardless of dict insertion order.
     for item in sorted(bl.items.values(), key=lambda i: (i.trigger_day, i.id)):
         if item.status != "pending" or item.trigger_day > campaign.day:
             continue
+        last_fired_trigger_day = max(last_fired_trigger_day, item.trigger_day)  # pre-re-arm value
         if item.needs_llm:
             item.status = "fired"  # enqueue only — voicing/authoring is P2/P3, not the engine
         else:
@@ -169,8 +177,12 @@ def tick_backlog(campaign: Campaign, max_events: int = 2) -> list[BacklogItem]:
             item.status = "pending"
         fired.append(item)
         if len(fired) >= cap:
+            capped = True
             break
-    bl.last_tick_day = campaign.day
+    # Not capped -> we drained everything due through today, so advance to campaign.day (and never
+    # re-enter on the same day). Capped with pending work left -> advance only to the highest day
+    # we fired, leaving room for the next tick to fire the strays without re-firing the done ones.
+    bl.last_tick_day = last_fired_trigger_day if capped else campaign.day
     return fired
 
 

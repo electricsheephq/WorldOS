@@ -755,7 +755,10 @@ def add_location(
             party_relocated = _move_party_to(c, loc.id)
         if make_current:
             loc.visited = True  # arriving (or already here) marks it visited, like travel_to
-            if advance_time:
+            # The clock only rolls when we actually ARRIVED somewhere NEW (a journey) — not when
+            # make_current targets the place the party is already standing in (no travel = no time
+            # passes). Gating on `arrived` stops a self-target add_location from burning a phase.
+            if advance_time and arrived:
                 travel.advance_clock(c, 1)
                 world_beats = [b.text for b in worldsim.tick(c, max_beats=1)]
                 # The proactive backlog rides the same arrival time-passage (idempotent by day).
@@ -1764,11 +1767,18 @@ def set_hp(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        was_down = ch.current_hp == 0  # remember the prior 0-state for the wake transition
         ch.current_hp = current_hp
         if temp_hp is not None:
             ch.temp_hp = temp_hp
-        # Re-validate so the clamp invariants apply.
-        c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
+        # Re-validate so the clamp invariants apply (current_hp floored to 0..max_hp).
+        ch = Character.model_validate(ch.model_dump(mode="json"))
+        # Mirror the combat path's 0-HP semantics (one source of truth): a manual set TO 0 clears
+        # concentration + its twin effect and downs the character (unconscious + dying/death-saves,
+        # or death for monsters/NPCs); a set FROM 0 to >0 wakes them. Run on the CLAMPED object so
+        # a negative input that clamps to 0 still triggers the downed transition.
+        combat.apply_hp_set_transition(ch, was_down)
+        c.characters[character_id] = ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")
 
@@ -3961,6 +3971,10 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
         due = consequences_mod.due(c)
         beats = worldsim.tick(c, max_beats=2)  # a long span → a couple of threads stirred
         dev = worldsim.tick_backlog(c, max_events=2)  # ...and the backlog advances over the span
+        # The clock jumped forward days — expire timed effects like every sibling time-seam
+        # (advance_time/travel_to/long_rest/short_rest). A multi-day downtime clears hour/day-scale
+        # buffs (Mage Armor) and any sub-hour leftover; this was the only seam that omitted it.
+        expired = _expire_clock_effects_all(c) if elapsed > 0 else []
         save_campaign(c)
         return {
             "day": c.day,
@@ -3969,6 +3983,7 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
             "due_consequences": [{"text": x.text, "note": x.note} for x in due],
             "world_beats": [b.text for b in beats],
             "world_developments": [_backlog_line(d) for d in dev],
+            "expired_effects": expired,
         }
 
 
@@ -3987,6 +4002,22 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
     standing thread, like travel_to. Returns {day, time_of_day, phases_advanced, world_beats}."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
+        # Combat time is measured in ROUNDS (6s) via next_turn, NOT world phases. Advancing the
+        # phase clock mid-combat would expire every round/minute-scale effect at once (Bless,
+        # Hex) and drop concentration — see combat.expire_clock_effects. So while combat is
+        # active, do NOT move the clock and do NOT expire clock effects; round/minute effects are
+        # correctly decremented by next_turn. (Defense in depth with the harness soft-tick, which
+        # also skips while combat is active.)
+        if c.combat.active:
+            return {
+                "note": "clock not advanced during combat (combat runs in rounds; use next_turn)",
+                "day": c.day,
+                "time_of_day": c.time_of_day,
+                "phases_advanced": 0,
+                "world_beats": [],
+                "world_developments": [],
+                "expired_effects": [],
+            }
         phases_list = travel.PHASES
         target = (to or "").strip().lower()
         if target:

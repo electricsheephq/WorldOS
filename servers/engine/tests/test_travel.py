@@ -304,6 +304,36 @@ def test_add_location_make_current_propagates_party(party_world):
     assert server.get_character(cid, npc)["location_id"] != new_id
 
 
+def test_add_location_make_current_on_current_does_not_advance_time(party_world):
+    """L3 regression: make_current=True targeting the place the party is ALREADY in (a
+    self-update via location_id) must not 'arrive' anywhere, so advance_time=True must NOT
+    burn a phase — no travel happened, so no time passes."""
+    cid, _pc, _comp, _npc, start, _dest = party_world
+    before = server.get_state(cid)
+    day_before, tod_before = before["day"], before["time_of_day"]
+    # Re-add the CURRENT location with make_current + advance_time -> a no-op arrival.
+    res = server.add_location(cid, "Undercroft", location_id=start,
+                              make_current=True, advance_time=True)
+    assert res["is_current"] is True
+    assert res["arrived"] is False               # we were already here
+    assert res["world_beats"] == []              # the clock seam didn't fire
+    assert res["world_developments"] == []
+    after = server.get_state(cid)
+    assert (after["day"], after["time_of_day"]) == (day_before, tod_before)  # clock unchanged
+
+
+def test_add_location_make_current_to_new_place_still_advances_time(party_world):
+    """The L3 gate is arrival-scoped: arriving at a genuinely NEW place with advance_time=True
+    still rolls the clock one phase (the live-gen journey path is unchanged)."""
+    cid, _pc, _comp, _npc, _start, _dest = party_world
+    before = server.get_state(cid)
+    res = server.add_location(cid, "Siltwharf Steps", make_current=True, advance_time=True)
+    assert res["arrived"] is True
+    after = server.get_state(cid)
+    # The clock advanced (a phase moved, possibly rolling the day) — not the same instant.
+    assert (after["day"], after["time_of_day"]) != (before["day"], before["time_of_day"])
+
+
 def test_travel_party_propagation_pure_no_party_is_noop():
     # The pure travel.travel_to still works on a party-less Campaign graph (the engine
     # wrapper adds propagation; the pure layer just moves the pointer).

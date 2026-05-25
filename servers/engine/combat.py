@@ -273,6 +273,33 @@ def apply_healing(ch: Character, amount: int) -> dict:
     return {"healed": amount, "revived": revived, **status(ch)}
 
 
+def apply_hp_set_transition(ch: Character, was_down: bool) -> dict:
+    """Apply the SAME downed/wake/concentration transition the combat path uses, for a manual
+    HP set (set_hp) — `ch.current_hp` has ALREADY been set + clamped to 0..max_hp; `was_down`
+    is whether it was at 0 BEFORE the set. One source of truth with apply_damage/apply_healing:
+      * dropped TO 0 (was up): clear concentration + its twin effect; monsters/NPCs die outright,
+        PCs/companions go unconscious + dying (fresh death saves, not stable);
+      * raised FROM 0 (was down, now >0): wake — fresh death saves, not stable, drop unconscious
+        (mirrors apply_healing's un-down; does NOT touch `dead`, like apply_healing).
+    Mutates ch; returns the resulting status() (with a `revived` flag on a wake)."""
+    if ch.current_hp == 0 and not was_down and not ch.dead:
+        if ch.kind in ("monster", "npc"):
+            _die(ch)  # monsters/NPCs die outright at 0 HP (no death saves) — same as apply_damage
+        else:
+            ch.concentration = None  # 0 HP ends concentration (no save)...
+            expire_concentration_effects(ch)  # ...and drops its engine-tracked twin effect
+            ch.death_saves = DeathSaves()
+            ch.stable = False
+            _ensure_unconscious(ch)
+    revived = False
+    if ch.current_hp > 0 and was_down and not ch.dead:
+        ch.death_saves = DeathSaves()
+        ch.stable = False
+        ch.conditions = [c for c in ch.conditions if c != Condition.UNCONSCIOUS]
+        revived = True
+    return {"revived": revived, **status(ch)}
+
+
 def resolve_death_save(ch: Character, roll) -> dict:
     """Apply a death-saving-throw roll (a plain 1d20 DiceRoll). nat20 -> 1 HP;
     nat1 -> two failures; >=10 success; <10 failure; 3 successes stabilize;

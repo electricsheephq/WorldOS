@@ -245,6 +245,40 @@ def test_tick_respects_max_events():
     assert len(worldsim.tick_backlog(c, max_events=2)) == 2
 
 
+def test_capped_tick_does_not_strand_an_overdue_item():
+    """L1 regression: when the per-tick cap stops us with due items still pending, the cursor
+    must NOT jump to campaign.day (which would strand the strays behind the same-day idempotency
+    guard until the next day-roll). It advances only to the highest day actually fired, so a
+    subsequent tick on the SAME day fires the remainder — without re-firing the done ones."""
+    c = _camp(day=1)
+    # Five deterministic one-shots due at staggered days 2..6; all overdue at day 6.
+    ids = []
+    for d in range(2, 7):
+        item = BacklogItem(kind="faction_move", trigger_day=d, needs_llm=False,
+                           effect={"flag": f"f{d}"}, title=f"day{d}")
+        c.campaign_backlog.items[item.id] = item
+        ids.append((d, item.id))
+    c.campaign_backlog.last_tick_day = 1
+    c.day = 6
+
+    fired1 = worldsim.tick_backlog(c, max_events=2)  # capped at 2 -> fires the two most-overdue
+    assert [f.trigger_day for f in fired1] == [2, 3]
+    # Cursor advanced ONLY to the highest day fired (3), NOT to campaign.day (6) — the bug.
+    assert c.campaign_backlog.last_tick_day == 3
+
+    # A SAME-DAY re-tick still fires the strays (not stranded), and never re-fires the done ones.
+    fired2 = worldsim.tick_backlog(c, max_events=2)
+    assert [f.trigger_day for f in fired2] == [4, 5]  # the next two, the day-2/3 ones are guarded
+    assert c.campaign_backlog.last_tick_day == 5
+
+    fired3 = worldsim.tick_backlog(c, max_events=2)  # the last stray drains; not capped now
+    assert [f.trigger_day for f in fired3] == [6]
+    assert c.campaign_backlog.last_tick_day == 6  # fully drained today -> cursor reaches the day
+    # All five fired exactly once.
+    assert all(c.campaign_backlog.items[i].status == "resolved" for _, i in ids)
+    assert worldsim.tick_backlog(c, max_events=2) == []  # idempotent now everything is done
+
+
 def test_tick_backlog_does_not_touch_consequences():
     # The backlog is a STRICT sibling of the narrative-beat layer: tick_backlog never reads or
     # mutates c.consequences and is never consumed by consequences.due.
@@ -330,9 +364,14 @@ def test_travel_to_surfaces_developments_when_an_item_is_due(cid):
 def test_backlog_state_persists_via_save(cid):
     # Sole-writer: the engine mutates under the lock + save_campaign; reload from disk shows the
     # advanced cursor + fired/re-armed items (no hand-edit of snapshot.json anywhere).
+    seeded_cursor = store.load_campaign(cid).campaign_backlog.last_tick_day
     server.downtime(cid, 12)
     c = store.load_campaign(cid)  # fresh read from disk
-    assert c.campaign_backlog.last_tick_day == c.day
+    # The cursor ADVANCED and persisted. A 12-day jump can fire more items than the per-tick cap
+    # (downtime caps at 2), so the cursor may legitimately land BELOW c.day — only as far as the
+    # highest day actually fired — leaving the strays for the next tick (L1: a capped tick must
+    # not strand a due item by claiming it drained the whole day). It never regresses or overruns.
+    assert seeded_cursor < c.campaign_backlog.last_tick_day <= c.day
     # at least one seeded item left its pending-at-seed state (fired, resolved, or re-armed past
     # the original trigger) — the world demonstrably advanced and persisted.
     statuses = [i.status for i in c.campaign_backlog.items.values()]

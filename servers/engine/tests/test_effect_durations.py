@@ -243,6 +243,85 @@ def test_advance_time_no_movement_keeps_effects():
     assert len(_effects(cid, c)) == 1
 
 
+# --- C1: advance_time must NOT nuke combat buffs/concentration mid-combat -----
+def test_advance_time_during_combat_does_not_expire_buffs_or_break_concentration():
+    """C1 regression: combat runs in ROUNDS (next_turn), not world phases. advance_time
+    mid-combat must be a no-op for the clock AND for effect expiry — Bless + concentration
+    SURVIVE. (The harness soft-tick fires advance_time(phases=1) on every frozen beat; without
+    this guard it stripped every round-scale buff and dropped concentration each beat.)"""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30)["id"]
+    server.cast_spell(cid, c, "Bless")  # rounds/minute-scale + concentration
+    server.start_combat(cid, [c, foe])
+    st = server.get_state(cid)
+    day_before, tod_before = (st["day"], st["time_of_day"])
+
+    out = server.advance_time(cid, phases=1)  # would expire Bless + drop concentration if unguarded
+
+    assert out["phases_advanced"] == 0
+    assert out["expired_effects"] == []
+    assert "combat" in out["note"].lower()
+    # Clock did NOT move.
+    assert out["day"] == day_before and out["time_of_day"] == tod_before
+    # Buff + concentration SURVIVE the mid-combat call.
+    assert [e["name"] for e in _effects(cid, c)] == ["Bless"]
+    assert server.get_character(cid, c)["concentration"] == "Bless"
+    # Even a target-phase jump (`to=`) is refused while combat is active.
+    out2 = server.advance_time(cid, to="evening")
+    assert out2["phases_advanced"] == 0 and out2["expired_effects"] == []
+
+
+def test_advance_time_out_of_combat_still_expires_after_end_combat():
+    """The C1 guard is combat-scoped: once combat ends, advance_time expires sub-hour effects
+    exactly as before (the out-of-combat path is unchanged)."""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30)["id"]
+    server.cast_spell(cid, c, "Bless")
+    server.start_combat(cid, [c, foe])
+    server.advance_time(cid, phases=1)  # no-op while in combat
+    assert [e["name"] for e in _effects(cid, c)] == ["Bless"]  # untouched
+    server.end_combat(cid)
+    out = server.advance_time(cid, phases=1)  # now out of combat -> expires
+    assert out["expired_effects"] == [{"character_id": c, "name": "Bless"}]
+    assert _effects(cid, c) == []
+
+
+# --- H1: set_hp(0) clears concentration + effect + downs; healing wakes -------
+def test_set_hp_zero_clears_concentration_and_downs_then_heal_wakes():
+    """H1 regression: set_hp(…, 0) must match the combat path — clear concentration AND its
+    engine-tracked effect, and apply the unconscious/dying transition (not just clamp HP).
+    Raising HP from 0 wakes the character (mirrors apply_healing)."""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    server.cast_spell(cid, c, "Bless")  # concentration + a tracked effect
+    assert server.get_character(cid, c)["concentration"] == "Bless"
+
+    sheet = server.set_hp(cid, c, 0)
+    assert sheet["current_hp"] == 0
+    assert sheet["concentration"] is None                  # concentration cleared
+    assert sheet["active_effects"] == []                   # ...and its twin effect removed
+    assert "unconscious" in sheet["conditions"]            # downed
+    assert sheet["stable"] is False and sheet["dead"] is False
+    assert sheet["death_saves"]["failures"] == 0           # fresh death saves
+
+    # Heal back up -> wake.
+    sheet2 = server.set_hp(cid, c, 7)
+    assert sheet2["current_hp"] == 7
+    assert "unconscious" not in sheet2["conditions"]
+    assert sheet2["stable"] is False
+
+
+def test_set_hp_negative_clamps_to_zero_and_still_downs():
+    """A negative input clamps to 0 (validator) AND still triggers the downed transition —
+    the transition runs on the CLAMPED value, not the raw input."""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    sheet = server.set_hp(cid, c, -5)
+    assert sheet["current_hp"] == 0 and "unconscious" in sheet["conditions"]
+
+
 def test_mage_armor_survives_combat_but_expires_on_long_rest():
     cid = server.create_campaign("S")["id"]
     w = server.create_character(
@@ -279,6 +358,35 @@ def test_short_rest_expires_sub_hour_but_keeps_mage_armor():
     names_expired = sorted(e["name"] for e in out["expired_effects"])
     assert names_expired == ["Bless"]  # sub-hour gone, Mage Armor survives
     assert [e["name"] for e in _effects(cid, w)] == ["Mage Armor"]
+
+
+# --- M1: downtime expires timed effects like every sibling time-seam ---------
+def test_downtime_expires_hours_scale_effect():
+    """M1 regression: a multi-day downtime jumps the clock forward, so it must expire timed
+    effects (like advance_time/travel_to/long_rest/short_rest) — it was the only seam omitting
+    it. An 8h Mage Armor does not survive days of downtime."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(
+        cid, "Gale", kind="player", class_name="Wizard",
+        apply_srd_defaults=True, abilities={"intelligence": 16, "constitution": 12},
+    )["id"]
+    server.learn_spells(cid, w, ["Mage Armor"])
+    server.prepare_spells(cid, w, ["Mage Armor"])
+    server.cast_spell(cid, w, "Mage Armor")  # 8h, hour-scale
+    assert [e["name"] for e in _effects(cid, w)] == ["Mage Armor"]
+    out = server.downtime(cid, 3)  # three days pass
+    assert out["expired_effects"] == [{"character_id": w, "name": "Mage Armor"}]
+    assert _effects(cid, w) == []
+
+
+def test_downtime_zero_days_is_noop_for_effects():
+    """downtime(0) doesn't move the clock, so nothing expires (guarded on elapsed > 0)."""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    server.cast_spell(cid, c, "Bless")
+    out = server.downtime(cid, 0)
+    assert out["expired_effects"] == []
+    assert len(_effects(cid, c)) == 1
 
 
 # --- pure helper edges -------------------------------------------------------

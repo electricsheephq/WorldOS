@@ -2,7 +2,7 @@ import pytest
 
 import combat
 from dice import DiceRoll
-from models import Character, Condition
+from models import ActiveEffect, Character, Condition
 
 
 def mk(**kw) -> Character:
@@ -84,6 +84,43 @@ def test_cannot_heal_dead():
     ch = mk(max_hp=10, current_hp=0, dead=True)
     out = combat.apply_healing(ch, 5)
     assert ch.current_hp == 0 and out["revived"] is False
+
+
+# --- H1: manual HP-set transition (one source of truth with damage/heal) ---
+def test_hp_set_transition_to_zero_downs_and_clears_concentration():
+    """A manual set TO 0 (set_hp path) must mirror apply_damage: clear concentration + its
+    twin effect, and down a PC/companion (unconscious + fresh death saves, not stable)."""
+    eff = ActiveEffect(name="Bless", concentration=True, scale="minutes", rounds_remaining=10)
+    ch = mk(max_hp=20, current_hp=0, concentration="Bless", active_effects=[eff], stable=True)
+    out = combat.apply_hp_set_transition(ch, was_down=False)  # was up before, now at 0
+    assert ch.concentration is None and ch.active_effects == []
+    assert "unconscious" in out["conditions"] and out["dying"] is True
+    assert ch.stable is False and ch.dead is False
+
+
+def test_hp_set_transition_to_zero_kills_monster():
+    """Monsters/NPCs die outright at 0 (no death saves) — same rule as apply_damage."""
+    ch = mk(kind="monster", max_hp=15, current_hp=0)
+    out = combat.apply_hp_set_transition(ch, was_down=False)
+    assert ch.dead is True and out["dead"] is True
+
+
+def test_hp_set_transition_from_zero_wakes():
+    """A manual set FROM 0 to >0 wakes the character (mirrors apply_healing's un-down)."""
+    ch = mk(max_hp=20, current_hp=8, conditions=[Condition.UNCONSCIOUS])
+    ch.death_saves.failures = 2
+    out = combat.apply_hp_set_transition(ch, was_down=True)
+    assert out["revived"] is True and "unconscious" not in out["conditions"]
+    assert ch.death_saves.failures == 0 and ch.stable is False
+
+
+def test_hp_set_transition_staying_up_is_noop():
+    """Setting HP between two positive values touches nothing (no spurious down/wake)."""
+    eff = ActiveEffect(name="Bless", concentration=True, scale="minutes", rounds_remaining=10)
+    ch = mk(max_hp=20, current_hp=12, concentration="Bless", active_effects=[eff])
+    out = combat.apply_hp_set_transition(ch, was_down=False)
+    assert ch.concentration == "Bless" and [e.name for e in ch.active_effects] == ["Bless"]
+    assert out["revived"] is False and "unconscious" not in out["conditions"]
 
 
 # --- death-save state machine ---
