@@ -460,3 +460,46 @@ def test_cast_spell_by_non_current_caster_is_rejected_after_reaction_spent(tmp_p
     assert "spell" in first  # resolved
     with pytest.raises(ValueError, match="reaction"):
         server.cast_spell(cid, other, "Fire Bolt", target_id=cur)  # reaction spent
+
+
+def test_next_turn_with_all_combatants_dead_returns_no_current_without_raising(tmp_path, monkeypatch):
+    # A TPK / mutual-kill edge: with EVERY combatant dead, next_turn's one-lap loop finds no
+    # living candidate, so `cur` stays None and the `cur.name if cur else None` path (server.py
+    # ~2028) yields current_name=None — and the call must NOT raise. (`current` itself is the
+    # computed turn_index slot, which stays set while combat is active; the None is current_name.)
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("tpk")["id"]
+    a = server.create_character(cid, "A", kind="monster", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [a, b])
+    server.apply_damage(cid, a, 100)  # both down for good (monsters die outright at 0)
+    server.apply_damage(cid, b, 100)
+    view = server.next_turn(cid)  # no living combatant left -> must not raise
+    assert view["current_name"] is None      # the `cur.name if cur else None` else-branch
+    assert view["death_save_due"] is False    # no one is owed a death save (nobody's alive/dying)
+
+
+def test_action_surge_by_non_current_combatant_does_not_unlock_current_turns_second_attack(tmp_path, monkeypatch):
+    # Turn-ownership for Action Surge: surge_actions only rises for the CURRENT combatant
+    # (server.py ~3184). A NON-current creature spending action_surge must NOT raise the current
+    # combatant's attack ceiling — so the current combatant's 2nd attack is still rejected.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import store
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    # Give the OFF-TURN combatant an action_surge pool and spend it — succeeds as a pool spend,
+    # but it isn't this combatant's turn, so the combat-wide surge_actions must stay 0.
+    server.set_class_resource(cid, other, "action_surge", max=1, recharge="short")
+    spent = server.use_resource(cid, other, "action_surge")
+    assert spent["ok"] is True
+    assert store.load_campaign(cid).combat.surge_actions == 0  # NOT incremented by a non-current spend
+
+    # The CURRENT combatant (no Extra Attack, no surge of its own) gets ONE attack; the second is
+    # rejected — the off-turn surge granted it nothing.
+    target = next(i for i in _ids if i != cur)
+    server.attack(cid, cur, target, attack_bonus=5, damage_dice="1d6")
+    with pytest.raises(ValueError, match="already attacked this turn"):
+        server.attack(cid, cur, target, attack_bonus=5, damage_dice="1d6")
