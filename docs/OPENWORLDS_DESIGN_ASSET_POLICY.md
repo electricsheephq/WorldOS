@@ -7,39 +7,52 @@ third-party game UI material.
 
 ## Source Buckets
 
+Source artifact:
+
+- `OpenWorlds.zip`
+  - SHA256: `8e9e2b885764fd3492b74b2d02eda5db9827eb087121054e8ca52e9ace10fd0a`
+  - Acquisition date: 2026-05-25 UTC
+  - Local extraction label: `openworlds-design-2026-05-25`
+  - License/provenance status: internal design handoff; not a blanket asset
+    license
+
 Primary visual/reference contract:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/Open Worlds.html`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/styles.css`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/app.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/chrome.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/screen-*.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/camp-sidebar.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/toast.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/tooltip.jsx`
+- `openworlds/Open Worlds.html`
+- `openworlds/styles.css`
+- `openworlds/app.jsx`
+- `openworlds/chrome.jsx`
+- `openworlds/screen-*.jsx`
+- `openworlds/camp-sidebar.jsx`
+- `openworlds/toast.jsx`
+- `openworlds/tooltip.jsx`
 
 Prototype/demo data requiring rewrite:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/data.js`
+- `openworlds/data.js`
 
 Open Design or tweak-host code to remove from production routes:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/tweaks-panel.jsx`
+- `openworlds/tweaks-panel.jsx`
 
 Secondary reference only:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/uploads/dndforever/index.html`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/uploads/dndforever/DESIGN-HANDOFF.md`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/uploads/dndforever/DESIGN-MANIFEST.json`
+- `uploads/dndforever/index.html`
+- `uploads/dndforever/DESIGN-HANDOFF.md`
+- `uploads/dndforever/DESIGN-MANIFEST.json`
 
 Reference-only assets:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/screenshots/*`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/uploads/*.png`
-- `/Users/lume/Downloads/OpenWorlds.zip`
+- `openworlds/screenshots/*`
+- `uploads/*.png`
+- `OpenWorlds.zip`
 
 The reference-only assets must not be committed unless a follow-up PR documents
 clear provenance and licensing.
+
+When a later PR copies any source file into the repo, its PR body must map the
+source artifact entry to the new repo-relative path and list the relevant
+license/provenance note.
 
 ## Allowed In Repo
 

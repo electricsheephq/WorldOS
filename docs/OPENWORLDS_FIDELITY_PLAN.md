@@ -11,17 +11,18 @@ local services and host the product surface in `WKWebView`; it should not
 recreate the OpenWorlds UI in SwiftUI unless a future native component can meet
 screenshot-level parity.
 
-Primary visual/reference source files:
+Primary visual/reference source files inside source artifact `OpenWorlds.zip`
+SHA256 `8e9e2b885764fd3492b74b2d02eda5db9827eb087121054e8ca52e9ace10fd0a`:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/Open Worlds.html`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/styles.css`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/app.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/chrome.jsx`
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/screen-*.jsx`
+- `openworlds/Open Worlds.html`
+- `openworlds/styles.css`
+- `openworlds/app.jsx`
+- `openworlds/chrome.jsx`
+- `openworlds/screen-*.jsx`
 
 Prototype/demo data requiring rewrite or explicit non-canonical labeling:
 
-- `/Volumes/LEXAR/Codex/openworlds-design-2026-05-25/openworlds/data.js`
+- `openworlds/data.js`
 
 ## Architecture
 
@@ -81,8 +82,8 @@ Prototype/demo data requiring rewrite or explicit non-canonical labeling:
 ## PR #123 Disposition
 
 PR #123 must remain unmerged. After this plan lands, add a final PR comment on
-#123 linking to the fidelity contract PR and close #123 as superseded once the
-first viewer-hosted OpenWorlds surface PR is open.
+issue/PR `#123` linking to the fidelity contract PR and close `#123` as
+superseded once the first viewer-hosted OpenWorlds surface PR is open.
 
 If the viewer-hosted web-surface path fails, reopen the architecture decision in
 a new issue or PR. Do not revive the SwiftUI repaint unless it includes
