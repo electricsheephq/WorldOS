@@ -64,6 +64,8 @@
     font-size: 12px; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px; }
   .score { font-weight: 700; }
   .score.good { color: var(--good); } .score.mid { color: var(--qa); } .score.low { color: var(--bad); }
+  .status { font-weight: 700; }
+  .status.good { color: var(--good); } .status.low { color: var(--bad); } .status.unknown { color: var(--dim); }
   .ago { margin-left: auto; }
   .empty { color: var(--dim); padding: 72px 20px; text-align: center; font: italic 16px/1.6 Georgia, serif; }
   .empty::before { content: "❧"; display: block; font: 34px/1 var(--font-display); color: var(--gold2); margin-bottom: 12px; }
@@ -92,6 +94,12 @@ function ago(sec) {
   return Math.round(sec/86400) + 'd ago';
 }
 function scoreClass(v) { return v == null ? '' : (v >= 4.3 ? 'good' : v >= 3.5 ? 'mid' : 'low'); }
+function statusClass(v) {
+  const s = String(v ?? '').toUpperCase();
+  if (s === 'PASS' || s === 'GREEN') return 'good';
+  if (s === 'FAIL' || s === 'RED') return 'low';
+  return 'unknown';
+}
 function card(c, now) {
   const root = String(c.root ?? '');
   const isPlay = root === 'play';
@@ -124,9 +132,16 @@ function card(c, now) {
     `<span class="chip ${p.dead ? 'dead' : ''} ${p.kind === 'companion' ? 'companion' : ''}">${esc(p.name)} ${esc(p.hp)}</span>`
   ).join('');
   const scores = c.scores || {};
-  const scoreBadges = ['mechanical','story'].filter(k => scores[k] != null).map(k =>
+  const scoreBadges = ['mechanical','story'].filter(k => typeof scores[k] === 'number').map(k =>
     `<span>${k[0].toUpperCase()}: <span class="score ${scoreClass(scores[k])}">${scores[k]}</span></span>`
   ).join(' &nbsp; ');
+  const readinessBadges = (!isPlay ? ['behavioral','fiction','release'].map(k => {
+    const status = String(scores[k] ?? 'UNKNOWN').toUpperCase();
+    return `<span>${k[0].toUpperCase()}: <span class="status ${statusClass(status)}">${esc(status)}</span></span>`;
+  }).join(' &nbsp; ') : '');
+  const blockerTitle = (c.blockers || []).length ? ` title="${esc((c.blockers || []).slice(0, 3).join(' | '))}"` : '';
+  const releaseMeta = (!isPlay && (c.release_cell || c.run_id))
+    ? `<span${blockerTitle}>${c.release_cell ? `cell: ${esc(c.release_cell)}` : `run: ${esc(c.run_id)}`}</span>` : '';
   const counts = [
     (c.quest_hooks ? `${c.quest_hooks} hooks` : ''),
     (c.quest_outcomes ? `${c.quest_outcomes} quests` : ''),
@@ -141,6 +156,8 @@ function card(c, now) {
     <div class="foot">
       ${counts ? `<span>${esc(counts)}</span>` : ''}
       ${scoreBadges ? `<span>${scoreBadges}</span>` : ''}
+      ${readinessBadges ? `<span>${readinessBadges}</span>` : ''}
+      ${releaseMeta}
       <span class="ago">${ago(now - c.updated_at)}</span>
     </div>
   </div>`;
