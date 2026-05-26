@@ -818,7 +818,13 @@ def test_next_turn_brief_monster_multiattack(tmp_path, monkeypatch):
     captain_id = res["spawned"][0]["id"]
 
     server.start_combat(cid, [pc, captain_id])
-    nt = server.next_turn(cid)  # advance past the first combatant to the second
+    # Initiative order is random; the #183 guard blocks advancing past an able PC
+    # who hasn't acted, so declare a pass for the PC if it won initiative.
+    try:
+        nt = server.next_turn(cid)  # advance past the first combatant to the second
+    except ValueError:
+        server.use_action(cid, pc, "skip")
+        nt = server.next_turn(cid)
 
     assert "turn_brief" in nt, "next_turn must always include turn_brief when combat is active"
     brief = nt["turn_brief"]

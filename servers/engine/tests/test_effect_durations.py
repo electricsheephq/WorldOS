@@ -138,6 +138,173 @@ def test_buff_with_target_tracks_on_target():
     assert _effects(cid, ally)[0]["source_id"] == caster  # source recorded
 
 
+# --- attack-roll spell ON-HIT riders defer until the spell attack hits (#186) ----
+# Guiding Bolt grants its "next attack has Advantage" rider ONLY on a hit. cast_spell
+# must NOT write that marker to the target at cast time (a miss would leave a phantom
+# free-advantage marker, and a re-cast would stack a second one). Instead it records a
+# PENDING rider on the caster; the next attack() materializes it on a HIT and discards
+# it on a MISS. Save spells and self/ally buffs are unaffected (the regressions below).
+
+import dice as dice_mod  # noqa: E402  (deterministic hit/miss for the attack() resolution)
+from dice import DiceRoll  # noqa: E402
+
+
+def _d20_roll(natural: int):
+    """A dice.roll stub that forces the d20 NATURAL face (so a spell attack is a
+    deterministic hit/miss) while honoring the expression's flat modifier; non-d20
+    expressions (damage) roll a fixed mid value. Used via monkeypatch on the attack."""
+    def _roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed=None) -> DiceRoll:
+        if expression.startswith("1d20"):
+            mod = 0
+            if "+" in expression:
+                mod = int(expression.split("+", 1)[1])
+            elif "-" in expression.split("d", 1)[1]:
+                mod = -int(expression.rsplit("-", 1)[1])
+            return DiceRoll(
+                expression=expression, total=natural + mod, rolls=[natural], modifier=mod,
+                detail=f"{expression}[{natural}] = {natural + mod}", is_d20=True,
+                natural=natural, crit=(natural == 20), fumble=(natural == 1),
+            )
+        return DiceRoll(expression=expression, total=6, rolls=[3], detail=f"{expression}[3] = 6")
+    return _roll
+
+
+def _gb_cleric(cid, name="Pious"):
+    c = _cleric(cid, name)
+    server.learn_spells(cid, c, ["Guiding Bolt"])
+    server.prepare_spells(cid, c, ["Guiding Bolt"])
+    return c
+
+
+def _advance_to(cid, who):
+    """Pass non-`who` combatants (PCs must act/pass before next_turn, #160) until it
+    is `who`'s turn so an action attack by `who` is legal."""
+    for _ in range(12):
+        cur = server.get_state(cid).get("current_turn")
+        if cur == who:
+            return
+        ch = server.get_character(cid, cur)
+        if ch.get("kind") in ("player", "companion") and ch.get("current_hp", 1) > 0:
+            server.use_action(cid, cur, "skip")
+        server.next_turn(cid)
+    raise AssertionError(f"never reached {who}'s turn")
+
+
+def test_guiding_bolt_cast_defers_rider_does_not_touch_target():
+    """cast(Guiding Bolt at foe) must NOT write the GB marker to the target — it returns
+    a `pending_effect` (not `active_effect`) and records a pending rider on the caster."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30, armor_class=12)["id"]
+    out = server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    # NOT applied to the target yet — surfaced as a pending on-hit effect instead.
+    assert "active_effect" not in out
+    assert out["pending_effect"]["name"] == "Guiding Bolt"
+    assert out["pending_effect"]["target_id"] == foe and out["pending_effect"]["on_hit"] is True
+    assert _effects(cid, foe) == []  # the target carries NOTHING at cast time
+    # The pending rider lives on the CASTER, keyed to the target.
+    riders = server.get_character(cid, cleric)["pending_on_hit_riders"]
+    assert [r["name"] for r in riders] == ["Guiding Bolt"]
+    assert riders[0]["target_id"] == foe and riders[0]["source_id"] == cleric
+
+
+def test_guiding_bolt_miss_does_not_apply_rider(monkeypatch):
+    """THE BUG (#186): cast(Guiding Bolt) + attack(MISS) -> the target has NO GB marker,
+    and the pending rider is discarded (no free advantage on a missed bolt)."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30, armor_class=18)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    server.start_combat(cid, [cleric, foe])
+    _advance_to(cid, cleric)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(2))  # natural 2, +bonus -> misses AC 18
+    res = server.attack(cid, cleric, foe, attack_bonus=5, damage_dice="4d6",
+                        damage_type="radiant", is_ranged=True)
+    assert res["hit"] is False
+    assert res.get("on_hit_effect_discarded") == ["Guiding Bolt"]
+    assert "on_hit_effect_applied" not in res
+    assert _effects(cid, foe) == []  # <-- the fix: NO marker on a miss
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"] == []  # rider consumed
+
+
+def test_guiding_bolt_hit_applies_rider(monkeypatch):
+    """cast(Guiding Bolt) + attack(HIT) -> the GB marker IS written to the target (a
+    round-scale effect, sourced from the caster), and the pending rider is consumed."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30, armor_class=10)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    server.start_combat(cid, [cleric, foe])
+    _advance_to(cid, cleric)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))  # natural 15, +5 -> hits AC 10
+    res = server.attack(cid, cleric, foe, attack_bonus=5, damage_dice="4d6",
+                        damage_type="radiant", is_ranged=True)
+    assert res["hit"] is True
+    assert res.get("on_hit_effect_applied") == ["Guiding Bolt"]
+    assert "on_hit_effect_discarded" not in res
+    eff = _effects(cid, foe)
+    assert [e["name"] for e in eff] == ["Guiding Bolt"]  # <-- marker written on a hit
+    assert eff[0]["scale"] == "rounds" and eff[0]["source_id"] == cleric
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"] == []  # rider consumed
+
+
+def test_guiding_bolt_recast_does_not_phantom_stack_pending():
+    """Re-casting Guiding Bolt at the same target replaces the pending rider (one record),
+    so a second cast can't leave a phantom marker (the re-cast half of the bug)."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    for _ in range(2):  # a level-3 cleric has two 1st-level slots to spend
+        server.level_up(cid, cleric, "Cleric")
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30, armor_class=12)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)  # re-cast
+    riders = server.get_character(cid, cleric)["pending_on_hit_riders"]
+    assert len(riders) == 1 and riders[0]["target_id"] == foe  # single rider, no phantom
+    assert _effects(cid, foe) == []  # still nothing on the target
+
+
+def test_guiding_bolt_materialized_rider_auto_expires(monkeypatch):
+    """Once a hit materializes the GB rider on the target, it auto-expires like any other
+    timed effect — its 1-round duration ends a round later via next_turn."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=60, armor_class=10)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    server.start_combat(cid, [cleric, foe])
+    _advance_to(cid, cleric)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))  # hit -> GB lands on foe
+    server.attack(cid, cleric, foe, attack_bonus=5, damage_dice="4d6", is_ranged=True)
+    assert [e["name"] for e in _effects(cid, foe)] == ["Guiding Bolt"]
+    # (the d20 stub stays patched; next_turn / use_action(skip) roll no attack, so the
+    # turn advance below is unaffected — don't monkeypatch.undo(), which would also revert
+    # the autouse CLAWDND_STATE_DIR fixture and orphan the campaign.)
+    expired = None
+    for _ in range(6):
+        v = _advance_turn(cid)
+        if v["expired_effects"]:
+            expired = v["expired_effects"]
+            break
+    assert expired == [{"character_id": foe, "name": "Guiding Bolt"}]
+    assert _effects(cid, foe) == []
+
+
+def test_self_buff_attack_spell_not_deferred_unchanged():
+    """REGRESSION: a self/ally buff still writes its effect at cast even if the SRD record
+    happens to carry attack_roll (Mirror Image is a self-buff). The defer is scoped to a
+    SEPARATE target, so a no-target / self-target cast is byte-identical to before."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.level_up(cid, w, "Wizard")
+    server.level_up(cid, w, "Wizard")  # level 3 -> a 2nd-level slot for the level-2 spell
+    server.learn_spells(cid, w, ["Mirror Image"])
+    server.prepare_spells(cid, w, ["Mirror Image"])
+    out = server.cast_spell(cid, w, "Mirror Image")  # no target -> holder is the caster
+    assert "pending_effect" not in out
+    assert out["active_effect"]["holder_id"] == w
+    assert [e["name"] for e in _effects(cid, w)] == ["Mirror Image"]  # applied at cast, as before
+
+
 # --- decrement + auto-expire in combat ---------------------------------------
 def test_next_turn_decrements_and_expires_bless():
     cid = server.create_campaign("S")["id"]
