@@ -254,10 +254,10 @@ function ScreenTable({ onNavigate, state, setState }) {
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
-              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}>d20</button>
-              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}>d12</button>
-              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}>d8</button>
-              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}>d6</button>
+              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -294,7 +294,7 @@ function ScreenTable({ onNavigate, state, setState }) {
               </div>
             </div>
             <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn ghost sm" onClick={() => onNavigate("journal")}>Open chronicle</button>
+              <button className="btn ghost sm" onClick={() => onNavigate("journal")}>{window.OpenWorldsIcon?.has?.("codex.book") && <window.OpenWorldsIcon id="codex.book" size={13} />} Open chronicle</button>
             </div>
           </Panel>
         )}
@@ -327,7 +327,7 @@ function ScreenTable({ onNavigate, state, setState }) {
           <SectionTitle right={<button className="btn ghost sm" onClick={() => onNavigate("inventory")}>Open</button>}>Quick Stash</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
             {stash.slice(0, 8).map((it) => (
-              <IconPlate key={it.id} size={48} label={it.glyph} framed />
+              <IconPlate key={it.id} size={48} label={it.name || it.glyph || "Item"} glyph={it.icon || it.glyph || "inventory.potion"} framed />
             ))}
             {!stash.length && <div className="body-sm muted" style={{ gridColumn: "1 / -1" }}>No quick inventory items.</div>}
           </div>
@@ -349,7 +349,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             {actions.slice(0, 6).map((a) => (
               <EncounterButton
                 key={`${a.group}:${a.id}`}
-                icon={a.available ? "◈" : "◆"}
+                icon={a.available ? (a.icon || a.kind || a.group || "quest.scroll") : "inventory.locked"}
                 label={a.label}
                 detail={a.available ? a.groupLabel : a.disabled_reason}
                 tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
@@ -428,6 +428,9 @@ function PartyRow({ p, active, onClick }) {
 }
 
 function ConditionRow({ icon, name, who, detail, tone }) {
+  const iconNode = window.OpenWorldsIcon?.has?.(icon)
+    ? <window.OpenWorldsIcon id={icon} size={16} label={name} />
+    : icon;
   return (
     <div style={{
       display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center",
@@ -435,7 +438,7 @@ function ConditionRow({ icon, name, who, detail, tone }) {
       background: "rgba(176,141,87,0.06)",
       boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.2)",
     }}>
-      <span style={{ color: `var(--${tone === "crimson" ? "crimson" : tone === "royal" ? "royal" : "b-500"})`, fontSize: 16 }}>{icon}</span>
+      <span style={{ color: `var(--${tone === "crimson" ? "crimson" : tone === "royal" ? "royal" : "b-500"})`, fontSize: 16 }}>{iconNode}</span>
       <div>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)" }}>
           {name} <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>· {who}</span>
@@ -506,6 +509,9 @@ function LogEntry({ entry }) {
 Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry });
 
 function EncounterButton({ icon, label, detail, tone, onClick, disabled }) {
+  const iconNode = window.OpenWorldsIcon?.has?.(icon)
+    ? <window.OpenWorldsIcon id={icon} size={17} label={label} />
+    : icon;
   return (
     <button onClick={onClick} style={{
       display: "grid", gridTemplateColumns: "24px 1fr", gap: 8, alignItems: "center",
@@ -528,7 +534,7 @@ function EncounterButton({ icon, label, detail, tone, onClick, disabled }) {
       e.currentTarget.style.background = "rgba(176,141,87,0.08)";
       e.currentTarget.style.boxShadow = "inset 0 0 0 1px rgba(140,100,60,0.3)";
     }}>
-      <span style={{ color: tone === "crimson" ? "var(--crimson)" : tone === "royal" ? "var(--royal)" : "var(--b-500)", fontSize: 16 }}>{icon}</span>
+      <span style={{ color: tone === "crimson" ? "var(--crimson)" : tone === "royal" ? "var(--royal)" : "var(--b-500)", fontSize: 16 }}>{iconNode}</span>
       <div>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-900)" }}>
           {label}

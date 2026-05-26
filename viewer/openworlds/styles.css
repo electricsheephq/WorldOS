@@ -121,6 +121,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 a { color: inherit; text-decoration: none; cursor: pointer; }
 
+.ow-icon,
+.ow-icon-fallback {
+  display: inline-block;
+  flex: 0 0 auto;
+  color: currentcolor;
+  background: currentcolor;
+  vertical-align: -0.14em;
+}
+
+.ow-icon {
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.ow-icon-fallback {
+  background: transparent;
+  font-family: var(--f-display);
+  line-height: 1;
+  text-align: center;
+}
+
 :where(button, a, .btn, .icon-btn, .nav-item):focus-visible {
   outline: 2px solid var(--gold-glow);
   outline-offset: 2px;

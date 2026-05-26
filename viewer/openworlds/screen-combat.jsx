@@ -192,11 +192,11 @@ function ScreenCombat({ onNavigate, state }) {
           <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 220px) 1fr", gap: 16, alignItems: "center" }}>
             <CombatantSummary token={selected} economy={economy} commandCenter={commandCenter} />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
-              {actionTile("move", "↗", "Move")}
-              {actionTile("attack", "⚔", "Attack")}
-              {actionTile("cast", "✦", "Cast")}
+              {actionTile("move", "atlas.travel", "Move")}
+              {actionTile("attack", "combat.attack", "Attack")}
+              {actionTile("cast", "dice.roll", "Cast")}
               {actionTile("bonus-action", "◈", "Bonus")}
-              {actionTile("item", "◊", "Item")}
+              {actionTile("item", "inventory.potion", "Item")}
               {actionTile("reaction", "✺", "Reaction")}
               {actionTile("end-turn", "⊘", "End turn")}
             </div>
@@ -587,6 +587,9 @@ function InitiativeRow({ row, token, selected, onClick }) {
 }
 
 function ActionTile({ icon, label, hint, onClick, active, disabled }) {
+  const iconNode = window.OpenWorldsIcon?.has?.(icon)
+    ? <window.OpenWorldsIcon id={icon} size={19} label={label} />
+    : icon;
   return (
     <button onClick={onClick} disabled={disabled} title={hint || label} style={{
       padding: "10px 8px",
@@ -603,7 +606,7 @@ function ActionTile({ icon, label, hint, onClick, active, disabled }) {
       opacity: disabled ? 0.55 : 1,
       minWidth: 0,
     }}>
-      <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4 }}>{icon}</div>
+      <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4, color: "inherit" }}>{iconNode}</div>
       <div style={{ fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
       {hint && <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, color: active ? "var(--w-300)" : "var(--ink-600)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hint}</div>}
     </button>

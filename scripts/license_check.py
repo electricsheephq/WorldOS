@@ -89,6 +89,46 @@ def _check_authored_bestiary() -> list[str]:
         bestiary._index.cache_clear()
 
 
+def _check_game_icons_attribution(tracked: list[str]) -> list[str]:
+    """The OpenWorlds UI may vendor a small subset of Game Icons, but every SVG
+    must stay covered by the local attribution file and top-level notices."""
+    errors: list[str] = []
+    icons = [
+        f for f in tracked
+        if f.startswith("viewer/openworlds/assets/icons/game-icons/") and f.endswith(".svg")
+    ]
+    if not icons:
+        return errors
+
+    attr_path = ROOT / "viewer/openworlds/assets/icons/ATTRIBUTION.md"
+    notice_path = ROOT / "THIRD_PARTY_NOTICES.md"
+    if not attr_path.exists():
+        errors.append("Game Icons assets are missing viewer/openworlds/assets/icons/ATTRIBUTION.md")
+        attr_text = ""
+    else:
+        try:
+            attr_text = attr_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"Game Icons attribution file is unreadable: {exc}")
+            attr_text = ""
+    if notice_path.exists():
+        try:
+            notice_text = notice_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"THIRD_PARTY_NOTICES.md is unreadable: {exc}")
+            notice_text = ""
+    else:
+        notice_text = ""
+
+    if "Game Icons" not in notice_text or "CC-BY-3.0" not in notice_text:
+        errors.append("THIRD_PARTY_NOTICES.md is missing Game Icons CC-BY-3.0 attribution")
+    for f in icons:
+        local = f.removeprefix("viewer/openworlds/assets/icons/")
+        if local not in attr_text:
+            errors.append(f"Game Icons SVG missing attribution row: {f}")
+    return errors
+
+
 def tracked_files() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
@@ -121,6 +161,7 @@ def main() -> int:
     # Ingested (wiki-derived) records/pages must each carry per-source attribution.
     errors.extend(_check_ingested_attribution(tracked))
     errors.extend(_check_authored_bestiary())
+    errors.extend(_check_game_icons_attribution(tracked))
 
     if errors:
         print("LICENSE CHECK FAILED:")

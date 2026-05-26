@@ -2,6 +2,7 @@ import http.client
 import importlib.util
 import json
 import os
+import re
 import tempfile
 import threading
 import unittest
@@ -118,6 +119,36 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         rel_src = rel.decode("utf-8")
         self.assertIn("Img scope=", rel_src)
         self.assertIn("portrait-", rel_src)
+
+    def test_openworlds_icon_registry_assets_are_local_and_attributed(self):
+        index = (server._OPENWORLDS_DIR / "index.html").read_text(encoding="utf-8")
+        registry = (server._OPENWORLDS_DIR / "icon-registry.jsx").read_text(encoding="utf-8")
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+        attribution = (server._OPENWORLDS_DIR / "assets" / "icons" / "ATTRIBUTION.md").read_text(encoding="utf-8")
+
+        self.assertIn('src="icon-registry.jsx"', index)
+        self.assertLess(index.index('src="icon-registry.jsx"'), index.index('src="chrome.jsx"'))
+        self.assertIn("OPENWORLDS_ICON_MANIFEST", registry)
+        self.assertNotIn("https://", registry)
+        self.assertNotIn('map: "atlas.travel"', registry)
+        self.assertIn("CHROME_BUILTIN_GLYPHS", chrome)
+
+        icon_paths = sorted(set(re.findall(r'src: "([^"]+\.svg)"', registry)))
+        self.assertGreaterEqual(len(icon_paths), 10)
+        for rel in icon_paths:
+            icon = server._OPENWORLDS_DIR / rel
+            self.assertTrue(icon.exists(), rel)
+            self.assertIn(rel.removeprefix("assets/icons/"), attribution)
+            svg = icon.read_text(encoding="utf-8")
+            self.assertIn("<svg", svg)
+            self.assertNotIn('d="M0 0h512v512H0z"', svg)
+
+    def test_openworlds_serves_icon_svgs_with_image_mime_type(self):
+        status, ctype, body = self._get("/openworlds/assets/icons/game-icons/lorc/sword-clash.svg")
+
+        self.assertEqual(status, 200)
+        self.assertIn("image/svg+xml", ctype)
+        self.assertIn(b"<svg", body)
 
     def test_openworlds_combat_screen_binds_viewer_combat_surface(self):
         status, ctype, body = self._get("/openworlds/screen-combat.jsx")
