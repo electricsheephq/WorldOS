@@ -767,3 +767,148 @@ def test_bg_base_world_has_no_minsc_agenda_additive():
     events_mod.resolve(c, ev, events_mod.find_option(ev, BRIBE_OPTION))
     assert c.flags.get(TOOK_BRIBE_FLAG) is True  # the flag is set regardless
     # ...but with no agenda reading it, nothing is armed (additive: no ending == today's behavior)
+
+
+# =========================================================================
+# CANON EXEMPLAR CONTENT — the living-story FILL: more stumble-into Events on
+# canon BG factions/NPCs (Fist checkpoint, Guild offer, refugee crisis, patriar
+# bargain) + two more L3->L2 companion-agenda seams (Astarion, Shadowheart).
+# Same discipline as the Raphael/Minsc exemplar above: prove the authored canon
+# content LOADS, surfaces, ripples, and arms the right companion end-to-end.
+# Flag names are CONTENT'S choices (asserted here); the engine stays setting-agnostic.
+# =========================================================================
+
+# The four new stumble-into Events and the one CONTENT flag each "entangling" option sets.
+BG_FILL_EVENTS = {
+    "event-fist-checkpoint": ("fac-flaming-fist", "took_bribe"),
+    "event-guild-offer": ("fac-guild", "owes_the_guild"),
+    "event-refugee-crisis": ("fac-harpers", "abandoned_refugees"),
+    "event-patriar-bargain": ("fac-zhentarim", "served_patriar_blackmail"),
+}
+
+
+def test_bg_fill_events_seed_and_surface():
+    """All four authored fill Events load from the base world, bind to a canon roster anchor NPC,
+    surface via present (manual trigger), and each offers a clean decline/walk-away path."""
+    c = _seed_bg()
+    present_ids = {e.id for e in events_mod.present(c)}
+    for eid, (fac_id, _flag) in BG_FILL_EVENTS.items():
+        assert eid in c.events, f"the authored fill Event {eid!r} must seed from world.json"
+        ev = c.events[eid]
+        assert ev.prompt.strip(), f"{eid} must carry a prompt the DM voices"
+        # bound to a canon roster NPC (the owner's anchoring priority)
+        assert ev.anchor_npc_id and c.characters.get(ev.anchor_npc_id) is not None, (
+            f"{eid} must anchor to a real roster NPC"
+        )
+        # at least 2 options, and at least one carries the entangling decision_flag the content names
+        assert len(ev.options) >= 2
+        assert ev.id in present_ids, f"{eid} (manual trigger, unresolved) must surface via present"
+        # the touched faction is a real seeded faction (so the rep ripple lands, not degrades)
+        assert fac_id in c.factions
+
+
+def test_bg_fill_events_entangling_option_ripples_and_arms_flag():
+    """Each fill Event's 'entangling' option sets the CONTENT-defined decision_flag (the L3->L2
+    seam), shifts the named faction's reputation, and schedules the rule-of-three echo — exactly
+    the Raphael exemplar's shape, on more canon anchors. Resolving is idempotent."""
+    for eid, (fac_id, flag) in BG_FILL_EVENTS.items():
+        c = _seed_bg()
+        ev = c.events[eid]
+        # find the one option whose Outcome carries this content flag (decision_flag or flag)
+        opt = next(
+            (o for o in ev.options if flag in (o.outcome.decision_flag, o.outcome.flag)),
+            None,
+        )
+        assert opt is not None, f"{eid} must have an option setting the {flag!r} flag"
+        res = events_mod.resolve(c, ev, opt)
+        assert c.flags.get(flag) is True, f"{eid}: resolving the entangling option must set {flag!r}"
+        # the named faction's reputation moved (the shared ripple path), and the echo is scheduled
+        assert res["rep_shift"] is not None and res["rep_shift"]["faction_id"] == fac_id
+        assert res["scheduled"] is not None, f"{eid}: the entangling option schedules a callback"
+        assert ev.resolved is True
+        # idempotent: re-resolving a resolved Event applies nothing new
+        flags_before = dict(c.flags)
+        events_mod.resolve(c, ev, opt)
+        assert c.flags == flags_before
+
+
+def test_bg_fill_events_have_clean_refuse_path():
+    """Every fill Event offers a 'refuse/walk away' option whose Outcome arms NO companion flip
+    and schedules nothing — the player can always decline cleanly (the owner's requirement)."""
+    c = _seed_bg()
+    # the authored clean-out option label per Event (a walk-away with no decision_flag)
+    clean = {
+        "event-fist-checkpoint": "Not your bridge, not your problem — walk away",
+        "event-guild-offer": "Slide the packet back unopened",
+        "event-refugee-crisis": "Broker a delay — buy the clerk, shame the patriar's men",
+        "event-patriar-bargain": "Decline the commission and leave",
+    }
+    for eid, label in clean.items():
+        ev = c.events[eid]
+        opt = events_mod.find_option(ev, label)
+        assert opt is not None, f"{eid} must offer the clean path {label!r}"
+        assert not opt.outcome.decision_flag, f"{eid} clean path must arm no companion flip"
+
+
+BG_BHAAL_ENDING = "dark-urge-bhaal"
+
+
+def test_bg_hopeful_ending_seeds_astarion_guild_agenda():
+    """The hopeful-ending overlay pre-loads Astarion's attitude_below agenda gated on
+    owes_the_guild (in-character: he refuses to be leashed to a creditor again) — a new L3->L2
+    seam wired to the Guild-offer Event. Its breaking point sits in the warn band."""
+    c = _seed_bg(ending=BG_HOPEFUL_ENDING)
+    astarion = c.characters.get("npc-astarion")
+    assert astarion is not None and astarion.arc is not None, "Astarion must carry a seeded arc"
+    agenda = astarion.arc.agenda
+    assert agenda is not None and agenda.trigger == "attitude_below"
+    assert agenda.decision_flag == "owes_the_guild"
+    assert agenda.value is not None
+    assert companion_arc.ATTITUDE_WARN_LOW <= agenda.value <= companion_arc.ATTITUDE_WARN_HIGH
+
+
+def test_bg_bhaal_ending_seeds_shadowheart_refugee_agenda():
+    """The dark-urge/Bhaal-ending overlay pre-loads Shadowheart's attitude_below agenda gated on
+    abandoned_refugees (in-character: a comrade's cruelty to the helpless vindicates Shar's
+    bleak doctrine and pulls her back to the dark) — a new L3->L2 seam wired to the refugee Event."""
+    c = _seed_bg(ending=BG_BHAAL_ENDING)
+    sh = c.characters.get("npc-shadowheart")
+    assert sh is not None and sh.arc is not None, "Shadowheart must carry a seeded arc in this ending"
+    agenda = sh.arc.agenda
+    assert agenda is not None and agenda.trigger == "attitude_below"
+    assert agenda.decision_flag == "abandoned_refugees"
+    assert agenda.value is not None
+    assert companion_arc.ATTITUDE_WARN_LOW <= agenda.value <= companion_arc.ATTITUDE_WARN_HIGH
+
+
+def test_bg_fill_astarion_seam_end_to_end():
+    """The whole authored loop on REAL content: in the hopeful ending, resolving the Guild-offer's
+    'take the job' option arms owes_the_guild, which spikes Astarion's attitude_below betrayal
+    probability and lights the advisory betrayal_warning (mirrors the Minsc/Raphael seam test)."""
+    c = _seed_bg(ending=BG_HOPEFUL_ENDING)
+    astarion = c.characters["npc-astarion"]
+    agenda = astarion.arc.agenda
+    astarion.attitude_value = (companion_arc.ATTITUDE_WARN_LOW + companion_arc.ATTITUDE_WARN_HIGH) // 2
+
+    assert companion_arc._decision_flag_active(agenda, c) is False
+    p_off = companion_arc._attitude_below_snap_p(
+        astarion.attitude_value, agenda.value, vulnerable=False, decision_flag_active=False
+    )
+    # resolve the authored Guild "take the job" option -> sets owes_the_guild
+    ev = c.events["event-guild-offer"]
+    opt = next(o for o in ev.options if o.outcome.decision_flag == "owes_the_guild")
+    res = events_mod.resolve(c, ev, opt)
+    assert res["decision_flag"] == "owes_the_guild" and c.flags.get("owes_the_guild") is True
+    # the world rippled too: the Guild's regard rose, the follow-on favour is scheduled
+    assert c.factions["fac-guild"].reputation > 0
+    assert any(co.note == f"event:{ev.id}" for co in c.consequences)
+    # after: the SAME agenda reads the flag active and the snap probability SPIKES
+    assert companion_arc._decision_flag_active(agenda, c) is True
+    p_on = companion_arc._attitude_below_snap_p(
+        astarion.attitude_value, agenda.value, vulnerable=False, decision_flag_active=True
+    )
+    assert p_on == pytest.approx(p_off + companion_arc.ATTITUDE_SNAP_DECISION_BONUS)
+    assert p_on > p_off
+    # and the advisory telegraph fires so the DM can foreshadow the fracture
+    warn = companion_arc._betrayal_warning(astarion, c)
+    assert warn is not None and warn["decision_flag_active"] is True

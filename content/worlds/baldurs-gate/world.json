@@ -86,9 +86,177 @@
           }
         }
       ]
+    },
+    {
+      "id": "event-fist-checkpoint",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-wyll",
+      "prompt": "The checkpoint on the bridge wasn't here yesterday — a few sawhorses, a brazier, and four Flaming Fist in mismatched armour who look like they've slept in it. The sergeant working the line is young and grey-faced with exhaustion, and the wagon he's stopped is packed with shivering Lower City families fleeing a tenement fire. 'Toll's gone up,' he says, not meeting their eyes, and the number he names is robbery dressed as policy — coin these people plainly do not have. One of his own troopers has gone very still, watching him; this isn't sanctioned, and everyone on the bridge knows it. The sergeant's gaze flicks to you, the obvious outsider with the look of someone who carries weight. 'You vouching for this lot? Or paying their way? Either works. I just need the line moving and my palm warm before the captain rides through.'",
+      "options": [
+        {
+          "label": "Grease his palm and move the line",
+          "tag": "expedient / corrupt",
+          "outcome": {
+            "flag": "fist_checkpoint_bribed",
+            "decision_flag": "took_bribe",
+            "faction_id": "fac-flaming-fist",
+            "reputation_delta": -7,
+            "schedule_in_days": 6,
+            "schedule_text": "The bridge sergeant's little arrangement gets noticed — and remembered as YOURS. A Fist internal-affairs officer comes asking why an outsider was buying passage at an unsanctioned toll, and the honest trooper who watched it happen has a name to give.",
+            "narrate": "The coin changes hands low and quick, the way these things do, and the sawhorses scrape aside. The families roll past without ever knowing how close they came to being turned back — but the trooper who was watching has gone from still to stone, and you feel her eyes on your back the whole length of the bridge. You bought a road. You also bought into something."
+          }
+        },
+        {
+          "label": "Call it the shakedown it is — back the honest trooper",
+          "tag": "principled / lawful",
+          "outcome": {
+            "flag": "fist_checkpoint_exposed",
+            "faction_id": "fac-flaming-fist",
+            "reputation_delta": 8,
+            "schedule_in_days": 8,
+            "schedule_text": "The exposed sergeant is quietly cashiered, and the trooper you backed — now a corporal with a debt — sends word that she'd stand at your shoulder if ever you needed the Fist's honest ranks. The captain who rode through remembers who kept the bridge clean.",
+            "narrate": "You say it plainly, loud enough for the line to hear: this is theft, and the Fist doesn't do theft, not while there's a soul in the ranks who still means the oath. The sergeant goes white, then red; the watching trooper steps off the wall to stand at your side before he can decide to make it ugly. The sawhorses come down. The families go through free, and the young soldier who chose right gives you a nod worth more than the toll."
+          }
+        },
+        {
+          "label": "Not your bridge, not your problem — walk away",
+          "tag": "detached / wary",
+          "outcome": {
+            "flag": "fist_checkpoint_ignored",
+            "narrate": "You turn up your collar and find the long way round. Whatever the sergeant decides, whatever the wagon's worth — it happens behind you, to people whose names you'll never learn. The Gate is full of small cruelties at small tolls, and a person could go mad trying to right each one. You tell yourself that twice before the cold makes you stop."
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-guild-offer",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-astarion",
+      "prompt": "You don't find the Guild; the Guild finds you, the way it finds everyone eventually. A woman with a fixer's easy smile slides onto the bench across from you in the Elfsong's quietest corner — too well-dressed for the dockside, too plainly armed for the Upper City — and sets a sealed packet on the wood between you without a word of greeting. 'Nine-Fingers sends her regards,' she says, 'and a small kindness, freely given, to a newcomer who keeps interesting company.' Inside: enough coin to matter, and a name and an address. 'There's a man at that address who's been talking to the Fist about people he shouldn't. We don't want him hurt — gods, no, the Guild doesn't do murders, that's the Bhaalists. We just want his ledgers gone before he hands them over. Quiet work. Profitable. And the Guild remembers a favour the way a creditor remembers a debt — fondly, and forever. First one's on the house. Interested?'",
+      "options": [
+        {
+          "label": "Take the job — burn the ledgers",
+          "tag": "pragmatic / criminal",
+          "outcome": {
+            "flag": "guild_first_favor_done",
+            "decision_flag": "owes_the_guild",
+            "faction_id": "fac-guild",
+            "reputation_delta": 10,
+            "schedule_in_days": 9,
+            "schedule_text": "The Guild collects on the 'freely given' kindness, courteous and inexorable: a second job, harder than the first, framed as a favour you already agreed to owe. Nine-Fingers' debts only ever compound — and refusing the second is a different conversation than refusing the first would have been.",
+            "narrate": "The ledgers burn fast — cheap paper, cheaper secrets — and the informant never even wakes. The fixer's smile is genuinely warm when you bring word back, and the Guild's coin is genuinely heavy. You've made a friend who is also a ledger entry, in a network that never forgets a number. The first one was on the house. You suspect nothing else ever will be."
+          }
+        },
+        {
+          "label": "Warn the informant instead — sell the Guild's move",
+          "tag": "subversive / risky",
+          "outcome": {
+            "flag": "guild_offer_betrayed",
+            "faction_id": "fac-guild",
+            "reputation_delta": -10,
+            "schedule_in_days": 7,
+            "schedule_text": "The Guild learns the warning came from you — the Guild always learns — and a cold little reckoning is scheduled. Nine-Fingers doesn't do murders. She does worse, slower, to people who make her look like a fool in her own city.",
+            "narrate": "You find the informant before the Guild's quieter hands do, and the man's gratitude is the desperate kind. His ledgers reach the Fist; a few of the Guild's quiet arrangements come apart in the daylight. It's the right thing, or close to it — and somewhere beneath the Counting House, a woman with nine fingers is told your name, and files it, and is not fond at all."
+          }
+        },
+        {
+          "label": "Slide the packet back unopened",
+          "tag": "principled / wary",
+          "outcome": {
+            "flag": "guild_offer_declined",
+            "narrate": "You push the packet back across the bench, seal unbroken. The fixer's smile doesn't dim — if anything it sharpens with a flicker of respect. 'Suit yourself,' she says, sweeping it away. 'No debt, no favour, no harm. The Guild only minds the ones who waste its time, and you haven't.' She's gone between one breath and the next, and the corner is just a corner again — but you've a feeling the offer will know where to find you, if your luck ever turns lean."
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-refugee-crisis",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-jaheira",
+      "prompt": "It starts as shouting and ends, the way these things do, with you in the middle of it. A knot of tiefling refugees — gaunt, road-worn, a clutch of children among them — has been stopped at the edge of Rivington by a patriar's hired men and a clerk waving a writ: the empty lot where the refugees have been sheltering through the winter has been 'lawfully claimed,' and they're to be cleared out tonight, into the cold, writ or no writ. The refugees' spokeswoman, a horned woman with a healer's worn hands and a voice gone hoarse from pleading, turns to you because you're the only one watching who doesn't look bought. 'They'll die out there — the little ones first. We're not asking for charity. We're asking for one night, and someone who'll stand in the doorway long enough for the cold to break.' The hired men are already loosening their cudgels. The clerk looks like he'd take a bribe or a threat with equal relief, just to be elsewhere.",
+      "options": [
+        {
+          "label": "Stand in the doorway — they don't clear it tonight",
+          "tag": "heroic / compassionate",
+          "outcome": {
+            "flag": "refugees_sheltered",
+            "faction_id": "fac-harpers",
+            "reputation_delta": 9,
+            "schedule_in_days": 12,
+            "schedule_text": "The tiefling enclave you stood for doesn't forget — and neither do the Harpers, who were quietly watching to see who in the Gate would put their body between the cold and the helpless. The healer-spokeswoman becomes a friend, a fixer, and an ear in Rivington; the patriar who wanted the lot is now an enemy who knows your face.",
+            "narrate": "You put yourself in the doorway and you do not move, and there is a long, ugly moment where it could go either way — and then the hired men decide a patriar's lot isn't worth a brawl with someone who looks like they'd win it. The clerk folds his writ with relief and a muttered 'tomorrow's problem.' The children sleep warm. The healer presses her hoarse thanks into your hands like something fragile, and somewhere in the dark a Harper marks you down as the kind of person the Gate still grows."
+          }
+        },
+        {
+          "label": "Broker a delay — buy the clerk, shame the patriar's men",
+          "tag": "shrewd / diplomatic",
+          "skill": "persuasion",
+          "dc": 14,
+          "outcome": {
+            "flag": "refugees_reprieved",
+            "faction_id": "fac-harpers",
+            "reputation_delta": 5,
+            "narrate": "You don't fight; you talk — a coin to the clerk to lose the writ for a tenday, a word to the hired men about how their patriar will enjoy the gazette learning he froze tiefling children for a vacant lot. It's a reprieve, not a rescue: the enclave gets the winter, the patriar gets a quiet grudge, and you get the uneasy knowledge that next season this happens again to someone, somewhere, with no one watching who isn't bought."
+          }
+        },
+        {
+          "label": "It's a lawful writ — let them clear the lot",
+          "tag": "callous / lawful-cold",
+          "outcome": {
+            "flag": "refugees_evicted",
+            "decision_flag": "abandoned_refugees",
+            "faction_id": "fac-harpers",
+            "reputation_delta": -10,
+            "schedule_in_days": 10,
+            "schedule_text": "The cleared enclave scatters into the Outer City's worst, and not all of the children are accounted for come spring. The Harpers — and anyone who loved the people you let freeze — learn that when the cold came to the helpless, you read the writ and stepped aside. That is a thing that follows a person.",
+            "narrate": "You look at the writ, and the writ is lawful, and you tell yourself that's the end of your part in it. The hired men move in; the doorway empties; the healer-spokeswoman doesn't argue, just looks at you for one long moment that you will not forget as easily as you'd like, and then turns to gather the children for the cold. The law was satisfied. Something else wasn't. You feel the difference all the way down."
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-patriar-bargain",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-the-emperor",
+      "prompt": "The invitation came on cream-coloured paper and the wine, when you arrive, is older than your grandparents. The patriar receiving you behind the Basilisk Gate is all warmth and worry — a soft, ringed man whose family name opens doors and whose hands, he wants you to understand, are entirely clean. 'A delicate matter,' he says, 'and you come recommended as discreet.' A rival house has a document; the document concerns a debt his family owes to the Black Network — the Zhentarim — a debt he'd rather the Council never see as the dukedom vote approaches. He wants the document, and he wants the rival to understand it was taken, and he is prepared to be 'lavishly grateful.' 'You'd be doing the Gate a service, truly — that family are vipers, and I am, whatever my creditors, a patriot.' Behind the worry, his eyes are flat and measuring. This is not a man asking for help. This is a man buying a tool, and pricing you.",
+      "options": [
+        {
+          "label": "Take the commission — steal the document, send the message",
+          "tag": "mercenary / political",
+          "outcome": {
+            "flag": "patriar_served",
+            "decision_flag": "served_patriar_blackmail",
+            "faction_id": "fac-zhentarim",
+            "reputation_delta": 6,
+            "schedule_in_days": 11,
+            "schedule_text": "The favour cuts both ways the patriar never intended: the Zhentarim, whose debt the stolen document concerned, take a keen interest in the discreet outsider now entangled in their ledger — and decide you'd make a useful instrument, willing or not. A Black Network factor calls, smiling, with an offer that is also a leash.",
+            "narrate": "The document is where the patriar said it would be, and the taking of it is clean, and the rival house wakes to the cold understanding that someone walked through their walls at will. The patriar is lavishly grateful, exactly as promised. What he doesn't mention — what he may not know — is that the Zhentarim were always watching the debt, and now they're watching you. You served one master tonight. You may have auditioned for another."
+          }
+        },
+        {
+          "label": "Sell the commission to the rival house instead",
+          "tag": "double-dealing / opportunist",
+          "outcome": {
+            "flag": "patriar_double_crossed",
+            "faction_id": "fac-zhentarim",
+            "reputation_delta": -5,
+            "schedule_in_days": 8,
+            "schedule_text": "Two patriar houses now know you can be hired — and that you can't be trusted to stay hired. One wants you dead for the betrayal; the other thinks you're brilliant and dangerous and wants you closer than is safe. The dukedom's intrigue has found a new pawn, and it is you.",
+            "narrate": "You take the soft patriar's commission and his coin, and then you take it straight to the rival house and sell them the warning besides. It's lucrative, and clever, and the kind of clever that gets a person a reputation. By morning two of the Upper City's oldest families have your name — one in a list of debts to be collected, one in a ledger of assets to be used. You've made yourself interesting. In the Gate, interesting is a precarious thing to be."
+          }
+        },
+        {
+          "label": "Decline the commission and leave",
+          "tag": "principled / wary",
+          "outcome": {
+            "flag": "patriar_bargain_declined",
+            "narrate": "You set the antique wine down half-finished and tell the patriar his delicate matter will have to find less discreet hands. The warmth drops from his face like a mask he's tired of holding. 'Pity,' he says, in a voice with no worry left in it at all. 'I'd hoped you understood how the Gate is run.' You let yourself out past the marble and the old money, and the cold of the street is almost a relief. You've made no coin tonight, and possibly an enemy — but you walk out owing nothing, and in this city that is its own kind of wealth."
+          }
+        }
+      ]
     }
   ],
-  "license_events": "events prose is ORIGINAL ClawDnD text (an authored stumble-into decisional staging a canon BG3 figure in our own words), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
+  "license_events": "events prose is ORIGINAL ClawDnD text (authored stumble-into decisionals staging canon BG / BG3 figures and factions in our own words — a cambion's bargain, a Flaming Fist checkpoint shakedown, a Guild fixer's first 'favour', a tiefling-refugee eviction, a patriar's blackmail commission), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
   "faction_arcs": [
     {
       "id": "arc-fist-rise",
@@ -129,9 +297,95 @@
           }
         }
       ]
+    },
+    {
+      "id": "arc-guild-rise",
+      "faction_id": "fac-guild",
+      "title": "The Ledger and the Knife",
+      "requires_joined": true,
+      "note": "The join->grow->lead questline for the Guild, Baldur's Gate's vast thieves' network run from the Counting House beneath the Lower City. Where the Fist's arc is about earning honest rank, the Guild's is about earning TRUST in a network that trusts no one — smuggling, protection, and information, and the slow climb to a seat at Nine-Fingers' own table. Stage 1 (the proving job) gates on reputation (the Guild has to want you before it'll let you in); stages 2-3 gate on the monotonic `standing` gauge (clout earned through jobs done clean — use grant_standing as the party runs Guild work). The finale ripples a world-changing effect via _apply_structured_effect: the party takes the network in hand and the Gate's underworld answers to them. Morally grey, warmth-first — the Guild does not do murders; it does favours, and favours owed.",
+      "stages": [
+        {
+          "id": "stage-guild-proving",
+          "title": "Run the proving job",
+          "unlock_at": 12,
+          "gauge": "reputation",
+          "note": "Available once the Guild has heard enough good things to risk a test. A fixer in a back room of the Counting House slides a job across the table: 'Nine-Fingers doesn't take meetings with strangers. She takes meetings with people who've already proved they can keep their mouth shut and their hands clean. So. One job, no questions, no bodies. Do it well and the door opens. Do it badly and you were never here.' Play the proving job, then call advance_faction_arc to resolve it; grant_standing as the party banks clean work.",
+          "location_id": "loc-outer-city"
+        },
+        {
+          "id": "stage-guild-fixer",
+          "title": "Earn your own table",
+          "unlock_at": 25,
+          "gauge": "standing",
+          "note": "Available once the party's CLOUT (standing, earned via grant_standing on jobs run clean) makes them a fixer in their own right, not just a hired pair of hands. A quiet promotion in the Counting House's deepest room: 'You've got people running to YOU now instead of past you. Nine-Fingers noticed. There's a chair here with your name not-quite-written on it — close enough that the old hands have stopped pretending they don't take your word.' Set the party's new rank on advance_faction_arc (rank=3).",
+          "location_id": "loc-outer-city"
+        },
+        {
+          "id": "stage-guild-keene",
+          "title": "Hold the network",
+          "unlock_at": 50,
+          "gauge": "standing",
+          "note": "The world-changing finale. Whether Nine-Fingers steps back, falls, or simply decides the party is the only hand steady enough to hold the threads, the Counting House's web of favours and debts comes into their grip. Resolving this stage ripples the finale: the Guild's standing surges and the Gate's underworld answers to the party's table. Play it as the moment the party stops working FOR the Guild and becomes the one the Guild works for — then call advance_faction_arc(stage_status='resolved', rank=5).",
+          "location_id": "loc-outer-city",
+          "finale_effect": {
+            "flag": "guild_under_party",
+            "faction_id": "fac-guild",
+            "reputation_delta": 28,
+            "controller_id": "fac-guild",
+            "location_id": "loc-outer-city",
+            "narrate": "There is no ceremony — the Guild does not do ceremony, ceremony leaves witnesses — but one by one the fixers and the smugglers and the quiet hands that move the Gate's dark begin to bring their problems to you, and wait on your word, and call it settled when you give it. The Counting House's ledger of every favour owed in the city is yours to read now, and every knife in the Outer City knows whose table not to cross. You did not take a throne. You took something quieter and, in this city, stronger: you took the debts.",
+            "schedule_in_days": 9,
+            "schedule_text": "The price of the network comes due: a rival who thought the Guild leaderless and ripe — the Zhentarim, a treacherous old fixer, a Fist crackdown — moves on the web now that it has a single throat to cut. The party learns that running the underworld means everyone underneath you has a reason to want your chair."
+          }
+        }
+      ]
+    },
+    {
+      "id": "arc-harper-rise",
+      "faction_id": "fac-harpers",
+      "title": "The Open Hand and the Hidden One",
+      "requires_joined": true,
+      "note": "The join->grow->lead questline for the Harpers — the covert network of idealists-with-knives that fights tyranny and unchecked power, battered from the Absolute war and watching the Gate's power vacuum closely (Jaheira is its likeliest door). Where the Guild's arc is about trust in a network that trusts no one, the Harper arc is about being trusted with the network's SECRETS — and with the moral weight of deciding which tyrant to cut and when. Stage 1 (the oath of the harp) gates on reputation (the Harpers vet hard before they hand you a pin); stages 2-3 gate on the monotonic `standing` gauge (trust earned through quiet work — use grant_standing as the party runs Harper missions). The finale ripples a world-changing effect: the party becomes a High Harper, and the Gate's covert counterweight to its circling powers moves at their word. Idealist, weary, principled-but-pragmatic — the Harpers are good people who do hard things.",
+      "stages": [
+        {
+          "id": "stage-harper-pin",
+          "title": "Take up the harp",
+          "unlock_at": 15,
+          "gauge": "reputation",
+          "note": "Available once the Harpers trust the party enough to offer the pin. A grey-eyed veteran sizes them up in a back room that smells of old books and older grief: 'We don't recruit the loud ones, or the ones who want it. We recruit the ones who keep doing the right thing when nobody's clapping and nobody's paying. We've watched you. You'll do. The harp doesn't make you a hero — it makes you a secret with a conscience. Still want it?' Play the oath, then call advance_faction_arc to resolve it; grant_standing as the party proves itself on quiet work.",
+          "location_id": "loc-lower-city"
+        },
+        {
+          "id": "stage-harper-cell",
+          "title": "Run a cell of your own",
+          "unlock_at": 25,
+          "gauge": "standing",
+          "note": "Available once the party's TRUST (standing, earned via grant_standing on Harper missions) marks them fit to hold others' lives in their hands. A field promotion, the Harper way — no rank insignia, just a list of names that are now yours to keep alive: 'You've a cell of your own now. Three good people who'll do what you ask and trust you not to spend their lives cheaply. That's the whole job, in the end — being worth that trust.' Set the party's new rank on advance_faction_arc (rank=3).",
+          "location_id": "loc-lower-city"
+        },
+        {
+          "id": "stage-harper-high",
+          "title": "Stand as a High Harper",
+          "unlock_at": 50,
+          "gauge": "standing",
+          "note": "The world-changing finale. With the old guard thinned by the Absolute war and the Gate's powers all circling the empty seat, the Harpers' surviving leaders raise the party to High Harper — a hand on the covert counterweight that keeps any one power from swallowing the city. Resolving this stage ripples the finale: the Harpers' standing surges and the Gate's hidden balance moves at the party's word. Play it as the moment the party stops carrying the harp and starts deciding where it points — then call advance_faction_arc(stage_status='resolved', rank=5).",
+          "location_id": "loc-lower-city",
+          "finale_effect": {
+            "flag": "harpers_led_by_party",
+            "faction_id": "fac-harpers",
+            "reputation_delta": 26,
+            "controller_id": "fac-harpers",
+            "location_id": "loc-lower-city",
+            "narrate": "They give you no medal — the Harpers' honours are all the kind you can't wear — but the grey-eyed veterans who taught you fall quiet when you speak now, and defer, and a network of safehouses and watchers and idealists-with-knives that has guarded the Sword Coast in secret for longer than the Gate has had walls becomes, in this hard winter, yours to aim. Tyranny has a new and patient enemy, and it wears your face only when it must. The hidden balance of the city tilts, just slightly, toward the side that does the right thing when no one is clapping.",
+            "schedule_in_days": 12,
+            "schedule_text": "The weight of the harp comes due: to lead the Harpers is to choose which of the Gate's circling powers to cut, and the first hard choice arrives fast — a tyranny worth stopping, a cost worth counting, and a network watching to see whether their new High Harper has the stomach for the thing they raised them to do."
+          }
+        }
+      ]
     }
   ],
-  "license_faction_arcs": "faction-arc prose is ORIGINAL ClawDnD text (an authored join->grow->lead questline for a canon BG3 faction in our own words), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
+  "license_faction_arcs": "faction-arc prose is ORIGINAL ClawDnD text (authored join->grow->lead questlines for canon BG / BG3 factions in our own words — the Flaming Fist's banner, the Guild's ledger of favours, the Harpers' hidden balance), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
   "npc_roster": [
     {"id": "npc-jaheira", "name": "Jaheira", "voice_id": "npc-elder", "role": "High Harper, veteran of a hundred years", "personality": "A half-elf druid-warrior and Harper leader who has buried more friends than most people meet. Dry, fierce, maternal in a way that bites; she has saved the Coast before and is too tired and too stubborn to stop now. The player's likeliest mentor and door into the Harpers.", "hook": "Suspects someone is gathering the Absolute's loose ends — and that the new powers circling the dukedom are not all what they claim."},
     {"id": "npc-minsc", "name": "Minsc and Boo", "voice_id": "companion-default", "role": "ranger of legend (and his miniature giant space hamster) — candidate COMPANION", "personality": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him.", "hook": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play.", "dossier": {"wound": "outlived the friends time took from him", "wants": ["a righteous cause to swing for", "to honor the fallen by protecting the living"], "fears": ["failing those under his guard, as he feels he once did"], "values": ["courage", "loyalty", "the small and the innocent"], "approval_likes": ["standing up for the helpless", "boldness in a good cause"], "approval_dislikes": ["preying on the weak", "cowardice dressed as caution"], "banter_tags": ["go_for_the_eyes", "grief_of_long_years", "boo_knows_best"], "camp_prompts": ["asks Boo what the stars looked like before the years he lost"], "relationships": {"npc-jaheira": "old comrade-in-arms"}}},
@@ -216,6 +470,16 @@
       "outcomes": [
         {"id": "aylin-freed", "random": 2, "lore": "The imprisoned immortal — the moon-goddess's own daughter, caged for a hundred years under the Shadow-Cursed Lands — walks free. Last Light held; the covert network that sheltered there survived; a living icon of the moon faith stands again in the world.", "hook": "The freed immortal is hunting the last of her old jailers, and her crusade has led her to the Gate — where she needs mortal hands to do the quiet work a legend cannot."},
         {"id": "aylin-lost", "random": 2, "lore": "The cage was never opened; the imprisoned immortal was lost when the refuge at Last Light fell, and the network that sheltered there died with it. There is a goddess-shaped absence in the world's history and a massacre site no one will name.", "hook": "A relic looted from the fallen refuge at Last Light has surfaced in a Gate market, and the survivors of that network — what few there are — want it back badly enough to pay or to kill."}
+      ]
+    },
+    {
+      "id": "who-holds-the-underworld",
+      "name": "The Counting House and the Black Network",
+      "outcomes": [
+        {"id": "guild-holds", "when": {"baldurs_gate": "rebuilding"}, "lore": "The Guild kept its grip. With the city rebuilding and the Fist overstretched, Nine-Fingers Keene's network of smugglers and fixers quietly became the thing that actually keeps the Lower City's underside running — protection, information, and a thousand favours owed, all answering to the Counting House beneath the streets.", "hook": "The Guild's hold is so total it has started turning down work — and the jobs it refuses are washing up with the Zhentarim instead. A nervous fixer wants someone unaffiliated to find out what kind of contracts Nine-Fingers is suddenly too careful to touch."},
+        {"id": "zhent-ascendant", "when": {"baldurs_gate": "occupied"}, "lore": "Under an occupied Gate the Black Network throve where the old Guild faltered: the Zhentarim's coin and contracts bought the loyalty of fixers who used to answer to the Counting House, and the smiling, ruthless cabal now moves more of the city's dark than the thieves it displaced. The Guild that remains is a remnant trading on a name.", "hook": "A Guild old-timer who refused to take the Black Network's coin is being squeezed out of his own territory, and he'll trade everything he knows about the Zhentarim's new operation to anyone willing to make the cabal's expansion expensive."},
+        {"id": "underworld-war", "random": 2, "lore": "Neither side won. The Guild and the Zhentarim fell into a quiet, grinding turf war over the leaderless dark the Steel Watch left behind — a knifing in an alley here, a torched warehouse there, deniable and constant, with the Outer City's desperate caught between two networks that both call it business.", "hook": "Both the Guild and the Zhentarim are hiring the same kind of deniable outside muscle for the same week's work, and a clever newcomer could take coin from both — right up until the day the two networks compare notes on who they've been paying."},
+        {"id": "underworld-truce", "random": 1, "lore": "Against the odds, the Guild and the Black Network struck a cold truce — territory carved up, the worst of the bloodletting stopped, an uneasy peace between a thieves' network and a Bane-tinged cabal that trust each other exactly as far as the next profitable quarter. The dark runs orderly now, and somehow that's worse.", "hook": "The underworld truce holds on a single brokered understanding, and someone is quietly breaking its terms to start the war back up — a peace-keeper on neither side wants the saboteur found before the Outer City bleeds for it again."}
       ]
     }
   ],

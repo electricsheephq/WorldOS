@@ -64,6 +64,19 @@
           {"kind": "personal_quest", "threshold": 20, "note": "Name the Slayer — Minsc means to sniff out the crowned Bhaalspawn's mortal name so the cult's god-touched head can be reached; win his trust and Boo points the way to the liturgy's author."}
         ]
       }
+    },
+    "npc-shadowheart": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "personal_quest", "threshold": 25, "note": "Mercy in the murder-god's city — Shadowheart's hardest test is whether the kindness she chose over Shar's doctrine can survive a world where a Bhaalspawn rules the nights. Earn her trust and she'll let you see how much it costs her to keep choosing the moon over the dark — and ask you to help her keep choosing it."}
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -20,
+          "decision_flag": "abandoned_refugees",
+          "note": "Shadowheart's whole long war was a slow turning from Shar — goddess of loss, of forgetting, of the cold comfort that nothing matters because everything ends — toward Selune's harder, brighter faith that mercy is worth its price even when it fails. In a Gate where a murder-god walks crowned, that faith is a candle in a gale. A companion who abandons the helpless to the cold — who looks at suffering and reads the writ and steps aside — does not merely disappoint her; he PROVES the thing Shar always whispered, that kindness is a lie the strong tell the weak, that the dark was right all along. If the bond is already failing, the despair wins where the murder-god's whole cult could not: she stops arguing, and the next time the dark offers its old certainty she takes it — not in malice, but in a grief so deep it looks like surrender. 'I wanted you to be the proof that I was right to choose the light,' she says, very quietly, the Selunite softness gone hard and Shar-cold. 'You've made the better argument for the dark than my goddess of loss ever did.' She is exactly herself to the last — the wound at her center reopened, and a faith she fought a war to claim guttering out in a city that gave her no reason to keep it lit."
+        }
+      }
     }
   },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
