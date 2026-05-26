@@ -3699,6 +3699,212 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     return out
 
 
+@mcp.tool()
+def grapple(
+    campaign_id: str,
+    attacker_id: str,
+    target_id: str,
+    save_ability: str = "",
+) -> dict:
+    """Resolve a Grapple attempt (SRD 5.2 / 2024 Unarmed Strike option).
+
+    The target makes a Strength or Dexterity saving throw (target's choice — by
+    default the engine picks whichever gives the higher bonus) against
+    DC = 8 + attacker's Strength modifier + attacker's proficiency bonus.
+
+    On a FAILED save: the target gains the Grappled condition (Speed 0, disadvantage
+    on attack rolls against anyone other than the grappler). On a SUCCESS: no effect.
+
+    To escape: the grappled creature uses its action and calls `escape_grapple`.
+
+    Returns {dc, save_ability, save_roll, natural, success, applied, attacker, target}.
+    `applied` is true when the Grappled condition was added (i.e. the save failed AND
+    the target is not immune to the grappled condition)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        attacker = _char(c, attacker_id)
+        target = _char(c, target_id)
+
+        # SRD 2024: DC = 8 + attacker STR mod + proficiency bonus (server.py:2643 pattern)
+        dc = combat.grapple_save_dc(attacker)
+
+        # Resolve the save ability: explicit override or best of STR/DEX
+        if save_ability:
+            ab = Ability(save_ability.lower())
+        else:
+            ab = combat.best_save_ability(target)
+
+        # Auto-fail if the target has a paralysis/stun/petrify/unconscious condition
+        conds = set(target.conditions)
+        auto_fail = ab in (Ability.STR, Ability.DEX) and bool(conds & combat.SAVE_AUTOFAIL)
+        disadvantage = ab == Ability.DEX and Condition.RESTRAINED in conds
+
+        r = dice_mod.roll(
+            f"1d20+{target.saving_throw_bonus(ab)}", disadvantage=disadvantage
+        )
+        success = (not auto_fail) and r.total >= dc
+
+        applied = False
+        if not success:
+            # Apply grappled condition via the same path add_condition uses
+            cond = Condition.GRAPPLED
+            immune = cond.value in {i.strip().lower() for i in target.condition_immunities}
+            if not immune and cond not in target.conditions:
+                target.conditions.append(cond)
+                applied = True
+
+        save_campaign(c)
+
+        out: dict = {
+            "attacker": attacker.name,
+            "target": target.name,
+            "dc": dc,
+            "save_ability": ab.value,
+            "save_roll": r.total,
+            "natural": r.natural,
+            "success": success,
+            "applied": applied,
+        }
+        if auto_fail:
+            forcing = ", ".join(cn.value for cn in target.conditions if cn in combat.SAVE_AUTOFAIL)
+            out["reason"] = f"condition auto-fail: {target.name} is {forcing} — STR/DEX saves automatically fail"
+        if disadvantage:
+            out["disadvantage"] = True
+        return out
+
+
+@mcp.tool()
+def shove(
+    campaign_id: str,
+    attacker_id: str,
+    target_id: str,
+    mode: str = "prone",
+) -> dict:
+    """Resolve a Shove attempt (SRD 5.2 / 2024 Unarmed Strike option).
+
+    Same save as Grapple: DC = 8 + attacker's Strength modifier + attacker's proficiency
+    bonus. The target makes a STR or DEX save (best of the two by default).
+
+    `mode` controls what happens on a FAILED save:
+      - "prone"  (default): the target gains the Prone condition (must use movement to
+                 stand; melee attacks against it have Advantage, ranged have Disadvantage).
+      - "push":  the target is pushed 5 feet away (no condition; narrative only).
+
+    Returns {dc, save_ability, save_roll, natural, success, mode, applied, pushed, attacker, target}."""
+    mode = mode.lower()
+    if mode not in ("prone", "push"):
+        raise ValueError(f"shove mode must be 'prone' or 'push', got {mode!r}")
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        attacker = _char(c, attacker_id)
+        target = _char(c, target_id)
+
+        dc = combat.grapple_save_dc(attacker)
+
+        # Best of STR/DEX for the target (same rule as grapple — 2024 Unarmed Strike option)
+        ab = combat.best_save_ability(target)
+
+        conds = set(target.conditions)
+        auto_fail = ab in (Ability.STR, Ability.DEX) and bool(conds & combat.SAVE_AUTOFAIL)
+        disadvantage = ab == Ability.DEX and Condition.RESTRAINED in conds
+
+        r = dice_mod.roll(
+            f"1d20+{target.saving_throw_bonus(ab)}", disadvantage=disadvantage
+        )
+        success = (not auto_fail) and r.total >= dc
+
+        applied = False
+        pushed = 0
+        if not success:
+            if mode == "prone":
+                cond = Condition.PRONE
+                immune = cond.value in {i.strip().lower() for i in target.condition_immunities}
+                if not immune and cond not in target.conditions:
+                    target.conditions.append(cond)
+                    applied = True
+            else:  # push
+                pushed = 5  # SRD: 5 feet (no grid model; narrative)
+
+        save_campaign(c)
+
+        out: dict = {
+            "attacker": attacker.name,
+            "target": target.name,
+            "dc": dc,
+            "save_ability": ab.value,
+            "save_roll": r.total,
+            "natural": r.natural,
+            "success": success,
+            "mode": mode,
+            "applied": applied,
+            "pushed": pushed,
+        }
+        if auto_fail:
+            forcing = ", ".join(cn.value for cn in target.conditions if cn in combat.SAVE_AUTOFAIL)
+            out["reason"] = f"condition auto-fail: {target.name} is {forcing} — STR/DEX saves automatically fail"
+        if disadvantage:
+            out["disadvantage"] = True
+        return out
+
+
+@mcp.tool()
+def escape_grapple(
+    campaign_id: str,
+    character_id: str,
+    grappler_id: str,
+) -> dict:
+    """Attempt to escape a Grapple (SRD 5.2 / 2024).
+
+    The grappled creature uses its action to make a Strength (Athletics) or Dexterity
+    (Acrobatics) check — the engine picks whichever gives the higher total — against the
+    same DC the grappler used: 8 + grappler's Strength modifier + grappler's proficiency
+    bonus.
+
+    On a SUCCESS: the Grappled condition is removed. On a FAILURE: the creature remains
+    grappled.
+
+    Returns {dc, skill, skill_roll, natural, success, escaped, character, grappler}."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        escapee = _char(c, character_id)
+        grappler = _char(c, grappler_id)
+
+        # Recompute the same DC from the grappler's current sheet
+        dc = combat.grapple_save_dc(grappler)
+
+        # SRD: Athletics (STR) or Acrobatics (DEX) — best of the two
+        ath_bonus = escapee.skill_bonus("athletics")
+        acr_bonus = escapee.skill_bonus("acrobatics")
+        if acr_bonus > ath_bonus:
+            skill = "acrobatics"
+            bonus = acr_bonus
+        else:
+            skill = "athletics"
+            bonus = ath_bonus
+
+        r = dice_mod.roll(f"1d20+{bonus}")
+        success = r.total >= dc
+
+        escaped = False
+        if success and Condition.GRAPPLED in escapee.conditions:
+            escapee.conditions = [x for x in escapee.conditions if x != Condition.GRAPPLED]
+            escaped = True
+
+        save_campaign(c)
+
+        return {
+            "character": escapee.name,
+            "grappler": grappler.name,
+            "dc": dc,
+            "skill": skill,
+            "skill_roll": r.total,
+            "natural": r.natural,
+            "success": success,
+            "escaped": escaped,
+        }
+
+
 def _catalog_describe(rec: dict) -> str:
     """A one-line description for an inventory item granted from the catalog:
     the SRD prose, prefixed with the mechanical tags (kind/rarity/attunement/
