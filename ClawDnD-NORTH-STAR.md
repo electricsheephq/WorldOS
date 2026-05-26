@@ -180,6 +180,8 @@ destination. Full spec: `qa/SCORING.md`; running ledger: `qa/SCORECARD.md`.
 
 **The exit bar:** **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0 critical/high adversarial defects.**
 
+*Honest trajectory note (don't read this doc as describing a solved state):* mechanical ≥ 4.5 is the **aspirational** target — emergent-play mech currently sits ~3.9 and Angry-DM ~3.2, **coverage-gated** (one session can't exercise the whole 5e surface, and the Angry-DM lens is adversarial). The climb path is **coverage** (richer seeds/scenarios) + **content** + engine-fidelity fixes (Multiattack, turn-order, on-hit riders) — *not* prose tuning. A single run's lens number is a floor-check, never a verdict on the ceiling.
+
 ### Why the gate exists first
 LLM scorers grade *prose* and can't be trusted to flip RED on a structurally-broken run — a dead
 scene can read as "atmospheric." The deterministic gate is the **honest floor**: it makes
@@ -239,6 +241,13 @@ the fitness function.
   setup is a broken promise to the player. *(Check: list the setups; confirm each has an echo or a
   scheduled return. Zero orphans.)*
 
+- [ ] **Are the stakes EARNED, not handed over?** No "kill a god on day 1" (barring a deliberate
+  Clawdan easter-egg): a high-stakes ask should be GATED behind built trust — a faction questline you
+  rose through (rank/standing tiers), a companion bond you deepened, a thread you've been pulling.
+  Power and world-changing finales are the *payoff* of an arc, not its opening move. *(Check: did the
+  session's biggest stake sit on earned progression — faction rank, a bond, a multi-stage arc — or
+  arrive ungrounded?)*
+
 - [ ] **Does a companion feel REAL — and canon?** Two failure modes, both fatal: a companion who's a
   silent stat-block ("log, not a scene"), or a companion who's vivid but *off-character* for who they
   canonically are. The bar is **both**: present, voiced, with their own agenda — *and* unmistakably
@@ -276,6 +285,11 @@ the fitness function.
 - [ ] **Is the next world NEAR-FREE?** The ultimate generativity check: could a second world ship by
   *authoring a seed*, with no new engine subsystem? Every time you're tempted to hard-code, ask this.
   *(Check: would this feature need to be rebuilt for world #2, or does it read from content?)*
+  **⚠ This is the boldest and least-PROVEN claim in this doc — make it falsifiable.** One world (BG) is
+  deeply built; "near-free" is still *vision*, not demonstrated fact. Required milestone before
+  declaring the engine "done": spin up a THIN second seed (a small non-BG `world.json` + a few content
+  blocks) and confirm it runs a coherent session with **ZERO engine changes**. Treat that second-seed
+  spike as a falsifiable gate on deliverable B, not an aspiration.
 
 > **How to use this list:** run it as a post-run reflection on the runs that matter (not every
 > sprint). A GREEN run that fails three of these is a *better* signal about the roadmap than the lens
