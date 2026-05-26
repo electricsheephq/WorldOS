@@ -147,6 +147,16 @@ def _live_play() -> bool:
 # the engine. GET /image?scope=<scope> finds the most-recent descriptor for a scope
 # and serves the pixels; absent scope/descriptor → 404 so the dashboard falls back
 # to its luxe placeholder.
+#
+# W2b — ingested asset lookup:
+# wiki_images.py writes a descriptor (wiki_ingest.json) under the gitignored path
+#   content/worlds/_private/<world_id>/images/<safe-scope>/
+# Resolution order for a scope:
+#   1. Ingested asset (_private/<world_id>/images/<scope>/wiki_ingest.json) — newest wins
+#   2. Generated imagegen cache (<state_dir>/images/<scope>/*.json)
+#   3. 404 / placeholder fallback
+# The _private root is added to the path-containment allowlist in _serve_image so file
+# serving is safe even when descriptors carry absolute paths from a different machine.
 
 def _safe_scope(scope: Optional[str]) -> str:
     """Reduce a caller-supplied scope id to a single safe path segment, mirroring
@@ -165,15 +175,55 @@ def _images_dir(scope: Optional[str]) -> Path:
     return root / seg if seg else root
 
 
-def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
-    """Most-recently-written *.json descriptor under the scope's cache dir, parsed.
-    Returns None when the scope dir is absent, holds no descriptors, or the newest
-    one won't parse (the cache is rebuildable, never load-bearing — a bad entry is
-    just a miss, exactly like imagegen.cache_read)."""
+# W2b: repo root is two levels above viewer/ (repo-root/viewer/server.py).
+_REPO_ROOT = _HERE.parent
+
+
+def _ingested_images_root() -> Path:
+    """Root of the gitignored _private images tree (world-neutral).
+
+    Returns content/worlds/_private/ inside the repo. This directory is covered by
+    /content/worlds/_private/ in .gitignore so its contents are NEVER committed.
+    """
+    return _REPO_ROOT / "content" / "worlds" / "_private"
+
+
+def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
+    """Look up a wiki_ingest.json descriptor for scope across ALL world _private dirs.
+
+    Searches content/worlds/_private/<any-world>/images/<safe-scope>/wiki_ingest.json.
+    Returns the first readable descriptor found, or None. Path-traversal safe: scope
+    is sanitised and the result is confirmed to sit inside _ingested_images_root().
+    """
     seg = _safe_scope(scope)
     if not seg:
         return None
-    cdir = _images_dir(scope)
+    root = _ingested_images_root()
+    if not root.is_dir():
+        return None
+    for world_dir in root.iterdir():
+        if not world_dir.is_dir():
+            continue
+        desc_path = world_dir / "images" / seg / "wiki_ingest.json"
+        if not desc_path.exists():
+            continue
+        # Containment check: descriptor must resolve under _private root.
+        try:
+            if root.resolve() not in desc_path.resolve().parents:
+                continue
+        except OSError:
+            continue
+        try:
+            d = json.loads(desc_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if isinstance(d, dict):
+            return d
+    return None
+
+
+def _newest_json_descriptor(cdir: Path) -> Optional[dict]:
+    """Most-recently-written *.json under a directory, parsed. None on miss/error."""
     if not cdir.is_dir():
         return None
     newest: Optional[Path] = None
@@ -192,6 +242,27 @@ def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
     except (ValueError, OSError):
         return None
     return d if isinstance(d, dict) else None
+
+
+def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
+    """Resolve the best image descriptor for a scope.
+
+    Resolution order (W2b):
+      1. Ingested asset — content/worlds/_private/<world>/images/<scope>/wiki_ingest.json
+      2. Generated imagegen cache — <state_dir>/images/<scope>/*.json (newest)
+      3. None → 404
+
+    The cache is rebuildable, never load-bearing — a bad entry is just a miss.
+    """
+    seg = _safe_scope(scope)
+    if not seg:
+        return None
+    # 1. Ingested asset (wiki_images.py output) — takes priority over generated cache
+    ingested = _ingested_descriptor(scope)
+    if ingested is not None:
+        return ingested
+    # 2. Generated imagegen cache (existing behaviour)
+    return _newest_json_descriptor(_images_dir(scope))
 
 
 def _campaign_recency(snap_path: Path) -> float:
@@ -4670,9 +4741,11 @@ class _Handler(BaseHTTPRequestHandler):
         ctype = desc.get("mime_type")
         ctype = ctype if isinstance(ctype, str) and ctype.strip() else "image/png"
         # 1) a real file on disk — ONLY if it's contained under an expected image root
-        # (the derived cache, or the OpenClaw gateway media dir where it writes generated
-        # images). The viewer is the documented "pure reader": a descriptor's `path` must
-        # never let /image serve an arbitrary file (e.g. /etc/passwd) even if tampered.
+        # (the derived cache, the OpenClaw gateway media dir, or the gitignored _private
+        # ingested-art tree). The viewer is the documented "pure reader": a descriptor's
+        # `path` must never let /image serve an arbitrary file (e.g. /etc/passwd) even
+        # if tampered. W2b adds the _private ingested root so wiki_images.py output is
+        # served transparently alongside generated images.
         path = desc.get("path")
         if isinstance(path, str) and path:
             _oh = os.environ.get("OPENCLAW_HOME")
@@ -4680,6 +4753,8 @@ class _Handler(BaseHTTPRequestHandler):
                 _state_dir() / "images",
                 Path(os.environ.get("CLAWDND_OPENCLAW_MEDIA_DIR")
                      or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
+                # W2b: ingested wiki art (gitignored _private; never committed).
+                _ingested_images_root(),
             ]
             data = None
             try:

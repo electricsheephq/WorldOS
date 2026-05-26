@@ -58,6 +58,62 @@ python3 tools/ingest/wiki_to_characters.py tools/ingest/manifest_characters.json
 The parser is guarded by `servers/engine/tests/test_wiki_to_characters.py` (runs in CI's
 engine pytest via a path-insert, like `test_wiki_ingest.py`).
 
+## Image pipeline (W2b — wiki image ingest)
+
+`wiki_images.py` fetches the **lead image** for each entry in `manifest_images.json`
+via the MediaWiki API (pageimages → imageinfo fallback) and writes:
+
+1. **Image file** at `content/worlds/_private/<world_id>/images/<safe-scope>/image.<ext>`
+2. **Provenance sidecar** (`image.<ext>.provenance.json`) — `source_url`, `license`,
+   `attribution`, `fetched_at`.
+3. **Viewer descriptor** (`wiki_ingest.json`) — the shape `_latest_descriptor` in
+   `viewer/server.py` reads: `{path, mime_type, scope, source_url, license, attribution}`.
+
+**Licensing / storage discipline:** Official game/wiki art (© Larian / WotC) lands ONLY
+under the gitignored `content/worlds/_private/` tree. CC-BY-SA wiki images are kept WITH
+per-file attribution in the sidecar. The `_private/` path is covered by `.gitignore`;
+`scripts/license_check.py` enforces no committed images from that tree. NEVER commit the
+`_private/` directory.
+
+The `/image?scope=<scope>` viewer endpoint resolves descriptors in this order:
+  1. Ingested asset (`_private/<world>/images/<scope>/wiki_ingest.json`) — priority
+  2. Generated imagegen cache (`<state_dir>/images/<scope>/*.json`)
+  3. 404 / placeholder fallback
+
+```bash
+# Dry-run (preview what would be fetched, no downloads):
+python3 tools/ingest/wiki_images.py --dry-run
+
+# Fetch up to N images per source (for testing):
+python3 tools/ingest/wiki_images.py --max 3
+
+# Full ingest (all entries in manifest_images.json):
+python3 tools/ingest/wiki_images.py
+
+# Custom manifest:
+python3 tools/ingest/wiki_images.py path/to/my_manifest_images.json
+```
+
+Resumable + idempotent: scopes already written to `_private/` are skipped.
+The manifest format:
+
+```json
+{
+  "world_id": "baldurs-gate",
+  "rate_delay_seconds": 0.75,
+  "sources": [{
+    "wiki": "bg3.wiki",
+    "script_path": "/w",
+    "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual)",
+    "attribution": "Image from bg3.wiki ...",
+    "images": [
+      {"title": "Shadowheart", "scope": "portrait:shadowheart", "kind": "portrait"},
+      {"title": "Elfsong Tavern", "scope": "scene:elfsong-tavern", "kind": "scene"}
+    ]
+  }]
+}
+```
+
 ## Private compendium sidecar
 
 `private_compendium_sidecar.py` is a local-only scaffold for user-owned books,
