@@ -1,0 +1,20 @@
+{
+  "id": "loc-patriars-walk",
+  "name": "the Patriars' Walk",
+  "description": "The long marble-flagged promenade that winds through the Upper City's residential heart, flanked by the walled estates of families who have owned this view since before Gortash's grandfather was born. In warmer seasons the Walk is where the Parliament of Peers does the real business of governance — in gloved hands, over garden walls, during the kind of conversation that has no record. In this first winter after the Absolute it is strange, and the strangeness is visible: shuttered windows on three of the oldest estates, a Ravengard steward quietly negotiating the price of debt with a Zhentarim coin-factor in a doorway that used to be a tradesman's entrance, two houses whose owners died without heirs in the crisis and whose sealed doors the Council cannot agree on. The Walk itself is impeccable — someone is still paying the lamplighters and the stone-cleaners — but the marble is cold and the usual social traffic has thinned to a careful few. Patriars who were close to Gortash are not seen here anymore, or anywhere.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "Baldur's Gate — Upper City",
+    "the Basilisk Gate",
+    "Wyrm's Rock Fortress"
+  ],
+  "tags": [
+    "district",
+    "power",
+    "intrigue",
+    "city"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}

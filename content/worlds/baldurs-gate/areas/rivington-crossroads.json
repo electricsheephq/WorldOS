@@ -1,0 +1,20 @@
+{
+  "id": "loc-rivington-crossroads",
+  "name": "Rivington & the Crossroads",
+  "description": "The first neighborhood outside the walls on the Risen Road: technically the Outer City, practically its own small town, with a mill, a circus-ground-turned-refugee-settlement, a Flaming Fist checkpoint that was supposed to be temporary six months ago, and the residual smell of carnival. Rivington is where you end up if you cannot get into the Gate or will not pay what the gate-watch demands; it is also where you start if you are coming up the Risen Road from the south. The tiefling community that came north from the western wilds made this its home, and signs of that are everywhere — painted doorframes, small shrines to gods the Lower City does not stock, the sound of a different music from the windows. The Gur caravans camp at the crossroads' edge: horse-lines, cookfires, and an industry of quiet monster-hunting that the neighborhood finds useful and the city watch officially pretends not to know about. Since Cazador fell his vampire spawn have been drifting outward, and some of them drift this far.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "The Outer City & Rivington",
+    "Wyrm's Crossing & the Risen Road",
+    "Little Calimshan"
+  ],
+  "tags": [
+    "district",
+    "slums",
+    "city",
+    "crossroads"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}
