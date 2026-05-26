@@ -2245,6 +2245,16 @@ def start_combat(
                 outlook = _outlook_for_xps(_party_levels(c), monster_xps)
                 if outlook.get("must_offer_out") or outlook.get("band") == "deadly":
                     view["outlook"] = outlook
+        # Surface whose turn it is at combat-start and make clear they must act BEFORE
+        # calling next_turn (the root cause of Round-1 skips: DM reads start_combat.current
+        # as already-done and immediately calls next_turn).
+        first_combatant = c.characters.get(c.combat.current_combatant_id)
+        if first_combatant is not None:
+            view["turn_instruction"] = (
+                f"It is now {first_combatant.name}'s turn (Round 1). "
+                f"Resolve their action (attack / cast_spell / use_action) BEFORE calling next_turn. "
+                f"'current' is WHO MUST ACT NOW — not a completed turn."
+            )
         save_campaign(c)
         return view
 
@@ -2514,6 +2524,30 @@ def next_turn(campaign_id: str) -> dict:
         if not c.combat.active or not order:
             raise ValueError("no active combat")
         previous = c.characters.get(c.combat.current_combatant_id)
+        # --- PC-skip guard (#160/#166): enforce that a PC/companion who CAN act has
+        # actually acted (or explicitly passed) before we advance past their turn.
+        # Rules-correct 5e: a creature takes an action or explicitly declares a pass;
+        # silent skip is never legal. Monsters/NPCs advance freely (DM runs them).
+        if previous is not None and previous.kind in ("player", "companion"):
+            outgoing_able = (
+                not combat.is_incapacitated(previous)
+                and previous.current_hp > 0
+                and not previous.dead
+                and not getattr(previous, "stable", False)  # stable/unconscious can't act anyway
+            )
+            # "Stable" PCs at 0 hp are unconscious — is_incapacitated covers most
+            # of this, but we also gate on hp>0 to be explicit.
+            outgoing_acted = (
+                c.combat.action_used
+                or c.combat.action_attacks_made > 0
+                or c.combat.bonus_action_used
+            )
+            if outgoing_able and not outgoing_acted:
+                raise ValueError(
+                    f"{previous.name} has not acted this turn — resolve their action "
+                    f"(attack / cast_spell / use_action) or declare a pass via "
+                    f"use_action(kind='skip') before advancing."
+                )
         n = len(order)
         cur = None
         new_round = False
@@ -2563,6 +2597,14 @@ def next_turn(campaign_id: str) -> dict:
         # Only when combat is active and there's a living current combatant.
         if cur is not None:
             view["turn_brief"] = _turn_brief(cur, c)
+            # Clarify to the DM that 'current' is WHO MUST ACT NOW — not a completed turn.
+            # This directly addresses the Round-1 skip pattern where the DM misread
+            # start_combat/next_turn's 'current' as the turn just finished.
+            view["turn_instruction"] = (
+                f"It is now {cur.name}'s turn (Round {c.combat.round}). "
+                f"Resolve their action (attack / cast_spell / use_action) BEFORE calling next_turn. "
+                f"'current' is WHO MUST ACT NOW — not a completed turn."
+            )
         _log_combat_event(
             c,
             f"Turn advances to {cur.name}." if cur else "Turn advances with no living combatant.",
@@ -2584,16 +2626,20 @@ def next_turn(campaign_id: str) -> dict:
 
 @mcp.tool()
 def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dict:
-    """Track a combatant's action economy. kind: action | bonus | reaction | free.
+    """Track a combatant's action economy. kind: action | bonus | reaction | free | skip.
     `action`/`bonus` are legal only on the creature's OWN turn and only once each
     per turn; `reaction` is legal any time but once per round (it refreshes at the
     start of the creature's turn via next_turn); `free`/movement isn't rate-limited.
+    `skip` (a.k.a. pass) declares an intentional do-nothing turn for the current
+    combatant — sets action_used so next_turn's PC-skip guard is satisfied without
+    actually attacking or casting. Use it when a PC Dodges, Dashes, Disengages,
+    Readies, or simply passes their turn.
     Returns {ok, reason, action_available, bonus_available, reaction_available} so
     you can flag an illegal double-action. NOTE: multiattack (Extra Attack) is ONE
     action — declare a single `action`, then make several attack() calls under it."""
     kind = kind.lower()
-    if kind not in ("action", "bonus", "reaction", "free", "movement"):
-        raise ValueError("kind must be action | bonus | reaction | free")
+    if kind not in ("action", "bonus", "reaction", "free", "movement", "skip"):
+        raise ValueError("kind must be action | bonus | reaction | free | skip")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -2614,6 +2660,17 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
                 f"{', '.join(c.value for c in ch.conditions if c in combat.INCAPACITATING)}) "
                 f"and can't take an action, bonus action, or reaction"
             )
+        elif kind == "skip":
+            # Declare an intentional pass: satisfies the PC-skip guard in next_turn so
+            # the DM can advance the turn without the combatant attacking or casting.
+            # Only valid on the current combatant's turn; marks action_used so any
+            # subsequent use_action(kind='action') is properly rejected.
+            if not is_current:
+                ok, reason = False, f"it is not {ch.name}'s turn — skip must be declared on your own turn"
+            elif c.combat.action_used:
+                ok, reason = False, "action already used this turn (already acted or skipped)"
+            else:
+                c.combat.action_used = True
         elif kind in ("action", "bonus"):
             if not is_current:
                 ok, reason = False, f"it is not {ch.name}'s turn (only a reaction acts off-turn)"
@@ -3729,6 +3786,10 @@ def cast_spell(
         # is separate from the character, so the re-validation above didn't touch it).
         if cast_consumes_reaction and caster_cb is not None:
             caster_cb.reaction_used = True
+        # An on-turn cast consumes the combatant's action (mirrors attack()'s action_used
+        # bookkeeping). Required so next_turn's PC-skip guard recognises a spell as "acted".
+        elif caster_cb is not None and not cast_consumes_reaction:
+            c.combat.action_used = True
         save_campaign(c)
         updated = c.characters[character_id]
         result = {
