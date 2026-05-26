@@ -161,13 +161,20 @@ Take your next action(s) for this beat using your tools — say / do / request_c
 
   RUNBOOK="$(clawdnd_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_DIR")"
   echo "[duo] beat $b runbook: ${RUNBOOK%% (*}…"
+  # Campaign Director (#72): surface what the campaign OWES this beat (untracked hook -> add_quest,
+  # silent NPC to voice, due consequence) so the DM is reminded structurally (closes the add_quest
+  # reach-for gap). Empty when nothing's owed -> no change to the prompt.
+  DIRECTOR="$(clawdnd_director_advisory "$ROOT" "$STATE_DIR")"
+  [ -n "$DIRECTOR" ] && echo "[duo] beat $b director: ${DIRECTOR:0:80}…"
   DMSG="$(turn_retry dm "$DSID" 0 "The player does:
 
 $PMSG
 
 Resolve it through the engine (roll/cast/attack as needed), then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or the companion) in the scene SPEAKS at least one quoted line in their own voice; let them push back, hesitate, lie, or counter when it's real (don't just grant every ask); and weave the open moment back to the player INTO the scene — never a bare 'Your move.' / 'What do you do?' on its own line.
 
-$RUNBOOK")"
+$RUNBOOK
+
+$DIRECTOR")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
   chatlog dm "$DMSG"
