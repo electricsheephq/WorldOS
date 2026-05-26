@@ -301,6 +301,27 @@ class TestViewerIngestedDescriptor(unittest.TestCase):
         result = _viewer._ingested_descriptor("portrait:shadowheart")
         self.assertIsNotNone(result)
 
+    def test_scope_key_normalizes_prefix_and_separator(self):
+        sk = _viewer._scope_key
+        self.assertEqual(sk("portrait-npc-shadowheart"), "shadowheart")
+        self.assertEqual(sk("portrait:shadowheart"), "shadowheart")
+        self.assertEqual(sk("portrait-shadowheart"), "shadowheart")
+        self.assertEqual(sk("loc-elfsong-tavern"), "elfsong-tavern")
+        self.assertEqual(sk("scene:elfsong-tavern"), "elfsong-tavern")
+        self.assertEqual(sk("npc-the-emperor"), "the-emperor")
+        self.assertEqual(sk(""), "")
+
+    def test_ingested_descriptor_normalized_match(self):
+        # ingested under the manifest slug; the UI fetches the ENGINE-ID scope — must resolve
+        self._write_ingested("baldurs-gate", "portrait:shadowheart")
+        self.assertIsNotNone(_viewer._ingested_descriptor("portrait-npc-shadowheart"))
+        self.assertIsNotNone(_viewer._ingested_descriptor("portrait-shadowheart"))
+        # a scene ingested as scene:<slug>; the UI fetches the location id
+        self._write_ingested("baldurs-gate", "scene:elfsong-tavern")
+        self.assertIsNotNone(_viewer._ingested_descriptor("loc-elfsong-tavern"))
+        # an unrelated scope still misses (no false positives)
+        self.assertIsNone(_viewer._ingested_descriptor("portrait-npc-gibberish"))
+
     def test_empty_scope_returns_none(self):
         self.assertIsNone(_viewer._ingested_descriptor(""))
         self.assertIsNone(_viewer._ingested_descriptor(None))
