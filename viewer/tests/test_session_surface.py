@@ -252,7 +252,8 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["actionContext"]["consequences"]["dueCount"], 1)
         self.assertEqual(surface["actionContext"]["consequences"]["pendingCount"], 1)
         self.assertEqual(surface["actionContext"]["consequences"]["signals"][0]["id"], "charter_due")
-        self.assertEqual(surface["actionModel"]["blockedActions"][0]["disabled_reason"], "no live move sink")
+        action_model_blocked = {a["id"]: a for a in surface["actionModel"]["blockedActions"]}
+        self.assertEqual(action_model_blocked["continue"]["disabled_reason"], "no live move sink")
         encoded = json.dumps(surface)
         self.assertNotIn("private", encoded)
         self.assertNotIn("baron", encoded)

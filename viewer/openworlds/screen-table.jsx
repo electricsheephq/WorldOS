@@ -133,7 +133,7 @@ function ScreenTable({ onNavigate, state, setState }) {
       setLog((l) => [...l, { kind: "action", who: hero.name, text }]);
       loadSurface();
     } catch (error) {
-      toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
+      toast({ kind: "danger", title: "Move not sent", body: error?.message || `The viewer could not reach ${writeLane.endpoint || "/move"}.` });
     }
   };
 
