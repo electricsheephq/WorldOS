@@ -93,21 +93,96 @@ The DM loop is **safety-capped** so it can't run away: a per-turn budget, a whol
 
 > Not to be confused with `clawdnd-dashboard.command`, the read-only **director's view** — it *watches* a game (live or a QA run) without an action palette. `clawdnd-play.command` is the one that lets you *play*.
 
-## Requirements
+## Quick start — install, create a character, play your first session
 
-- [Claude Code](https://claude.ai/code)
-- [`uv`](https://docs.astral.sh/uv/) (manages the Python servers; auto-provisions Python 3.12)
-- macOS / Apple Silicon recommended for the local Kokoro voice (works elsewhere too)
+### 1. Requirements
 
-## Install (dev)
+- **[Claude Code](https://claude.ai/code)** (the host shell)
+- **[`uv`](https://docs.astral.sh/uv/)** — manages the three Python MCP servers; auto-provisions Python 3.12. Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+- macOS / Apple Silicon recommended for Kokoro local voice (works on Linux too; Kokoro requires a one-time model download).
+
+### 2. Install the plugin
+
+Clone the repo and register it with Claude Code in a single step:
 
 ```bash
 git clone https://github.com/100yenadmin/ClawDnD.git
 cd ClawDnD
-# In Claude Code:
-/plugin marketplace add 100yenadmin/ClawDnD
-/plugin install clawdnd@clawdnd
 ```
+
+Then inside Claude Code:
+
+```
+/plugin install .
+```
+
+Claude Code reads `.claude-plugin/plugin.json` and `.mcp.json`, starts the three MCP
+servers (`clawdnd-engine`, `clawdnd-rules`, `clawdnd-voice`) via `uv`, and the plugin
+is live for the session.
+
+### 3. Create a character and begin
+
+In Claude Code, start your first living-world session:
+
+```
+/world-list          ← see the available worlds
+/world-play sundered-reach   ← drop into The Sundered Reach (original, CC-BY)
+```
+
+The DM generates your character (level 3, class and concept fitted to the world), opens
+a scene grounded in the world's canon, introduces your **voiced AI companion**, and hands
+you an open moment to act on. You type your moves; the engine resolves them
+deterministically; the DM narrates and voices every character.
+
+Other worlds:
+- `baldurs-gate` — the Unofficial BG3+ Universe Seed (free Fan Content)
+- `tidal-commonwealth` — The Tidal Commonwealth (original, CC-BY)
+
+Or start a scripted campaign: `/campaign-new [name]` then `/session-start [id]`.
+
+### 4. Play surfaces
+
+**Option A — play in Claude Code** (type your turns in chat):
+
+```
+/world-play sundered-reach
+```
+
+**Option B — play in the browser dashboard** (action palette + live DM beside it):
+
+```bash
+# Double-click the desktop shortcut (after scripts/install-desktop-shortcut.sh), or:
+./clawdnd-play.command            # default world (baldurs-gate)
+scripts/play.sh sundered-reach    # specific world
+```
+
+Your browser opens to `http://127.0.0.1:8765/dashboard`. Act through **Say**, **Do**,
+**Continue**, the dice / skill / save / combat buttons, and click-to-travel. The DM
+resolves each move through the engine and narrates the next beat live.
+
+**Option C — native macOS app** (OpenWorlds — build from source):
+
+```bash
+script/build_and_run.sh           # builds with Swift, ad-hoc signs, opens the app
+```
+
+The app (`macos/ClawDnDApp/`) hosts the same read-model screens (atlas, party, quests,
+event feed, combat, portrait art) as live engine read-models. Requires macOS 13+ and
+`swift` in your PATH (Xcode Command Line Tools).
+
+### 5. Voice
+
+Voice is on by default (Kokoro local TTS, multi-voice, free). Toggle it mid-session:
+
+```
+/voice-toggle off    ← text-only fallback
+/voice-toggle on     ← voiced narration + per-character voices
+```
+
+Kokoro runs on-device; no API key needed. ElevenLabs can drop in later via
+`CLAWDND_TTS_BACKEND=elevenlabs` without touching anything else.
+
+---
 
 ## Licensing
 
