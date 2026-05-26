@@ -57,6 +57,9 @@ function getDefaultScreen(groupId) {
 }
 
 function Glyph({ kind, size = 22 }) {
+  if (window.OpenWorldsIcon?.has?.(kind)) {
+    return <window.OpenWorldsIcon id={kind} size={size} />;
+  }
   const stroke = { stroke: "currentColor", strokeWidth: 1.4, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" };
   switch (kind) {
     case "compass":
@@ -249,9 +252,11 @@ function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onC
       }}
       title={label}
     >
-      {children || (
+      {children || (glyph && window.OpenWorldsIcon?.has?.(glyph) ? (
+        <window.OpenWorldsIcon id={glyph} size={Math.max(18, size * 0.46)} label={label} />
+      ) : (
         <span className="ph-label" style={{ fontSize: 9 }}>{label}</span>
-      )}
+      ))}
     </button>
   );
 }

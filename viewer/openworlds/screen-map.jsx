@@ -375,10 +375,10 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
             )}
 
             <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
-              <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
-                {busyTravel === selected.id ? "Sending..." : "Travel here"}
+            <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
+                <window.OpenWorldsIcon id="atlas.travel" size={14} /> {busyTravel === selected.id ? "Sending..." : "Travel here"}
               </BrassButton>
-              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}>Mark</BrassButton>
+              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}><window.OpenWorldsIcon id="quest.scroll" size={13} /> Mark</BrassButton>
             </div>
             {travelDisabled && (
               <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>{travelReason}</div>
@@ -472,7 +472,10 @@ function LocationPin({ loc, selected }) {
           : "inset 0 0 0 1px var(--b-500), 0 2px 4px rgba(0,0,0,0.4)",
         whiteSpace: "nowrap",
       }}>
-        {loc.name}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <window.OpenWorldsIcon id={loc.current ? "atlas.travel" : (loc.tags || []).includes("rest") ? "camp.rest" : "settlement.tavern"} size={11} />
+          {loc.name}
+        </span>
       </div>
       <div style={{
         width: 12, height: 12, borderRadius: "50%",

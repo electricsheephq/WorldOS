@@ -39,6 +39,22 @@ hashes. These development-mode runtime files are a fidelity bridge for the first
 local packaged surface; release hardening should replace Babel-in-browser with a
 compiled bundle while keeping all assets local.
 
+## Bundled OpenWorlds icon assets
+
+OpenWorlds vendors a small curated subset of **Game Icons** under
+`viewer/openworlds/assets/icons/game-icons/` for gameplay affordances such as
+attacks, dice, travel, quests, camp, settlements, consumables, and coins.
+
+- **Source:** <https://game-icons.net> / `game-icons/icons`
+- **License:** Creative Commons Attribution 3.0 (CC-BY-3.0), unless an upstream
+  contributor is explicitly marked CC0.
+- **Attribution:** see `viewer/openworlds/assets/icons/ATTRIBUTION.md`.
+- **Authors in this subset:** Lorc, Delapouite, and Willdabeast.
+
+The imported SVGs were normalized only for presentation by removing the opaque
+background rectangle so the app can tint them as local CSS masks. ClawDnD does
+not vendor the full icon set and does not fetch icon assets from a network CDN.
+
 ## Structural references — learn-from only (NO code copied)
 
 These projects informed ClawDnD's design. After verifying their licensing
