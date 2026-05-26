@@ -27,6 +27,7 @@ from models import (
     DowntimeProject,
     Event,
     Faction,
+    FactionArc,
     FactionAsset,
     Location,
     Quest,
@@ -683,6 +684,14 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
     ov_id = overlay.get("id", overlay.get("name", "?"))
     _seed_events_block(c, overlay.get("events"), where=f"ending overlay {ov_id!r}")
 
+    # ADDITIVE (Quest & Arc engine, faction arcs / #127): the chosen ending may ALSO seed faction
+    # questlines — so the post-state shapes which factions are joinable + what their arcs become
+    # (the Fist's rise looks different under a tyranny ending vs a liberation one). Folded onto
+    # whatever the base world already seeded; a malformed entry degrades (skip-one), like events.
+    # No `faction_arcs` key in the overlay is a no-op. Runs here so an arc's `faction_id` can be
+    # ref-checked against the (already-seeded) factions.
+    _seed_faction_arcs_block(c, overlay.get("faction_arcs"), where=f"ending overlay {ov_id!r}")
+
 
 def _seed_strategic_state(c: Campaign, world: dict) -> None:
     """Seed optional strategic board data from world.json.
@@ -848,6 +857,81 @@ def _seed_events(c: Campaign, world: dict) -> None:
     Runs AFTER factions are seeded (so a `reputation_at` trigger can be ref-checked). Additive
     + degrade-not-abort: a world with no `events` key seeds nothing (today's behavior)."""
     _seed_events_block(c, world.get("events"), where="world events block")
+
+
+def _seed_faction_arcs_block(c: Campaign, raw, *, where: str) -> int:
+    """Fold an OPTIONAL authored `faction_arcs` block onto the campaign (Quest & Arc engine,
+    faction arcs / #127). Mutates `c.faction_arcs` + links each named faction's `questline_arc_id`;
+    returns the count seeded.
+
+    This is the clean answer to "how is a faction arc seeded" given a faction is NOT a Character
+    (so the `companion_seeds` path — keyed to a roster companion — doesn't fit): faction arcs get
+    their OWN block. It mirrors `_seed_events_block` byte-for-byte — a list of FactionArc objects OR
+    a dict id->FactionArc; each validated into a `FactionArc`; a present-but-MALFORMED entry (wrong
+    shape, a `faction_id` naming a missing faction, a forbidden extra key, a stage `quest_id` with
+    no tracked Quest, a duplicate stage id) is SKIPPED with a diagnostic — DEGRADE-not-abort,
+    exactly the companion_seeds / world_state / events contract — never aborting start_world. A
+    missing/None/non-collection block is a no-op (today's behavior).
+
+    An arc naming an unknown faction is skipped (the gauge gate could never resolve — an authoring
+    typo). An explicit id collision (two arcs with the same id) keeps the first and skips the rest."""
+    if raw is None:
+        return 0
+    if isinstance(raw, dict):
+        entries = list(raw.values())
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        print(f"[content] skipping malformed faction_arcs block in {where} (not a list or object)")
+        return 0
+    seeded = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            print(f"[content] skipping faction_arcs entry in {where} (not an object)")
+            continue
+        try:
+            arc = FactionArc.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed faction arc in {where}")
+            continue
+        # An arc must name a real faction — its gauge gate reads that faction's reputation/standing;
+        # an unknown faction can never satisfy it (almost always an authoring typo). Skip (degrade).
+        if not arc.faction_id or arc.faction_id not in c.factions:
+            print(
+                f"[content] skipping faction arc {arc.id!r} in {where}: "
+                f"names unknown faction {arc.faction_id!r}"
+            )
+            continue
+        # A stage's optional tracked-Quest projection must point at an existing Quest (seeded
+        # quests are rare at world-gen, so this is usually empty). A dangling ref degrades the arc.
+        bad_quest = next((s.quest_id for s in arc.stages if s.quest_id and s.quest_id not in c.quests), None)
+        if bad_quest is not None:
+            print(
+                f"[content] skipping faction arc {arc.id!r} in {where}: "
+                f"stage references unknown tracked quest {bad_quest!r}"
+            )
+            continue
+        if arc.id in c.faction_arcs:
+            print(f"[content] skipping faction arc {arc.id!r} in {where}: duplicate arc id (keeping the first)")
+            continue
+        c.faction_arcs[arc.id] = arc
+        # Link the faction back to its questline (the runtime tools rely on questline_arc_id to
+        # find the arc on join_faction). If the faction already links a DIFFERENT arc, keep the
+        # first link (one questline per faction); the arc is still seeded + reachable by id.
+        fac = c.factions[arc.faction_id]
+        if not fac.questline_arc_id:
+            fac.questline_arc_id = arc.id
+        seeded += 1
+    return seeded
+
+
+def _seed_faction_arcs(c: Campaign, world: dict) -> None:
+    """Seed authored faction questlines from `world['faction_arcs']` (Quest & Arc engine, faction
+    arcs / #127).
+
+    Runs AFTER factions are seeded (so an arc's `faction_id` can be ref-checked). Additive +
+    degrade-not-abort: a world with no `faction_arcs` key seeds nothing (today's behavior)."""
+    _seed_faction_arcs_block(c, world.get("faction_arcs"), where="world faction_arcs block")
 
 
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
@@ -1156,12 +1240,24 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             name=fac.get("name", "Faction"),
             description=fac.get("description", ""),
             reputation=int(fac.get("reputation", 0)),
+            # ADDITIVE faction-growth membership (faction arcs / #127). A world MAY seed a
+            # starting rank/standing/joined state, but the default leaves a faction un-joined at
+            # rank 0 / standing 0 — byte-for-byte today's behavior. `standing` floors at 0 (the
+            # monotonic gauge), so a negative seed degrades to 0 rather than aborting the world.
+            rank=int(fac.get("rank", 0)),
+            standing=max(0, int(fac.get("standing", 0))),
+            joined=bool(fac.get("joined", False)),
         )
         if fac.get("id"):
             faction.id = fac["id"]
         c.factions[faction.id] = faction
 
     _seed_strategic_state(c, world)
+
+    # Faction-growth questlines (Quest & Arc engine, faction arcs / #127). Runs AFTER factions are
+    # seeded so an arc's `faction_id` can be ref-checked. Additive: a world with no `faction_arcs`
+    # key is a no-op (today's behavior); the ending overlay may add MORE (see _apply_ending_overlay).
+    _seed_faction_arcs(c, world)
 
     # Authored stumble-into Events (Quest & Arc engine, Layer 3). Runs after factions so a
     # `reputation_at` trigger can be ref-checked. Additive: a world with no `events` key is a

@@ -27,6 +27,7 @@ import content as content_mod
 import dice as dice_mod
 import encounter
 import events as events_mod
+import faction_arc as faction_arc_mod
 import generator
 import imagegen
 import inventory
@@ -65,6 +66,7 @@ from models import (
     DeathSaves,
     Decision,
     Faction,
+    FactionArc,
     HouseRules,
     Item,
     Location,
@@ -6091,6 +6093,255 @@ def adjust_reputation(
         fac.reputation = max(-100, min(100, fac.reputation + int(delta)))
         save_campaign(c)
         return {"id": fac.id, "name": fac.name, "reputation": fac.reputation, "reason": reason}
+
+
+# --- Faction-growth questlines (Quest & Arc engine, faction arcs / #127) -----------------------
+# The Skyrim/Kingmaker join->grow->lead loop. Mirrors the companion-quest-arc tool surface
+# (set_companion_quest_arc / advance_companion_quest_arc / get_companion_quest_arcs +
+# check_companion_arc) — generalized onto a FACTION-owned reputation/standing gauge. The engine
+# advances a stage only when its gauge gate holds (pure, contract-safe) and ripples a resolved
+# stage's finale ONCE; the advisory surface (check_faction_arcs) detects-but-never-acts.
+
+
+def _faction_arc_view(c: Campaign, arc: FactionArc) -> dict:
+    """A DM-facing view of a faction arc with its faction name + the current gauge values resolved
+    (so the DM sees how close each locked stage is to unlocking without a second call)."""
+    fac = c.factions.get(arc.faction_id)
+    out = arc.model_dump()
+    out["faction_name"] = fac.name if fac else ""
+    out["reputation"] = fac.reputation if fac else None
+    out["standing"] = fac.standing if fac else None
+    out["joined"] = fac.joined if fac else False
+    out["rank"] = fac.rank if fac else 0
+    out["linked_quests"] = [
+        {"id": q.id, "title": q.title, "status": q.status}
+        for s in arc.stages
+        if s.quest_id and (q := c.quests.get(s.quest_id)) is not None
+    ]
+    return out
+
+
+def _validate_faction_arc_links(c: Campaign, arc: FactionArc) -> None:
+    """Validate a faction arc's references against campaign state (mirrors
+    _validate_companion_quest_arc_links). A faction arc must name a real faction; each stage's
+    optional tracked-Quest projection must point at an existing Quest."""
+    if not arc.faction_id or arc.faction_id not in c.factions:
+        raise ValueError(f"faction arc {arc.id!r} names unknown faction {arc.faction_id!r}")
+    for stage in arc.stages:
+        if stage.quest_id and stage.quest_id not in c.quests:
+            raise ValueError(f"no tracked quest {stage.quest_id!r} for faction arc stage {stage.id!r}")
+
+
+@mcp.tool()
+def grant_standing(campaign_id: str, faction_id: str, amount: int, reason: str = "") -> dict:
+    """Raise (or lower) a faction's MONOTONIC membership `standing` by `amount` — the Skyrim-style
+    "rank progress" gauge, distinct from `reputation` (how the faction FEELS about you). Use it
+    when the party performs SERVICE that advances them inside a faction (completing a faction
+    job, proving themselves) — standing is what unlocks the next stage of a faction questline
+    gated on `gauge="standing"`. Floored at 0 (it never goes negative — you don't un-rise through
+    service; `reputation` is the gauge that can be burned). The faction must already exist (join
+    it / earn reputation first). Returns the faction's new standing.
+
+    NOTE: this does NOT auto-advance a faction arc — call `check_faction_arcs` after to see whether
+    a stage just unlocked, then `advance_faction_arc` to take it (the advise-not-act contract)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        fac = c.factions.get(faction_id)
+        if fac is None:
+            raise ValueError(f"no faction {faction_id!r} — join it or earn reputation first")
+        fac.standing = max(0, fac.standing + int(amount))
+        save_campaign(c)
+        return {"id": fac.id, "name": fac.name, "standing": fac.standing, "reason": reason}
+
+
+@mcp.tool()
+def set_faction_arc(campaign_id: str, arc: dict) -> dict:
+    """Create or replace an engine-owned FACTION questline (the join->grow->lead state machine).
+
+    `arc` is `{faction_id, title, stages:[{title, unlock_at, gauge?, location_id?, quest_id?,
+    note?, finale_effect?}], requires_joined?, note?}`. `gauge` is "reputation" (default) or
+    "standing" — which faction gauge a stage's `unlock_at` threshold reads. `finale_effect` is an
+    Outcome-shaped world ripple (flag / faction_id+reputation_delta / controller_id+location_id /
+    npc_name / decision_flag / schedule_in_days+schedule_text / narrate) applied ONCE when the
+    stage resolves — the world-changing finale. The faction must already exist; any stage
+    `quest_id` must point at an existing tracked Quest. LINKS the arc to its faction
+    (`questline_arc_id`). The engine evaluates the gauge gates each beat via `check_faction_arcs`;
+    `join_faction` arms the arc; `advance_faction_arc` advances a stage / applies the finale."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        parsed = FactionArc.model_validate(dict(arc or {}))
+        _validate_faction_arc_links(c, parsed)
+        c.faction_arcs[parsed.id] = parsed
+        # Link the faction back to its questline so get_state / the viewer can find it.
+        c.factions[parsed.faction_id].questline_arc_id = parsed.id
+        save_campaign(c)
+        return {"faction_arc": _faction_arc_view(c, parsed)}
+
+
+@mcp.tool()
+def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
+    """JOIN a faction — the membership latch that ARMS its questline (the Skyrim/Kingmaker
+    join->grow->lead loop). Sets the faction `joined=True` and its starting `rank` (default 1 —
+    the lowest membership tier), then ARMS any linked FactionArc: a `requires_joined` arc that was
+    `locked` opens to `available`, and any stage whose gauge gate ALREADY holds unlocks. Use it
+    when the party formally enlists with / is inducted into a group.
+
+    The faction must already exist (earn some reputation first, or it's seeded by the world).
+    Idempotent on the membership latch (re-joining just re-evaluates the arc). Returns the
+    faction's membership state + any stages that just became available. After this, grow
+    `reputation`/`standing` through service, then `advance_faction_arc` to climb the questline."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        fac = c.factions.get(faction_id)
+        if fac is None:
+            raise ValueError(f"no faction {faction_id!r} — earn reputation with it first (adjust_reputation)")
+        fac.joined = True
+        if rank > fac.rank:
+            fac.rank = int(rank)
+        newly_available: list[str] = []
+        arc = c.faction_arcs.get(fac.questline_arc_id) if fac.questline_arc_id else None
+        if arc is not None:
+            res = faction_arc_mod.evaluate(arc, c)
+            newly_available = res["newly_available"]
+        save_campaign(c)
+        return {
+            "id": fac.id,
+            "name": fac.name,
+            "joined": fac.joined,
+            "rank": fac.rank,
+            "standing": fac.standing,
+            "reputation": fac.reputation,
+            "questline_arc_id": fac.questline_arc_id,
+            "newly_available_stage_ids": newly_available,
+        }
+
+
+@mcp.tool()
+def get_faction_arcs(campaign_id: str, faction_id: str = "", status: str = "") -> dict:
+    """Read faction questlines (the join->grow->lead arcs), optionally filtered by faction and
+    lifecycle status. Read-only; does NOT evaluate gates or advance anything (use
+    `check_faction_arcs` to advance locked->available, `advance_faction_arc` to take a stage). Each
+    arc view resolves the faction's name + current reputation/standing/joined/rank so the DM can
+    see how close each locked stage sits to its `unlock_at`."""
+    c = _require(campaign_id)
+    wanted = _companion_quest_status(status, "status") if status else ""
+    arcs = list(c.faction_arcs.values())
+    if faction_id:
+        arcs = [a for a in arcs if a.faction_id == faction_id]
+    if wanted:
+        arcs = [a for a in arcs if a.status == wanted]
+    arcs.sort(key=lambda a: (a.faction_id, a.title, a.id))
+    return {"faction_arcs": [_faction_arc_view(c, a) for a in arcs], "count": len(arcs)}
+
+
+@mcp.tool()
+def check_faction_arcs(campaign_id: str, faction_id: str = "") -> dict:
+    """Advance faction questlines' gauge gates against the CURRENT state and surface the rank-ups
+    that just became live — the faction analog of `check_companion_arc`. Call it each beat: when a
+    stage UNLOCKS (the faction's reputation/standing reached its `unlock_at` and the party has
+    joined), play that "you've earned a promotion / the next mission opens" beat.
+
+    Pass `faction_id` to evaluate one faction's arc, or leave blank to evaluate ALL armed arcs. A
+    stage flips locked->available when its gauge gate holds AND the faction is joined; the engine
+    NEVER auto-advances past `available` — taking a stage (active/resolved/failed) and rippling its
+    finale is an EXPLICIT `advance_faction_arc` call (advise-not-act). Idempotent — an
+    already-unlocked stage is not re-reported. Also returns an ADVISORY `nudges` list (available /
+    in-flight questline stages) mirroring the Director's scene-debt surface; read-only, never acts."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if faction_id and faction_id not in c.factions:
+            raise ValueError(f"no faction {faction_id!r}")
+        results = []
+        for arc in c.faction_arcs.values():
+            if faction_id and arc.faction_id != faction_id:
+                continue
+            res = faction_arc_mod.evaluate(arc, c)
+            if res["newly_available"]:
+                fac = c.factions.get(arc.faction_id)
+                results.append(
+                    {
+                        "arc_id": arc.id,
+                        "faction_id": arc.faction_id,
+                        "faction_name": fac.name if fac else "",
+                        "title": arc.title,
+                        "newly_available_stage_ids": res["newly_available"],
+                    }
+                )
+        save_campaign(c)
+        # The advisory nudge surface (read-only — runs on the just-evaluated state).
+        nudges = faction_arc_mod.detect_rank_available(c)
+        if faction_id:
+            nudges = [n for n in nudges if n["faction_id"] == faction_id]
+        return {"results": results, "nudges": nudges}
+
+
+@mcp.tool()
+def advance_faction_arc(
+    campaign_id: str,
+    arc_id: str,
+    stage_id: str = "",
+    stage_status: str = "",
+    status: str = "",
+    rank: int = 0,
+) -> dict:
+    """Explicitly advance a FACTION questline — take an available stage, resolve a finale, fail a
+    branch (the faction analog of `advance_companion_quest_arc`). The engine ripples a resolved
+    stage's world-changing finale ONCE; you narrate it.
+
+    `stage_id` + `stage_status` advances one stage (e.g. `available`->`active`->`resolved`).
+    `status` advances the arc-level lifecycle. `rank` (optional) sets the faction's new membership
+    rank (a promotion). GATE-CHECKED: a stage can only leave `locked`/`available` toward `active`
+    when its gauge gate holds (the party earned it) — advancing an un-earned stage is rejected.
+
+    When a stage moves to `resolved` AND carries a `finale_effect`, the engine applies that ripple
+    through the SAME path the living world uses (a set flag, a faction reputation shift, a
+    control/arrival marker, an optional `decision_flag` that arms a companion flip, an optional
+    follow-on Consequence). IDEMPOTENT: re-resolving an already-resolved stage applies the finale
+    NOTHING further (the `effect_applied` latch) — calling it twice is safe. Returns the updated
+    arc view + what the finale moved (`finale`)."""
+    next_stage_status = _companion_quest_status(stage_status, "stage_status") if stage_status else ""
+    next_status = _companion_quest_status(status, "status") if status else ""
+    if not any((next_stage_status, next_status, rank)):
+        raise ValueError("advance_faction_arc requires stage_status, status, or rank")
+    if next_stage_status and not stage_id:
+        raise ValueError("stage_status requires stage_id")
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        arc = c.faction_arcs.get(arc_id)
+        if arc is None:
+            raise ValueError(f"no faction arc {arc_id!r}")
+        fac = c.factions.get(arc.faction_id)
+        if fac is None:
+            raise ValueError(f"faction arc {arc_id!r} names unknown faction {arc.faction_id!r}")
+
+        finale: dict | None = None
+        if next_stage_status:
+            stage = next((s for s in arc.stages if s.id == stage_id), None)
+            if stage is None:
+                raise ValueError(f"no stage {stage_id!r} in faction arc {arc_id!r}")
+            # Gate enforcement: a stage may only begin (-> active) once its gauge gate holds.
+            # Moving toward active/resolved from locked without the gate is rejected (the engine
+            # enforces "earned trust", invariant #3 — a pure gauge check, never fiction).
+            advancing = next_stage_status in ("available", "active", "resolved")
+            if stage.status == "locked" and advancing and not faction_arc_mod.stage_gate_holds(stage, fac):
+                raise ValueError(
+                    f"faction arc stage {stage_id!r} is gated: {stage.gauge} "
+                    f"{faction_arc_mod.gauge_value(fac, stage.gauge)} has not reached unlock_at {stage.unlock_at}"
+                )
+            stage.status = next_stage_status
+            if next_stage_status == "resolved":
+                finale = faction_arc_mod.apply_finale(c, stage)
+        if next_status:
+            arc.status = next_status
+        if rank and rank > fac.rank:
+            fac.rank = int(rank)
+
+        save_campaign(c)
+        out = {"faction_arc": _faction_arc_view(c, arc)}
+        if finale is not None:
+            out["finale"] = finale
+        return out
 
 
 @mcp.tool()
