@@ -89,6 +89,49 @@
     }
   ],
   "license_events": "events prose is ORIGINAL ClawDnD text (an authored stumble-into decisional staging a canon BG3 figure in our own words), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
+  "faction_arcs": [
+    {
+      "id": "arc-fist-rise",
+      "faction_id": "fac-flaming-fist",
+      "title": "The Banner of the Fist",
+      "requires_joined": true,
+      "note": "The join->grow->lead questline for the Flaming Fist. The Gate's mercenary army is overstretched and leaderless-feeling with the Steel Watch gone and the dukedom contested; a hard, honorable company looking for someone to follow. Stage 1 (enlist) gates on reputation (you have to be trusted to be let in); stages 2-3 gate on the monotonic `standing` gauge (rank earned through service — use grant_standing as the party completes Fist work). The finale ripples a world-changing effect via _apply_structured_effect: the party takes command, the Fist's reputation surges, and the Gate falls under the Fist's banner.",
+      "stages": [
+        {
+          "id": "stage-fist-enlist",
+          "title": "Take the oath",
+          "unlock_at": 15,
+          "gauge": "reputation",
+          "note": "Available once the Fist trusts the party enough to let them swear in. A drill-yard veteran sizes them up: 'We're short of everything but graves, and long on folk who'd rather watch the Gate burn than carry a bucket. You're not those folk — or you wouldn't be standing in my yard. Take the oath, then. The pay's poor and the hours are worse, but you'll never want for someone at your back.' Play the enlistment, then call advance_faction_arc to resolve it; grant_standing as they prove themselves on patrol."
+        },
+        {
+          "id": "stage-fist-captaincy",
+          "title": "Earn the captaincy",
+          "unlock_at": 25,
+          "gauge": "standing",
+          "note": "Available once the party's SERVICE (standing, earned via grant_standing on completed Fist work) marks them as officer material. A field-promotion in the ash of a street that didn't fall because they held it: 'On your knee. No — don't make a speech of it, none of us are good at speeches. By such authority as is left to give it, you're a captain of the Flaming Fist. The ranks already follow you; this just lets the paperwork catch up.' Set the party's new rank on advance_faction_arc (rank=3)."
+        },
+        {
+          "id": "stage-fist-command",
+          "title": "Raise the banner",
+          "unlock_at": 50,
+          "gauge": "standing",
+          "note": "The world-changing finale. With the dukedom contested and no one else willing to stand in the gap, the Fist's surviving officers put the company in the party's hands. Resolving this stage ripples the finale: the Fist's standing with the Gate surges and the city's order falls under the Fist's banner. Play it as the moment the party stops serving the Fist and becomes the Fist — then call advance_faction_arc(stage_status='resolved', rank=5).",
+          "finale_effect": {
+            "flag": "fist_under_party_banner",
+            "faction_id": "fac-flaming-fist",
+            "reputation_delta": 30,
+            "controller_id": "fac-flaming-fist",
+            "location_id": "loc-lower-city",
+            "narrate": "They do not cheer — the Fist is not a company that cheers — but every blade in the yard comes up in salute, and holds, and the silence of it is louder than any roar. The banner that has flown crooked over a leaderless army since the Steel Watch fell is hauled straight and high, and for the first time in a long winter the Gate has someone to answer for it. The watch-fires are lit by your order tonight. The streets are yours to keep.",
+            "schedule_in_days": 10,
+            "schedule_text": "The cost of command comes due: rivals who tolerated a leaderless Fist will not tolerate a led one. Someone tests the new banner — and the party learns that holding a city is harder than taking it."
+          }
+        }
+      ]
+    }
+  ],
+  "license_faction_arcs": "faction-arc prose is ORIGINAL ClawDnD text (an authored join->grow->lead questline for a canon BG3 faction in our own words), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
   "npc_roster": [
     {"id": "npc-jaheira", "name": "Jaheira", "voice_id": "npc-elder", "role": "High Harper, veteran of a hundred years", "personality": "A half-elf druid-warrior and Harper leader who has buried more friends than most people meet. Dry, fierce, maternal in a way that bites; she has saved the Coast before and is too tired and too stubborn to stop now. The player's likeliest mentor and door into the Harpers.", "hook": "Suspects someone is gathering the Absolute's loose ends — and that the new powers circling the dukedom are not all what they claim."},
     {"id": "npc-minsc", "name": "Minsc and Boo", "voice_id": "companion-default", "role": "ranger of legend (and his miniature giant space hamster) — candidate COMPANION", "personality": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him.", "hook": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play.", "dossier": {"wound": "outlived the friends time took from him", "wants": ["a righteous cause to swing for", "to honor the fallen by protecting the living"], "fears": ["failing those under his guard, as he feels he once did"], "values": ["courage", "loyalty", "the small and the innocent"], "approval_likes": ["standing up for the helpless", "boldness in a good cause"], "approval_dislikes": ["preying on the weak", "cowardice dressed as caution"], "banter_tags": ["go_for_the_eyes", "grief_of_long_years", "boo_knows_best"], "camp_prompts": ["asks Boo what the stars looked like before the years he lost"], "relationships": {"npc-jaheira": "old comrade-in-arms"}}},

@@ -346,6 +346,48 @@ def _detect_npc_introduced_silent(c: Campaign) -> list[SceneDebt]:
     return debts
 
 
+def _detect_faction_rank_available(c: Campaign) -> list[SceneDebt]:
+    """faction_rank_available — a JOINED faction whose questline (FactionArc) has a stage the
+    party has EARNED (status ``available``) but not yet taken. The Skyrim/Kingmaker "your
+    promotion is waiting" nudge: the gauge gate is satisfied, the rank-up is on the table, but the
+    DM hasn't played the beat. ADVISORY only (severity low) — the Director surfaces it so the DM
+    can play the rank-up and call ``advance_faction_arc``; the engine NEVER auto-advances a faction
+    quest (map seam #5). Pure / read-only: it reports stages ALREADY in ``available`` (flipped by
+    the engine's gauge eval); it never mutates an arc. A faction not yet joined, or an arc with no
+    available stage, is not flagged."""
+    debts: list[SceneDebt] = []
+    for arc in sorted(c.faction_arcs.values(), key=lambda a: a.id):
+        fac = c.factions.get(arc.faction_id)
+        if fac is None:
+            continue
+        if arc.requires_joined and not fac.joined:
+            continue  # not a member — no earned rank-up to nudge
+        available = [s for s in arc.stages if s.status == "available"]
+        if not available:
+            continue
+        titles = ", ".join(s.title for s in available)
+        debts.append(
+            SceneDebt(
+                id=_debt_id("faction_rank_available", arc.id),
+                kind="faction_rank_available",
+                subject=arc.id,
+                detail=(
+                    f"Faction questline '{arc.title}' ({fac.name}) has a rank-up the party earned "
+                    f"but hasn't taken — stage(s): {titles}. Play the promotion / next mission and "
+                    f"call advance_faction_arc."
+                ),
+                severity="low",
+                evidence={
+                    "arc_id": arc.id,
+                    "faction_id": arc.faction_id,
+                    "faction_name": fac.name,
+                    "available_stage_ids": [s.id for s in available],
+                },
+            )
+        )
+    return debts
+
+
 # ── v2 stubs (COARSE narrative proxies — not implemented in v1) ───────────────
 
 # TODO v2: setup_without_payoff — a quest_hook with status 'open' referenced in
@@ -377,6 +419,7 @@ def detect(c: Campaign) -> list[SceneDebt]:
     - ``due_consequence``: a non-thread Consequence past trigger_day, not fired.
     - ``thread_pressure``: a worldsim thread-beat overdue (world_tick not called).
     - ``npc_introduced_silent``: a met NPC at current location with no memory.
+    - ``faction_rank_available``: a joined faction's questline has an earned, untaken rank-up.
     """
     debts: list[SceneDebt] = []
     debts.extend(_detect_hook_untracked(c))
@@ -386,4 +429,5 @@ def detect(c: Campaign) -> list[SceneDebt]:
     debts.extend(_detect_due_consequence(c))
     debts.extend(_detect_thread_pressure(c))
     debts.extend(_detect_npc_introduced_silent(c))
+    debts.extend(_detect_faction_rank_available(c))
     return debts

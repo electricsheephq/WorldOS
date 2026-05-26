@@ -720,6 +720,95 @@ class Faction(_StrictModel):
     description: str = ""
     reputation: int = 0  # -100..100
 
+    # --- Faction-growth membership (Quest & Arc engine, faction arcs / #127) -----------------
+    # ADDITIVE: every field defaults to "behaves exactly like today when unset", so an old
+    # snapshot round-trips byte-for-byte and a world that authors no membership is unchanged.
+    # These give the Skyrim/Kingmaker join->grow->lead loop a gauge the engine can READ to gate
+    # a faction questline (closing the "reputation is tracked but nothing reads it" gap).
+    #
+    # `standing` is a MONOTONIC membership/progression gauge — distinct from the bidirectional
+    # `reputation`. Reputation (-100..100) is how the faction FEELS about you (it can fall, drifts
+    # via the backlog); `standing` (>=0) is how far you've RISEN inside it through service — the
+    # Skyrim "rank progress" number, only ever earned upward. A FactionArc stage may gate on
+    # EITHER gauge (see FactionArcStage.gauge); both are engine-mutated, so a gate never reads
+    # fiction (invariant #3). `rank` is the readable tier the standing/arc has unlocked (0 ==
+    # not a ranked member); `joined` is the membership latch `join_faction` sets; `questline_arc_id`
+    # links this faction to its FactionArc in Campaign.faction_arcs (empty == no questline).
+    rank: int = 0
+    standing: int = Field(default=0, ge=0)  # monotonic membership gauge — never negative
+    joined: bool = False
+    questline_arc_id: str = ""
+
+
+class FactionArcStage(_StrictModel):
+    """One engine-owned stage inside a faction questline (Quest & Arc engine, faction arcs).
+
+    Generalizes ``CompanionQuestStage`` (the proven companion machine) to a FACTION owner. The
+    same bounded lifecycle enum (``locked|available|active|resolved|failed``); the difference is
+    the UNLOCK GATE is folded directly onto the stage as a gauge threshold — a stage becomes
+    ``available`` when the owning faction's gauge has reached ``unlock_at``. This is PURE and
+    engine-evaluated: it reads ONLY ``reputation`` / ``standing`` (engine-mutated gauges), NEVER
+    fiction (the questgen.py discipline / invariant #3).
+
+    ``gauge`` picks WHICH faction gauge the threshold reads:
+      * ``"reputation"`` (default) — the bidirectional trust gauge (a trust-gated stage).
+      * ``"standing"`` — the monotonic membership/progression gauge (a service-grind stage).
+
+    A resolved stage may carry a one-shot ``finale_effect`` — an ``Outcome``-shaped world ripple
+    (the same payload ``_apply_structured_effect`` consumes) applied EXACTLY ONCE when the stage
+    transitions to ``resolved`` (the world-changing finale). Idempotent: ``effect_applied`` latches
+    so a re-advance never double-ripples (mirrors a fired Event/Consequence)."""
+
+    id: str = Field(default_factory=lambda: _new_id("fstage"))
+    title: str
+    status: CompanionQuestStatus = "locked"
+    # The gauge threshold that unlocks this stage (locked -> available). Read by the engine
+    # against `gauge`; pure, contract-safe (reputation/standing only, never fiction).
+    unlock_at: int = 0
+    gauge: Literal["reputation", "standing"] = "reputation"
+    location_id: str = ""
+    quest_id: str = ""  # optional player-facing tracked-Quest projection (one-way, like companion stages)
+    note: str = ""
+    # The world-changing ripple this stage applies ONCE on resolve (the finale). Reuses the
+    # Outcome payload so it ripples through the EXACT engine path the backlog / Events use. Empty
+    # == no ripple (a non-finale stage). The engine never authors the payload — it's content.
+    finale_effect: Optional["Outcome"] = None
+    effect_applied: bool = False  # idempotency latch — a resolved stage's finale ripples at most once
+
+
+class FactionArc(_StrictModel):
+    """A FACTION's joinable, multi-stage questline (Quest & Arc engine, faction arcs / #127).
+
+    The Skyrim/Kingmaker join->grow->lead loop, made a real engine state machine by GENERALIZING
+    ``CompanionQuestArc`` onto a faction-owned reputation/standing gauge — NOT a parallel system.
+    The companion arc is keyed to a companion; this is keyed to a ``faction_id`` and its stages
+    gate on the faction's gauge. ``join_faction`` arms it (flips the faction ``joined`` + links
+    ``questline_arc_id``); ``advance_faction_arc`` advances a stage when its gauge gate holds and
+    applies a resolved stage's ``finale_effect`` once.
+
+    ADDITIVE: a campaign with no faction arcs behaves exactly as today; old snapshots round-trip.
+    Stages are evaluated in author order; ``status`` is the arc-level lifecycle (the arc resolves
+    when its terminal stage does)."""
+
+    id: str = Field(default_factory=lambda: _new_id("farc"))
+    faction_id: str = ""
+    title: str
+    status: CompanionQuestStatus = "locked"
+    stages: list[FactionArcStage] = Field(default_factory=list)
+    # The arc only ARMS after the party joins (join_faction). A locked-but-unjoined arc never
+    # advances — the gauge gate is necessary but not sufficient; membership is the precondition.
+    requires_joined: bool = True
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _unique_stage_ids(self) -> "FactionArc":
+        seen: set[str] = set()
+        for stage in self.stages:
+            if stage.id in seen:
+                raise ValueError(f"duplicate faction arc stage id {stage.id!r}")
+            seen.add(stage.id)
+        return self
+
 
 class Combatant(_StrictModel):
     character_id: str
@@ -1094,7 +1183,7 @@ class SceneDebt(_StrictModel):
 
     kind values:
         hook_untracked, quest_stalled, thread_no_payoff, choice_without_outcome,
-        due_consequence, thread_pressure, npc_introduced_silent
+        due_consequence, thread_pressure, npc_introduced_silent, faction_rank_available
     severity: low | med | high
     """
 
@@ -1199,6 +1288,14 @@ class Campaign(_StrictModel):
     # tracked Quest objects; explicit server APIs advance them and optionally project status
     # into linked Quests. Empty == old snapshots load unchanged.
     companion_quest_arcs: dict[str, CompanionQuestArc] = Field(default_factory=dict)
+    # Faction-growth questlines (Quest & Arc engine, faction arcs / #127). The Skyrim/Kingmaker
+    # join->grow->lead loop: a FactionArc generalizes the companion stage-machine onto a faction-
+    # owned reputation/standing gauge (each stage gated on stage.unlock_at). join_faction arms one;
+    # advance_faction_arc advances a stage when its gauge gate holds and ripples a resolved stage's
+    # finale ONCE. Empty == today's behavior byte-for-byte; old snapshots lacking the key round-trip
+    # to this empty default. Mirrors companion_quest_arcs/events; seeded from a world/ending
+    # `faction_arcs` block (content.py). Engine sole-writer (the tools persist under campaign_lock).
+    faction_arcs: dict[str, FactionArc] = Field(default_factory=dict)
     # First-class stumble-into Events (Quest & Arc engine, Layer 3). Content-authored decisionals
     # whose options carry a deterministic Outcome (a world ripple + optionally a Layer-2
     # decision_flag that arms a companion flip). Surfaced read-only by present_events when their
