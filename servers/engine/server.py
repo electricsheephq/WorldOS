@@ -37,6 +37,8 @@ import recap
 import rests
 import spells
 import srd_tables
+import director
+import scene_debt as _scene_debt_mod
 import travel
 import wander
 import worldsim
@@ -65,6 +67,7 @@ from models import (
     Item,
     Location,
     Quest,
+    SceneDebt,
     SessionLogEntry,
     SpellSlotLevel,
     Zone,
@@ -5613,6 +5616,112 @@ def set_house_rules(campaign_id: str, patch: dict) -> dict:
         c.house_rules = HouseRules.model_validate(data)
         save_campaign(c)
         return c.house_rules.model_dump()
+
+
+@mcp.tool()
+def get_campaign_director(campaign_id: str) -> dict:
+    """Campaign Director — advisory beat-start tool (issue #72).
+
+    ADVISORY ONLY. Detects structural story debts from the current campaign state
+    and returns the top 3 (by severity) with a one-line nudge each. Read-only:
+    the engine NEVER acts on debts, mutates fiction, or forces a resolution.
+
+    Call this at the start of a beat to see what the campaign structurally OWES.
+    The DM reads the advisory and CHOOSES what to honour. One nudge at a time —
+    this is not a mandatory checklist. Resolution is always explicit via
+    resolve_scene_debt.
+
+    Returns::
+
+        {
+            "debts": [<top 3 SceneDebt dicts, highest severity first>],
+            "advisory": ["one-line nudge per debt"],
+            "total_debts": <int>,
+        }
+
+    An empty ``debts`` list means no structural debts — today's behavior.
+    """
+    c = _require(campaign_id)
+    return director.compute(c)
+
+
+@mcp.tool()
+def get_scene_debts(campaign_id: str) -> dict:
+    """Campaign Director — raw scene-debt list (issue #72).
+
+    ADVISORY ONLY. Returns the full list of structural scene-debts detected from
+    the current campaign state — all kinds and severities, unranked. Use
+    get_campaign_director for the prioritised top-3 advisory instead.
+
+    Read-only: the engine NEVER acts on debts or mutates fiction.
+
+    Also includes any previously-resolved debts persisted on the campaign snapshot
+    (resolved=True) as an audit trail, accessible from Campaign.scene_debts.
+    Live-detected debts (from detect()) are merged with the resolved persisted ones
+    so the DM can see what was owed and what was cleared.
+
+    Returns::
+
+        {
+            "live_debts": [<all currently detected SceneDebt dicts>],
+            "resolved_debts": [<SceneDebt dicts with resolved=True from snapshot>],
+            "total_live": <int>,
+        }
+    """
+    c = _require(campaign_id)
+    live = _scene_debt_mod.detect(c)
+    resolved_persisted = [d for d in c.scene_debts if d.resolved]
+    return {
+        "live_debts": [d.model_dump() for d in live],
+        "resolved_debts": [d.model_dump() for d in resolved_persisted],
+        "total_live": len(live),
+    }
+
+
+@mcp.tool()
+def resolve_scene_debt(campaign_id: str, debt_id: str, evidence: str) -> dict:
+    """Campaign Director — mark a scene-debt resolved (issue #72).
+
+    EXPLICIT RESOLUTION ONLY. The DM calls this when they have addressed a debt
+    in play (e.g. called add_quest for a hook_untracked, surfaced a consequence,
+    gave an NPC a line). The engine NEVER auto-resolves debts.
+
+    ``debt_id`` must match the ``id`` field of a SceneDebt in the live-detected
+    list (from get_scene_debts). ``evidence`` is a DM-written note explaining
+    what was done (required; must be non-empty). The resolved debt is persisted
+    on the campaign snapshot (scene_debts) as an audit trail with resolved=True
+    and the provided evidence.
+
+    Returns the persisted SceneDebt record.
+    """
+    if not evidence or not evidence.strip():
+        raise ValueError("evidence is required — describe what was done to resolve this debt.")
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+
+        # Check if already resolved and persisted
+        existing = next((d for d in c.scene_debts if d.id == debt_id and d.resolved), None)
+        if existing:
+            return {"message": "already resolved", "debt": existing.model_dump()}
+
+        # Detect live debts to find the matching one
+        live = _scene_debt_mod.detect(c)
+        debt = next((d for d in live if d.id == debt_id), None)
+        if debt is None:
+            raise ValueError(
+                f"No live scene-debt with id {debt_id!r}. "
+                f"Use get_scene_debts to see current debt ids."
+            )
+
+        # Mark resolved and persist
+        debt.resolved = True
+        debt.resolution_evidence = evidence.strip()
+        # Append to campaign.scene_debts (additive audit trail)
+        c.scene_debts.append(debt)
+        save_campaign(c)
+
+        return {"message": "resolved", "debt": debt.model_dump()}
 
 
 if __name__ == "__main__":
