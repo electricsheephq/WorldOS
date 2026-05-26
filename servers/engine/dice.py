@@ -14,6 +14,13 @@ from dataclasses import dataclass, field
 
 _TERM = re.compile(r"(\d*)d(\d+)(kh\d+|kl\d+)?$")
 
+# Bounds on a single dice term. Real D&D never needs more (a high-level fireball is
+# ~20d6; d100 is the largest standard die), so these never affect legitimate rolls —
+# they exist purely to stop a pathological expression (e.g. "100000000d20") from
+# allocating a giant list and hanging the engine via the public `roll` MCP tool.
+_MAX_DICE = 1000
+_MAX_SIDES = 1000
+
 
 @dataclass
 class DiceRoll:
@@ -65,6 +72,10 @@ def roll(
             keep = m.group(3)
             if n == 0:
                 raise ValueError(f"die count must be >= 1: {term!r}")
+            if n > _MAX_DICE:
+                raise ValueError(f"die count must be <= {_MAX_DICE}: {term!r}")
+            if sides < 1 or sides > _MAX_SIDES:
+                raise ValueError(f"die sides must be 1..{_MAX_SIDES}: {term!r}")
             faces = [rng.randint(1, sides) for _ in range(n)]
             kept = faces
 
