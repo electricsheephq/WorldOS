@@ -12,7 +12,7 @@
 > `decision-campaign-director.md`, `decision-event-parley.md`, `insights-encounter-balance.md`.
 > The QA results ledger is `qa/SCORECARD.md`; the scoring spec is `qa/SCORING.md`.
 >
-> Last updated: 2026-05-26.
+> Last updated: 2026-05-27 (cont.3).
 
 ---
 
@@ -271,8 +271,24 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 
 ## CURRENT STATE + WORK QUEUE
 
-**`main` tip:** `c7a49d7` — Quest-Arc Layer 2 (#189). Full suite **1169 green** at last full
-run. Branch lane is the disjoint **engine / content / QA** lane.
+**`main` tip:** `ea815fc` (2026-05-27 cont.3). Full engine suite **1334 green** + viewer 71.
+Branch lane is the disjoint **engine / content / QA** lane.
+
+**LATEST (2026-05-27 cont.3) — the Quest & Arc engine is COMPLETE + WIRED, all combat
+defects closed, and the sibling's draft-PR backlog is fully landed.** Since the queue
+below was written: L3 events (#196), faction arcs (#205), the DM-wiring (#203), the North
+Star doc (#206), the full combat-fidelity wave (#207/#209/#210/#211/#213→**#215** maneuver
+die — all 6 flagged combat defects CLOSED), canon content-fill (**#216** — 4 stumble-into
+Events + 2 faction arcs + 2 decision-gated agendas), and **all 10 sibling roadmap-squeeze
+PRs** (#190/#192/#199/#191/#197 engine + #204/#201/#202/#198/#187 viewer) merged after a
+2-agent read-only triage. **Combat-sprint at a new high: angry-dm 3.7** (combat core "clean
+— every number traces to a tool call"); residual is DM adherence (monster reactions #218)
++ narration nits (#219), not engine. distill now surfaces auto-fired repeat-saves +
+maneuver damage (#217). IN FLIGHT: a post-content-fill story-lift duo (does story clear
+4.3?) + the **2nd-seed generativity spike** (the North Star deliverable-B gate — a thin
+ORIGINAL non-BG world, zero engine changes; branch `spike/second-seed-generativity`).
+The detailed queue below is now mostly HISTORICAL — read `implementation-notes.html` +
+`qa/SCORECARD.md` for the live state.
 
 ### Quest & Arc engine (the living-story skeleton — `decision-quest-arc-engine.md`)
 - **L1 — rule-of-three** (`Quest.evolves_to` + `callback_in_days`; `complete_quest`
