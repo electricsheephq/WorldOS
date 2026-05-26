@@ -405,7 +405,7 @@ function PartyRow({ p, active, onClick }) {
       cursor: "pointer",
       transition: "all 140ms",
     }}>
-      <Placeholder label={p.short} w={44} h={56} framed />
+      <Img scope={p.id ? "portrait-" + p.id : ""} label={p.short} w={44} h={56} framed />
       <div>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
           {p.name}
