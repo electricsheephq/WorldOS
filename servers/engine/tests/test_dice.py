@@ -132,6 +132,15 @@ def test_roll_rejects_pathological_dice():
             raise AssertionError(f"expected ValueError for {expr!r}")
 
 
+def test_roll_rejects_pathologically_long_expression():
+    expr = "+".join(["1d6"] * 2000)
+    try:
+        dice.roll(expr)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for pathologically long expression")
+
+
 def test_legit_rolls_unaffected_by_bounds():
     # Real D&D rolls stay well under the bounds and are unchanged.
     assert dice.roll("20d6+5", seed=1).total > 0          # high-level fireball
