@@ -3145,6 +3145,9 @@ def attack(
         hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
         # SRD: a melee hit against an unconscious/paralyzed creature auto-crits.
         is_crit = atk.crit or (hit and combat.melee_auto_crit(target, is_ranged))
+        # WHY it critted, so the DM narrates the right reason (#219): a nat 20, an expanded
+        # crit range, or the auto-crit vs a helpless target — NOT "nat 20" on every crit.
+        crit_why = combat.crit_source(atk.crit, atk.natural, is_crit, target)
         result = {
             "attacker": attacker.name,
             "target": target.name,
@@ -3152,6 +3155,7 @@ def attack(
             "advantage": adv,
             "disadvantage": dis,
             "crit": is_crit,
+            "crit_source": crit_why,
             "hit": hit,
             "target_ac": target.armor_class,
             "damage": None,
