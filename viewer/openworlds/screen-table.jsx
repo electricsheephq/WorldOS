@@ -243,7 +243,7 @@ function ScreenTable({ onNavigate, state, setState }) {
           <SectionTitle ordinal="·" right={<Pill>{canAct ? "AI GM · Listening" : surfaceStatus === "ready" ? "Read Only" : "Loading"}</Pill>}>The Tabletop Chronicle</SectionTitle>
           <div ref={logRef} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
             {visibleLog.length ? visibleLog.map((entry, i) => (
-              <LogEntry key={i} entry={entry} />
+              <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No recent table events have been written yet.</div>}
           </div>
 
@@ -350,7 +350,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             {actions.slice(0, 6).map((a) => (
               <EncounterButton
                 key={`${a.group}:${a.id}`}
-                icon={a.available ? (a.icon || a.kind || a.group || "quest.scroll") : "inventory.locked"}
+                icon={a.available ? (a.icon || "quest.scroll") : "inventory.locked"}
                 label={a.label}
                 detail={a.available ? a.groupLabel : a.disabled_reason}
                 tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}

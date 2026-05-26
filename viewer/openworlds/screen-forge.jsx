@@ -8,7 +8,7 @@ function ScreenForge({ onNavigate, state, setState }) {
   const [log, setLog] = React.useState([
     { when: "yesterday", who: "Cassian", item: "Scroll of Light", success: true },
     { when: "2 days past", who: "Vell", item: "Iron-shod boots (repair)", success: true },
-    { when: "5 days past", who: "Mira", item: "Healer's draught", success: false, note: "Cooking DC missed by 3" },
+    { when: "5 days past", who: "Mira", item: "Potion of Healing", success: false, note: "DC missed by 3" },
   ]);
   const toast = window.useToast ? window.useToast() : (() => {});
 
@@ -264,9 +264,9 @@ const CATEGORY_LABEL = {
 };
 
 const CRAFTER_SKILL = {
-  cassian: { Craft: 5, Alchemy: 2, Spellcraft: 8, Linguistics: 2 },
-  mira: { Craft: 3, Alchemy: 4, Spellcraft: 6, Linguistics: 8 },
-  vell: { Craft: 9, Alchemy: 1, Spellcraft: 0, Linguistics: 1 },
+  cassian: { "Smith's Tools": 5, "Alchemist's Supplies": 2, Arcana: 8, History: 2 },
+  mira: { "Smith's Tools": 3, "Alchemist's Supplies": 4, Arcana: 6, History: 8 },
+  vell: { "Smith's Tools": 9, "Alchemist's Supplies": 1, Arcana: 0, History: 1 },
 };
 
 const RECIPES_LIST = [
@@ -274,7 +274,7 @@ const RECIPES_LIST = [
   {
     id: "s1", category: "smith", tier: "I", name: "Sharpened greataxe edge",
     glyph: "axe edge", desc: "Restore an edge dulled by a season's road. The blade will sing again for a stretch.",
-    skill: "Craft", dc: 12, time: "1 rest",
+    skill: "Smith's Tools", dc: 12, time: "1 rest",
     components: [
       { name: "Whetstone", glyph: "whetstone", qty: 1, have: 1 },
       { name: "Oil", glyph: "oil flask", qty: 1, have: 3 },
@@ -285,7 +285,7 @@ const RECIPES_LIST = [
   {
     id: "s2", category: "smith", tier: "II", name: "Iron-shod boots (repair)",
     glyph: "boots", desc: "Re-nail the heel-plates and tighten the buckle of a worn pair of iron-shods.",
-    skill: "Craft", dc: 14, time: "1 rest",
+    skill: "Smith's Tools", dc: 14, time: "1 rest",
     components: [
       { name: "Iron nails", glyph: "nails", qty: 4, have: 12 },
       { name: "Leather strap", glyph: "strap", qty: 1, have: 2 },
@@ -294,12 +294,12 @@ const RECIPES_LIST = [
     note: "If you do not own the boots, do not repair them. The chronicle has had to write that sentence twice.",
   },
   {
-    id: "s3", category: "smith", tier: "III", name: "Cold-forged dagger",
-    glyph: "dagger", desc: "A small blade with a long memory of cold. +1 damage to creatures that fear winter; that is most of them.",
-    skill: "Craft", dc: 18, time: "2 rests",
+    id: "s3", category: "smith", tier: "III", name: "Fine silvered dagger",
+    glyph: "dagger", desc: "A small blade sheathed in silver. Bites cleanly into creatures that shrug off ordinary steel.",
+    skill: "Smith's Tools", dc: 18, time: "2 rests",
     components: [
-      { name: "Cold iron ingot", glyph: "ingot", qty: 1, have: 1 },
-      { name: "Bog-pearl", glyph: "pearl", qty: 1, have: 2 },
+      { name: "Silver ingot", glyph: "ingot", qty: 1, have: 1 },
+      { name: "River pearl", glyph: "pearl", qty: 1, have: 2 },
       { name: "Leather strap", glyph: "strap", qty: 1, have: 2 },
       { name: "Hammer", glyph: "hammer", qty: 1, have: 1 },
     ],
@@ -309,9 +309,9 @@ const RECIPES_LIST = [
 
   // Alchemy
   {
-    id: "a1", category: "alchemy", tier: "I", name: "Healer's draught",
+    id: "a1", category: "alchemy", tier: "I", name: "Potion of Healing",
     glyph: "red potion", desc: "Restores 2d4+2 hp when consumed. Tastes of iron and elderberry. Will keep a season.",
-    skill: "Alchemy", dc: 13, time: "1 rest",
+    skill: "Alchemist's Supplies", dc: 13, time: "1 rest",
     components: [
       { name: "Elderberry", glyph: "berries", qty: 2, have: 5 },
       { name: "Glass vial", glyph: "vial", qty: 1, have: 4 },
@@ -321,8 +321,8 @@ const RECIPES_LIST = [
   },
   {
     id: "a2", category: "alchemy", tier: "II", name: "Antitoxin",
-    glyph: "green vial", desc: "+5 alchemical bonus to next save vs. poison. Lasts one hour.",
-    skill: "Alchemy", dc: 15, time: "1 rest",
+    glyph: "green vial", desc: "Advantage on saving throws against poison for one hour. Does no good once you are already poisoned.",
+    skill: "Alchemist's Supplies", dc: 15, time: "1 rest",
     components: [
       { name: "Charcoal", glyph: "charcoal", qty: 1, have: 2 },
       { name: "Distilled wine", glyph: "wine flask", qty: 1, have: 1 },
@@ -331,9 +331,9 @@ const RECIPES_LIST = [
     note: "Useful against fen-snakes. Useful against politicians.",
   },
   {
-    id: "a3", category: "alchemy", tier: "III", name: "Alchemist's fire",
-    glyph: "orange flask", desc: "Splash flask. 1d6 fire, continues 1 round. Throw at range 10. Do not store near rations.",
-    skill: "Alchemy", dc: 17, time: "1 rest",
+    id: "a3", category: "alchemy", tier: "III", name: "Alchemist's Fire",
+    glyph: "orange flask", desc: "Thrown flask. 1d4 fire on a hit, then 1d4 each turn until someone douses it. Range 20. Do not store near rations.",
+    skill: "Alchemist's Supplies", dc: 17, time: "1 rest",
     components: [
       { name: "Naphtha", glyph: "naphtha", qty: 1, have: 0 },
       { name: "Sulfur", glyph: "sulfur", qty: 1, have: 1 },
@@ -346,7 +346,7 @@ const RECIPES_LIST = [
   {
     id: "sc1", category: "scribe", tier: "I", name: "Scroll of Light",
     glyph: "scroll", desc: "Single-use scroll of the cantrip Light. Useful for one who cannot cast it but might one day need to.",
-    skill: "Spellcraft", dc: 11, time: "1 rest",
+    skill: "Arcana", dc: 11, time: "1 rest",
     components: [
       { name: "Vellum", glyph: "vellum", qty: 1, have: 4 },
       { name: "Brass ink", glyph: "inkpot", qty: 1, have: 2 },
@@ -355,9 +355,9 @@ const RECIPES_LIST = [
     note: "Cassian writes these to keep his hand in. Linzi reads them aloud before they are sealed.",
   },
   {
-    id: "sc2", category: "scribe", tier: "II", name: "Scroll of Cure Light Wounds",
-    glyph: "scroll", desc: "Single-use scroll of the 1st-level divine spell Cure Light Wounds (1d8+1 HP).",
-    skill: "Spellcraft", dc: 14, time: "1 rest",
+    id: "sc2", category: "scribe", tier: "II", name: "Scroll of Cure Wounds",
+    glyph: "scroll", desc: "Single-use scroll of the 1st-level spell Cure Wounds (1d8 + spellcasting modifier HP).",
+    skill: "Arcana", dc: 14, time: "1 rest",
     components: [
       { name: "Vellum", glyph: "vellum", qty: 1, have: 4 },
       { name: "Brass ink", glyph: "inkpot", qty: 1, have: 2 },
@@ -367,8 +367,8 @@ const RECIPES_LIST = [
   },
   {
     id: "sc3", category: "scribe", tier: "III", name: "Scroll of Mage Armor",
-    glyph: "scroll, blue seal", desc: "Single-use scroll of Mage Armor. Useful when you have not slept and your magus has not prayed.",
-    skill: "Spellcraft", dc: 16, time: "1 rest",
+    glyph: "scroll, blue seal", desc: "Single-use scroll of Mage Armor (AC 13 + Dex for 8 hours). Useful when you have not slept and your wizard has not prepared it.",
+    skill: "Arcana", dc: 16, time: "1 rest",
     components: [
       { name: "Vellum", glyph: "vellum", qty: 2, have: 4 },
       { name: "Blue wax", glyph: "wax", qty: 1, have: 1 },
@@ -381,7 +381,7 @@ const RECIPES_LIST = [
   {
     id: "e1", category: "enchant", tier: "II", name: "Ward chalk",
     glyph: "white chalk", desc: "Sketch a one-room ward on a stone floor. Detects undead, fey, and a few unhappier categories.",
-    skill: "Spellcraft", dc: 15, time: "1 rest",
+    skill: "Arcana", dc: 15, time: "1 rest",
     components: [
       { name: "Chalk", glyph: "chalk", qty: 2, have: 1 },
       { name: "Spring water", glyph: "flask", qty: 1, have: 6 },
@@ -390,12 +390,12 @@ const RECIPES_LIST = [
     note: "Useful at the Lanternrest. Wholly useless against the crow on the gable, in case you were wondering.",
   },
   {
-    id: "e2", category: "enchant", tier: "III", name: "Cold-iron ring",
-    glyph: "ring", desc: "+1 saves vs. fey. Slim chance to attract them, depending on what you have been doing.",
-    skill: "Spellcraft", dc: 18, time: "2 rests",
+    id: "e2", category: "enchant", tier: "III", name: "Ring of Warding",
+    glyph: "ring", desc: "+1 to saving throws against fey. Slim chance to attract them, depending on what you have been doing.",
+    skill: "Arcana", dc: 18, time: "2 rests",
     components: [
-      { name: "Cold iron ingot", glyph: "ingot", qty: 1, have: 1 },
-      { name: "Bog-pearl", glyph: "pearl", qty: 2, have: 2 },
+      { name: "Silver ingot", glyph: "ingot", qty: 1, have: 1 },
+      { name: "River pearl", glyph: "pearl", qty: 2, have: 2 },
       { name: "Hammer", glyph: "hammer", qty: 1, have: 1 },
     ],
     note: "Vell forges, Cassian binds. They argue for an hour about whose name goes on it. Neither does.",

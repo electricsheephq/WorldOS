@@ -171,9 +171,14 @@ function ScreenJournal({ onNavigate, state, setState }) {
           <div>
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>{quest.label} · {quest.region || "The Stolen Marches"}</div>
             <h1 className="h1" style={{ fontSize: 28, marginTop: 4 }}>{quest.title}</h1>
-            <div className="hand" style={{ fontSize: 15, color: "var(--ink-600)", marginTop: 2 }}>
-              Inscribed {quest.dateOpened || "Day 9 of Gozran"}
-            </div>
+            {/* Inscription date — show ONLY when the surface provides it (truthy); never a
+                hardcoded fake. The journal-surface (_journal_quests) does not currently emit
+                an inscribed/dateOpened field, so this stays hidden until one exists. */}
+            {(quest.inscribed || quest.dateOpened) && (
+              <div className="hand" style={{ fontSize: 15, color: "var(--ink-600)", marginTop: 2 }}>
+                Inscribed {quest.inscribed || quest.dateOpened}
+              </div>
+            )}
 
             {/* Rule-of-three evolution badge (#120): a quest carrying an evolves_to hook
                 will echo back. Display-only telegraph; icon-free. */}
@@ -246,21 +251,27 @@ function ScreenJournal({ onNavigate, state, setState }) {
               ))}
             </div>
 
-            <Divider />
-
-            <div className="eyebrow" style={{ color: "var(--crimson)" }}>Of note</div>
-            <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>Names mentioned</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-              {quest.npcs?.map((n) => (
-                <div key={n.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <Placeholder label={n.short} w={36} h={44} framed />
-                  <div>
-                    <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{n.name}</div>
-                    <div className="hand muted" style={{ fontSize: 12 }}>{n.role}</div>
-                  </div>
+            {/* "Names mentioned" — the journal-surface does not provide quest.npcs, so this
+                whole section (eyebrow + heading + roster) renders ONLY when the surface
+                actually supplies a non-empty npcs list; otherwise it's hidden (no empty label). */}
+            {Array.isArray(quest.npcs) && quest.npcs.length > 0 && (
+              <>
+                <Divider />
+                <div className="eyebrow" style={{ color: "var(--crimson)" }}>Of note</div>
+                <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>Names mentioned</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                  {quest.npcs.map((n) => (
+                    <div key={n.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <Placeholder label={n.short} w={36} h={44} framed />
+                      <div>
+                        <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{n.name}</div>
+                        <div className="hand muted" style={{ fontSize: 12 }}>{n.role}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
 
             {/* Threads & Callbacks (#120): scheduled quest-evolution echoes — a resolved
                 quest's pending "this thread will return" callback. Display-only. */}
@@ -292,7 +303,9 @@ function ScreenJournal({ onNavigate, state, setState }) {
               </>
             )}
 
-            {/* Wax seal */}
+            {/* Wax seal + reward — the reward line shows ONLY when the surface provides
+                quest.reward (truthy); otherwise no fake "750 XP · 120 gp" is stamped. The
+                decorative seal stays as a chrome flourish. */}
             <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{
                 width: 60, height: 60, borderRadius: "50%",
@@ -309,13 +322,14 @@ function ScreenJournal({ onNavigate, state, setState }) {
               }}>
                 OPEN<br/>WORLDS
               </div>
-              <div>
-                <div className="eyebrow" style={{ color: "var(--crimson)" }}>Reward</div>
-                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>
-                  {quest.reward || "750 XP · 120 gp"}
+              {quest.reward && (
+                <div>
+                  <div className="eyebrow" style={{ color: "var(--crimson)" }}>Reward</div>
+                  <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>
+                    {quest.reward}
+                  </div>
                 </div>
-                <div className="hand muted" style={{ fontSize: 12, marginTop: 2 }}>and one quiet road, hopefully</div>
-              </div>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>

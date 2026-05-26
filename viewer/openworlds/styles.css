@@ -55,6 +55,9 @@
     0 30px 80px -20px rgba(0, 0, 0, 0.55),
     0 10px 30px -10px rgba(0, 0, 0, 0.45);
 
+  /* Accessibility — UI scale (1 = 100%); driven by Settings → Display "UI scale" via app.jsx. */
+  --ui-scale: 1;
+
   /* Type */
   --f-display: "Cinzel", "Cormorant SC", "Trajan Pro", serif;
   --f-body: "Cormorant Garamond", "EB Garamond", georgia, serif;
@@ -833,6 +836,60 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* =========================================================================
+   ACCESSIBILITY — driven by the Settings screen via document.documentElement
+   attributes (set in app.jsx, mirroring [data-palette]). These make the
+   Accessibility/Display toggles ACTUALLY take effect.
+   ========================================================================= */
+
+/* Reduced motion — same effect as the prefers-reduced-motion block, but opted in
+   from Settings (no candle flicker, no fades, no slide-ins). */
+[data-reduced-motion="on"] *,
+[data-reduced-motion="on"] *::before,
+[data-reduced-motion="on"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* High-contrast UI — darken ink + strengthen edges so text and panel boundaries
+   read clearly. Overriding the custom properties cascades through every var()-based
+   rule; the decorative low-contrast overlays (wood grain, vignette, candle glow) are
+   suppressed so they can't wash out the contrast. */
+[data-contrast="high"] {
+  --ink-900: #000000;
+  --ink-800: #14100a;
+  --ink-700: #241a10;
+  --ink-600: #3a2a18;
+  --ink-500: #4a3624;
+  --p-edge: #2a2113;
+  --candle: none;
+}
+[data-contrast="high"] .panel,
+[data-contrast="high"] .panel.framed {
+  box-shadow: inset 0 0 0 2px var(--ink-800) !important;
+}
+[data-contrast="high"] .btn {
+  box-shadow: inset 0 0 0 2px var(--ink-800) !important;
+}
+[data-contrast="high"] .window::before,
+[data-contrast="high"] .parchment::before,
+[data-contrast="high"] .parchment::after {
+  display: none !important;
+}
+[data-contrast="high"] :where(button, a, .btn, .icon-btn, .nav-item):focus-visible {
+  outline: 3px solid var(--ink-900) !important;
+  outline-offset: 2px;
+}
+
+/* UI scale — the layout is entirely px-based, so font-size scaling does nothing.
+   `zoom` reflows and resizes the whole window. --ui-scale is set on <html> by app.jsx
+   (1 = 100%); defaults to 1 so unscaled rendering is unaffected. */
+.window {
+  zoom: var(--ui-scale, 1);
 }
 
 /* ===== Responsive collapse for narrow windows ===== */

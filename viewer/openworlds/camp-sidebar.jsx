@@ -1,4 +1,4 @@
-/* Camp Sidebar — Pathfinder Kingmaker-style party role assignment */
+/* Camp Sidebar — D&D 5e party role assignment during a long rest */
 
 function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   const party = Array.isArray(state?.party) ? state.party : [];
@@ -41,15 +41,23 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
 
   const clearSlot = (slot) => setRoles((r) => ({ ...r, [slot]: null }));
 
+  const _badge = { label: "Preview", tone: "muted", detail: "Camp is display-only — role assignments, recipes, and resting are not persisted to the engine." };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, overflow: "auto" }}>
+
+      {/* Prototype banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+        <CapabilityBadge capability={_badge} nativeStatus={null} />
+        <span className="hand muted" style={{ fontSize: 12 }}>Preview — camp actions are not saved to the engine.</span>
+      </div>
 
       {/* Time progression bar */}
       <Panel framed style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div className="eyebrow">23 Gozran</div>
+          <div className="eyebrow">23rd, dusk</div>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>Camp</div>
-          <div className="eyebrow">24 Gozran</div>
+          <div className="eyebrow">24th, dawn</div>
         </div>
         <TimelineBar startHour={17} hours={totalHours} />
         <div style={{ marginTop: 6, textAlign: "center" }}>
@@ -64,7 +72,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       <Panel framed style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <SectionTitle>Rations</SectionTitle>
-          <BrassButton tone="ghost" size="sm">Manage</BrassButton>
+          <BrassButton tone="ghost" size="sm" disabled title="Display-only — ration changes are not saved to the engine">Manage (preview)</BrassButton>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <RationStat label="Needed" value={ration} />
@@ -85,7 +93,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       <Panel framed style={{ padding: 12 }}>
         <SectionTitle>Healing</SectionTitle>
         <CampRadio value={healing} onChange={setHealing} options={[
-          { value: "spells", label: "Use healing spells & abilities before resting", detail: "Cassian: 2 cure light." },
+          { value: "spells", label: "Use healing spells & abilities before resting", detail: "Cassian: 2 Cure Wounds." },
           { value: "natural", label: "Natural healing only", detail: "Slower, no spell cost." },
         ]} />
       </Panel>
@@ -96,7 +104,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           slot="hunting"
           icon="H"
           label="Hunting"
-          summary="Lore (Nature)"
+          summary="Survival"
           summaryValue="+6"
           detail={roles.hunting ? "Hunting will take 0–2 hours. You will recover 5 rations." : "No hunter. Rations from pack."}
           hero={party.find((p) => p.id === roles.hunting)}
@@ -120,7 +128,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           slot="cooking"
           icon="C"
           label="Cooking"
-          summary="Knowledge (World)"
+          summary="Nature"
           summaryValue="+5"
           detail={
             <span>
@@ -249,8 +257,8 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       {/* Begin resting */}
       <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
         <BrassButton tone="ghost" size="sm" onClick={onExit}>Leave camp</BrassButton>
-        <BrassButton tone="dark" onClick={onBeginRest} style={{ flex: 1 }}>
-          ✺ Begin Resting
+        <BrassButton tone="dark" disabled style={{ flex: 1 }} title="Display-only — resting is not yet wired to the engine; nothing is saved">
+          ✺ Begin Resting <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
         </BrassButton>
       </div>
     </div>
@@ -542,13 +550,13 @@ const SPECIAL_ROLES = {
   cassian: { name: "Maintain Armor", detail: "Sees to the buckles. +1 AC for tomorrow." },
   vell: { name: "Sharpen Weapons", detail: "Iron on whetstone. +1 damage for tomorrow." },
   mira: { name: "Patrol Perimeter", detail: "Quiet steps. -2 to ambush chance." },
-  linzi: { name: "Inspire Competence", detail: "Linzi's enthusiasm gives camp-duty rolls a +2 competence bonus." },
+  linzi: { name: "Bardic Inspiration", detail: "Linzi's enthusiasm grants advantage on one camp-duty check." },
 };
 
 const RECIPES = {
-  hearty: { name: "Hearty Meal", bonus: "+2 Fortitude saves until next rest." },
-  pheasant: { name: "Roast Pheasant", bonus: "+1 to all attack rolls until next rest." },
-  stew: { name: "Trail Stew", bonus: "+1 hp/level on next long rest." },
+  hearty: { name: "Hearty Meal", bonus: "+2 Constitution saving throws until next rest." },
+  pheasant: { name: "Roast Pheasant", bonus: "Advantage on your first attack roll until next rest." },
+  stew: { name: "Trail Stew", bonus: "Regain 1 extra Hit Die on your next long rest." },
 };
 
 const TALK_PROMPTS = {

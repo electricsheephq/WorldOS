@@ -6,6 +6,42 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "candle": true
 }/*EDITMODE-END*/;
 
+/* Accessibility wiring — applied to <html> the same way data-palette is (below), but kept in
+   one place so both App (on mount / reload) and the Settings screen drive the SAME document
+   state. Reduced-motion and high-contrast set data-attrs (styled in styles.css); UI scale sets
+   a --ui-scale custom property consumed by a `zoom` rule on .window (the layout is all px, so
+   font-size scaling would do nothing — zoom actually reflows/resizes it). Persisted to
+   localStorage so the choice survives a reload even when the Settings screen isn't mounted. */
+const A11Y_KEY = "openworlds.accessibility";
+const A11Y_DEFAULTS = { reducedMotion: false, highContrast: false, uiScale: 100 };
+
+window.OpenWorldsA11y = window.OpenWorldsA11y || {
+  read() {
+    try {
+      const raw = window.localStorage.getItem(A11Y_KEY);
+      if (!raw) return { ...A11Y_DEFAULTS };
+      const parsed = JSON.parse(raw);
+      return {
+        reducedMotion: Boolean(parsed.reducedMotion),
+        highContrast: Boolean(parsed.highContrast),
+        uiScale: Number.isFinite(parsed.uiScale) ? parsed.uiScale : A11Y_DEFAULTS.uiScale,
+      };
+    } catch (_e) {
+      return { ...A11Y_DEFAULTS };
+    }
+  },
+  apply(settings) {
+    const s = { ...A11Y_DEFAULTS, ...(settings || {}) };
+    const root = document.documentElement;
+    root.setAttribute("data-reduced-motion", s.reducedMotion ? "on" : "off");
+    root.setAttribute("data-contrast", s.highContrast ? "high" : "normal");
+    const scale = Math.max(75, Math.min(150, Number(s.uiScale) || 100));
+    root.style.setProperty("--ui-scale", String(scale / 100));
+    try { window.localStorage.setItem(A11Y_KEY, JSON.stringify(s)); } catch (_e) {}
+    return s;
+  },
+};
+
 function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
   const [screen, setScreen] = React.useState("launcher");
@@ -24,6 +60,12 @@ function App() {
   React.useEffect(() => {
     document.documentElement.setAttribute("data-palette", t.palette || "warm");
   }, [t.palette]);
+
+  // Apply persisted accessibility choices (reduced motion / high contrast / UI scale) to <html>
+  // on mount so they take effect app-wide, even before the Settings screen is opened.
+  React.useEffect(() => {
+    window.OpenWorldsA11y?.apply(window.OpenWorldsA11y.read());
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;

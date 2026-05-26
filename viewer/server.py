@@ -2952,6 +2952,35 @@ def _infer_item_type(name: str, item: dict) -> str:
     return "common"
 
 
+_ITEMCATALOG = None
+_ITEMCATALOG_TRIED = False
+
+
+def _catalog_meta(name: str) -> dict:
+    """Lazily resolve an item's SRD catalog metadata (weight/cost/rarity/type) so the
+    inventory detail isn't all dashes for plain gear the DM granted by free text.
+    Degrades to {} if itemcatalog is unavailable (viewer stays a pure reader)."""
+    global _ITEMCATALOG, _ITEMCATALOG_TRIED
+    if not name:
+        return {}
+    if _ITEMCATALOG is None and not _ITEMCATALOG_TRIED:
+        _ITEMCATALOG_TRIED = True
+        try:
+            engine_dir = (_HERE.parent / "servers" / "engine").resolve()
+            if str(engine_dir) not in sys.path:
+                sys.path.insert(0, str(engine_dir))
+            import itemcatalog as _ic  # type: ignore
+            _ITEMCATALOG = _ic
+        except Exception:
+            _ITEMCATALOG = None
+    if _ITEMCATALOG is None:
+        return {}
+    try:
+        return _ITEMCATALOG.resolve(name) or {}
+    except Exception:
+        return {}
+
+
 def _inventory_items(cid: str, ch: dict) -> list[dict]:
     inventory = ch.get("inventory")
     out: list[dict] = []
@@ -2965,6 +2994,19 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             continue
         qty = _num(item.get("quantity"))
         weight = _num(item.get("weight"))
+        cost = _num(item.get("cost"))
+        rarity = _text(item.get("rarity"))
+        # Backfill weight/value/rarity from the SRD catalog when the granted item omits them
+        # (engine stays the source of truth; this is display-only enrichment for the reader).
+        if (weight is None or weight <= 0) or (cost is None or cost <= 0) or not rarity:
+            meta = _catalog_meta(name)
+            if meta:
+                if weight is None or weight <= 0:
+                    weight = _num(meta.get("weight"))
+                if cost is None or cost <= 0:
+                    cost = _num(meta.get("cost"))
+                if not rarity:
+                    rarity = _text(meta.get("rarity"))
         out.append({
             "id": f"{cid}:{idx}:{name}",
             "owner": cid,
@@ -2974,6 +3016,8 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             "glyph": _text(item.get("glyph"), name.lower()),
             "equipped": bool(item.get("equipped")),
             "weight": f"{weight:g} lb" if weight is not None and weight > 0 else "—",
+            "value": f"{cost:g} gp" if cost is not None and cost > 0 else "—",
+            "rarity": rarity or "common",
             "desc": _text(item.get("description"), "No description recorded."),
             "attunement": bool(item.get("requires_attunement")),
             "attuned": bool(item.get("attuned")),
@@ -3472,6 +3516,11 @@ def build_parley_surface(
         "dayLabel": _openworlds_day_label(snapshot),
         "actor": _text(actor.get("name"), actor_id),
         "actor_id": actor_id,
+        "location_id": _text(snapshot.get("current_location_id")),
+        "imageScope": (
+            f"location:{_text(snapshot.get('current_location_id'))}"
+            if _text(snapshot.get("current_location_id")) else ""
+        ),
         "alignment": _text(actor.get("alignment")),
         "free_form": True,
         "difficulty": difficulty,

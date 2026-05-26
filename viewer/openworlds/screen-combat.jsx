@@ -262,7 +262,7 @@ function CombatantSummary({ token, economy, commandCenter }) {
       background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
       boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)",
     }}>
-      <Placeholder label={token.short || token.initial || "token"} w={40} h={48} framed />
+      <Img scope={token.id ? "portrait-" + token.id : ""} label={token.short || token.initial || "token"} w={40} h={48} framed />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {token.name}
@@ -513,8 +513,16 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
         fontSize: 13,
         letterSpacing: "0.04em",
         color: isFoe ? "var(--p-100)" : "var(--ink-900)",
+        overflow: "hidden",
       }}>
-        {t.initial}
+        <Img
+          scope={t.id ? "portrait-" + t.id : ""}
+          label={t.initial}
+          w="100%"
+          h="100%"
+          fit="cover"
+          style={{ width: "100%", height: "100%", borderRadius: "50%" }}
+        />
       </div>
       <div style={{
         position: "absolute", left: "50%", bottom: -10, transform: "translateX(-50%)",
@@ -561,7 +569,7 @@ function InitiativeRow({ row, token, selected, onClick }) {
         color: isFoe ? "var(--crimson)" : "var(--ink-900)",
         fontWeight: 600,
       }}>{row.init ?? "-"}</span>
-      <Placeholder label={token.short || "?"} w={36} h={36} framed />
+      <Img scope={(token.id || row.id) ? "portrait-" + (token.id || row.id) : ""} label={token.short || "?"} w={36} h={36} framed />
       <div style={{ minWidth: 0 }}>
         <div style={{
           fontFamily: "var(--f-display)",
