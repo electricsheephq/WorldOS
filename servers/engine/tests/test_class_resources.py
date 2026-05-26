@@ -173,6 +173,47 @@ def test_bare_character_deserializes_and_rests(cid):
     assert rests.long_rest(ch)["resources_restored"] == []
 
 
+# --- Battle Master DAMAGE maneuver (#213): use_resource rolls the die + stashes a pending bonus ---
+def test_use_resource_maneuver_rolls_die_and_stashes_pending(cid, monkeypatch):
+    fid = server.create_character(
+        cid, "Ren", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    # Deterministic die: 1d8 -> 5.
+    monkeypatch.setattr(server.dice_mod, "roll", fixed_roll(5))
+    out = server.use_resource(cid, fid, "superiority_dice", maneuver="Trip Attack")
+    assert out["ok"] is True and out["remaining"] == 3
+    assert out["maneuver_damage"]["die"] == "1d8" and out["maneuver_damage"]["rolled"] == 5
+    pdb = server.get_character(cid, fid)["pending_damage_bonus"]
+    assert pdb["amount"] == 5 and pdb["source"] == "Trip Attack" and pdb["resource"] == "superiority_dice"
+
+
+def test_use_resource_no_maneuver_sets_no_pending_bonus(cid):
+    # ADDITIVE: a plain superiority-die spend (no maneuver) never creates a pending bonus.
+    fid = server.create_character(
+        cid, "Ren", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    out = server.use_resource(cid, fid, "superiority_dice")  # no maneuver
+    assert out["ok"] is True and "maneuver_damage" not in out
+    assert server.get_character(cid, fid)["pending_damage_bonus"] is None
+
+
+def test_use_resource_maneuver_amount_rolls_that_many_dice(cid, monkeypatch):
+    # amount=2 rolls 2d8 (the expression passed to the roller carries the count).
+    fid = server.create_character(
+        cid, "Ren", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    seen = {}
+    def _roll(expr, *a, **k):
+        seen["expr"] = expr
+        return DiceRoll(expression=expr, total=9, rolls=[9])
+    monkeypatch.setattr(server.dice_mod, "roll", _roll)
+    out = server.use_resource(cid, fid, "superiority_dice", amount=2, maneuver="Trip Attack")
+    assert seen["expr"] == "2d8" and out["remaining"] == 2 and out["maneuver_damage"]["rolled"] == 9
+
+
 def test_use_resource_preserved_across_level_up(cid):
     # Leveling up must NOT silently refill a half-spent pool (preserve `used`).
     pid = server.create_character(
