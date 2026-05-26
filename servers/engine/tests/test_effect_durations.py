@@ -11,6 +11,7 @@ import pytest
 import combat
 import spells
 import server
+import store
 from models import ActiveEffect, Campaign, Character
 
 
@@ -31,6 +32,12 @@ def _cleric(cid, name="Pious", **abil):
 
 def _effects(cid, char_id):
     return server.get_character(cid, char_id)["active_effects"]
+
+
+def _load(cid, char_id) -> Character:
+    """The real persisted Character object (for pure combat.* calls) — get_character augments
+    the dict with non-model view keys, which a strict Character would reject."""
+    return store.load_campaign(cid).characters[char_id]
 
 
 def _advance_turn(cid):
@@ -286,6 +293,110 @@ def test_guiding_bolt_materialized_rider_auto_expires(monkeypatch):
             break
     assert expired == [{"character_id": foe, "name": "Guiding Bolt"}]
     assert _effects(cid, foe) == []
+
+
+# --- the materialized GB marker auto-grants + is consumed by the NEXT attack (#194) ----
+# #186/#188 fixed the on-HIT registration; #194 is the OTHER half — the marker on the
+# target must make the next attack against it carry advantage WITHOUT the DM passing
+# advantage=True, and be consumed so it benefits exactly one attack.
+
+
+def _fighter(cid, name="Brawn", ac=10):
+    return server.create_character(
+        cid, name, kind="player", class_name="Fighter", apply_srd_defaults=True,
+        armor_class=ac, abilities={"strength": 16, "constitution": 14},
+    )["id"]
+
+
+def test_guiding_bolt_marker_auto_grants_advantage_to_next_attack_and_is_consumed(monkeypatch):
+    """cast(GB)+hit lands the marker on the foe; the NEXT attack against that foe (by a
+    DIFFERENT combatant, who passes NO advantage flag) auto-carries advantage=True, names
+    its source, and CONSUMES the marker — so it benefits exactly one attack (#194)."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    fighter = _fighter(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    # The fixed-natural-15 stub also makes initiative tie -> input order [cleric, fighter, foe],
+    # so the cleric acts first and the fighter follows in the SAME round (marker still live).
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))
+    server.start_combat(cid, [cleric, fighter, foe])
+    _advance_to(cid, cleric)
+    # Cleric's GB attack hits -> the "next attack has advantage" marker lands on the foe.
+    gb = server.attack(cid, cleric, foe, attack_bonus=5, damage_dice="4d6",
+                       damage_type="radiant", is_ranged=True)
+    assert gb["hit"] is True and gb.get("on_hit_effect_applied") == ["Guiding Bolt"]
+    # The GB spell attack itself must NOT have consumed any advantage (none pre-existed).
+    assert "advantage_source" not in gb
+    eff = _effects(cid, foe)
+    assert [e["name"] for e in eff] == ["Guiding Bolt"] and eff[0]["grants_advantage"] is True
+    # Advance to the fighter (still round 1) and attack the SAME foe with NO advantage flag.
+    server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == fighter
+    res = server.attack(cid, fighter, foe, attack_bonus=4, damage_dice="1d8+3",
+                        damage_type="slashing")  # DM passes NO advantage=True
+    assert res["advantage"] is True  # <-- the fix: engine auto-granted it
+    assert res["disadvantage"] is False
+    assert res["advantage_source"] == "Guiding Bolt" and res["advantage_consumed"] is True
+    # The marker is consumed — gone from the foe, so it benefits exactly ONE attack. Because
+    # attack_modifiers derives the auto-advantage purely from this (now empty) effect list, a
+    # SECOND attack against the foe necessarily gets NO advantage from the marker.
+    assert _effects(cid, foe) == []
+    adv2, dis2 = combat.attack_modifiers(_load(cid, fighter), _load(cid, foe))
+    assert adv2 is False and dis2 is False
+
+
+def test_guiding_bolt_marker_not_consumed_for_attack_on_other_target(monkeypatch):
+    """The marker is the FOE's; an attack against a DIFFERENT (unmarked) target neither gets
+    advantage from it nor consumes it — the marker stays live for the marked foe."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _gb_cleric(cid)
+    fighter = _fighter(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    other = server.create_character(cid, "Rat", kind="monster", max_hp=80, armor_class=10)["id"]
+    server.cast_spell(cid, cleric, "Guiding Bolt", target_id=foe)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))
+    server.start_combat(cid, [cleric, fighter, foe, other])
+    _advance_to(cid, cleric)
+    server.attack(cid, cleric, foe, attack_bonus=5, damage_dice="4d6", is_ranged=True)  # marker on foe
+    server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == fighter
+    # Fighter strikes the UNMARKED 'other' -> no auto-advantage, marker untouched.
+    res = server.attack(cid, fighter, other, attack_bonus=4, damage_dice="1d8+3")
+    assert res["advantage"] is False
+    assert "advantage_source" not in res and "advantage_consumed" not in res
+    assert [e["name"] for e in _effects(cid, foe)] == ["Guiding Bolt"]  # still live on the foe
+    assert _effects(cid, other) == []
+
+
+def test_attack_on_unmarked_target_has_no_advantage_machinery(monkeypatch):
+    """A plain weapon attack against a target carrying NO advantage rider is byte-identical
+    to before — no advantage, no advantage_source/consumed keys (non-marked unaffected)."""
+    cid = server.create_campaign("S")["id"]
+    fighter = _fighter(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))
+    server.start_combat(cid, [fighter, foe])
+    _advance_to(cid, fighter)
+    res = server.attack(cid, fighter, foe, attack_bonus=4, damage_dice="1d8+3")
+    assert res["advantage"] is False and res["disadvantage"] is False
+    assert "advantage_source" not in res and "advantage_consumed" not in res
+
+
+def test_condition_advantage_still_works_with_no_marker(monkeypatch):
+    """REGRESSION: condition-derived advantage (a PRONE target, melee) is unchanged by the
+    #194 marker path — it still grants advantage with no marker present and no source key."""
+    cid = server.create_campaign("S")["id"]
+    fighter = _fighter(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))
+    server.start_combat(cid, [fighter, foe])
+    _advance_to(cid, fighter)
+    server.add_condition(cid, foe, "prone")  # melee attacker vs prone -> advantage
+    res = server.attack(cid, fighter, foe, attack_bonus=4, damage_dice="1d8+3")  # melee
+    assert res["advantage"] is True  # condition advantage intact
+    assert "advantage_source" not in res  # NOT from a marker
+    assert _effects(cid, foe) == []  # no spurious marker created/consumed
 
 
 def test_self_buff_attack_spell_not_deferred_unchanged():

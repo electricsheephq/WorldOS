@@ -488,6 +488,13 @@ class ActiveEffect(_StrictModel):
     # hour-scale buffs also end on a long rest (an overnight ~8h) regardless of the
     # phase math; day-scale ones survive it.
     until_long_rest: bool = False
+    # Combat rider flag (#194): this effect grants ADVANTAGE to the NEXT attack roll made
+    # against its holder (Guiding Bolt's "the next attack roll against it has Advantage").
+    # combat.attack_modifiers reads it so the engine auto-applies advantage instead of
+    # relying on the DM to pass advantage=True; attack() consumes the effect after that one
+    # attack resolves (one-shot). Defaults False, so every existing effect (Bless, Hex, Mage
+    # Armor) and every old snapshot is untouched — only an advantage-granting rider sets it.
+    grants_advantage: bool = False
 
 
 class PendingOnHitRider(_StrictModel):

@@ -168,6 +168,53 @@ def test_attack_modifiers():
     assert dis2 and not adv2
 
 
+# --- advantage-granting rider on the target (Guiding Bolt, #194) ---
+def test_attack_modifiers_advantage_granting_effect_on_target():
+    """A target carrying an advantage-granting active_effect (Guiding Bolt's rider) auto-
+    grants advantage to the attacker — even with no conditions and no explicit flag."""
+    gb = ActiveEffect(name="Guiding Bolt", grants_advantage=True, scale="rounds", rounds_remaining=1)
+    adv, dis = combat.attack_modifiers(mk(), mk(active_effects=[gb]))
+    assert adv and not dis
+
+
+def test_attack_modifiers_plain_effect_does_not_grant_advantage():
+    """An ordinary timed effect (Bless) is NOT a 'next attack has advantage' rider —
+    grants_advantage defaults False, so a target carrying it is unaffected (no regression)."""
+    bless = ActiveEffect(name="Bless", scale="minutes", rounds_remaining=10)
+    adv, dis = combat.attack_modifiers(mk(), mk(active_effects=[bless]))
+    assert not adv and not dis
+    # ...and a target with no effects at all is likewise unaffected.
+    adv0, dis0 = combat.attack_modifiers(mk(), mk())
+    assert not adv0 and not dis0
+
+
+def test_attack_modifiers_marker_combines_with_disadvantage():
+    """The marker grants advantage; an attacker's own disadvantage (blinded) still applies —
+    the caller/dice.roll cancels them. The marker doesn't suppress condition-derived disadv."""
+    gb = ActiveEffect(name="Guiding Bolt", grants_advantage=True, scale="rounds", rounds_remaining=1)
+    adv, dis = combat.attack_modifiers(mk(conditions=[Condition.BLINDED]), mk(active_effects=[gb]))
+    assert adv and dis
+
+
+def test_advantage_granting_effect_helper():
+    """advantage_granting_effect returns the flagged effect (Guiding Bolt) or None — pure,
+    and it does not mutate the target."""
+    gb = ActiveEffect(name="Guiding Bolt", grants_advantage=True)
+    bless = ActiveEffect(name="Bless")
+    tgt = mk(active_effects=[bless, gb])
+    found = combat.advantage_granting_effect(tgt)
+    assert found is gb
+    assert len(tgt.active_effects) == 2  # no mutation
+    assert combat.advantage_granting_effect(mk(active_effects=[bless])) is None
+    assert combat.advantage_granting_effect(mk()) is None
+
+
+def test_spell_grants_advantage_registry():
+    assert combat.spell_grants_advantage("Guiding Bolt") is True
+    assert combat.spell_grants_advantage("Bless") is False
+    assert combat.spell_grants_advantage("Fire Bolt") is False
+
+
 # --- end-to-end through the MCP tools ---
 def test_combat_flow_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
