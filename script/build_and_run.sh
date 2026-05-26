@@ -13,6 +13,8 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$DISPLAY_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 
@@ -30,9 +32,12 @@ build_bundle() {
   bin_path="$(swift build --package-path "$PACKAGE_DIR" --show-bin-path)/$APP_NAME"
 
   rm -rf "$APP_BUNDLE"
-  mkdir -p "$APP_MACOS"
+  mkdir -p "$APP_MACOS" "$APP_FRAMEWORKS" "$APP_RESOURCES"
   cp "$bin_path" "$APP_BINARY"
   chmod +x "$APP_BINARY"
+  copy_sparkle_framework
+  copy_openworlds_resources
+  add_app_framework_rpath
 
   cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -64,6 +69,29 @@ PLIST
 
   if command -v codesign >/dev/null 2>&1; then
     codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+  fi
+}
+
+copy_sparkle_framework() {
+  local sparkle_framework
+  sparkle_framework="$(find "$PACKAGE_DIR/.build/artifacts" -path '*/Sparkle.framework' -type d -print -quit 2>/dev/null || true)"
+  if [[ -z "$sparkle_framework" ]]; then
+    sparkle_framework="$(find "$PACKAGE_DIR/.build" -path '*/Sparkle.framework' -type d -print -quit 2>/dev/null || true)"
+  fi
+  if [[ -n "$sparkle_framework" ]]; then
+    ditto "$sparkle_framework" "$APP_FRAMEWORKS/Sparkle.framework"
+  fi
+}
+
+copy_openworlds_resources() {
+  if [[ -d "$ROOT_DIR/viewer/openworlds" ]]; then
+    ditto "$ROOT_DIR/viewer/openworlds" "$APP_RESOURCES/openworlds"
+  fi
+}
+
+add_app_framework_rpath() {
+  if command -v install_name_tool >/dev/null 2>&1 && ! otool -l "$APP_BINARY" | grep -q '@executable_path/../Frameworks'; then
+    install_name_tool -add_rpath '@executable_path/../Frameworks' "$APP_BINARY"
   fi
 }
 

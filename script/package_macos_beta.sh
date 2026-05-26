@@ -84,6 +84,14 @@ copy_sparkle_framework() {
   ditto "$sparkle_framework" "${frameworks_dir}/Sparkle.framework"
 }
 
+add_app_framework_rpath() {
+  local binary_path="$1"
+  if otool -l "$binary_path" | grep -q '@executable_path/../Frameworks'; then
+    return
+  fi
+  install_name_tool -add_rpath '@executable_path/../Frameworks' "$binary_path"
+}
+
 find_swiftpm_executable() {
   local package_dir="$1"
   local executable_path=""
@@ -269,6 +277,8 @@ main() {
   require_command ditto
   require_command codesign
   require_command hdiutil
+  require_command install_name_tool
+  require_command otool
   require_command shasum
   require_command spctl
 
@@ -321,6 +331,7 @@ main() {
   plutil -lint "${app_path}/Contents/Info.plist" >/dev/null
   copy_sparkle_framework "$package_dir" "${app_path}/Contents/Frameworks"
   ditto "${repo_root}/viewer/openworlds" "${app_path}/Contents/Resources/openworlds"
+  add_app_framework_rpath "${app_path}/Contents/MacOS/${EXECUTABLE_NAME}"
 
   sign_bundle_contents "$app_path"
   rm -rf "$channel_app_path"
