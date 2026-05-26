@@ -4176,6 +4176,194 @@ def skill_check(campaign_id: str, character_id: str, skill: str, dc: int = 0,
     return out
 
 
+# Suggested-DC band keyed off the situation `difficulty` (P-B). The engine SUPPLIES
+# the DC so the DM never hand-computes one — the #1 mechanical error per skill_check's
+# docstring. HouseRules.difficulty then nudges the whole band (+2 hard / -2 easy).
+_PARLEY_DC_BAND = {"easy": 10, "medium": 14, "hard": 18}
+# The skills always offered at a social beat, on top of the actor's own proficient/
+# expertise skills — the four every parley reaches for regardless of build.
+_PARLEY_CORE_SKILLS = ("persuasion", "deception", "intimidation", "insight")
+
+
+def _lead_pc_id(c: Campaign) -> str:
+    """The default actor for a parley: the first PLAYER in the party (the lead PC),
+    falling back to the first party member, then any character. '' if the campaign
+    has no characters at all."""
+    for pid in c.party:
+        ch = c.characters.get(pid)
+        if ch is not None and ch.kind == "player":
+            return pid
+    for pid in c.party:
+        if pid in c.characters:
+            return pid
+    return next(iter(c.characters), "")
+
+
+def _suggested_dc(difficulty: str, house_difficulty: str) -> int:
+    """A parley skill DC: the situation band (easy 10 / medium 14 / hard 18) shifted
+    by the campaign's house difficulty (+2 when 'hard', -2 when 'easy')."""
+    base = _PARLEY_DC_BAND.get(difficulty.strip().lower(), _PARLEY_DC_BAND["medium"])
+    shift = {"hard": 2, "easy": -2}.get(house_difficulty, 0)
+    return base + shift
+
+
+@mcp.tool()
+def generate_parley_options(
+    campaign_id: str,
+    actor_id: str = "",
+    situation: str = "",
+    difficulty: str = "medium",
+    skills: Optional[list[str]] = None,
+    include_alignment: bool = True,
+) -> dict:
+    """Call this BEFORE narrating a social encounter or any choice point: it lays out the
+    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
+    instead of railroading to one narrated path. This is NOT `companion_advise` (the
+    companion's in-character take) or `get_scene` (the authored scene beats) — it returns
+    the lead PC's own alignment + the actual skill modifiers off their sheet + a suggested
+    DC per skill, so you write 2-4 tagged choices WITHOUT hand-computing anything.
+
+    Returns ``{actor, alignment, skills:[{skill, modifier, suggested_dc}], free_form: true,
+    guidance}``. `actor_id` defaults to the lead PC. `skills` defaults to the actor's
+    proficient/expertise skills plus persuasion/deception/intimidation/insight. `modifier`
+    is the sheet-correct bonus (ability mod + proficiency, doubled on expertise — the engine
+    computes it via the character's skill_bonus, you never invent it). `suggested_dc` comes
+    from a fixed band (easy 10 / medium 14 / hard 18) keyed off `difficulty`, shifted +2 when
+    HouseRules.difficulty is 'hard' and -2 when 'easy'.
+
+    This tool authors NOTHING and never rolls — it hands you slots, not lines. Voice the
+    prose yourself, tag each option by alignment + skill+DC + a reputation/consequence hint,
+    and ALWAYS leave a free-form path (`free_form` is always true). Then ROUTE the pick:
+    a chosen skill option -> ``skill_check(actor, skill, dc)``; a social option vs a tracked
+    NPC -> ``social_check`` (or ``target_name`` for a scene extra); a combat option ->
+    ``start_combat``; a free-form/alignment beat you adjudicate, then ``record_decision``
+    (and optional ``adjust_reputation``). Read-only."""
+    c = _require(campaign_id)
+    aid = actor_id or _lead_pc_id(c)
+    if not aid:
+        raise ValueError("campaign has no characters to parley with; create the PC first")
+    actor = _char(c, aid)
+
+    # Default skill set: the actor's own proficient/expertise skills UNION the four core
+    # social skills every parley reaches for. Dedup while preserving a stable order
+    # (sheet skills first, then any core skills not already present).
+    if skills is None:
+        chosen = list(dict.fromkeys(actor.skill_proficiencies + actor.skill_expertise))
+        for s in _PARLEY_CORE_SKILLS:
+            if s not in chosen:
+                chosen.append(s)
+    else:
+        chosen = list(dict.fromkeys(s.strip().lower().replace(" ", "_") for s in skills))
+
+    dc = _suggested_dc(difficulty, c.house_rules.difficulty)
+    skill_rows: list[dict] = []
+    for sk in chosen:
+        if sk not in SKILL_ABILITIES:
+            raise ValueError(f"unknown skill {sk!r}")
+        # modifier comes straight off the sheet — never recomputed by hand
+        skill_rows.append({"skill": sk, "modifier": actor.skill_bonus(sk), "suggested_dc": dc})
+
+    out: dict = {
+        "actor": actor.name,
+        "skills": skill_rows,
+        "free_form": True,
+        "guidance": (
+            "Author 2-4 SHORT options tagged by alignment + skill+DC + a "
+            "reputation/consequence hint, then ALWAYS leave a free-form path. Voice the "
+            "prose yourself — these are slots, not lines. Route a chosen skill option -> "
+            "skill_check(actor, skill, dc); a social option vs an NPC -> social_check; a "
+            "combat option -> start_combat."
+        ),
+    }
+    if include_alignment:
+        out["alignment"] = actor.alignment
+    return out
+
+
+def _resolve_monster_xps(
+    c: Campaign, monster_xps: Optional[list[int]], monster_ids: Optional[list[str]]
+) -> list[int]:
+    """The per-monster XP list for an outlook: prefer an explicit `monster_xps`, else
+    resolve each id in `monster_ids` to its XP — first from a staged monster Character's
+    `xp_value` (already in the campaign), else from the bestiary stat block by name."""
+    if monster_xps:
+        return [int(x) for x in monster_xps]
+    xps: list[int] = []
+    for mid in monster_ids or []:
+        ch = c.characters.get(mid)
+        if ch is not None and ch.xp_value > 0:
+            xps.append(int(ch.xp_value))
+            continue
+        sb = bestiary.stat_block(mid)
+        if sb and int(sb.get("xp") or 0) > 0:
+            xps.append(int(sb["xp"]))
+            continue
+        raise ValueError(f"could not resolve XP for monster {mid!r}; pass monster_xps instead")
+    return xps
+
+
+@mcp.tool()
+def encounter_outlook(
+    campaign_id: str,
+    monster_xps: Optional[list[int]] = None,
+    monster_ids: Optional[list[str]] = None,
+) -> dict:
+    """Call this BEFORE staging a fight to see how over-matched it is against the LIVING
+    party: it makes the SRD over-match math legible so the balancing doctrine is followable.
+    The engine NEVER alters combat — the dragon stays a dragon. Returns the SRD difficulty
+    band PLUS an `overmatch_ratio` (the band alone caps at 'deadly' and can't tell a
+    winnable 1.12x troll from a guaranteed-wipe 6.25x dragon) and a `must_offer_out` flag
+    that fires only in the unwinnable low-level zone.
+
+    Returns ``{band, overmatch_ratio, avg_party_level, must_offer_out, guidance}``.
+    `overmatch_ratio = adjusted_xp(xps) / xp_thresholds(party_levels)["deadly"]`, where xps
+    come from `monster_xps` or are resolved from `monster_ids` (a staged foe's xp_value, or
+    the bestiary by name). `must_offer_out = (avg_party_level <= 5) and (overmatch_ratio >=
+    2.0)` — empirically the line that passes a deadly-but-fair troll and catches a dragon.
+
+    When `must_offer_out` is true, you MUST surface at least one non-combat branch WITH A
+    COST (escape leaving something behind, parley/relent, a hazard buying retreat) via
+    generate_parley_options — do NOT auto-soften, do NOT TPK. Over level 5, a chosen fight
+    may kill. Read-only."""
+    c = _require(campaign_id)
+    xps = _resolve_monster_xps(c, monster_xps, monster_ids)
+    levels = _party_levels(c)
+    avg_party_level = sum(levels) / len(levels)
+
+    deadly = encounter.xp_thresholds(levels)["deadly"]
+    adjusted = encounter.adjusted_xp(xps)
+    # deadly is always > 0 (the SRD table has no zero), so this division is safe.
+    overmatch_ratio = round(adjusted / deadly, 2)
+    band = encounter.encounter_difficulty(levels, xps)
+    must_offer_out = (avg_party_level <= 5) and (overmatch_ratio >= 2.0)
+
+    if must_offer_out:
+        guidance = (
+            f"This fight is ~{overmatch_ratio}x over the party's deadly budget at level "
+            "<=5. The world is SET — do NOT auto-soften it, and do NOT TPK. REQUIRED: "
+            "surface at least one non-combat branch with a COST (escape leaving something "
+            "behind, parley/relent, a hazard that buys retreat) via generate_parley_options. "
+            "Over level 5, a chosen fight may kill."
+        )
+    elif band == "deadly":
+        guidance = (
+            f"Deadly but winnable (~{overmatch_ratio}x the deadly budget). A real, scary "
+            "fight — let them sweat; no escape branch is mandated."
+        )
+    else:
+        guidance = (
+            f"A fair {band} encounter (~{overmatch_ratio}x the deadly budget). Run it "
+            "straight — no out required."
+        )
+    return {
+        "band": band,
+        "overmatch_ratio": overmatch_ratio,
+        "avg_party_level": avg_party_level,
+        "must_offer_out": must_offer_out,
+        "guidance": guidance,
+    }
+
+
 @mcp.tool()
 def companion_suggest_action(campaign_id: str, companion_id: str) -> dict:
     """Suggest a tactical action for the companion (or any character) given the
