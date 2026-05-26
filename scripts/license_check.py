@@ -27,6 +27,9 @@ FORBIDDEN_PREFIXES = (
     "content/campaigns/_imported/",
     "content/campaigns/_private/",
     "content/worlds/_private/",
+    "clawdnd-private-compendium/",
+    "private-compendium/",
+    "tools/ingest/private-compendium/",
 )
 
 

@@ -58,6 +58,21 @@ python3 tools/ingest/wiki_to_characters.py tools/ingest/manifest_characters.json
 The parser is guarded by `servers/engine/tests/test_wiki_to_characters.py` (runs in CI's
 engine pytest via a path-insert, like `test_wiki_ingest.py`).
 
+## Private compendium sidecar
+
+`private_compendium_sidecar.py` is a local-only scaffold for user-owned books,
+adventures, exports, and homebrew. It validates a manifest kept outside the git checkout
+and prints planned gitignored private outputs; it does not ingest records into public
+content or mutate engine campaign state.
+
+```bash
+python3 tools/ingest/private_compendium_sidecar.py --init
+python3 tools/ingest/private_compendium_sidecar.py
+```
+
+The default sidecar root is `/Volumes/LEXAR/Codex/clawdnd-private-compendium`, overridable
+with `CLAWDND_PRIVATE_COMPENDIUM_ROOT`. See `docs/PRIVATE_COMPENDIUM_SIDECAR.md`.
+
 ## Licensing (TEXT ONLY)
 
 Each ingested record/page carries its **source URL + a per-source license + attribution**;
