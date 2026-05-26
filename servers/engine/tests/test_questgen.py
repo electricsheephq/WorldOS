@@ -43,8 +43,11 @@ def test_hooks_derive_from_resolved_quest_outcomes():
     assert 1 <= len(c.quest_hooks) <= len(c.quest_outcomes)
     for h in c.quest_hooks:
         assert h.grievance and h.note  # a wrong + its follow-on
-        assert h.shape in {"fetch_plus", "investigation", "hunt", "rescue", "heist",
-                            "escort", "faction_war", "dilemma"}
+        assert h.shape in {
+            "fetch_plus", "investigation", "hunt", "rescue", "heist",
+            "escort", "faction_war", "dilemma",
+            "false_accusation", "sacrifice_choice", "revelation", "tragedy_unfolding",
+        }
         assert h.status == "open"
 
 
@@ -193,3 +196,137 @@ def test_sundered_reach_gets_cold_open_but_no_hooks(tmp_path, monkeypatch):
     assert "quest_hooks_count" not in out           # echo omitted when none
     assert len(c.prelude) == 4                       # but a cold-open still opens the world
     assert not any(l.startswith("[Outcome]") or l.startswith("[Hook]") for l in c.lore)
+
+
+# --- gut-punch shapes: false_accusation, sacrifice_choice, revelation, tragedy_unfolding ----
+# Each test drives the shape via keyword-hinted grievance/hook text so _pick_shape selects it,
+# then checks: valid skeleton fields, determinism under a seeded rng, appears in _SHAPES.
+
+_ALL_SHAPES = set(questgen._SHAPES)
+
+
+def _make_shaped_campaign(grievance: str, hook_note: str) -> tuple:
+    """Return (Campaign, world_dict) with exactly one quest_outcome whose hook text carries
+    the given grievance and note — so _derive_hooks produces exactly one shaped hook."""
+    from models import Campaign, Location, Faction
+    c = Campaign(title="Shaped")
+    c.locations["loc-1"] = Location(id="loc-1", name="The Gallows Quarter", description="where blame lands")
+    c.current_location_id = "loc-1"
+    c.factions["fac-1"] = Faction(id="fac-1", name="The Accusers", description="those with power to condemn")
+    c.quest_outcomes = {"q-shaped": "o-1"}
+    world = {"id": "w-shaped", "quest_variants": [
+        {"id": "q-shaped", "name": grievance, "outcomes": [
+            {"id": "o-1", "random": 1, "lore": "lore text", "hook": hook_note}
+        ]},
+    ]}
+    return c, world
+
+
+def test_false_accusation_shape_valid_skeleton_and_determinism():
+    # keyword "framed" in grievance triggers false_accusation via _SHAPE_HINTS
+    grievance = "The Healer Framed for Poisoning"
+    hook_note = "an innocent ally is blamed and the accuser holds the power to exile them"
+    c, world = _make_shaped_campaign(grievance, hook_note)
+    questgen.generate(c, world, random.Random("fa-seed"))
+    assert len(c.quest_hooks) == 1
+    h = c.quest_hooks[0]
+    assert h.shape == "false_accusation"
+    assert h.grievance == grievance
+    assert h.note == hook_note
+    assert h.status == "open"
+    assert h.giver_id or h.target_id or h.place_id  # at least one lore noun bound
+    assert h.motivation == "reputation"
+    assert h.shape in _ALL_SHAPES
+    # determinism: same seed -> same output
+    import copy
+    c2 = copy.deepcopy(c)
+    c2.quest_hooks = []; c2.prelude = []
+    questgen.generate(c2, world, random.Random("fa-seed"))
+    assert [(h2.shape, h2.grievance, h2.giver_id, h2.place_id) for h2 in c2.quest_hooks] == \
+           [(h.shape, h.grievance, h.giver_id, h.place_id) for h in c.quest_hooks]
+
+
+def test_sacrifice_choice_shape_valid_skeleton_and_determinism():
+    # keyword "trade" in hook triggers sacrifice_choice (no earlier hint fires on this text)
+    grievance = "The Price at the Temple Gate"
+    hook_note = "there is no clean exit — the trade forces a real cost: one life given freely or all lost"
+    c, world = _make_shaped_campaign(grievance, hook_note)
+    questgen.generate(c, world, random.Random("sc-seed"))
+    assert len(c.quest_hooks) == 1
+    h = c.quest_hooks[0]
+    assert h.shape == "sacrifice_choice"
+    assert h.grievance == grievance
+    assert h.note == hook_note
+    assert h.status == "open"
+    assert h.motivation == "serenity"
+    assert h.shape in _ALL_SHAPES
+    import copy
+    c2 = copy.deepcopy(c)
+    c2.quest_hooks = []; c2.prelude = []
+    questgen.generate(c2, world, random.Random("sc-seed"))
+    assert [(h2.shape, h2.grievance) for h2 in c2.quest_hooks] == \
+           [(h.shape, h.grievance) for h in c.quest_hooks]
+
+
+def test_revelation_shape_valid_skeleton_and_determinism():
+    # keyword "lied" triggers revelation (no earlier hint fires on this text)
+    grievance = "The Lie at the Root of the Order"
+    hook_note = "the elder lied from the beginning — their identity reshapes everything the party trusted"
+    c, world = _make_shaped_campaign(grievance, hook_note)
+    questgen.generate(c, world, random.Random("rv-seed"))
+    assert len(c.quest_hooks) == 1
+    h = c.quest_hooks[0]
+    assert h.shape == "revelation"
+    assert h.grievance == grievance
+    assert h.note == hook_note
+    assert h.status == "open"
+    assert h.motivation == "knowledge"
+    assert h.shape in _ALL_SHAPES
+    import copy
+    c2 = copy.deepcopy(c)
+    c2.quest_hooks = []; c2.prelude = []
+    questgen.generate(c2, world, random.Random("rv-seed"))
+    assert [(h2.shape, h2.grievance) for h2 in c2.quest_hooks] == \
+           [(h.shape, h.grievance) for h in c.quest_hooks]
+
+
+def test_tragedy_unfolding_shape_valid_skeleton_and_determinism():
+    # keyword "doom" triggers tragedy_unfolding
+    grievance = "The Doom Already in Motion"
+    hook_note = "the curse is spreading — the party may witness and soften it but cannot stop what is already dying"
+    c, world = _make_shaped_campaign(grievance, hook_note)
+    questgen.generate(c, world, random.Random("tu-seed"))
+    assert len(c.quest_hooks) == 1
+    h = c.quest_hooks[0]
+    assert h.shape == "tragedy_unfolding"
+    assert h.grievance == grievance
+    assert h.note == hook_note
+    assert h.status == "open"
+    assert h.motivation == "comfort"
+    assert h.shape in _ALL_SHAPES
+    import copy
+    c2 = copy.deepcopy(c)
+    c2.quest_hooks = []; c2.prelude = []
+    questgen.generate(c2, world, random.Random("tu-seed"))
+    assert [(h2.shape, h2.grievance) for h2 in c2.quest_hooks] == \
+           [(h.shape, h.grievance) for h in c.quest_hooks]
+
+
+def test_all_four_gut_punch_shapes_appear_in_shapes_list():
+    for shape in ("false_accusation", "sacrifice_choice", "revelation", "tragedy_unfolding"):
+        assert shape in _ALL_SHAPES
+
+
+def test_gut_punch_shapes_selectable_via_seeded_rng():
+    # When no keyword hints fire, _pick_shape falls through to rng.choice(_SHAPES).
+    # The 4 new shapes must be reachable — seed until each appears (bounded loop).
+    import random as _random
+    found: set[str] = set()
+    target = {"false_accusation", "sacrifice_choice", "revelation", "tragedy_unfolding"}
+    for i in range(10_000):
+        shape = questgen._pick_shape("neutral grievance text", "neutral hook note", _random.Random(i))
+        if shape in target:
+            found.add(shape)
+        if found == target:
+            break
+    assert found == target, f"shapes not reached via rng.choice: {target - found}"

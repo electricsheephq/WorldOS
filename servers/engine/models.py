@@ -931,7 +931,7 @@ class QuestHook(_StrictModel):
 
     id: str = Field(default_factory=lambda: _new_id("hook"))
     title: str = ""                       # short DM-facing label
-    shape: str = ""                       # archetype TAG (a label, not a grammar): fetch_plus|investigation|hunt|rescue|heist|escort|faction_war|dilemma
+    shape: str = ""                       # archetype TAG (a label, not a grammar): fetch_plus|investigation|hunt|rescue|heist|escort|faction_war|dilemma|false_accusation|sacrifice_choice|revelation|tragedy_unfolding
     grievance: str = ""                   # the lore "wrong" this addresses — the spine primitive quests derive from
     motivation: str = ""                  # the giver's "why": knowledge|protection|conquest|serenity|wealth|reputation|comfort|ability|equipment
     giver_id: str = ""                    # bound lore noun: the NPC who offers/embodies it (ref into c.characters)
