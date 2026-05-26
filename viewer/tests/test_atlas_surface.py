@@ -181,6 +181,36 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["travel_options"], [])
         self.assertFalse(surface["camp_available"])
 
+    def test_atlas_surface_tolerates_null_optional_lists(self):
+        snapshot = {
+            "current_location_id": "gate",
+            "locations": {
+                "gate": {
+                    "name": "Gate",
+                    "connections": None,
+                    "visited": True,
+                }
+            },
+            "strategic_state": {
+                "regions": {
+                    "gate": {
+                        "location_id": "gate",
+                        "tags": None,
+                    }
+                }
+            },
+        }
+
+        surface = server.build_atlas_surface(
+            snapshot,
+            campaign_id="camp_nulls",
+            live=True,
+            is_live_view=True,
+        )
+
+        self.assertEqual(surface["known_locations"][0]["connections"], [])
+        self.assertEqual(surface["region_control"][0]["tags"], [])
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",

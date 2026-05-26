@@ -1432,6 +1432,8 @@ def _atlas_known_locations(snapshot: dict) -> list[dict]:
             continue
         x, y = _atlas_hex_position(row, idx)
         name = _text(row.get("name"), loc_id)
+        connections = row.get("connections")
+        connections = connections if isinstance(connections, list) else []
         out.append({
             "id": loc_id,
             "name": name,
@@ -1442,12 +1444,9 @@ def _atlas_known_locations(snapshot: dict) -> list[dict]:
             "x": x,
             "y": y,
             "tags": _atlas_tags(row),
-            "connections": [
-                _text(c) for c in row.get("connections", [])
-                if isinstance(row.get("connections"), list) and _text(c) in visible_ids
-            ],
+            "connections": [_text(c) for c in connections if _text(c) in visible_ids],
         })
-    out.sort(key=lambda l: (not l["current"], l["name"]))
+    out.sort(key=lambda loc: (not loc["current"], loc["name"]))
     return out
 
 
@@ -1596,12 +1595,14 @@ def _atlas_strategic(snapshot: dict, visible_ids: set[str]) -> tuple[list[dict],
         loc_id = _text(row.get("location_id"), _text(rid))
         if loc_id not in visible_ids:
             continue
+        tags = row.get("tags")
+        tags = tags if isinstance(tags, list) else []
         regions.append({
             "location_id": loc_id,
             "controller": _atlas_faction_name(snapshot, _text(row.get("controller_id"))),
             "stability": int(_num(row.get("stability")) or 0),
             "unrest": int(_num(row.get("unrest")) or 0),
-            "tags": [_text(t) for t in row.get("tags", []) if isinstance(row.get("tags"), list) and _text(t)],
+            "tags": [_text(t) for t in tags if _text(t)],
         })
     last_tick_day = int(_num(st.get("last_tick_day")) or 0)
     clocks.sort(key=lambda c: (not c["urgent"], c["remaining"], c["title"]))
