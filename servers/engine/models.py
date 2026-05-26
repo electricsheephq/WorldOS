@@ -673,6 +673,11 @@ class Character(_StrictModel):
     features: list[str] = Field(default_factory=list)  # class/subclass features gained
     extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
     sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
+    # A defensive REACTION that adds this many points to AC against ONE melee attack that
+    # would otherwise hit (the Parry reaction — Bandit Captain +2, fallen consular +4, etc.,
+    # #218). 0 == no such reaction (today's behavior). Set at spawn from the stat block; the
+    # engine spends the creature's reaction to parry only when it would FLIP a hit to a miss.
+    parry: int = 0
     xp_value: int = 0  # XP this creature grants when defeated (set when spawned from the bestiary; drives auto-XP)
 
     # roleplay (companion / npc)
