@@ -110,10 +110,11 @@ git clone https://github.com/100yenadmin/ClawDnD.git
 cd ClawDnD
 ```
 
-Then inside Claude Code:
+Then inside Claude Code, register the local marketplace and install the plugin:
 
 ```
-/plugin install .
+/plugin marketplace add .
+/plugin install clawdnd@clawdnd
 ```
 
 Claude Code reads `.claude-plugin/plugin.json` and `.mcp.json`, starts the three MCP
