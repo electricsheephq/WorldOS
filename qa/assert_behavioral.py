@@ -220,6 +220,51 @@ def main() -> int:
                         fatal=False)
                 # else: snapshot doesn't carry action-economy data -> skip rather than false-WARN.
 
+                # round1_turn_skipped (SOFT — WARN, not FATAL, #166). Detects the pattern:
+                # start_combat → next_turn with NO resolving action (attack / cast_spell /
+                # saving_throw / use_action) in between, meaning the first combatant's Round-1
+                # turn was advanced without any action being taken — the most common DM drift.
+                # Conservative design:
+                #   - Only fires when we can affirmatively confirm the pattern from the ordered
+                #     tool stream (both start_combat AND next_turn present, AND zero resolving
+                #     calls between them). Never fires when the stream is absent or ambiguous.
+                #   - False-positive guard: we flag the FIRST next_turn with no prior resolver;
+                #     a DM who attacked then called next_turn is clean (resolvers > 0 in between).
+                #   - Does NOT try to identify WHICH combatant was skipped (result payloads not
+                #     in the stream); it only checks that something was resolved before the first
+                #     turn advance. Best-effort; documented as such.
+                _RESOLVERS = frozenset({"attack", "cast_spell", "saving_throw", "use_action"})
+                ordered_calls: list[str] = []
+                for ev in events:
+                    if ev.get("type") != "assistant":
+                        continue
+                    for b in (ev.get("message", {}) or {}).get("content") or []:
+                        if isinstance(b, dict) and b.get("type") == "tool_use":
+                            short = (b.get("name") or "").split("__")[-1]
+                            ordered_calls.append(short)
+                # Scan for the first start_combat → next_turn gap
+                round1_skip = False
+                in_combat = False
+                resolver_since_start = False
+                for call in ordered_calls:
+                    if call == "start_combat":
+                        in_combat = True
+                        resolver_since_start = False
+                    elif in_combat and call in _RESOLVERS:
+                        resolver_since_start = True
+                    elif in_combat and call == "next_turn":
+                        if not resolver_since_start:
+                            round1_skip = True
+                        break  # only check the first next_turn after start_combat
+                if in_combat:  # only warn when we actually entered combat in this run
+                    chk("round1_turn_skipped", not round1_skip,
+                        "start_combat fired and next_turn advanced immediately with no "
+                        "attack/cast_spell/saving_throw/use_action in between — the first "
+                        "combatant's Round-1 turn may have been skipped without resolving "
+                        "any action (read turn_brief at each next_turn and resolve the full "
+                        "action before advancing; Multiattack = all N attacks).",
+                        fatal=False)
+
         # PARTY-LOCATION COHERENCE (#agency, WARN, NULL-GUARDED). Every party member with a
         # known location should be co-located with the current scene. Skip members whose
         # location_id is absent/empty (serialization sometimes omits it) — never false-fire on
