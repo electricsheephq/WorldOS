@@ -1977,6 +1977,54 @@ def _atlas_strategic(snapshot: dict, visible_ids: set[str]) -> tuple[list[dict],
     return clocks[:12], projects[:12], regions[:12], last_tick_day
 
 
+def _atlas_settlements(snapshot: dict, visible_ids: set[str]) -> list[dict]:
+    st = snapshot.get("strategic_state")
+    if not isinstance(st, dict):
+        return []
+    raw = st.get("settlements")
+    if not isinstance(raw, dict):
+        return []
+
+    out: list[dict] = []
+    for sid, row in raw.items():
+        if not isinstance(row, dict):
+            continue
+        loc_id = _text(row.get("location_id"), _text(sid))
+        if loc_id not in visible_ids:
+            continue
+        faction_ids = row.get("public_faction_ids")
+        faction_ids = faction_ids if isinstance(faction_ids, list) else []
+        establishments = row.get("establishments")
+        establishments = establishments if isinstance(establishments, list) else []
+        public_npcs = row.get("public_npcs")
+        public_npcs = public_npcs if isinstance(public_npcs, list) else []
+        out.append({
+            "location_id": loc_id,
+            "settlement_type": _text(row.get("settlement_type"), "town"),
+            "governance": _text(row.get("governance")),
+            "public_safety": _text(row.get("public_safety")),
+            "economy": _text(row.get("economy")),
+            "unrest": int(_num(row.get("unrest")) or 0),
+            "public_factions": [
+                _atlas_faction_name(snapshot, _text(fid))
+                for fid in faction_ids
+                if _text(fid)
+            ],
+            "establishments": [_text(name) for name in establishments if _text(name)][:8],
+            "public_npcs": [
+                {
+                    "npc_id": _text(npc.get("npc_id")),
+                    "role": _text(npc.get("role")),
+                    "pressure": _text(npc.get("pressure")),
+                }
+                for npc in public_npcs
+                if isinstance(npc, dict) and (_text(npc.get("role")) or _text(npc.get("pressure")))
+            ][:8],
+        })
+    out.sort(key=lambda s: (s["location_id"], s["settlement_type"]))
+    return out[:12]
+
+
 def build_atlas_surface(
     snapshot: dict,
     *,
@@ -1992,6 +2040,7 @@ def build_atlas_surface(
     current = next((loc for loc in locations if loc["id"] == current_id), None)
     travel_options = _atlas_travel_options(snapshot, locations, live=live, is_live_view=is_live_view)
     clocks, projects, regions, last_tick_day = _atlas_strategic(snapshot, visible_ids)
+    settlements = _atlas_settlements(snapshot, visible_ids)
     current_tags = set(current.get("tags", [])) if current else set()
     camp_available = bool(current and current_tags.intersection({"rest", "town", "safe", "camp"}))
     return {
@@ -2007,6 +2056,7 @@ def build_atlas_surface(
         "strategic_clocks": clocks,
         "downtime_projects": projects,
         "region_control": regions,
+        "settlements": settlements,
         "camp_available": camp_available,
         "last_world_tick": last_tick_day,
         "live": bool(live),

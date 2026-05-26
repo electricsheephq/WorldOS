@@ -32,6 +32,7 @@ from models import (
     Location,
     Quest,
     RegionControl,
+    SettlementPressure,
     StrategicClock,
     WorldGraph,
     WorldGraphEdge,
@@ -999,6 +1000,42 @@ def _seed_world_graph(c: Campaign, world: dict) -> None:
     c.world_graph = graph
 
 
+def _seed_settlement_pressure(c: Campaign, world: dict) -> None:
+    """Seed optional settlement/NPC/faction pressure from world.json.
+
+    Settlement pressure is additive read-model state anchored to existing locations.
+    Unknown references or malformed rows are skipped with diagnostics so an authored
+    block cannot partially bind to the wrong civic surface.
+    """
+    for entry in _as_list_lenient(world, "settlements"):
+        if not isinstance(entry, dict):
+            print("[content] skipping settlement (not an object)")
+            continue
+        try:
+            settlement = SettlementPressure.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed settlement")
+            continue
+
+        missing_locations = [settlement.location_id] if settlement.location_id not in c.locations else []
+        missing_factions = [fid for fid in settlement.public_faction_ids if fid and fid not in c.factions]
+        missing_npcs = [npc.npc_id for npc in settlement.public_npcs if npc.npc_id and npc.npc_id not in c.characters]
+        if missing_locations or missing_factions or missing_npcs:
+            print(
+                "[content] skipping settlement "
+                f"{settlement.location_id!r}: unknown refs "
+                f"locations={missing_locations} factions={missing_factions} npcs={missing_npcs}"
+            )
+            continue
+        if settlement.location_id in c.strategic_state.settlements:
+            print(f"[content] skipping settlement {settlement.location_id!r}: duplicate location_id")
+            continue
+
+        settlement.public_faction_ids = _dedupe_strs(fid for fid in settlement.public_faction_ids if fid)
+        settlement.establishments = _dedupe_strs(str(x).strip() for x in settlement.establishments if str(x).strip())
+        c.strategic_state.settlements[settlement.location_id] = settlement
+
+
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
     """Seed the PROACTIVE living-world backlog (P0) — the world's own off-screen to-do, so the
     campaign advances when in-fiction time passes (P1 tick_backlog) instead of only reacting to
@@ -1358,6 +1395,8 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
         if dossier is not None:
             ch.companion_dossier = dossier
         c.characters[ch.id] = ch
+
+    _seed_settlement_pressure(c, world)
 
     # World facts the DM recalls to stay consistent (indexed into the ledger as lore).
     c.lore = [str(x) for x in (_as_list(world, "history") + _as_list(world, "standing_threads")) if str(x).strip()]

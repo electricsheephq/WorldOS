@@ -1193,6 +1193,36 @@ class DowntimeProject(_StrictModel):
         return self
 
 
+class SettlementNpcPressure(_StrictModel):
+    """Player-safe NPC pressure visible at a settlement.
+
+    This is a public signal, not private motivation or scripted dialogue."""
+
+    npc_id: str = ""  # optional ref into Campaign.characters
+    role: str = ""
+    pressure: str = ""
+
+
+class SettlementPressure(_StrictModel):
+    """Clean-room settlement texture anchored to one Location.
+
+    The row stores public-facing civic pressure only. Private notes may be retained for
+    DM tools, but viewer projections must not expose them."""
+
+    location_id: str
+    settlement_type: Literal[
+        "hamlet", "village", "town", "city", "district", "port", "fort", "camp", "outpost", "other"
+    ] = "town"
+    governance: str = ""
+    public_safety: str = ""
+    economy: str = ""
+    unrest: int = Field(0, ge=0, le=100)
+    public_faction_ids: list[str] = Field(default_factory=list)
+    establishments: list[str] = Field(default_factory=list)
+    public_npcs: list[SettlementNpcPressure] = Field(default_factory=list)
+    notes: str = ""
+
+
 class StrategicState(_StrictModel):
     """The campaign's optional strategic board.
 
@@ -1204,6 +1234,7 @@ class StrategicState(_StrictModel):
     assets: dict[str, FactionAsset] = Field(default_factory=dict)  # asset id -> asset
     clocks: dict[str, StrategicClock] = Field(default_factory=dict)  # clock id -> clock
     projects: dict[str, DowntimeProject] = Field(default_factory=dict)  # project id -> project
+    settlements: dict[str, SettlementPressure] = Field(default_factory=dict)  # location_id -> settlement pressure
     last_tick_day: int = 0
 
 
