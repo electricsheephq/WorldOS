@@ -281,3 +281,36 @@ def test_campaign_round_trips_after_second_seed():
     assert reloaded.world_id == WORLD_ID
     assert EVENT_ID in reloaded.events
     assert FACTION_ARC_ID in reloaded.faction_arcs
+
+
+# ---------------------------------------------------------------------------
+# 9. #221: a companion arc/agenda arms from the BASE world.json (no ending overlay)
+# ---------------------------------------------------------------------------
+
+
+def test_base_world_companion_arc_arms_without_an_ending():
+    """The generativity boundary the spike surfaced: a CompanionAgenda (the sealed flip)
+    used to require an ending overlay's companion_seeds. #221 lets the base npc_roster carry
+    an `arc`, so a world with NO endings can still have a companion who turns. The Tidal
+    Commonwealth's Captain Drev must arm his decision-gated flip from the seed alone."""
+    world = _load_world()
+    c, _ = _seed_world(world)
+    drev = c.characters[NPC_COMPANION_ID]
+    assert drev.arc is not None, "base-world npc_roster `arc` did not seed onto the companion"
+    ag = drev.arc.agenda
+    assert ag is not None and ag.trigger == "attitude_below"
+    assert ag.value == -25, "breaking point must sit inside the [-40,-20] warn band so it telegraphs"
+    # the L3->L2 seam: the agenda is decision-gated, and the gating flag is set by an event option
+    assert ag.decision_flag == "left_drev_exposed"
+    flag_setters = [
+        o.outcome.decision_flag
+        for ev in c.events.values()
+        for o in ev.options
+        if o.outcome.decision_flag
+    ]
+    assert "left_drev_exposed" in flag_setters, (
+        "the agenda's decision_flag must be reachable from an authored event option (the L3->L2 seam)"
+    )
+    # the relationship gates (loyalty + personal-quest) seeded too — a full companion, not just a flip
+    gate_kinds = {g.kind for g in drev.arc.arc_gates}
+    assert {"loyalty", "personal_quest"} <= gate_kinds

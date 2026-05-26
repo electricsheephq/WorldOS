@@ -115,6 +115,18 @@
           "npc-warden-estris": "old working relationship — she brought him in on three salvage contracts",
           "npc-mira-scroll": "knows her by reputation and is wary of her"
         }
+      },
+      "arc": {
+        "arc_gates": [
+          {"kind": "loyalty", "threshold": 30, "note": "Drev stops talking around you and starts talking to you — he names the crew he lost on the dive that scarred him, one at a time, and what he should have done differently. The trust is earned, not given; play it as a man who has decided you are worth the risk of caring about."},
+          {"kind": "personal_quest", "threshold": 45, "note": "The Deep Rim wound — the door the world points at. Drev finally describes what COLD LAMP's predecessor found at the rim six years ago: not a creature, a STRUCTURE, and it was aware of being looked at. He needs to go back and confirm it before it confirms him. His personal arc is the first hard evidence of what's cycling beneath the Commonwealth's politics."}
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -25,
+          "decision_flag": "left_drev_exposed",
+          "note": "Drev does NOT turn for gold or power — he is crew-first to the bone. His break is the slow, cold kind: if you have repeatedly gambled lives he was responsible for and left him exposed when it counted, he stops trusting you with his people, pulls his crew and his Basin-knowledge out from under you, and — if pushed past the breaking point — actively moves to stop the next dive you would spend lives on. Telegraph it (he goes quiet, he stops bringing you finds, he starts checking your math) long before it lands. The turn is a withdrawal that becomes opposition, never a sudden knife — a good man who has stopped believing you'll do the right thing."
+        }
       }
     },
     {
@@ -171,6 +183,7 @@
           "tag": "detached / wary",
           "outcome": {
             "flag": "cold_lamp_cache_bystander",
+            "decision_flag": "left_drev_exposed",
             "narrate": "You step back from the gangplank and let it play out. The inspectors arrive; Drev makes a decision you don't see; the dock moves on. Whatever came up from the shallows is out of your hands, one way or another — and something in the captain's expression, when he passes you later, suggests he noticed you weren't there when it counted."
           }
         }
