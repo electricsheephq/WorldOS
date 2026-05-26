@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "clawdnd",
-      "version": "0.2.0",
+      "version": "1.0.0",
       "source": "./",
       "description": "Adventure inside living, AI-generated D&D 5e worlds with a voiced AI companion — an AI DM generates epic stories live within persistent, canon-anchored worlds."
     }
