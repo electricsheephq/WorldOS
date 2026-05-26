@@ -78,6 +78,7 @@ function ScreenCombat({ onNavigate, state }) {
   const zones = Array.isArray(surface?.zones) ? surface.zones : [];
   const battleLog = Array.isArray(surface?.battleLog) ? surface.battleLog : [];
   const encounter = surface?.encounter || { active: false, name: "No active encounter" };
+  const commandCenter = surface?.commandCenter || {};
   const economy = surface?.actionEconomy || {};
   const canAct = Boolean(surface?.can_act);
   const selected =
@@ -189,7 +190,7 @@ function ScreenCombat({ onNavigate, state }) {
 
         <Panel framed style={{ padding: 14, flex: "0 0 auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 220px) 1fr", gap: 16, alignItems: "center" }}>
-            <CombatantSummary token={selected} economy={economy} />
+            <CombatantSummary token={selected} economy={economy} commandCenter={commandCenter} />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
               {actionTile("move", "↗", "Move")}
               {actionTile("attack", "⚔", "Attack")}
@@ -222,6 +223,11 @@ function ScreenCombat({ onNavigate, state }) {
           </div>
         </Panel>
 
+        <Panel framed style={{ padding: 18 }}>
+          <SectionTitle>Command</SectionTitle>
+          <CommandCenterPanel commandCenter={commandCenter} selectedId={selected?.id} onSelect={setSelectedToken} />
+        </Panel>
+
         <Panel framed style={{ padding: 18, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <SectionTitle>Battle Log</SectionTitle>
           <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -235,7 +241,7 @@ function ScreenCombat({ onNavigate, state }) {
   );
 }
 
-function CombatantSummary({ token, economy }) {
+function CombatantSummary({ token, economy, commandCenter }) {
   if (!token) {
     return (
       <div style={{ padding: "8px 12px", background: "rgba(176,141,87,0.08)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)" }}>
@@ -246,6 +252,9 @@ function CombatantSummary({ token, economy }) {
   }
   const hpText = token.hpKnown ? `HP ${token.hp}/${token.hpMax}` : token.health || "unknown";
   const acText = token.ac ? ` · AC ${token.ac}` : "";
+  const cues = Array.isArray(commandCenter?.cues)
+    ? commandCenter.cues.filter((cue) => cue.character_id === token.id).slice(0, 2)
+    : [];
   return (
     <div style={{
       display: "flex", gap: 10, alignItems: "center",
@@ -266,8 +275,110 @@ function CombatantSummary({ token, economy }) {
           <ApBadge used={economy.bonus_available === false} label="Bonus" />
           <ApBadge used={economy.reaction_available === false} label="React" />
         </div>
+        {cues.length > 0 && (
+          <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {cues.map((cue, i) => <CueChip key={`${cue.type}-${i}`} cue={cue} />)}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function CommandCenterPanel({ commandCenter, selectedId, onSelect }) {
+  const actor = commandCenter?.activeActor || {};
+  const slots = commandCenter?.slots || {};
+  const budget = commandCenter?.attackBudget || {};
+  const targetability = Array.isArray(commandCenter?.targetability) ? commandCenter.targetability : [];
+  const targets = targetability.filter((row) => row.id !== actor.id);
+  const cues = Array.isArray(commandCenter?.cues) ? commandCenter.cues.slice(0, 4) : [];
+  const attackLine = Number.isFinite(Number(budget.allowed))
+    ? `${budget.remaining ?? 0}/${budget.allowed} attacks left`
+    : "attack budget unavailable";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+        <div style={{ fontFamily: "var(--f-display)", fontSize: 13, color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {actor.name || "No active actor"}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 4 }}>
+          <SlotPip label="Act" slot={slots.action} />
+          <SlotPip label="Bonus" slot={slots.bonusAction} />
+          <SlotPip label="React" slot={slots.reaction} />
+        </div>
+        <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-700)" }}>{attackLine}</div>
+      </div>
+
+      {cues.length > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {cues.map((cue, i) => <CueChip key={`${cue.character_id}-${cue.type}-${i}`} cue={cue} />)}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {targets.length ? targets.map((row) => (
+          <button key={row.id} onClick={() => onSelect(row.id)} title={row.reason || "targetable"} style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 8,
+            alignItems: "center",
+            padding: "6px 8px",
+            textAlign: "left",
+            background: selectedId === row.id ? "rgba(176,141,87,0.18)" : "transparent",
+            color: row.targetable ? "var(--ink-900)" : "var(--ink-600)",
+            boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.16)",
+            cursor: "pointer",
+          }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.06em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</span>
+              <span style={{ display: "block", fontFamily: "var(--f-mono)", fontSize: 9, color: "var(--ink-600)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.zone || row.health || "field"}</span>
+            </span>
+            <span style={{
+              fontFamily: "var(--f-mono)",
+              fontSize: 9,
+              color: row.targetable ? "var(--crimson)" : "var(--ink-600)",
+              textTransform: "uppercase",
+            }}>{row.targetable ? "target" : row.reason}</span>
+          </button>
+        )) : <div className="body-sm" style={{ color: "var(--ink-600)" }}>No combatants projected.</div>}
+      </div>
+    </div>
+  );
+}
+
+function SlotPip({ label, slot }) {
+  const available = Boolean(slot?.available);
+  return (
+    <span title={slot?.reason || "ready"} style={{
+      fontFamily: "var(--f-display)",
+      fontSize: 8,
+      letterSpacing: "0.1em",
+      textTransform: "uppercase",
+      padding: "3px 5px",
+      textAlign: "center",
+      color: available ? "var(--ink-900)" : "var(--ink-600)",
+      background: available ? "rgba(95,75,45,0.38)" : "rgba(0,0,0,0.18)",
+      boxShadow: available ? "inset 0 0 0 1px var(--b-500)" : "inset 0 0 0 1px rgba(80,50,20,0.35)",
+      textDecoration: available ? "none" : "line-through",
+    }}>{label}</span>
+  );
+}
+
+function CueChip({ cue }) {
+  const danger = cue?.severity === "danger";
+  return (
+    <span title={cue?.text || cue?.label || ""} style={{
+      fontFamily: "var(--f-mono)",
+      fontSize: 9,
+      color: danger ? "var(--crimson)" : "var(--ink-700)",
+      padding: "2px 5px",
+      background: danger ? "rgba(166,39,39,0.1)" : "rgba(176,141,87,0.12)",
+      boxShadow: danger ? "inset 0 0 0 1px rgba(166,39,39,0.28)" : "inset 0 0 0 1px rgba(140,100,60,0.18)",
+      maxWidth: 170,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    }}>{cue?.label || cue?.type}</span>
   );
 }
 
@@ -544,6 +655,7 @@ Object.assign(window, {
   ScreenCombat,
   CombatMap,
   CombatToken,
+  CommandCenterPanel,
   ActionTile,
   ApBadge,
   BattleLogLine,

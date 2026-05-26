@@ -1329,6 +1329,192 @@ def _combat_battle_log(raw_events: list[dict] | None) -> list[dict]:
     return out
 
 
+def _combat_slot(available: object, spent_reason: str) -> dict:
+    available_bool = bool(available)
+    return {
+        "available": available_bool,
+        "spent": not available_bool,
+        "reason": "" if available_bool else spent_reason,
+    }
+
+
+def _combat_death_save_text(death_saves: object) -> str:
+    if not isinstance(death_saves, dict):
+        return "0 success / 0 fail"
+    successes = _num(death_saves.get("successes"))
+    failures = _num(death_saves.get("failures"))
+    return f"{int(successes or 0)} success / {int(failures or 0)} fail"
+
+
+def _combat_character_cues(ch: dict, token: dict) -> list[dict]:
+    cues: list[dict] = []
+    cid = _text(token.get("id"))
+    name = _text(token.get("name"), cid or "Combatant")
+    concentration = _text(ch.get("concentration"))
+    if concentration:
+        cues.append({
+            "type": "concentration",
+            "severity": "info",
+            "character_id": cid,
+            "label": f"{name} concentrating",
+            "text": concentration,
+        })
+    hp = _num(ch.get("current_hp"))
+    dead = bool(ch.get("dead"))
+    stable = bool(ch.get("stable"))
+    if dead:
+        cues.append({
+            "type": "death",
+            "severity": "danger",
+            "character_id": cid,
+            "label": f"{name} dead",
+            "text": "dead",
+        })
+    elif hp == 0 and not stable:
+        cues.append({
+            "type": "death_saves",
+            "severity": "danger",
+            "character_id": cid,
+            "label": f"{name} dying",
+            "text": _combat_death_save_text(ch.get("death_saves")),
+        })
+    elif hp == 0 and stable:
+        cues.append({
+            "type": "stable",
+            "severity": "warning",
+            "character_id": cid,
+            "label": f"{name} stable",
+            "text": "0 HP, stable",
+        })
+    return cues
+
+
+def _combat_multiattack_count(snapshot: dict, active_id: str) -> int:
+    chars = snapshot.get("characters") if isinstance(snapshot, dict) else {}
+    ch = chars.get(active_id) if isinstance(chars, dict) else None
+    if isinstance(ch, dict):
+        for key in ("multiattack", "attacks_per_turn"):
+            value = _num(ch.get(key))
+            if value is not None and value > 1:
+                return int(value)
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    turn_brief = combat.get("turn_brief") if isinstance(combat, dict) else None
+    if not isinstance(turn_brief, dict):
+        turn_brief = snapshot.get("turn_brief") if isinstance(snapshot, dict) else None
+    attack = turn_brief.get("attack") if isinstance(turn_brief, dict) else None
+    if isinstance(attack, dict):
+        value = _num(attack.get("attacks_per_turn"))
+        if value is not None and value > 1:
+            return int(value)
+    return 0
+
+
+def _combat_command_center(
+    snapshot: dict,
+    *,
+    tokens: list[dict],
+    initiative: list[dict],
+    combat_view: dict,
+    action_model: dict,
+    battle_log: list[dict],
+) -> dict:
+    """Browser-safe command-center read model derived from engine-owned combat data."""
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else {}
+    combat = combat if isinstance(combat, dict) else {}
+    chars = snapshot.get("characters") if isinstance(snapshot, dict) else {}
+    chars = chars if isinstance(chars, dict) else {}
+    active = next((t for t in tokens if t.get("isCurrent")), None)
+    actor_id = _text(active.get("id")) if isinstance(active, dict) else ""
+    actor_ch = chars.get(actor_id) if actor_id else {}
+    actor_ch = actor_ch if isinstance(actor_ch, dict) else {}
+    actions = combat_view.get("actions") if isinstance(combat_view.get("actions"), dict) else {}
+    action_model_combat = action_model.get("combat") if isinstance(action_model.get("combat"), dict) else {}
+    actor_team = _text(active.get("team")) if isinstance(active, dict) else ""
+
+    active_actor = {}
+    if isinstance(active, dict):
+        active_actor = {
+            "id": actor_id,
+            "name": _text(active.get("name"), actor_id),
+            "team": actor_team,
+            "initiative": active.get("initiative"),
+            "zone": _text(active.get("zone")),
+            "conditions": [str(c) for c in active.get("conditions", []) if str(c)]
+            if isinstance(active.get("conditions"), list)
+            else [],
+            "cues": _combat_character_cues(actor_ch, active),
+        }
+        concentration = _text(actor_ch.get("concentration"))
+        if concentration:
+            active_actor["concentration"] = concentration
+
+    made = _num(combat.get("action_attacks_made")) or 0
+    surge = _num(combat.get("surge_actions")) or 0
+    extra = _num(actor_ch.get("extra_attacks")) or 0
+    multiattack = _combat_multiattack_count(snapshot, actor_id)
+    per_action = max(int(extra) + 1 if actor_id else 0, multiattack)
+    allowed = per_action * (1 + max(0, int(surge))) if actor_id else 0
+    remaining = max(0, allowed - int(made))
+
+    cues: list[dict] = []
+    targetability: list[dict] = []
+    action_available = bool(actions.get("action_available")) and bool(action_model_combat.get("is_current_turn", True))
+    for token in tokens:
+        if not isinstance(token, dict):
+            continue
+        tid = _text(token.get("id"))
+        ch = chars.get(tid) if tid else {}
+        ch = ch if isinstance(ch, dict) else {}
+        token_cues = _combat_character_cues(ch, token)
+        cues.extend(token_cues)
+        reason = ""
+        targetable = False
+        if tid == actor_id:
+            reason = "self"
+        elif _text(token.get("team")) == actor_team:
+            reason = "ally"
+        elif bool(ch.get("dead")):
+            reason = "dead"
+        elif not action_available:
+            reason = "action unavailable"
+        else:
+            targetable = True
+        targetability.append({
+            "id": tid,
+            "name": _text(token.get("name"), tid),
+            "team": _text(token.get("team")),
+            "zone": _text(token.get("zone")),
+            "health": _text(token.get("health"), "unknown"),
+            "conditions": [str(c) for c in token.get("conditions", []) if str(c)]
+            if isinstance(token.get("conditions"), list)
+            else [],
+            "targetable": targetable,
+            "reason": reason,
+            "cues": token_cues,
+        })
+
+    return {
+        "activeActor": active_actor,
+        "initiativeLadder": initiative,
+        "slots": {
+            "action": _combat_slot(actions.get("action_available"), "action spent"),
+            "bonusAction": _combat_slot(actions.get("bonus_available"), "bonus action spent"),
+            "reaction": _combat_slot(actions.get("reaction_available"), "reaction spent"),
+        },
+        "attackBudget": {
+            "made": int(made),
+            "allowed": int(allowed),
+            "remaining": int(remaining),
+            "extraAttacks": int(extra),
+            "surgeActions": int(surge),
+            "multiattack": int(multiattack),
+        },
+        "targetability": targetability,
+        "cues": cues,
+        "eventCards": battle_log,
+    }
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -1347,6 +1533,14 @@ def build_combat_surface(
     action_bar = _combat_action_bar(action_model, combat_active)
     can_act = bool(live and is_live_view and combat_active)
     battle_log = _combat_battle_log(recent_events)
+    command_center = _combat_command_center(
+        snapshot,
+        tokens=tokens,
+        initiative=initiative,
+        combat_view=combat_view,
+        action_model=action_model,
+        battle_log=battle_log,
+    )
     summary = _text(snapshot.get("summary"))
     if not summary:
         summary = (
@@ -1374,6 +1568,7 @@ def build_combat_surface(
         "zones": zones,
         "selectedTokenId": selected,
         "actionEconomy": (combat_view.get("actions") if combat_active else {}) or {},
+        "commandCenter": command_center,
         "actionBar": action_bar,
         "battleLog": battle_log,
         "live": bool(live),

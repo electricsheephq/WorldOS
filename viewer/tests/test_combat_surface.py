@@ -141,6 +141,128 @@ class CombatSurfaceTests(unittest.TestCase):
             self.assertNotIn(forbidden, encoded)
         self.assert_no_private_keys(surface)
 
+    def test_combat_command_center_projects_turn_cues_and_targetability(self):
+        snapshot = {
+            "id": "camp_center",
+            "title": "Command Center Fight",
+            "current_location_id": "crypt",
+            "locations": {"crypt": {"name": "Moon Crypt"}},
+            "party": ["hero", "cleric"],
+            "characters": {
+                "hero": {
+                    "id": "hero",
+                    "name": "Renn",
+                    "kind": "player",
+                    "current_hp": 14,
+                    "max_hp": 30,
+                    "armor_class": 16,
+                    "extra_attacks": 1,
+                    "concentration": "Bless",
+                    "conditions": ["blessed"],
+                    "notes": "private tactical note",
+                },
+                "cleric": {
+                    "id": "cleric",
+                    "name": "Vela",
+                    "kind": "companion",
+                    "current_hp": 0,
+                    "max_hp": 22,
+                    "armor_class": 18,
+                    "conditions": ["unconscious"],
+                    "death_saves": {"successes": 1, "failures": 2},
+                },
+                "gob": {
+                    "id": "gob",
+                    "name": "Goblin Sapper",
+                    "kind": "monster",
+                    "current_hp": 3,
+                    "max_hp": 7,
+                    "armor_class": 13,
+                    "conditions": ["prone"],
+                    "notes": "private fuse",
+                },
+            },
+            "combat": {
+                "active": True,
+                "round": 3,
+                "turn_index": 0,
+                "action_used": False,
+                "bonus_action_used": True,
+                "action_attacks_made": 1,
+                "surge_actions": 0,
+                "zones": [{"name": "altar"}, {"name": "stairs", "adjacent": ["altar"]}],
+                "order": [
+                    {"character_id": "hero", "initiative": 20, "reaction_used": False, "zone": "altar"},
+                    {"character_id": "cleric", "initiative": 15, "reaction_used": True, "zone": "altar"},
+                    {"character_id": "gob", "initiative": 9, "reaction_used": False, "zone": "stairs"},
+                ],
+            },
+        }
+        recent_events = [
+            {
+                "kind": "combat",
+                "text": "Renn presses the attack.",
+                "payload": {
+                    "schema": "clawdnd.combat_event.v1",
+                    "event": "attack",
+                    "actor": {"id": "hero", "name": "Renn", "notes": "private actor note"},
+                    "target": {"id": "gob", "name": "Goblin Sapper", "notes": "private target note"},
+                    "roll": {"natural": 14, "total": 21},
+                    "damage": {"total": 5, "type": "piercing"},
+                },
+            }
+        ]
+
+        surface = server.build_combat_surface(
+            snapshot,
+            campaign_id="camp_center",
+            live=True,
+            is_live_view=True,
+            recent_events=recent_events,
+        )
+
+        center = surface["commandCenter"]
+        self.assertEqual(center["activeActor"]["id"], "hero")
+        self.assertEqual(center["activeActor"]["concentration"], "Bless")
+        self.assertEqual(center["slots"]["action"], {"available": True, "spent": False, "reason": ""})
+        self.assertEqual(center["slots"]["bonusAction"]["reason"], "bonus action spent")
+        self.assertEqual(center["slots"]["reaction"], {"available": True, "spent": False, "reason": ""})
+        self.assertEqual(
+            center["attackBudget"],
+            {
+                "made": 1,
+                "allowed": 2,
+                "remaining": 1,
+                "extraAttacks": 1,
+                "surgeActions": 0,
+                "multiattack": 0,
+            },
+        )
+        by_id = {row["id"]: row for row in center["targetability"]}
+        self.assertEqual(by_id["gob"]["targetable"], True)
+        self.assertEqual(by_id["cleric"]["reason"], "ally")
+        self.assertEqual(by_id["hero"]["reason"], "self")
+        self.assertIn(
+            {"type": "concentration", "severity": "info", "character_id": "hero", "label": "Renn concentrating", "text": "Bless"},
+            center["cues"],
+        )
+        self.assertIn(
+            {
+                "type": "death_saves",
+                "severity": "danger",
+                "character_id": "cleric",
+                "label": "Vela dying",
+                "text": "1 success / 2 fail",
+            },
+            center["cues"],
+        )
+        self.assertEqual(center["eventCards"][0]["event"], "attack")
+
+        encoded = json.dumps(center)
+        self.assertNotIn("private", encoded)
+        self.assertNotIn("notes", encoded)
+        self.assert_no_private_keys(center)
+
     def test_combat_surface_fails_closed_when_not_live_or_not_current_turn(self):
         snapshot = {
             "party": ["hero"],
