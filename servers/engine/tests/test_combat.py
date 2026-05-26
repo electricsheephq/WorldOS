@@ -976,3 +976,192 @@ def test_next_turn_brief_absent_when_combat_not_active(tmp_path, monkeypatch):
     import pytest
     with pytest.raises(ValueError):
         server.next_turn(cid)  # must raise when combat is not active
+
+
+# =========================================================================
+# Issue #180: monster Multiattack enforcement
+# =========================================================================
+# These tests verify that the engine now ENFORCES the stat-block Multiattack
+# count for monsters, while leaving PC Extra-Attack / Action-Surge completely
+# unchanged.
+
+
+# --- pure combat.py unit tests (no I/O, no campaign) ---
+
+
+@pytest.mark.parametrize(
+    "extra,surge,multiattack,expected",
+    [
+        (0, 0, 0, 1),   # unchanged: vanilla PC with no extras
+        (0, 0, 2, 2),   # Multiattack=2, no Extra Attack -> 2
+        (0, 0, 3, 3),   # Multiattack=3 (e.g. vampire)
+        (1, 0, 0, 2),   # Extra Attack, no Multiattack -> unchanged
+        (1, 0, 2, 2),   # Extra Attack=1 AND Multiattack=2 -> max(2,2)=2 (no double-count)
+        (2, 0, 2, 3),   # Extra Attack=2 (ceil=3) beats Multiattack=2 -> 3
+        (0, 1, 2, 4),   # Multiattack=2 + Action Surge -> 2*(1+1)=4
+        (0, 1, 0, 2),   # unchanged: vanilla + Action Surge
+    ],
+)
+def test_attacks_allowed_with_multiattack(extra, surge, multiattack, expected):
+    """attacks_allowed respects multiattack ceiling; multiattack=0 is byte-identical to old behaviour."""
+    assert combat.attacks_allowed(extra, surge, multiattack) == expected
+
+
+def test_check_action_attack_multiattack_rejection_message():
+    """When the Multiattack budget is exhausted the rejection names Multiattack, not Extra Attack."""
+    ok, reason = combat.check_action_attack(
+        is_current=True, attacks_made=2, extra_attacks=0, surge_actions=0, multiattack=2
+    )
+    assert ok is False
+    assert "Multiattack" in reason
+    assert "2" in reason
+
+
+def test_check_action_attack_multiattack_allows_within_budget():
+    """First two action-attacks are allowed for a Multiattack=2 creature."""
+    ok1, _ = combat.check_action_attack(
+        is_current=True, attacks_made=0, extra_attacks=0, surge_actions=0, multiattack=2
+    )
+    ok2, _ = combat.check_action_attack(
+        is_current=True, attacks_made=1, extra_attacks=0, surge_actions=0, multiattack=2
+    )
+    assert ok1 is True and ok2 is True
+
+
+# --- end-to-end through attack() via spawn_monster ---
+
+
+def test_multiattack_monster_makes_two_attacks_third_rejected(tmp_path, monkeypatch):
+    """A Bandit Captain (Multiattack=2) can make 2 action-attacks in one turn; the 3rd is rejected.
+
+    This is the core regression guard for issue #180: before the fix the 2nd attack
+    was rejected ("one Attack action grants a single attack without the Extra Attack
+    feature"). After the fix, the engine reads the stat-block Multiattack count and
+    allows exactly 2 attacks per turn.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Multiattack Enforcement #180")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    res = server.spawn_monster(cid, "Bandit Captain")
+    captain_id = res["spawned"][0]["id"]
+
+    # Force the Bandit Captain to go first by making its initiative enormous.
+    # We do this by monkeypatching dice.roll to return 20 for d20 rolls so start_combat
+    # initiative rolls are high; then next_turn places it first.
+    # Simpler: start with both, then next_turn until the captain is current.
+    server.start_combat(cid, [captain_id, pc])
+    # Advance turns until the Bandit Captain is current.
+    for _ in range(10):
+        state = server.get_state(cid)
+        if state["current_turn"] == captain_id:
+            break
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == captain_id, (
+        "Could not make Bandit Captain the current combatant — adjust test setup"
+    )
+
+    # First attack must succeed.
+    a1 = server.attack(cid, captain_id, pc, attack_bonus=5, damage_dice="1d6+3")
+    assert a1.get("attacks_made_this_turn") == 1
+    assert a1.get("attacks_allowed_this_turn") == 2, (
+        f"Bandit Captain should be allowed 2 attacks/turn; got {a1.get('attacks_allowed_this_turn')}"
+    )
+
+    # Second attack must also succeed (was blocked before the fix).
+    a2 = server.attack(cid, captain_id, pc, attack_bonus=5, damage_dice="1d6+3")
+    assert a2.get("attacks_made_this_turn") == 2
+
+    # Third attack must be rejected with a Multiattack-specific message.
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="[Mm]ultiattack"):
+        server.attack(cid, captain_id, pc, attack_bonus=5, damage_dice="1d6+3")
+
+
+def test_pc_no_extra_attack_still_capped_at_one(tmp_path, monkeypatch):
+    """A plain PC (no Extra Attack, no Multiattack) is still capped at 1 action-attack per turn.
+
+    Regression guard: the multiattack change must not silently elevate PC attack budgets.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    # Ensure no Extra Attack on this PC.
+    server.update_character(cid, cur, {"extra_attacks": 0})
+
+    server.attack(cid, cur, other, attack_bonus=3, damage_dice="1d6")  # first: ok
+    with _pytest.raises(ValueError, match="already attacked this turn"):
+        server.attack(cid, cur, other, attack_bonus=3, damage_dice="1d6")  # second: rejected
+
+
+def test_pc_extra_attack_still_makes_two(tmp_path, monkeypatch):
+    """A PC with extra_attacks=1 (Extra Attack) makes 2 action-attacks; the 3rd is rejected.
+
+    Regression guard: Extra Attack path unchanged by the Multiattack change.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    server.update_character(cid, cur, {"extra_attacks": 1})
+
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 1st ok
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 2nd ok
+    with _pytest.raises(ValueError, match="no attacks left"):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 3rd rejected
+
+
+def test_action_surge_still_grants_extra_action_for_pc(tmp_path, monkeypatch):
+    """Action Surge still grants a 2nd action's worth of attacks for a PC (unchanged).
+
+    Regression guard: surge path unchanged by the Multiattack change.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    server.set_class_resource(cid, cur, "action_surge", max=1, recharge="short")
+
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 1st ok
+    # Without surge: 2nd is rejected.
+    with _pytest.raises(ValueError):
+        server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    # Spend Action Surge -> 2nd action unlocked.
+    server.use_resource(cid, cur, "action_surge")
+    a2 = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")
+    assert a2.get("attacks_allowed_this_turn") == 2 and a2.get("attacks_made_this_turn") == 2
+
+
+def test_multiattack_zero_path_unchanged(tmp_path, monkeypatch):
+    """A monster without Multiattack (e.g. Wolf) is capped at 1 action-attack (multiattack=0 path).
+
+    Regression guard: the _attacker_multiattack_count fallback returns 0 for
+    non-Multiattack monsters and the cap stays at 1.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid = server.create_campaign("Wolf #180")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    res = server.spawn_monster(cid, "Wolf")
+    wolf_id = res["spawned"][0]["id"]
+
+    server.start_combat(cid, [wolf_id, pc])
+    # Advance until the wolf is current.
+    for _ in range(10):
+        state = server.get_state(cid)
+        if state["current_turn"] == wolf_id:
+            break
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == wolf_id
+
+    server.attack(cid, wolf_id, pc, attack_bonus=4, damage_dice="2d4+2")  # 1st ok
+    # Wolf has no Multiattack -> 2nd is rejected.
+    with _pytest.raises(ValueError, match="already attacked this turn"):
+        server.attack(cid, wolf_id, pc, attack_bonus=4, damage_dice="2d4+2")

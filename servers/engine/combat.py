@@ -79,13 +79,19 @@ def clears_concentration(conditions) -> bool:
 # NOT routed through here — they act off-turn and are gated by reaction_used.
 
 
-def attacks_allowed(extra_attacks: int, surge_actions: int) -> int:
+def attacks_allowed(extra_attacks: int, surge_actions: int, multiattack: int = 0) -> int:
     """How many ATTACK ROLLS the current combatant may make this turn under the
     Attack action(s) available. One Attack action grants ``extra_attacks + 1``
     attacks (a level-1 fighter -> 1, an Extra-Attack fighter -> 2); each Action
     Surge spent this turn (``surge_actions``) grants another whole Attack action,
-    i.e. another ``extra_attacks + 1`` attacks. Clamps negatives to 0."""
-    per_action = max(0, int(extra_attacks)) + 1
+    i.e. another ``extra_attacks + 1`` attacks. Clamps negatives to 0.
+
+    ``multiattack`` (default 0): the number of attacks granted by a monster's
+    Multiattack stat-block entry. When >0 it raises the per-action ceiling to
+    max(extra_attacks+1, multiattack) so a Bandit Captain (multiattack=2,
+    extra_attacks=0) is allowed 2 attacks, not 1. PCs leave multiattack=0 so
+    their behaviour is byte-identical to before."""
+    per_action = max(max(0, int(extra_attacks)) + 1, max(0, int(multiattack)))
     return per_action * (1 + max(0, int(surge_actions)))
 
 
@@ -95,6 +101,7 @@ def check_action_attack(
     attacks_made: int,
     extra_attacks: int,
     surge_actions: int,
+    multiattack: int = 0,
 ) -> tuple[bool, str]:
     """Decide whether a NON-reaction (action) attack by ``is_current`` combatant is
     legal given how many attacks already resolved this turn. Returns
@@ -109,15 +116,25 @@ def check_action_attack(
         attack with no Extra Attack and no Action Surge is rejected (the QA defect:
         two full attacks in one round); a fighter with extra_attacks makes its
         allowed multiple attacks under the one action; a spent Action Surge
-        (surge_actions>0) grants the extra attacks for a 2nd action."""
+        (surge_actions>0) grants the extra attacks for a 2nd action.
+
+    ``multiattack`` (default 0): pass the monster's Multiattack count to raise the
+    per-action ceiling for stat-block Multiattack creatures (see attacks_allowed).
+    Zero leaves PC Extra-Attack / Action-Surge behaviour byte-identical to before."""
     if not is_current:
         return False, (
             "it is not this creature's turn — an attack as your action is only legal "
             "on your own turn (an off-turn melee strike is a reaction/opportunity "
             "attack; track it with use_action(kind='reaction'))"
         )
-    allowed = attacks_allowed(extra_attacks, surge_actions)
+    allowed = attacks_allowed(extra_attacks, surge_actions, multiattack)
     if attacks_made >= allowed:
+        ma = max(0, int(multiattack))
+        if ma > 0:
+            return False, (
+                f"this creature's Multiattack grants {ma} attack(s) per turn; "
+                f"{attacks_made} already made this turn."
+            )
         if surge_actions <= 0 and int(extra_attacks) <= 0:
             return False, (
                 "already attacked this turn — one Attack action grants a single "
