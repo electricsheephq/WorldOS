@@ -4,6 +4,18 @@
    data until the first fetch. The per-hero coin purse comes from the live currency.
    Layout/design unchanged from the prototype. */
 
+/* W2c: item-icon scope helper — lowercase, non-alphanumeric → "-". Used as a fallback
+   when item.id is absent (it is always present in the live surface, but kept for safety). */
+function slug(name) {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/* Resolve the /image scope for an inventory item: prefer the engine id (always present as
+   "{character_id}:{idx}:{name}"); fall back to a slug of the item name. */
+function itemScope(item) {
+  return "item-" + (item.id ? item.id : slug(item.name));
+}
+
 function ScreenInventory({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -108,7 +120,9 @@ function ScreenInventory({ onNavigate, state, setState }) {
               const equipped = hero.equipped.find((e) => e.slot === s.label);
               return (
                 <div key={s.label} style={{ textAlign: "center" }}>
-                  <Placeholder label={equipped ? equipped.glyph : s.label} w="100%" h={44} framed />
+                  {equipped
+                    ? <Img scope={"item-" + slug(equipped.name)} label={equipped.name} w="100%" h={44} framed />
+                    : <Placeholder label={s.label} w="100%" h={44} framed />}
                   <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, marginTop: 2, color: "var(--ink-600)" }}>
                     {s.label}
                   </div>
@@ -291,13 +305,14 @@ function ItemSlot({ item, selected, onClick, onContextMenu }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       transition: "all 120ms",
     }}>
-      <span style={{
-        fontFamily: "var(--f-mono)", fontSize: 8.5,
-        color: "var(--ink-700)",
-        textAlign: "center",
-        padding: 2,
-        lineHeight: 1.15,
-      }}>{item.glyph}</span>
+      <Img
+        scope={itemScope(item)}
+        label={item.name}
+        w={44}
+        h={44}
+        fit="contain"
+        style={{ pointerEvents: "none" }}
+      />
       {item.qty > 1 && (
         <span style={{
           position: "absolute", bottom: 2, right: 4,
@@ -315,7 +330,7 @@ function ItemDetail({ item, hero, toast }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <Placeholder label={item.glyph} w={72} h={72} framed />
+        <Img scope={itemScope(item)} label={item.name} w={72} h={72} framed />
         <div>
           <div className="eyebrow" style={{ color:
             item.type === "rare" ? "var(--royal)" :
@@ -385,4 +400,4 @@ const ITEM_TYPES = {
 
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, ITEM_TYPES, toRoman });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, ITEM_TYPES, toRoman, slug, itemScope });
