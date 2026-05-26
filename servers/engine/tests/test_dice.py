@@ -118,3 +118,22 @@ def test_keep_more_than_rolled_raises():
     except ValueError:
         return
     raise AssertionError("expected ValueError when keeping more dice than rolled")
+
+
+def test_roll_rejects_pathological_dice():
+    # A pathological count/sides must raise (not hang allocating a giant list) — the
+    # `roll` MCP tool is publicly reachable, so this guards against a DoS.
+    for expr in ("100000000d20", "1d100000000"):
+        try:
+            dice.roll(expr)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {expr!r}")
+
+
+def test_legit_rolls_unaffected_by_bounds():
+    # Real D&D rolls stay well under the bounds and are unchanged.
+    assert dice.roll("20d6+5", seed=1).total > 0          # high-level fireball
+    assert 1 <= dice.roll("1d100", seed=1).total <= 100   # percentile die
+    assert 1 <= dice.roll("1d20", seed=1).total <= 20
