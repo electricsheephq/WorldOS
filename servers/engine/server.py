@@ -2019,12 +2019,27 @@ def set_hp(
 
 
 @mcp.tool()
-def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
+def start_combat(
+    campaign_id: str,
+    combatant_ids: list[str],
+    surpriser_ids: list[str] | None = None,
+) -> dict:
     """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
     and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight."""
+    Pass the character ids of everyone in the fight.
+
+    surpriser_ids (optional): ids of combatants who initiated the fight with a
+    surprise attack (an ambush, a betrayal opener, an attack on an unready target).
+    They are placed FIRST in the turn order so they act before initiative would
+    otherwise allow; everyone else follows in normal rolled initiative order.
+    The return carries a ``surprise`` key signalling the opening attack should
+    use advantage=True (the edge is going-first + advantage; the target's AC still
+    applies — no auto-kill). Unknown ids in surpriser_ids are silently skipped.
+    Default [] = today's exact initiative-only behaviour (purely additive).
+    # v2 idea: also apply the 5e "surprised creatures skip round 1" rule."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
+    surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -2035,6 +2050,13 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
             r = dice_mod.roll(f"1d20+{ch.initiative_bonus}")
             rolled.append((cid, r.total, ch.ability_modifier(Ability.DEX)))
         indexed = sorted(enumerate(rolled), key=lambda t: (-t[1][1], -t[1][2], t[0]))
+        # Surprise ordering: surprisers go first (in their relative rolled order),
+        # then non-surprisers in normal rolled initiative order.
+        if surpriser_ids:
+            surpriser_set = set(surpriser_ids)
+            surprise_slots = [item for item in indexed if item[1][0] in surpriser_set]
+            normal_slots = [item for item in indexed if item[1][0] not in surpriser_set]
+            indexed = surprise_slots + normal_slots
         c.combat = Combat(
             active=True,
             round=1,
@@ -2043,6 +2065,20 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
         )
         save_campaign(c)
         view = _combat_view(c)
+        # Surface the surprise edge in the runtime view so the DM resolves the opener
+        # with attack(advantage=True).  Not persisted — old snapshots round-trip cleanly.
+        if surpriser_ids:
+            surpriser_names = [
+                c.characters[sid].name for sid in surpriser_ids if sid in c.characters
+            ]
+            view["surprise"] = {
+                "surprisers": surpriser_ids,
+                "surpriser_names": surpriser_names,
+                "note": (
+                    "opening attack has advantage; the target's AC still applies — "
+                    "call attack(advantage=True) for the opener. NO auto-kill."
+                ),
+            }
         # Reminder: surface anyone with Extra Attack so the DM makes the right number of attacks
         # per turn (QA: a Barbarian-5 with extra_attacks=1 made a single attack). One action =
         # extra_attacks + 1 attack calls; the engine tracks the economy via use_action.

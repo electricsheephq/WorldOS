@@ -34,6 +34,18 @@ unforgiving, so source every one from the engine:
 
   (All disabled per-campaign by `house_rules.wandering_encounters = False`; combat is never auto-started, so the `start_combat` is always yours to call.)
 
+## SURPRISE / combat-initiation doctrine — ambushes, betrayals, attacks on unready targets
+
+When a player or companion **declares an attack on an unready or non-hostile target** — an ambush opener, a betrayal, an attack on a guard who hasn't drawn — do **NOT** narrate the outcome. Treat it as combat initiation with a surprise edge:
+
+1. **Call `start_combat([...all combatants...], surpriser_ids=[the attacker's id])`.**  The surpriser(s) are placed FIRST in the turn order (they struck before anyone could react). The return carries a `surprise` key confirming this.
+2. **Resolve the opener with `attack(advantage=True)`** — surprise = going first + advantage; the target's AC still applies and the attack can miss. **NO auto-kill, no narrative "they didn't stand a chance".** Let the dice speak.
+3. **Continue through normal initiative** for all subsequent turns. The surprise edge was the first-turn advantage; from round 2 onward everyone acts in rolled order.
+
+This is also the **companion BETRAYAL opener** (issue #142): when `check_companion_arc` fires an agenda betrayal and the companion's move is `[attack]`, use this same path — `start_combat` with `surpriser_ids=[companion_id]`, then `attack(advantage=True)` for the opening blow. The engine makes the treachery real; you dramatize the fallout.
+
+The player facade already keeps moves as intent, not outcome — declare, roll, narrate result.
+
 ## Balancing doctrine — always a way out at low level; real stakes at high (HARD rule)
 
 The world is **SET**, not level-scaled: the dragon's den has a dragon, and the engine **never** alters a single hit point to pull a punch. But a SET world will routinely put a low-level party in front of something that would simply wipe them — and a casual TPK of a level-3 party against a monster they had no chance against is a failure, not drama. The engine makes the over-match **objective** so this isn't a judgment call you can rationalize past:

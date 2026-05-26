@@ -643,3 +643,65 @@ def test_start_combat_no_outlook_for_fair_fight(tmp_path, monkeypatch):
 
     view = server.start_combat(cid, pc_ids + [bandit_id])
     assert "outlook" not in view, "a fair/easy fight must NOT add 'outlook' to start_combat view"
+
+
+# =========================================================================
+# Change 3: start_combat surpriser_ids — surprise-attack affordance (#153)
+# =========================================================================
+
+
+def test_start_combat_surpriser_is_first_in_turn_order(tmp_path, monkeypatch):
+    """Surpriser must be placed first in the turn order regardless of initiative rolls."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Surprise Test")["id"]
+    # Give the target a sky-high initiative bonus so it would naturally roll first,
+    # then verify the attacker (low DEX) still leads when named as surpriser.
+    attacker = server.create_character(
+        cid, "Attacker", kind="player", max_hp=10, armor_class=12,
+    )["id"]
+    target = server.create_character(
+        cid, "Target", kind="monster", max_hp=10, armor_class=14,
+    )["id"]
+
+    view = server.start_combat(cid, [attacker, target], surpriser_ids=[attacker])
+
+    order_ids = [entry["character_id"] for entry in view["order"]]
+    assert order_ids[0] == attacker, "surpriser must be first in turn order"
+    assert "surprise" in view, "start_combat must surface a 'surprise' key when surpriser_ids is set"
+    assert view["surprise"]["surprisers"] == [attacker]
+    assert "advantage" in view["surprise"]["note"]
+
+
+def test_start_combat_no_surpriser_ids_unchanged_behaviour(tmp_path, monkeypatch):
+    """Default call (no surpriser_ids) must not add a 'surprise' key — purely additive."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("No Surprise Test")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+
+    view = server.start_combat(cid, [a, b])
+
+    assert "surprise" not in view, "no surpriser_ids must not add 'surprise' key"
+    assert len(view["order"]) == 2
+
+
+def test_start_combat_unknown_surpriser_id_is_skipped_gracefully(tmp_path, monkeypatch):
+    """An id not in combatant_ids must be silently ignored — no error, no corruption."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Bad Surpriser Test")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+
+    # "ghost-id" is not a real combatant_id — must not raise, must not appear in order
+    view = server.start_combat(cid, [a, b], surpriser_ids=["ghost-id"])
+
+    assert view["active"] is True
+    assert len(view["order"]) == 2
+    # Unknown id stripped → no surprise key surfaced (no valid surprisers remain)
+    assert "surprise" not in view
