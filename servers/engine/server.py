@@ -5581,7 +5581,14 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
     companions that carry an arc. A gate unlocks when the companion's `attitude_value`
     (the approval gauge) reaches its threshold; the sealed agenda fires when its trigger
     holds. Idempotent — a gate/agenda already resolved on a prior call is NOT reported
-    again, so calling every beat is safe."""
+    again, so calling every beat is safe.
+
+    A result may also carry an ADVISORY `betrayal_warning` (Layer 2): when a companion's
+    unfired `attitude_below` agenda sits in the danger band (~ -20..-40 approval), this
+    telegraphs an approaching turn so you can FORESHADOW it — it never fires the agenda
+    or mutates state. A `decision_flag` set by a recorded choice (set_flag /
+    record_decision sets_flag) spikes that betrayal's odds; the warning flags when one is
+    already active."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if companion_id:
@@ -5593,7 +5600,12 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
             if ch.arc is None:
                 continue
             res = companion_arc.evaluate(ch, c)
-            if res["newly_unlocked"] or res["agenda_fired"] or res.get("companion_quest_unlocks"):
+            if (
+                res["newly_unlocked"]
+                or res["agenda_fired"]
+                or res.get("companion_quest_unlocks")
+                or res.get("betrayal_warning")
+            ):
                 results.append({"companion_id": ch.id, "name": ch.name, **res})
         save_campaign(c)
         return {"results": results}
@@ -6062,11 +6074,21 @@ def record_decision(
     chosen: str = "",
     rationale: str = "",
     actor_ids: Optional[list] = None,
+    sets_flag: str = "",
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
     `summary` (the decision), `options` (what was on the table), `chosen`, why
-    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id."""
+    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+
+    `sets_flag` (optional, Quest & Arc engine Layer 2) ties this CHOICE to a CONTENT-
+    defined campaign flag it raises — the one-step path for the owner's model ("let the
+    farmer's daughter die → the knight-companion turns on you"). When set, the named flag
+    is flipped True in `Campaign.flags` (same store as `set_flag`), which ESCALATES any
+    `attitude_below` companion agenda whose `decision_flag` matches (the betrayal chance
+    spikes). The flag NAME is yours (e.g. "let_daughter_die", "took_bribe") — never
+    engine-coded. Equivalent to a `set_flag` call alongside the record; omit it (or use
+    plain `set_flag`) when no agenda is gated on the choice. Returns the flag in `flag`."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         d = Decision(
@@ -6078,8 +6100,14 @@ def record_decision(
             actor_ids=list(actor_ids or []),
         )
         c.decisions.append(d)
+        flag = sets_flag.strip()
+        if flag:
+            c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
         save_campaign(c)
-        return {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
+        out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
+        if flag:
+            out["flag"] = flag
+        return out
 
 
 @mcp.tool()
