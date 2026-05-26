@@ -16,6 +16,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
   const factions = (Array.isArray(surface?.factions) && surface.factions.length) ? surface.factions : FACTIONS;
   const npcs = (Array.isArray(surface?.npcs) && surface.npcs.length) ? surface.npcs
     : (surface ? [] : NPCS);
+  const campBeats = surface?.campBeats || null;
   const [selectedFactionId, setSelectedFactionId] = React.useState("");
   const [selectedNPCId, setSelectedNPCId] = React.useState("");
   const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || FACTIONS[0];
@@ -127,7 +128,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
           </div>
 
           <div style={{ overflow: "auto" }}>
-            {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} /> : <div className="body-sm muted">No acquaintance selected.</div>}
+            {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} campBeats={campBeats} /> : <div className="body-sm muted">No acquaintance selected.</div>}
           </div>
         </div>
       </Panel>
@@ -272,7 +273,7 @@ function BetrayalWarning({ w }) {
   );
 }
 
-function NPCDetail({ n, onNavigate }) {
+function NPCDetail({ n, onNavigate, campBeats }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
@@ -331,6 +332,7 @@ function NPCDetail({ n, onNavigate }) {
               ))}
             </div>
           )}
+          <CampBeatLedger npcId={n.id} campBeats={campBeats} />
         </>
       )}
 
@@ -375,6 +377,42 @@ function NPCDetail({ n, onNavigate }) {
         <BrassButton size="sm" tone="ghost">Send word</BrassButton>
       </div>
     </div>
+  );
+}
+
+function CampBeatLedger({ npcId, campBeats }) {
+  const recent = Array.isArray(campBeats?.recent)
+    ? campBeats.recent.filter((beat) => (beat.participants || []).some((p) => p.id === npcId)).slice(0, 3)
+    : [];
+  if (!campBeats) return null;
+  return (
+    <>
+      <Divider />
+      <div className="eyebrow" style={{ marginBottom: 4 }}>Camp</div>
+      <div className="body-sm muted" style={{ marginBottom: 6 }}>
+        {campBeats.summary?.records || 0} recorded · solo {campBeats.summary?.solo_cooldown_days || 0}d · pair {campBeats.summary?.pair_cooldown_days || 0}d
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {recent.map((beat) => (
+          <div key={beat.id} style={{
+            padding: "8px 10px",
+            background: "rgba(176,141,87,0.06)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span className="body-sm" style={{ color: "var(--ink-800)" }}>{beat.note || beat.kind}</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 9, color: "var(--ink-600)", whiteSpace: "nowrap" }}>
+                day {beat.day}
+              </span>
+            </div>
+            <div className="hand muted" style={{ fontSize: 11, marginTop: 3 }}>
+              {beat.cooldown?.remaining_days > 0 ? `ready day ${beat.cooldown.ready_day}` : "ready now"}
+            </div>
+          </div>
+        ))}
+        {!recent.length && <div className="body-sm muted">No camp beats recorded for them yet.</div>}
+      </div>
+    </>
   );
 }
 

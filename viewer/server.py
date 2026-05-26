@@ -2933,6 +2933,55 @@ def _relations_companion_arcs(snapshot: dict) -> list[dict]:
     return out
 
 
+def _relations_camp_beats(snapshot: dict) -> dict:
+    """Project camp-beat history/cooldowns without asking the viewer to schedule or
+    record anything. `record_camp_beat` remains the only engine write lane."""
+    state = snapshot.get("camp_beats") if isinstance(snapshot.get("camp_beats"), dict) else {}
+    records = state.get("records") if isinstance(state.get("records"), list) else []
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    day = int(_num(snapshot.get("day")) or 0)
+    solo_days = int(_num(state.get("solo_cooldown_days")) or 2)
+    pair_days = int(_num(state.get("pair_cooldown_days")) or 3)
+    max_records = int(_num(state.get("max_records")) or 200)
+    recent: list[dict] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        companion_ids = [str(cid) for cid in (record.get("companion_ids") or []) if str(cid)]
+        participants = []
+        for cid in companion_ids:
+            ch = chars.get(cid) if isinstance(chars.get(cid), dict) else {}
+            participants.append({"id": cid, "name": _text(ch.get("name"), cid)})
+        kind = _text(record.get("kind"), "solo")
+        cooldown_days = pair_days if kind == "pair_banter" else solo_days
+        record_day = int(_num(record.get("day")) or 0)
+        ready_day = record_day + cooldown_days if record_day else 0
+        recent.append({
+            "id": _text(record.get("id")),
+            "day": record_day,
+            "kind": kind,
+            "participants": participants,
+            "tags": [str(t) for t in (record.get("tags") or []) if str(t)] if isinstance(record.get("tags"), list) else [],
+            "resolved": bool(record.get("resolved")),
+            "note": _text(record.get("note")),
+            "cooldown": {
+                "days": cooldown_days,
+                "ready_day": ready_day,
+                "remaining_days": max(0, ready_day - day) if day and ready_day else 0,
+            },
+        })
+    recent.sort(key=lambda row: (row.get("day") or 0, row.get("id") or ""), reverse=True)
+    return {
+        "summary": {
+            "records": len(records),
+            "solo_cooldown_days": solo_days,
+            "pair_cooldown_days": pair_days,
+            "max_records": max_records,
+        },
+        "recent": recent[:8],
+    }
+
+
 def build_relations_surface(
     snapshot: dict,
     *,
@@ -2950,6 +2999,7 @@ def build_relations_surface(
         "factions": _relations_factions(snapshot),
         "npcs": _relations_npcs(snapshot),
         "companionArcs": _relations_companion_arcs(snapshot),
+        "campBeats": _relations_camp_beats(snapshot),
         "live": bool(live),
         "is_live_view": bool(is_live_view),
         "can_act": bool(live and is_live_view),

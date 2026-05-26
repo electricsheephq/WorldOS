@@ -105,6 +105,24 @@ _SNAPSHOT = {
                 "stages": [{"id": "s1", "title": "Find the score", "status": "active", "note": "in the cellar"},
                            {"id": "s2", "title": "Sing it once", "status": "locked"}]},
     },
+    "camp_beats": {
+        "solo_cooldown_days": 2,
+        "pair_cooldown_days": 3,
+        "max_records": 200,
+        "records": [
+            {
+                "id": "camp:solo:mira:wry",
+                "day": 11,
+                "companion_ids": ["mira"],
+                "kind": "solo",
+                "tags": ["wry"],
+                "resolved": True,
+                "note": "Mira asked Cassian why the sealed gate felt familiar.",
+                "cooldown_key": "solo:mira:wry",
+                "pair_key": "",
+            }
+        ],
+    },
 }
 
 
@@ -408,6 +426,14 @@ class ReadModelSurfaceTests(unittest.TestCase):
         arcs = {a["id"]: a for a in surface["companionArcs"]}
         self.assertEqual(arcs["a1"]["companion"], "Mira of the Inkstain")
         self.assertEqual([s["status"] for s in arcs["a1"]["stages"]], ["active", "locked"])
+
+        camp = surface["campBeats"]
+        self.assertEqual(camp["summary"]["records"], 1)
+        self.assertEqual(camp["summary"]["solo_cooldown_days"], 2)
+        self.assertEqual(camp["summary"]["pair_cooldown_days"], 3)
+        self.assertEqual(camp["recent"][0]["participants"], [{"id": "mira", "name": "Mira of the Inkstain"}])
+        self.assertEqual(camp["recent"][0]["cooldown"], {"days": 2, "ready_day": 13, "remaining_days": 1})
+        self.assertEqual(camp["recent"][0]["note"], "Mira asked Cassian why the sealed gate felt familiar.")
         self.assert_no_private_keys(surface)
         # baseline companion (no arc) carries no betrayal warning
         self.assertIsNone(npcs["mira"]["betrayalWarning"])
