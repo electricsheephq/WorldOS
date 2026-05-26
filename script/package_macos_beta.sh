@@ -11,28 +11,32 @@ set -euo pipefail
 DEFAULT_VERSION="0.3.0"
 DEFAULT_BUILD="2026052601"
 DEFAULT_CHANNEL="local-beta"
+DEFAULT_PRERELEASE="beta.1"
 
 APP_NAME="ClawDnD"
 EXECUTABLE_NAME="ClawDnDApp"
 BUNDLE_ID="dev.clawdnd.app"
 SIGNING_IDENTITY="Developer ID Application: Andrew Ryan (TC6MS3T6NN)"
 
-OUTPUT_ROOT="/Volumes/LEXAR/Codex/clawdnd-beta-channel"
+OUTPUT_ROOT="${BETA_OUTPUT_DIR:-/Volumes/LEXAR/Codex/clawdnd-beta-channel}"
 SECRETS_DIR="/Volumes/LEXAR/Codex/clawdnd-release-secrets"
 PRIVATE_KEY_FILE="${SECRETS_DIR}/sparkle-ed25519-private-key.base64"
 
 usage() {
   cat <<'USAGE'
-Usage: script/package_macos_beta.sh [--version VERSION] [--build BUILD] [--channel CHANNEL]
+Usage: script/package_macos_beta.sh [--version VERSION] [--build BUILD] [--channel CHANNEL] [--prerelease SUFFIX]
 
 Defaults:
   --version  0.3.0
   --build    2026052601
   --channel  local-beta
+  --prerelease beta.1
 
 Environment:
+  BETA_OUTPUT_DIR               Output directory for the local beta channel.
+                                Defaults to /Volumes/LEXAR/Codex/clawdnd-beta-channel
   CLAWDND_FEED_URL              Sparkle feed URL written into Info.plist.
-                                Defaults to file:///Volumes/LEXAR/Codex/clawdnd-beta-channel/appcast.xml
+                                Defaults to file://${BETA_OUTPUT_DIR:-/Volumes/LEXAR/Codex/clawdnd-beta-channel}/appcast.xml
   CLAWDND_DOWNLOAD_URL_PREFIX   Optional URL prefix passed to Sparkle generate_appcast.
 USAGE
 }
@@ -245,6 +249,7 @@ main() {
   local version="$DEFAULT_VERSION"
   local build="$DEFAULT_BUILD"
   local channel="$DEFAULT_CHANNEL"
+  local prerelease="${PRERELEASE:-$DEFAULT_PRERELEASE}"
 
   while (($#)); do
     case "$1" in
@@ -261,6 +266,11 @@ main() {
       --channel)
         [[ $# -ge 2 ]] || fail "--channel requires a value"
         channel="$2"
+        shift 2
+        ;;
+      --prerelease)
+        [[ $# -ge 2 ]] || fail "--prerelease requires a value"
+        prerelease="$2"
         shift 2
         ;;
       -h|--help)
@@ -281,6 +291,8 @@ main() {
   require_command otool
   require_command shasum
   require_command spctl
+  prerelease="$(printf '%s' "$prerelease" | tr -d '[:space:]')"
+  [[ -n "$prerelease" ]] || fail "pre-release suffix must not be empty"
 
   local script_dir repo_root package_dir public_key_file feed_url
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -313,7 +325,7 @@ main() {
   staging_dir="${OUTPUT_ROOT}/staging"
   app_path="${staging_dir}/${APP_NAME}.app"
   channel_app_path="${OUTPUT_ROOT}/${APP_NAME}.app"
-  artifact_stem="${APP_NAME}-${version}-beta.1"
+  artifact_stem="${APP_NAME}-${version}-${prerelease}"
   zip_path="${OUTPUT_ROOT}/${artifact_stem}.zip"
   dmg_path="${OUTPUT_ROOT}/${artifact_stem}.dmg"
   dmg_src="${staging_dir}/dmg"

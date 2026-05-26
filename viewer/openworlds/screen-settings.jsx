@@ -225,6 +225,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
   const providers = Array.isArray(nativeState?.providers) ? nativeState.providers : [];
   const dependencies = Array.isArray(nativeState?.dependencies) ? nativeState.dependencies : [];
   const bridgeReady = Boolean(nativeState?.bridge);
+  const hasNativeBridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
 
   const nativeAction = async (type, payload = {}) => {
     if (!window.OpenWorldsNative?.hasBridge?.()) {
@@ -307,7 +308,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
           <BrassButton
             size="sm"
             onClick={() => nativeAction("checkForUpdates")}
-            disabled={!bridgeReady || !updater.canCheckForUpdates}
+            disabled={!bridgeReady || !hasNativeBridge || !updater.canCheckForUpdates}
           >
             Check for Updates
           </BrassButton>

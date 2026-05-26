@@ -9,12 +9,17 @@ final class UpdaterService: ObservableObject {
     private let updaterController: SPUStandardUpdaterController?
 
     init() {
-        if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String == nil {
+        let feedURL = (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let publicKey = (Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if feedURL.isEmpty {
             updaterController = nil
-            lastError = "Sparkle feed URL is missing from Info.plist."
-        } else if Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String == nil {
+            lastError = "Sparkle feed URL is missing or empty in Info.plist."
+        } else if publicKey.isEmpty {
             updaterController = nil
-            lastError = "Sparkle public key is missing from Info.plist."
+            lastError = "Sparkle public key is missing or empty in Info.plist."
         } else {
             updaterController = SPUStandardUpdaterController(
                 startingUpdater: true,

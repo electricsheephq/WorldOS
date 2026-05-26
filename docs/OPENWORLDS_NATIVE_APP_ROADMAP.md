@@ -68,8 +68,12 @@ Every OpenWorlds screen should expose one of these labels:
 
 ## Sparkle Update Lane
 
-Sparkle is the beta distribution lane for #134. The local beta channel writes to
-`/Volumes/LEXAR/Codex/clawdnd-beta-channel` and uses:
+Sparkle is the beta distribution lane for #134. Maintainers currently use a
+Lexar-backed local channel at `/Volumes/LEXAR/Codex/clawdnd-beta-channel`.
+Contributors can use a different local channel by setting `BETA_OUTPUT_DIR` and,
+when needed, `CLAWDND_FEED_URL` before running the packaging script.
+
+Local maintainer setup:
 
 - app bundle: `/Volumes/LEXAR/Codex/clawdnd-beta-channel/ClawDnD.app`
 - update feed: `file:///Volumes/LEXAR/Codex/clawdnd-beta-channel/appcast.xml`
@@ -77,6 +81,14 @@ Sparkle is the beta distribution lane for #134. The local beta channel writes to
 - bundle id: `dev.clawdnd.app`
 - version/build: `0.3.0` / `2026052601` for `0.3.0-beta.1`
 - signing identity: `Developer ID Application: Andrew Ryan (TC6MS3T6NN)`
+
+Contributor override example:
+
+```bash
+BETA_OUTPUT_DIR="$HOME/ClawDnD-beta-channel" \
+CLAWDND_FEED_URL="file://$HOME/ClawDnD-beta-channel/appcast.xml" \
+./script/package_macos_beta.sh --version 0.3.0 --build 2026052601 --channel local-beta
+```
 
 The Sparkle private key lives only under
 `/Volumes/LEXAR/Codex/clawdnd-release-secrets/`. The repo stores only the public
@@ -132,6 +144,28 @@ Supported request types:
 - `checkForUpdates`
 - `windowCommand`
 - `openFallbackDashboard`
+
+Update and window request payloads:
+
+```json
+{ "type": "updaterStatus", "payload": {} }
+```
+
+Returns `{ "updater": { "version": "0.3.0", "build": "2026052601", "feedURL": "...", "channel": "local-beta", "canCheckForUpdates": true, "status": "ready", "lastError": "" } }`.
+
+```json
+{ "type": "checkForUpdates", "payload": {} }
+```
+
+Triggers Sparkle's user-facing update check and returns the same updater status
+shape.
+
+```json
+{ "type": "windowCommand", "payload": { "command": "close" } }
+```
+
+`command` must be one of `close`, `minimize`, or `zoom`; the native reply
+includes `{ "command": "...", "performed": true }`.
 
 Native replies:
 
