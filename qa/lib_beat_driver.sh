@@ -275,3 +275,37 @@ PY
 )"
   [ -n "$out" ] && printf '%s' "$out"
 }
+
+# Event advisory (Quest & Arc engine, Layer 3): at the START of a beat, surface the first-class
+# stumble-into EVENTS whose contract-safe trigger holds NOW (a set flag, a faction's reputation
+# reaching a level, a reached day — never fiction), so the DM is REMINDED to STAGE the available
+# decisional instead of relying on reach-for (the same dark-surface gap the Director closed for
+# add_quest before #154). MIRRORS clawdnd_director_advisory exactly: read-only (present_events
+# never mutates), echoes a short EVENT block for the DM beat prompt, or NOTHING when no Event is
+# available / no snapshot yet. Non-fatal: a transient uv error -> empty (the next beat re-reads).
+clawdnd_event_advisory() {
+  local root="$1" state_dir="$2" snap camp out
+  snap="$(clawdnd_snapshot_path "$state_dir")"
+  [ -n "$snap" ] || return 0
+  camp="$(basename "$(dirname "$snap")")"
+  out="$(CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
+import sys
+import server
+try:
+    r = server.present_events(sys.argv[1])
+    evs = (r or {}).get("events") or []
+    if evs:
+        print("EVENT AVAILABLE — a stumble-into decisional has arrived (STAGE the top one IN-CHARACTER this beat; lay out its options via the parley surface, free-form always allowed; resolve the pick with resolve_event):")
+        for ev in evs[:2]:
+            prompt = (ev.get("prompt") or "").strip()
+            labels = ", ".join((o.get("label") or "").strip() for o in (ev.get("options") or []) if (o.get("label") or "").strip())
+            line = f"- {ev.get('id')}: {prompt}" if prompt else f"- {ev.get('id')}"
+            if labels:
+                line += f"  [options: {labels}]"
+            print(line)
+except Exception:
+    pass
+PY
+)"
+  [ -n "$out" ] && printf '%s' "$out"
+}

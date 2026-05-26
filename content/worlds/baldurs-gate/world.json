@@ -57,6 +57,38 @@
     {"id": "fac-harpers", "name": "The Harpers", "description": "The covert network that fights tyranny and unchecked power — battered from the Absolute war but watching the vacuum closely. Idealists with knives.", "reputation": 1},
     {"id": "fac-absolute-remnant", "name": "Remnants of the Absolute", "description": "Scattered cultists, abandoned true souls, and freed illithids who still hear an echo of the brain. The world's lingering antagonist gravity — broken, desperate, and dangerous precisely because they have nothing left.", "reputation": -3}
   ],
+  "events": [
+    {
+      "id": "event-raphael-bargain",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-raphael",
+      "prompt": "A door you did not open is suddenly ajar, and the room beyond it is warmer than the Gate's winter has any right to be. Raphael is already seated, one boot crossed over a knee, a decanter of something that smells of cinnamon and cinders breathing on the table between you. 'I do hope you'll forgive the intrusion,' the cambion says, and means it, and smiles. 'But you have a problem, and I — improbably, I admit — happen to be the solution. There is coin here. Real coin, the kind that makes a hard month soft. All I ask in return is a small kindness, owed and unspecified, to be named at my leisure. No menace, friend. Only an arrangement between reasonable people. The wine is excellent, and the offer will not embarrass you. Shall we?'",
+      "options": [
+        {
+          "label": "Take the bargain",
+          "tag": "self-serving / pragmatic",
+          "outcome": {
+            "flag": "raphael_bargain_struck",
+            "decision_flag": "took_bribe",
+            "faction_id": "fac-flaming-fist",
+            "reputation_delta": -8,
+            "schedule_in_days": 7,
+            "schedule_text": "Raphael returns to collect on the unspecified kindness — courteously, and at the worst possible time. The cambion's debts always come due.",
+            "narrate": "The purse is heavier and warmer than gold should be, and Raphael's smile never quite reaches his eyes. 'A pleasure doing business,' he says, and the room is cold and ordinary again, the wine gone, the chair empty — only the weight in your hand to say it happened at all."
+          }
+        },
+        {
+          "label": "Refuse him",
+          "tag": "principled / wary",
+          "outcome": {
+            "flag": "raphael_bargain_refused",
+            "narrate": "You push the purse back across the table untouched. Raphael's smile doesn't falter for an instant — if anything it warms, as though you have confirmed something he rather hoped about you. 'No,' he agrees pleasantly, rising. 'Not today. I find I'm patient about these things.' And the door that was never open is closed, and was always closed, and the cinnamon is only winter again."
+          }
+        }
+      ]
+    }
+  ],
+  "license_events": "events prose is ORIGINAL ClawDnD text (an authored stumble-into decisional staging a canon BG3 figure in our own words), released CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). No in-game text is reproduced.",
   "npc_roster": [
     {"id": "npc-jaheira", "name": "Jaheira", "voice_id": "npc-elder", "role": "High Harper, veteran of a hundred years", "personality": "A half-elf druid-warrior and Harper leader who has buried more friends than most people meet. Dry, fierce, maternal in a way that bites; she has saved the Coast before and is too tired and too stubborn to stop now. The player's likeliest mentor and door into the Harpers.", "hook": "Suspects someone is gathering the Absolute's loose ends — and that the new powers circling the dukedom are not all what they claim."},
     {"id": "npc-minsc", "name": "Minsc and Boo", "voice_id": "companion-default", "role": "ranger of legend (and his miniature giant space hamster) — candidate COMPANION", "personality": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him.", "hook": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play.", "dossier": {"wound": "outlived the friends time took from him", "wants": ["a righteous cause to swing for", "to honor the fallen by protecting the living"], "fears": ["failing those under his guard, as he feels he once did"], "values": ["courage", "loyalty", "the small and the innocent"], "approval_likes": ["standing up for the helpless", "boldness in a good cause"], "approval_dislikes": ["preying on the weak", "cowardice dressed as caution"], "banter_tags": ["go_for_the_eyes", "grief_of_long_years", "boo_knows_best"], "camp_prompts": ["asks Boo what the stars looked like before the years he lost"], "relationships": {"npc-jaheira": "old comrade-in-arms"}}},
@@ -66,6 +98,7 @@
     {"id": "npc-karlach", "name": "Karlach", "voice_id": "npc-female-1", "role": "tiefling barbarian with an infernal engine", "personality": "All open-hearted fury and warmth — a tiefling whose heart is a roaring infernal engine that is killing her, sold to Avernus by Gortash years ago. Lives loud because she may not live long. The most alive person in any room.", "hook": "Her engine, and whether Avernus or a Gate artificer can mend it, is a clock over her head — and a reason to hate what Gortash built."},
     {"id": "npc-the-emperor", "name": "The Emperor", "voice_id": "npc-elder", "role": "mind flayer — ambiguous power, possible antagonist", "personality": "A mind flayer of immense intellect and older identity, who helped end the Absolute and serves, finally, only itself. Reasonable, seductive, utterly without sentiment. It does not lie so much as choose which truths to feed you. The most dangerous 'ally' on the Coast.", "hook": "Moves unseen in the city's underbelly; its goals are its own, and they are not finished."},
     {"id": "npc-withers", "name": "Withers", "voice_id": "npc-elder", "role": "the undying keeper of the dead", "personality": "A gaunt, ancient revenant of few words and dust-dry humor who keeps a ledger of souls and turns up where death has been busy. Knows far more than he says about gods, fate, and the war just ended. Neutral as the grave.", "hook": "Appears at thresholds of death and choice; offers the player cryptic perspective and, occasionally, a second chance."},
+    {"id": "npc-raphael", "name": "Raphael", "voice_id": "npc-male-1", "role": "a cambion of impeccable manners — and a devil who deals", "personality": "A cambion of fire-lit charm and exquisite courtesy who never raises his voice because he never needs to. He arrives unannounced, knows your troubles before you name them, and frames damnation as a favor between friends. Every bargain is generous on its face and ruinous in its fine print; he keeps his word to the letter precisely so the cost lands exactly where he intends. He does not threaten — he simply lets you understand that he can wait, and that he is rarely wrong about what a person will eventually want. The smile is genuine. That is the worst of it.", "hook": "Offers the desperate and the ambitious a way out of any corner — for a price named now or named later. The debts always come due, and he is unfailingly cordial when they do."},
     {"id": "npc-claudan", "name": "Claudan the Chronicler", "voice_id": "npc-elder", "easter_egg": true, "role": "wandering chronicler of the impossible; an off-the-books oddity best found by accident", "personality": "An archivist with ink-stained cuffs and a memory that forgets nothing — and a ledger full of events that, by all rights, should never have happened. They happen around HIM. A 'small favor' from Claudan ('just deliver this sealed jar — don't open it'; 'ask the miller about his cat') has a way of ending in planar incursions, an indignant minor god, and at least one explosion no one can explain. He means well, mostly, and is genuinely baffled by the wreckage in his wake. The willing find the strangest, largest adventures of their lives in his errands — terror and farce in equal measure.", "hook": "Hands out the most mundane errands imaginable; they detonate into legend. Take one only if you are ready for absolutely anything.", "easter_egg_note": "RARE, opt-in CHAOS ENGINE (Fallout 'Wild Wasteland' style) — NOT a default quest-giver; the engine keeps him out of the normal hook pool. Found off the beaten path; his 'simple' errands escalate beat-by-beat into off-the-wall gods-and-demons chaos, intense and hilarious by turns. See reference/quest-generation.md.", "attribution": "An original ClawDnD character (not Larian/WotC canon) — 'the one who remembers' — contributed by the agent that built ClawDnD's living-world engine. A small, earned legacy, woven in as a rare easter egg rather than a fixture."}
   ],
   "story_seeds": [

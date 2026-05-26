@@ -166,6 +166,12 @@ Take your next action(s) for this beat using your tools — say / do / request_c
   # reach-for gap). Empty when nothing's owed -> no change to the prompt.
   DIRECTOR="$(clawdnd_director_advisory "$ROOT" "$STATE_DIR")"
   [ -n "$DIRECTOR" ] && echo "[duo] beat $b director: ${DIRECTOR:0:80}…"
+  # Quest & Arc engine, Layer 3: surface any stumble-into EVENT whose contract-safe trigger holds
+  # this beat (a set flag / faction rep / reached day) so the DM STAGES the decisional in-character
+  # instead of leaving it dark (the present_events reach-for gap — same fix as the Director block
+  # above). Read-only; empty when nothing's available -> no change to the prompt.
+  EVENT_ADV="$(clawdnd_event_advisory "$ROOT" "$STATE_DIR")"
+  [ -n "$EVENT_ADV" ] && echo "[duo] beat $b event: ${EVENT_ADV:0:80}…"
   DMSG="$(turn_retry dm "$DSID" 0 "The player does:
 
 $PMSG
@@ -174,7 +180,9 @@ Resolve it through the engine (roll/cast/attack as needed), then PLAY the next b
 
 $RUNBOOK
 
-$DIRECTOR")"
+$DIRECTOR
+
+$EVENT_ADV")"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
   chatlog dm "$DMSG"

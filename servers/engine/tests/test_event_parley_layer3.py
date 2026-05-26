@@ -651,3 +651,119 @@ def test_ending_overlay_events_degrade_not_abort():
     c2 = Campaign(title="W2")
     content_mod._apply_ending_overlay(c2, {"id": "ov2", "name": "Ov2"})
     assert c2.events == {}
+
+
+# =========================================================================
+# CANON EXEMPLAR CONTENT — the baldurs-gate Raphael bribe Event + Minsc agenda
+# (the DM-skill-wiring wave: prove the authored canon content LOADS and the
+#  authored L3->L2 seam works end-to-end through the REAL world + ending overlay)
+# =========================================================================
+
+# Content-defined constants the exemplar authors (flag names live in CONTENT, never engine
+# code — so the test asserts the CONTENT'S choices, the engine stays setting-agnostic).
+BG_WORLD = "baldurs-gate"
+BG_HOPEFUL_ENDING = "netherbrain-destroyed-heroes-live"
+RAPHAEL_EVENT = "event-raphael-bargain"
+BRIBE_OPTION = "Take the bargain"
+TOOK_BRIBE_FLAG = "took_bribe"
+
+
+def _seed_bg(ending: str = "") -> Campaign:
+    """Seed the real baldurs-gate world (optionally with an ending overlay) from its shipped
+    content. Skips cleanly if the world bible isn't reachable from the test's cwd."""
+    try:
+        world = content_mod.load_world_data(BG_WORLD)
+    except (ValueError, FileNotFoundError, OSError):  # pragma: no cover - content not present
+        pytest.skip("baldurs-gate world content not reachable from test cwd")
+    return content_mod.seed_world(world, ending=ending)
+
+
+def test_bg_raphael_event_seeds_and_surfaces():
+    """The authored Raphael bribe Event loads from the base world and surfaces via present
+    (manual trigger), bound to the canon anchor NPC, with the bribe option carrying the
+    took_bribe decision_flag + the negative Flaming-Fist ripple + the rule-of-three echo."""
+    c = _seed_bg()
+    assert RAPHAEL_EVENT in c.events, "the authored Raphael Event must seed from world.json"
+    ev = c.events[RAPHAEL_EVENT]
+    assert ev.prompt.strip(), "the Event must carry a prompt the DM voices"
+    # bound to a canon roster NPC (the owner's anchoring priority) — Raphael is in the roster
+    assert ev.anchor_npc_id == "npc-raphael"
+    assert c.characters.get("npc-raphael") is not None, "anchor NPC must exist in the roster"
+    # the bribe option's deterministic Outcome
+    bribe = events_mod.find_option(ev, BRIBE_OPTION)
+    assert bribe is not None, "the bribe ParleyOption must exist"
+    assert bribe.outcome.decision_flag == TOOK_BRIBE_FLAG  # the L3->L2 seam flag
+    assert bribe.outcome.faction_id == "fac-flaming-fist" and bribe.outcome.reputation_delta < 0
+    assert bribe.outcome.schedule_in_days > 0 and bribe.outcome.schedule_text.strip()  # L1 echo
+    # a refuse path exists (a choice the player can decline cleanly)
+    assert events_mod.find_option(ev, "Refuse him") is not None
+    # surfaces NOW (manual trigger, unresolved)
+    assert any(e.id == RAPHAEL_EVENT for e in events_mod.present(c))
+
+
+def test_bg_hopeful_ending_seeds_minsc_bribe_agenda():
+    """The hopeful-ending overlay pre-loads Minsc's attitude_below agenda gated on took_bribe
+    (the principled companion whose bond the bribe can break) — the L3->L2 content seam."""
+    c = _seed_bg(ending=BG_HOPEFUL_ENDING)
+    minsc = c.characters.get("npc-minsc")
+    assert minsc is not None and minsc.arc is not None, "Minsc must carry a seeded arc"
+    agenda = minsc.arc.agenda
+    assert agenda is not None and agenda.trigger == "attitude_below"
+    assert agenda.decision_flag == TOOK_BRIBE_FLAG, "agenda must read the same flag the bribe sets"
+    assert agenda.value is not None
+    # the breaking point sits in/at the danger band so betrayal_warning can telegraph the fracture
+    assert companion_arc.ATTITUDE_WARN_LOW <= agenda.value <= companion_arc.ATTITUDE_WARN_HIGH
+
+
+def test_bg_exemplar_l3_to_l2_seam_end_to_end():
+    """The whole authored loop on the REAL content: in the hopeful ending, resolving Raphael's
+    bribe option arms took_bribe, which spikes Minsc's attitude_below betrayal probability and
+    lights the advisory betrayal_warning. Mirrors the synthetic seam test against shipped canon."""
+    c = _seed_bg(ending=BG_HOPEFUL_ENDING)
+    minsc = c.characters["npc-minsc"]
+    agenda = minsc.arc.agenda
+    # put Minsc's bond in the danger band (a curdled friendship the bribe can finally break)
+    minsc.attitude_value = (companion_arc.ATTITUDE_WARN_LOW + companion_arc.ATTITUDE_WARN_HIGH) // 2
+
+    # before resolving: the flag is unset, no boost, the snap probability is the unescalated curve
+    assert companion_arc._decision_flag_active(agenda, c) is False
+    p_off = companion_arc._attitude_below_snap_p(
+        minsc.attitude_value, agenda.value, vulnerable=False, decision_flag_active=False
+    )
+
+    # resolve the authored bribe option -> sets took_bribe (identical to record_decision(sets_flag=))
+    ev = c.events[RAPHAEL_EVENT]
+    res = events_mod.resolve(c, ev, events_mod.find_option(ev, BRIBE_OPTION))
+    assert res["decision_flag"] == TOOK_BRIBE_FLAG
+    assert c.flags.get(TOOK_BRIBE_FLAG) is True
+    # the world rippled too: the Flaming Fist's regard fell, the cambion's return is scheduled
+    assert c.factions["fac-flaming-fist"].reputation < 1  # base rep was 1; the bribe dropped it
+    assert any(co.note == f"event:{ev.id}" for co in c.consequences)
+
+    # after: the SAME agenda now reads the flag as active and the snap probability SPIKES
+    assert companion_arc._decision_flag_active(agenda, c) is True
+    p_on = companion_arc._attitude_below_snap_p(
+        minsc.attitude_value, agenda.value, vulnerable=False, decision_flag_active=True
+    )
+    assert p_on == pytest.approx(p_off + companion_arc.ATTITUDE_SNAP_DECISION_BONUS)
+    assert p_on > p_off
+
+    # and the advisory telegraph fires so the DM can foreshadow the fracture before it snaps
+    warn = companion_arc._betrayal_warning(minsc, c)
+    assert warn is not None and warn["decision_flag_active"] is True
+
+
+def test_bg_base_world_has_no_minsc_agenda_additive():
+    """ADDITIVE check: the agenda is an ENDING-overlay seed. The base world (no ending) leaves
+    Minsc without the betrayal agenda — taking the bribe there is a pure world ripple, no flip
+    armed (the seam is opt-in via the post-state, exactly like Karlach's romance gate)."""
+    c = _seed_bg()  # base world, no ending overlay
+    minsc = c.characters.get("npc-minsc")
+    assert minsc is not None
+    # base roster seeds the dossier only (not an arc/agenda) — so no took_bribe-gated flip
+    assert minsc.arc is None or minsc.arc.agenda is None
+    # the Event still loads and resolving the bribe still ripples the world (just arms no companion)
+    ev = c.events[RAPHAEL_EVENT]
+    events_mod.resolve(c, ev, events_mod.find_option(ev, BRIBE_OPTION))
+    assert c.flags.get(TOOK_BRIBE_FLAG) is True  # the flag is set regardless
+    # ...but with no agenda reading it, nothing is armed (additive: no ending == today's behavior)
