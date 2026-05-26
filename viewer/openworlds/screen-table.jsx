@@ -31,6 +31,9 @@ function ScreenTable({ onNavigate, state, setState }) {
   const roundOrder = Array.isArray(surface?.roundOrder) ? surface.roundOrder : [];
   const scene = surface?.scene || {};
   const encounter = surface?.encounter || {};
+  const calendar = surface?.calendar?.available ? surface.calendar : null;
+  const calendarMoon = Array.isArray(calendar?.moons) ? calendar.moons[0] : null;
+  const calendarDetail = calendar ? [calendar.season, calendarMoon ? `${calendarMoon.name}: ${calendarMoon.phase}` : ""].filter(Boolean).join(" · ") : "";
   const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
   const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
@@ -219,8 +222,9 @@ function ScreenTable({ onNavigate, state, setState }) {
             display: "flex", justifyContent: "space-between", alignItems: "flex-end",
             pointerEvents: "none",
           }}>
-            <div>
+            <div style={{ minWidth: 0, maxWidth: "min(620px, 62%)" }}>
               <Pill tone="royal" dot>{surface?.dayLabel || activeCampaign.day || "Unknown time"}</Pill>
+              {calendarDetail && <div className="body-xs" title={calendarDetail} style={{ marginTop: 4, color: "var(--p-150)", textShadow: "0 1px 2px rgba(0,0,0,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{calendarDetail}</div>}
               <div className="hand" style={{ marginTop: 6, color: "var(--p-100)", fontSize: 16, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
                 {scene.summary || activeCampaign.recap || "The table is waiting for a campaign snapshot."}
               </div>

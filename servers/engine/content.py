@@ -20,6 +20,7 @@ import worldsim
 from models import (
     BacklogItem,
     Campaign,
+    CampaignCalendar,
     CampaignBacklog,
     CompanionArc,
     CompanionDossier,
@@ -1242,6 +1243,13 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     c = Campaign(title=world.get("name", "Untitled World"), summary=world.get("premise", ""))
     c.world_id = str(world.get("id", ""))  # enables lookup_lore over this world's corpus
     c.era = str(world.get("era") or world.get("current_year") or "")  # chronology guardrail
+    if isinstance(world.get("calendar"), dict):
+        try:
+            calendar = CampaignCalendar.model_validate(world["calendar"])
+            if calendar.months:
+                c.calendar = calendar
+        except (ValidationError, ValueError, TypeError):
+            c.calendar = None
 
     first_loc = None
     for reg in _as_list(world, "regions"):
