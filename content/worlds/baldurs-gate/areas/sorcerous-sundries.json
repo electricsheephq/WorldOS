@@ -1,0 +1,18 @@
+{
+  "id": "loc-sorcerous-sundries",
+  "name": "Sorcerous Sundries",
+  "description": "The Gate's foremost emporium of the arcane, a tall merchant-house whose shelves run floor to ceiling with bottled lights, catalogued spell-scrolls, and curiosities with price-tags that do not explain what they do. Since the crisis the management has added a locked rear counter for tadpole-related 'consultations' — a polite term for frightened people asking whether they are going to change. The answer is usually hedged, costs three gold, and does not comfort. A driftglobe above the door still flickers when certain names are spoken nearby; no one on staff has managed to make it stop.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "Baldur's Gate — Lower City",
+    "the Elfsong Tavern"
+  ],
+  "tags": [
+    "magic",
+    "shop",
+    "city"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}

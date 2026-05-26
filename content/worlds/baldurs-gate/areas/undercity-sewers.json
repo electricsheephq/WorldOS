@@ -1,0 +1,20 @@
+{
+  "id": "loc-undercity-sewers",
+  "name": "the Undercity Sewers",
+  "description": "A vast network of vaulted brick tunnels threading beneath the Lower City, older than the walls above and more honestly built. Torchlight carries six feet before the dark closes in; the trickle of water is constant and the smell is everything you expect. The Absolute crisis cracked the deeper chambers — a section near the harbor still runs with something that is not quite water and does not quite dry — and Bhaalist murder-shrines left in the rock-cut alcoves have not all been found. The Guild moves freely here; so, it is increasingly suspected, does something else. Street-access grates are everywhere and the stairs that lead up to the Elfsong's cellar are an open secret.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "Baldur's Gate — Lower City",
+    "Little Calimshan",
+    "the Elfsong Tavern"
+  ],
+  "tags": [
+    "underworld",
+    "sewers",
+    "dungeon",
+    "city"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}

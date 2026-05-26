@@ -1108,16 +1108,17 @@ def test_load_world_areas_absent_dir_is_empty():
 
 
 def test_seed_world_seeds_areas_additively_with_resolved_connections():
-    # ADDITIVE: after the 7 authored regions, the 2 example areas are seeded as Locations.
+    # ADDITIVE: after the authored regions, all area files are seeded as Locations.
     w = content.load_world_data("baldurs-gate")
     base_regions = len(w["regions"])
+    n_areas = len(content.load_world_areas("baldurs-gate"))
     c = content.seed_world(w)
     by_name = {loc.name: loc for loc in c.locations.values()}
     # the authored regions are all still present, plus the ingested areas
     assert "Baldur's Gate — Lower City" in by_name      # an authored region
     assert "Bloomridge Market" in by_name               # an ingested area
     assert "the Siltwharf Steps" in by_name
-    assert len(c.locations) == base_regions + 2
+    assert len(c.locations) == base_regions + n_areas
 
     bm = by_name["Bloomridge Market"]
     # ingested-area fields carried through (region, tags→notes)
@@ -1145,8 +1146,9 @@ def test_seed_world_areas_do_not_double_seed_or_change_start():
     # explicit dedup probe: a region whose NAME an injected area reuses is not re-seeded
     w2 = content.load_world_data("baldurs-gate")
     before = len(content.seed_world(w2).locations)
-    # (the example areas have unique names, so the count is the regions + 2 areas)
-    assert before == len(w2["regions"]) + 2
+    # (all areas have unique names, so the count is the regions + number of area files)
+    n_areas = len(content.load_world_areas("baldurs-gate"))
+    assert before == len(w2["regions"]) + n_areas
 
 
 def test_seed_world_without_areas_is_unchanged(tmp_path, monkeypatch):
