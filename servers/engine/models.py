@@ -919,6 +919,32 @@ class CampaignBacklog(_StrictModel):
     last_tick_day: int = 0  # the Campaign.day the mechanical backlog tick last advanced through
 
 
+class SceneDebt(_StrictModel):
+    """A structural story debt detected by the Campaign Director (issue #72).
+
+    ADVISORY ONLY: the engine detects debts + returns them; it NEVER acts on them
+    or mutates fiction. The DM reads + chooses. Resolution is EXPLICIT (a
+    resolve_scene_debt tool call), never automatic.
+
+    Additive: empty ``scene_debts`` on Campaign == today's behavior.
+    Old snapshots without this field deserialise unchanged.
+
+    kind values:
+        hook_untracked, quest_stalled, choice_without_outcome,
+        due_consequence, thread_pressure, npc_introduced_silent
+    severity: low | med | high
+    """
+
+    id: str = Field(default_factory=lambda: _new_id("debt"))
+    kind: str  # one of the six structural debt kinds
+    subject: str  # the id of the thing that owes (quest id, hook id, decision id, …)
+    detail: str  # one-line DM-facing description of the debt
+    severity: Literal["low", "med", "high"] = "med"
+    evidence: dict[str, Any] = Field(default_factory=dict)  # structured context for resolution
+    resolved: bool = False
+    resolution_evidence: str = ""  # DM-supplied evidence when marking resolved
+
+
 class QuestHook(_StrictModel):
     """S7 — a lore-derived quest SEED the DM pulls and weaves. The engine ASSEMBLES it at
     world-gen (a dramatic SHAPE tag bound to typed lore nouns + a `grievance` — a wrong the
@@ -1034,3 +1060,10 @@ class Campaign(_StrictModel):
     # tension, momentum, encounters. "downtime": slower — let scenes breathe, lean into
     # social/shopping/recovery. Advisory (the DM reads it via get_state); never computed on.
     pacing_mode: Literal["adventure", "downtime"] = "adventure"
+    # Campaign Director scene-debts (issue #72). ADDITIVE: empty == today's behavior.
+    # Old snapshots lacking this key deserialise to the empty default, round-tripping
+    # byte-identically. The engine never auto-populates this list; debts are detected
+    # read-only by scene_debt.detect() and surfaced via get_scene_debts /
+    # get_campaign_director. Resolved debts are marked in-place (resolved=True) by
+    # resolve_scene_debt and then preserved here as an audit trail.
+    scene_debts: list[SceneDebt] = Field(default_factory=list)
