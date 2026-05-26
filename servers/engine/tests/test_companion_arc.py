@@ -832,3 +832,262 @@ def test_companion_quest_arc_apis_reject_bad_optional_links_without_partial_muta
     arc = persisted.companion_quest_arcs["cq_seraphine_vow"]
     assert arc.status == "locked"
     assert arc.stages[0].status == "locked"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Quest & Arc engine — Layer 2: decision-gated companion flips
+#
+# A recorded player CHOICE sets a CONTENT-defined campaign flag that ESCALATES an
+# `attitude_below` agenda's betrayal weight ("let the daughter die → the knight turns").
+# Additive: empty `decision_flag` == today's #142/#158 behavior, byte-for-byte. The
+# escalation reads ONLY engine-mutated values (flags + attitude_value), never fiction.
+# A danger-band warning telegraphs the turn so it isn't a surprise-from-nowhere.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+# --- additive default: the new field --------------------------------------------
+
+def test_agenda_decision_flag_defaults_empty():
+    agenda = CompanionAgenda(trigger="attitude_below", value=-20)
+    assert agenda.decision_flag == ""
+
+
+def test_old_agenda_snapshot_without_decision_flag_deserializes_unchanged():
+    """An agenda authored before Layer 2 has no `decision_flag` key — it must load with
+    decision_flag="" and round-trip identically (the additive-default contract)."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=-20, note="turns")
+    data = agenda.model_dump(mode="json")
+    old = {k: v for k, v in data.items() if k != "decision_flag"}
+    assert "decision_flag" not in old
+    reloaded = CompanionAgenda.model_validate(old)
+    assert reloaded.decision_flag == ""
+    # full round-trip stays stable
+    assert CompanionAgenda.model_validate(reloaded.model_dump(mode="json")).decision_flag == ""
+
+
+def test_empty_decision_flag_snap_p_is_byte_identical_to_158():
+    """With no decision_flag active, the snap probability is EXACTLY the #142/#158 curve —
+    the Layer-2 param is purely additive."""
+    for attitude in range(-100, 1, 7):
+        for vuln in (False, True):
+            base = companion_arc._attitude_below_snap_p(attitude, 0, vuln)
+            with_param = companion_arc._attitude_below_snap_p(attitude, 0, vuln, decision_flag_active=False)
+            assert base == with_param
+
+
+# --- the probability boost math --------------------------------------------------
+
+def test_decision_flag_boosts_snap_probability():
+    """An active decision_flag ADDS ATTITUDE_SNAP_DECISION_BONUS on top of the rising
+    chance (capped at ATTITUDE_SNAP_DECISION_MAX)."""
+    attitude, threshold = -30, 0  # raw_p = 30/100 = 0.30 (below the 0.35 cap)
+    p_off = companion_arc._attitude_below_snap_p(attitude, threshold, False, decision_flag_active=False)
+    p_on = companion_arc._attitude_below_snap_p(attitude, threshold, False, decision_flag_active=True)
+    assert p_off == pytest.approx(0.30)
+    assert p_on == pytest.approx(0.30 + companion_arc.ATTITUDE_SNAP_DECISION_BONUS)
+    assert p_on > p_off
+
+
+def test_decision_flag_boost_capped_at_decision_max():
+    """The boosted probability never exceeds ATTITUDE_SNAP_DECISION_MAX (0.90) — the
+    betrayal stays a roll, never a certainty per beat. At the floor with the vulnerable
+    bonus the base reaches 0.45, +0.30 decision = 0.75 (still under the 0.90 ceiling)."""
+    p_floor = companion_arc._attitude_below_snap_p(
+        companion_arc.ATTITUDE_SNAP_FLOOR, 0, True, decision_flag_active=True
+    )
+    assert p_floor <= companion_arc.ATTITUDE_SNAP_DECISION_MAX + 1e-9
+    assert p_floor == pytest.approx(
+        companion_arc.ATTITUDE_SNAP_MAX
+        + companion_arc.ATTITUDE_SNAP_VULNERABLE_BONUS
+        + companion_arc.ATTITUDE_SNAP_DECISION_BONUS
+    )
+
+    # And where the base curve is high enough, the decision boost is what the 0.90 ceiling
+    # actually clamps: a threshold of 80 puts the raw curve near 1.0, so base hits the
+    # 0.35 cap, +vuln 0.10 = 0.45, +decision 0.30 = 0.75 — still under. To exercise the
+    # ceiling directly, confirm it never returns above DECISION_MAX across the whole range.
+    for attitude in range(-100, 80):
+        p = companion_arc._attitude_below_snap_p(attitude, 80, True, decision_flag_active=True)
+        assert p <= companion_arc.ATTITUDE_SNAP_DECISION_MAX + 1e-9
+
+
+def test_decision_flag_never_fires_above_threshold():
+    """The decision boost must NOT override the breaking-point guard: at/above the
+    threshold P stays 0 even with the flag active (no betrayal from nowhere)."""
+    p = companion_arc._attitude_below_snap_p(5, 0, True, decision_flag_active=True)
+    assert p == 0.0
+
+
+# --- the with/without-flag FIRE-RATE comparison (the headline behavioral gate) ---
+
+def test_decision_flag_fires_at_notably_higher_rate(monkeypatch):
+    """STATISTICAL gate: an attitude_below agenda WITH a set decision_flag fires at a
+    NOTABLY higher per-beat rate than the same agenda without it — over a seeded rng
+    loop. This is the owner's "betrayal chance spikes" made measurable."""
+    threshold, attitude = 0, -30  # base p = 0.30; boosted p = 0.60
+    n_trials = 800
+
+    def fire_rate(*, with_flag: bool, seed: int) -> float:
+        rng = random.Random(seed)
+        hits = 0
+        for _ in range(n_trials):
+            agenda = CompanionAgenda(
+                trigger="attitude_below",
+                value=threshold,
+                decision_flag="let_daughter_die" if with_flag else "",
+            )
+            _ch = _companion(attitude=attitude, agenda=agenda)
+            flags = {"let_daughter_die": True} if with_flag else None
+            c = _campaign_with(_ch, flags=flags)
+            if companion_arc.evaluate(_ch, c, rng=rng)["agenda_fired"]:
+                hits += 1
+        return hits / n_trials
+
+    rate_off = fire_rate(with_flag=False, seed=11)
+    rate_on = fire_rate(with_flag=True, seed=12)
+
+    # base ≈ 0.30, boosted ≈ 0.60 — demand a clearly higher rate (wide margin for variance)
+    assert rate_on > rate_off + 0.15, f"on={rate_on:.3f} should be notably > off={rate_off:.3f}"
+
+
+def test_decision_flag_set_but_false_does_not_boost():
+    """The flag must be present AND True to escalate — a flag set to False (or a different
+    flag set) leaves the #158 curve unchanged."""
+    threshold, attitude = 0, -30
+    agenda = CompanionAgenda(trigger="attitude_below", value=threshold, decision_flag="took_bribe")
+    ch = _companion(attitude=attitude, agenda=agenda)
+
+    # flag present but False -> no boost
+    c_false = _campaign_with(ch, flags={"took_bribe": False})
+    assert companion_arc._decision_flag_active(ch.arc.agenda, c_false) is False
+    # an UNRELATED flag set True -> no boost
+    c_other = _campaign_with(ch, flags={"some_other_flag": True})
+    assert companion_arc._decision_flag_active(ch.arc.agenda, c_other) is False
+    # the named flag True -> boost active
+    c_true = _campaign_with(ch, flags={"took_bribe": True})
+    assert companion_arc._decision_flag_active(ch.arc.agenda, c_true) is True
+
+
+def test_decision_flag_ignored_by_non_attitude_triggers():
+    """decision_flag is scoped to attitude_below — it must not change a day_reached /
+    prize_seized / party_vulnerable agenda's deterministic semantics."""
+    # day_reached with a decision_flag set True still only fires on/after its day
+    agenda = CompanionAgenda(trigger="day_reached", value=7, decision_flag="took_bribe")
+    ch = _companion(attitude=-90, agenda=agenda)
+    assert companion_arc.evaluate(ch, _campaign_with(ch, day=6, flags={"took_bribe": True}))["agenda_fired"] is False
+    assert companion_arc.evaluate(ch, _campaign_with(ch, day=7, flags={"took_bribe": True}))["agenda_fired"] is True
+
+
+# --- warning bands (telegraph) ---------------------------------------------------
+
+def test_betrayal_warning_surfaces_in_danger_band():
+    """A live attitude_below agenda whose companion sits in [-40, -20] surfaces an
+    advisory betrayal_warning."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=0, note="turns on the party")
+    ch = _companion(attitude=-30, agenda=agenda)  # in the band, below the threshold
+    res = companion_arc.evaluate(ch, _campaign_with(ch), rng=random.Random(0))
+    warn = res.get("betrayal_warning")
+    assert warn is not None
+    assert warn["companion_id"] == ch.id
+    assert warn["attitude_value"] == -30
+    assert warn["band"] == [companion_arc.ATTITUDE_WARN_LOW, companion_arc.ATTITUDE_WARN_HIGH]
+    assert warn["decision_flag_active"] is False
+
+
+def test_betrayal_warning_absent_above_the_band():
+    """Above the danger band (attitude > -20) there is no warning — the bond hasn't
+    soured far enough to telegraph."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=0)
+    ch = _companion(attitude=-10, agenda=agenda)  # above the band
+    res = companion_arc.evaluate(ch, _campaign_with(ch), rng=random.Random(0))
+    assert "betrayal_warning" not in res
+
+
+def test_betrayal_warning_absent_below_the_band():
+    """Below the danger band (attitude < -40) the warning stops — past telegraphing, the
+    turn is imminent (and the high per-beat P speaks for itself)."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=0)
+    # use a fresh companion each beat so a fire doesn't end the loop; just inspect one beat
+    ch = _companion(attitude=-60, agenda=agenda)
+    # Force no-fire this beat with an rng that returns ~1.0 so we can inspect the warning field.
+    class _NoFire(random.Random):
+        def random(self):  # always >= any p -> never fires
+            return 0.999999
+    res = companion_arc.evaluate(ch, _campaign_with(ch), rng=_NoFire())
+    assert res["agenda_fired"] is False
+    assert "betrayal_warning" not in res
+
+
+def test_betrayal_warning_reflects_active_decision_flag():
+    """When a recorded choice has armed the agenda's decision_flag, the warning flags it
+    so the DM foreshadows harder."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=0, decision_flag="let_daughter_die")
+    ch = _companion(attitude=-25, agenda=agenda)
+    res = companion_arc.evaluate(ch, _campaign_with(ch, flags={"let_daughter_die": True}), rng=random.Random(0))
+    assert res["betrayal_warning"]["decision_flag_active"] is True
+
+
+def test_no_warning_for_non_attitude_or_fired_agenda():
+    """The warning is only for a LIVE attitude_below agenda — not for other triggers, and
+    not once it has fired."""
+    # a prize_seized agenda in the same attitude band -> no warning
+    ch_event = _companion(attitude=-30, agenda=CompanionAgenda(trigger="prize_seized"))
+    assert "betrayal_warning" not in companion_arc.evaluate(ch_event, _campaign_with(ch_event))
+
+    # a fired attitude_below agenda -> no warning (the fire was the event)
+    agenda = CompanionAgenda(trigger="attitude_below", value=0, fired=True)
+    ch_fired = _companion(attitude=-30, agenda=agenda)
+    assert "betrayal_warning" not in companion_arc.evaluate(ch_fired, _campaign_with(ch_fired))
+
+
+# --- the Decision -> flag path (MCP tool layer) ----------------------------------
+
+def test_set_flag_arms_decision_gated_agenda(camp):
+    """The existing set_flag path arms an attitude_below agenda's decision_flag: with the
+    companion below threshold, setting the flag spikes the betrayal so it fires reliably."""
+    cid, comp = camp
+    server.set_companion_arc(cid, comp, {
+        "agenda": {
+            "trigger": "attitude_below",
+            "value": 0,
+            "decision_flag": "let_daughter_die",
+            "note": "the knight turns",
+        },
+    })
+    server.adjust_attitude(cid, comp, -30)  # push deep below the breaking point
+
+    server.set_flag(cid, "let_daughter_die")
+    # With p ≈ 0.60/beat, it fires within a handful of beats (idempotent check loop).
+    fired = False
+    for _ in range(60):
+        res = server.check_companion_arc(cid, comp)["results"]
+        if any(r.get("agenda_fired") for r in res):
+            fired = True
+            break
+    assert fired, "decision-gated betrayal should fire once the flag is set and attitude is below threshold"
+
+
+def test_record_decision_sets_flag_persists_and_arms_betrayal(camp):
+    """record_decision(..., sets_flag=...) flips the content-defined flag in the same call
+    that records the choice — the one-step decision->escalation path."""
+    cid, comp = camp
+    out = server.record_decision(
+        cid,
+        "Let the farmer's daughter die",
+        options=["save her", "let her die"],
+        chosen="let her die",
+        sets_flag="let_daughter_die",
+    )
+    assert out["flag"] == "let_daughter_die"
+    c = store.load_campaign(cid)
+    assert c.flags["let_daughter_die"] is True
+    assert len(c.decisions) == 1 and c.decisions[0].chosen == "let her die"
+
+
+def test_record_decision_without_sets_flag_is_unchanged(camp):
+    """Omitting sets_flag leaves flags untouched and the return shape free of `flag` —
+    today's behavior, byte-for-byte."""
+    cid, _comp = camp
+    out = server.record_decision(cid, "A choice with no gated agenda", chosen="x")
+    assert "flag" not in out
+    assert store.load_campaign(cid).flags == {}

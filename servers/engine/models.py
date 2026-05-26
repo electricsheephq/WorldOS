@@ -222,12 +222,29 @@ class CompanionAgenda(_StrictModel):
     - "party_vulnerable": any party member at `current_hp <= 0` OR `<= 25% of max_hp`
                           (strikes when the party is weakest)
     - "prize_seized":   the campaign flag `prize_seized` is set (the goal is in hand)
+
+    Decision-gated escalation (Quest & Arc engine, Layer 2):
+    `decision_flag` names a CONTENT-defined campaign flag (e.g. "let_daughter_die",
+    "took_bribe") that, when present AND True in `Campaign.flags`, ESCALATES an
+    ``attitude_below`` agenda — a recorded player CHOICE makes the turn far likelier
+    ("let the farmer's daughter die → the knight-companion turns on you"). It BOOSTS the
+    rising snap probability (companion_arc._attitude_below_snap_p); it never makes a
+    deterministic event fire on its own and never names the breaking point — the companion
+    stays in-character, the betrayal is still rolled. ADDITIVE: empty `decision_flag` ==
+    today's #142/#158 behavior byte-for-byte, so old snapshots round-trip unchanged. The
+    flag NAME lives in content (set via set_flag / record_decision(..., sets_flag=...)),
+    never in engine code.
     """
 
     trigger: Literal["attitude_below", "day_reached", "party_vulnerable", "prize_seized"]
     value: Optional[int] = None  # REQUIRED threshold for attitude_below/day_reached; unused otherwise
     fired: bool = False
     note: str = ""  # the agenda's intent, for the DM to dramatize when it fires
+    # A CONTENT-defined campaign flag whose presence+True in Campaign.flags ESCALATES this
+    # agenda's betrayal weight (Layer 2). Only the `attitude_below` trigger reads it. Empty
+    # == today's behavior. Never engine-coded; the DM/content sets the flag (set_flag /
+    # record_decision sets_flag) when the gating choice is made.
+    decision_flag: str = ""
 
     @model_validator(mode="after")
     def _require_threshold(self):
