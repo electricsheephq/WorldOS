@@ -2112,6 +2112,23 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
     }
 
 
+def _attacker_multiattack_count(ch: "Character", c: "Campaign") -> int:
+    """Return the number of attacks a combatant may make via Multiattack (0 for PCs
+    and monsters without a Multiattack stat-block entry). Reuses _monster_combat_entry
+    so the lookup path is identical to what the DM sees in the combat view. Returns 0
+    on any lookup failure so the caller degrades to normal Extra-Attack behaviour."""
+    try:
+        entry = _monster_combat_entry(ch, c)
+        if entry is None:
+            return 0
+        apt = entry.get("attacks_per_turn", 1)
+        # attacks_per_turn=1 is also the fallback for monsters WITHOUT Multiattack;
+        # only counts > 1 represent a real Multiattack action in the stat block.
+        return int(apt) if int(apt) > 1 else 0
+    except Exception:
+        return 0
+
+
 @mcp.tool()
 def start_combat(
     campaign_id: str,
@@ -2699,6 +2716,7 @@ def attack(
             (cb for cb in c.combat.order if cb.character_id == attacker_id), None
         ) if c.combat.active else None
         consume_reaction = False
+        ma = 0  # multiattack count; set in action-attack branch below for monsters
         if attacker_cb is not None:
             is_current = c.combat.current_combatant_id == attacker_id
             # Off-turn, or an explicitly-declared opportunity attack, is a REACTION:
@@ -2720,12 +2738,15 @@ def attack(
                 consume_reaction = True
             else:
                 # An attack as the current combatant's ACTION: enforce one Attack
-                # action's worth of strikes (Extra Attack / Action Surge aware).
+                # action's worth of strikes (Extra Attack / Action Surge aware,
+                # and Multiattack-aware for monsters with a stat-block entry).
+                ma = _attacker_multiattack_count(attacker, c)
                 ok, reason = combat.check_action_attack(
                     is_current=True,
                     attacks_made=c.combat.action_attacks_made,
                     extra_attacks=getattr(attacker, "extra_attacks", 0),
                     surge_actions=c.combat.surge_actions,
+                    multiattack=ma,
                 )
                 if not ok:
                     raise ValueError(f"{attacker.name} cannot attack: {reason}")
@@ -2759,7 +2780,9 @@ def attack(
                 c.combat.action_attacks_made += 1
                 result["attacks_made_this_turn"] = c.combat.action_attacks_made
                 result["attacks_allowed_this_turn"] = combat.attacks_allowed(
-                    getattr(attacker, "extra_attacks", 0), c.combat.surge_actions
+                    getattr(attacker, "extra_attacks", 0),
+                    c.combat.surge_actions,
+                    ma,
                 )
         # Zone-aware range (S2.7): a MELEE attack needs attacker & target in the same
         # or an adjacent zone; ranged reaches any zone. Advisory only — surface a
