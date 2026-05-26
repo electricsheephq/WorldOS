@@ -25,8 +25,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_openworlds = os.environ.get("CLAWDND_OPENWORLDS_DIR")
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ.pop("CLAWDND_OPENWORLDS_DIR", None)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -44,6 +46,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_STATE_DIR", None)
         else:
             os.environ["CLAWDND_STATE_DIR"] = self._old_state
+        if self._old_openworlds is None:
+            os.environ.pop("CLAWDND_OPENWORLDS_DIR", None)
+        else:
+            os.environ["CLAWDND_OPENWORLDS_DIR"] = self._old_openworlds
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -82,6 +88,18 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn(b"https://unpkg.com", body)
         self.assertNotIn(b"https://fonts.googleapis.com", body)
         self.assertNotIn(b"tweaks-panel.jsx", body)
+
+    def test_openworlds_static_assets_can_be_served_from_bundled_override(self):
+        bundled = self._tmp / "bundled-openworlds"
+        bundled.mkdir()
+        (bundled / "index.html").write_text("bundled openworlds beta", encoding="utf-8")
+        os.environ["CLAWDND_OPENWORLDS_DIR"] = str(bundled)
+
+        status, ctype, body = self._get("/openworlds/")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", ctype)
+        self.assertEqual(body, b"bundled openworlds beta")
 
     def test_openworlds_config_is_browser_safe_metadata(self):
         status, ctype, body = self._get("/openworlds/config.json")

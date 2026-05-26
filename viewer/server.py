@@ -49,7 +49,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 _HERE = Path(__file__).resolve().parent
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
-_OPENWORLDS_DIR = _HERE / "openworlds"
+_OPENWORLDS_DIR_ENV = "CLAWDND_OPENWORLDS_DIR"
 _OPENWORLDS_ROUTE = "/openworlds"
 _OPENWORLDS_MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -60,6 +60,16 @@ _OPENWORLDS_MIME_TYPES = {
     ".md": "text/markdown; charset=utf-8",
     ".ttf": "font/ttf",
 }
+
+
+def _openworlds_dir() -> Path:
+    """OpenWorlds asset root.
+
+    The native app can ship a bundled copy of the UI and point the repo-backed
+    viewer at it. Engine/viewer data still comes from the configured checkout.
+    """
+    override = os.environ.get(_OPENWORLDS_DIR_ENV, "").strip()
+    return Path(override).expanduser() if override else _HERE / "openworlds"
 
 # The constrained move palette — the SAME lane the engine facade enforces. A human
 # acting via the dashboard must not be able to POST DM-side narration ("the dragon
@@ -2786,8 +2796,9 @@ def _openworlds_mime(path: Path) -> str:
 
 def _openworlds_asset(route: str) -> Path | None:
     """Resolve a /openworlds asset path without allowing traversal outside the bundle."""
+    openworlds_dir = _openworlds_dir()
     if route in (_OPENWORLDS_ROUTE, f"{_OPENWORLDS_ROUTE}/"):
-        index = _OPENWORLDS_DIR / "index.html"
+        index = openworlds_dir / "index.html"
         return index if index.is_file() else None
     if not route.startswith(f"{_OPENWORLDS_ROUTE}/"):
         return None
@@ -2795,7 +2806,7 @@ def _openworlds_asset(route: str) -> Path | None:
     if not rel or rel.endswith("/"):
         rel = f"{rel}index.html"
     try:
-        root = _OPENWORLDS_DIR.resolve()
+        root = openworlds_dir.resolve()
         target = (root / rel).resolve()
         target.relative_to(root)
     except (OSError, ValueError):

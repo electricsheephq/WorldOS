@@ -10,6 +10,7 @@ final class AppProcessService: ObservableObject {
     @Published var providerLog: String = ""
     @Published var lastError: String?
     @Published var providerLaunchMetadata: ProviderLaunchMetadata?
+    @Published var openWorldsAssetsPath: String?
 
     private var viewerProcess: ManagedProcess?
     private var providerProcess: ManagedProcess?
@@ -22,6 +23,7 @@ final class AppProcessService: ObservableObject {
         ClawDnD Native App Diagnostics
         Viewer: \(viewerEndpoint?.url.absoluteString ?? "stopped")
         Viewer status: \(viewerEndpoint?.status.rawValue ?? "stopped")
+        OpenWorlds assets: \(openWorldsAssetsPath ?? "repo default")
         Active campaign: \(activeCampaignID ?? "none")
         Running provider: \(runningProvider?.rawValue ?? "none")
         Last error: \(lastError ?? "none")
@@ -74,6 +76,7 @@ final class AppProcessService: ObservableObject {
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
         }
+        attachBundledOpenWorldsAssets(to: &env)
         let args = ["python3", "viewer/server.py", campaignID ?? "", String(port)]
         let managed = try launchManagedProcess(
             name: "viewer",
@@ -152,13 +155,15 @@ final class AppProcessService: ObservableObject {
         runningProvider = nil
         providerLaunchMetadata = nil
         providerLog = ""
+        var providerEnvironment = request.environment
+        attachBundledOpenWorldsAssets(to: &providerEnvironment)
         let metadata = ProviderLaunchMetadata(
             kind: kind,
             processName: request.name,
             executable: request.executable,
             arguments: request.arguments,
             workingDirectory: request.workingDirectory,
-            environment: request.environment,
+            environment: providerEnvironment,
             world: world,
             runId: runId,
             port: port,
@@ -170,7 +175,7 @@ final class AppProcessService: ObservableObject {
             executable: request.executable,
             arguments: request.arguments,
             workingDirectory: request.workingDirectory,
-            environment: request.environment,
+            environment: providerEnvironment,
             stream: .provider,
             providerMetadata: metadata
         )
@@ -329,6 +334,23 @@ final class AppProcessService: ObservableObject {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return (trimmed as NSString).expandingTildeInPath
+    }
+
+    private func attachBundledOpenWorldsAssets(to environment: inout [String: String]) {
+        guard let bundledAssets = bundledOpenWorldsAssets() else {
+            openWorldsAssetsPath = nil
+            return
+        }
+        environment["CLAWDND_OPENWORLDS_DIR"] = bundledAssets.path
+        openWorldsAssetsPath = bundledAssets.path
+    }
+
+    private func bundledOpenWorldsAssets() -> URL? {
+        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        let assetsURL = resourceURL.appendingPathComponent("openworlds", isDirectory: true)
+        let indexURL = assetsURL.appendingPathComponent("index.html")
+        guard FileManager.default.fileExists(atPath: indexURL.path) else { return nil }
+        return assetsURL
     }
 
     private func throwAndRecord(_ message: String) throws -> Never {

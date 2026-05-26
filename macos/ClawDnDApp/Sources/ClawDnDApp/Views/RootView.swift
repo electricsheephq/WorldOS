@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var processService: AppProcessService
     @EnvironmentObject private var campaignStore: CampaignStore
+    @EnvironmentObject private var updaterService: UpdaterService
 
     @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
@@ -52,6 +53,11 @@ struct RootView: View {
                 }
                 .background(.black.opacity(0.82))
             }
+        }
+        .overlay(alignment: .top) {
+            OpenWorldsDragStrip()
+                .frame(width: 560, height: 36)
+                .accessibilityHidden(true)
         }
         .onAppear {
             refresh()
@@ -171,6 +177,12 @@ struct RootView: View {
         case "copyDiagnostics":
             Diagnostics.copy(processService: processService)
             return ["copied": true]
+        case "updaterStatus":
+            return ["updater": updaterService.statusPayload]
+        case "checkForUpdates":
+            return ["updater": try updaterService.checkForUpdates()]
+        case "windowCommand":
+            return try performWindowCommand(request.payload)
         case "openFallbackDashboard":
             let dashboardURL = try await ensureDashboardURL()
             NSWorkspace.shared.open(dashboardURL)
@@ -254,9 +266,31 @@ struct RootView: View {
             "providers": providerStatusesPayload(),
             "dependencies": dependencyPayload(),
             "providerDiagnostics": Diagnostics.providerLaunchSummary(processService.providerLaunchMetadata),
+            "openWorldsAssetsPath": processService.openWorldsAssetsPath ?? "",
+            "updater": updaterService.statusPayload,
         ]
         extra.forEach { payload[$0.key] = $0.value }
         return payload
+    }
+
+    private func performWindowCommand(_ payload: [String: Any]) throws -> [String: Any] {
+        guard let rawCommand = stringPayload(payload, "command")?.lowercased(), !rawCommand.isEmpty else {
+            throw ProviderError.configuration("windowCommand requires a command.")
+        }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible }) else {
+            throw ProviderError.configuration("No active app window is available.")
+        }
+        switch rawCommand {
+        case "close":
+            DispatchQueue.main.async { window.performClose(nil) }
+        case "minimize":
+            DispatchQueue.main.async { window.miniaturize(nil) }
+        case "zoom":
+            DispatchQueue.main.async { window.zoom(nil) }
+        default:
+            throw ProviderError.configuration("Unsupported window command: \(rawCommand)")
+        }
+        return ["command": rawCommand, "performed": true]
     }
 
     private func endpointPayload(_ endpoint: LocalEndpoint?) -> [String: Any] {
@@ -367,6 +401,22 @@ private final class OpenWorldsChromeHostView: NSView {
                 window.standardWindowButton(button)?.isHidden = true
             }
         }
+    }
+}
+
+private struct OpenWorldsDragStrip: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        OpenWorldsDragStripView(frame: .zero)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private final class OpenWorldsDragStripView: NSView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }
 

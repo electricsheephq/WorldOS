@@ -60,16 +60,27 @@ Every OpenWorlds screen should expose one of these labels:
 5. Sprint 4: make Chronicles the real app home with live/stale run state.
 6. Sprint 5+: finish gameplay surfaces in impact order: table, combat, atlas,
    relations/camp, inventory/economy, acts, bestiary/codex.
-7. Release trust: add a Sparkle-backed update channel (#134) after the local `.app`,
-   signing, and bundle identity are stable. This should let owners update the
-   native app without repeated manual rebuild/download cycles, while keeping the
-   viewer/engine state directories outside the app bundle.
+7. Release trust: add a Sparkle-backed local beta channel (#134) after the local
+   `.app`, signing, and bundle identity are stable. This lets owners update the
+   native app and bundled OpenWorlds UI without repeated manual rebuild/download
+   cycles, while keeping the viewer/engine state directories outside the app
+   bundle.
 
 ## Sparkle Update Lane
 
-Sparkle is intentionally out of the correction PR's runtime scope. Track it as a
-release-trust feature in #134 after the OpenWorlds host and native bridge are
-stable.
+Sparkle is the beta distribution lane for #134. The local beta channel writes to
+`/Volumes/LEXAR/Codex/clawdnd-beta-channel` and uses:
+
+- app bundle: `/Volumes/LEXAR/Codex/clawdnd-beta-channel/ClawDnD.app`
+- update feed: `file:///Volumes/LEXAR/Codex/clawdnd-beta-channel/appcast.xml`
+- release script: `script/package_macos_beta.sh`
+- bundle id: `dev.clawdnd.app`
+- version/build: `0.3.0` / `2026052601` for `0.3.0-beta.1`
+- signing identity: `Developer ID Application: Andrew Ryan (TC6MS3T6NN)`
+
+The Sparkle private key lives only under
+`/Volumes/LEXAR/Codex/clawdnd-release-secrets/`. The repo stores only the public
+key in `macos/ClawDnDApp/SparklePublicKey.txt`.
 
 Implementation goals:
 
@@ -82,6 +93,9 @@ Implementation goals:
   bridge, not through a second visible SwiftUI settings shell.
 - Keep local dev builds working without Sparkle so contributors can still use
   `./script/build_and_run.sh --verify`.
+- Package `viewer/openworlds/` into `ClawDnD.app/Contents/Resources/openworlds`
+  and launch the repo-backed Python viewer with `CLAWDND_OPENWORLDS_DIR` pointing
+  at those bundled assets when available.
 
 ## Window Chrome Lane
 
@@ -114,6 +128,9 @@ Supported request types:
 - `stopProvider`
 - `diagnostics`
 - `copyDiagnostics`
+- `updaterStatus`
+- `checkForUpdates`
+- `windowCommand`
 - `openFallbackDashboard`
 
 Native replies:

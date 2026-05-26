@@ -366,12 +366,50 @@ function CapabilityBadge({ capability, nativeStatus }) {
 }
 
 function TitleBar({ campaign, location, day, capability, nativeStatus }) {
+  const bridgeReady = Boolean(nativeStatus?.bridge && window.OpenWorldsNative?.hasBridge?.());
+  const commandWindow = (command) => {
+    if (!bridgeReady) return;
+    window.OpenWorldsNative.request("windowCommand", { command }).catch((error) => {
+      window.dispatchEvent(new CustomEvent("openworlds:toast", {
+        detail: {
+          kind: "danger",
+          title: "Window command failed",
+          body: error?.message || String(error),
+        },
+      }));
+    });
+  };
+  const controlTitle = bridgeReady
+    ? "Native window control"
+    : "Unavailable outside the ClawDnD macOS app";
+
   return (
     <div className="title-bar">
-      <div className="traffic-lights" aria-hidden="true">
-        <span className="traffic-light close" />
-        <span className="traffic-light min" />
-        <span className="traffic-light zoom" />
+      <div className="traffic-lights" aria-label="Window controls">
+        <button
+          type="button"
+          className="traffic-light close"
+          onClick={() => commandWindow("close")}
+          disabled={!bridgeReady}
+          title={`${controlTitle}: close`}
+          aria-label="Close window"
+        />
+        <button
+          type="button"
+          className="traffic-light min"
+          onClick={() => commandWindow("minimize")}
+          disabled={!bridgeReady}
+          title={`${controlTitle}: minimize`}
+          aria-label="Minimize window"
+        />
+        <button
+          type="button"
+          className="traffic-light zoom"
+          onClick={() => commandWindow("zoom")}
+          disabled={!bridgeReady}
+          title={`${controlTitle}: zoom`}
+          aria-label="Zoom window"
+        />
       </div>
       <div className="title-text">
         <span>Open Worlds</span><em>·</em><span>{campaign || "The Long Road to Odrun"}</span>

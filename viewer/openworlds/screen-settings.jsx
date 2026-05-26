@@ -221,6 +221,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
   const toast = window.useToast ? window.useToast() : (() => {});
   const app = nativeState?.appStatus || {};
   const viewer = app.viewer || {};
+  const updater = app.updater || {};
   const providers = Array.isArray(nativeState?.providers) ? nativeState.providers : [];
   const dependencies = Array.isArray(nativeState?.dependencies) ? nativeState.dependencies : [];
   const bridgeReady = Boolean(nativeState?.bridge);
@@ -281,6 +282,37 @@ function NativeAppSection({ nativeState, refreshNative }) {
           </div>
           <p className="body-sm muted" style={{ marginTop: 12 }}>
             Native actions supervise local processes only. Game intent still travels through the existing engine/player move lane.
+          </p>
+        </Panel>
+      </div>
+
+      <Divider />
+      <SectionTitle>Updates</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Panel framed style={{ padding: 18 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <Pill tone={updater.status === "ready" ? "emerald" : "crimson"}>
+              Sparkle {updater.status || "unavailable"}
+            </Pill>
+            <Pill tone="royal">{updater.channel || "local-beta"}</Pill>
+          </div>
+          <StatLine k="Version" v={updater.version || "0.0.0"} />
+          <StatLine k="Build" v={updater.build || "0"} />
+          <StatLine k="Feed" v={updater.feedURL || "not configured"} />
+          <StatLine k="Last check" v={updater.lastCheckRequestedAt || "not checked"} />
+          <StatLine k="Update error" v={updater.lastError || "none"} />
+        </Panel>
+        <Panel framed style={{ padding: 18 }}>
+          <SectionTitle>Update Actions</SectionTitle>
+          <BrassButton
+            size="sm"
+            onClick={() => nativeAction("checkForUpdates")}
+            disabled={!bridgeReady || !updater.canCheckForUpdates}
+          >
+            Check for Updates
+          </BrassButton>
+          <p className="body-sm muted" style={{ marginTop: 12 }}>
+            Local beta updates use the file-based appcast in the Lexar release channel. Campaign state remains in the configured repo/state directory.
           </p>
         </Panel>
       </div>

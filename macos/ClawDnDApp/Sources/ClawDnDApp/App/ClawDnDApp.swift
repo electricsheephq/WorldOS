@@ -7,18 +7,21 @@ struct ClawDnDApp: App {
     @Environment(\.openWindow) private var openWindow
     @StateObject private var processService = AppProcessService()
     @StateObject private var campaignStore = CampaignStore()
+    @StateObject private var updaterService = UpdaterService()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(processService)
                 .environmentObject(campaignStore)
+                .environmentObject(updaterService)
                 .frame(minWidth: 1120, minHeight: 720)
         }
         WindowGroup("Debug Control Center", id: "debug-control-center") {
             DebugControlCenterView()
                 .environmentObject(processService)
                 .environmentObject(campaignStore)
+                .environmentObject(updaterService)
                 .frame(minWidth: 1120, minHeight: 720)
         }
         .commands {
