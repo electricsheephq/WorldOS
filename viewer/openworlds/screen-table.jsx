@@ -23,6 +23,11 @@ function ScreenTable({ onNavigate, state, setState }) {
   const conditions = Array.isArray(surface?.conditions) ? surface.conditions : [];
   const recentEvents = Array.isArray(surface?.recentEvents) ? surface.recentEvents : [];
   const actions = Array.isArray(surface?.availableActions) ? surface.availableActions : [];
+  const enabledActions = Array.isArray(surface?.enabledActions) ? surface.enabledActions : actions.filter((a) => a?.available);
+  const blockedActions = Array.isArray(surface?.blockedActions) ? surface.blockedActions : actions.filter((a) => !a?.available);
+  const writeLane = surface?.writeLane || { endpoint: surface?.write_lane || "/move" };
+  const actionContext = surface?.actionContext || {};
+  const consequenceContext = actionContext?.consequences || {};
   const roundOrder = Array.isArray(surface?.roundOrder) ? surface.roundOrder : [];
   const scene = surface?.scene || {};
   const encounter = surface?.encounter || {};
@@ -30,9 +35,10 @@ function ScreenTable({ onNavigate, state, setState }) {
   const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
-  const readOnlyReason = actions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
+  const readOnlyReason = blockedActions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
   const visibleLog = surface ? [...recentEvents, ...log] : [...demoLog, ...log];
   const actionById = (id) => actions.find((a) => a.id === id);
+  const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const params = new URLSearchParams();
@@ -107,14 +113,15 @@ function ScreenTable({ onNavigate, state, setState }) {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [visibleLog]);
 
-  const postMove = async (move, label) => {
-    if (!move || !canAct) {
+  const postMove = async (move, label, actionId) => {
+    const enabledAction = actionId ? enabledActionById(actionId) : null;
+    if (!move || !canAct || (actionId && !enabledAction)) {
       toast({ kind: "danger", title: "Action unavailable", body: readOnlyReason });
       return;
     }
     const text = label || move.text || move.name || "declares an action";
     try {
-      const response = await fetch("/move", {
+      const response = await fetch(writeLane.endpoint || "/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...move, campaign: surface?.campaign_id || campaignId }),
@@ -138,7 +145,7 @@ function ScreenTable({ onNavigate, state, setState }) {
       toast({ kind: "danger", title: "Declare is unavailable", body: action?.disabled_reason || readOnlyReason });
       return;
     }
-    await postMove({ kind: "do", text }, text);
+    await postMove({ kind: "do", text }, text, "do");
     setInput("");
   };
 
@@ -148,7 +155,7 @@ function ScreenTable({ onNavigate, state, setState }) {
       toast({ kind: "danger", title: `d${sides} unavailable`, body: action?.disabled_reason || readOnlyReason });
       return;
     }
-    postMove({ kind: "check", name: `d${sides}`, text: `roll d${sides}` }, `requests a d${sides} roll`);
+    postMove({ kind: "check", name: `d${sides}`, text: `roll d${sides}` }, `requests a d${sides} roll`, "check");
   };
 
   const invokeAction = (action) => {
@@ -161,7 +168,7 @@ function ScreenTable({ onNavigate, state, setState }) {
       return;
     }
     if (action.move) {
-      postMove(action.move, action.label);
+      postMove(action.move, action.label, action.id);
     }
   };
 
@@ -330,6 +337,9 @@ function ScreenTable({ onNavigate, state, setState }) {
           <SectionTitle>Encounter</SectionTitle>
           <div className="body-sm muted" style={{ marginBottom: 10 }}>
             {encounter.summary || scene.summary || "Choose what to risk."}
+            {Number(consequenceContext.dueCount || 0) > 0 && (
+              <span style={{ color: "var(--crimson)" }}> · {consequenceContext.dueCount} consequence due</span>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {actions.slice(0, 6).map((a) => (

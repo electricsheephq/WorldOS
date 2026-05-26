@@ -128,6 +128,19 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("window.atlasSurfaceFromCampaign", source)
         self.assertNotIn("state?.locations", source)
 
+    def test_openworlds_table_posts_only_enabled_session_actions(self):
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("surface?.enabledActions", source)
+        self.assertIn("surface?.blockedActions", source)
+        self.assertIn("enabledActionById(actionId)", source)
+        self.assertIn("fetch(writeLane.endpoint || \"/move\"", source)
+        self.assertNotIn("snapshot.json", source)
+        self.assertNotIn("writeSnapshot", source)
+
     def test_openworlds_rejects_path_traversal(self):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)
