@@ -1,0 +1,31 @@
+{
+  "_comment": "W2b image-ingest manifest for the Unofficial Baldur's Gate 3+ Universe Seed. Lead images for key characters and locations are fetched from bg3.wiki (CC BY-SA 4.0 / CC BY-NC-SA 4.0 dual-licensed, non-commercial fan use) and written ONLY to the gitignored content/worlds/_private/baldurs-gate/images/<scope>/ path. NEVER committed. Each image gets a .provenance.json sidecar with source_url, license, and attribution. To run a full ingest: python3 tools/ingest/wiki_images.py (uses this manifest). Use --max N to cap images per source during testing.",
+  "world_id": "baldurs-gate",
+  "rate_delay_seconds": 0.75,
+  "sources": [
+    {
+      "_comment": "bg3.wiki — standalone MediaWiki (API at /w/api.php). Images are dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. See https://bg3.wiki/wiki/bg3wiki:Copyrights. Non-commercial fan project; we attribute per wiki policy.",
+      "wiki": "bg3.wiki",
+      "script_path": "/w",
+      "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions CC BY-NC-SA 4.0 only). Non-commercial fan use.",
+      "attribution": "Image from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Unofficial, non-commercial fan content. Subject to Larian Studios' and Wizards of the Coast's Fan Content Policies.",
+      "images": [
+        {"title": "Shadowheart",          "scope": "portrait:shadowheart",     "kind": "portrait"},
+        {"title": "Astarion",             "scope": "portrait:astarion",        "kind": "portrait"},
+        {"title": "Gale",                 "scope": "portrait:gale",            "kind": "portrait"},
+        {"title": "Karlach",              "scope": "portrait:karlach",         "kind": "portrait"},
+        {"title": "Lae'zel",              "scope": "portrait:lazel",           "kind": "portrait"},
+        {"title": "Wyll",                 "scope": "portrait:wyll",            "kind": "portrait"},
+        {"title": "Halsin",               "scope": "portrait:halsin",          "kind": "portrait"},
+        {"title": "Minsc",                "scope": "portrait:minsc",           "kind": "portrait"},
+        {"title": "Jaheira",              "scope": "portrait:jaheira",         "kind": "portrait"},
+        {"title": "Withers",              "scope": "portrait:withers",         "kind": "portrait"},
+        {"title": "Elfsong Tavern",       "scope": "scene:elfsong-tavern",     "kind": "scene"},
+        {"title": "Baldur's Gate",        "scope": "scene:baldurs-gate",       "kind": "scene"},
+        {"title": "Moonrise Towers",      "scope": "scene:moonrise-towers",    "kind": "scene"},
+        {"title": "Wyrm's Rock Fortress", "scope": "scene:wyrms-rock",         "kind": "scene"},
+        {"title": "Candlekeep",           "scope": "scene:candlekeep",         "kind": "scene"}
+      ]
+    }
+  ]
+}
