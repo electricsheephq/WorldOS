@@ -789,3 +789,190 @@ def test_monster_combat_absent_with_no_monsters(tmp_path, monkeypatch):
     assert "monster_combat" not in view, (
         "monster_combat key must be absent when no monsters are in the fight"
     )
+
+
+# --- turn_brief in next_turn (#166) -------------------------------------------------
+
+
+def test_next_turn_brief_monster_multiattack(tmp_path, monkeypatch):
+    """next_turn returns turn_brief with Bandit Captain's Multiattack count + to-hit (#166).
+
+    The DM sees authoritative Multiattack data AT THE PER-TURN TRIGGER so it can't
+    drift back to a single-attack habit by round 3 (the primary combat-adherence gap).
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Brief Monster Test")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    res = server.spawn_monster(cid, "Bandit Captain")
+    captain_id = res["spawned"][0]["id"]
+
+    server.start_combat(cid, [pc, captain_id])
+    nt = server.next_turn(cid)  # advance past the first combatant to the second
+
+    assert "turn_brief" in nt, "next_turn must always include turn_brief when combat is active"
+    brief = nt["turn_brief"]
+    assert "name" in brief
+    assert "kind" in brief
+    assert "attack" in brief, "turn_brief must include an 'attack' key"
+
+    # If this turn belongs to the Bandit Captain, assert full monster data.
+    # If it belongs to the PC (initiative order varies), just confirm the schema.
+    if brief["kind"] == "monster":
+        atk = brief["attack"]
+        assert "attacks_per_turn" in atk, "monster turn_brief must have attacks_per_turn"
+        assert atk["attacks_per_turn"] >= 1
+        assert "attacks" in atk, "monster turn_brief must have attacks list"
+        # Verify the structure of each attack entry
+        for a in atk["attacks"]:
+            assert "to_hit" in a, f"attack entry missing to_hit: {a}"
+            assert isinstance(a["to_hit"], int)
+    else:
+        # PC schema
+        atk = brief["attack"]
+        assert "melee_attack_bonus" in atk
+        assert "ranged_attack_bonus" in atk
+        assert "melee_damage_mod" in atk
+        assert "ranged_damage_mod" in atk
+
+
+def test_next_turn_brief_monster_has_correct_multiattack_count(tmp_path, monkeypatch):
+    """Bandit Captain's turn_brief must show attacks_per_turn=2 when it IS the current combatant.
+
+    Strategy: put the Bandit Captain FIRST in initiative by monkeypatching dice.roll so
+    the captain always rolls max initiative; the first next_turn then belongs to the PC,
+    the second to the captain — ensuring we assert the captain's brief specifically.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    # Force deterministic initiative: hero rolls 1, captain rolls 2 → captain goes first.
+    _call_count = [0]
+    _orig_roll = server.dice_mod.roll
+
+    def _rigged_roll(expression, **kwargs):
+        result = _orig_roll(expression, **kwargs)
+        if expression.startswith("1d20"):
+            _call_count[0] += 1
+            # First initiative roll = hero (low), second = captain (high)
+            from dice import DiceRoll
+            total = 1 if _call_count[0] == 1 else 25
+            return DiceRoll(expression=expression, total=total, rolls=[total],
+                            is_d20=True, natural=total)
+        return result
+
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged_roll)
+
+    cid = server.create_campaign("Captain Brief Test")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    res = server.spawn_monster(cid, "Bandit Captain")
+    captain_id = res["spawned"][0]["id"]
+
+    sc = server.start_combat(cid, [pc, captain_id])
+    # Captain has higher initiative → captain is turn_index=0 (first).
+    # next_turn → advances to the PC's turn.
+    nt1 = server.next_turn(cid)
+    # next_turn again → wraps back to the captain (new round).
+    nt2 = server.next_turn(cid)
+
+    # Identify which response belongs to the captain
+    captain_brief = None
+    for nt in (nt1, nt2):
+        if nt.get("turn_brief", {}).get("name", "").startswith("Bandit Captain"):
+            captain_brief = nt["turn_brief"]
+            break
+    assert captain_brief is not None, (
+        f"Expected one of the next_turn responses to carry the Bandit Captain's brief; "
+        f"got: {[nt.get('turn_brief', {}).get('name') for nt in (nt1, nt2)]}"
+    )
+    atk = captain_brief["attack"]
+    assert atk["attacks_per_turn"] == 2, (
+        f"Bandit Captain must have attacks_per_turn=2 in turn_brief; got {atk['attacks_per_turn']}"
+    )
+    assert len(atk["attacks"]) >= 2, "Bandit Captain should have at least 2 attack options"
+    for a in atk["attacks"]:
+        assert isinstance(a["to_hit"], int) and a["to_hit"] > 0
+        assert a.get("damage"), f"attack entry missing damage: {a}"
+
+
+def test_next_turn_brief_pc_attack_numbers(tmp_path, monkeypatch):
+    """PC turn_brief carries melee/ranged bonuses derived from the sheet (#166 PC path)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("PC Brief Test")["id"]
+    # Fighter L2 with STR 16 (+3), DEX 14 (+2), prof=2 → melee=+5, ranged=+4
+    pc = server.create_character(
+        cid, "Ren", kind="player", max_hp=20,
+        class_name="Fighter", level=2, apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 14},
+    )["id"]
+    monster = server.create_character(cid, "Dummy", kind="monster", max_hp=5)["id"]
+
+    server.start_combat(cid, [pc, monster])
+    # Call next_turn until we land on the PC.
+    nt = server.next_turn(cid)
+    # If the first next_turn is the monster, advance one more.
+    if nt.get("turn_brief", {}).get("kind") != "player":
+        nt = server.next_turn(cid)
+
+    brief = nt.get("turn_brief", {})
+    assert brief.get("kind") == "player", f"Expected PC turn; got kind={brief.get('kind')}"
+    atk = brief["attack"]
+    assert "melee_attack_bonus" in atk
+    assert "ranged_attack_bonus" in atk
+    assert "attacks_per_action" in atk
+    # Prof=2 + STR mod=3 = melee +5; prof=2 + DEX mod=2 = ranged +4
+    assert atk["melee_attack_bonus"] == 5, (
+        f"Expected melee_attack_bonus=5 (prof2+STR3); got {atk['melee_attack_bonus']}"
+    )
+    assert atk["ranged_attack_bonus"] == 4, (
+        f"Expected ranged_attack_bonus=4 (prof2+DEX2); got {atk['ranged_attack_bonus']}"
+    )
+
+
+def test_next_turn_brief_pc_with_action_surge(tmp_path, monkeypatch):
+    """Fighter with untouched Action Surge shows it in turn_brief.resources (#166)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Action Surge Brief Test")["id"]
+    pc = server.create_character(
+        cid, "Ren", kind="player", max_hp=20,
+        class_name="Fighter", level=2, apply_srd_defaults=True,
+        abilities={"strength": 16, "dexterity": 14},
+    )["id"]
+    monster = server.create_character(cid, "Dummy", kind="monster", max_hp=5)["id"]
+
+    server.start_combat(cid, [pc, monster])
+    # Find the PC's turn in next_turn responses
+    nt = server.next_turn(cid)
+    if nt.get("turn_brief", {}).get("kind") != "player":
+        nt = server.next_turn(cid)
+
+    brief = nt.get("turn_brief", {})
+    assert brief.get("kind") == "player"
+    resources = brief.get("resources", {})
+    assert "action_surge" in resources, (
+        f"Fighter L2 with untouched Action Surge must appear in turn_brief.resources; "
+        f"got resources={resources}"
+    )
+    assert resources["action_surge"]["remaining"] == 1
+
+
+def test_next_turn_brief_absent_when_combat_not_active(tmp_path, monkeypatch):
+    """turn_brief must NOT appear when there is no active combat (additive guarantee)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("No Combat Test")["id"]
+    a = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    b = server.create_character(cid, "Foe", kind="monster", max_hp=5)["id"]
+
+    server.start_combat(cid, [a, b])
+    server.end_combat(cid)
+
+    import pytest
+    with pytest.raises(ValueError):
+        server.next_turn(cid)  # must raise when combat is not active

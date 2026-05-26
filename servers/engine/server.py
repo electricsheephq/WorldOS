@@ -2399,11 +2399,98 @@ def combatants_in_zone(campaign_id: str, zone: str) -> dict:
     return {"zone": zone, "count": len(occupants), "combatants": occupants}
 
 
+def _turn_brief(ch: "Character", c: "Campaign") -> dict:
+    """Build the per-turn brief for the combatant whose turn it just became.
+
+    Surfaced in next_turn's return so the DM has authoritative attack/resource
+    data AT THE TURN TRIGGER — the root cause of combat-adherence drift (#166):
+    the DM reads monster_combat once at start_combat then forgets it by round 3.
+
+    Schema:
+      name        — combatant name (for quick DM reference)
+      kind        — "monster" | "player" | "npc" | "companion"
+      attack      — for monsters: {attacks_per_turn, attacks (list of {name, to_hit, damage})};
+                    for PCs/companions/NPCs: {melee_attack_bonus, ranged_attack_bonus,
+                                              melee_damage_mod, ranged_damage_mod,
+                                              extra_attacks} (from _combat_numbers)
+      resources   — {resource_id: {remaining, max, label}} for every class_resource
+                    with remaining > 0; empty dict if none or all spent.
+      spell_slots — {level: remaining} for slot levels with at least 1 remaining;
+                    empty dict if no slots or all used.
+      note        — brief action instruction for this combatant type.
+    """
+    brief: dict = {
+        "name": ch.name,
+        "kind": ch.kind,
+    }
+    # --- attack line ---
+    if ch.kind == "monster":
+        entry = _monster_combat_entry(ch, c)
+        if entry is not None:
+            brief["attack"] = {
+                "attacks_per_turn": entry["attacks_per_turn"],
+                "attacks": entry["attacks"],
+            }
+            brief["note"] = (
+                f"Run {entry['attacks_per_turn']} attack call(s) using the listed "
+                "to_hit/damage — never invent bonuses."
+            )
+        else:
+            # Fallback: no bestiary data, use derived numbers like a PC
+            nums = _combat_numbers(ch)
+            brief["attack"] = {
+                "melee_attack_bonus": nums["melee_attack_bonus"],
+                "ranged_attack_bonus": nums["ranged_attack_bonus"],
+                "melee_damage_mod": nums["melee_damage_mod"],
+                "ranged_damage_mod": nums["ranged_damage_mod"],
+                "extra_attacks": int(getattr(ch, "extra_attacks", 0)),
+            }
+            brief["note"] = "No bestiary data — use derived bonuses above; never invent."
+    else:
+        nums = _combat_numbers(ch)
+        extra = int(getattr(ch, "extra_attacks", 0))
+        attacks_per_action = extra + 1
+        brief["attack"] = {
+            "melee_attack_bonus": nums["melee_attack_bonus"],
+            "ranged_attack_bonus": nums["ranged_attack_bonus"],
+            "melee_damage_mod": nums["melee_damage_mod"],
+            "ranged_damage_mod": nums["ranged_damage_mod"],
+            "extra_attacks": extra,
+            "attacks_per_action": attacks_per_action,
+        }
+        brief["note"] = (
+            f"Declare use_action(kind='action') then make {attacks_per_action} attack call(s) "
+            "using the sheet bonuses above — never invent or copy another combatant's."
+        )
+    # --- limited resources (class_resources with remaining > 0) ---
+    resources: dict = {}
+    for rid, res in ch.class_resources.items():
+        remaining = res.max - res.used
+        if remaining > 0:
+            resources[rid] = {
+                "remaining": remaining,
+                "max": res.max,
+                "label": f"{remaining}/{res.max}" + (f" {res.size}" if res.size else ""),
+            }
+    brief["resources"] = resources
+    # --- spell slots with at least 1 remaining ---
+    slots: dict = {}
+    for lvl, slot in ch.spell_slots.items():
+        rem = slot.maximum - slot.used
+        if rem > 0:
+            slots[str(lvl)] = rem
+    if slots:
+        brief["spell_slots"] = slots
+    return brief
+
+
 @mcp.tool()
 def next_turn(campaign_id: str) -> dict:
     """Advance to the next LIVING combatant's turn (round increments on wrap;
-    dead or removed combatants are skipped). Returns whose turn it is and whether
-    they owe a death save (downed and unstable)."""
+    dead or removed combatants are skipped). Returns whose turn it is, whether
+    they owe a death save (downed and unstable), and a ``turn_brief`` with their
+    authoritative attack line + available limited resources so the DM never drifts
+    from the sheet numbers mid-combat (#166)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         order = c.combat.order
@@ -2454,6 +2541,11 @@ def next_turn(campaign_id: str) -> dict:
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
         view["expired_effects"] = expired
+        # Surface per-turn authoritative attack line + available resources so the DM
+        # has the sheet numbers AT THE TRIGGER POINT — not just at start_combat (#166).
+        # Only when combat is active and there's a living current combatant.
+        if cur is not None:
+            view["turn_brief"] = _turn_brief(cur, c)
         _log_combat_event(
             c,
             f"Turn advances to {cur.name}." if cur else "Turn advances with no living combatant.",

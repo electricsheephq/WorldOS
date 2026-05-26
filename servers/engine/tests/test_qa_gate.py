@@ -479,3 +479,145 @@ def test_combat_view_inactive_when_no_active_combat():
 
     assert v.build_combat_view({}) == {"active": False, "order": [], "warnings": []}
     assert v.build_combat_view({"combat": {"active": False, "order": []}})["active"] is False
+
+
+# --- round1_turn_skipped behavioral assertion (#166) --------------------------------
+# These tests exercise the SOFT (WARN, not FATAL) gate that detects the pattern:
+#   start_combat → next_turn with NO resolving action in between.
+# The check is gated inside the `has_facade` block (moves file present + non-empty).
+
+def _run_gate_multi(
+    tmp_path: Path,
+    *,
+    dm_events: list[dict],
+    chat: list[dict],
+    moves: list[dict],
+    state: dict,
+) -> subprocess.CompletedProcess:
+    """Like _run_gate but accepts a list of dm_events (instead of one)."""
+    run = tmp_path / "run.jsonl"
+    _write(run, dm_events)
+    chatp = tmp_path / "chat.jsonl"
+    _write(chatp, chat)
+    movp = tmp_path / "moves.jsonl"
+    _write(movp, moves)
+    stp = tmp_path / "state.json"
+    stp.write_text(json.dumps(state), encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, str(GATE), str(run), str(stp), str(chatp), str(movp)],
+        capture_output=True, text=True,
+    )
+
+
+_COMBAT_STATE = {
+    "characters": {
+        "pc1": {"kind": "player", "name": "Kield"},
+        "m1": {"kind": "monster", "name": "Goblin", "dead": True, "xp_value": 0},
+    },
+    "party": ["pc1"],
+    "combat": {"active": False},
+    "leveling_mode": "milestone",  # disable xp_not_orphaned check
+}
+
+_MIN_CHAT = [
+    {"role": "player", "text": "[attack] goblin"},
+    {"role": "dm", "text": "You swing!"},
+    {"role": "player", "text": "[attack] goblin"},
+    {"role": "dm", "text": "It falls."},
+    {"role": "player", "text": "[say] victory"},
+    {"role": "dm", "text": "Indeed."},
+    {"role": "player", "text": "[do] look around"},
+    {"role": "dm", "text": "Clear."},
+]
+
+_MIN_MOVES = [
+    {"role": "player", "kind": "attack", "text": "attack goblin", "target": "goblin"},
+    {"role": "player", "kind": "attack", "text": "attack goblin", "target": "goblin"},
+    {"role": "player", "kind": "say", "text": "victory"},
+    {"role": "player", "kind": "do", "text": "look around"},
+]
+
+
+def test_round1_turn_not_skipped_when_resolver_before_next_turn(tmp_path):
+    """PASS: start_combat → attack → next_turn — resolver present, no skip detected."""
+    dm_events = [
+        _dm_event(["start_combat"], "Combat starts!"),
+        _dm_event(["attack"], "You strike!"),
+        _dm_event(["next_turn"], "Turn advances."),
+        _dm_event(["end_combat"], "Combat ends."),
+    ]
+    r = _run_gate_multi(
+        tmp_path,
+        dm_events=dm_events,
+        chat=_MIN_CHAT,
+        moves=_MIN_MOVES,
+        state=_COMBAT_STATE,
+    )
+    assert "[WARN] round1_turn_skipped" not in r.stdout, (
+        f"Should NOT warn when attack precedes next_turn.\nstdout={r.stdout}"
+    )
+    # Confirm the check ran at all (it should appear as PASS when combat is in the stream)
+    assert "round1_turn_skipped" in r.stdout, (
+        f"round1_turn_skipped check should appear (combat active in stream).\nstdout={r.stdout}"
+    )
+
+
+def test_round1_turn_skipped_when_no_resolver_before_next_turn(tmp_path):
+    """WARN: start_combat → next_turn with nothing in between — Round-1 skip detected."""
+    dm_events = [
+        _dm_event(["start_combat"], "Combat starts!"),
+        _dm_event(["next_turn"], "Turn advances without any attack."),
+        _dm_event(["attack"], "Now we attack."),
+        _dm_event(["end_combat"], "Combat ends."),
+    ]
+    r = _run_gate_multi(
+        tmp_path,
+        dm_events=dm_events,
+        chat=_MIN_CHAT,
+        moves=_MIN_MOVES,
+        state=_COMBAT_STATE,
+    )
+    assert "[WARN] round1_turn_skipped" in r.stdout, (
+        f"Should WARN when next_turn fires before any resolver.\nstdout={r.stdout}"
+    )
+    # Must be WARN (not FATAL) — overall exit should still be 0
+    assert r.returncode == 0, (
+        f"round1_turn_skipped is SOFT (WARN), must not cause RED exit.\nstdout={r.stdout}"
+    )
+
+
+def test_round1_turn_skipped_resolvers_use_action_counts(tmp_path):
+    """PASS: use_action before next_turn counts as a resolver — not a skip."""
+    dm_events = [
+        _dm_event(["start_combat"], "Combat starts!"),
+        _dm_event(["use_action"], "Action declared."),
+        _dm_event(["next_turn"], "Turn advances."),
+        _dm_event(["end_combat"], "Combat ends."),
+    ]
+    r = _run_gate_multi(
+        tmp_path,
+        dm_events=dm_events,
+        chat=_MIN_CHAT,
+        moves=_MIN_MOVES,
+        state=_COMBAT_STATE,
+    )
+    assert "[WARN] round1_turn_skipped" not in r.stdout, (
+        f"use_action before next_turn counts as resolver; should not warn.\nstdout={r.stdout}"
+    )
+
+
+def test_round1_turn_skipped_not_fired_without_combat(tmp_path):
+    """round1_turn_skipped must NOT appear at all when start_combat was never called."""
+    dm_events = [
+        _dm_event(["roll", "social_check"], "Non-combat session."),
+    ]
+    r = _run_gate_multi(
+        tmp_path,
+        dm_events=dm_events,
+        chat=_MIN_CHAT,
+        moves=_MIN_MOVES,
+        state=_COMBAT_STATE,
+    )
+    assert "round1_turn_skipped" not in r.stdout, (
+        f"round1_turn_skipped must not appear when start_combat never fired.\nstdout={r.stdout}"
+    )
