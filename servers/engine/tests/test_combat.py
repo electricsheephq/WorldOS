@@ -705,3 +705,87 @@ def test_start_combat_unknown_surpriser_id_is_skipped_gracefully(tmp_path, monke
     assert len(view["order"]) == 2
     # Unknown id stripped → no surprise key surfaced (no valid surprisers remain)
     assert "surprise" not in view
+
+
+# --- monster_combat surfacing (issue #157: Bandit Captain Multiattack) ---------
+
+
+def test_monster_combat_bandit_captain_multiattack(tmp_path, monkeypatch):
+    """Bandit Captain → monster_combat shows attacks_per_turn=2 with Scimitar + Pistol.
+
+    This is the primary regression guard for issue #157: the Bandit Captain's
+    Multiattack ('makes two attacks') was silently lost — the DM made one attack
+    per turn and halved the monster's threat. The engine now surfaces authoritative
+    Multiattack count + per-attack to-hit/damage at start_combat so the DM can't
+    miss it.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Multiattack Test")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    res = server.spawn_monster(cid, "Bandit Captain")
+    captain_id = res["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, captain_id])
+
+    assert "monster_combat" in view, "monster_combat key must be present when a monster is in the fight"
+    entries = {e["id"]: e for e in view["monster_combat"]}
+    assert captain_id in entries, "Bandit Captain must have a monster_combat entry"
+
+    entry = entries[captain_id]
+    assert entry["attacks_per_turn"] == 2, (
+        f"Bandit Captain Multiattack should be 2; got {entry['attacks_per_turn']}"
+    )
+    attack_names = {a["name"] for a in entry["attacks"]}
+    assert "Scimitar" in attack_names, f"Scimitar attack missing; got {attack_names}"
+    assert "Pistol" in attack_names, f"Pistol attack missing; got {attack_names}"
+    for atk in entry["attacks"]:
+        assert isinstance(atk["to_hit"], int), f"to_hit must be int; got {atk}"
+        assert atk["to_hit"] > 0, f"to_hit must be positive; got {atk}"
+        assert atk["damage"], f"damage must be non-empty; got {atk}"
+
+
+def test_monster_combat_single_attack_monster(tmp_path, monkeypatch):
+    """Wolf (no Multiattack) → attacks_per_turn=1, no false extra attacks.
+
+    Verifies that the Multiattack parser doesn't invent an extra attack when the
+    creature has only a single attack action and no Multiattack entry.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Single Attack Test")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    res = server.spawn_monster(cid, "Wolf")
+    wolf_id = res["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, wolf_id])
+
+    assert "monster_combat" in view
+    entries = {e["id"]: e for e in view["monster_combat"]}
+    assert wolf_id in entries
+    wolf_entry = entries[wolf_id]
+    assert wolf_entry["attacks_per_turn"] == 1, (
+        f"Wolf has no Multiattack — attacks_per_turn should be 1; got {wolf_entry['attacks_per_turn']}"
+    )
+    # Wolf has a Bite attack with authoritative to-hit
+    assert len(wolf_entry["attacks"]) >= 1
+    bite = next((a for a in wolf_entry["attacks"] if "Bite" in a["name"]), None)
+    assert bite is not None, "Wolf should have a Bite attack entry"
+    assert isinstance(bite["to_hit"], int) and bite["to_hit"] > 0
+
+
+def test_monster_combat_absent_with_no_monsters(tmp_path, monkeypatch):
+    """monster_combat key must NOT appear when the fight is PC-only (additive, no regressions)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("PC Only Test")["id"]
+    a = server.create_character(cid, "Hero A", kind="player", max_hp=20)["id"]
+    b = server.create_character(cid, "Hero B", kind="player", max_hp=18)["id"]
+
+    view = server.start_combat(cid, [a, b])
+    assert "monster_combat" not in view, (
+        "monster_combat key must be absent when no monsters are in the fight"
+    )
