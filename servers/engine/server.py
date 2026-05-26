@@ -67,6 +67,7 @@ from models import (
     HouseRules,
     Item,
     Location,
+    PendingOnHitRider,
     Quest,
     SceneDebt,
     SessionLogEntry,
@@ -2861,6 +2862,44 @@ def attack(
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
+        # ON-HIT RIDER RESOLUTION (#186). An attack-roll spell (Guiding Bolt) recorded a
+        # PENDING rider on the caster at cast_spell time instead of writing its timed effect
+        # to the target. This attack resolves that spell attack when it's the caster striking
+        # this same target: on a HIT, materialize the rider's ActiveEffect on the target now
+        # (refresh-not-stack, identical to a cast-time write); on a MISS, discard it (no free
+        # advantage). A weapon attack with no matching pending rider is wholly unaffected.
+        riders = [
+            r for r in attacker.pending_on_hit_riders if r.target_id == target_id
+        ]
+        if riders:
+            # Drop every matched rider from the caster whatever the outcome — hit applies,
+            # miss simply discards. (Unmatched riders, e.g. a bolt aimed at a different
+            # target, stay pending.)
+            attacker.pending_on_hit_riders = [
+                r for r in attacker.pending_on_hit_riders if r.target_id != target_id
+            ]
+            if hit:
+                applied = []
+                for r in riders:
+                    eff = ActiveEffect(
+                        name=r.name,
+                        source_id=r.source_id,
+                        concentration=False,
+                        scale=r.scale,
+                        rounds_remaining=r.rounds_remaining,
+                        expires_day=r.expires_day,
+                        expires_phase_index=r.expires_phase_index,
+                        until_long_rest=r.until_long_rest,
+                    )
+                    # Refresh, don't stack (mirrors cast_spell's write).
+                    target.active_effects = [
+                        e for e in target.active_effects if e.name != r.name
+                    ]
+                    target.active_effects.append(eff)
+                    applied.append(r.name)
+                result["on_hit_effect_applied"] = applied
+            else:
+                result["on_hit_effect_discarded"] = [r.name for r in riders]
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
         if hit and result["damage"]:
             dtype = f" {damage_type}" if damage_type else ""
@@ -3695,6 +3734,15 @@ def cast_spell(
     # The spell's timed duration (if any), normalized from whichever data source carries
     # it — both curated and srd524 records have a `duration` string (see spells.parse_duration).
     duration = spells.parse_duration(curated.get("duration") if curated else srd.get("duration"))
+    # Does this spell resolve via an ATTACK ROLL (vs a saving throw / auto-hit / buff)?
+    # SRD records carry an explicit `attack_roll` bool; a curated spell is an attack spell
+    # when its mechanics kind is "attack" (Fire Bolt — a damage cantrip). Drives the #186
+    # on-hit-rider defer below: an attack-roll spell's timed effect on a SEPARATE target
+    # is a 5e on-hit rider (Guiding Bolt) and must wait for the attack to HIT.
+    is_attack_roll_spell = bool(
+        (curated.get("mechanics", {}).get("kind") == "attack") if curated
+        else srd.get("attack_roll")
+    )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -3754,28 +3802,66 @@ def cast_spell(
         # CASTER (so it stays the twin of ch.concentration, one source of truth); a
         # non-concentration buff with an explicit target holds it on that target.
         effect_holder = ch
+        pending_rider = None  # set when the effect DEFERS to the spell-attack hit (#186)
         if duration is not None:
             if not concentrates and target_id and target_id != character_id:
                 tgt = c.characters.get(target_id)
                 if tgt is not None:
                     effect_holder = tgt
-            eff = ActiveEffect(
-                name=canonical,
-                source_id=character_id,
-                concentration=concentrates,
-                scale=duration["scale"],
-                rounds_remaining=duration["rounds"],
-                until_long_rest=(duration["scale"] == "hours"),
+            # ON-HIT RIDER DEFER (#186). An ATTACK-ROLL spell whose timed effect lands on a
+            # SEPARATE target is a 5e on-hit rider (Guiding Bolt: "on a hit, the next attack
+            # against it has Advantage"). The cast and the spell attack are two calls, so the
+            # effect must NOT be written to the target at cast time — a MISS would leave a
+            # phantom marker (free advantage) and a re-cast would stack a second one. Record a
+            # PENDING rider on the CASTER instead; the next attack() (attacker == caster,
+            # target == this target) materializes it on a HIT or discards it on a MISS. Save
+            # spells (attack_roll False) and self/ally buffs (holder == caster) are unaffected
+            # — they fall through to the immediate write below, exactly as before.
+            defer_on_hit = (
+                is_attack_roll_spell
+                and effect_holder is not ch
+                and not concentrates
             )
-            if duration["scale"] in ("hours", "days"):
-                eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
-                    c, duration["hours"], duration["days"]
+            if defer_on_hit:
+                rider = PendingOnHitRider(
+                    name=canonical,
+                    source_id=character_id,
+                    target_id=effect_holder.id,
+                    scale=duration["scale"],
+                    rounds_remaining=duration["rounds"],
+                    until_long_rest=(duration["scale"] == "hours"),
                 )
-            # Recasting the SAME spell on a holder refreshes (doesn't stack) it.
-            effect_holder.active_effects = [
-                e for e in effect_holder.active_effects if e.name != canonical
-            ]
-            effect_holder.active_effects.append(eff)
+                if duration["scale"] in ("hours", "days"):
+                    rider.expires_day, rider.expires_phase_index = _effect_clock_deadline(
+                        c, duration["hours"], duration["days"]
+                    )
+                # Re-casting at the SAME target replaces the pending rider for this spell —
+                # no phantom second marker (the bug). Keyed by (target_id, name).
+                ch.pending_on_hit_riders = [
+                    r for r in ch.pending_on_hit_riders
+                    if not (r.target_id == rider.target_id and r.name == canonical)
+                ]
+                ch.pending_on_hit_riders.append(rider)
+                pending_rider = rider
+                effect_holder = ch  # nothing written to the target yet; caster carries the pending record
+            else:
+                eff = ActiveEffect(
+                    name=canonical,
+                    source_id=character_id,
+                    concentration=concentrates,
+                    scale=duration["scale"],
+                    rounds_remaining=duration["rounds"],
+                    until_long_rest=(duration["scale"] == "hours"),
+                )
+                if duration["scale"] in ("hours", "days"):
+                    eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
+                        c, duration["hours"], duration["days"]
+                    )
+                # Recasting the SAME spell on a holder refreshes (doesn't stack) it.
+                effect_holder.active_effects = [
+                    e for e in effect_holder.active_effects if e.name != canonical
+                ]
+                effect_holder.active_effects.append(eff)
         mod = _casting_mod(ch)
         prof = ch.proficiency_bonus
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
@@ -3805,8 +3891,23 @@ def cast_spell(
             },
         }
         # Surface the engine-tracked timed effect (if any) so the DM knows it'll
-        # auto-expire — and on whom it's tracked.
-        if duration is not None:
+        # auto-expire — and on whom it's tracked. An ON-HIT rider (#186) is NOT on the
+        # target yet, so report it as a `pending_effect` keyed to its target: it lands
+        # only when the spell attack hits (and the DM resolves that via attack()).
+        if pending_rider is not None:
+            result["pending_effect"] = {
+                "name": canonical,
+                "target_id": pending_rider.target_id,
+                "scale": duration["scale"],
+                "rounds_remaining": duration["rounds"],
+                "on_hit": True,
+                "note": (
+                    "On-hit rider: applied to the target only when the spell attack HITS "
+                    "(resolve via attack(attacker=this caster, target=this target)); "
+                    "discarded on a miss."
+                ),
+            }
+        elif duration is not None:
             result["active_effect"] = {
                 "name": canonical,
                 "holder_id": effect_holder.id,

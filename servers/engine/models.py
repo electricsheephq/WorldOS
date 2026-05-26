@@ -376,6 +376,42 @@ class ActiveEffect(_StrictModel):
     until_long_rest: bool = False
 
 
+class PendingOnHitRider(_StrictModel):
+    """An attack-roll spell's ON-HIT rider effect that has NOT yet landed (#186).
+
+    5e attack-roll spells (Guiding Bolt: "on a hit ... the next attack roll against
+    it has Advantage") grant a timed effect on the TARGET *only when the spell attack
+    hits*. But the cast and the attack are two separate engine calls (`cast_spell`
+    then `attack`), so the effect must not be written to the target at cast time —
+    a missed bolt would wrongly leave the marker, and a re-cast would phantom-stack
+    a second one.
+
+    So `cast_spell` records this PENDING rider on the CASTER (one source of truth,
+    keyed by `target_id` + spell `name`) instead of writing the ActiveEffect; the
+    next `attack()` whose attacker == this caster and target == `target_id`
+    materializes the ActiveEffect on the target on a HIT, or discards this record on
+    a MISS. It carries the duration descriptor (the same `scale`/`rounds`/clock
+    fields `cast_spell` computed) so the effect rebuilt on hit is identical to the
+    one that would have been written at cast.
+
+    ADDITIVE: `Character.pending_on_hit_riders` defaults to `[]`, so every existing
+    snapshot deserializes unchanged and a campaign that never casts an attack-roll
+    rider spell behaves exactly as today. Only attack-roll spells with a timed
+    duration aimed at a SEPARATE target ever create one — save spells and self/ally
+    buffs are untouched (they write their effect at cast, as before)."""
+
+    name: str  # the spell's canonical name (the materialized effect's name)
+    source_id: str  # the caster's character id (matched against attack()'s attacker)
+    target_id: str  # who the rider lands on, on a hit (matched against attack()'s target)
+    # Duration descriptor captured at cast (mirrors ActiveEffect's timing fields) so the
+    # effect materialized on hit is byte-identical to the one cast_spell would have written.
+    scale: Literal["rounds", "minutes", "hours", "days"] = "rounds"
+    rounds_remaining: int = 0
+    expires_day: int = 0
+    expires_phase_index: int = 0
+    until_long_rest: bool = False
+
+
 class Character(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("char"))
     name: str
@@ -416,6 +452,11 @@ class Character(_StrictModel):
     # that auto-expire via next_turn / clock-advance tools instead of relying on the DM
     # to remember. Empty == today's behavior. See ActiveEffect; set by cast_spell.
     active_effects: list[ActiveEffect] = Field(default_factory=list)
+    # Attack-roll spell on-hit riders (Guiding Bolt's "advantage on the next attack")
+    # that have NOT yet landed — recorded here at cast time and materialized onto the
+    # target only when the spell attack hits (see PendingOnHitRider, #186). Empty ==
+    # today's behavior; held on the CASTER so attack() can match attacker→target.
+    pending_on_hit_riders: list[PendingOnHitRider] = Field(default_factory=list)
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves
