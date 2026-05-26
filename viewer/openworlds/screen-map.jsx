@@ -180,6 +180,18 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
           </div>
         </div>
 
+        {!campMode && selected && (
+          <Img
+            scope={selected.id}
+            label={selected.name}
+            w="100%"
+            h={90}
+            framed
+            fit="cover"
+            style={{ marginBottom: 8, flex: "0 0 auto" }}
+          />
+        )}
+
         <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
           {campMode && window.CampSidebar ? (
             <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
@@ -342,7 +354,7 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
             </div>
 
             <Divider />
-            <Placeholder label={`${selected.name} - painted location`} h={118} framed />
+            <Img scope={selected.id} label={selected.name} w="100%" h={118} framed />
             <p className="body dropcap" style={{ marginTop: 12, fontSize: 15 }}>
               {selected.description || "No public description has been recorded for this place yet."}
             </p>
@@ -488,7 +500,7 @@ function LocationPin({ loc, selected }) {
           pointerEvents: "none",
           animation: "tooltip-in 140ms ease both",
         }}>
-          <Placeholder label={`${loc.name} vignette`} h={70} framed style={{ width: "100%" }} />
+          <Img scope={loc.id} label={loc.name} w="100%" h={70} framed fit="cover" />
           <div className="eyebrow" style={{ color: "var(--crimson)", marginTop: 8, fontSize: 9 }}>
             {loc.region || "Unknown reach"}
           </div>

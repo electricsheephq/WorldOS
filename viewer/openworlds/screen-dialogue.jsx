@@ -74,6 +74,8 @@ function ScreenDialogue({ onNavigate, state, setState }) {
 function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHistory, onNavigate, toast }) {
   const actorName = surface.actor || "Hero";
   const canAct = Boolean(surface.can_act);
+  const sceneScope = surface.location_id ||
+    (surface.event?.anchor_npc_id ? `portrait-${surface.event.anchor_npc_id}` : null);
 
   const pick = (slot) => {
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
@@ -108,11 +110,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
     <div className="screen" style={{ height: "100%", position: "relative", padding: 14 }}>
       {/* Scene backdrop */}
       <div style={{ position: "relative", height: "100%", overflow: "hidden", borderRadius: 4, boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 0 4px var(--b-500), inset 0 0 0 5px var(--b-300), inset 0 0 0 6px var(--b-500)" }}>
-        <Placeholder
-          label={`scene · parley · ${surface.title || "the table"}`}
-          h="100%"
-          style={{ width: "100%", height: "100%" }}
-        />
+        <Img scope={sceneScope} label={`scene · parley · ${surface.title || "the table"}`} w="100%" h="100%" fit="cover" style={{ position: "absolute", inset: 0 }} />
 
         {/* Vignette */}
         <div style={{
@@ -293,11 +291,7 @@ function ScreenDialogueDemo({ onNavigate, state, status }) {
     <div className="screen" style={{ height: "100%", position: "relative", padding: 14 }}>
       {/* Scene backdrop */}
       <div style={{ position: "relative", height: "100%", overflow: "hidden", borderRadius: 4, boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 0 4px var(--b-500), inset 0 0 0 5px var(--b-300), inset 0 0 0 6px var(--b-500)" }}>
-        <Placeholder
-          label="scene · oleg's trading post · interior · candlelit · 3 figures at table"
-          h="100%"
-          style={{ width: "100%", height: "100%" }}
-        />
+        <Img scope={node.locationScope || null} label="scene · oleg's trading post · interior · candlelit · 3 figures at table" w="100%" h="100%" fit="cover" style={{ position: "absolute", inset: 0 }} />
 
         {/* Vignette */}
         <div style={{
