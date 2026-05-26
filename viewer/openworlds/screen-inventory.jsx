@@ -10,10 +10,13 @@ function slug(name) {
   return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-/* Resolve the /image scope for an inventory item: prefer the engine id (always present as
-   "{character_id}:{idx}:{name}"); fall back to a slug of the item name. */
+/* Resolve the /image scope for an inventory item. Ingested item art is keyed by a name-slug
+   ("item:<slug>"), and the server normalises "item-<slug>" to the same key — so we must build
+   the scope from a slug of the item NAME, exactly as the equipped slots do ("item-"+slug(name)).
+   The engine item.id is a composite "{character_id}:{idx}:{name}" which normalises to a unique
+   per-instance key that never matches the shared art, so it must NOT be used for the scope. */
 function itemScope(item) {
-  return "item-" + (item.id ? item.id : slug(item.name));
+  return "item-" + slug(item && item.name);
 }
 
 function ScreenInventory({ onNavigate, state, setState }) {
@@ -227,9 +230,9 @@ function ScreenInventory({ onNavigate, state, setState }) {
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="muted body-sm">{filtered.length} items · {stash.length} total</span>
           <div style={{ display: "flex", gap: 6 }}>
-            <BrassButton tone="ghost" size="sm">Sort</BrassButton>
-            <BrassButton tone="ghost" size="sm">Mark Trash</BrassButton>
-            <BrassButton size="sm">Loot Pile</BrassButton>
+            <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Sort (preview)</BrassButton>
+            <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Mark Trash (preview)</BrassButton>
+            <BrassButton size="sm" disabled title="Display-only — not saved to the engine">Loot Pile (preview)</BrassButton>
           </div>
         </div>
       </Panel>

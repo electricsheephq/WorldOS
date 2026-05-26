@@ -5,12 +5,12 @@ function ScreenCreate({ onNavigate, state, setState }) {
   const [hero, setHero] = React.useState({
     name: "",
     race: "human",
-    class: "magus",
+    class: "fighter",
     background: "wanderer",
     portrait: 0,
     alignment: "neutral-good",
-    abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-    points: 20,
+    abilities: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 },
+    points: 27,
   });
 
   const steps = [
@@ -280,7 +280,7 @@ function StepAbilities({ hero, setHero }) {
   const adjust = (key, delta) => {
     const cur = hero.abilities[key];
     const target = cur + delta;
-    if (target < 8 || target > 18) return;
+    if (target < 8 || target > 15) return;
     const cost = abilityCost(target) - abilityCost(cur);
     if (hero.points - cost < 0) return;
     setHero({
@@ -294,7 +294,7 @@ function StepAbilities({ hero, setHero }) {
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>IV. Of Aptitudes</div>
       <h1 className="h1">Distribute your gifts.</h1>
       <p className="body muted" style={{ marginTop: 4 }}>
-        Twenty points, six gifts. Higher scores cost more. Pathfinder rules.
+        Twenty-seven points, six gifts. Scores run 8 to 15; higher scores cost more. D&D 5e point buy.
       </p>
       <Divider />
 
@@ -336,13 +336,13 @@ function StepAbilities({ hero, setHero }) {
         <div>
           <div className="eyebrow">Points remaining</div>
           <div style={{ fontFamily: "var(--f-display)", fontSize: 28, color: hero.points === 0 ? "var(--emerald)" : "var(--ink-900)" }}>
-            {hero.points}<span className="muted" style={{ fontSize: 14 }}>/20</span>
+            {hero.points}<span className="muted" style={{ fontSize: 14 }}>/27</span>
           </div>
         </div>
         <BrassButton tone="ghost" size="sm" onClick={() => setHero({
           ...hero,
-          abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-          points: 20,
+          abilities: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 },
+          points: 27,
         })}>Reset</BrassButton>
       </div>
     </div>
@@ -513,7 +513,8 @@ function SelectCard({ selected, onClick, label, sublabel, portrait, body, tags }
 }
 
 function abilityCost(score) {
-  const cost = { 8: -2, 9: -1, 10: 0, 11: 1, 12: 2, 13: 3, 14: 5, 15: 7, 16: 10, 17: 13, 18: 17 };
+  // D&D 5e point buy: scores 8–15, total budget 27.
+  const cost = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
   return cost[score] ?? 0;
 }
 
@@ -537,7 +538,7 @@ const RACES = {
     life: "70 years",
     glyph: "human · sketch",
     body: "Adaptive, ambitious, and overrepresented in chronicles. Heroes from the south road to the Old Hills count themselves human by habit.",
-    bonus: {},
+    bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
   },
   halfling: {
     name: "Halfling",
@@ -545,7 +546,7 @@ const RACES = {
     life: "100 years",
     glyph: "halfling · sketch",
     body: "Footloose, footsure, and oddly hard to startle. Scribes, scouts, and second daughters of failed dynasties.",
-    bonus: { dex: 2, str: -2, cha: 2 },
+    bonus: { dex: 2 },
   },
   dwarf: {
     name: "Dwarf",
@@ -553,7 +554,7 @@ const RACES = {
     life: "350 years",
     glyph: "dwarf · sketch",
     body: "Slow to leave, slower to anger, slowest to forget. Stonecunning, ironwise, and oddly reliable.",
-    bonus: { con: 2, wis: 2, cha: -2 },
+    bonus: { con: 2 },
   },
   elf: {
     name: "Elf",
@@ -561,7 +562,7 @@ const RACES = {
     life: "750 years",
     glyph: "elf · sketch",
     body: "Older than several wars they were not in. Sharp eyes, sharp words, sharper at the wrong times.",
-    bonus: { dex: 2, int: 2, con: -2 },
+    bonus: { dex: 2 },
   },
   half: {
     name: "Half-Elf",
@@ -569,7 +570,7 @@ const RACES = {
     life: "180 years",
     glyph: "half-elf",
     body: "Sufficient to neither lineage to be considered theirs by either. Many things, often very well.",
-    bonus: { cha: 2 },
+    bonus: { cha: 2, dex: 1, int: 1 },
   },
   tiefling: {
     name: "Tiefling",
@@ -577,22 +578,22 @@ const RACES = {
     life: "120 years",
     glyph: "tiefling",
     body: "Touched by something hot once. Counts the chambers of the soul on three hands.",
-    bonus: { dex: 2, int: 2, cha: -2 },
+    bonus: { int: 1, cha: 2 },
   },
 };
 
 const CLASSES = {
-  magus: {
-    name: "Magus",
-    role: "Sword and spell",
-    glyph: "magus · sigil",
-    body: "Weaves a single touched spell through a held blade. Best when nobody knows whether the cut or the cantrip arrives first.",
-    tags: ["d10 HP", "spell combat", "longsword"],
-    hp: 10,
+  wizard: {
+    name: "Wizard",
+    role: "Spell and study",
+    glyph: "wizard · sigil",
+    body: "Carries a book of borrowed lightning. Prepares the day's spells each dawn and spends them like a careful purse.",
+    tags: ["d6 HP", "spellbook", "arcane"],
+    hp: 6,
     kit: [
-      { name: "Longsword", qty: 1 },
-      { name: "Studded leather", qty: 1 },
-      { name: "Spellbook (5 spells)", qty: 1 },
+      { name: "Quarterstaff", qty: 1 },
+      { name: "Spellbook (6 spells)", qty: 1 },
+      { name: "Component pouch", qty: 1 },
       { name: "Travel rations", qty: 4 },
     ],
   },
@@ -619,8 +620,8 @@ const CLASSES = {
     hp: 10,
     kit: [
       { name: "Greataxe", qty: 1 },
-      { name: "Chainmail", qty: 1 },
-      { name: "Iron rations", qty: 6 },
+      { name: "Chain mail", qty: 1 },
+      { name: "Rations", qty: 6 },
     ],
   },
   cleric: {
@@ -628,13 +629,13 @@ const CLASSES = {
     role: "Sworn and channeling",
     glyph: "cleric · sigil",
     body: "Tied to a god by oath, debt, or unconcluded argument. Keeps the company alive by negotiating with the dying on a god's behalf.",
-    tags: ["d8 HP", "channels", "heavy armour"],
+    tags: ["d8 HP", "channel divinity", "heavy armour"],
     hp: 8,
     kit: [
       { name: "Warhammer", qty: 1 },
       { name: "Shield, holy", qty: 1 },
       { name: "Holy symbol", qty: 1 },
-      { name: "Cure light wounds", qty: 3 },
+      { name: "Cure Wounds (prepared)", qty: 3 },
     ],
   },
   rogue: {
@@ -642,7 +643,7 @@ const CLASSES = {
     role: "First in, first out",
     glyph: "rogue · sigil",
     body: "Knows what the door is for, has a different way through it. Useful in the dark; useful in the meeting; useful in the kitchens.",
-    tags: ["d8 HP", "sneak", "tools"],
+    tags: ["d8 HP", "sneak attack", "tools"],
     hp: 8,
     kit: [
       { name: "Shortsword + dagger", qty: 2 },
@@ -651,32 +652,32 @@ const CLASSES = {
       { name: "Caltrops", qty: 1 },
     ],
   },
-  ranger: {
-    name: "Ranger",
-    role: "Of the second-shallowest water",
-    glyph: "ranger · sigil",
-    body: "Has slept outside more nights than indoors. The road obeys you because you obey it first.",
-    tags: ["d10 HP", "two-weapon", "tracker"],
+  paladin: {
+    name: "Paladin",
+    role: "Oath and aegis",
+    glyph: "paladin · sigil",
+    body: "Bound to an oath that burns brighter than any blade. Lays on hands what the sword could not mend.",
+    tags: ["d10 HP", "lay on hands", "heavy armour"],
     hp: 10,
     kit: [
-      { name: "Longbow", qty: 1 },
-      { name: "Twin shortswords", qty: 2 },
-      { name: "Studded leather", qty: 1 },
-      { name: "Snares", qty: 3 },
+      { name: "Longsword", qty: 1 },
+      { name: "Chain mail", qty: 1 },
+      { name: "Shield", qty: 1 },
+      { name: "Holy symbol", qty: 1 },
     ],
   },
 };
 
 const BACKGROUNDS = {
-  wanderer: { name: "Wanderer", brief: "No address. Many addresses.", skills: ["Survival", "Knowledge (World)"] },
-  scholar: { name: "Scholar", brief: "Of an institution, real or alleged.", skills: ["Knowledge (Arcana)", "Linguistics"] },
-  noble: { name: "Disinherited Noble", brief: "Was someone. Is no longer.", skills: ["Persuasion", "Knowledge (Nobility)"] },
-  soldier: { name: "Soldier", brief: "Served, returned, signed nothing.", skills: ["Athletics", "Intimidate"] },
-  outlaw: { name: "Outlaw", brief: "Wanted in three districts; welcome in two.", skills: ["Stealth", "Trickery"] },
-  pilgrim: { name: "Pilgrim", brief: "Going somewhere. Still going.", skills: ["Knowledge (Religion)", "Survival"] },
-  artisan: { name: "Artisan", brief: "Made something good. Will make another.", skills: ["Craft", "Appraise"] },
-  hedge: { name: "Hedge-witch", brief: "Taught by an older woman, since gone.", skills: ["Knowledge (Nature)", "Heal"] },
-  spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Persuasion"] },
+  wanderer: { name: "Wanderer", brief: "No address. Many addresses.", skills: ["Survival", "Nature"] },
+  scholar: { name: "Scholar", brief: "Of an institution, real or alleged.", skills: ["Arcana", "History"] },
+  noble: { name: "Disinherited Noble", brief: "Was someone. Is no longer.", skills: ["Persuasion", "History"] },
+  soldier: { name: "Soldier", brief: "Served, returned, signed nothing.", skills: ["Athletics", "Intimidation"] },
+  outlaw: { name: "Outlaw", brief: "Wanted in three districts; welcome in two.", skills: ["Stealth", "Deception"] },
+  pilgrim: { name: "Pilgrim", brief: "Going somewhere. Still going.", skills: ["Religion", "Survival"] },
+  artisan: { name: "Artisan", brief: "Made something good. Will make another.", skills: ["Investigation", "Persuasion"] },
+  hedge: { name: "Hedge-witch", brief: "Taught by an older woman, since gone.", skills: ["Nature", "Medicine"] },
+  spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
 Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost });

@@ -17,6 +17,9 @@ function ScreenRelations({ onNavigate, state, setState }) {
   const npcs = (Array.isArray(surface?.npcs) && surface.npcs.length) ? surface.npcs
     : (surface ? [] : NPCS);
   const campBeats = surface?.campBeats || null;
+  // Companion personal-quest arcs (from /relations-surface `companionArcs`): each is
+  // { id, companion_id, companion, title, status, note, stages:[{title,status,note}] }.
+  const companionArcs = Array.isArray(surface?.companionArcs) ? surface.companionArcs : [];
   const [selectedFactionId, setSelectedFactionId] = React.useState("");
   const [selectedNPCId, setSelectedNPCId] = React.useState("");
   const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || FACTIONS[0];
@@ -48,7 +51,8 @@ function ScreenRelations({ onNavigate, state, setState }) {
   }, [loadSurface]);
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, padding: 14, minHeight: 0 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 14, padding: 14, minHeight: 0 }}>
+     <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, minHeight: 0 }}>
 
       {/* LEFT — Factions */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -132,6 +136,64 @@ function ScreenRelations({ onNavigate, state, setState }) {
           </div>
         </div>
       </Panel>
+     </div>
+
+      {/* Companion Arcs — the character-owned personal-quest lifecycle from
+          /relations-surface `companionArcs`. Hidden entirely when the surface provides none. */}
+      {companionArcs.length > 0 && (
+        <Panel framed style={{ padding: 22, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+            <div>
+              <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Roads They Walk</div>
+              <h2 className="h1" style={{ fontSize: 18 }}>Companion Arcs</h2>
+            </div>
+            <span className="muted body-sm">{companionArcs.length} in motion</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+            {companionArcs.map((arc) => <CompanionArcCard key={arc.id} arc={arc} />)}
+          </div>
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+function CompanionArcCard({ arc }) {
+  const statusTone = (s) => {
+    const v = String(s || "").toLowerCase();
+    if (v === "complete" || v === "completed" || v === "resolved" || v === "done") return "var(--emerald)";
+    if (v === "active" || v === "in_progress" || v === "unlocked" || v === "open") return "var(--royal)";
+    if (v === "failed") return "var(--crimson)";
+    return "var(--b-400)"; // locked / unknown
+  };
+  const stages = Array.isArray(arc.stages) ? arc.stages : [];
+  return (
+    <div style={{
+      padding: "12px 14px",
+      background: "rgba(176,141,87,0.06)",
+      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25), inset 3px 0 0 " + statusTone(arc.status),
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.06em", color: "var(--ink-900)" }}>
+          {arc.title}
+        </span>
+        {arc.status && <Pill>{arc.status}</Pill>}
+      </div>
+      {arc.companion && <div className="hand muted" style={{ fontSize: 11, marginTop: 2 }}>{arc.companion}</div>}
+      {arc.note && <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 6 }}>{arc.note}</div>}
+      {stages.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+          {stages.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", marginTop: 5, background: statusTone(s.status), boxShadow: "0 0 0 1px rgba(0,0,0,0.3)", flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <div className="body-sm" style={{ color: "var(--ink-800)" }}>{s.title}</div>
+                {s.note && <div className="hand muted" style={{ fontSize: 11 }}>{s.note}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -189,7 +251,8 @@ function FactionDetail({ f }) {
 
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>{f.kind}</div>
       <h2 className="h1" style={{ fontSize: 20, marginTop: 2 }}>{f.name}</h2>
-      <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>{f.seat}</div>
+      {/* Seat — hide when the surface leaves it blank (a live faction has no seat field). */}
+      {f.seat && <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>{f.seat}</div>}
 
       <Divider />
 
@@ -197,35 +260,53 @@ function FactionDetail({ f }) {
 
       <Divider />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        <StatLine k="Standing" v={f.standing} />
-        <StatLine k="Last contact" v={f.lastContact} />
-      </div>
-
-      <Divider />
-
-      <SectionTitle>Of late</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {f.events.map((e, i) => (
-          <div key={i} style={{
-            display: "grid", gridTemplateColumns: "80px 1fr",
-            gap: 10,
-            padding: "8px 10px",
-            background: "rgba(176,141,87,0.06)",
-            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
-          }}>
-            <span className="eyebrow" style={{ fontSize: 9 }}>{e.when}</span>
-            <span className="body-sm" style={{ color: "var(--ink-800)" }}>{e.text}</span>
+      {/* Standing/last-contact grid — only render a StatLine whose value is present; the live
+          surface emits standing but leaves lastContact blank. */}
+      {(f.standing || f.lastContact) && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {f.standing && <StatLine k="Standing" v={f.standing} />}
+            {f.lastContact && <StatLine k="Last contact" v={f.lastContact} />}
           </div>
-        ))}
-      </div>
 
-      <Divider />
+          <Divider />
+        </>
+      )}
 
-      <SectionTitle>They offer</SectionTitle>
-      <div className="tag-row">
-        {f.offers.map((o) => <Pill key={o}>{o}</Pill>)}
-      </div>
+      {/* "Of late" — recent faction events. The live surface emits an empty events list, so
+          hide the whole section (heading + rows) rather than show an empty "Of late" label. */}
+      {Array.isArray(f.events) && f.events.length > 0 && (
+        <>
+          <SectionTitle>Of late</SectionTitle>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {f.events.map((e, i) => (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "80px 1fr",
+                gap: 10,
+                padding: "8px 10px",
+                background: "rgba(176,141,87,0.06)",
+                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+              }}>
+                <span className="eyebrow" style={{ fontSize: 9 }}>{e.when}</span>
+                <span className="body-sm" style={{ color: "var(--ink-800)" }}>{e.text}</span>
+              </div>
+            ))}
+          </div>
+
+          <Divider />
+        </>
+      )}
+
+      {/* "They offer" — the live surface fills this with the faction's raw reputation tags;
+          hide the section entirely when there are none rather than show an empty tag row. */}
+      {Array.isArray(f.offers) && f.offers.length > 0 && (
+        <>
+          <SectionTitle>They offer</SectionTitle>
+          <div className="tag-row">
+            {f.offers.map((o) => <Pill key={o}>{o}</Pill>)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -645,4 +726,4 @@ const NPCS = [
   },
 ];
 
-Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, RepBar, DispositionDot, FACTIONS, NPCS });
+Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, CompanionArcCard, RepBar, DispositionDot, FACTIONS, NPCS });

@@ -74,8 +74,8 @@ function ScreenDialogue({ onNavigate, state, setState }) {
 function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHistory, onNavigate, toast }) {
   const actorName = surface.actor || "Hero";
   const canAct = Boolean(surface.can_act);
-  const sceneScope = surface.location_id ||
-    (surface.event?.anchor_npc_id ? `portrait-${surface.event.anchor_npc_id}` : null);
+  const sceneScope = surface.imageScope ||
+    (surface.location_id ? `location:${surface.location_id}` : "");
 
   const pick = (slot) => {
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
@@ -169,7 +169,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
             {/* Actor portrait (left) */}
             <div style={{ padding: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRight: "1px solid rgba(140,100,60,0.35)" }}>
-              <Img scope={surface.event?.anchor_npc_id ? "portrait-" + surface.event.anchor_npc_id : ""} label={actorName} w={120} h={150} framed />
+              <Img scope={surface.actor_id ? "portrait-" + surface.actor_id : (surface.event?.anchor_npc_id ? "portrait-" + surface.event.anchor_npc_id : "")} label={actorName} w={120} h={150} framed />
               <div style={{ marginTop: 8, fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)", textAlign: "center" }}>
                 {actorName}
               </div>

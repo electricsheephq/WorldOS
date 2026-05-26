@@ -2,7 +2,7 @@
 
 function ScreenSeed({ onNavigate, state, setState }) {
   const [seed, setSeed] = React.useState({
-    system: "Pathfinder 1e",
+    system: "D&D 5e",
     tone: "Heroic",
     difficulty: "Standard",
     gmStrictness: "Standard",
@@ -53,7 +53,7 @@ function ScreenSeed({ onNavigate, state, setState }) {
             The marches do not respect a single law. Travel by post-road if you must travel by anything.
           </div>
           <div className="hand" style={{ marginTop: 8, paddingLeft: 22, fontSize: 13, color: "var(--gold-glow)" }}>
-            — found in a Restov coachman's pocket, undated
+            — found in a border coachman's pocket, undated
           </div>
         </div>
 
@@ -62,14 +62,14 @@ function ScreenSeed({ onNavigate, state, setState }) {
         <SectionTitle ordinal="·">The Quickening</SectionTitle>
         <div className="body" style={{ fontSize: 15 }}>
           <p>
-            This chronicle is sown for a heroic register in the post-tabletop tradition of Brevoy and the Stolen Marches. The reading voice is communal — we, when we walked; we, when we found. Decisions are remembered. Failure is rarely permanent but always written down. Salt and silence have meanings the rules will not state.
+            This chronicle is sown for a heroic register in the tradition of frontier baronies and the contested marches. The reading voice is communal — we, when we walked; we, when we found. Decisions are remembered. Failure is rarely permanent but always written down. Salt and silence have meanings the rules will not state.
           </p>
         </div>
 
         <Divider />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <StatLine k="Seeded" v="27 Pharast, 4717" />
+          <StatLine k="Seeded" v="27th of Firstthaw, 1147" />
           <StatLine k="By" v="Linzi (chronicler)" />
           <StatLine k="Pattern" v="9b3d-2f1e-77ac" />
           <StatLine k="Engine" v="Chronicle II" />
@@ -92,7 +92,7 @@ function ScreenSeed({ onNavigate, state, setState }) {
         <SectionTitle ordinal="I.">System</SectionTitle>
         <SeedSelect
           value={seed.system}
-          options={["Pathfinder 1e", "Pathfinder 2e", "D&D 5e", "Free Form (No System)"]}
+          options={["D&D 5e (SRD 5.2)", "D&D 5e", "Free Form (No System)"]}
           onChange={(v) => update("system", v)}
         />
 

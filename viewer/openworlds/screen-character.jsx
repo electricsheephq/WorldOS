@@ -139,6 +139,11 @@ function ScreenCharacter({ onNavigate, state, setState }) {
                   }} />
                 </div>
               </div>
+
+              {/* Resources & Status — combat/status state projected by the read-model
+                  (classResources / tempHp / deathSaves / concentration / exhaustion /
+                  conditions). Each row is hidden when absent or zero; never faked. */}
+              <ResourcesStatus hero={hero} />
             </div>
 
             {/* Ability scores column */}
@@ -282,12 +287,14 @@ function RestPrepareModal({ hero, onClose, toast, setState }) {
     }
   };
 
+  // Display-only: this modal has no write route to the engine. The toasts below are
+  // neutral previews — nothing here mutates HP, spell slots, or prepared spells.
   const completeRest = () => {
     toast({
       kind: "rest",
-      eyebrow: restType === "long" ? "Long rest" : "Short rest",
-      title: hero.name + " is restored",
-      body: restType === "long" ? "HP and spell slots refreshed. The watch goes to Mira." : "Some wounds knit. Spell slots untouched.",
+      eyebrow: (restType === "long" ? "Long rest" : "Short rest") + " (preview)",
+      title: "Rest preview",
+      body: "Display-only — rest is not saved to the engine.",
     });
     setStep("prep");
   };
@@ -296,9 +303,9 @@ function RestPrepareModal({ hero, onClose, toast, setState }) {
     const count = Object.values(prepared).reduce((s, l) => s + l.length, 0);
     toast({
       kind: "item",
-      eyebrow: "Spellbook",
-      title: hero.name + " prepares " + count + " spell" + (count !== 1 ? "s" : ""),
-      body: "The chronicle records the binding. They may be unbound at next rest.",
+      eyebrow: "Spellbook (preview)",
+      title: count + " spell" + (count !== 1 ? "s" : "") + " selected",
+      body: "Display-only — spell preparation is not saved to the engine.",
     });
     onClose();
   };
@@ -359,7 +366,9 @@ function RestPrepareModal({ hero, onClose, toast, setState }) {
 
               <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
                 <BrassButton tone="ghost" onClick={onClose}>Not yet</BrassButton>
-                <BrassButton onClick={completeRest}>Make camp</BrassButton>
+                <BrassButton onClick={completeRest} disabled title="Display-only — rest is not saved to the engine">
+                  Make camp <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+                </BrassButton>
               </div>
             </>
           ) : (
@@ -431,7 +440,9 @@ function RestPrepareModal({ hero, onClose, toast, setState }) {
                 </span>
                 <div style={{ display: "flex", gap: 10 }}>
                   <BrassButton tone="ghost" onClick={onClose}>Close book</BrassButton>
-                  <BrassButton onClick={completePrep}>Seal the choices</BrassButton>
+                  <BrassButton onClick={completePrep} disabled title="Display-only — spell preparation is not saved to the engine">
+                    Seal the choices <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+                  </BrassButton>
                 </div>
               </div>
             </>
@@ -494,6 +505,50 @@ function StatLine({ k, v }) {
     }}>
       <span className="eyebrow" style={{ fontSize: 9 }}>{k}</span>
       <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>{v}</span>
+    </div>
+  );
+}
+
+function ResourcesStatus({ hero }) {
+  // Pull only what the surface actually carries; every value is gated so an absent
+  // or zero field renders nothing (no hardcoded fakes).
+  const resources = (Array.isArray(hero.classResources) ? hero.classResources : [])
+    .filter((r) => r && (r.max > 0 || (r.remaining !== null && r.remaining !== undefined)));
+  const conditions = Array.isArray(hero.conditions) ? hero.conditions : [];
+  const tempHp = Number(hero.tempHp) || 0;
+  const exhaustion = Number(hero.exhaustion) || 0;
+  const concentration = typeof hero.concentration === "string" ? hero.concentration.trim() : "";
+  const death = hero.deathSaves || {};
+  const successes = Number(death.successes) || 0;
+  const failures = Number(death.failures) || 0;
+  // "Dying" per 5e: downed and not yet stable/dead but accruing death saves.
+  const dying = !hero.dead && !hero.stable && (successes > 0 || failures > 0);
+
+  const hasStatusPills = tempHp > 0 || exhaustion > 0 || concentration || dying || conditions.length > 0;
+  if (!resources.length && !hasStatusPills) return null;
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>Resources &amp; Status</div>
+
+      {hasStatusPills && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {tempHp > 0 && <Pill tone="emerald" dot>Temp HP {tempHp}</Pill>}
+          {dying && <Pill tone="crimson" dot>Death Saves {successes}✓ / {failures}✗</Pill>}
+          {concentration && <Pill tone="royal" dot>Concentrating · {concentration}</Pill>}
+          {exhaustion > 0 && <Pill tone="crimson">Exhaustion {exhaustion}</Pill>}
+          {conditions.map((c) => (<Pill key={c}>{c}</Pill>))}
+        </div>
+      )}
+
+      {resources.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: hasStatusPills ? 8 : 0 }}>
+          {resources.map((r) => {
+            const remaining = (r.remaining !== null && r.remaining !== undefined) ? r.remaining : Math.max(0, (r.max || 0) - (r.used || 0));
+            return <StatLine key={r.id || r.name} k={r.name} v={`${remaining} / ${r.max}`} />;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -585,29 +640,35 @@ function SkillsTab({ hero }) {
   );
 }
 
+// Render a spell group's heading from the surface's real `level` field. The engine
+// groups everything under the string "Known" (it stores spell names, not slot blocks),
+// so prefix numeric levels with "Level" but show string labels (e.g. "Known") verbatim —
+// never the nonsense "Level Known", and never invented slot math.
+function spellGroupLabel(level) {
+  return (typeof level === "number" || /^\d+$/.test(String(level))) ? `Level ${level}` : String(level);
+}
+
 function SpellsTab({ hero }) {
+  // Data-driven from the /character-surface read-model. The surface does not project
+  // spell-slot counts, so we render only what it provides (known/prepared spells) and
+  // fall back to an honest empty state — no hardcoded class label, no fabricated slots.
+  const groups = (Array.isArray(hero.spells) ? hero.spells : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+
+  if (!groups.length) {
+    return (
+      <div>
+        <SectionTitle ordinal="·">Spellbook</SectionTitle>
+        <div className="muted body-sm" style={{ marginTop: 8 }}>No spells prepared.</div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <SectionTitle ordinal="·">Spellbook</SectionTitle>
-      <div className="eyebrow muted" style={{ marginBottom: 10 }}>Slots per level — Magus</div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[0,1,2,3,4,5,6,7,8,9].map((lv) => (
-          <div key={lv} style={{
-            flex: 1, padding: "10px 0", textAlign: "center",
-            background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
-            boxShadow: "inset 0 0 0 1px var(--b-500)",
-          }}>
-            <div className="eyebrow" style={{ fontSize: 9 }}>Lv {lv}</div>
-            <div style={{ fontFamily: "var(--f-display)", fontSize: 16, color: "var(--ink-900)", marginTop: 2 }}>
-              {lv === 0 ? "∞" : lv <= 2 ? Math.max(0, 4 - lv) : "—"}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {hero.spells.map((group) => (
+      {groups.map((group) => (
         <div key={group.level} style={{ marginTop: 16 }}>
-          <SectionTitle>Level {group.level}</SectionTitle>
+          <SectionTitle>{spellGroupLabel(group.level)}</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {group.list.map((sp) => (
               <div key={sp.name} style={{
@@ -652,4 +713,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, AbilitiesTab, SkillsTab, SpellsTab, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard });

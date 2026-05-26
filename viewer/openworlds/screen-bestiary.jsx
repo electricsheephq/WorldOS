@@ -1,12 +1,82 @@
 /* Screen: Bestiary / Codex — encounters, lore, NPCs */
 
+// Map one live /bestiary-surface item (player_bestiary_preview shape:
+// { name, size, type, cr, content_origin, known_actions[], source?, license?, provenance? })
+// onto the codex entry shape this screen renders. Fields the player-safe preview does NOT
+// expose (stats / hd / ac / body / tactics / loot) are simply absent, so BestiaryEntry hides
+// them — never a fake stat block.
+function liveBestiaryEntry(item) {
+  const name = String(item?.name || "").trim();
+  const size = String(item?.size || "").trim();
+  const type = String(item?.type || "").trim();
+  const descriptor = [size, type].filter(Boolean).join(" · ");
+  return {
+    id: "live:" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || Math.random().toString(36).slice(2)),
+    name: name || "Unknown",
+    short: name.slice(0, 6).toLowerCase() || "?",
+    short_descriptor: descriptor,
+    subtitle: "",
+    size,
+    kind: type,
+    alignment: "",            // preview is player-safe — no alignment leaked; eyebrow shows size·kind
+    cr: (item?.cr !== undefined && item?.cr !== null && String(item.cr) !== "") ? String(item.cr) : "",
+    knownActions: Array.isArray(item?.known_actions) ? item.known_actions.filter((a) => String(a).trim()) : [],
+    contentOrigin: String(item?.content_origin || "srd"),
+    source: item?.source ? String(item.source) : "",
+    license: item?.license ? String(item.license) : "",
+    provenance: item?.provenance ? String(item.provenance) : "",
+  };
+}
+
 function ScreenBestiary({ onNavigate, state, setState }) {
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
   const [tab, setTab] = React.useState("creatures");
   const [selected, setSelected] = React.useState(BESTIARY[0]);
   const [filter, setFilter] = React.useState("");
+  // Live codex from /bestiary-surface; null until the first successful fetch (demo shows until then).
+  const [liveCreatures, setLiveCreatures] = React.useState(null);
+  const wired = liveCreatures !== null;
 
-  const entries = tab === "creatures" ? BESTIARY : tab === "people" ? PEOPLE : LORE;
-  const filtered = entries.filter((e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()));
+  // Fetch the live bestiary, driving the search box straight to ?q=<term>. The route reads
+  // `q`; we also carry the campaign surfaceQuery (mirrors screen-relations.jsx) — harmless
+  // params the read model ignores. Re-runs (debounced) whenever the query term changes.
+  const loadSurface = React.useCallback(async (q, isCancelled = () => false) => {
+    try {
+      const params = new URLSearchParams(surfaceQuery.replace(/^\?/, ""));
+      if (q) params.set("q", q); else params.delete("q");
+      const qs = params.toString();
+      const response = await fetch("/bestiary-surface" + (qs ? "?" + qs : ""), { cache: "no-store" });
+      if (!response.ok) throw new Error(`bestiary surface ${response.status}`);
+      const payload = await response.json();
+      if (isCancelled()) return;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setLiveCreatures(items.map(liveBestiaryEntry));
+    } catch (error) {
+      if (isCancelled()) return;
+      /* keep last good surface; the demo fallback shows until the first success */
+    }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    // Debounce search-driven refetches so each keystroke doesn't fire a request.
+    const handle = window.setTimeout(() => { if (!cancelled) loadSurface(filter, () => cancelled); }, 200);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [loadSurface, filter]);
+
+  // Creatures come from the live surface once loaded (the server already applied ?q, so we
+  // don't re-filter those); people & lore stay on the demo constants (no live surface yet).
+  const creatureEntries = wired ? liveCreatures : BESTIARY;
+  const entries = tab === "creatures" ? creatureEntries : tab === "people" ? PEOPLE : LORE;
+  const filtered = (tab === "creatures" && wired)
+    ? entries
+    : entries.filter((e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()));
 
   React.useEffect(() => {
     if (filtered.length === 0) {
@@ -18,15 +88,21 @@ function ScreenBestiary({ onNavigate, state, setState }) {
     }
   }, [filtered, selected?.id]);
 
-  const _badge = { label: "Preview", tone: "muted", detail: "Bestiary is display-only — entries are static demo data, not live engine read-models." };
+  const _badge = wired
+    ? { label: "Live", tone: "emerald", detail: "Wired to the engine's player-safe /bestiary-surface read model." }
+    : { label: "Preview", tone: "muted", detail: "Loading the live bestiary — demo entries shown until the first fetch." };
 
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
 
-      {/* Prototype banner */}
+      {/* Surface banner */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
         <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — not yet wired to the engine. Entries shown are demo data.</span>
+        <span className="hand muted" style={{ fontSize: 12 }}>
+          {wired
+            ? "Creatures are live from the engine's player-safe bestiary; the search box queries the codex. Persons & lore remain demo entries."
+            : "Loading the live bestiary from the engine — demo entries shown until the first fetch."}
+        </span>
       </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr", gap: 14, minHeight: 0 }}>
@@ -84,7 +160,10 @@ function ScreenBestiary({ onNavigate, state, setState }) {
         </div>
 
         <div className="muted body-sm" style={{ marginTop: 8, textAlign: "center" }}>
-          {filtered.length} known · {BESTIARY.filter((e) => e.unknown).length + PEOPLE.filter((e) => e.unknown).length} rumoured
+          {filtered.length} known{(() => {
+            const rumoured = creatureEntries.filter((e) => e.unknown).length + PEOPLE.filter((e) => e.unknown).length;
+            return rumoured ? ` · ${rumoured} rumoured` : "";
+          })()}
         </div>
       </Panel>
 
@@ -124,12 +203,13 @@ function BestiaryEntry({ entry, tab }) {
 
         <div>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>
-            {tab === "creatures" ? entry.alignment + " · " + entry.size + " " + entry.kind :
+            {tab === "creatures"
+              ? [entry.alignment, [entry.size, entry.kind].filter(Boolean).join(" ")].filter(Boolean).join(" · ") :
              tab === "people" ? entry.role :
              "Lore entry"}
           </div>
           <h1 className="h1" style={{ marginTop: 2 }}>{entry.name}</h1>
-          <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{entry.subtitle}</div>
+          {entry.subtitle && <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{entry.subtitle}</div>}
 
           <Divider />
 
@@ -159,9 +239,34 @@ function BestiaryEntry({ entry, tab }) {
             </div>
           )}
 
-          <p className="body dropcap" style={{ marginTop: 12 }}>
-            {entry.body}
-          </p>
+          {entry.body && (
+            <p className="body dropcap" style={{ marginTop: 12 }}>
+              {entry.body}
+            </p>
+          )}
+
+          {/* Known abilities — player-safe action names from the live bestiary preview
+              (knownActions). Hidden when the entry carries none. */}
+          {Array.isArray(entry.knownActions) && entry.knownActions.length > 0 && (
+            <>
+              <Divider />
+              <SectionTitle>Known abilities</SectionTitle>
+              <div className="tag-row" style={{ marginTop: 6 }}>
+                {entry.knownActions.map((a) => <Pill key={a}>{a}</Pill>)}
+              </div>
+            </>
+          )}
+
+          {/* Provenance — authored (non-SRD) content credits its source/license. */}
+          {entry.contentOrigin === "authored" && (entry.source || entry.license || entry.provenance) && (
+            <>
+              <Divider />
+              <div className="eyebrow">Source</div>
+              <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {[entry.source, entry.license, entry.provenance].filter(Boolean).join(" · ")}
+              </div>
+            </>
+          )}
 
           {entry.tactics && (
             <>

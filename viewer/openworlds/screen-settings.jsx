@@ -2,11 +2,33 @@
 
 function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNative }) {
   const [section, setSection] = React.useState("native");
+
+  // Genuinely functional accessibility/display controls are driven through the shared
+  // window.OpenWorldsA11y bridge (defined in app.jsx): it writes data-reduced-motion /
+  // data-contrast / --ui-scale onto <html> (all backed by real CSS in styles.css) and
+  // persists to localStorage. Seed local UI from the persisted values so the controls
+  // reflect the document state the app applied on mount, then drive the bridge on change.
+  const a11yBridge = window.OpenWorldsA11y;
+  const [a11y, setA11y] = React.useState(() =>
+    a11yBridge?.read ? a11yBridge.read() : { reducedMotion: false, highContrast: false, uiScale: 100 }
+  );
+  const applyA11y = React.useCallback((patch) => {
+    setA11y((prev) => {
+      const next = { ...prev, ...patch };
+      a11yBridge?.apply?.(next); // sets <html> attrs/--ui-scale + persists; no-op if bridge absent
+      return next;
+    });
+  }, [a11yBridge]);
+
+  // Remaining sections are display-only prototypes: they have no backing mechanism in the
+  // app, so their controls are labelled "(preview)" / disabled rather than silently lying.
   const [audio, setAudio] = React.useState({ master: 72, music: 60, sfx: 80, ambience: 50, voice: 70, duckMusic: true, crossfade: true });
-  const [display, setDisplay] = React.useState({ scale: 100, contrast: 50, vignette: true, paperGrain: true, candleGlow: true });
+  const [display, setDisplay] = React.useState({ contrast: 50, vignette: true, paperGrain: true, candleGlow: true });
   const [gameplay, setGameplay] = React.useState({ auto: 15, narration: "balanced", dice: "visible", dangerHints: true, confirmDestructive: true, aiPartyRolls: false });
   const [controls, setControls] = React.useState({ twoFingerScroll: true, pinchZoom: true, forceTouchInspect: false });
-  const [accessibility, setAccessibility] = React.useState({ dyslexic: false, reducedMotion: false, captions: true, contrast: false, underlineChoices: false });
+  const [accessibility, setAccessibility] = React.useState({ dyslexic: false, captions: true, underlineChoices: false });
+
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
 
   const SECTIONS = [
     { id: "native", label: "ClawDnD" },
@@ -61,48 +83,52 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
 
         {section === "audio" && (
           <SettingsSection title="The Sound of the Chronicle" eyebrow="Mixing board" ordinal="I.">
-            <Slider label="Master" value={audio.master} onChange={(v) => setAudio({ ...audio, master: v })} />
-            <Slider label="Music" value={audio.music} onChange={(v) => setAudio({ ...audio, music: v })} />
-            <Slider label="Sound effects" value={audio.sfx} onChange={(v) => setAudio({ ...audio, sfx: v })} />
-            <Slider label="Ambience" value={audio.ambience} onChange={(v) => setAudio({ ...audio, ambience: v })} />
-            <Slider label="Voice & narration" value={audio.voice} onChange={(v) => setAudio({ ...audio, voice: v })} />
+            <PreviewBanner>Display-only — there is no audio engine behind the mixing board yet. These controls move but change nothing.</PreviewBanner>
+            <Slider preview label="Master" value={audio.master} onChange={(v) => setAudio({ ...audio, master: v })} />
+            <Slider preview label="Music" value={audio.music} onChange={(v) => setAudio({ ...audio, music: v })} />
+            <Slider preview label="Sound effects" value={audio.sfx} onChange={(v) => setAudio({ ...audio, sfx: v })} />
+            <Slider preview label="Ambience" value={audio.ambience} onChange={(v) => setAudio({ ...audio, ambience: v })} />
+            <Slider preview label="Voice & narration" value={audio.voice} onChange={(v) => setAudio({ ...audio, voice: v })} />
 
             <Divider />
             <SectionTitle>Output</SectionTitle>
-            <SelectRow label="Device" value="System default — MacBook Pro Speakers" options={["System default — MacBook Pro Speakers", "AirPods Pro", "Studio Monitor"]} />
-            <SelectRow label="Surround mix" value="Stereo" options={["Stereo", "Spatial Audio", "Headphones (HRTF)"]} />
-            <Toggle label="Duck music during GM narration" value={audio.duckMusic} onChange={(v) => setAudio({ ...audio, duckMusic: v })} />
-            <Toggle label="Crossfade between scenes" value={audio.crossfade} onChange={(v) => setAudio({ ...audio, crossfade: v })} />
+            <SelectRow preview label="Device" value="System default — MacBook Pro Speakers" options={["System default — MacBook Pro Speakers", "AirPods Pro", "Studio Monitor"]} />
+            <SelectRow preview label="Surround mix" value="Stereo" options={["Stereo", "Spatial Audio", "Headphones (HRTF)"]} />
+            <Toggle preview label="Duck music during GM narration" value={audio.duckMusic} onChange={(v) => setAudio({ ...audio, duckMusic: v })} />
+            <Toggle preview label="Crossfade between scenes" value={audio.crossfade} onChange={(v) => setAudio({ ...audio, crossfade: v })} />
           </SettingsSection>
         )}
 
         {section === "display" && (
           <SettingsSection title="What the Eye Sees" eyebrow="Lantern & ink" ordinal="II.">
-            <Slider label="UI scale" value={display.scale} onChange={(v) => setDisplay({ ...display, scale: v })} min={75} max={150} unit="%" />
-            <Slider label="Contrast" value={display.contrast} onChange={(v) => setDisplay({ ...display, contrast: v })} />
+            {/* GENUINELY FUNCTIONAL: drives --ui-scale on <html> (styles.css zooms .window). */}
+            <Slider label="UI scale" value={a11y.uiScale} onChange={(v) => applyA11y({ uiScale: v })} min={75} max={150} unit="%" />
+            <Slider preview label="Contrast" value={display.contrast} onChange={(v) => setDisplay({ ...display, contrast: v })} />
 
             <Divider />
             <SectionTitle>Atmosphere</SectionTitle>
-            <Toggle label="Candle glow on panels" value={display.candleGlow} onChange={(v) => setDisplay({ ...display, candleGlow: v })} />
-            <Toggle label="Paper grain texture" value={display.paperGrain} onChange={(v) => setDisplay({ ...display, paperGrain: v })} />
-            <Toggle label="Edge vignette" value={display.vignette} onChange={(v) => setDisplay({ ...display, vignette: v })} />
+            <Toggle preview label="Candle glow on panels" value={display.candleGlow} onChange={(v) => setDisplay({ ...display, candleGlow: v })} />
+            <Toggle preview label="Paper grain texture" value={display.paperGrain} onChange={(v) => setDisplay({ ...display, paperGrain: v })} />
+            <Toggle preview label="Edge vignette" value={display.vignette} onChange={(v) => setDisplay({ ...display, vignette: v })} />
 
             <Divider />
             <SectionTitle>Window</SectionTitle>
-            <SelectRow label="Mode" value="Windowed" options={["Windowed", "Fullscreen", "Borderless"]} />
-            <SelectRow label="Frame rate" value="ProMotion — 120 Hz" options={["30 Hz", "60 Hz", "ProMotion — 120 Hz"]} />
-            <SelectRow label="HDR" value="Off" options={["Off", "Standard", "Aggressive"]} />
+            <SelectRow preview label="Mode" value="Windowed" options={["Windowed", "Fullscreen", "Borderless"]} />
+            <SelectRow preview label="Frame rate" value="ProMotion — 120 Hz" options={["30 Hz", "60 Hz", "ProMotion — 120 Hz"]} />
+            <SelectRow preview label="HDR" value="Off" options={["Off", "Standard", "Aggressive"]} />
           </SettingsSection>
         )}
 
         {section === "gameplay" && (
           <SettingsSection title="The Manner of Play" eyebrow="Pace & disclosure" ordinal="III.">
+            <PreviewBanner>Display-only — these preferences are not yet read by the engine. Pacing, narration and dice behaviour are unaffected.</PreviewBanner>
             <SectionTitle>Auto-save</SectionTitle>
-            <Slider label="Cadence" value={gameplay.auto} onChange={(v) => setGameplay({ ...gameplay, auto: v })} min={5} max={60} unit=" min" />
+            <Slider preview label="Cadence" value={gameplay.auto} onChange={(v) => setGameplay({ ...gameplay, auto: v })} min={5} max={60} unit=" min" />
 
             <Divider />
             <SectionTitle>Narration</SectionTitle>
             <Radio
+              preview
               value={gameplay.narration}
               onChange={(v) => setGameplay({ ...gameplay, narration: v })}
               options={[
@@ -115,6 +141,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
             <Divider />
             <SectionTitle>Dice</SectionTitle>
             <Radio
+              preview
               value={gameplay.dice}
               onChange={(v) => setGameplay({ ...gameplay, dice: v })}
               options={[
@@ -125,15 +152,16 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
             />
 
             <Divider />
-            <Toggle label="Show danger hints in the world" value={gameplay.dangerHints} onChange={(v) => setGameplay({ ...gameplay, dangerHints: v })} />
-            <Toggle label="Confirm before destructive actions" value={gameplay.confirmDestructive} onChange={(v) => setGameplay({ ...gameplay, confirmDestructive: v })} />
-            <Toggle label="Permit AI GM to roll for the party" value={gameplay.aiPartyRolls} onChange={(v) => setGameplay({ ...gameplay, aiPartyRolls: v })} />
+            <Toggle preview label="Show danger hints in the world" value={gameplay.dangerHints} onChange={(v) => setGameplay({ ...gameplay, dangerHints: v })} />
+            <Toggle preview label="Confirm before destructive actions" value={gameplay.confirmDestructive} onChange={(v) => setGameplay({ ...gameplay, confirmDestructive: v })} />
+            <Toggle preview label="Permit AI GM to roll for the party" value={gameplay.aiPartyRolls} onChange={(v) => setGameplay({ ...gameplay, aiPartyRolls: v })} />
           </SettingsSection>
         )}
 
         {section === "controls" && (
           <SettingsSection title="The Player's Hand" eyebrow="Keys & gestures" ordinal="IV.">
-            <SectionTitle>Bindings</SectionTitle>
+            <PreviewBanner>Display-only — these are the fixed default shortcuts; rebinding and gesture options are not yet wired.</PreviewBanner>
+            <SectionTitle>Bindings <span style={{ fontSize: 9, opacity: 0.7, letterSpacing: "0.18em" }}>(preview)</span></SectionTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {KEYBINDS.map((kb) => (
                 <KeybindRow key={kb.label} kb={kb} />
@@ -142,43 +170,70 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
 
             <Divider />
             <SectionTitle>Trackpad</SectionTitle>
-            <Toggle label="Two-finger scroll the chronicle" value={controls.twoFingerScroll} onChange={(v) => setControls({ ...controls, twoFingerScroll: v })} />
-            <Toggle label="Pinch to zoom the world map" value={controls.pinchZoom} onChange={(v) => setControls({ ...controls, pinchZoom: v })} />
-            <Toggle label="Force-touch to inspect items" value={controls.forceTouchInspect} onChange={(v) => setControls({ ...controls, forceTouchInspect: v })} />
+            <Toggle preview label="Two-finger scroll the chronicle" value={controls.twoFingerScroll} onChange={(v) => setControls({ ...controls, twoFingerScroll: v })} />
+            <Toggle preview label="Pinch to zoom the world map" value={controls.pinchZoom} onChange={(v) => setControls({ ...controls, pinchZoom: v })} />
+            <Toggle preview label="Force-touch to inspect items" value={controls.forceTouchInspect} onChange={(v) => setControls({ ...controls, forceTouchInspect: v })} />
           </SettingsSection>
         )}
 
         {section === "accessibility" && (
           <SettingsSection title="So All May Sit at the Table" eyebrow="Open the door" ordinal="V.">
-            <Toggle label="Dyslexic-friendly font for body text" value={accessibility.dyslexic} onChange={(v) => setAccessibility({ ...accessibility, dyslexic: v })} />
-            <Toggle label="Reduce motion (no candle flicker, no fades)" value={accessibility.reducedMotion} onChange={(v) => setAccessibility({ ...accessibility, reducedMotion: v })} />
-            <Toggle label="Always show captions for narration" value={accessibility.captions} onChange={(v) => setAccessibility({ ...accessibility, captions: v })} />
-            <Toggle label="High-contrast UI" value={accessibility.contrast} onChange={(v) => setAccessibility({ ...accessibility, contrast: v })} />
+            {/* GENUINELY FUNCTIONAL: Reduce motion + High-contrast drive data-reduced-motion /
+                data-contrast on <html> (real CSS in styles.css) and persist via OpenWorldsA11y. */}
+            <Toggle label="Reduce motion (no candle flicker, no fades)" value={a11y.reducedMotion} onChange={(v) => applyA11y({ reducedMotion: v })} />
+            <Toggle label="High-contrast UI" value={a11y.highContrast} onChange={(v) => applyA11y({ highContrast: v })} />
+
+            <Divider />
+            <SectionTitle>Not yet wired</SectionTitle>
+            <PreviewBanner>Display-only — the controls below have no backing yet. Reduce motion and high-contrast above are live and persist across reloads.</PreviewBanner>
+            <Toggle preview label="Dyslexic-friendly font for body text" value={accessibility.dyslexic} onChange={(v) => setAccessibility({ ...accessibility, dyslexic: v })} />
+            <Toggle preview label="Always show captions for narration" value={accessibility.captions} onChange={(v) => setAccessibility({ ...accessibility, captions: v })} />
 
             <Divider />
             <SectionTitle>Reading</SectionTitle>
-            <SelectRow label="Body font" value="Cormorant Garamond" options={["Cormorant Garamond", "Atkinson Hyperlegible", "OpenDyslexic", "System default"]} />
-            <Slider label="Line spacing" value={50} min={0} max={100} />
-            <Toggle label="Underline interactive choices" value={accessibility.underlineChoices} onChange={(v) => setAccessibility({ ...accessibility, underlineChoices: v })} />
+            <SelectRow preview label="Body font" value="Cormorant Garamond" options={["Cormorant Garamond", "Atkinson Hyperlegible", "OpenDyslexic", "System default"]} />
+            <Slider preview label="Line spacing" value={50} min={0} max={100} />
+            <Toggle preview label="Underline interactive choices" value={accessibility.underlineChoices} onChange={(v) => setAccessibility({ ...accessibility, underlineChoices: v })} />
 
             <Divider />
             <SectionTitle>Colour</SectionTitle>
-            <SelectRow label="Colour-blind mode" value="None" options={["None", "Deuteranopia", "Protanopia", "Tritanopia"]} />
+            <SelectRow preview label="Colour-blind mode" value="None" options={["None", "Deuteranopia", "Protanopia", "Tritanopia"]} />
           </SettingsSection>
         )}
 
         {section === "saves" && (
           <SettingsSection title="Anchors in Time" eyebrow="Save & restore" ordinal="VI.">
-            <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-              <BrassButton size="sm">Quicksave</BrassButton>
-              <BrassButton size="sm" tone="ghost">Quickload</BrassButton>
-              <BrassButton size="sm" tone="ghost">Export chronicle…</BrassButton>
+            {/* Read-only list bound to the real campaign catalog (state.campaigns, fetched from
+                /openworlds/campaigns.json by app.jsx). The save/load/erase actions themselves are
+                not wired to the engine, so they are labelled preview / disabled. */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
+              <BrassButton size="sm" disabled title="Display-only — not yet wired to the engine save lane">Quicksave <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
+              <BrassButton size="sm" tone="ghost" disabled title="Display-only — not yet wired to the engine save lane">Quickload <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
+              <BrassButton size="sm" tone="ghost" disabled title="Display-only — not yet wired to the engine save lane">Export chronicle… <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
               <div style={{ flex: 1 }} />
-              <BrassButton size="sm" tone="crimson">Erase all</BrassButton>
+              <BrassButton size="sm" tone="crimson" disabled title="Display-only — erase is not wired; nothing is deleted">Erase all <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {SAVE_SLOTS.map((s, i) => <SaveSlot key={i} s={s} active={i === 0} />)}
-            </div>
+            {campaigns.length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {campaigns.map((c) => (
+                  <SaveSlot key={c.id} active={c.current || c.id === state?.activeCampaign} s={{
+                    name: c.title,
+                    chronicle: c.subtitle || c.region || c.world || "",
+                    time: c.lastPlayed || "",
+                    auto: false,
+                    party: c.partyCount,
+                    dayLabel: c.day || c.region || "",
+                  }} />
+                ))}
+              </div>
+            ) : (
+              <div>
+                <PreviewBanner>Display-only — the live campaign catalog has not loaded; the slots below are demo data.</PreviewBanner>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {SAVE_SLOTS.map((s, i) => <SaveSlot key={i} s={s} active={i === 0} />)}
+                </div>
+              </div>
+            )}
           </SettingsSection>
         )}
 
@@ -314,6 +369,25 @@ function NativeAppSection({ nativeState, refreshNative }) {
   );
 }
 
+/* Honest-UI marker, matching screen-merchant.jsx / screen-forge.jsx: a brass "Preview" badge
+   plus a one-line explanation, shown above any section whose controls are decorative. */
+function PreviewBanner({ children }) {
+  const badge = { label: "Preview", tone: "muted", detail: typeof children === "string" ? children : "Display-only — not yet wired." };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", marginBottom: 16, background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+      <CapabilityBadge capability={badge} nativeStatus={null} />
+      <span className="hand muted" style={{ fontSize: 12 }}>{children}</span>
+    </div>
+  );
+}
+
+/* Small "(preview)" tag appended to a decorative control's label, matching the merchant/forge
+   convention (`<span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>`). */
+const PREVIEW_TITLE = "Display-only — not yet saved";
+function PreviewTag() {
+  return <span style={{ fontSize: 9, opacity: 0.7, letterSpacing: "0.12em" }}> (preview)</span>;
+}
+
 function SettingsSection({ title, eyebrow, ordinal, children }) {
   return (
     <div>
@@ -328,12 +402,12 @@ function SettingsSection({ title, eyebrow, ordinal, children }) {
   );
 }
 
-function Slider({ label, value, onChange, min = 0, max = 100, unit = "" }) {
+function Slider({ label, value, onChange, min = 0, max = 100, unit = "", preview = false }) {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div style={{ marginBottom: 12, opacity: preview ? 0.6 : 1 }} title={preview ? PREVIEW_TITLE : undefined}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <span style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)" }}>
-          {label}
+          {label}{preview && <PreviewTag />}
         </span>
         <span style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-700)" }}>
           {value}{unit}
@@ -356,10 +430,12 @@ function Slider({ label, value, onChange, min = 0, max = 100, unit = "" }) {
         }} />
         <input
           type="range" min={min} max={max} value={value}
+          disabled={preview}
+          aria-label={label}
           onChange={(e) => onChange && onChange(Number(e.target.value))}
           style={{
             position: "absolute", inset: 0, width: "100%", height: "100%",
-            opacity: 0, cursor: "pointer",
+            opacity: 0, cursor: preview ? "not-allowed" : "pointer",
           }}
         />
         <div style={{
@@ -376,19 +452,29 @@ function Slider({ label, value, onChange, min = 0, max = 100, unit = "" }) {
   );
 }
 
-function Toggle({ label, value, onChange }) {
+function Toggle({ label, value, onChange, preview = false }) {
   const checked = Boolean(value);
   return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange && onChange(!checked)} style={{
-      display: "flex", justifyContent: "space-between", alignItems: "center",
-      width: "100%",
-      padding: "10px 0",
-      background: "transparent",
-      borderBottom: "1px solid rgba(140,100,60,0.2)",
-      cursor: "pointer",
-      textAlign: "left",
-    }}>
-      <span className="body" style={{ color: "var(--ink-800)" }}>{label}</span>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-disabled={preview || undefined}
+      disabled={preview}
+      title={preview ? PREVIEW_TITLE : undefined}
+      onClick={() => { if (!preview && onChange) onChange(!checked); }}
+      style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        width: "100%",
+        padding: "10px 0",
+        background: "transparent",
+        borderBottom: "1px solid rgba(140,100,60,0.2)",
+        cursor: preview ? "not-allowed" : "pointer",
+        opacity: preview ? 0.6 : 1,
+        textAlign: "left",
+      }}>
+      <span className="body" style={{ color: "var(--ink-800)" }}>{label}{preview && <PreviewTag />}</span>
       <span style={{
         width: 44, height: 22,
         background: checked ? "linear-gradient(180deg, var(--b-200), var(--b-500))" : "rgba(0,0,0,0.18)",
@@ -413,7 +499,7 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
-function SelectRow({ label, value, options }) {
+function SelectRow({ label, value, options, preview = false }) {
   const [open, setOpen] = React.useState(false);
   const [current, setCurrent] = React.useState(value);
   return (
@@ -421,12 +507,13 @@ function SelectRow({ label, value, options }) {
       display: "grid", gridTemplateColumns: "180px 1fr", gap: 16, alignItems: "center",
       padding: "8px 0",
       borderBottom: "1px solid rgba(140,100,60,0.2)",
-    }}>
+      opacity: preview ? 0.6 : 1,
+    }} title={preview ? PREVIEW_TITLE : undefined}>
       <span style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)" }}>
-        {label}
+        {label}{preview && <PreviewTag />}
       </span>
       <div style={{ position: "relative" }}>
-        <button onClick={() => setOpen(!open)} style={{
+        <button disabled={preview} onClick={() => { if (!preview) setOpen(!open); }} style={{
           width: "100%",
           padding: "8px 12px",
           background: "rgba(255,250,230,0.5)",
@@ -436,12 +523,12 @@ function SelectRow({ label, value, options }) {
           color: "var(--ink-800)",
           textAlign: "left",
           display: "flex", justifyContent: "space-between", alignItems: "center",
-          cursor: "pointer",
+          cursor: preview ? "not-allowed" : "pointer",
         }}>
           <span>{current}</span>
           <span style={{ color: "var(--b-500)", fontSize: 10 }}>▾</span>
         </button>
-        {open && (
+        {open && !preview && (
           <div style={{
             position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
             background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
@@ -468,11 +555,11 @@ function SelectRow({ label, value, options }) {
   );
 }
 
-function Radio({ value, onChange, options }) {
+function Radio({ value, onChange, options, preview = false }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, opacity: preview ? 0.6 : 1 }} title={preview ? PREVIEW_TITLE : undefined}>
       {options.map((o) => (
-        <button key={o.value} onClick={() => onChange && onChange(o.value)} style={{
+        <button key={o.value} disabled={preview} onClick={() => { if (!preview && onChange) onChange(o.value); }} style={{
           padding: "12px 14px",
           textAlign: "left",
           background: value === o.value
@@ -481,7 +568,7 @@ function Radio({ value, onChange, options }) {
           boxShadow: value === o.value
             ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
             : "inset 0 0 0 1px rgba(140,100,60,0.3)",
-          cursor: "pointer",
+          cursor: preview ? "not-allowed" : "pointer",
           transition: "all 140ms",
         }}>
           <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-900)" }}>
