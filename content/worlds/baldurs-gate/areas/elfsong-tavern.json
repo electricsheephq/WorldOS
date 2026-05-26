@@ -1,0 +1,19 @@
+{
+  "id": "loc-elfsong-tavern",
+  "name": "the Elfsong Tavern",
+  "description": "A sprawling, smoke-dark inn on the Lower City's main drag, its common room permanently lit by tallow candles and the glow of argument. Three floors of creaking galleries look down on a bar where Flaming Fist veterans drink beside tiefling refugees and tadpole-survivors who have nowhere quieter to go. The tavern owes its name to a ghostly elven voice that rises, unbidden, between the second and third bell — mournful, wordless, beautiful in the way a wound is beautiful. The barkeep does not comment on it. Neither does anyone who stays more than a night.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "Baldur's Gate — Lower City",
+    "Bloomridge Market"
+  ],
+  "tags": [
+    "tavern",
+    "city",
+    "hub",
+    "haunt"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}

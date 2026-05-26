@@ -1,0 +1,19 @@
+{
+  "id": "loc-wyrms-rock",
+  "name": "Wyrm's Rock Fortress",
+  "description": "The great drum-towered fortress on the promontory above the Chionthar, named for the legendary sea-beast Balduran slew when he first sailed this shore. The Steel Watch foundry beneath it is wrecked and silent — the assembly-hall floors still carpeted in burst-open construct casings — but the fortress itself was only bruised by the battle. The Flaming Fist holds it now, more by habit than by any duke's order, and the walls look down on a city nobody yet governs. The Archduke's receiving-rooms stand empty and exactly as Gortash left them, which suits the Fist just fine and the patriars not at all.",
+  "region": "Baldur's Gate",
+  "connections": [
+    "Baldur's Gate — Upper City",
+    "the Counting House"
+  ],
+  "tags": [
+    "fortress",
+    "power",
+    "city",
+    "ruins"
+  ],
+  "source_url": "",
+  "license": "Original prose by the ClawDnD authors, released under CC-BY-SA 4.0. Setting (Baldur's Gate, the Sword Coast) is unofficial Fan Content under the Wizards Fan Content Policy; see LICENSE.md in this world folder.",
+  "attribution": "Original example area written for ClawDnD (CC-BY-SA 4.0). Unofficial, non-commercial Fan Content; place-names are property of Wizards of the Coast LLC."
+}
