@@ -254,11 +254,11 @@ function FactionDetail({ f }) {
       {/* Seat — hide when the surface leaves it blank (a live faction has no seat field). */}
       {f.seat && <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>{f.seat}</div>}
 
-      <Divider />
+      {f.seat && <Divider />}
 
       <p className="body dropcap" style={{ marginTop: 0, fontSize: 14 }}>{f.body}</p>
 
-      <Divider />
+      {(f.standing || f.lastContact || (f.events && f.events.length) || (f.offers && f.offers.length)) && <Divider />}
 
       {/* Standing/last-contact grid — only render a StatLine whose value is present; the live
           surface emits standing but leaves lastContact blank. */}

@@ -543,7 +543,7 @@ function ResourcesStatus({ hero }) {
 
       {resources.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: hasStatusPills ? 8 : 0 }}>
-          {resources.map((r) => {
+          {resources.filter((r) => Number(r.max) > 0).map((r) => {
             const remaining = (r.remaining !== null && r.remaining !== undefined) ? r.remaining : Math.max(0, (r.max || 0) - (r.used || 0));
             return <StatLine key={r.id || r.name} k={r.name} v={`${remaining} / ${r.max}`} />;
           })}
