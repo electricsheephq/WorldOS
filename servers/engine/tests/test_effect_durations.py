@@ -33,6 +33,17 @@ def _effects(cid, char_id):
     return server.get_character(cid, char_id)["active_effects"]
 
 
+def _advance_turn(cid):
+    """Pass the current PC/companion (if any) then call next_turn.
+    Required after #160 enforcement: a PC who can act must act or pass before next_turn."""
+    cur = server.get_state(cid).get("current_turn")
+    if cur:
+        ch = server.get_character(cid, cur)
+        if ch.get("kind") in ("player", "companion") and ch.get("current_hp", 1) > 0:
+            server.use_action(cid, cur, "skip")
+    return server.next_turn(cid)
+
+
 # --- duration parsing (pure) -------------------------------------------------
 @pytest.mark.parametrize(
     "text,scale,rounds",
@@ -137,9 +148,9 @@ def test_next_turn_decrements_and_expires_bless():
     expired = None
     last_round = 0
     # Two combatants -> 2 next_turns per round. Bless ticks once per round; the 10th
-    # decrement (start of round 11) expires it.
+    # decrement (start of round 11) expires it. Use _advance_turn to pass PCs first (#160).
     for _ in range(30):
-        v = server.next_turn(cid)
+        v = _advance_turn(cid)
         last_round = v["round"]
         if v["expired_effects"]:
             expired = v
@@ -160,9 +171,9 @@ def test_round_decrement_is_per_round_not_per_turn():
     server.cast_spell(cid, c, "Bless")
     server.start_combat(cid, [c, foe])
     before = _effects(cid, c)[0]["rounds_remaining"]
-    server.next_turn(cid)  # advance one turn (1 of 2) — no round wrap yet
+    _advance_turn(cid)  # advance one turn (1 of 2) — no round wrap yet; pass PC if needed (#160)
     assert _effects(cid, c)[0]["rounds_remaining"] == before  # unchanged mid-round
-    server.next_turn(cid)  # wrap -> round 2 -> decrement
+    _advance_turn(cid)  # wrap -> round 2 -> decrement
     assert _effects(cid, c)[0]["rounds_remaining"] == before - 1
 
 
@@ -216,8 +227,8 @@ def test_recasting_same_spell_refreshes_not_stacks():
     foe = server.create_character(cid, "Goblin", kind="monster", max_hp=30)["id"]
     server.cast_spell(cid, c, "Bless")
     server.start_combat(cid, [c, foe])
-    server.next_turn(cid)
-    server.next_turn(cid)  # round 2 -> Bless 10 -> 9
+    _advance_turn(cid)       # pass PC if needed, then advance (#160)
+    _advance_turn(cid)  # round 2 -> Bless 10 -> 9
     assert _effects(cid, c)[0]["rounds_remaining"] == 9
     server.cast_spell(cid, c, "Bless")  # recast refreshes
     eff = _effects(cid, c)
@@ -334,8 +345,8 @@ def test_mage_armor_survives_combat_but_expires_on_long_rest():
     assert out["active_effect"]["scale"] == "hours"
     foe = server.create_character(cid, "Goblin", kind="monster", max_hp=20)["id"]
     server.start_combat(cid, [w, foe])
-    for _ in range(12):  # several rounds of combat
-        server.next_turn(cid)
+    for _ in range(12):  # several rounds of combat; pass PCs before advancing (#160)
+        _advance_turn(cid)
     assert [e["name"] for e in _effects(cid, w)] == ["Mage Armor"]  # still up
     server.end_combat(cid)
     lr = server.long_rest(cid, w)  # overnight ends the 8h buff

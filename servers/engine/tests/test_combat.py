@@ -226,6 +226,10 @@ def test_turn_advance_logs_structured_combat_event_payload(tmp_path, monkeypatch
     gob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
 
     before = server.start_combat(cid, [hero, gob])
+    # Pass the outgoing combatant if it's the PC, then advance (#160 enforcement).
+    cur = server.get_state(cid)["current_turn"]
+    if server.get_character(cid, cur)["kind"] in ("player", "companion"):
+        server.use_action(cid, cur, "skip")
     advanced = server.next_turn(cid)
 
     camp = store.load_campaign(cid)
@@ -310,6 +314,11 @@ def test_next_turn_skips_dead(tmp_path, monkeypatch):  # H2
     server.apply_damage(cid, d, 100)  # d is dead
     seen = set()
     for _ in range(6):  # two laps
+        # PC must act or pass before next_turn advances past them (#160 enforcement).
+        cur = server.get_state(cid)["current_turn"]
+        ch = server.get_character(cid, cur)
+        if ch["kind"] in ("player", "companion"):
+            server.use_action(cid, cur, "skip")
         v = server.next_turn(cid)
         if v["current"]:
             seen.add(v["current"])
@@ -871,8 +880,10 @@ def test_next_turn_brief_monster_has_correct_multiattack_count(tmp_path, monkeyp
 
     sc = server.start_combat(cid, [pc, captain_id])
     # Captain has higher initiative → captain is turn_index=0 (first).
-    # next_turn → advances to the PC's turn.
+    # next_turn → advances to the PC's turn. Captain is outgoing (monster) → no guard.
     nt1 = server.next_turn(cid)
+    # PC is now current — must act or pass before next_turn (#160 enforcement).
+    server.use_action(cid, pc, "skip")
     # next_turn again → wraps back to the captain (new round).
     nt2 = server.next_turn(cid)
 
@@ -911,10 +922,16 @@ def test_next_turn_brief_pc_attack_numbers(tmp_path, monkeypatch):
     monster = server.create_character(cid, "Dummy", kind="monster", max_hp=5)["id"]
 
     server.start_combat(cid, [pc, monster])
-    # Call next_turn until we land on the PC.
+    # Call next_turn until we land on the PC. Pass the outgoing PC if needed (#160 enforcement).
+    cur = server.get_state(cid)["current_turn"]
+    if server.get_character(cid, cur)["kind"] in ("player", "companion"):
+        server.use_action(cid, cur, "skip")
     nt = server.next_turn(cid)
-    # If the first next_turn is the monster, advance one more.
+    # If the first next_turn is the monster, pass the monster's outgoing turn and advance once more.
     if nt.get("turn_brief", {}).get("kind") != "player":
+        cur2 = server.get_state(cid)["current_turn"]
+        if server.get_character(cid, cur2)["kind"] in ("player", "companion"):
+            server.use_action(cid, cur2, "skip")
         nt = server.next_turn(cid)
 
     brief = nt.get("turn_brief", {})
@@ -946,9 +963,15 @@ def test_next_turn_brief_pc_with_action_surge(tmp_path, monkeypatch):
     monster = server.create_character(cid, "Dummy", kind="monster", max_hp=5)["id"]
 
     server.start_combat(cid, [pc, monster])
-    # Find the PC's turn in next_turn responses
+    # Find the PC's turn in next_turn responses. Pass outgoing PCs (#160 enforcement).
+    cur = server.get_state(cid)["current_turn"]
+    if server.get_character(cid, cur)["kind"] in ("player", "companion"):
+        server.use_action(cid, cur, "skip")
     nt = server.next_turn(cid)
     if nt.get("turn_brief", {}).get("kind") != "player":
+        cur2 = server.get_state(cid)["current_turn"]
+        if server.get_character(cid, cur2)["kind"] in ("player", "companion"):
+            server.use_action(cid, cur2, "skip")
         nt = server.next_turn(cid)
 
     brief = nt.get("turn_brief", {})
@@ -1052,11 +1075,14 @@ def test_multiattack_monster_makes_two_attacks_third_rejected(tmp_path, monkeypa
     # initiative rolls are high; then next_turn places it first.
     # Simpler: start with both, then next_turn until the captain is current.
     server.start_combat(cid, [captain_id, pc])
-    # Advance turns until the Bandit Captain is current.
+    # Advance turns until the Bandit Captain is current. Pass outgoing PCs (#160).
     for _ in range(10):
         state = server.get_state(cid)
         if state["current_turn"] == captain_id:
             break
+        cur = state["current_turn"]
+        if server.get_character(cid, cur)["kind"] in ("player", "companion"):
+            server.use_action(cid, cur, "skip")
         server.next_turn(cid)
     assert server.get_state(cid)["current_turn"] == captain_id, (
         "Could not make Bandit Captain the current combatant — adjust test setup"
@@ -1153,11 +1179,14 @@ def test_multiattack_zero_path_unchanged(tmp_path, monkeypatch):
     wolf_id = res["spawned"][0]["id"]
 
     server.start_combat(cid, [wolf_id, pc])
-    # Advance until the wolf is current.
+    # Advance until the wolf is current. Pass any PC outgoing combatant first (#160).
     for _ in range(10):
         state = server.get_state(cid)
         if state["current_turn"] == wolf_id:
             break
+        cur = state["current_turn"]
+        if server.get_character(cid, cur)["kind"] in ("player", "companion"):
+            server.use_action(cid, cur, "skip")
         server.next_turn(cid)
     assert server.get_state(cid)["current_turn"] == wolf_id
 
@@ -1165,3 +1194,231 @@ def test_multiattack_zero_path_unchanged(tmp_path, monkeypatch):
     # Wolf has no Multiattack -> 2nd is rejected.
     with _pytest.raises(ValueError, match="already attacked this turn"):
         server.attack(cid, wolf_id, pc, attack_bonus=4, damage_dice="2d4+2")
+
+
+# =========================================================================
+# Issue #160/#166: Round-1 turn-skip enforcement in next_turn
+# =========================================================================
+# next_turn must BLOCK advancing past a PC/companion who can act but has not
+# acted or declared a pass this turn. Monsters/NPCs are never blocked.
+
+
+def test_next_turn_blocks_pc_who_has_not_acted(tmp_path, monkeypatch):
+    """BLOCK: next_turn raises when the outgoing PC has not acted or passed.
+
+    This is the core Round-1 skip defect — the DM calls next_turn immediately
+    after start_combat, silently skipping the highest-initiative PC's turn.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid = server.create_campaign("Turn Skip Block #160")["id"]
+    # Force PC to go first so the outgoing combatant on the first next_turn is the PC.
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+    # Rig initiative so pc is always first.
+    import dice as dice_mod
+    _orig = dice_mod.roll
+    _call = [0]
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc, "PC must be first for this test"
+
+    # next_turn with no action from PC must be rejected
+    with _pytest.raises(ValueError, match="has not acted this turn"):
+        server.next_turn(cid)
+
+
+def test_next_turn_allows_pc_after_attack(tmp_path, monkeypatch):
+    """ALLOW: next_turn succeeds when the outgoing PC attacked this turn."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Turn Skip After Attack #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    # Rig PC first
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc
+
+    server.attack(cid, pc, mob, attack_bonus=5, damage_dice="1d8+3")  # PC acted
+    view = server.next_turn(cid)  # must NOT raise
+    assert view["active"] is True
+
+
+def test_next_turn_allows_pc_after_use_action(tmp_path, monkeypatch):
+    """ALLOW: next_turn succeeds when the outgoing PC declared use_action(kind='action')."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Turn Skip After use_action #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc
+
+    server.use_action(cid, pc, "action")  # Dodge/Dash/Disengage/Ready/Help declared
+    view = server.next_turn(cid)  # must NOT raise
+    assert view["active"] is True
+
+
+def test_next_turn_allows_pc_after_skip(tmp_path, monkeypatch):
+    """ALLOW: use_action(kind='skip') is the pass escape — next_turn succeeds after it."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Turn Skip Pass Escape #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc
+
+    skip_result = server.use_action(cid, pc, "skip")
+    assert skip_result["ok"] is True, f"skip must be accepted; got {skip_result}"
+    view = server.next_turn(cid)  # must NOT raise after skip
+    assert view["active"] is True
+
+
+def test_next_turn_allows_incapacitated_pc(tmp_path, monkeypatch):
+    """NO BLOCK: an incapacitated (stunned/unconscious) PC is advanced without error.
+
+    A PC who CANNOT act must never trigger the skip-guard — they're already unable
+    to take an action and forcing a pass would be wrong.
+    """
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Incapacitated PC #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc
+
+    # Stun the PC — incapacitated, cannot act
+    server.add_condition(cid, pc, "stunned")
+    view = server.next_turn(cid)  # must NOT raise — incapacitated PC is not blocked
+    assert view["active"] is True
+
+
+def test_next_turn_allows_downed_pc(tmp_path, monkeypatch):
+    """NO BLOCK: a PC at 0 hp is advanced without error (they can't act, just death-save)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Downed PC #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [pc, mob])
+    assert server.get_state(cid)["current_turn"] == pc
+
+    # Drop the PC to 0 — they're downed, cannot take actions
+    server.apply_damage(cid, pc, 20)
+    assert server.get_character(cid, pc)["current_hp"] == 0
+    view = server.next_turn(cid)  # must NOT raise — 0-hp PC is not blocked
+    assert view["active"] is True
+
+
+def test_next_turn_monster_no_action_advances_freely(tmp_path, monkeypatch):
+    """NO BLOCK: a monster who took no action advances without error — guard is PC-only."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Monster Free Advance #160")["id"]
+    pc = server.create_character(cid, "Aria", kind="player", max_hp=20, armor_class=14)["id"]
+    mob = server.create_character(cid, "Goblin", kind="monster", max_hp=7, armor_class=15)["id"]
+
+    # Rig monster first
+    _call = [0]
+    _orig = server.dice_mod.roll
+    def _rigged(expr, **kw):
+        r = _orig(expr, **kw)
+        if expr.startswith("1d20"):
+            _call[0] += 1
+            from dice import DiceRoll
+            total = 25 if _call[0] == 1 else 1
+            return DiceRoll(expression=expr, total=total, rolls=[total], is_d20=True, natural=total)
+        return r
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    server.start_combat(cid, [mob, pc])
+    # mob is first (rigged higher initiative)
+    assert server.get_state(cid)["current_turn"] == mob
+
+    # Monster takes no action — next_turn must NOT raise
+    view = server.next_turn(cid)
+    assert view["active"] is True
