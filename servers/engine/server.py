@@ -2812,6 +2812,10 @@ def attack(
                 )
                 if not ok:
                     raise ValueError(f"{attacker.name} cannot attack: {reason}")
+        # Capture any advantage-granting rider on the target (Guiding Bolt's "next attack
+        # has advantage" marker) BEFORE the roll so we can both auto-apply its advantage
+        # (via attack_modifiers) and consume it after this one attack resolves (#194).
+        adv_marker = combat.advantage_granting_effect(target)
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
@@ -2893,6 +2897,10 @@ def attack(
                         expires_day=r.expires_day,
                         expires_phase_index=r.expires_phase_index,
                         until_long_rest=r.until_long_rest,
+                        # Flag the rider as advantage-granting (Guiding Bolt) so the NEXT
+                        # attack against this target auto-gets advantage via
+                        # combat.attack_modifiers and is consumed there (#194).
+                        grants_advantage=combat.spell_grants_advantage(r.name),
                     )
                     # Refresh, don't stack (mirrors cast_spell's write).
                     target.active_effects = [
@@ -2903,6 +2911,19 @@ def attack(
                 result["on_hit_effect_applied"] = applied
             else:
                 result["on_hit_effect_discarded"] = [r.name for r in riders]
+        # CONSUME the advantage-granting rider (Guiding Bolt) that auto-granted advantage to
+        # THIS attack (#194). 5e: "the next attack roll made against it has Advantage" — the
+        # marker is spent by the next attack ROLL (hit OR miss), so it benefits exactly one
+        # attack. ``adv_marker`` was captured before the roll, so a Guiding-Bolt SPELL attack
+        # that just materialized a fresh marker on this same target (above) is not consumed
+        # here (that path had no pre-existing marker). Removed by identity so re-applied
+        # same-name effects aren't clobbered.
+        if adv_marker is not None:
+            target.active_effects = [
+                e for e in target.active_effects if e is not adv_marker
+            ]
+            result["advantage_source"] = adv_marker.name
+            result["advantage_consumed"] = True
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
         if hit and result["damage"]:
             dtype = f" {damage_type}" if damage_type else ""

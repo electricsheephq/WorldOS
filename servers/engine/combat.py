@@ -38,6 +38,30 @@ _TARGET_GIVES_ADV = {
     Condition.UNCONSCIOUS,
 }
 
+# Spells whose timed effect is a "next attack roll against the target has Advantage"
+# rider (#194). When such a spell's on-hit rider materializes on the target, the
+# ActiveEffect is flagged grants_advantage=True so attack_modifiers auto-grants advantage
+# to the next attacker (and attack() consumes the marker). Keyed by canonical spell name so
+# the marker is general — any future rider spell just joins this set. Currently: Guiding
+# Bolt ("On a hit ... the next attack roll made against it ... has Advantage").
+_ADVANTAGE_GRANTING_SPELLS = frozenset({"Guiding Bolt"})
+
+
+def spell_grants_advantage(spell_name: str) -> bool:
+    """Does this spell's on-hit rider grant ADVANTAGE to the next attack against the target
+    (Guiding Bolt)? Used when materializing the rider to flag the ActiveEffect; pure."""
+    return spell_name in _ADVANTAGE_GRANTING_SPELLS
+
+
+def advantage_granting_effect(target: Character):
+    """The first active_effect on ``target`` flagged as granting advantage to the next
+    attack against it (Guiding Bolt's rider), or None. Pure — no mutation; attack() reads
+    this to surface/consume the marker. Today only one such marker can exist at a time."""
+    for eff in target.active_effects:
+        if getattr(eff, "grants_advantage", False):
+            return eff
+    return None
+
 
 def double_dice(expr: str) -> str:
     """Double the DICE count of a damage expression for a critical hit, leaving
@@ -48,9 +72,12 @@ def double_dice(expr: str) -> str:
 
 
 def attack_modifiers(attacker: Character, target: Character, is_ranged: bool = False) -> tuple[bool, bool]:
-    """(advantage, disadvantage) implied by the combatants' conditions. The caller
-    combines these with any explicit flags; dice.roll cancels adv+disadv. A prone
-    target grants advantage to melee attackers and disadvantage to ranged ones."""
+    """(advantage, disadvantage) implied by the combatants' conditions AND any
+    advantage-granting active_effect on the TARGET (Guiding Bolt's "next attack against it
+    has Advantage" rider, #194). The caller combines these with any explicit flags;
+    dice.roll cancels adv+disadv. A prone target grants advantage to melee attackers and
+    disadvantage to ranged ones. PURE — reads state only; consuming the rider is attack()'s
+    job. A target with no advantage-granting effect (the common case) is unaffected."""
     adv = disadv = False
     ac = set(attacker.conditions)
     tc = set(target.conditions)
@@ -65,6 +92,10 @@ def attack_modifiers(attacker: Character, target: Character, is_ranged: bool = F
     if Condition.PRONE in tc:
         adv = adv or (not is_ranged)
         disadv = disadv or is_ranged
+    # An advantage-granting rider on the target (Guiding Bolt) auto-grants advantage to the
+    # next attacker — deterministic, not reliant on the DM passing advantage=True (#194).
+    if advantage_granting_effect(target) is not None:
+        adv = True
     return adv, disadv
 
 
