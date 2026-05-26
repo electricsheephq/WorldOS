@@ -2018,6 +2018,100 @@ def set_hp(
         return out
 
 
+def _parse_multiattack_count(desc: str) -> int:
+    """Return the total number of attack rolls a monster makes when it uses Multiattack.
+
+    Handles the three SRD wording patterns:
+    - "makes two X attacks"              → 2
+    - "makes one X attack and one Y attack" → 1+1 = 2
+    - "makes one Ram attack, one Bite attack, and one Claw attack" → 3
+    Counts every (number + 'attack/attacks') clause, summing them.
+    Falls back to the first number word in the desc when no clause matches,
+    and ultimately defaults to 1 (conservative).
+    """
+    import re as _re
+    _WORD_TO_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+    # Split on 'and' and ',' to get individual attack clauses
+    parts = _re.split(r"\band\b|\,", desc, flags=_re.IGNORECASE)
+    total = 0
+    for part in parts:
+        m = _re.search(r"\b(one|two|three|four|five|six|\d+)\b", part, _re.IGNORECASE)
+        if m and _re.search(r"\battacks?\b", part, _re.IGNORECASE):
+            tok = m.group(1).lower()
+            total += int(tok) if tok.isdigit() else _WORD_TO_NUM.get(tok, 1)
+    if total > 0:
+        return total
+    # Fallback: first number word anywhere in the desc
+    m2 = _re.search(r"\b(one|two|three|four|five|six|\d+)\b", desc, _re.IGNORECASE)
+    if m2:
+        tok = m2.group(1).lower()
+        return int(tok) if tok.isdigit() else _WORD_TO_NUM.get(tok, 1)
+    return 1
+
+
+def _parse_attack_action(action: dict) -> dict | None:
+    """Parse a monster attack action dict (from bestiary.stat_block) into
+    {name, to_hit, damage} with authoritative numeric to_hit pulled from the
+    SRD desc ('Melee/Ranged Attack Roll: +5').  Returns None for non-attack
+    actions (no 'Attack Roll' in desc and action_type != 'ACTION').
+    """
+    import re as _re
+    if action.get("action_type") != "ACTION":
+        return None
+    desc = action.get("desc", "")
+    hit_m = _re.search(r"Attack Roll:\s*([+-]\d+)", desc, _re.IGNORECASE)
+    if hit_m is None:
+        return None  # not an attack action (e.g. Parry, Spellcasting)
+    to_hit = int(hit_m.group(1))
+    dmg_m = _re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", desc, _re.IGNORECASE)
+    damage = dmg_m.group(1).replace(" ", "") if dmg_m else ""
+    return {"name": action["name"], "to_hit": to_hit, "damage": damage}
+
+
+def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
+    """Build a monster_combat entry for a combatant: Multiattack count + attack list.
+    Returns None if the character is not a monster or has no bestiary data available.
+
+    Source of truth: the bestiary stat block identified by the monster's base name
+    (strip trailing ' N' numbering). If no stat block resolves, falls back to the
+    character's own ability scores + proficiency (mirrors _combat_numbers derivation).
+    """
+    if ch.kind != "monster":
+        return None
+    # Resolve canonical bestiary name: strip trailing ' N' (e.g. 'Bandit Captain 2')
+    import re as _re
+    base_name = _re.sub(r"\s+\d+$", "", ch.name).strip()
+    sb = bestiary.stat_block(base_name)
+    if sb is None:
+        canonical = bestiary.resolve(base_name)
+        sb = bestiary.stat_block(canonical) if canonical else None
+    if sb is None:
+        return None
+    actions = sb.get("actions", [])
+    # Determine attacks_per_turn from Multiattack action
+    attacks_per_turn = 1
+    for act in actions:
+        if act["name"].lower() == "multiattack":
+            attacks_per_turn = _parse_multiattack_count(act.get("desc", ""))
+            break
+    # Collect authoritative attack actions (have 'Attack Roll' in desc)
+    attack_list = []
+    for act in actions:
+        parsed = _parse_attack_action(act)
+        if parsed is not None and act["name"].lower() != "multiattack":
+            attack_list.append(parsed)
+    return {
+        "id": ch.id,
+        "name": ch.name,
+        "attacks_per_turn": attacks_per_turn,
+        "attacks": attack_list,
+        "note": (
+            f"Run {attacks_per_turn} attack call(s) per Attack action using the surfaced "
+            "to_hit/damage — never invent bonuses (mirrors PC _combat_numbers rule)."
+        ),
+    }
+
+
 @mcp.tool()
 def start_combat(
     campaign_id: str,
@@ -2088,6 +2182,19 @@ def start_combat(
               if c.characters.get(cid) is not None and int(getattr(c.characters[cid], "extra_attacks", 0)) > 0]
         if ea:
             view["extra_attack_reminder"] = ea
+        # Surface monster combat numbers (Multiattack count + authoritative attack to-hit/damage)
+        # so the DM never invents monster attack bonuses and always runs the right number of
+        # attacks per turn. Mirrors the PC _combat_numbers approach: authoritative sheet values,
+        # never invented. Purely additive — absent when no monsters are in the fight.
+        monster_combat_entries = []
+        for cid in combatant_ids:
+            ch = c.characters.get(cid)
+            if ch is not None:
+                entry = _monster_combat_entry(ch, c)
+                if entry is not None:
+                    monster_combat_entries.append(entry)
+        if monster_combat_entries:
+            view["monster_combat"] = monster_combat_entries
         ordered = [
             {
                 "id": cb.character_id,
