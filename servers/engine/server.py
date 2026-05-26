@@ -11,6 +11,7 @@ in later epics; this server already owns dice, characters, and persistence.
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Optional
 
@@ -37,6 +38,7 @@ import rests
 import spells
 import srd_tables
 import travel
+import wander
 import worldsim
 from models import (
     SKILL_ABILITIES,
@@ -198,6 +200,19 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
             member.location_id = location_id
             moved.append(pid)
     return moved
+
+
+def _party_levels(c: Campaign) -> list[int]:
+    """The total-level of every LIVING party member (PC + companion) — the input the
+    encounter sizing (`encounter.py` / `wander.pick_encounter`) needs to budget a fight
+    to the party. Falls back to [1] when the party is empty/all-down so sizing always
+    has a non-empty list (encounter.xp_thresholds requires one)."""
+    levels = [
+        c.characters[i].total_level
+        for i in c.party
+        if i in c.characters and not c.characters[i].dead and c.characters[i].current_hp > 0
+    ]
+    return levels or [1]
 
 
 def _deep_update(base: dict, patch: dict) -> dict:
@@ -870,6 +885,23 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             # A phase elapsed (overland travel): expire timed spell effects whose
             # duration ran out (minute/round-scale die on any phase advance).
             result["expired_effects"] = _expire_clock_effects_all(c)
+            # Kingmaker-style WANDERING ENCOUNTER: a time-advancing travel leg may be
+            # ambushed. Roll for the DESTINATION's region (mirroring how world_beats
+            # rides this same seam); on a hit, stage region-appropriate foes sized to
+            # the party and surface them under `wandering_encounter`. The DM narrates
+            # the ambush and start_combat's the staged foes — we never auto-fight.
+            # Skip the ambush roll if a fight is already live (parity with long_rest /
+            # roll_wandering_encounter) — don't stage a second encounter mid-combat.
+            dest_loc = c.locations.get(destination_id)
+            if not c.combat.active:
+                staged = _stage_wandering_encounter(
+                    c,
+                    dest_loc.region if dest_loc is not None else "",
+                    difficulty="medium",
+                    location_id=destination_id,
+                )
+                if staged:
+                    result["wandering_encounter"] = staged
         save_campaign(c)
         return result
 
@@ -1595,6 +1627,116 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
         "cr": sb["cr"],
         "xp_each": sb["xp"],
         "actions": sb["actions"],
+    }
+
+
+def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) -> list[dict]:
+    """Add `count` combat-ready monster Characters for a canonical bestiary name to the
+    campaign (mutates; caller holds the lock + saves). Mirrors `spawn_monster`'s
+    construction EXACTLY — same stat-block flattening, abilities, AC/HP, resistances,
+    actions-on-notes, and `xp_value` — but anchors each spawn at `location_id` (the
+    scene the wandering encounter erupts in) so the local cast shows it, and returns
+    nothing on an unresolvable name (defensive; the picker only hands us resolvable
+    names). Returns `[{"id","name"}]` for the spawned foes."""
+    sb = bestiary.stat_block(canonical)
+    if sb is None:
+        return []
+    n = max(1, min(int(count), 20))
+    scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
+    actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
+    summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
+    spawned: list[dict] = []
+    for i in range(n):
+        label = f"{sb['name']} {i + 1}" if n > 1 else sb["name"]
+        ch = Character(
+            name=label,
+            kind="monster",
+            abilities=scores,
+            max_hp=sb["hp"],
+            current_hp=sb["hp"],
+            armor_class=sb["ac"],
+            hit_dice=sb["hit_dice"],
+            proficiency_bonus=sb["proficiency_bonus"],
+            initiative_bonus=sb["initiative_bonus"] or scores.modifier(Ability.DEX),
+            damage_resistances=sb["damage_resistances"],
+            damage_immunities=sb["damage_immunities"],
+            damage_vulnerabilities=sb["damage_vulnerabilities"],
+            condition_immunities=sb["condition_immunities"],
+            notes=summary,
+            xp_value=sb["xp"],
+            location_id=location_id,
+        )
+        c.characters[ch.id] = ch
+        spawned.append({"id": ch.id, "name": ch.name})
+    return spawned
+
+
+def _stage_wandering_encounter(
+    c: Campaign,
+    region: str,
+    *,
+    difficulty: str = "medium",
+    modifiers: dict | None = None,
+    location_id=None,
+    force: bool = False,
+    rng: random.Random | None = None,
+) -> Optional[dict]:
+    """Roll + (on a hit) STAGE a Kingmaker-style wandering encounter (mutates; caller
+    holds the lock + saves). Composes the pure `wander` module with the existing spawn
+    path:
+
+      1. unless `force`, roll `wander.roll_encounter(region, modifiers)` — a miss (or
+         the `house_rules.wandering_encounters` flag being off) returns None and leaves
+         the campaign untouched (today's behavior);
+      2. on a hit, `wander.pick_encounter` chooses region-appropriate foe(s) sized to
+         the LIVING party's XP budget for `difficulty`;
+      3. spawn those foes as monster Characters via `_spawn_creature_chars`, anchored at
+         `location_id` (defaults to the party's current location) so they're already in
+         the campaign, ready to fight;
+      4. return the **`wandering_encounter`** payload the seam merges into its result
+         (mirroring `world_beats`): ``{staged, region, foes, difficulty, surprise,
+         encounter_xp}``. `surprise` is a coin flip the DM HONORS (ambush → the foes act
+         first). Combat is NOT auto-started — the DM narrates the ambush and calls
+         `start_combat` on the staged foe ids.
+
+    Returns None when nothing was staged (flag off, roll missed, empty party, or the
+    region pool yielded no creature) so the seam simply omits the key."""
+    if not force and not c.house_rules.wandering_encounters:
+        return None
+    region = region or ""
+    if not force and not wander.roll_encounter(region, modifiers, rng=rng):
+        return None
+    levels = _party_levels(c)
+    specs = wander.pick_encounter(levels, region, target_difficulty=difficulty, rng=rng)
+    if not specs:
+        return None
+    where = location_id if location_id is not None else c.current_location_id
+    r = rng or random.Random()
+    foes: list[dict] = []
+    encounter_xp = 0
+    for spec in specs:
+        ids = _spawn_creature_chars(c, spec["name"], spec["count"], where)
+        if not ids:
+            continue
+        encounter_xp += int(spec.get("xp_each") or 0) * len(ids)
+        foes.append(
+            {
+                "name": spec["name"],
+                "count": len(ids),
+                "cr": spec.get("cr", ""),
+                "xp_each": spec.get("xp_each", 0),
+                "ids": [s["id"] for s in ids],
+            }
+        )
+    if not foes:
+        return None  # everything failed to spawn -> treat as no encounter (no half-staged state)
+    return {
+        "staged": True,
+        "region": region,
+        "difficulty": difficulty,
+        "surprise": r.random() < 0.5,
+        "foes": foes,
+        "encounter_xp": encounter_xp,
     }
 
 
@@ -3586,7 +3728,7 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
 
 
 @mcp.tool()
-def long_rest(campaign_id: str, character_id: str) -> dict:
+def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
     """Take a long rest: restore all HP, recover half total Hit Dice (min 1), reset
     all spell slots, reduce exhaustion by 1, and end the dying state. The DM should
     call this for each party member. Cannot rest while dead.
@@ -3597,7 +3739,15 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
     afternoon/evening/night rolls the day forward by one; resting when it is ALREADY
     morning is a clock no-op, so calling long_rest once per party member on the same
     night converges on a single morning instead of each member burning a day. The
-    rollover is persisted with the rest."""
+    rollover is persisted with the rest.
+
+    CAMP WATCH (Kingmaker-style): the night the rest actually rolls the clock over (the
+    FIRST member's rest that overnight — so a per-member party rolls ONCE, not once each)
+    rolls a wandering-encounter check for the camp's region. On a hit the result carries a
+    `wandering_encounter` payload (foes already staged in the campaign, ready to fight) for
+    the DM to narrate as a night ambush and `start_combat`. Pass `watch` (e.g. "careful",
+    "camouflaged", "hidden") to lower the ambush chance — a well-kept watch / concealed
+    camp is safer. Disabled by `house_rules.wandering_encounters = False`."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -3629,6 +3779,26 @@ def long_rest(campaign_id: str, character_id: str) -> dict:
         # past their deadline, AND every hour-scale buff (Mage Armor/Aid/Longstrider) via
         # long_rest=True — even when resting in the morning is a clock no-op (steps == 0).
         out["expired_effects"] = _expire_clock_effects_all(c, long_rest=True)
+        # CAMP-WATCH AMBUSH — gated on `steps > 0` so it rolls ONCE per overnight (the
+        # member whose rest actually rolls the clock to morning), NOT once per party
+        # member resting the same night. Region = the camp's current location; a careful/
+        # hidden `watch` lowers the chance (a camouflage modifier). Same stage-only
+        # contract as travel: foes are staged + surfaced, never auto-fought.
+        if steps > 0:
+            cur_loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+            watch_lower = watch.strip().lower()
+            modifiers = {"camouflage": True} if watch_lower in (
+                "careful", "camouflage", "camouflaged", "hidden", "concealed", "stealth", "stealthy"
+            ) else None
+            staged = _stage_wandering_encounter(
+                c,
+                cur_loc.region if cur_loc is not None else "",
+                difficulty="medium",
+                modifiers=modifiers,
+                location_id=c.current_location_id,
+            )
+            if staged:
+                out["wandering_encounter"] = staged
         save_campaign(c)
         # A long rest is the natural moment for a CAMP scene — nudge the DM to gather the party
         # (companions breathe here) when there are companions to gather.
@@ -4995,6 +5165,39 @@ def encounter_difficulty(party_levels: list[int], monster_xps: list[int]) -> dic
         "difficulty": encounter.encounter_difficulty(party_levels, monster_xps),
         "thresholds": encounter.xp_thresholds(party_levels),
     }
+
+
+@mcp.tool()
+def roll_wandering_encounter(campaign_id: str, region: str = "", difficulty: str = "medium") -> dict:
+    """EXPLICITLY stage a Kingmaker-style wandering encounter (the manual trigger for
+    the DM, a QA harness, or the "Stir the world" UI button).
+
+    Unlike the automatic checks on time-advancing `travel_to` / `long_rest` (which only
+    fire on a probabilistic per-region roll), this ALWAYS stages an encounter: it picks
+    region-appropriate foe(s) sized to the LIVING party's XP budget for `difficulty`
+    (easy/medium/hard/deadly), spawns them as monster Characters anchored at the party's
+    current location, and returns them under `wandering_encounter`:
+    ``{staged, region, difficulty, surprise, foes:[{name,count,cr,xp_each,ids}],
+    encounter_xp}``. `region` defaults to the party's current location's region. The foes
+    are now IN the campaign, ready to fight — narrate the ambush, honor `surprise`, then
+    `start_combat` with the returned foe ids. (Combat is never auto-started.) Returns
+    ``{"staged": False}`` only if no creature could be sized (an empty/all-down party is
+    floored to level 1, so it still stages)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if c.combat.active:
+            raise ValueError("combat already active — resolve it (end_combat) before staging another encounter")
+        region_in = region.strip()
+        if not region_in:
+            cur_loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+            region_in = cur_loc.region if cur_loc is not None else ""
+        staged = _stage_wandering_encounter(
+            c, region_in, difficulty=difficulty, location_id=c.current_location_id, force=True
+        )
+        if staged is None:
+            return {"staged": False, "region": region_in, "difficulty": difficulty}
+        save_campaign(c)
+        return staged
 
 
 @mcp.tool()

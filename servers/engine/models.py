@@ -706,6 +706,11 @@ class HouseRules(_StrictModel):
     feats_allowed: bool = True
     multiclass_allowed: bool = True
     dm_can_fudge: bool = False  # allow DM dice fudging (off by default)
+    # Kingmaker-style WANDERING encounters on time-advancing travel + camp watches.
+    # ON by default (at a low per-region rate) so travel/camp carry real combat risk;
+    # set False to disable the auto-roll entirely (explicit roll_wandering_encounter
+    # still works). Additive: an old snapshot lacking this key loads as True.
+    wandering_encounters: bool = True
 
 
 class WorldState(_StrictModel):
