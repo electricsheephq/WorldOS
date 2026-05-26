@@ -51,6 +51,19 @@
         ]
       }
     },
+    "npc-astarion": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "loyalty", "threshold": 35, "note": "Two hundred years a thing that was owned, and now — improbably — free, and choosing. Reach this and Astarion lets the glamour slip far enough to mean it: a loyalty that costs him to give, sworn to the one person who never once tried to hold his leash. He'll deny it with his whole vain heart. He'll also be there."}
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -25,
+          "decision_flag": "owes_the_guild",
+          "note": "Astarion spent two centuries as a creditor's possession, and he clawed free at the cost of a power he wanted badly, precisely so that no one would ever own him again. A partner who sells them both back into a web of owed favours — who hands a fixer a leash and calls it good business — has, in his exact and unforgiving accounting, become the kind of master he bled to escape. If the bond hasn't already soured, the leaving is quiet and almost gentle: he simply isn't at camp one morning, and the note in his elegant hand says only that he has had quite enough of belonging to anyone. If it HAS soured, the wit goes cold and surgical first, and then he's gone — taking what's useful, leaving what isn't, and a parting line with no warmth left in it: 'I have worn a collar, darling. I know precisely how it's buckled. I won't wear yours, and I certainly won't help you fit it.' He is, to the end, exactly himself — survival first, sentiment denied, and a wound where the loyalty used to be."
+        }
+      }
+    },
     "npc-minsc": {
       "arc": {
         "arc_gates": [

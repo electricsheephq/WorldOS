@@ -550,3 +550,83 @@ def test_bg_malformed_faction_arc_degrades_not_aborts():
     )
     assert seeded == 1
     assert "good" in c.faction_arcs and "bad" not in c.faction_arcs and "alsobad" not in c.faction_arcs
+
+
+# =========================================================================
+# THE LIVING-STORY FILL — two more authored faction questlines on real content:
+# the Guild ("The Ledger and the Knife") and the Harpers ("The Open Hand and
+# the Hidden One"). Same join->grow->lead shape as the Flaming-Fist exemplar.
+# =========================================================================
+
+GUILD_ARC = "arc-guild-rise"
+HARPER_ARC = "arc-harper-rise"
+
+
+@pytest.mark.parametrize(
+    "arc_id, faction_id, finale_loc",
+    [
+        (GUILD_ARC, "fac-guild", "loc-outer-city"),
+        (HARPER_ARC, "fac-harpers", "loc-lower-city"),
+    ],
+)
+def test_bg_fill_faction_arc_seeds_and_links(arc_id, faction_id, finale_loc):
+    """Each authored fill questline loads from world.json, links to its canon faction, and has the
+    3-stage join->prove->lead shape (reputation gate, then two standing gates) with a world-changing
+    finale on the terminal stage that ripples a real effect on a real location."""
+    c = _seed_bg()
+    assert arc_id in c.faction_arcs, f"the authored {arc_id} must seed from world.json"
+    arc = c.faction_arcs[arc_id]
+    assert arc.faction_id == faction_id
+    assert c.factions[faction_id].questline_arc_id == arc_id  # linked back
+    assert len(arc.stages) == 3, "join -> prove -> lead"
+    # stage 1 gates on reputation (trust to be let in); the later stages on standing (earned clout)
+    assert arc.stages[0].gauge == "reputation"
+    assert arc.stages[1].gauge == "standing" and arc.stages[2].gauge == "standing"
+    # the terminal stage carries a world-changing finale that ripples a real effect
+    finale = arc.stages[-1].finale_effect
+    assert finale is not None
+    assert finale.flag and finale.narrate.strip()
+    assert finale.faction_id == faction_id and finale.reputation_delta > 0
+    # canon-grounded: the finale puts the faction in control of a real location in this world
+    assert finale.controller_id == faction_id and finale.location_id == finale_loc
+    assert finale.location_id in c.locations
+    # and leaves a rule-of-three echo (the price of leadership comes due)
+    assert finale.schedule_in_days > 0 and finale.schedule_text.strip()
+
+
+@pytest.mark.parametrize("arc_id, faction_id", [(GUILD_ARC, "fac-guild"), (HARPER_ARC, "fac-harpers")])
+def test_bg_fill_faction_arc_locked_at_seed(arc_id, faction_id):
+    """At world start the faction isn't joined — all stages locked. The additive guarantee: the
+    exemplar changes nothing until the player engages it."""
+    c = _seed_bg()
+    arc = c.faction_arcs[arc_id]
+    assert c.factions[faction_id].joined is False
+    fa.evaluate(arc, c)
+    assert all(s.status == "locked" for s in arc.stages)
+
+
+@pytest.mark.parametrize("arc_id, faction_id", [(GUILD_ARC, "fac-guild"), (HARPER_ARC, "fac-harpers")])
+def test_bg_fill_faction_arc_end_to_end_on_real_content(arc_id, faction_id):
+    """The whole authored loop on shipped canon: join, prove yourself (reputation), rise through
+    service (standing), then the finale ripples the faction's control of its turf — exactly once."""
+    c = _seed_bg()
+    arc = c.faction_arcs[arc_id]
+    fac = c.factions[faction_id]
+    # prove yourself: reputation up to the join threshold, then join
+    fac.reputation = arc.stages[0].unlock_at
+    fac.joined = True
+    fa.evaluate(arc, c)
+    assert arc.stages[0].status == "available"  # the join stage opens
+    # rise through service: standing up to the command threshold
+    fac.standing = arc.stages[2].unlock_at
+    fa.evaluate(arc, c)
+    assert arc.stages[2].status == "available"
+    # the finale ripples the faction's grip on its turf, exactly once
+    rep_before = fac.reputation
+    finale = arc.stages[2].finale_effect
+    res = fa.apply_finale(c, arc.stages[2])
+    assert res is not None
+    assert c.flags.get(finale.flag) is True
+    assert c.flags.get(f"control:{finale.location_id}={finale.controller_id}") is True
+    assert fac.reputation == min(100, rep_before + finale.reputation_delta)
+    assert fa.apply_finale(c, arc.stages[2]) is None  # idempotent
