@@ -1,0 +1,272 @@
+{
+  "id": "tidal-commonwealth",
+  "schema_version": 1,
+  "name": "The Tidal Commonwealth",
+  "ruleset": "SRD 5.2",
+  "license": "CC-BY-4.0",
+  "attribution": "Original ClawDnD world. Built on SRD 5.2 (CC-BY-4.0). No Wizards of the Coast / Larian / Forgotten Realms / Baldur's Gate IP — clean-room original.",
+  "map_kind": "none",
+  "era": "The Forty-Third Year of the Interregnum. Three generations have passed since the Drowning Tide swallowed the old Empire's heartland — the great plateau is gone, the imperial capital is sixty fathoms under saltwater, and what remains is a scatter of island-cities and reef-holds arguing over who inherits the wreckage. No one has yet managed to crown anything.",
+  "tone": "Heroic but grim, mature (18+), morally grey — the Baldur's Gate register. The ocean won and the world rebuilt itself around the absence; every faction has a point, every alliance has a price, and the most dangerous thing in the world is a good person who has stopped believing the right thing is possible. Generate prestige maritime fantasy, never a quest board.",
+  "premise": "Three generations ago, the Drowning Tide — a catastrophic surge of still-unknown origin — swallowed the central plateau of the old Varentine Empire, submerging its capital and richest provinces under a new inland sea called the Gray Basin. What survived became the Tidal Commonwealth: a loose, fractious coalition of island-cities, reef-holds, and drowned-coast fishing towns that mostly agrees on one thing — no single power should ever get large enough to drown again. The Compact that holds the Commonwealth together is forty years old, crumbling at its edges, and fiercely defended by the people who remember what came before it. Into this world the player steps: the sea holds secrets, the factions sharpen their knives, and something old is stirring in the basin's depths.",
+  "history": [
+    "The Varentine Empire (ended ~100 years ago): a centralized imperial state built on the highland plateau, its capital Varent the largest city of its age. Its reach extended to the coasts but its heart was inland — which made it vulnerable to what came.",
+    "The Drowning Tide (~100 years ago): a single catastrophic surge — not a storm, not a quake, but something that acted on the water from below — swallowed the plateau in three days. Varent drowned in hours. The coastal cities survived only because the wave had exhausted itself on the highlands; refugees poured into them for a decade.",
+    "The Interregnum (last ~100 years): no successor state has managed to unify the survivors. Dozens of city-states and island councils rose and fell; the drowned coast is dotted with the ruins of brief kingdoms.",
+    "The Compact (~40 years ago): the surviving coastal powers hammered out a mutual non-conquest agreement after the Three-City War left all of them diminished. It has held — barely — because the alternative is remembered.",
+    "The Gray Basin: the inland sea that covers the drowned plateau. Its surface is calm, its depths unexplored. Salvagers dive the outer rim. Nothing returns from the deep center, and the water at its heart is wrong — it doesn't move the way water should.",
+    "The Tide-Readers: a small, old-knowledge sect who claim to know why the Drowning Tide happened. They are not trusted. They have been right before.",
+    "The present: trade disputes between the cities are sharpening into something harder; a new thing has begun to surface from the Gray Basin — artifacts, ruins, and something that isn't either of those."
+  ],
+  "standing_threads": [
+    "Something is surfacing from the Gray Basin's deep center — artifacts, structural ruins, and at least one thing that moved — and no one in the Commonwealth wants to be the first to say it aloud.",
+    "The Compact is forty years old and the generation that signed it is nearly gone; its successors inherit the letter but not the terror that made it, and two cities are close to a breaking point.",
+    "The Tide-Readers' founder-sect believes the Drowning Tide was deliberate — a mechanism, not a natural disaster — and their evidence is growing harder to dismiss."
+  ],
+  "regions": [
+    {
+      "id": "loc-saltmere",
+      "name": "Saltmere",
+      "description": "The Commonwealth's busiest free port — a tiered city built into a drowned-coast cliff, its lower districts half-flooded at high tide, its upper warrens loud with merchant arguments and Compact-politics. The default hub: traders, diplomats, salvagers, refugees, and the occasional Tide-Reader all pass through. The Saltmere Council has the largest vote under the Compact and uses it.",
+      "connections": ["loc-gray-basin-shallows", "loc-ironhull-station"],
+      "tags": ["hub", "city", "port"]
+    },
+    {
+      "id": "loc-ironhull-station",
+      "name": "Ironhull Station",
+      "description": "A fortified reef-platform — an old imperial signal-tower converted into a trading post and light-house, equidistant between Saltmere and the League cities. It is the Compact's only neutral ground, the place where deals are brokered and arguments kept off the ships. Permanently crowded, always watching.",
+      "connections": ["loc-saltmere", "loc-gray-basin-shallows", "loc-vethis-isle"],
+      "tags": ["crossroads", "neutral-ground", "intrigue"]
+    },
+    {
+      "id": "loc-vethis-isle",
+      "name": "Vethis Isle",
+      "description": "A League city-state on an island whose volcanic rock makes it almost impossible to siege — Vethis is proud, militant, and convinced the rest of the Commonwealth is coasting on its willingness to defend them. Its council is the youngest and the most aggressive, and it is the city closest to breaking the Compact.",
+      "connections": ["loc-ironhull-station", "loc-gray-basin-shallows"],
+      "tags": ["city", "military", "tension"]
+    },
+    {
+      "id": "loc-gray-basin-shallows",
+      "name": "The Gray Basin Shallows",
+      "description": "The navigable outer ring of the inland sea — shallow enough for salvage diving, deep enough to hide what the tide left. Salvage rigs, marker-buoys, and the occasional Tide-Reader survey boat share these waters. The bottom changes. Salvagers notice, and mostly say nothing, because the alternative is explaining what they saw.",
+      "connections": ["loc-saltmere", "loc-ironhull-station", "loc-vethis-isle", "loc-the-deep-rim"],
+      "tags": ["sea", "salvage", "mystery"]
+    },
+    {
+      "id": "loc-the-deep-rim",
+      "name": "The Deep Rim",
+      "description": "The inner edge of the Gray Basin where the drowned plateau drops away into depths no line has bottomed. The water here is wrong: too still, too dark, and at certain tides faintly luminescent. Salvagers don't dive past the rim. Tide-Readers study it. Something has begun to rise from it.",
+      "connections": ["loc-gray-basin-shallows"],
+      "tags": ["sea", "dangerous", "mystery", "ruin"]
+    }
+  ],
+  "factions": [
+    {
+      "id": "fac-compact",
+      "name": "The Compact Council",
+      "description": "The Tidal Commonwealth's governing body — a rotating council of city representatives with barely enough authority to maintain the mutual non-conquest agreement. Honorable in intent, paralyzed in practice; the faction everyone claims to support and quietly undermines.",
+      "reputation": 0
+    },
+    {
+      "id": "fac-salvagers-league",
+      "name": "The Salvagers' League",
+      "description": "The guild-network of professional wreck-divers and artifact traders who work the Gray Basin's shallows. Pragmatic, well-armed, well-connected, and the only faction with real intelligence on what the Basin contains. They sell to everyone and owe loyalty to no city — which is precisely what makes them dangerous when they find something they don't put up for auction.",
+      "reputation": 0
+    },
+    {
+      "id": "fac-tide-readers",
+      "name": "The Tide-Readers",
+      "description": "A sect of archivists, divers, and theorists who have dedicated three generations to understanding what caused the Drowning Tide. Mistrusted by every city (no one wants the answer) and occasionally right in ways that get people killed. They believe the Tide was deliberate — built — and the evidence is mounting.",
+      "reputation": -1
+    },
+    {
+      "id": "fac-vethis-bloc",
+      "name": "The Vethis Bloc",
+      "description": "Vethis Isle and the two smaller militarist city-states in its orbit, who believe the Compact's non-aggression clause has made the Commonwealth weak and that someone — preferably them — needs to lead the defense of the Basin's edge before what's surfacing becomes ungovernable. Aggressive, genuinely afraid, and not entirely wrong.",
+      "reputation": -1
+    }
+  ],
+  "npc_roster": [
+    {
+      "id": "npc-warden-estris",
+      "name": "Warden Estris Vane",
+      "voice_id": "npc-elder",
+      "role": "Compact Council secretary — de facto keeper of the peace",
+      "personality": "A sharp-minded woman in her sixties who has watched the Compact survive thirty-nine years by being the person no one notices is in the room. She does not raise her voice. She remembers everything. She has buried two colleagues who underestimated how much a secretary can choose to forget.",
+      "hook": "Knows the Compact is sixty days from a crisis she cannot resolve alone, and is quietly looking for people with no obvious city allegiance who might help before it becomes public."
+    },
+    {
+      "id": "npc-captain-drev",
+      "name": "Captain Drev Ossian",
+      "voice_id": "companion-default",
+      "role": "Salvagers' League captain — candidate COMPANION",
+      "personality": "A weathered half-elf who has dived the Gray Basin for twenty years and does not discuss what he saw on the dive that gave him his scar. Blunt, practical, loyal to crew above all else; argues from evidence and falls silent rather than speculate. The scar runs from his jaw to his collarbone, and he flinches at the sound of stillwater.",
+      "hook": "Available as the player's companion; whatever he found on that dive is tied to what is surfacing now, and he knows it.",
+      "dossier": {
+        "wound": "saw something in the Deep Rim that he cannot explain and will not name",
+        "wants": ["to protect his crew", "to understand what he saw before it finds him"],
+        "fears": ["being responsible for another crew going down", "the thing in the deep being exactly what he thinks it is"],
+        "values": ["evidence over belief", "crew loyalty", "honest risk-taking"],
+        "approval_likes": ["making decisions on evidence", "standing between danger and bystanders"],
+        "approval_dislikes": ["taking the Tide-Readers' claims on faith without evidence", "gambling other people's lives"],
+        "banter_tags": ["the_scar", "what_the_basin_holds", "crew_over_cause"],
+        "camp_prompts": ["sits facing the water and doesn't notice you've arrived", "traces the scar with two fingers when he thinks he's alone"],
+        "relationships": {
+          "npc-warden-estris": "old working relationship — she brought him in on three salvage contracts",
+          "npc-mira-scroll": "knows her by reputation and is wary of her"
+        }
+      }
+    },
+    {
+      "id": "npc-mira-scroll",
+      "name": "Mira Scroll",
+      "voice_id": "npc-female-1",
+      "role": "Tide-Readers' lead theorist — warmth first, then horror",
+      "personality": "A young-seeming woman of indeterminate age who talks about the Drowning Tide the way a naturalist talks about a particularly elegant predator — with genuine wonder and no apparent horror. Her diagrams are meticulous, her conclusions alarming, and her certainty that the mechanism is still active is the thing the Commonwealth Council refuses to put in writing. She means every word she says. That is the problem.",
+      "hook": "Has proof that the Drowning Tide was a mechanism, not a disaster — and proof that something in the Deep Rim is cycling toward a second activation. She is trying to decide who to trust with it."
+    },
+    {
+      "id": "npc-tribune-kessal",
+      "name": "Tribune Kessal Vor",
+      "voice_id": "npc-male-1",
+      "role": "Vethis Bloc spokesman — right for the wrong reasons",
+      "personality": "A Vethis council tribune with the gift for making invasion sound like mutual defense. Genuinely believes the Commonwealth will collapse without a strong center — and genuinely believes Vethis should be that center. Charming, impatient, not as clever as he thinks, and carrying intelligence about the Basin that he's chosen not to share.",
+      "hook": "Knows something is rising from the Deep Rim — his divers reported it six months ago — and is using that knowledge as leverage rather than sounding the alarm."
+    }
+  ],
+  "events": [
+    {
+      "id": "event-league-cache",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-captain-drev",
+      "prompt": "The salvage rig COLD LAMP was supposed to run a routine outer-shallows survey. It came back three days late, two crew short, and with its cargo hold locked from the inside. Captain Drev Ossian intercepts you at the Ironhull docks before the League inspectors arrive: the crew found something at the rim that isn't in any of the Basin charts, something the League factors will auction to the highest bidder the moment they see it — and two cities are already watching the dock. 'I need it in different hands before the inspectors open that hold,' he says. He does not specify what different hands means, or what COLD LAMP found.",
+      "options": [
+        {
+          "label": "Help him move it — trust the captain's judgment",
+          "tag": "loyal / pragmatic",
+          "outcome": {
+            "flag": "cold_lamp_cache_secured",
+            "decision_flag": "trust_over_procedure",
+            "faction_id": "fac-salvagers-league",
+            "reputation_delta": -6,
+            "schedule_in_days": 8,
+            "schedule_text": "The League factors know something came off COLD LAMP before inspection. They don't know what or where — but they are asking, and the asking has a price attached. Whatever trust was bought by helping Drev, the League is about to invoice it.",
+            "narrate": "The crate moves before the inspectors reach the gangplank. You don't open it. You don't ask what's inside. Drev gives you a nod that carries more weight than he'd let on, and the inspection turns up an unremarkable manifest. For now."
+          }
+        },
+        {
+          "label": "Tell him to let the League inspect it — the Compact procedure exists for a reason",
+          "tag": "principled / lawful",
+          "outcome": {
+            "flag": "cold_lamp_cache_inspected",
+            "faction_id": "fac-compact",
+            "reputation_delta": 7,
+            "schedule_in_days": 6,
+            "schedule_text": "The League inspection logs go directly to the Compact Council summary — and the Vethis Bloc's factor was on the dock when the crate opened. Whatever COLD LAMP found, Vethis now knows it exists. Tribune Kessal Vor has been asking for a meeting.",
+            "narrate": "The inspectors open the hold by the book. You watch Drev's jaw tighten when the League factor reaches for the manifest clipboard. Whatever is in there — it's on the record now, and the record goes to every Compact city-state by morning. The captain doesn't speak to you for the rest of the afternoon."
+          }
+        },
+        {
+          "label": "Stay out of it — not your rig, not your cargo",
+          "tag": "detached / wary",
+          "outcome": {
+            "flag": "cold_lamp_cache_bystander",
+            "narrate": "You step back from the gangplank and let it play out. The inspectors arrive; Drev makes a decision you don't see; the dock moves on. Whatever came up from the shallows is out of your hands, one way or another — and something in the captain's expression, when he passes you later, suggests he noticed you weren't there when it counted."
+          }
+        }
+      ]
+    }
+  ],
+  "faction_arcs": [
+    {
+      "id": "arc-salvagers-rise",
+      "faction_id": "fac-salvagers-league",
+      "title": "Depth and Tenure",
+      "requires_joined": true,
+      "note": "The join->grow->lead questline for the Salvagers' League. The League trusts earned knowledge, not credentials — you join by demonstrating you can dive and keep your mouth shut; you rise by accumulating the kind of clout that comes from knowing what's down there and being careful about what you sell. Stage 1 (the proving dive) gates on reputation; stages 2-3 gate on the monotonic standing gauge (depth-clout earned through successful jobs — use grant_standing as the party completes League contracts). The finale ripples a world-changing effect: the party takes the League's council seat, and the Commonwealth's intelligence on the Gray Basin falls under their discretion.",
+      "stages": [
+        {
+          "id": "stage-league-proving",
+          "title": "The proving dive",
+          "unlock_at": 12,
+          "gauge": "reputation",
+          "note": "Available once the League has seen enough of you to risk a test. A gray-haired dive-master meets you at the equipment racks before dawn: 'The League doesn't take referrals. We take people who've already gone down and come back with something useful. You want in? There's a site at chart-mark seven-nine-blue that nobody's touched. Come back with a record of the depth and whatever you find at the bottom, and we'll talk.' Run the dive, then call advance_faction_arc to resolve it; grant_standing as the party banks clean work.",
+          "location_id": "loc-gray-basin-shallows"
+        },
+        {
+          "id": "stage-league-factor",
+          "title": "Earn a factor's berth",
+          "unlock_at": 20,
+          "gauge": "standing",
+          "note": "Available once the party's depth-clout (standing, earned via grant_standing on completed League contracts) marks them as a factor — someone other divers bring their finds to before the inspectors arrive. The recognition comes sideways, the way it does in the League: 'Three rigs have asked for you specifically on their next survey. That means something. Hang your marker at dock seven — that's a factor's berth, and it comes with a vote on what we bring to auction and what we sit on.' Set rank on advance_faction_arc (rank=3).",
+          "location_id": "loc-ironhull-station"
+        },
+        {
+          "id": "stage-league-council",
+          "title": "The council chair",
+          "unlock_at": 45,
+          "gauge": "standing",
+          "note": "The world-changing finale. With the League's old council chair retired and the Basin producing things that can't go to auction without a Commonwealth crisis, the League's senior factors put the chair in the party's hands — the decision-maker for what the Commonwealth knows about its own drowned heartland. Play it as the moment the party stops working for the League and becomes the authority on the Basin. Call advance_faction_arc(stage_status='resolved', rank=5).",
+          "finale_effect": {
+            "flag": "league_council_chair_held",
+            "faction_id": "fac-salvagers-league",
+            "reputation_delta": 25,
+            "controller_id": "fac-salvagers-league",
+            "location_id": "loc-gray-basin-shallows",
+            "narrate": "There is no ceremony — the League does things by handshake and logged charter — but the senior factors sign the document one by one, and when the last one adds her mark the Basin's intelligence belongs to you: what surfaces, what stays down, what goes to auction and what gets buried. The Commonwealth thinks it governs the Gray Basin. The League has always known better. Now so do you.",
+            "schedule_in_days": 12,
+            "schedule_text": "What comes with the chair: a courier arrives with a sealed League report the previous chair locked away — a dive record from six years ago that describes something at the Deep Rim in terms no one wanted to put into the general archive. Now it's your problem."
+          }
+        }
+      ]
+    }
+  ],
+  "quest_variants": [
+    {
+      "id": "the-first-surfacing",
+      "name": "What COLD LAMP Found",
+      "outcomes": [
+        {
+          "id": "cache-under-study",
+          "when": {"world_tenor": "hopeful"},
+          "lore": "The artifact COLD LAMP recovered from the Gray Basin rim has been placed under joint Tide-Reader and Compact Council study — an uneasy alliance, but one that is actually producing answers. The early findings are alarming and have not yet been published.",
+          "hook": "One of the study's researchers has gone missing; the last message she sent described a pattern in the artifact's surface that she said 'moved when you weren't looking at it.'"
+        },
+        {
+          "id": "cache-in-vethis-hands",
+          "random": 2,
+          "lore": "The COLD LAMP artifact was acquired by the Vethis Bloc before the Compact Council could impound it. Tribune Kessal Vor has announced it is being studied for 'defensive applications' and declined to share the findings.",
+          "hook": "A Compact inspector who was supposed to document the artifact before handover never filed her report. She has asked to meet, at night, at a location that is not her office."
+        },
+        {
+          "id": "cache-lost-overboard",
+          "random": 1,
+          "lore": "The COLD LAMP artifact went overboard during a League dock dispute — whether deliberately or by accident, no one is saying on the record. It is somewhere in the Saltmere harbor shallows, and at least three separate parties have divers looking for it.",
+          "hook": "A night-dive retrieval job is circulating through the Salvagers' League, paying three times the standard rate, with a very specific instruction: bring it to a specific address in Saltmere's upper city, no manifests."
+        }
+      ]
+    }
+  ],
+  "story_seeds": [
+    "Something is rising from the Deep Rim — prove what it is, and decide who can be trusted with that knowledge (the slow main thread).",
+    "The Compact is sixty days from a vote that will either renew it or break it into a war; the Vethis Bloc is already drafting military plans they haven't filed with the Council.",
+    "The Tide-Readers' founding evidence — the proof the Drowning Tide was a mechanism — is hidden somewhere in the Gray Basin's sunken ruins, and three factions are looking for it.",
+    "Captain Drev Ossian's lost dive record describes something at the Deep Rim that he has never told the League. He remembers it every time it storms.",
+    "A Saltmere fishing town on the Basin's edge has stopped answering courier ships. The last message out was three days ago and read only: 'the bottom is closer than it was.'"
+  ],
+  "starting_options": [
+    {
+      "location_id": "loc-saltmere",
+      "framing": "Default. The player arrives in the Commonwealth's busiest free port — traders, diplomats, salvagers, and the occasional Tide-Reader all pass through. The threads find you here."
+    },
+    {
+      "location_id": "loc-ironhull-station",
+      "framing": "The player is on the Compact's neutral ground — already in the middle of a deal, a dispute, or something that has gone wrong between cities."
+    },
+    {
+      "location_id": "loc-gray-basin-shallows",
+      "framing": "The player is already working the Basin's salvage circuit — lower, wetter, and closer to what's coming up from the deep."
+    }
+  ],
+  "dm_guidance": "Run this as a LIVING SANDBOX, not a fixed plot. On start_world: seed the regions as locations, the factions, and the standing threads/history into memory (so recall keeps the world consistent). Drop the player at a starting_option, then GENERATE the specific scene/town/NPC on arrival and PERSIST it (add_location, create_character, remember, add_quest) so the world grows and is never forgotten. The three standing threads (the Deep Rim surfacing, the Compact crisis, the Tide-Readers' evidence) move whether or not the party is watching. Pull from the npc_roster, but invent freely — every reef-hold has a harbor-master, every salvage rig has a dive-crew, every Compact session has a functionary who knows too much. The main gravity is the Basin: something old is cycling back toward activation, and the Commonwealth doesn't have a word for it yet. Hold the craft bar of the dungeon-master skill: felt menace, a wounded companion (Drev is ready, his scar is the door), show-don't-tell, the unforgettable beat. GRANDEUR is the dimension to push — don't let a session live in one tavern. Move the party through at least two locations and make the Basin's wrongness PRESS ON THE ROOM as physical things, not lore recited: a tide-chart that is six minutes off, a depth-line that bottoms before it should and comes back smelling of something that isn't saltwater, a fish brought up from the shallows that is perfectly preserved but not recently dead, the faint luminescence you only see if you've been watching for fifteen minutes. Something vast is cycling beneath the human-scale politics. Show one edge of it."
+}
