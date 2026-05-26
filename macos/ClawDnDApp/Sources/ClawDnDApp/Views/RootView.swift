@@ -64,6 +64,7 @@ struct RootView: View {
         .onDisappear {
             launchTask?.cancel()
         }
+        .background(OpenWorldsWindowChrome())
     }
 
     private func refresh() {
@@ -109,9 +110,24 @@ struct RootView: View {
                 request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
                 request.timeoutInterval = 1
                 let (_, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse, (200..<500).contains(http.statusCode) {
-                    return
+                guard let http = response as? HTTPURLResponse else {
+                    lastError = "non-HTTP response"
+                    continue
                 }
+                switch http.statusCode {
+                case 200..<300:
+                    return
+                case 300..<400:
+                    lastError = "HTTP \(http.statusCode) redirect"
+                case 400..<500:
+                    throw ProviderError.configuration(
+                        "Viewer returned HTTP \(http.statusCode) at \(url.absoluteString)"
+                    )
+                default:
+                    lastError = "HTTP \(http.statusCode)"
+                }
+            } catch let error as ProviderError {
+                throw error
             } catch {
                 lastError = error.localizedDescription
             }
@@ -311,6 +327,46 @@ struct RootView: View {
 
     private static func newRunID() -> String {
         "play-\(runIDFormatter.string(from: Date()))"
+    }
+}
+
+private struct OpenWorldsWindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        OpenWorldsChromeHostView(frame: .zero)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        OpenWorldsChromeHostView.configure(view.window)
+    }
+}
+
+private final class OpenWorldsChromeHostView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        Self.configure(window)
+    }
+
+    static func configure(_ window: NSWindow?) {
+        guard let window else { return }
+        DispatchQueue.main.async {
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+            window.styleMask.remove(.titled)
+            window.styleMask.insert(.resizable)
+            window.toolbar = nil
+            window.backgroundColor = .black
+            window.isOpaque = true
+            window.isMovableByWindowBackground = true
+
+            [
+                NSWindow.ButtonType.closeButton,
+                .miniaturizeButton,
+                .zoomButton
+            ].forEach { button in
+                window.standardWindowButton(button)?.isHidden = true
+            }
+        }
     }
 }
 

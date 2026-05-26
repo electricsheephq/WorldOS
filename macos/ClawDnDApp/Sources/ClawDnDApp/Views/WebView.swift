@@ -76,6 +76,7 @@ struct WebView: NSViewRepresentable {
         if nativeRequestHandler != nil {
             configuration.userContentController.addUserScript(Self.nativeBridgeScript)
             configuration.userContentController.add(context.coordinator, name: "clawdnd")
+            context.coordinator.hasNativeMessageHandler = true
         }
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.allowsBackForwardNavigationGestures = true
@@ -99,7 +100,9 @@ struct WebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
-        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "clawdnd")
+        if coordinator.hasNativeMessageHandler {
+            nsView.configuration.userContentController.removeScriptMessageHandler(forName: "clawdnd")
+        }
     }
 
     private static let nativeBridgeScript = WKUserScript(
@@ -142,6 +145,7 @@ struct WebView: NSViewRepresentable {
         private let navigationError: Binding<String?>
         weak var webView: WKWebView?
         var nativeRequestHandler: NativeRequestHandler?
+        var hasNativeMessageHandler = false
 
         init(navigationError: Binding<String?>) {
             self.navigationError = navigationError
@@ -182,13 +186,21 @@ struct WebView: NSViewRepresentable {
         }
 
         private func send(_ reply: NativeBridgeReply) {
-            guard JSONSerialization.isValidJSONObject(reply.dictionary),
-                  let data = try? JSONSerialization.data(withJSONObject: reply.dictionary),
-                  let json = String(data: data, encoding: .utf8)
-            else {
+            let dictionary = reply.dictionary
+            guard JSONSerialization.isValidJSONObject(dictionary) else {
+                NSLog("ClawDnD native bridge produced an invalid JSON reply: \(dictionary)")
                 return
             }
-            webView?.evaluateJavaScript("window.ClawDnDNative && window.ClawDnDNative._reply(\(json));")
+            do {
+                let data = try JSONSerialization.data(withJSONObject: dictionary)
+                guard let json = String(data: data, encoding: .utf8) else {
+                    NSLog("ClawDnD native bridge failed to encode reply as UTF-8: \(dictionary)")
+                    return
+                }
+                webView?.evaluateJavaScript("window.ClawDnDNative && window.ClawDnDNative._reply(\(json));")
+            } catch {
+                NSLog("ClawDnD native bridge reply serialization failed: \(error); reply=\(dictionary)")
+            }
         }
     }
 }

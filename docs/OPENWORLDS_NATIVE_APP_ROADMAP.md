@@ -53,7 +53,8 @@ Every OpenWorlds screen should expose one of these labels:
 ## Sprint Order
 
 1. Sprint 0: roadmap correction and trailing-slash bug fix.
-2. Sprint 1: full-window OpenWorlds host in the macOS app.
+2. Sprint 1: full-window OpenWorlds host in the macOS app, including the first
+   pass at single-frame custom chrome (#136).
 3. Sprint 2: `window.ClawDnDNative.request(type, payload)` bridge.
 4. Sprint 3: map Settings, Providers, and Logs into OpenWorlds.
 5. Sprint 4: make Chronicles the real app home with live/stale run state.
@@ -81,6 +82,18 @@ Implementation goals:
   bridge, not through a second visible SwiftUI settings shell.
 - Keep local dev builds working without Sparkle so contributors can still use
   `./script/build_and_run.sh --verify`.
+
+## Window Chrome Lane
+
+The visible app should not show duplicate window traffic lights. Track the full
+custom-chrome work in #136:
+
+- native titlebar and traffic lights hidden in normal OpenWorlds play;
+- OpenWorlds frame becomes the apparent app frame;
+- visible OpenWorlds controls later call native close/minimize/zoom through the
+  bridge;
+- a reliable drag region is added without stealing gameplay/settings clicks;
+- Debug Control Center keeps normal native chrome for recovery.
 
 ## Native Bridge Contract
 
