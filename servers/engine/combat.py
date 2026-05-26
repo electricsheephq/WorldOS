@@ -194,6 +194,18 @@ def is_incapacitated(ch: Character) -> bool:
 SAVE_AUTOFAIL = {Condition.PARALYZED, Condition.PETRIFIED, Condition.STUNNED, Condition.UNCONSCIOUS}
 
 
+def save_modifiers(ch: Character, ability: Ability) -> tuple[bool, bool]:
+    """The SRD condition rules that bend a saving throw, as (auto_fail, disadvantage) —
+    pure, no roll, no mutation. paralyzed/petrified/stunned/unconscious AUTO-FAIL STR & DEX
+    saves; restrained gives DISADVANTAGE on DEX saves. Factored out so every save site
+    (`saving_throw`, the grapple/shove saves, the #209 end-of-turn repeat save in
+    `next_turn`) applies one identical rule set instead of re-deriving it."""
+    conds = set(ch.conditions)
+    auto_fail = ability in (Ability.STR, Ability.DEX) and bool(conds & SAVE_AUTOFAIL)
+    disadvantage = ability == Ability.DEX and Condition.RESTRAINED in conds
+    return auto_fail, disadvantage
+
+
 # A melee hit within 5 ft of an Unconscious or Paralyzed creature is automatically
 # a Critical Hit (SRD). We have no distance model, so a non-ranged attack is
 # treated as being within 5 ft.
@@ -477,6 +489,13 @@ def tick_round_effects(ch: Character) -> list[str]:
     expired: list[ActiveEffect] = []
     surviving: list[ActiveEffect] = []
     for eff in ch.active_effects:
+        # A repeat-save marker (#209: Hold Person → paralyzed) is a CONDITION tracker, not a
+        # round-timed buff — its lifetime is the recurring end-of-turn save (next_turn) + the
+        # caster's concentration, NOT a round counter. So it's exempt from the round-tick
+        # decrement (it carries no meaningful rounds_remaining and must not expire on a tick).
+        if eff.repeat_save is not None:
+            surviving.append(eff)
+            continue
         if eff.scale in ("rounds", "minutes"):
             eff.rounds_remaining -= 1
             if eff.rounds_remaining <= 0:
@@ -544,6 +563,19 @@ def expire_concentration_effects(ch: Character) -> list[str]:
     if expired:
         ch.active_effects = [eff for eff in ch.active_effects if not eff.concentration]
     return expired
+
+
+def end_repeat_save_effect(ch: Character, eff: ActiveEffect) -> None:
+    """Remove a save-ends effect from its holder after a successful end-of-turn repeat
+    save (#209), and clear the condition it imposed so the holder is genuinely freed
+    (Hold Person's effect leaves AND the `paralyzed` condition lifts — one source of
+    truth). Mutates ONLY the holder `ch`. The CASTER's concentration twin (held on a
+    different Character) is ended by the server layer, which has both characters in hand.
+    A no-op-safe identity removal: the exact effect object is dropped by identity, and the
+    imposed condition removed if present."""
+    ch.active_effects = [e for e in ch.active_effects if e is not eff]
+    if eff.imposes_condition is not None:
+        ch.conditions = [cn for cn in ch.conditions if cn != eff.imposes_condition]
 
 
 # --- Grapple / Shove (SRD 5.2 / 2024 Unarmed Strike options) ---------------

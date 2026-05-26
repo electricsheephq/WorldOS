@@ -192,3 +192,48 @@ def parse_duration(duration: Optional[str]) -> Optional[dict]:
     if unit in ("day",):
         return {"scale": "days", "rounds": 0, "hours": 0, "days": n}
     return None
+
+
+# 5e condition names the engine tracks (mirrors models.Condition); used to spot which
+# condition a save-ends spell imposes. Kept here (not imported) so spells.py stays a
+# pure, I/O-light data helper with no model dependency.
+_TRACKED_CONDITIONS = (
+    "blinded", "charmed", "deafened", "frightened", "grappled", "incapacitated",
+    "invisible", "paralyzed", "petrified", "poisoned", "prone", "restrained",
+    "stunned", "unconscious",
+)
+# The canonical "at the END OF EACH OF ITS TURNS the target repeats the save, ending the
+# spell on a single success" clause shared by Hold Person / Hold Monster (and any future
+# spell worded identically). Deliberately anchored on the END-OF-TURN trigger: a spell whose
+# recurring save fires on a DIFFERENT trigger (Dominate Person/Beast/Monster: "whenever the
+# target takes damage") must NOT match — the engine only owns the END-OF-TURN save, so
+# auto-imposing it on a damage-triggered spell would roll a save 5e doesn't grant. Likewise
+# multi-success (Contagion) and detached-clause (Weird) wordings don't match.
+_REPEAT_SAVE_RE = re.compile(
+    r"at the end of each of its turns,\s*the target repeats the save,\s*"
+    r"ending the spell on itself on a success",
+    re.IGNORECASE,
+)
+
+
+def repeat_save_rider(srd_record: Optional[dict]) -> Optional[dict]:
+    """For a save-ends condition spell whose victim "repeats the save at the end of each
+    of its turns, ending the spell on itself on a success" (Hold Person, Hold Monster),
+    return ``{ability, condition}`` — the recurring save's ability and the single condition
+    it imposes — so cast_spell can tell the DM exactly how to apply it self-enforcingly
+    (#209). Returns None for any other spell.
+
+    GENERAL, not Hold-Person-special: it keys off the canonical SRD wording + a single
+    tracked condition, so it fires for Hold Monster too and would fire for a new spell
+    worded the same way. Intentionally conservative — a spell with multi-condition or
+    multi-success recurring-save semantics returns None (the engine won't guess wrong)."""
+    if not srd_record:
+        return None
+    ability = (srd_record.get("saving_throw_ability") or "").strip().lower()
+    desc = (srd_record.get("desc") or "").lower()
+    if not ability or not _REPEAT_SAVE_RE.search(desc):
+        return None
+    found = [cn for cn in _TRACKED_CONDITIONS if re.search(rf"\b{cn}\b", desc)]
+    if len(found) != 1:
+        return None  # only the unambiguous single-condition case self-enforces
+    return {"ability": ability, "condition": found[0]}

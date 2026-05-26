@@ -72,6 +72,7 @@ from models import (
     Location,
     PendingOnHitRider,
     Quest,
+    RepeatSave,
     SceneDebt,
     SessionLogEntry,
     SpellSlotLevel,
@@ -86,11 +87,22 @@ _AB3_TO_FULL = {
     "wis": "wisdom",
     "cha": "charisma",
 }
+# Reverse: accept either the 3-letter code (the Ability enum value) or the full word
+# (how the SRD records spell saving_throw_ability, e.g. "wisdom") and resolve to an Ability.
+_FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
 from store import append_log, campaign_lock, campaigns_for_world
 from store import list_campaigns as _list_campaigns
 from store import load_campaign, save_campaign
 
 mcp = FastMCP("clawdnd-engine")
+
+
+def _parse_ability(value: str) -> Ability:
+    """Resolve an ability name to the Ability enum, accepting BOTH the 3-letter code
+    ('wis') and the full word ('wisdom') — the latter is how SRD records spell their
+    saving_throw_ability, so a rider DC threaded from cast_spell stays usable verbatim."""
+    v = (value or "").strip().lower()
+    return Ability(_FULL_TO_AB3.get(v, v))
 
 
 def _require(campaign_id: str) -> Campaign:
@@ -1959,12 +1971,32 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
 
 
 @mcp.tool()
-def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
+def add_condition(
+    campaign_id: str,
+    character_id: str,
+    condition: str,
+    repeat_save_ability: str = "",
+    repeat_save_dc: int = 0,
+    source_id: str = "",
+    spell_name: str = "",
+) -> dict:
     """Add a 5e condition to a character (idempotent). Prefer this over patching
     the whole conditions list. Valid values: blinded, charmed, deafened,
     frightened, grappled, incapacitated, invisible, paralyzed, petrified,
-    poisoned, prone, restrained, stunned, unconscious."""
+    poisoned, prone, restrained, stunned, unconscious.
+
+    SAVE-ENDS conditions (#209): for a "the target repeats the save at the end of
+    each of its turns" effect (Hold Person → paralyzed, Hold Monster, a monster's
+    hold), pass `repeat_save_ability` (str/dex/con/int/wis/cha) + `repeat_save_dc`
+    (the caster's spell save DC) so the ENGINE rolls that recurring save in next_turn
+    and frees the target on a success — instead of the target staying locked because
+    the DM forgot to prompt the save. `source_id` (the caster) + `spell_name` link the
+    effect to its concentration so a successful escape also ends the caster's
+    concentration. ADDITIVE: omit these and the condition behaves exactly as before
+    (no end-of-turn save — the DM resolves any save by hand). cast_spell surfaces the
+    `condition_rider` hint telling you exactly which values to pass here."""
     cond = Condition(condition.lower())
+    rs_ability = _parse_ability(repeat_save_ability) if repeat_save_ability else None
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -1978,6 +2010,41 @@ def add_condition(campaign_id: str, character_id: str, condition: str) -> dict:
         if cond in combat.INCAPACITATING:
             ch.concentration = None  # SRD: incapacitation breaks concentration
             combat.expire_concentration_effects(ch)  # ...and its engine-tracked effect
+        # Save-ends linkage (#209): record a TARGET-side ActiveEffect carrying the recurring
+        # end-of-turn save + the condition it imposed, so next_turn self-enforces the escape.
+        # The marker is NOT a concentration twin (concentration=False) — the caster's twin
+        # lives on the caster; this only remembers "what to roll, what to clear on success".
+        # Re-applying the same save-ends spell/condition refreshes (doesn't stack) the marker.
+        if rs_ability is not None and repeat_save_dc > 0:
+            eff_name = spell_name or f"{cond.value} (save ends)"
+            # Keep source_id as a CONCENTRATION link only when the source spell actually
+            # concentrates (Hold Person does). Then it precisely signals "this marker is the
+            # twin of source_id's concentration" so next_turn frees the target if that
+            # concentration ends. A non-concentration save-ends source (a monster's innate
+            # hold) still self-enforces its end-of-turn save, but carries no concentration link
+            # (source_id dropped) — so the inverse reconciliation never wrongly sweeps it.
+            concentrates = False
+            if spell_name:
+                rec = spells.srd_spell(spell_name)
+                try:
+                    cur_rec = spells.spell_data(spell_name)
+                except ValueError:
+                    cur_rec = None
+                concentrates = bool(
+                    (cur_rec.get("concentration") if cur_rec else None)
+                    or (rec.get("concentration") if rec else None)
+                )
+            ch.active_effects = [e for e in ch.active_effects if e.name != eff_name]
+            ch.active_effects.append(
+                ActiveEffect(
+                    name=eff_name,
+                    source_id=source_id if concentrates else "",
+                    imposes_condition=cond,
+                    repeat_save=RepeatSave(
+                        ability=rs_ability, dc=repeat_save_dc, ends_effect=True
+                    ),
+                )
+            )
         save_campaign(c)
         return {**ch.model_dump(mode="json"), "immune": False, "added": added}
 
@@ -2522,7 +2589,15 @@ def next_turn(campaign_id: str) -> dict:
     dead or removed combatants are skipped). Returns whose turn it is, whether
     they owe a death save (downed and unstable), and a ``turn_brief`` with their
     authoritative attack line + available limited resources so the DM never drifts
-    from the sheet numbers mid-combat (#166)."""
+    from the sheet numbers mid-combat (#166).
+
+    Also self-enforces SAVE-ENDS effects (#209): the OUTGOING combatant (whose turn
+    just ended) automatically rolls any repeat-save it carries (Hold Person → a WIS
+    save to shake off paralysis), reported in ``repeat_saves`` — a success frees it
+    (clearing the condition + the caster's concentration); a failure keeps the lock.
+    A paralyzed target whose caster loses concentration is freed here too (the inverse
+    link), surfaced in ``expired_effects``. So nothing stays locked because the DM
+    forgot to prompt the save."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         order = c.combat.order
@@ -2553,6 +2628,68 @@ def next_turn(campaign_id: str) -> dict:
                     f"(attack / cast_spell / use_action) or declare a pass via "
                     f"use_action(kind='skip') before advancing."
                 )
+        # --- End-of-turn REPEAT SAVES (#209): engine-rolls-and-tells ----------------
+        # A save-ends effect (Hold Person → paralyzed: "the target repeats the save at
+        # the END of each of its turns, ending the effect on a success") must get that
+        # save automatically, or its victim stays locked forever when the DM forgets to
+        # prompt it. So for the OUTGOING combatant (whose turn is ending — same anchor as
+        # the PC-skip guard above), roll each repeat-save-bearing active_effect's save via
+        # the shared resolver and free them on a success. The engine resolves it; results
+        # are surfaced in the return so the DM narrates the escape (or the continued hold).
+        repeat_save_results: list[dict] = []
+        if previous is not None:
+            # Snapshot the list — end_repeat_save_effect mutates previous.active_effects.
+            for eff in list(previous.active_effects):
+                rs = eff.repeat_save
+                if rs is None:
+                    continue
+                auto_fail, disadvantage = combat.save_modifiers(previous, rs.ability)
+                r = dice_mod.roll(
+                    f"1d20+{previous.saving_throw_bonus(rs.ability)}",
+                    disadvantage=disadvantage,
+                )
+                success = (not auto_fail) and r.total >= rs.dc
+                entry = {
+                    "character_id": previous.id,
+                    "name": eff.name,
+                    "ability": rs.ability.value,
+                    "dc": rs.dc,
+                    "roll": r.total,
+                    "natural": r.natural,
+                    "success": success,
+                    "ended": False,
+                }
+                if auto_fail:
+                    forcing = ", ".join(
+                        cn.value for cn in previous.conditions if cn in combat.SAVE_AUTOFAIL
+                    )
+                    entry["reason"] = (
+                        f"condition auto-fail: {previous.name} is {forcing} — "
+                        f"STR/DEX saves automatically fail"
+                    )
+                if disadvantage:
+                    entry["disadvantage"] = True
+                if success and rs.ends_effect:
+                    ended_condition = eff.imposes_condition
+                    # End the CASTER's concentration twin if this effect came from a
+                    # concentration spell (the twin lives on the caster, not on this
+                    # target-side marker). One source of truth: the spell is over, so the
+                    # caster's concentration field + its flagged effect both clear.
+                    caster = c.characters.get(eff.source_id) if eff.source_id else None
+                    if (
+                        caster is not None
+                        and caster is not previous
+                        and caster.concentration == eff.name
+                    ):
+                        caster.concentration = None
+                        combat.expire_concentration_effects(caster)
+                        entry["concentration_ended_for"] = caster.id
+                    # Remove the effect from the target + clear the condition it imposed.
+                    combat.end_repeat_save_effect(previous, eff)
+                    entry["ended"] = True
+                    if ended_condition is not None:
+                        entry["cleared_condition"] = ended_condition.value
+                repeat_save_results.append(entry)
         n = len(order)
         cur = None
         new_round = False
@@ -2593,10 +2730,37 @@ def next_turn(campaign_id: str) -> dict:
                     continue
                 for name in combat.tick_round_effects(holder):
                     expired.append({"character_id": holder.id, "name": name})
+        # CONCENTRATION-LINK reconciliation (#209, the inverse direction): a repeat-save
+        # marker (Hold Person → paralyzed) is the TARGET-side twin of the CASTER's
+        # concentration. If that concentration has ended for ANY reason — its duration just
+        # ticked out above, or it broke earlier (failed save / incapacitation / 0 HP / a
+        # recast) — the spell is over, so the target must be freed here rather than staying
+        # paralyzed indefinitely. Sweep every combatant's markers: when the source caster no
+        # longer concentrates on that spell, drop the marker + clear the condition it imposed.
+        for cb in order:
+            holder = c.characters.get(cb.character_id)
+            if holder is None:
+                continue
+            for eff in list(holder.active_effects):
+                if eff.repeat_save is None or not eff.source_id:
+                    continue
+                caster = c.characters.get(eff.source_id)
+                # Marker is orphaned when the caster is gone, or no longer concentrating on
+                # this spell (concentration twin broken/expired). A non-concentration save-ends
+                # source (caster never concentrated) is left alone — nothing ties it to a twin.
+                caster_concentrating = caster is not None and caster.concentration == eff.name
+                if caster is not None and not caster_concentrating:
+                    combat.end_repeat_save_effect(holder, eff)
+                    expired.append({"character_id": holder.id, "name": eff.name})
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
         view["expired_effects"] = expired
+        # End-of-turn repeat saves the engine just rolled for the OUTGOING combatant (#209):
+        # each carries success + whether the effect/condition ended, so the DM narrates the
+        # escape ("the paralysis loosens its grip") or the continued hold. Empty == none owed.
+        if repeat_save_results:
+            view["repeat_saves"] = repeat_save_results
         # Surface per-turn authoritative attack line + available resources so the DM
         # has the sheet numbers AT THE TRIGGER POINT — not just at start_combat (#166).
         # Only when combat is active and there's a living current combatant.
@@ -2622,6 +2786,7 @@ def next_turn(campaign_id: str) -> dict:
                 "turn_index": c.combat.turn_index,
                 "death_save_due": view["death_save_due"],
                 "expired_effects": expired,
+                "repeat_saves": repeat_save_results,
             },
             speaker=cur.name if cur else "",
         )
@@ -3961,6 +4126,35 @@ def cast_spell(
                 "spell_save_dc) then apply_damage(base_damage, damage_types, "
                 "half=<save succeeded>); healing via apply_healing."
             )
+            # SAVE-ENDS rider hint (#209): for a "repeats the save at the end of each of
+            # its turns, ending on a success" condition spell (Hold Person → paralyzed,
+            # Hold Monster), tell the DM exactly which self-enforcing add_condition call to
+            # make on a FAILED initial save. Passing repeat_save_ability/dc/source/spell to
+            # add_condition wires the ENGINE to roll the recurring save in next_turn and free
+            # the target on a success — no manual end-of-turn prompting. Only the unambiguous
+            # single-condition pattern surfaces this (spells.repeat_save_rider is conservative).
+            rider = spells.repeat_save_rider(srd)
+            if rider is not None and target_id and target_id != character_id:
+                save_dc = 8 + prof + mod
+                # Normalize the ability to the canonical 3-letter code (the Ability enum value
+                # next_turn reports + saving_throw expects) — SRD records carry the full word.
+                rs_ab = _parse_ability(rider["ability"]).value
+                result["condition_rider"] = {
+                    "condition": rider["condition"],
+                    "repeat_save_ability": rs_ab,
+                    "repeat_save_dc": save_dc,
+                    "source_id": character_id,
+                    "spell_name": canonical,
+                    "target_id": target_id,
+                    "note": (
+                        f"On a FAILED initial {rs_ab} save, apply via "
+                        f"add_condition(character_id='{target_id}', condition='{rider['condition']}', "
+                        f"repeat_save_ability='{rs_ab}', repeat_save_dc={save_dc}, "
+                        f"source_id='{character_id}', spell_name='{canonical}'). The engine then "
+                        f"rolls the end-of-turn repeat save in next_turn and frees the target on a "
+                        f"success (ending this concentration) — no manual prompting."
+                    ),
+                }
         # Zone-aware range for a TOUCH/melee spell (S2.7): same rule as a melee
         # attack — advisory, never blocks, inert without declared zones. Position
         # lives on the Combatant records.
@@ -3987,9 +4181,7 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     c = _require(campaign_id)
     ch = _char(c, character_id)
     ab = Ability(ability.lower())
-    conds = set(ch.conditions)
-    auto_fail = ab in (Ability.STR, Ability.DEX) and bool(conds & combat.SAVE_AUTOFAIL)
-    disadvantage = ab == Ability.DEX and Condition.RESTRAINED in conds
+    auto_fail, disadvantage = combat.save_modifiers(ch, ab)
     r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}", disadvantage=disadvantage)
     out = {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc,
            "success": (not auto_fail) and r.total >= dc}

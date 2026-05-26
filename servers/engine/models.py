@@ -445,6 +445,30 @@ class CompanionDossier(_StrictModel):
     relationships: dict[str, str] = Field(default_factory=dict)
 
 
+class RepeatSave(_StrictModel):
+    """An END-OF-TURN repeat saving throw that the ENGINE rolls for the holder of an
+    ActiveEffect, so a "save-ends" spell (Hold Person → paralyzed: "the target repeats
+    the save at the end of each of its turns, ending the effect on a success") doesn't
+    leave its victim locked forever because the DM forgot to prompt the save (#209).
+
+    Carried on the TARGET-side ActiveEffect (the one whose holder owes the save).
+    `next_turn` rolls `saving_throw_bonus(ability)` vs `dc` for the combatant whose turn
+    is ENDING; on a SUCCESS the engine removes the effect (and, when `ends_effect`, the
+    condition it imposed + the caster's concentration twin); on a FAILURE the effect
+    persists for another round. The DM narrates the surfaced result — no prompt needed.
+
+    ADDITIVE: optional on ActiveEffect (None == today's behavior — no end-of-turn save),
+    so every existing snapshot round-trips unchanged and only a save-ends effect sets it."""
+
+    ability: Ability  # which save the holder rolls (Hold Person → WIS)
+    dc: int  # the caster's spell save DC (fixed at cast)
+    # On a successful save, end the effect (the 5e "ending the effect on a success" clause).
+    # The few save-ends effects that DON'T end on a single success (e.g. a recurring poison
+    # tick) can carry ends_effect=False — the save still rolls + is reported, but the marker
+    # stays. Defaults True (the Hold Person / paralysis case).
+    ends_effect: bool = True
+
+
 class ActiveEffect(_StrictModel):
     """A timed spell effect the ENGINE tracks so it auto-expires instead of relying
     on the DM to remember (Bless for 10 rounds, Hex for 1 hour, Mage Armor for 8
@@ -495,6 +519,17 @@ class ActiveEffect(_StrictModel):
     # attack resolves (one-shot). Defaults False, so every existing effect (Bless, Hex, Mage
     # Armor) and every old snapshot is untouched — only an advantage-granting rider sets it.
     grants_advantage: bool = False
+    # END-OF-TURN repeat save (#209): a "save-ends" spell (Hold Person, Hypnotic Pattern,
+    # a monster's hold) carries this so `next_turn` rolls the holder's recurring save and
+    # frees them on a success instead of locking them indefinitely. None == no repeat save
+    # (every existing effect / old snapshot). See RepeatSave.
+    repeat_save: Optional[RepeatSave] = None
+    # The condition this effect IMPOSED on its holder (Hold Person → "paralyzed"), so that
+    # when a repeat save ENDS the effect the engine can also clear that condition (one source
+    # of truth — the marker and the condition came together, they leave together). Empty ==
+    # the effect imposes no engine-tracked condition (a pure buff like Bless). Mainly read
+    # alongside repeat_save; only a condition-imposing effect sets it.
+    imposes_condition: Optional[Condition] = None
 
 
 class PendingOnHitRider(_StrictModel):
