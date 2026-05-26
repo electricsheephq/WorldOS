@@ -106,8 +106,19 @@ def _check_game_icons_attribution(tracked: list[str]) -> list[str]:
         errors.append("Game Icons assets are missing viewer/openworlds/assets/icons/ATTRIBUTION.md")
         attr_text = ""
     else:
-        attr_text = attr_path.read_text(encoding="utf-8")
-    notice_text = notice_path.read_text(encoding="utf-8") if notice_path.exists() else ""
+        try:
+            attr_text = attr_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"Game Icons attribution file is unreadable: {exc}")
+            attr_text = ""
+    if notice_path.exists():
+        try:
+            notice_text = notice_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"THIRD_PARTY_NOTICES.md is unreadable: {exc}")
+            notice_text = ""
+    else:
+        notice_text = ""
 
     if "Game Icons" not in notice_text or "CC-BY-3.0" not in notice_text:
         errors.append("THIRD_PARTY_NOTICES.md is missing Game Icons CC-BY-3.0 attribution")

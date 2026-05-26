@@ -254,10 +254,10 @@ function ScreenTable({ onNavigate, state, setState }) {
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
-              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}><window.OpenWorldsIcon id="dice.d20" size={13} /> d20</button>
-              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}><window.OpenWorldsIcon id="dice.roll" size={13} /> d12</button>
-              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}><window.OpenWorldsIcon id="dice.roll" size={13} /> d8</button>
-              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}><window.OpenWorldsIcon id="dice.roll" size={13} /> d6</button>
+              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -294,7 +294,7 @@ function ScreenTable({ onNavigate, state, setState }) {
               </div>
             </div>
             <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn ghost sm" onClick={() => onNavigate("journal")}><window.OpenWorldsIcon id="codex.book" size={13} /> Open chronicle</button>
+              <button className="btn ghost sm" onClick={() => onNavigate("journal")}>{window.OpenWorldsIcon?.has?.("codex.book") && <window.OpenWorldsIcon id="codex.book" size={13} />} Open chronicle</button>
             </div>
           </Panel>
         )}

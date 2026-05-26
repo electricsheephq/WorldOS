@@ -375,10 +375,10 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
             )}
 
             <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
-            <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
-                <window.OpenWorldsIcon id="atlas.travel" size={14} /> {busyTravel === selected.id ? "Sending..." : "Travel here"}
+              <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
+                {window.OpenWorldsIcon?.has?.("atlas.travel") && <window.OpenWorldsIcon id="atlas.travel" size={14} />} {busyTravel === selected.id ? "Sending..." : "Travel here"}
               </BrassButton>
-              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}><window.OpenWorldsIcon id="quest.scroll" size={13} /> Mark</BrassButton>
+              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}>{window.OpenWorldsIcon?.has?.("quest.scroll") && <window.OpenWorldsIcon id="quest.scroll" size={13} />} Mark</BrassButton>
             </div>
             {travelDisabled && (
               <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>{travelReason}</div>
@@ -473,7 +473,10 @@ function LocationPin({ loc, selected }) {
         whiteSpace: "nowrap",
       }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <window.OpenWorldsIcon id={loc.current ? "atlas.travel" : (loc.tags || []).includes("rest") ? "camp.rest" : "settlement.tavern"} size={11} />
+          {(() => {
+            const iconId = loc.current ? "atlas.travel" : (loc.tags || []).includes("rest") ? "camp.rest" : "settlement.tavern";
+            return window.OpenWorldsIcon?.has?.(iconId) ? <window.OpenWorldsIcon id={iconId} size={11} /> : null;
+          })()}
           {loc.name}
         </span>
       </div>

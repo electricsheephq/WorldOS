@@ -125,8 +125,8 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
 .ow-icon-fallback {
   display: inline-block;
   flex: 0 0 auto;
-  color: currentColor;
-  background: currentColor;
+  color: currentcolor;
+  background: currentcolor;
   vertical-align: -0.14em;
 }
 

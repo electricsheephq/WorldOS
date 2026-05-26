@@ -107,6 +107,7 @@ function resolveOpenWorldsIconId(id) {
   const raw = String(id).trim();
   if (OPENWORLDS_ICON_MANIFEST[raw]) return raw;
   const normalized = raw.toLowerCase().replace(/_/g, "-");
+  if (OPENWORLDS_ICON_MANIFEST[normalized]) return normalized;
   return OPENWORLDS_ICON_ALIASES[normalized] || "";
 }
 
