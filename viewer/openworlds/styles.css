@@ -714,6 +714,18 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
     inset 0 0 0 4px var(--p-200),
     inset 0 0 0 5px var(--b-400);
 }
+/* Rendered art from /image (the W2a render bridge) — wears the same brass frame as the
+   placeholder it replaces, so a portrait/scene drops in without disturbing the layout. */
+.ow-img {
+  background: rgba(80, 50, 20, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(80,50,20,0.4);
+}
+.ow-img.framed {
+  box-shadow:
+    inset 0 0 0 1px var(--b-500),
+    inset 0 0 0 4px var(--p-200),
+    inset 0 0 0 5px var(--b-400);
+}
 .placeholder .ph-label {
   background: var(--p-200);
   padding: 4px 8px;

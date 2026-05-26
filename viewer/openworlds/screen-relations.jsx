@@ -114,7 +114,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
                   : "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 cursor: "pointer",
               }}>
-                <Placeholder label={n.short} w={44} h={54} framed />
+                <Img scope={n.id ? "portrait-" + n.id : ""} label={n.short} w={44} h={54} framed />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.04em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {n.name}
