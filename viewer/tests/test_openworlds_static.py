@@ -58,14 +58,18 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ["CLAWDND_BETA_CHANNEL_DIR"] = self._old_beta_channel
         server._HERE = self._old_here
 
-    def _get(self, path: str) -> tuple[int, str, bytes]:
-        status, headers, body = self._get_with_headers(path)
+    def _get(self, path: str, headers: dict[str, str] | None = None) -> tuple[int, str, bytes]:
+        status, headers, body = self._get_with_headers(path, headers=headers)
         return status, headers.get("Content-Type", ""), body
 
-    def _get_with_headers(self, path: str) -> tuple[int, http.client.HTTPMessage, bytes]:
+    def _get_with_headers(
+        self,
+        path: str,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, http.client.HTTPMessage, bytes]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
         try:
-            conn.request("GET", path)
+            conn.request("GET", path, headers=headers or {})
             response = conn.getresponse()
             return response.status, response.headers, response.read()
         finally:
@@ -137,6 +141,23 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn(f"{expected_base}ClawDnD-0.3.0-beta.1.md", source)
         self.assertNotIn("file://", source)
         self.assertNotIn("http://127.0.0.1:8765/", source)
+
+    def test_local_beta_appcast_ignores_request_host_header(self):
+        beta = self._tmp / "beta-channel"
+        beta.mkdir()
+        (beta / "ClawDnD-0.3.0-beta.1.zip").write_bytes(b"zip")
+        (beta / "appcast.xml").write_text(
+            f'<rss><channel><item><enclosure url="{beta.as_uri()}/ClawDnD-0.3.0-beta.1.zip" /></item></channel></rss>',
+            encoding="utf-8",
+        )
+        os.environ["CLAWDND_BETA_CHANNEL_DIR"] = str(beta)
+
+        status, _ctype, body = self._get("/appcast.xml", headers={"Host": "updates.example.test"})
+
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        self.assertIn(f"http://127.0.0.1:{self._port}/ClawDnD-0.3.0-beta.1.zip", source)
+        self.assertNotIn("updates.example.test", source)
 
     def test_local_beta_artifacts_are_path_guarded(self):
         beta = self._tmp / "beta-channel"

@@ -150,16 +150,16 @@ struct RootView: View {
         throw ProviderError.configuration("Viewer did not become ready at \(url.absoluteString): \(lastError)")
     }
 
-    private func handleNativeRequest(_ request: NativeBridgeRequest) async -> NativeBridgeReply {
+    private func handleNativeRequest(_ request: NativeBridgeRequest, sourceWindow: NSWindow?) async -> NativeBridgeReply {
         do {
-            let payload = try await nativePayload(for: request)
+            let payload = try await nativePayload(for: request, sourceWindow: sourceWindow)
             return .success(request: request, payload: payload)
         } catch {
             return .failure(request: request, error: error.localizedDescription)
         }
     }
 
-    private func nativePayload(for request: NativeBridgeRequest) async throws -> [String: Any] {
+    private func nativePayload(for request: NativeBridgeRequest, sourceWindow: NSWindow?) async throws -> [String: Any] {
         switch request.type {
         case "appStatus":
             return appStatusPayload()
@@ -191,7 +191,7 @@ struct RootView: View {
         case "checkForUpdates":
             return ["updater": try updaterService.checkForUpdates()]
         case "windowCommand":
-            return try performWindowCommand(request.payload)
+            return try performWindowCommand(request.payload, sourceWindow: sourceWindow)
         case "openFallbackDashboard":
             let dashboardURL = try await ensureDashboardURL()
             NSWorkspace.shared.open(dashboardURL)
@@ -256,7 +256,8 @@ struct RootView: View {
     }
 
     private func updateAppcastFeedURL() {
-        updaterService.setFeedURL(processService.viewerEndpoint?.appcastURL)
+        let appcastURL = processService.localBetaChannelPath == nil ? nil : processService.viewerEndpoint?.appcastURL
+        updaterService.setFeedURL(appcastURL, available: appcastURL != nil)
     }
 
     private func appStatusPayload(extra: [String: Any] = [:]) -> [String: Any] {
@@ -293,12 +294,12 @@ struct RootView: View {
         return payload
     }
 
-    private func performWindowCommand(_ payload: [String: Any]) throws -> [String: Any] {
+    private func performWindowCommand(_ payload: [String: Any], sourceWindow: NSWindow?) throws -> [String: Any] {
         guard let rawCommand = stringPayload(payload, "command")?.lowercased(), !rawCommand.isEmpty else {
             throw ProviderError.configuration("windowCommand requires a command.")
         }
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible }) else {
-            throw ProviderError.configuration("No active app window is available.")
+        guard let window = sourceWindow, window.isVisible else {
+            throw ProviderError.configuration("No OpenWorlds app window is available.")
         }
         switch rawCommand {
         case "close":

@@ -2848,8 +2848,13 @@ def _beta_channel_asset(route: str) -> Path | None:
 
 
 def _loopback_base_url(handler: BaseHTTPRequestHandler) -> str:
-    host = handler.headers.get("Host", "").strip() or "127.0.0.1"
-    return f"http://{host}"
+    port = getattr(handler.server, "server_port", None)
+    if not port:
+        try:
+            port = handler.server.server_address[1]
+        except (AttributeError, IndexError, TypeError):
+            port = 0
+    return f"http://127.0.0.1:{port}"
 
 
 def _rewritten_appcast(handler: BaseHTTPRequestHandler, appcast: Path) -> bytes:

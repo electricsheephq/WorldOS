@@ -89,10 +89,13 @@ Local maintainer setup:
 Contributor override example:
 
 ```bash
-BETA_OUTPUT_DIR="$HOME/ClawDnD-beta-channel" \
+BETA_OUTPUT_DIR="/Volumes/LEXAR/Codex/my-clawdnd-beta-channel" \
 CLAWDND_FEED_URL="http://127.0.0.1:8765/appcast.xml" \
 ./script/package_macos_beta.sh --version 0.3.0 --build 2026052601 --channel local-beta
 ```
+
+The beta packaging script intentionally rejects output paths outside
+`/Volumes/LEXAR/Codex` and release identifiers containing path separators.
 
 The Sparkle private key lives only under
 `/Volumes/LEXAR/Codex/clawdnd-release-secrets/`. The repo stores only the public

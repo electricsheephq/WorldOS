@@ -32,9 +32,10 @@ Defaults:
   --channel  local-beta
   --prerelease beta.1
 
-Environment:
+ Environment:
   BETA_OUTPUT_DIR               Output directory for the local beta channel.
                                 Defaults to /Volumes/LEXAR/Codex/clawdnd-beta-channel
+                                Must resolve under /Volumes/LEXAR/Codex.
   CLAWDND_FEED_URL              Sparkle feed URL written into Info.plist.
                                 Defaults to http://127.0.0.1:8765/appcast.xml
   CLAWDND_DOWNLOAD_URL_PREFIX   Optional URL prefix passed to Sparkle generate_appcast.
@@ -65,6 +66,29 @@ require_dir() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+realpath_compat() {
+  python3 -c 'import os, sys; print(os.path.realpath(os.path.expanduser(sys.argv[1])))' "$1"
+}
+
+validate_release_token() {
+  local label="$1"
+  local value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || \
+    fail "${label} must be non-empty and may contain only letters, numbers, dot, underscore, and dash"
+}
+
+assert_under_root() {
+  local root="$1"
+  local path="$2"
+  local label="$3"
+  local resolved
+  resolved="$(realpath_compat "$path")"
+  case "$resolved" in
+    "$root"|"$root"/*) ;;
+    *) fail "${label} must stay under ${root}; ${path} resolves to ${resolved}" ;;
+  esac
 }
 
 xml_escape() {
@@ -293,10 +317,18 @@ main() {
   require_command hdiutil
   require_command install_name_tool
   require_command otool
+  require_command python3
   require_command shasum
   require_command spctl
   prerelease="$(printf '%s' "$prerelease" | tr -d '[:space:]')"
-  [[ -n "$prerelease" ]] || fail "pre-release suffix must not be empty"
+  validate_release_token "version" "$version"
+  validate_release_token "build" "$build"
+  validate_release_token "channel" "$channel"
+  validate_release_token "pre-release suffix" "$prerelease"
+
+  OUTPUT_ROOT="$(realpath_compat "$OUTPUT_ROOT")"
+  [[ "$OUTPUT_ROOT" == /Volumes/LEXAR/Codex/* ]] || fail "output root must resolve under /Volumes/LEXAR/Codex; found ${OUTPUT_ROOT}"
+  mkdir -p "$OUTPUT_ROOT"
 
   local script_dir repo_root package_dir public_key_file feed_url download_url_prefix
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -307,7 +339,6 @@ main() {
   feed_url="${CLAWDND_FEED_URL:-${download_url_prefix%/}/appcast.xml}"
 
   [[ "$repo_root" == /Volumes/LEXAR/repos/* ]] || fail "repo must be under /Volumes/LEXAR/repos; found ${repo_root}"
-  [[ "$OUTPUT_ROOT" == /Volumes/LEXAR/Codex/* ]] || fail "output root must be under /Volumes/LEXAR/Codex"
 
   require_dir "$package_dir" "SwiftPM package"
   require_dir "${repo_root}/viewer/openworlds" "OpenWorlds viewer resources"
@@ -339,6 +370,17 @@ main() {
   appcast_path="${OUTPUT_ROOT}/appcast.xml"
   checksums_path="${OUTPUT_ROOT}/CHECKSUMS.txt"
   validation_report_path="${OUTPUT_ROOT}/validation-report.md"
+
+  assert_under_root "$OUTPUT_ROOT" "$staging_dir" "staging directory"
+  assert_under_root "$OUTPUT_ROOT" "$channel_app_path" "channel app bundle"
+  assert_under_root "$OUTPUT_ROOT" "$zip_path" "zip artifact"
+  assert_under_root "$OUTPUT_ROOT" "$dmg_path" "dmg artifact"
+  assert_under_root "$OUTPUT_ROOT" "$dmg_src" "dmg staging directory"
+  assert_under_root "$OUTPUT_ROOT" "$appcast_src" "appcast staging directory"
+  assert_under_root "$OUTPUT_ROOT" "$release_notes_path" "release notes"
+  assert_under_root "$OUTPUT_ROOT" "$appcast_path" "appcast"
+  assert_under_root "$OUTPUT_ROOT" "$checksums_path" "checksums"
+  assert_under_root "$OUTPUT_ROOT" "$validation_report_path" "validation report"
 
   log "Assembling ${app_path}"
   rm -rf "$staging_dir"

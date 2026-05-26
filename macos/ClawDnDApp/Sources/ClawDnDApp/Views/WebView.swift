@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 import WebKit
@@ -54,7 +55,7 @@ struct NativeBridgeReply {
 }
 
 struct WebView: NSViewRepresentable {
-    typealias NativeRequestHandler = @MainActor (NativeBridgeRequest) async -> NativeBridgeReply
+    typealias NativeRequestHandler = @MainActor (NativeBridgeRequest, NSWindow?) async -> NativeBridgeReply
 
     let url: URL?
     @Binding var navigationError: String?
@@ -179,8 +180,9 @@ struct WebView: NSViewRepresentable {
                 send(.failure(request: request, error: "Native bridge is unavailable."))
                 return
             }
+            let sourceWindow = webView?.window
             Task { @MainActor in
-                let reply = await nativeRequestHandler(request)
+                let reply = await nativeRequestHandler(request, sourceWindow)
                 self.send(reply)
             }
         }
