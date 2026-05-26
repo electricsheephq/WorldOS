@@ -69,6 +69,27 @@ class AtlasSurfaceTests(unittest.TestCase):
             },
             "strategic_state": {
                 "last_tick_day": 11,
+                "settlements": {
+                    "gate": {
+                        "location_id": "gate",
+                        "settlement_type": "district",
+                        "governance": "watch council",
+                        "public_safety": "tense",
+                        "economy": "market day",
+                        "unrest": 18,
+                        "public_faction_ids": ["harpers"],
+                        "establishments": ["Lantern Hall"],
+                        "public_npcs": [
+                            {"npc_id": "reeve", "role": "gate reeve", "pressure": "Petitions are delayed"}
+                        ],
+                        "notes": "private settlement agenda",
+                    },
+                    "hidden-crypt": {
+                        "location_id": "hidden-crypt",
+                        "settlement_type": "hideout",
+                        "notes": "private hidden settlement",
+                    },
+                },
                 "regions": {
                     "gate": {
                         "location_id": "gate",
@@ -130,6 +151,11 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertTrue(surface["strategic_clocks"][0]["urgent"])
         self.assertEqual(surface["downtime_projects"][0]["title"], "Repair Gate Winch")
         self.assertEqual(surface["region_control"][0]["controller"], "Harpers")
+        self.assertEqual(surface["settlements"][0]["location_id"], "gate")
+        self.assertEqual(surface["settlements"][0]["settlement_type"], "district")
+        self.assertEqual(surface["settlements"][0]["public_factions"], ["Harpers"])
+        self.assertEqual(surface["settlements"][0]["establishments"], ["Lantern Hall"])
+        self.assertEqual(surface["settlements"][0]["public_npcs"][0]["role"], "gate reeve")
 
         encoded = json.dumps(surface)
         for forbidden in (
@@ -143,6 +169,8 @@ class AtlasSurfaceTests(unittest.TestCase):
             "clock note",
             "project note",
             "region note",
+            "settlement agenda",
+            "hideout",
         ):
             self.assertNotIn(forbidden, encoded)
         self.assert_no_private_keys(surface)

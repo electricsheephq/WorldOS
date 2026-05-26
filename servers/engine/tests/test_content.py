@@ -275,6 +275,93 @@ def test_seed_world_seeds_world_graph_metadata_without_authorizing_travel(capsys
     assert "unknown location" in out
 
 
+def test_seed_world_seeds_settlement_pressure_additively(capsys):
+    world = {
+        "id": "settlement-test",
+        "name": "Settlement Test",
+        "premise": "A compact settlement fixture.",
+        "era": "now",
+        "regions": [
+            {"id": "loc-harbor", "name": "Harbor", "description": "docks", "connections": []},
+            {"id": "loc-hill", "name": "Hill", "description": "watchpost", "connections": []},
+        ],
+        "factions": [
+            {"id": "fac-civic", "name": "Civic League", "description": "wardens", "reputation": 3},
+            {"id": "fac-rivals", "name": "Rival Compact", "description": "claimants", "reputation": -2},
+        ],
+        "npc_roster": [
+            {"id": "npc-reeve", "name": "Harbor Reeve", "role": "magistrate"},
+        ],
+        "history": [],
+        "standing_threads": [],
+        "starting_options": [{"location_id": "loc-harbor", "framing": "Start at the harbor."}],
+        "settlements": [
+            {
+                "location_id": "loc-harbor",
+                "settlement_type": "port",
+                "governance": "council",
+                "public_safety": "strained",
+                "economy": "busy",
+                "unrest": 24,
+                "public_faction_ids": ["fac-civic", "fac-rivals"],
+                "establishments": ["Harbor hall", "Lamp market"],
+                "public_npcs": [
+                    {"npc_id": "npc-reeve", "role": "hears petitions", "pressure": "Backlog of disputes"},
+                ],
+                "notes": "private compromise route",
+            },
+            {
+                "location_id": "loc-missing",
+                "settlement_type": "village",
+            },
+            {
+                "location_id": "loc-hill",
+                "settlement_type": "fort",
+                "public_faction_ids": ["fac-missing"],
+            },
+            {
+                "location_id": "loc-hill",
+                "settlement_type": "fort",
+                "public_npcs": [{"npc_id": "npc-missing", "role": "watch captain"}],
+            },
+            {"location_id": "loc-hill", "settlement_type": "moonbase"},
+        ],
+    }
+
+    c = content.seed_world(world)
+
+    assert set(c.strategic_state.settlements) == {"loc-harbor"}
+    settlement = c.strategic_state.settlements["loc-harbor"]
+    assert settlement.settlement_type == "port"
+    assert settlement.location_id == "loc-harbor"
+    assert settlement.public_faction_ids == ["fac-civic", "fac-rivals"]
+    assert settlement.establishments == ["Harbor hall", "Lamp market"]
+    assert settlement.public_npcs[0].npc_id == "npc-reeve"
+    assert settlement.notes == "private compromise route"
+
+    out = capsys.readouterr().out
+    assert "skipping settlement" in out
+
+
+def test_legacy_strategic_state_loads_without_settlements():
+    c = Campaign.model_validate(
+        {
+            "id": "camp-old",
+            "title": "Old Strategic Save",
+            "strategic_state": {
+                "regions": {},
+                "assets": {},
+                "clocks": {},
+                "projects": {},
+                "last_tick_day": 4,
+            },
+        }
+    )
+
+    assert c.strategic_state.settlements == {}
+    assert c.strategic_state.last_tick_day == 4
+
+
 def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
     w = content.load_world_data("sundered-reach")
     with pytest.raises(ValueError, match="not a region"):
