@@ -285,6 +285,59 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["threads"], [])
         self.assertEqual({q["id"]: q for q in surface["quests"]}["q2"]["evolvesTo"], "")
 
+    # ── acts / chronicle payoff ───────────────────────────────────────────────
+
+    def test_acts_surface_degrades_to_untracked_without_path_state(self):
+        self._write("camp_marches", _SNAPSHOT)
+        status, surface = self._get_json("/acts-surface?campaign=camp_marches")
+        self.assertEqual(status, 200)
+        self.assert_envelope(surface, "camp_marches")
+        self.assertFalse(surface["tracked"])
+        self.assertEqual(surface["acts"], [])
+        self.assertIn("not tracked", surface["emptyState"]["title"].lower())
+        self.assertEqual(surface["threads"], [])
+        self.assertEqual(surface["state_authority"], "engine")
+        self.assert_no_private_keys(surface)
+
+    def test_acts_surface_projects_adventure_path_choices_threads_and_debts(self):
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["adventure_path"] = {
+            "current_act_id": "act-1",
+            "acts": [
+                {
+                    "id": "act-1",
+                    "title": "The Lanternrest",
+                    "status": "active",
+                    "summary": "The road reaches the impossible inn.",
+                    "beats": [
+                        {"id": "b1", "title": "Reach the courtyard", "status": "resolved"},
+                        {"id": "b2", "title": "Open the eastern door", "status": "active"},
+                    ],
+                    "dm_notes": "hidden twist",
+                }
+            ],
+            "diagnostics": ["unknown beat ref: missing"],
+        }
+        snap["decisions"] = [
+            {"id": "d1", "day": 11, "summary": "Spared Falgrim", "chosen": "let him ride", "rationale": "Mira asked for mercy"},
+        ]
+        snap["quests"]["q2"]["evolves_to"] = "h-reckoning"
+        snap["consequences"].append({
+            "id": "c_evo", "trigger_day": 12, "fired": False, "thread_id": "",
+            "text": "It returns now.", "note": "evolves_from:q2",
+        })
+        self._write("camp_marches", snap)
+        status, surface = self._get_json("/acts-surface?campaign=camp_marches")
+        self.assertEqual(status, 200)
+        self.assertTrue(surface["tracked"])
+        self.assertEqual(surface["currentActId"], "act-1")
+        self.assertEqual(surface["acts"][0]["title"], "The Lanternrest")
+        self.assertEqual([b["status"] for b in surface["acts"][0]["beats"]], ["resolved", "active"])
+        self.assertEqual(surface["majorChoices"][0]["summary"], "Spared Falgrim")
+        self.assertEqual(surface["threads"][0]["status"], "due")
+        self.assertEqual(surface["diagnostics"][0]["message"], "unknown beat ref: missing")
+        self.assert_no_private_keys(surface)
+
     # ── character ───────────────────────────────────────────────────────────────
 
     def test_character_surface_projects_full_party_sheets(self):

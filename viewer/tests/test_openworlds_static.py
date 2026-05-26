@@ -141,6 +141,16 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("snapshot.json", source)
         self.assertNotIn("writeSnapshot", source)
 
+    def test_openworlds_acts_screen_binds_viewer_acts_surface(self):
+        status, ctype, body = self._get("/openworlds/screen-acts.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('fetch("/acts-surface', source)
+        self.assertIn("window.combatSurfaceFromCampaign", source)
+        self.assertIn("emptyState", source)
+
     def test_openworlds_rejects_path_traversal(self):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)

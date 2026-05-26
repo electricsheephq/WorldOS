@@ -2266,6 +2266,110 @@ def build_journal_surface(
     }
 
 
+def _acts_from_path(snapshot: dict) -> tuple[bool, str, list[dict], list[dict]]:
+    """Project optional adventure-path state without inventing progress when it is absent."""
+    path = snapshot.get("adventure_path")
+    if not isinstance(path, dict):
+        return False, "", [], []
+    current = _text(path.get("current_act_id") or path.get("currentActId"))
+    raw_acts = path.get("acts")
+    diagnostics_raw = path.get("diagnostics")
+    acts: list[dict] = []
+    if isinstance(raw_acts, list):
+        for index, act in enumerate(raw_acts, start=1):
+            if not isinstance(act, dict):
+                continue
+            act_id = _text(act.get("id"), f"act-{index}")
+            beats: list[dict] = []
+            raw_beats = act.get("beats")
+            if isinstance(raw_beats, list):
+                for beat_index, beat in enumerate(raw_beats, start=1):
+                    if not isinstance(beat, dict):
+                        continue
+                    beats.append({
+                        "id": _text(beat.get("id"), f"{act_id}:beat-{beat_index}"),
+                        "title": _text(beat.get("title"), "Untitled beat"),
+                        "status": _text(beat.get("status"), "planned"),
+                    })
+            status = _text(act.get("status"), "planned")
+            acts.append({
+                "id": act_id,
+                "title": _text(act.get("title") or act.get("name"), f"Act {index}"),
+                "status": status,
+                "current": act_id == current or status in {"active", "current"},
+                "summary": _text(act.get("summary") or act.get("synopsis")),
+                "beats": beats,
+            })
+    diagnostics = [
+        {"message": _text(item)}
+        for item in (diagnostics_raw if isinstance(diagnostics_raw, list) else [])
+        if _text(item)
+    ]
+    tracked = bool(acts or current or diagnostics)
+    if tracked and not current:
+        active = next((a for a in acts if a.get("current")), None)
+        current = _text(active.get("id")) if isinstance(active, dict) else ""
+    return tracked, current, acts, diagnostics
+
+
+def _acts_major_choices(snapshot: dict) -> list[dict]:
+    decisions = snapshot.get("decisions")
+    out: list[dict] = []
+    if not isinstance(decisions, list):
+        return out
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+        day = _num(decision.get("day"))
+        out.append({
+            "id": _text(decision.get("id"), f"decision-{len(out) + 1}"),
+            "day": int(day) if day is not None else None,
+            "summary": _text(decision.get("summary"), "A choice was recorded."),
+            "chosen": _text(decision.get("chosen")),
+            "context": _text(decision.get("rationale")),
+        })
+    out.sort(key=lambda row: (row.get("day") if row.get("day") is not None else -1, row.get("id") or ""), reverse=True)
+    return out[:12]
+
+
+def build_acts_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Read-only chronicle/payoff surface for the OpenWorlds Acts screen.
+
+    If no adventure-path state exists yet, the surface says so explicitly instead of
+    pretending prototype acts are real campaign progress.
+    """
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    tracked, current, acts, diagnostics = _acts_from_path(snapshot)
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "world": _text(snapshot.get("world_id"), "unknown"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "tracked": tracked,
+        "currentActId": current,
+        "acts": acts,
+        "majorChoices": _acts_major_choices(snapshot),
+        "threads": _journal_evolutions(snapshot),
+        "directorAdvisory": _director_advisory(snapshot),
+        "diagnostics": diagnostics,
+        "emptyState": {
+            "title": "Acts not tracked yet",
+            "body": "The campaign director has not compiled act progress for this save yet.",
+        },
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": False,
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
 # ── Character sheets surface (full party read model) ──────────────────────────
 
 def _ability_mod(score: object) -> int:
@@ -4438,6 +4542,10 @@ class _Handler(BaseHTTPRequestHandler):
             # The quest journal read model: tracked quests + unresolved hooks (as rumors)
             # + the Campaign Director's top structural debts (#72) as a GM advisory.
             self._serve_simple_surface(parse_qs(parsed.query), build_journal_surface)
+        elif route == "/acts-surface":
+            # Read-only act/chronicle payoff surface. It shows compiled path state when the
+            # engine has one and otherwise says the act tracker is not wired for this save yet.
+            self._serve_simple_surface(parse_qs(parsed.query), build_acts_surface)
         elif route == "/character-surface":
             # The party's full character sheets (classes/skills/spells/resources/AC/death
             # saves) projected from the engine snapshot into the heroes screen shape.
