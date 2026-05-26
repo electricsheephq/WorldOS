@@ -75,7 +75,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
               : "inset 0 0 0 1px rgba(140,100,60,0.2)",
             textAlign: "left",
           }}>
-            <Placeholder label={p.short} w={36} h={44} framed />
+            <Img scope={p.id ? "portrait-" + p.id : ""} label={p.short} w={36} h={44} framed />
             <div>
               <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
                 {p.name}
@@ -113,7 +113,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         {/* Hero header card */}
         <Panel framed style={{ padding: 22 }}>
           <div style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 22, alignItems: "start" }}>
-            <Placeholder label={`${hero.short} · portrait`} w={140} h={170} framed />
+            <Img scope={hero.id ? "portrait-" + hero.id : ""} label={`${hero.short} · portrait`} w={140} h={170} framed />
             <div>
               <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
               <h1 className="h1" style={{ marginTop: 2 }}>{hero.name}</h1>
