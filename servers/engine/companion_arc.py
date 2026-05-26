@@ -17,15 +17,60 @@ Pure module (no MCP, no I/O), like `worldsim.py`/`consequences.py`: ``evaluate``
 the in-memory `Character`/`Campaign` in place and is idempotent. The engine stays the sole
 writer — the MCP tool layer (`check_companion_arc`) persists under `campaign_lock` +
 `save_campaign`.
+
+``attitude_below`` betrayal probability curve (issue #142)
+----------------------------------------------------------
+When a companion's `attitude_value` is >= the threshold `value`, P(snap) = 0 — the agenda
+never fires while the relationship is still above the breaking point.
+
+When attitude_value < value the per-beat snap probability rises linearly with how far below
+the threshold the companion has fallen:
+
+    gap   = value - attitude_value          # strictly positive once below threshold
+    span  = value - ATTITUDE_SNAP_FLOOR     # full range from threshold down to the floor
+
+    raw_p = gap / span                      # 0.0 at threshold, 1.0 at floor
+
+    p     = min(raw_p, ATTITUDE_SNAP_MAX)   # clamped so even the worst relationship
+                                            # only reaches ATTITUDE_SNAP_MAX per beat
+
+    fire? = rng.random() < p               # sampled each call until the agenda fires
+
+ATTITUDE_SNAP_FLOOR (-100) is the lowest plausible attitude (deep contempt / total
+betrayal) — the denominator anchors the curve against the approval scale instead of
+making the slope an arbitrary magic number. ATTITUDE_SNAP_MAX (0.35) caps each beat so
+the agenda can't fire on the very first call below threshold (typical gap at threshold
+crossing ≈ 1 → raw_p < 0.01) and a companion sitting at deep-red (gap ≈ span) still
+only snaps ~35% of the time per beat — it feels dangerous, not instant. When the party
+is vulnerable the probability is nudged up by ATTITUDE_SNAP_VULNERABLE_BONUS (0.10) so
+the betrayer is more likely to pick the worst moment.
+
+The other triggers (day_reached, prize_seized, party_vulnerable) are SPECIFIC EVENTS —
+they either happened or they didn't; making them probabilistic would break their semantics.
 """
 
 from __future__ import annotations
+
+import random
 
 from models import Campaign, Character
 
 # Fraction of max HP at/below which a party member counts as "vulnerable" (also fires for
 # a downed member at 0 HP). Drives the `party_vulnerable` agenda trigger.
 _VULNERABLE_FRACTION = 0.25
+
+# --- attitude_below probability curve constants (issue #142) -------------------
+
+# Lower anchor of the approval scale — attitudes rarely go below -100 in practice.
+ATTITUDE_SNAP_FLOOR: int = -100
+
+# Maximum per-beat snap probability regardless of how far below the threshold the
+# companion's attitude has fallen — keeps the betrayal a "rising chance", not a coin flip.
+ATTITUDE_SNAP_MAX: float = 0.35
+
+# Additive bonus to the snap probability when _party_vulnerable() is True, so the
+# saboteur is more likely to strike when the party is weakest.
+ATTITUDE_SNAP_VULNERABLE_BONUS: float = 0.10
 
 
 def _party_vulnerable(campaign: Campaign) -> bool:
@@ -43,8 +88,35 @@ def _party_vulnerable(campaign: Campaign) -> bool:
     return False
 
 
-def _agenda_triggered(character: Character, campaign: Campaign) -> bool:
-    """Whether the companion's agenda condition currently holds (pure predicate)."""
+def _attitude_below_snap_p(attitude_value: int, threshold: int, vulnerable: bool) -> float:
+    """Per-beat snap probability for an ``attitude_below`` agenda (issue #142).
+
+    Returns 0.0 when attitude_value >= threshold (never fires above the line).
+    Otherwise rises linearly from ~0 at the threshold to ATTITUDE_SNAP_MAX at or below
+    ATTITUDE_SNAP_FLOOR, optionally boosted by ATTITUDE_SNAP_VULNERABLE_BONUS when
+    the party is weak. The result is clamped to [0.0, ATTITUDE_SNAP_MAX +
+    ATTITUDE_SNAP_VULNERABLE_BONUS] — never > ~0.45 so even a companion deep in the
+    red still requires multiple beats to reliably snap."""
+    if attitude_value >= threshold:
+        return 0.0
+    span = threshold - ATTITUDE_SNAP_FLOOR  # > 0: threshold is always > floor
+    gap = threshold - attitude_value         # > 0: attitude is below threshold
+    raw_p = gap / span
+    p = min(raw_p, ATTITUDE_SNAP_MAX)
+    if vulnerable:
+        p = min(p + ATTITUDE_SNAP_VULNERABLE_BONUS, ATTITUDE_SNAP_MAX + ATTITUDE_SNAP_VULNERABLE_BONUS)
+    return p
+
+
+def _agenda_triggered(character: Character, campaign: Campaign, rng: random.Random | None = None) -> bool:
+    """Whether the companion's agenda fires this beat.
+
+    For ``attitude_below``: probabilistic (rising chance as attitude drops — see module
+    docstring). A fresh ``random.Random()`` is used when no ``rng`` is passed; pass a
+    seeded one for deterministic tests.
+
+    For all other triggers: deterministic (the event either occurred or it didn't).
+    """
     agenda = character.arc.agenda if character.arc else None
     if agenda is None:
         return False
@@ -52,7 +124,17 @@ def _agenda_triggered(character: Character, campaign: Campaign) -> bool:
     if trigger == "attitude_below":
         # value is required for this trigger (model validator), but guard None defensively
         # so a hand-built/legacy agenda can never raise on the comparison.
-        return agenda.value is not None and character.attitude_value < agenda.value
+        if agenda.value is None:
+            return False
+        p = _attitude_below_snap_p(
+            character.attitude_value,
+            agenda.value,
+            _party_vulnerable(campaign),
+        )
+        if p <= 0.0:
+            return False
+        r = rng if rng is not None else random.Random()
+        return r.random() < p
     if trigger == "day_reached":
         return agenda.value is not None and campaign.day >= agenda.value
     if trigger == "party_vulnerable":
@@ -113,12 +195,14 @@ def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) 
     return event
 
 
-def evaluate(character: Character, campaign: Campaign) -> dict:
+def evaluate(character: Character, campaign: Campaign, rng: random.Random | None = None) -> dict:
     """Advance ONE companion's arc against the current state (mutates in place).
 
     - Unlocks every still-locked `arc_gate` whose `threshold <= attitude_value` (the
       approval gauge), setting `unlocked=True`.
     - Fires the `agenda` if it hasn't already and its trigger holds, setting `fired=True`.
+      For an ``attitude_below`` agenda the trigger is probabilistic (rising chance per
+      beat — see module docstring); pass a seeded ``rng`` for deterministic tests.
 
     Idempotent: a gate/agenda already resolved on a prior call is NOT reported again.
     Returns ``{newly_unlocked: [gate dicts], agenda_fired: bool, agenda: <dict|None>}`` —
@@ -148,7 +232,7 @@ def evaluate(character: Character, campaign: Campaign) -> dict:
 
     # The sealed agenda fires once, when its trigger holds.
     agenda = arc.agenda
-    if agenda is not None and not agenda.fired and _agenda_triggered(character, campaign):
+    if agenda is not None and not agenda.fired and _agenda_triggered(character, campaign, rng=rng):
         agenda.fired = True
         agenda_fired = True
         agenda_dump = agenda.model_dump()

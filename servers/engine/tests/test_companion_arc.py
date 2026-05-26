@@ -6,7 +6,15 @@ only in an ephemeral QA prompt. These tests guard the pure `companion_arc.evalua
 (gates unlock at threshold; each agenda trigger fires under its condition; idempotent;
 empty/None arc is a no-op) AND that the new `arc` field is ADDITIVE — an old snapshot
 with no `arc` deserializes unchanged.
+
+Issue #142 — attitude_below is now a RISING PROBABILITY ROLL:
+  - At/above threshold: P = 0 (never fires).
+  - Below threshold:    P rises linearly with depth below the threshold, capped at
+    ATTITUDE_SNAP_MAX per beat. Vulnerable-party gives an additive bonus.
+  - Deterministic under a seeded rng (passed to evaluate).
 """
+
+import random
 
 import pytest
 
@@ -135,21 +143,105 @@ def test_multiple_gates_only_those_at_or_below_attitude_unlock():
 
 # --- agenda triggers --------------------------------------------------------
 
-def test_agenda_attitude_below_fires_when_approval_drops():
+def test_agenda_attitude_below_never_fires_above_threshold():
+    """At or above the threshold P=0 — the agenda must not fire regardless of rng."""
     agenda = CompanionAgenda(trigger="attitude_below", value=-30, note="turns on the party")
     ch = _companion(attitude=-29, agenda=agenda)
     c = _campaign_with(ch)
 
-    # -29 is NOT below -30 -> no fire
-    assert companion_arc.evaluate(ch, c)["agenda_fired"] is False
+    # -29 is NOT below -30 -> P=0, must never fire across many calls
+    rng = random.Random(42)
+    for _ in range(50):
+        assert companion_arc.evaluate(ch, c, rng=rng)["agenda_fired"] is False
     assert ch.arc.agenda.fired is False
 
-    # drop to -31 (strictly below) -> fires
-    ch.attitude_value = -31
-    res = companion_arc.evaluate(ch, c)
-    assert res["agenda_fired"] is True
-    assert res["agenda"]["trigger"] == "attitude_below"
-    assert ch.arc.agenda.fired is True
+
+def test_agenda_attitude_below_eventually_fires_below_threshold():
+    """Below the threshold the agenda MUST eventually fire (P > 0)."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=-30, note="turns on the party")
+    ch = _companion(attitude=-50, agenda=agenda)  # well below threshold
+    c = _campaign_with(ch)
+
+    rng = random.Random(0)
+    fired = False
+    for _ in range(200):  # 200 independent evaluate calls (agenda resets each iter)
+        _ch = _companion(attitude=-50, agenda=CompanionAgenda(trigger="attitude_below", value=-30))
+        if companion_arc.evaluate(_ch, c, rng=rng)["agenda_fired"]:
+            fired = True
+            break
+    assert fired, "agenda should have fired within 200 beats at attitude -50 (threshold -30)"
+
+
+def test_agenda_attitude_below_deeper_attitude_fires_more_often():
+    """Deeper below the threshold = higher per-beat P — measured by fire rate across trials."""
+    threshold = 0
+    n_trials = 500
+
+    def fire_rate(attitude: int, seed: int) -> float:
+        rng = random.Random(seed)
+        hits = 0
+        for _ in range(n_trials):
+            _ch = _companion(attitude=attitude, agenda=CompanionAgenda(trigger="attitude_below", value=threshold))
+            c = _campaign_with(_ch)
+            if companion_arc.evaluate(_ch, c, rng=rng)["agenda_fired"]:
+                hits += 1
+        return hits / n_trials
+
+    rate_near = fire_rate(-1, seed=1)    # just 1 below threshold  -> very low P
+    rate_mid = fire_rate(-50, seed=2)   # halfway down              -> mid P
+    rate_deep = fire_rate(-90, seed=3)  # near the floor            -> near cap
+
+    assert rate_near < rate_mid, f"near={rate_near:.3f} should be < mid={rate_mid:.3f}"
+    assert rate_mid < rate_deep, f"mid={rate_mid:.3f} should be < deep={rate_deep:.3f}"
+
+
+def test_agenda_attitude_below_at_exact_threshold_p_is_zero():
+    """Exactly at the threshold (attitude == value) P must be 0."""
+    p = companion_arc._attitude_below_snap_p(0, 0, False)
+    assert p == 0.0
+
+
+def test_agenda_attitude_below_p_capped_at_snap_max():
+    """Even at the ATTITUDE_SNAP_FLOOR the probability is capped at ATTITUDE_SNAP_MAX
+    (no vulnerable bonus) or ATTITUDE_SNAP_MAX + ATTITUDE_SNAP_VULNERABLE_BONUS."""
+    p_normal = companion_arc._attitude_below_snap_p(companion_arc.ATTITUDE_SNAP_FLOOR, 0, False)
+    assert p_normal <= companion_arc.ATTITUDE_SNAP_MAX + 1e-9
+
+    p_vuln = companion_arc._attitude_below_snap_p(companion_arc.ATTITUDE_SNAP_FLOOR, 0, True)
+    assert p_vuln <= companion_arc.ATTITUDE_SNAP_MAX + companion_arc.ATTITUDE_SNAP_VULNERABLE_BONUS + 1e-9
+
+
+def test_agenda_attitude_below_vulnerable_party_raises_probability():
+    """The vulnerable-party bonus pushes P up when _party_vulnerable is True."""
+    # Use an attitude just barely below threshold so we can detect the small bonus.
+    attitude, threshold = -10, 0
+    p_safe = companion_arc._attitude_below_snap_p(attitude, threshold, False)
+    p_vuln = companion_arc._attitude_below_snap_p(attitude, threshold, True)
+    assert p_vuln > p_safe
+
+
+def test_agenda_attitude_below_firing_once_preserved():
+    """Once fired (fired=True), additional evaluate calls never re-fire — even with an
+    rng seeded to always return 0 (which would always roll < p if P>0)."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=0, note="turns on the party")
+    ch = _companion(attitude=-80, agenda=agenda)
+    c = _campaign_with(ch)
+    rng = random.Random(0)
+
+    # Force the first fire
+    forced = False
+    for _ in range(500):
+        res = companion_arc.evaluate(ch, c, rng=rng)
+        if res["agenda_fired"]:
+            forced = True
+            break
+    assert forced
+
+    # Now agenda.fired=True — should never report again
+    for _ in range(20):
+        res = companion_arc.evaluate(ch, c, rng=rng)
+        assert res["agenda_fired"] is False
+        assert res["agenda"] is None
 
 
 def test_agenda_day_reached_fires_on_or_after_the_day():
@@ -216,13 +308,21 @@ def test_gate_and_agenda_evaluate_together():
     ch = _companion(attitude=15, gates=[gate], agenda=agenda)
     c = _campaign_with(ch)
 
-    # high approval: gate unlocks, agenda not yet
-    res = companion_arc.evaluate(ch, c)
+    # high approval: gate unlocks, agenda not yet (P=0 above threshold)
+    rng = random.Random(42)
+    res = companion_arc.evaluate(ch, c, rng=rng)
     assert len(res["newly_unlocked"]) == 1 and res["agenda_fired"] is False
-    # approval collapses below 5: agenda fires, gate stays unlocked (not re-reported)
-    ch.attitude_value = 2
-    res = companion_arc.evaluate(ch, c)
-    assert res["newly_unlocked"] == [] and res["agenda_fired"] is True
+
+    # approval collapses deep below 5: agenda eventually fires, gate stays unlocked
+    ch.attitude_value = -90  # near the floor → near-cap P so it fires in few beats
+    fired = False
+    for _ in range(200):
+        res = companion_arc.evaluate(ch, c, rng=rng)
+        if res["agenda_fired"]:
+            fired = True
+            break
+    assert fired
+    assert res["newly_unlocked"] == []  # gate already unlocked, not re-reported
 
 
 # --- MCP tool layer (mirrors check_consequences) ----------------------------

@@ -44,6 +44,8 @@ When a player or companion **declares an attack on an unready or non-hostile tar
 
 This is also the **companion BETRAYAL opener** (issue #142): when `check_companion_arc` fires an agenda betrayal and the companion's move is `[attack]`, use this same path — `start_combat` with `surpriser_ids=[companion_id]`, then `attack(advantage=True)` for the opening blow. The engine makes the treachery real; you dramatize the fallout.
 
+**How the betrayal roll works (attitude_below trigger):** the engine does NOT snap a companion to hostile at a fixed approval number. Instead, each time `check_companion_arc` is called while a companion's `attitude_value` is below their agenda threshold, the engine rolls a *rising per-beat hazard*: the deeper their approval has fallen, the higher the probability that this is the beat they snap — but even a companion deep in the red only has a ~35-45% chance per call (never a guaranteed flip). If the party is **vulnerable** (someone downed or under ¼ HP) that probability gets a small bonus, so the betrayer is more likely to pick the worst moment. The agenda fires exactly once; after that it is silent. This means a companion's betrayal is genuinely unpredictable — calling `check_companion_arc` each beat is how the tension lives in the engine.
+
 The player facade already keeps moves as intent, not outcome — declare, roll, narrate result.
 
 ## Balancing doctrine — always a way out at low level; real stakes at high (HARD rule)
