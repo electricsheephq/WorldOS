@@ -20,6 +20,7 @@ _TERM = re.compile(r"(\d*)d(\d+)(kh\d+|kl\d+)?$")
 # allocating a giant list and hanging the engine via the public `roll` MCP tool.
 _MAX_DICE = 1000
 _MAX_SIDES = 1000
+_MAX_EXPRESSION_CHARS = 4096
 
 
 @dataclass
@@ -51,6 +52,8 @@ def roll(
     expr = expression.replace(" ", "").lower().replace("d%", "d100")
     if not expr:
         raise ValueError("empty dice expression")
+    if len(expr) > _MAX_EXPRESSION_CHARS:
+        raise ValueError(f"dice expression must be <= {_MAX_EXPRESSION_CHARS} characters")
 
     terms = re.findall(r"[+-]?[^+-]+", expr)
     total = 0
