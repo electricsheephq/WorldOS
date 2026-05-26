@@ -28,6 +28,24 @@ def test_stat_block_unknown_returns_none():
     assert bestiary.stat_block("nonexistent beast") is None
 
 
+def test_ghoul_stat_block_has_multi_component_bite_and_two_bite_multiattack():
+    """Ground-truth guard for #210/#211: the Ghoul Bite deals piercing PLUS necrotic in
+    one strike, and its Multiattack text is 'two Bite attacks' (the Claw, with the
+    paralysis rider, is a SEPARATE action). If the SRD data ever changes, the
+    engine-side parse/compose tests would silently pass on different inputs — this
+    pins the source data they rely on."""
+    sb = bestiary.stat_block("Ghoul")
+    assert sb is not None
+    actions = {a["name"]: a for a in sb["actions"]}
+    assert "Bite" in actions and "Claw" in actions and "Multiattack" in actions
+    bite_desc = actions["Bite"]["desc"].lower()
+    assert "piercing" in bite_desc and "necrotic" in bite_desc and "plus" in bite_desc
+    assert "two bite attacks" in actions["Multiattack"]["desc"].lower()
+    # The Claw is the paralysis-rider action and is NOT the Bite's necrotic component.
+    claw_desc = actions["Claw"]["desc"].lower()
+    assert "paralyzed" in claw_desc and "constitution saving throw" in claw_desc
+
+
 def test_find_substring():
     assert "Goblin Warrior" in bestiary.find("goblin")
 

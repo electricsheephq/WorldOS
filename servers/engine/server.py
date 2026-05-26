@@ -2121,11 +2121,72 @@ def _parse_multiattack_count(desc: str) -> int:
     return 1
 
 
+def _parse_multiattack_composition(desc: str) -> list[str]:
+    """Return the ORDERED list of attack NAMES a Multiattack is composed of (#211),
+    with repeats — so the DM issues the right attacks, not an improvised mix. Handles
+    the SRD clause wordings:
+      - "makes two Bite attacks"                         -> ['Bite', 'Bite']
+      - "makes one Claw attack and one Bite attack"      -> ['Claw', 'Bite']
+      - "makes one Ram attack, one Bite attack, and one Claw attack"
+                                                          -> ['Ram', 'Bite', 'Claw']
+    The attack name is the word(s) between the count and 'attack(s)'. Best-effort:
+    returns [] when no '<count> <Name> attack(s)' clause parses (the caller then
+    degrades to the count-only surfacing — never aborts). Title-cases each name so it
+    matches the stat-block action names (which the resolver looks up case-sensitively
+    only for display)."""
+    import re as _re
+    _WORD_TO_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+    names: list[str] = []
+    # <count> <name words> attack(s) — name is 1-3 words, stops at 'attack(s)'.
+    for m in _re.finditer(
+        r"\b(one|two|three|four|five|six|\d+)\s+([A-Za-z][A-Za-z'\- ]*?)\s+attacks?\b",
+        desc,
+        _re.IGNORECASE,
+    ):
+        tok = m.group(1).lower()
+        count = int(tok) if tok.isdigit() else _WORD_TO_NUM.get(tok, 1)
+        # Trim filler that can precede the weapon name ("with its Claws", "melee").
+        raw = m.group(2).strip()
+        raw = _re.sub(r"^(?:with\s+(?:its\s+)?|melee\s+|ranged\s+)", "", raw, flags=_re.IGNORECASE).strip()
+        if not raw:
+            continue
+        name = raw.title()
+        names.extend([name] * max(1, count))
+    return names
+
+
+def _parse_damage_components(desc: str) -> list[dict]:
+    """Extract EVERY typed damage component of an attack desc as an ordered list of
+    ``{"dice", "type"}`` (#210). Each SRD component reads ``N (XdY + Z) <Type> damage``
+    (the flat average, the dice in parens, then the type) and multiple components are
+    joined by 'plus' — e.g. the Ghoul Bite ``5 (1d6 + 2) Piercing damage plus 3 (1d6)
+    Necrotic damage`` -> ``[{dice:'1d6+2', type:'piercing'}, {dice:'1d6', type:
+    'necrotic'}]``. The dice are normalized (whitespace stripped) so they pass straight
+    to attack(damage_rolls=...). Best-effort: returns [] when no parenthesized dice are
+    found (the caller then degrades to the flat single-`damage` string)."""
+    import re as _re
+    out: list[dict] = []
+    # `(<dice>) <Type> damage` — Type is the word(s) immediately before 'damage'.
+    for m in _re.finditer(
+        r"\(\s*(\d*d\d+(?:\s*[+-]\s*\d+)?)\s*\)\s*([A-Za-z]+)\s+damage",
+        desc,
+        _re.IGNORECASE,
+    ):
+        dice = m.group(1).replace(" ", "")
+        dtype = m.group(2).strip().lower()
+        out.append({"dice": dice, "type": dtype})
+    return out
+
+
 def _parse_attack_action(action: dict) -> dict | None:
     """Parse a monster attack action dict (from bestiary.stat_block) into
-    {name, to_hit, damage} with authoritative numeric to_hit pulled from the
-    SRD desc ('Melee/Ranged Attack Roll: +5').  Returns None for non-attack
-    actions (no 'Attack Roll' in desc and action_type != 'ACTION').
+    {name, to_hit, damage, damage_type, damage_rolls} with authoritative numeric
+    to_hit pulled from the SRD desc ('Melee/Ranged Attack Roll: +5'). ``damage`` is
+    the FIRST component's dice (back-compat with the count-only surfacing); when the
+    attack deals more than one damage type (#210) ``damage_rolls`` carries every
+    component ({dice,type}) ready to pass to attack(damage_rolls=...) and
+    ``damage_type`` is the first component's type. Returns None for non-attack actions
+    (no 'Attack Roll' in desc and action_type != 'ACTION').
     """
     import re as _re
     if action.get("action_type") != "ACTION":
@@ -2135,9 +2196,22 @@ def _parse_attack_action(action: dict) -> dict | None:
     if hit_m is None:
         return None  # not an attack action (e.g. Parry, Spellcasting)
     to_hit = int(hit_m.group(1))
-    dmg_m = _re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", desc, _re.IGNORECASE)
-    damage = dmg_m.group(1).replace(" ", "") if dmg_m else ""
-    return {"name": action["name"], "to_hit": to_hit, "damage": damage}
+    components = _parse_damage_components(desc)
+    if components:
+        damage = components[0]["dice"]
+        damage_type = components[0]["type"]
+    else:
+        # Fallback: first bare dice expression anywhere (pre-#210 behaviour).
+        dmg_m = _re.search(r"(\d+d\d+(?:\s*[+-]\s*\d+)?)", desc, _re.IGNORECASE)
+        damage = dmg_m.group(1).replace(" ", "") if dmg_m else ""
+        damage_type = ""
+    out = {"name": action["name"], "to_hit": to_hit, "damage": damage, "damage_type": damage_type}
+    # Only attach damage_rolls for genuinely MULTI-component attacks — a single-type
+    # attack stays a plain {name,to_hit,damage} entry (no surface churn for the 95%
+    # of attacks that are single-type; the DM uses damage_dice as before).
+    if len(components) > 1:
+        out["damage_rolls"] = components
+    return out
 
 
 def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
@@ -2160,11 +2234,15 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
     if sb is None:
         return None
     actions = sb.get("actions", [])
-    # Determine attacks_per_turn from Multiattack action
+    # Determine attacks_per_turn AND its composition from the Multiattack action.
     attacks_per_turn = 1
+    multiattack_desc = ""
+    composition_names: list[str] = []
     for act in actions:
         if act["name"].lower() == "multiattack":
-            attacks_per_turn = _parse_multiattack_count(act.get("desc", ""))
+            multiattack_desc = act.get("desc", "")
+            attacks_per_turn = _parse_multiattack_count(multiattack_desc)
+            composition_names = _parse_multiattack_composition(multiattack_desc)
             break
     # Collect authoritative attack actions (have 'Attack Roll' in desc)
     attack_list = []
@@ -2172,7 +2250,7 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
         parsed = _parse_attack_action(act)
         if parsed is not None and act["name"].lower() != "multiattack":
             attack_list.append(parsed)
-    return {
+    entry = {
         "id": ch.id,
         "name": ch.name,
         "attacks_per_turn": attacks_per_turn,
@@ -2182,6 +2260,29 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
             "to_hit/damage — never invent bonuses (mirrors PC _combat_numbers rule)."
         ),
     }
+    # MULTIATTACK COMPOSITION (#211): surface WHICH attacks make up the Multiattack
+    # (e.g. the Ghoul's 'two Bite attacks' -> two Bite entries, each with its full
+    # multi-component damage), so the DM issues the stat-block's attacks rather than an
+    # improvised mix (Bite+Claw). Best-effort + degrade-not-abort: only attach when the
+    # desc parsed into names AND every name resolves to a known attack action; otherwise
+    # leave the count-only surfacing untouched.
+    if composition_names:
+        by_name = {a["name"].lower(): a for a in attack_list}
+        resolved = [by_name.get(n.lower()) for n in composition_names]
+        if all(r is not None for r in resolved):
+            entry["multiattack"] = {
+                "desc": multiattack_desc,
+                "sequence": [
+                    {k: v for k, v in a.items()}  # full attack entry incl. damage_rolls
+                    for a in resolved
+                ],
+                "note": (
+                    "This monster's Multiattack is the SPECIFIC sequence below — issue "
+                    "exactly these attacks (with each attack's surfaced to_hit/damage, and "
+                    "damage_rolls for multi-type attacks), not an improvised mix."
+                ),
+            }
+    return entry
 
 
 def _attacker_multiattack_count(ch: "Character", c: "Campaign") -> int:
@@ -2530,6 +2631,11 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
                 "attacks_per_turn": entry["attacks_per_turn"],
                 "attacks": entry["attacks"],
             }
+            # Carry the Multiattack composition (#211) to the per-turn brief so the DM
+            # issues the SPECIFIC attacks at the turn trigger (the surface it actually
+            # reads each turn), not just the count. Absent when no composition resolved.
+            if "multiattack" in entry:
+                brief["attack"]["multiattack"] = entry["multiattack"]
             brief["note"] = (
                 f"Run {entry['attacks_per_turn']} attack call(s) using the listed "
                 "to_hit/damage — never invent bonuses."
@@ -2900,12 +3006,13 @@ def attack(
     attacker_id: str,
     target_id: str,
     attack_bonus: int,
-    damage_dice: str,
+    damage_dice: str = "",
     damage_type: str = "",
     advantage: bool = False,
     disadvantage: bool = False,
     is_ranged: bool = False,
     is_reaction: bool = False,
+    damage_rolls: list[dict] | None = None,
 ) -> dict:
     """Resolve an attack. The DM supplies attack_bonus and damage_dice (e.g.
     '1d8+3'); the engine rolls 1d20+bonus vs the target's AC, auto-hits on a
@@ -2913,6 +3020,17 @@ def attack(
     applies the damage. Condition-based advantage/disadvantage is detected (set
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
     combined with the explicit flags (they cancel if both apply).
+
+    MULTI-COMPONENT DAMAGE (#210): an attack that deals more than one damage type in
+    a single strike — e.g. a Ghoul Bite (1d6+2 piercing PLUS 1d6 necrotic) — passes
+    ``damage_rolls=[{"dice": "1d6+2", "type": "piercing"}, {"dice": "1d6", "type":
+    "necrotic"}]``. EACH component is rolled, crit-doubles its OWN dice, and has the
+    target's resistance/immunity/vulnerability applied for ITS OWN type before the
+    components are summed and applied as one hit. The per-component breakdown is
+    surfaced under result["damage"]["components"]. When ``damage_rolls`` is given it
+    supersedes ``damage_dice``/``damage_type``; omit it (the default) and the single
+    ``damage_dice``/``damage_type`` path is byte-identical to before. The monster_combat
+    / turn_brief surfaces emit ready-to-pass ``damage_rolls`` for multi-type attacks.
 
     TURN ORDER + ACTION ECONOMY (enforced while a combat is active and the attacker
     is in the initiative order): an attack as your ACTION is legal only on your own
@@ -2924,6 +3042,15 @@ def attack(
     an opportunity attack explicitly. An illegal attack (wrong turn / out of attacks /
     no reaction left) is REJECTED with a clear error and NO state change (no roll,
     no damage). Inert when no combat is active or the attacker isn't a combatant."""
+    # Damage spec: exactly one of damage_dice / damage_rolls. ``damage_dice`` became
+    # optional (default "") so a multi-component caller can omit it, but a hit needs
+    # SOME damage to roll — reject a spec-less call up front with a clear message rather
+    # than failing deep in the dice roller on a hit (and only on a hit). No state change.
+    if not damage_dice and not damage_rolls:
+        raise ValueError(
+            "attack needs damage: pass damage_dice (e.g. '1d8+3') for a single type, or "
+            "damage_rolls=[{'dice','type'}, ...] for a multi-type attack (#210)."
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
@@ -3026,10 +3153,50 @@ def attack(
             if warn:
                 result["range_warning"] = warn
         if hit:
-            expr = combat.double_dice(damage_dice) if is_crit else damage_dice
-            dmg = dice_mod.roll(expr)
-            outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
-            result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
+            if damage_rolls:
+                # MULTI-COMPONENT (#210): roll + crit-double EACH component on its own
+                # dice, then apply per-type resistance/immunity/vulnerability per
+                # component before summing. The pre-adjustment roll total per component
+                # is surfaced so the DM sees what each type contributed; the post-
+                # resistance figure lives in target_state["components"].
+                comp_results: list[dict] = []
+                parts_for_apply: list[dict] = []
+                for spec in damage_rolls:
+                    cd = str(spec.get("dice", "") or "")
+                    ct = str(spec.get("type", "") or "")
+                    if not cd:
+                        continue
+                    cexpr = combat.double_dice(cd) if is_crit else cd
+                    cdmg = dice_mod.roll(cexpr)
+                    ctotal = max(0, cdmg.total)
+                    comp_results.append(
+                        {"type": ct, "total": ctotal, "expr": cexpr, "detail": cdmg.detail}
+                    )
+                    parts_for_apply.append({"amount": ctotal, "type": ct})
+                outcome = combat.apply_damage_components(
+                    target, parts_for_apply, crit=is_crit
+                )
+                rolled_total = sum(cr["total"] for cr in comp_results)
+                # Align each surfaced component with its post-resistance landed amount.
+                for cr, adj in zip(comp_results, outcome.get("components", [])):
+                    cr["applied"] = adj.get("adjusted", cr["total"])
+                # "type" / "total" stay scalar for back-compat with log/UI readers:
+                # report the pre-resistance rolled sum and a '+'-joined type label.
+                type_label = " + ".join(
+                    dict.fromkeys(cr["type"] for cr in comp_results if cr["type"])
+                )
+                result["damage"] = {
+                    "total": rolled_total,
+                    "type": type_label,
+                    "applied_total": outcome.get("total_adjusted", rolled_total),
+                    "components": comp_results,
+                    "detail": "; ".join(cr["detail"] for cr in comp_results),
+                }
+            else:
+                expr = combat.double_dice(damage_dice) if is_crit else damage_dice
+                dmg = dice_mod.roll(expr)
+                outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
+                result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             result["target_state"] = outcome
             kx = _award_kill_xp(c, target)
             if kx:
@@ -3091,7 +3258,10 @@ def attack(
             result["advantage_consumed"] = True
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
         if hit and result["damage"]:
-            dtype = f" {damage_type}" if damage_type else ""
+            # Use the resolved damage type label so a multi-component strike (#210)
+            # narrates "piercing + necrotic", not the empty scalar damage_type.
+            _dt_label = result["damage"].get("type") or damage_type
+            dtype = f" {_dt_label}" if _dt_label else ""
             text = (
                 f"{attacker.name} critically hits {target.name} for "
                 f"{result['damage']['total']}{dtype} damage."
