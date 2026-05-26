@@ -75,7 +75,7 @@ struct RootView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        if let resolved = resolvedRepoPath(persist: true) {
+        if let resolved = resolveAndPersistRepoPath() {
             campaignStore.reload(repoPath: resolved)
         } else {
             campaignStore.reload(repoPath: repoPath)
@@ -249,7 +249,7 @@ struct RootView: View {
     }
 
     private func appStatusPayload(extra: [String: Any] = [:]) -> [String: Any] {
-        let currentRepoPath = resolvedRepoPath(persist: false) ?? repoPath
+        let currentRepoPath = resolvedRepoPath() ?? repoPath
         var payload: [String: Any] = [
             "repoPath": currentRepoPath,
             "stateDir": stateDir.isEmpty ? "default" : stateDir,
@@ -330,7 +330,7 @@ struct RootView: View {
     }
 
     private func providerStatusesPayload() -> [[String: Any]] {
-        let currentRepoPath = resolvedRepoPath(persist: false) ?? repoPath
+        let currentRepoPath = resolvedRepoPath() ?? repoPath
         return processService.providerStatuses(repoPath: currentRepoPath, preferences: providerPreferences).map {
             [
                 "kind": $0.kind.rawValue,
@@ -344,7 +344,7 @@ struct RootView: View {
     }
 
     private func requireRepoPath() throws -> String {
-        if let resolved = resolvedRepoPath(persist: true) {
+        if let resolved = resolveAndPersistRepoPath() {
             return resolved
         }
         throw ProviderError.configuration(
@@ -352,17 +352,19 @@ struct RootView: View {
         )
     }
 
-    private func resolvedRepoPath(persist: Bool) -> String? {
+    private func resolveAndPersistRepoPath() -> String? {
+        guard let resolved = resolvedRepoPath() else { return nil }
+        if resolved != repoPath {
+            repoPath = resolved
+        }
+        return resolved
+    }
+
+    private func resolvedRepoPath() -> String? {
         if let compatible = RepositoryLocator.openWorldsRepoPath(repoPath) {
-            if persist, compatible != repoPath {
-                repoPath = compatible
-            }
             return compatible
         }
         if let discovered = RepositoryLocator.defaultOpenWorldsRepoPath() {
-            if persist, discovered != repoPath {
-                repoPath = discovered
-            }
             return discovered
         }
         return nil

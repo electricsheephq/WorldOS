@@ -14,10 +14,8 @@ enum RepositoryLocator {
     }
 
     static func defaultOpenWorldsRepoPath() -> String? {
-        for candidate in candidateURLs() where supportsOpenWorldsViewer(candidate) {
-            if looksLikeRepo(candidate) {
-                return candidate.standardizedFileURL.path
-            }
+        for candidate in candidateURLs() where looksLikeRepo(candidate) && supportsOpenWorldsViewer(candidate) {
+            return candidate.standardizedFileURL.path
         }
         return nil
     }
@@ -61,7 +59,6 @@ enum RepositoryLocator {
         }
 
         append(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("repos/ClawDnD"))
-        append(URL(fileURLWithPath: "/Volumes/LEXAR/repos/ClawDnD"))
 
         let lexarRepos = URL(fileURLWithPath: "/Volumes/LEXAR/repos", isDirectory: true)
         if let children = try? FileManager.default.contentsOfDirectory(
@@ -93,11 +90,7 @@ enum RepositoryLocator {
     }
 
     static func supportsOpenWorldsViewer(_ url: URL) -> Bool {
-        let serverURL = url.appendingPathComponent("viewer/server.py")
-        guard let source = try? String(contentsOf: serverURL, encoding: .utf8) else {
-            return false
-        }
-        return source.contains("CLAWDND_OPENWORLDS_DIR")
-            && source.contains("/openworlds/config.json")
+        let index = url.appendingPathComponent("viewer/openworlds/index.html").path
+        return FileManager.default.fileExists(atPath: index)
     }
 }
