@@ -1,0 +1,92 @@
+{
+  "id": "mechanism-destroyed",
+  "name": "The Mechanism Destroyed — The Commonwealth Holds",
+  "schema_version": 1,
+  "supersedes": [
+    "something old is cycling back toward activation",
+    "the mechanism is still active",
+    "the clock runs three years closer to completion",
+    "approximately three years from now",
+    "eighty-seven years through a ninety-year cycle",
+    "the mechanism is cyclic",
+    "what is currently rising from the deep rim",
+    "something is rising from the deep rim",
+    "something has begun to rise from it",
+    "the compact is sixty days from a crisis"
+  ],
+  "world_state": {
+    "world_tenor": "hopeful",
+    "facts": {
+      "the_mechanism": "destroyed",
+      "the_compact": "renewed",
+      "the_gray_basin": "stilling",
+      "vethis_bloc": "integrated",
+      "tide_readers": "vindicated"
+    }
+  },
+  "era": "The Forty-Third Year of the Interregnum, in its final days — or the first year of whatever comes after. The mechanism beneath the Deep Rim was found and destroyed before the cycle completed; the Gray Basin is stilling, the luminescence fading for the first time in living memory. The Compact was renewed under the pressure of the crisis and came out harder and more honest than it went in. The Commonwealth did not drown. What it cost to get here is another matter.",
+  "premise_suffix": " In this telling, the mechanism was reached and undone before the second Tide began. The Tide-Readers were vindicated. The Vethis Bloc, forced to put its intelligence on the table by the scale of the crisis, lost its leverage and kept its seat — and Kessal Vor negotiated from a weaker position than he had planned. The Gray Basin's water is slowly becoming ordinary water again, and the deep-divers who know what ordinary water looks like in those depths find the change unsettling in its own right: something vast is no longer there, and the absence has a shape. The Commonwealth survived. Into its first hopeful, diminished morning, the player steps — the crisis resolved, the factions rearranging themselves around a world where the threat is gone and the debts are not.",
+  "standing_threads": [
+    "The Tide-Readers vindicated: Mira Scroll's evidence is now a matter of public record, the Council has formally acknowledged the mechanism's existence and destruction, and the sect that was called fringe scholarship for three generations is the closest thing the Commonwealth has to institutional heroes — which means every city-state is now trying to absorb them, hire them, or quietly take credit for having always supported them.",
+    "Rebuilding the Compact: the crisis forced transparency the Compact had never managed before — Vethis's hidden intelligence, the League's depth-logs, the Warden's private negotiations — and the renewed Compact is a tougher document, with real reporting requirements and a mutual-defense clause that cost Saltmere, Vethis, and the Ironhull League a piece each of what they most wanted to keep.",
+    "The Basin's strange silence: the Deep Rim mechanism is gone, but what it left behind is not nothing — the basin floor is marked, the ruins are different than they were, and at least three dive-crews have reported something that might be a secondary structure, or might be the aftermath of the destruction, or might be neither of those things."
+  ],
+  "history_append": [
+    "The mechanism found: after the COLD LAMP's discovery and the crisis that followed, a joint League-Tide-Reader-Compact expedition reached the Deep Rim's architecture and confirmed both its existence and its purpose; what they found in the central chamber has been classified by the Council and described, in the public record, only as a machine of pre-imperial construction whose function was water management on a continental scale.",
+    "The mechanism destroyed: the decision to destroy rather than study it was contested; the argument for destruction won by two votes in a Council session that lasted fourteen hours and ended with three city representatives not speaking to each other. The mechanism was destroyed. The Basin began to still.",
+    "The Vethis Bloc's accounting: Kessal Vor was forced to disclose his intelligence to the full Council, months after he should have done it voluntarily; the disclosure was not a confession but was received as one, and Vethis's political position in the renewed Compact is weaker than it was, its military credibility intact, its moral credibility reduced."
+  ],
+  "story_seeds_append": [
+    "The classified chamber report: what the expedition found in the Deep Rim's central structure, before they destroyed it, is not in the public record — three surviving expedition members know what they saw, and at least one of them is not sleeping.",
+    "The secondary structure: dive-crews working the newly stilled shallows have logged a change in the basin floor near the old rim edge — something that wasn't there before the mechanism was destroyed, or that the mechanism was obscuring. The League has not yet decided whether to report it.",
+    "Vor's second act: Kessal Vor survived the political accounting and remains on the Vethis council; a person who almost let the world drown for political leverage, and who is now rebuilding his position in a Commonwealth that knows exactly what he did, is either a cautionary figure or a warning that the incentives haven't changed."
+  ],
+  "fates": {
+    "npc-warden-estris": {
+      "status": "alive, exhausted, at the desk",
+      "where": "the Compact Council records room at Ironhull Station",
+      "note": "Spent the crisis as the fulcrum between what the Compact allowed and what survival required; the renewed Compact is partly her drafting. She will not accept a formal title for this. She has already started preparing the next crisis's paperwork."
+    },
+    "npc-captain-drev": {
+      "status": "alive, the Basin known",
+      "where": "the COLD LAMP at anchor, between dives",
+      "note": "What he saw at the Deep Rim six years ago has now been confirmed by two hundred other people and destroyed by a Council vote. He does not feel vindicated. He feels the same way he felt on the dive — that he was looking at something that noticed being looked at — except that thing is now gone, and he does not know if gone is the right word for what happened to it."
+    },
+    "npc-mira-scroll": {
+      "status": "alive, vindicated, and tired of being thanked",
+      "where": "the Tide-Readers' archive at Saltmere",
+      "note": "Spent two years being told her evidence was fringe scholarship; spent the crisis being told her evidence was essential; is now being asked to sit on four advisory councils simultaneously. She has declined all four. She has a great deal more work to do."
+    },
+    "npc-tribune-kessal": {
+      "status": "alive, diminished",
+      "where": "Vethis Isle council chambers",
+      "note": "His intelligence about the Deep Rim, held too long for leverage, nearly cost everyone everything; he knows this, the Council knows this, and the knowledge has not made him different — it has made him more careful, which is not the same thing and everyone can tell."
+    }
+  },
+  "companion_seeds": {
+    "npc-captain-drev": {
+      "arc": {
+        "arc_gates": [
+          {
+            "kind": "loyalty",
+            "threshold": 30,
+            "note": "The Basin confirmed and the mechanism destroyed, Drev allows himself something he withheld for six years: that the dive was real, and that you were the person who made following the evidence possible rather than burying it again. He does not call this trust. He calls it knowing which side of a thing someone stands on. He is on yours."
+          },
+          {
+            "kind": "personal_quest",
+            "threshold": 45,
+            "note": "The Deep Rim expedition — his six-year wound finally opened and closed. Drev asks to be on the team that goes down to the mechanism's chamber. Not for the Council, not for the League. Because he saw it first, alone, and he needs to see it again with someone he trusts, before it stops existing. His personal quest is the expedition itself: confirmation, grief, and whatever comes after finally knowing."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -25,
+          "decision_flag": "left_drev_exposed",
+          "note": "In the ending where the mechanism is destroyed, Drev's break carries the same weight with a different wound: if you spent the crisis gambling other people's lives while claiming to protect what he found, and left him exposed at the moments that counted, he reaches the expedition decision and does not bring you. He files his own report with the Tide-Readers, cuts the formal relationship, and is civil at the dock — the cold civility of a man who has decided you are not someone he will spend his last dive near."
+        }
+      }
+    }
+  },
+  "license": "Original ClawDnD world content. CC-BY-4.0.",
+  "attribution": "Original work. The Tidal Commonwealth is a clean-room original setting — no WotC / Larian / Forgotten Realms / Baldur's Gate IP. CC-BY-4.0 © ClawDnD contributors."
+}

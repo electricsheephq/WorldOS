@@ -188,9 +188,92 @@
           }
         }
       ]
+    },
+    {
+      "id": "event-warden-summons",
+      "trigger": "manual",
+      "anchor_npc_id": "npc-warden-estris",
+      "prompt": "A letter arrives sealed with the Compact Council's administrative mark — not the official seal, which would require a formal summons and a logged record, but the Secretary-Warden's private mark, which means whoever sent it did not want a record of the sending. The note inside is three sentences: the date, a location in Ironhull Station's lower records room, and the words 'I am aware that the Compact has no authority to ask you to attend. I am asking anyway. —E.V.' The location is accessible at the time given, the Compact's official business is scheduled elsewhere, and whatever the Secretary-Warden wants, she has been careful to make it deniable.",
+      "options": [
+        {
+          "label": "Go — if the woman who keeps the Compact alive is asking privately, there's a reason",
+          "tag": "pragmatic / engaged",
+          "outcome": {
+            "flag": "warden_meeting_attended",
+            "faction_id": "fac-compact",
+            "reputation_delta": 5,
+            "schedule_in_days": 5,
+            "schedule_text": "Whatever the Warden shared in the records room is already moving — a courier was sent from Ironhull Station the morning after, and Tribune Kessal Vor's faction has noticed the Warden's schedule has an unlogged gap. Someone is asking questions about who she met with.",
+            "narrate": "She is already at the table when you arrive, two cups of salt-tea and a folder of unmarked documents in front of her. She does not waste time on framing. 'I have sixty days before a vote that will either renew the Compact or end it, a city that is sitting on intelligence it should have shared three months ago, and no legal mechanism to compel them to share it. I am looking for a different kind of mechanism.' She sets the folder on the table between you. 'I have looked at your record. You are the kind of person who understands that some problems require unofficial solutions. I need to know if you are the kind of person who can execute one.'"
+          }
+        },
+        {
+          "label": "Send a reply asking what this is about before committing to anything",
+          "tag": "cautious / professional",
+          "outcome": {
+            "flag": "warden_meeting_deferred",
+            "faction_id": "fac-compact",
+            "reputation_delta": 2,
+            "schedule_in_days": 10,
+            "schedule_text": "A second letter arrives, this one shorter: a time and location, and a single added sentence — 'The situation is not one I can describe in writing. You will understand why when you hear it.' The Secretary-Warden is still asking. She is running out of days.",
+            "narrate": "The reply comes back in a day — delivered by a courier who does not wait for a response and does not identify who sent them. The note is brief. She does not explain herself. She gives you another date and adds: 'The matter involves the Deep Rim. I trust this is sufficient.' You have been warned."
+          }
+        },
+        {
+          "label": "Ignore it — unofficial requests from powerful people come with unofficial obligations",
+          "tag": "independent / wary",
+          "outcome": {
+            "flag": "warden_meeting_declined",
+            "narrate": "The time passes. No follow-up arrives. Three days later you see the Warden at a distance, in the Ironhull Station main hall, speaking to someone whose face you do not recognize — quiet, precise, the same economy of motion she brings to everything. She notices you noticing, and her expression does not change. Whatever she needed, she is finding another way to get it."
+          }
+        }
+      ]
     }
   ],
   "faction_arcs": [
+    {
+      "id": "arc-tide-readers-evidence",
+      "faction_id": "fac-tide-readers",
+      "title": "What the Water Remembers",
+      "requires_joined": false,
+      "note": "The Tide-Readers do not recruit — they accumulate people who have seen what the Basin contains and decided to understand it rather than ignore it. Stage 1 gates on faction reputation and gives the party access to Mira Scroll's current research (the part she will share). Stage 2 (standing gate) requires the party to have contributed something real — a depth-log, a structural observation, confirmation data from the rim — not just listened. The finale is the moment the evidence becomes undeniable, the full mechanism cycle confirmed, and the party is the one person or group Mira trusts to decide what to do with it: publish and force the Council's hand, or bring it to the one faction that can move fast enough to matter.",
+      "stages": [
+        {
+          "id": "stage-tide-readers-access",
+          "title": "An audience with the evidence",
+          "unlock_at": 8,
+          "gauge": "reputation",
+          "note": "Once the Tide-Readers have seen the party take the Basin seriously — not as a salvage opportunity but as a problem — Mira Scroll makes herself available for a real conversation. She shows the party the last three seasons of survey data and the tidal offset graph. She does not ask for anything. She is watching to see what they do with the information. Use advance_faction_arc to mark this stage resolved once the party has responded to the data with something that demonstrates they understand what it means.",
+          "location_id": "loc-gray-basin-shallows"
+        },
+        {
+          "id": "stage-tide-readers-contribution",
+          "title": "Evidence from below",
+          "unlock_at": 15,
+          "gauge": "standing",
+          "note": "Standing with the Tide-Readers is earned by contributing to the evidence base — a dive that returns usable depth-data, confirmation of the architectural structures, measurement of the luminescence's current phase. Use grant_standing as the party contributes real observations. When standing reaches 15, Mira Scroll makes the private comparison explicit: the pre-Tide station records and the current rim readings, side by side. The six-minute offset. The cycle calculation. She says: 'Three years. Possibly less. I have been saying this for six months and no one has scheduled a meeting.'",
+          "location_id": "loc-the-deep-rim"
+        },
+        {
+          "id": "stage-tide-readers-reckoning",
+          "title": "The reckoning",
+          "unlock_at": 30,
+          "gauge": "standing",
+          "note": "The world-changing decision: with the cycle confirmed and the Council still stalling, Mira Scroll's complete research is ready — the mechanism, its location, its activation timeline, and a set of options for what can be done about it. She has decided to trust the party with the choice of who this goes to. The finale forces the party to choose a path — the Council (slow, formal, potentially captured by the Bloc), the League (fast, pragmatic, potentially mercenary), or a direct approach to the Deep Rim itself. Call advance_faction_arc(stage_status='resolved', rank=5) once the choice is made.",
+          "location_id": "loc-ironhull-station",
+          "finale_effect": {
+            "flag": "tide_readers_evidence_released",
+            "faction_id": "fac-tide-readers",
+            "reputation_delta": 20,
+            "controller_id": "fac-tide-readers",
+            "location_id": "loc-the-deep-rim",
+            "narrate": "The evidence is out: mechanism, location, cycle, timeline — in Mira Scroll's careful, specific, unanswerable language, addressed to whoever you decided could be trusted with it. What happens next depends on whose hands it landed in and how much time the cycle has left. The Tide-Readers have done their work. The work is not over.",
+            "schedule_in_days": 7,
+            "schedule_text": "Mira Scroll's research has reached its recipient. The response is not what anyone expected, and the question is now whether the party is ahead of the Vethis Bloc's awareness of what has been released — or behind it."
+          }
+        }
+      ]
+    },
     {
       "id": "arc-salvagers-rise",
       "faction_id": "fac-salvagers-league",
