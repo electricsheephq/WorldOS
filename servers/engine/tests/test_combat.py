@@ -2029,3 +2029,93 @@ def test_crit_source_attributes_the_right_reason():
     assert combat.crit_source(False, 7, True, unconscious) == "condition_unconscious"
     # a roll-crit takes precedence in naming even if the target also happens to be helpless
     assert combat.crit_source(True, 20, True, paralyzed) == "nat_20"
+
+
+# --- #218: monster defensive reactions (Parry) ---
+def test_bestiary_parry_bonus_parses_the_ac_reaction():
+    import bestiary
+    parry_sb = {"actions": [
+        {"name": "Multiattack", "desc": "two attacks", "action_type": "ACTION"},
+        {"name": "Parry", "desc": "The captain adds 2 to its AC against one melee attack that would hit it.", "action_type": "REACTION"},
+    ]}
+    assert bestiary.parry_bonus(parry_sb) == 2
+    # a higher-bonus variant
+    assert bestiary.parry_bonus({"actions": [{"name": "Parry", "desc": "adds 4 to its AC against that melee attack", "action_type": "REACTION"}]}) == 4
+    # no reaction / not a parry / empty -> 0
+    assert bestiary.parry_bonus({"actions": [{"name": "Bite", "desc": "1d6 piercing", "action_type": "ACTION"}]}) == 0
+    assert bestiary.parry_bonus({"actions": [{"name": "Shield", "desc": "adds 5 to its AC against a spell", "action_type": "REACTION"}]}) == 0  # not melee
+    assert bestiary.parry_bonus({}) == 0
+    assert bestiary.parry_bonus(None) == 0
+
+
+def _attack_roll_stub(d20_total: int, d20_natural: int = 14):
+    """A dice_mod.roll stub: the 1d20 attack returns a controlled (total, natural); any other
+    roll (damage) is small + deterministic so the attack resolves."""
+    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+        if expression.startswith("1d20"):
+            return _ds(d20_total, d20_natural)
+        return DiceRoll(expression=expression, total=4, rolls=[3], modifier=1, detail=f"{expression}[3] = 4")
+    return _roll
+
+
+def test_parry_flips_marginal_hit_and_is_spent_once_per_round(tmp_path, monkeypatch):
+    """#218: a Bandit Captain (AC 15, Parry +2) spends its reaction to turn a MARGINAL hit
+    (16, between AC 15 and AC+2=17) into a miss — but only once per round. The two attackers
+    act in the SAME round (a single creature can't attack twice without Extra Attack)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    cid = server.create_campaign("Parry")["id"]
+    h1 = server.create_character(cid, "Hero One", kind="player", max_hp=30, armor_class=14)["id"]
+    h2 = server.create_character(cid, "Hero Two", kind="player", max_hp=30, armor_class=14)["id"]
+    cap = server.spawn_monster(cid, "Bandit Captain")["spawned"][0]["id"]
+    assert server.get_character(cid, cap)["armor_class"] == 15
+    server.start_combat(cid, [h1, h2, cap])
+
+    monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(16))
+    # h1's marginal hit 16 -> would hit (>=15); Parry (+2 -> 17) flips it to a miss + spends the reaction
+    res = server.attack(cid, h1, cap, attack_bonus=0, damage_dice="1d6+1", damage_type="slashing")
+    assert res["hit"] is False, "Parry should have turned the marginal hit aside"
+    assert res["parry"] is not None and res["parry"]["ac_bonus"] == 2 and res["parry"]["effective_ac"] == 17
+    # h2's marginal hit the SAME round -> the captain's reaction is spent, so it lands
+    res2 = server.attack(cid, h2, cap, attack_bonus=0, damage_dice="1d6+1", damage_type="slashing")
+    assert res2["hit"] is True and res2["parry"] is None, "only one Parry per round"
+
+
+def test_parry_does_not_fire_when_it_cannot_flip_or_on_a_crit_or_ranged(tmp_path, monkeypatch):
+    """#218 guards: Parry never wastes the reaction on a blow that lands anyway, never stops a
+    crit (a crit always hits), and ranged attacks can't be parried. Distinct attackers avoid
+    the one-attack-per-turn economy limit."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    # (a) a clean hit (18 >= AC+2=17) lands + does NOT consume the reaction; a later marginal
+    #     hit by a DIFFERENT attacker the same round IS parried (the reaction was still free).
+    cid = server.create_campaign("ParryNoWaste")["id"]
+    h1 = server.create_character(cid, "Hero One", kind="player", max_hp=30, armor_class=14)["id"]
+    h2 = server.create_character(cid, "Hero Two", kind="player", max_hp=30, armor_class=14)["id"]
+    cap = server.spawn_monster(cid, "Bandit Captain")["spawned"][0]["id"]  # AC 15, parry 2
+    server.start_combat(cid, [h1, h2, cap])
+    monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(18))
+    res = server.attack(cid, h1, cap, attack_bonus=0, damage_dice="1d6+1", damage_type="slashing")
+    assert res["hit"] is True and res["parry"] is None, "Parry must not be wasted on a blow it can't stop"
+    monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(16))
+    res_b = server.attack(cid, h2, cap, attack_bonus=0, damage_dice="1d6+1", damage_type="slashing")
+    assert res_b["hit"] is False and res_b["parry"] is not None, "reaction was still free -> parries"
+
+    # (b) a nat-20 crit with a low total (16 < 17) is NOT parried — a crit always hits.
+    cid2 = server.create_campaign("ParryCrit")["id"]
+    hc = server.create_character(cid2, "Hero", kind="player", max_hp=30, armor_class=14)["id"]
+    cap2 = server.spawn_monster(cid2, "Bandit Captain")["spawned"][0]["id"]
+    server.start_combat(cid2, [hc, cap2])
+    monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(16, d20_natural=20))
+    rc = server.attack(cid2, hc, cap2, attack_bonus=0, damage_dice="1d6+1", damage_type="slashing")
+    assert rc["hit"] is True and rc["crit"] is True and rc["parry"] is None
+
+    # (c) a ranged marginal hit (16) is NOT parried (Parry is melee-only).
+    cid3 = server.create_campaign("ParryRanged")["id"]
+    hr = server.create_character(cid3, "Archer", kind="player", max_hp=30, armor_class=14)["id"]
+    cap3 = server.spawn_monster(cid3, "Bandit Captain")["spawned"][0]["id"]
+    server.start_combat(cid3, [hr, cap3])
+    monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(16))
+    rr = server.attack(cid3, hr, cap3, attack_bonus=0, damage_dice="1d6+1", damage_type="piercing", is_ranged=True)
+    assert rr["hit"] is True and rr["parry"] is None

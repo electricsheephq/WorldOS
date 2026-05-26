@@ -1634,6 +1634,7 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
                 damage_immunities=sb["damage_immunities"],
                 damage_vulnerabilities=sb["damage_vulnerabilities"],
                 condition_immunities=sb["condition_immunities"],
+                parry=bestiary.parry_bonus(sb),
                 notes=summary,
                 xp_value=sb["xp"],
             )
@@ -3143,6 +3144,37 @@ def attack(
         dis = disadvantage or cdis
         atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
         hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
+        # PARRY (#218): a defender with an available defensive reaction (+N AC vs one melee
+        # attack it can see) turns the blow aside — but ONLY when doing so FLIPS this hit to a
+        # miss. The engine never wastes the reaction on a crit it can't stop or a blow that
+        # lands anyway; this is the "enforce in the engine, don't rely on the DM" discipline of
+        # #209/#213, closing the recurring "monsters never use their reaction" sprint defect. A
+        # nat-20 crit can't be parried (a crit always hits); ranged attacks and an incapacitated
+        # or blinded defender can't react. Only meaningful in active combat (reaction economy).
+        parry_info = None
+        if (
+            hit and not atk.crit and not is_ranged and target.parry > 0
+            and c.combat.active
+            and not combat.is_incapacitated(target)
+            and Condition.BLINDED not in target.conditions
+            and atk.total < target.armor_class + target.parry
+        ):
+            target_cb = next(
+                (cb for cb in c.combat.order if cb.character_id == target_id), None
+            )
+            if target_cb is not None and not target_cb.reaction_used:
+                hit = False
+                target_cb.reaction_used = True
+                eff_ac = target.armor_class + target.parry
+                parry_info = {
+                    "defender": target.name,
+                    "ac_bonus": target.parry,
+                    "effective_ac": eff_ac,
+                    "note": (
+                        f"{target.name} spends its reaction to Parry — AC rises to {eff_ac}, "
+                        f"and the blow ({atk.total}) turns aside"
+                    ),
+                }
         # SRD: a melee hit against an unconscious/paralyzed creature auto-crits.
         is_crit = atk.crit or (hit and combat.melee_auto_crit(target, is_ranged))
         # WHY it critted, so the DM narrates the right reason (#219): a nat 20, an expanded
@@ -3156,6 +3188,7 @@ def attack(
             "disadvantage": dis,
             "crit": is_crit,
             "crit_source": crit_why,
+            "parry": parry_info,
             "hit": hit,
             "target_ac": target.armor_class,
             "damage": None,

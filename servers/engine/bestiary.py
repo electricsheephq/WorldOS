@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -325,6 +326,26 @@ def stat_block(name: str) -> Optional[dict]:
         "actions": _actions_by_source_parent().get((entry["src"], row.get("pk")), []),
         "content_origin": "srd",
     }
+
+
+_PARRY_AC_RE = re.compile(r"adds\s+(\d+)\s+to\s+its\s+ac", re.IGNORECASE)
+
+
+def parry_bonus(sb: Optional[dict]) -> int:
+    """The AC bonus a creature can add via a defensive REACTION against a melee hit it can
+    see — the Parry reaction (Bandit Captain +2, fallen consular +4). Scans the stat block's
+    REACTION-type actions for the 'adds N to its AC … melee' pattern and returns N; 0 if the
+    creature has no such reaction. Pure; used at spawn to set Character.parry (#218)."""
+    if not sb:
+        return 0
+    for a in sb.get("actions", []) or []:
+        if str(a.get("action_type", "")).upper() != "REACTION":
+            continue
+        desc = str(a.get("desc", ""))
+        m = _PARRY_AC_RE.search(desc)
+        if m and "melee" in desc.lower():
+            return int(m.group(1))
+    return 0
 
 
 def player_bestiary_preview(name: str) -> Optional[dict]:
