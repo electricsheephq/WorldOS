@@ -202,6 +202,50 @@ def test_gate_xp_awarded_satisfied_by_end_combat(tmp_path):
     assert "[PASS] xp_awarded" in r.stdout  # end_combat counts, not just an explicit award_xp
 
 
+def test_gate_combat_resolved_requires_attack_or_cast_not_spawn_alone(tmp_path):
+    # combat_resolved tightening: spawn_monster alone (monsters appeared, but no dice flew)
+    # must NOT satisfy the check — a fight that started but resolved via narration with zero
+    # attack/cast_spell/saving_throw is a structurally broken run.
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["start_combat", "spawn_monster"],  # NO attack/cast_spell/saving_throw
+        chat=[{"role": "player", "text": "[do] I charge."}, {"role": "dm", "text": "The bandits scatter."}],
+        moves=[{"role": "player", "kind": "do", "text": "charge the bandits"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 1, r.stdout
+    assert "[FAIL] combat_resolved" in r.stdout
+
+
+def test_gate_combat_resolved_passes_on_cast_spell_only(tmp_path):
+    # A caster-only fight (e.g. Guiding Bolt + Sacred Flame via cast_spell/saving_throw,
+    # zero weapon attacks) must be GREEN — the rubric cannot penalise a legitimate caster.
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["start_combat", "cast_spell", "saving_throw", "end_combat"],
+        chat=[{"role": "player", "text": "[cast] Guiding Bolt at the captain."},
+              {"role": "dm", "text": "Divine light sears; the captain staggers."}],
+        moves=[{"role": "player", "kind": "cast", "text": "Guiding Bolt", "name": "Guiding Bolt"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] combat_resolved" in r.stdout
+
+
+def test_gate_combat_resolved_passes_on_attack(tmp_path):
+    # Baseline: a fight resolved via attack() stays GREEN (regression guard).
+    r = _run_gate(
+        tmp_path,
+        dm_tools=["start_combat", "attack", "end_combat"],
+        chat=[{"role": "player", "text": "[attack] strike the bandit."},
+              {"role": "dm", "text": "Steel meets flesh; the bandit crumples."}],
+        moves=[{"role": "player", "kind": "attack", "text": "strike the bandit"}],
+        state=PLAYER_IN_PARTY,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[PASS] combat_resolved" in r.stdout
+
+
 def test_gate_green_skill_check_counts_as_dice_used(tmp_path):
     # skill_check (the generic ability/skill d20) must satisfy dice_used the same way
     # social_check does — a camp/exploration beat that rolls a Perception or Investigation

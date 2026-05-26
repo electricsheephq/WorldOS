@@ -19,6 +19,7 @@ Exit 0 = GREEN (warnings allowed), 1 = RED (a fatal gate failed), 2 = usage.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -266,10 +267,19 @@ def main() -> int:
         f"roll={tools.get('roll', 0)} attack={tools.get('attack', 0)} save={tools.get('saving_throw', 0)} "
         f"social={tools.get('social_check', 0)} skill_check={tools.get('skill_check', 0)}")
 
-    # 5) if combat started, attacks/monsters actually happened
+    # 5) if combat started, real combat mechanics fired — attack, cast_spell, or saving_throw.
+    # Tightened from "attack + spawn_monster > 0": spawn_monster alone means monsters appeared
+    # but no dice were rolled to resolve the fight (a caster-only session legitimately has
+    # attack=0, resolving via cast_spell/saving_throw). The new gate requires at least ONE of
+    # the resolution mechanics; spawn_monster alone no longer satisfies it. FATAL.
     if tools.get("start_combat", 0) > 0:
-        chk("combat_resolved", tools.get("attack", 0) + tools.get("spawn_monster", 0) > 0,
-            f"start_combat={tools['start_combat']} attack={tools.get('attack', 0)} spawn={tools.get('spawn_monster', 0)}")
+        combat_dice = (tools.get("attack", 0)
+                       + tools.get("cast_spell", 0)
+                       + tools.get("saving_throw", 0))
+        chk("combat_resolved", combat_dice > 0,
+            f"start_combat={tools['start_combat']} attack={tools.get('attack', 0)} "
+            f"cast_spell={tools.get('cast_spell', 0)} saving_throw={tools.get('saving_throw', 0)} "
+            f"(spawn_monster={tools.get('spawn_monster', 0)} alone does not satisfy this check)")
         # M6/M7) a combat that never ENDS, or never grants XP, is a smell — but a run cut
         # off "out of time" mid-fight legitimately may not end_combat/award_xp, so WARN.
         chk("combat_ended", tools.get("end_combat", 0) > 0,
@@ -338,7 +348,11 @@ def main() -> int:
         session_beats = len(mv)
     else:
         session_beats = dm_text
-    if session_beats >= MIN_BEATS:
+    # The combat-sprint lane (run_combat_sprint.sh) is a single pre-seeded FIGHT in one place — it
+    # legitimately never advances days or travels, so it sets CLAWDND_GATE_COMBAT_SPRINT=1 to skip
+    # the world-progression floor (which would else false-RED a 40+-beat fight on a 1-location run).
+    # Story / duo runs (no env var) keep the floor — it's the honest anti-frozen-scene gate.
+    if session_beats >= MIN_BEATS and not os.environ.get("CLAWDND_GATE_COMBAT_SPRINT"):
         day = state.get("day") or 1
         tod = (state.get("time_of_day") or "").strip().lower()
         # Campaigns start at day 1, "morning"; a full session still parked there never aged.
