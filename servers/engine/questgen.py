@@ -39,12 +39,21 @@ _MEETING_STAKES = [
     "you both reach for the same thing in the same breath",
     "a scuffle neither of you started puts you on the same side of it",
 ]
-_SHAPES = ["fetch_plus", "investigation", "hunt", "rescue", "heist", "escort", "faction_war", "dilemma"]
+_SHAPES = [
+    "fetch_plus", "investigation", "hunt", "rescue", "heist", "escort", "faction_war", "dilemma",
+    # gut-punch shapes — moral weight, tragedy, Baldur's-Gate-caliber stakes
+    "false_accusation", "sacrifice_choice", "revelation", "tragedy_unfolding",
+]
 # A shape's fitting NPC motivation (the "why"), from Doran/Parberry's 9 — used as a label only.
 _MOTIVATION_BY_SHAPE = {
     "fetch_plus": "equipment", "investigation": "knowledge", "hunt": "protection",
     "rescue": "serenity", "heist": "wealth", "escort": "protection",
     "faction_war": "conquest", "dilemma": "reputation",
+    # gut-punch shapes
+    "false_accusation": "reputation",   # clearing (or condemning) a name; truth is political
+    "sacrifice_choice": "serenity",     # saving one thing at the cost of another; no clean win
+    "revelation": "knowledge",          # truth that recontextualises everything already done
+    "tragedy_unfolding": "comfort",     # softening / witnessing a doom already in motion
 }
 # Light keyword heuristics → a dramatic shape (else a seeded pick). Bounded, not a grammar.
 _SHAPE_HINTS = [
@@ -54,6 +63,11 @@ _SHAPE_HINTS = [
     ("faction_war", ("faction", "rule", "throne", "archduke", "regime", "resistance", "patrol", "occupation", "collabor")),
     ("hunt", ("hunt", "kill", "beast", "broke", "broken", "warband", "crusade", "jailers")),
     ("escort", ("escort", "guard", "convoy", "refugee", "smuggling out", "get them out")),
+    # gut-punch hints (checked after task-flavored shapes so they win only when lore signals them)
+    ("false_accusation", ("blamed", "accused", "framed", "falsely", "scapegoat", "exile", "innocent", "wrongly", "hanged")),
+    ("sacrifice_choice", ("choose", "choice", "cost", "price", "either", "trade", "lose", "give up", "cannot save both")),
+    ("revelation", ("truth", "revealed", "betrayal", "hidden", "identity", "always been", "all along", "lie at", "lied")),
+    ("tragedy_unfolding", ("doom", "already", "dying", "falling", "cannot stop", "too late", "last", "inevit", "witness")),
 ]
 
 _TOKEN = re.compile(r"[a-z][a-z'\-]{3,}")  # words of length >= 4, lowercased
