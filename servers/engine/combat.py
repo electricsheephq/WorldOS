@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from models import ActiveEffect, Character, Condition, DeathSaves, Zone
+from models import Ability, ActiveEffect, Character, Condition, DeathSaves, Zone
 
 _DICE = re.compile(r"(\d*)d(\d+)", re.IGNORECASE)
 
@@ -496,3 +496,39 @@ def expire_concentration_effects(ch: Character) -> list[str]:
     if expired:
         ch.active_effects = [eff for eff in ch.active_effects if not eff.concentration]
     return expired
+
+
+# --- Grapple / Shove (SRD 5.2 / 2024 Unarmed Strike options) ---------------
+# In 2024 D&D, Grapple and Shove are options of the Unarmed Strike attack:
+# the target makes a STR or DEX saving throw (their choice / attacker's choice for
+# engine default) against DC = 8 + attacker's Strength modifier + proficiency bonus.
+# Source: ClassFeature srd-2024_monk_martial-arts ("the Grapple or Shove option of
+# your Unarmed Strike … save DC"); ConditionDescription srd-2024_grappled;
+# CreatureAction escape DC pattern ("escape DC = <same formula>").
+
+
+def grapple_save_dc(attacker: Character) -> int:
+    """SRD 2024 Grapple/Shove save DC: 8 + attacker's STR modifier + proficiency bonus.
+    Pure; does not mutate anything."""
+    return 8 + attacker.ability_modifier(Ability.STR) + attacker.proficiency_bonus
+
+
+def roll_grapple_save(target: Character, save_ability: Ability) -> tuple[int, int, int]:
+    """Return (bonus, natural, total) for the target's STR or DEX saving throw —
+    caller passes the die roll object and resolves hit/miss. Pure helper: no state mutation.
+    This is factored out so tests can inspect the bonus without needing real dice.
+
+    Enforces SRD auto-fail: a paralyzed/petrified/stunned/unconscious target
+    automatically fails a STR or DEX save (returned as (bonus, -1, -999) signal —
+    the server layer reads total < dc). Returns the bonus only; the actual roll is the
+    server's responsibility (sole-writer)."""
+    bonus = target.saving_throw_bonus(save_ability)
+    return bonus
+
+
+def best_save_ability(target: Character) -> Ability:
+    """Return whichever of STR/DEX gives the target the higher saving throw bonus.
+    Ties go to STR (a deliberate default; callers may override with save_ability)."""
+    str_bonus = target.saving_throw_bonus(Ability.STR)
+    dex_bonus = target.saving_throw_bonus(Ability.DEX)
+    return Ability.DEX if dex_bonus > str_bonus else Ability.STR
