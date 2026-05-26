@@ -416,6 +416,250 @@ def test_self_buff_attack_spell_not_deferred_unchanged():
     assert [e["name"] for e in _effects(cid, w)] == ["Mirror Image"]  # applied at cast, as before
 
 
+# --- End-of-turn REPEAT SAVES (#209): Hold Person → paralyzed self-enforces ----------
+# A save-ends spell ("the target repeats the save at the end of each of its turns, ending
+# the spell on a success") must get that recurring save automatically in next_turn, or its
+# victim stays locked forever when the DM forgets to prompt it. The engine rolls the save
+# for the OUTGOING combatant, frees them on a success (clearing the condition + the caster's
+# concentration), and surfaces the result so the DM narrates it.
+
+import models  # noqa: E402  (RepeatSave / ActiveEffect direct construction)
+
+
+def _hold_caster(cid, name="Pious", wis=16):
+    """A cleric who knows + has Hold Person prepared, with a 2nd-level slot to cast it."""
+    c = _cleric(cid, name, wisdom=wis)
+    server.level_up(cid, c, "Cleric")
+    server.level_up(cid, c, "Cleric")  # level 3 -> a 2nd-level slot
+    server.learn_spells(cid, c, ["Hold Person"])
+    server.prepare_spells(cid, c, ["Hold Person"])
+    return c
+
+
+def _humanoid(cid, name="Cultist", wis=8, hp=30):
+    return server.create_character(
+        cid, name, kind="monster", max_hp=hp, armor_class=12,
+        abilities={"wisdom": wis},
+    )["id"]
+
+
+def _lock_foe_with_hold_person(cid, caster, foe, monkeypatch):
+    """Set up combat, cast Hold Person on the caster's turn, apply the self-enforcing
+    paralyzed marker to the foe, and advance until the FOE is the current combatant (so the
+    next `next_turn` rolls the foe's end-of-turn repeat save). Returns the spell save DC.
+    Leaves a neutral d20 stub patched — each test re-patches the save roll it wants."""
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(10))  # ties -> input order [caster, foe]
+    server.start_combat(cid, [caster, foe])
+    _advance_to(cid, caster)  # caster acts first -> the cast is an on-turn action
+    out = server.cast_spell(cid, caster, "Hold Person", target_id=foe)
+    server.add_condition(cid, foe, "paralyzed", **{
+        k: out["condition_rider"][k]
+        for k in ("repeat_save_ability", "repeat_save_dc", "source_id", "spell_name")
+    })
+    _advance_to(cid, foe)  # foe is paralyzed (can't act) but its turn still ends on next_turn
+    return out["spell_save_dc"]
+
+
+def test_cast_hold_person_surfaces_condition_rider_hint():
+    """cast(Hold Person at a foe) is un-automated but surfaces a `condition_rider` hint
+    telling the DM the exact self-enforcing add_condition call (WIS save vs the spell DC)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid, wis=16)
+    foe = _humanoid(cid)
+    out = server.cast_spell(cid, caster, "Hold Person", target_id=foe)
+    assert out["automated"] is False and out["concentration"] == "Hold Person"
+    rider = out["condition_rider"]
+    # Ability is normalized to the canonical 3-letter code (Ability.WIS.value), not the SRD
+    # full word — so it's directly usable as add_condition's repeat_save_ability.
+    assert rider["condition"] == "paralyzed" and rider["repeat_save_ability"] == "wis"
+    assert rider["repeat_save_dc"] == out["spell_save_dc"]  # the caster's spell save DC
+    assert rider["source_id"] == caster and rider["spell_name"] == "Hold Person"
+    assert rider["target_id"] == foe
+
+
+def test_add_condition_with_repeat_save_writes_self_enforcing_marker():
+    """add_condition with the repeat-save params writes a TARGET-side ActiveEffect carrying
+    the recurring save + the imposed condition (the general save-ends wiring, #209)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid)
+    server.add_condition(cid, foe, "paralyzed", repeat_save_ability="wis",
+                         repeat_save_dc=14, source_id=caster, spell_name="Hold Person")
+    eff = _effects(cid, foe)
+    assert [e["name"] for e in eff] == ["Hold Person"]
+    rs = eff[0]["repeat_save"]
+    assert rs["ability"] == "wis" and rs["dc"] == 14 and rs["ends_effect"] is True
+    assert eff[0]["imposes_condition"] == "paralyzed" and eff[0]["source_id"] == caster
+    assert eff[0]["concentration"] is False  # the marker is NOT the caster's twin
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+
+
+def test_paralyzed_foe_gets_end_of_turn_wis_save_and_a_failure_keeps_the_lock(monkeypatch):
+    """THE BUG (#209): a foe paralyzed by Hold Person gets a WIS save when ITS turn ends in
+    next_turn — and a FAILED save keeps the paralysis + the effect (no indefinite lock-free)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)  # WIS mod -1
+    dc = _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(3))  # natural 3 -1 = 2, well under DC -> FAIL
+    v = server.next_turn(cid)  # foe is the OUTGOING combatant -> rolls its end-of-turn save
+    rs = v["repeat_saves"]
+    assert len(rs) == 1 and rs[0]["character_id"] == foe and rs[0]["name"] == "Hold Person"
+    assert rs[0]["ability"] == "wis" and rs[0]["dc"] == dc
+    assert rs[0]["success"] is False and rs[0]["ended"] is False
+    # The lock holds: effect + paralyzed condition both persist; caster still concentrating.
+    assert [e["name"] for e in _effects(cid, foe)] == ["Hold Person"]
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    assert server.get_character(cid, caster)["concentration"] == "Hold Person"
+
+
+def test_successful_end_of_turn_save_frees_target_and_ends_concentration(monkeypatch):
+    """A SUCCESSFUL end-of-turn save removes the effect AND the paralyzed condition, and ends
+    the CASTER's concentration twin (one source of truth) — the target is genuinely freed."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    assert server.get_character(cid, caster)["concentration"] == "Hold Person"
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(20))  # natural 20 -> clears any DC
+    v = server.next_turn(cid)
+    rs = v["repeat_saves"][0]
+    assert rs["success"] is True and rs["ended"] is True
+    assert rs["cleared_condition"] == "paralyzed" and rs["concentration_ended_for"] == caster
+    # Freed: no effect, no paralyzed condition, and the caster's concentration ended.
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+    assert server.get_character(cid, caster)["concentration"] is None
+
+
+def test_non_repeat_save_effect_is_untouched_by_next_turn(monkeypatch):
+    """REGRESSION: an ordinary timed effect with NO repeat_save (Bless) is never given an
+    end-of-turn save — next_turn surfaces no `repeat_saves` and leaves the effect alone."""
+    cid = server.create_campaign("S")["id"]
+    caster = _cleric(cid)
+    foe = _humanoid(cid)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(1))  # ties -> input order; would FAIL a save
+    server.start_combat(cid, [caster, foe])
+    _advance_to(cid, caster)  # reach the caster's turn so the cast is an on-turn action
+    server.cast_spell(cid, caster, "Bless")  # self-buff, concentration, no repeat_save
+    v = server.next_turn(cid)  # caster is outgoing -> Bless must NOT trigger a save
+    assert "repeat_saves" not in v
+    assert [e["name"] for e in _effects(cid, caster)] == ["Bless"]  # untouched
+    assert server.get_character(cid, caster)["concentration"] == "Bless"
+
+
+def test_next_turn_with_no_repeat_save_effects_is_byte_identical(monkeypatch):
+    """ADDITIVE: with no repeat_save anywhere, next_turn behaves exactly as today — no
+    `repeat_saves` key at all (the new path is fully inert)."""
+    cid = server.create_campaign("S")["id"]
+    a = _cleric(cid, "A")
+    foe = _humanoid(cid)
+    server.start_combat(cid, [a, foe])
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(10))
+    v = _advance_turn(cid)
+    assert "repeat_saves" not in v  # inert: no save-ends effect in play
+
+
+def test_repeat_save_only_for_the_outgoing_combatant(monkeypatch):
+    """The save fires for the combatant whose turn is ENDING — not for a still-locked foe
+    who isn't the outgoing one. A paralyzed foe gets its save only when ITS OWN turn ends."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(20))  # ties -> input order [caster, foe]
+    server.start_combat(cid, [caster, foe])
+    _advance_to(cid, caster)  # caster acts first
+    out = server.cast_spell(cid, caster, "Hold Person", target_id=foe)
+    server.add_condition(cid, foe, "paralyzed", **{
+        k: out["condition_rider"][k]
+        for k in ("repeat_save_ability", "repeat_save_dc", "source_id", "spell_name")
+    })
+    # Advancing past the CASTER (whose turn just ended) must NOT roll the FOE's save —
+    # the foe carries the marker, not the caster (the save is the OUTGOING combatant's).
+    v = server.next_turn(cid)  # caster outgoing -> no repeat_saves (caster has no marker)
+    assert "repeat_saves" not in v
+    assert [e["name"] for e in _effects(cid, foe)] == ["Hold Person"]  # foe still locked
+
+
+def test_paralyzed_does_not_autofail_the_wis_repeat_save(monkeypatch):
+    """SRD nuance: paralysis auto-fails STR/DEX saves, but Hold Person's repeat save is WIS —
+    so it rolls normally. A high WIS roll frees the target despite being paralyzed."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(20))
+    rs = server.next_turn(cid)["repeat_saves"][0]
+    assert rs["ability"] == "wis" and rs["success"] is True and "reason" not in rs  # no auto-fail
+
+
+def test_caster_losing_concentration_frees_the_paralyzed_target(monkeypatch):
+    """INVERSE direction (#209): if the CASTER's concentration ends (here: incapacitated),
+    Hold Person is over — so next_turn frees the target (drops the marker + the paralyzed
+    condition) instead of leaving it locked indefinitely. One source of truth, both ways."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    # Break the caster's concentration directly (stun it) — its twin effect drops immediately,
+    # but the TARGET's marker + paralyzed persist until the reconciliation pass in next_turn.
+    server.add_condition(cid, caster, "stunned")
+    assert server.get_character(cid, caster)["concentration"] is None  # concentration broke
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]  # not yet reconciled
+    # A FAILED foe save would normally KEEP the lock — but the caster no longer concentrates,
+    # so the reconciliation frees the foe regardless of the (irrelevant) save roll.
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(1))
+    v = server.next_turn(cid)
+    assert {"character_id": foe, "name": "Hold Person"} in v["expired_effects"]
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]  # freed via the link
+
+
+def test_non_concentration_save_ends_source_is_not_concentration_swept(monkeypatch):
+    """A save-ends marker from a NON-concentration source (no concentration twin) self-enforces
+    its end-of-turn save but is NEVER swept by the concentration reconciliation — a FAILED save
+    keeps it (it only ends on a successful save), regardless of any caster's concentration."""
+    cid = server.create_campaign("S")["id"]
+    caster = _cleric(cid)
+    foe = _humanoid(cid, wis=8)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(10))
+    server.start_combat(cid, [caster, foe])
+    # A non-concentration source (Bless concentrates, but we don't pass it as spell_name) — use
+    # a generic save-ends marker with no spell linkage: source_id is dropped (not concentration).
+    server.add_condition(cid, foe, "restrained", repeat_save_ability="str", repeat_save_dc=14,
+                         source_id=caster)  # no spell_name -> not a concentration link
+    eff = _effects(cid, foe)
+    assert eff[0]["source_id"] == ""  # concentration link NOT kept (no concentrating spell)
+    assert eff[0]["repeat_save"]["ability"] == "str"
+    _advance_to(cid, foe)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(1))  # FAIL the end-of-turn save
+    v = server.next_turn(cid)
+    assert v["repeat_saves"][0]["success"] is False and v["repeat_saves"][0]["ended"] is False
+    assert [e["name"] for e in _effects(cid, foe)] == ["restrained (save ends)"]  # still held
+    assert "restrained" in server.get_character(cid, foe)["conditions"]
+
+
+def test_repeat_save_marker_roundtrips_old_snapshot():
+    """ADDITIVE: a snapshot with NO repeat_save/imposes_condition keys loads unchanged (the
+    fields default to None), so existing campaigns deserialize exactly as before."""
+    snap = {"title": "T", "characters": {"c1": {
+        "name": "X",
+        "active_effects": [{"name": "Bless", "scale": "rounds", "rounds_remaining": 5}],
+    }}}
+    c = models.Campaign.model_validate(snap)
+    eff = c.characters["c1"].active_effects[0]
+    assert eff.repeat_save is None and eff.imposes_condition is None
+    # And a marker round-trips through JSON intact.
+    ae = models.ActiveEffect(
+        name="Hold Person", imposes_condition=models.Condition.PARALYZED,
+        repeat_save=models.RepeatSave(ability=models.Ability.WIS, dc=15),
+    )
+    back = models.ActiveEffect.model_validate(json.loads(ae.model_dump_json()))
+    assert back.repeat_save.ability == models.Ability.WIS and back.repeat_save.dc == 15
+    assert back.imposes_condition == models.Condition.PARALYZED
+
+
 # --- decrement + auto-expire in combat ---------------------------------------
 def test_next_turn_decrements_and_expires_bless():
     cid = server.create_campaign("S")["id"]
