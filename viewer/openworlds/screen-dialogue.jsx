@@ -169,7 +169,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
             {/* Actor portrait (left) */}
             <div style={{ padding: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRight: "1px solid rgba(140,100,60,0.35)" }}>
-              <Placeholder label="portrait" w={120} h={150} framed />
+              <Img scope={surface.event?.anchor_npc_id ? "portrait-" + surface.event.anchor_npc_id : ""} label={actorName} w={120} h={150} framed />
               <div style={{ marginTop: 8, fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)", textAlign: "center" }}>
                 {actorName}
               </div>
@@ -410,7 +410,7 @@ function ScreenDialogueDemo({ onNavigate, state, status }) {
 
             {/* Listener (right) */}
             <div style={{ padding: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderLeft: "1px solid rgba(140,100,60,0.35)" }}>
-              <Placeholder label={listener.short} w={120} h={150} framed />
+              <Img scope={listener.id ? "portrait-" + listener.id : ""} label={listener.short} w={120} h={150} framed />
               <div style={{ marginTop: 8, fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)", textAlign: "center" }}>
                 {listener.name}
               </div>

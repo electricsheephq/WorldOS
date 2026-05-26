@@ -166,12 +166,10 @@ function ScreenCharacter({ onNavigate, state, setState }) {
 
             <div className="eyebrow" style={{ marginTop: 4 }}>Attack</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 8 }}>
-              <StatLine k="Base Attack" v={`+${hero.stats.bab}`} />
-              <StatLine k="Initiative" v={`+${hero.stats.initiative}`} />
-              <StatLine k="Melee" v={`+${hero.stats.melee}`} />
-              <StatLine k="Ranged" v={`+${hero.stats.ranged}`} />
-              <StatLine k="CMB" v={`+${hero.stats.cmb}`} />
-              <StatLine k="CMD" v={hero.stats.cmd} />
+              <StatLine k="Proficiency" v={`+${hero.stats.proficiency_bonus}`} />
+              <StatLine k="Initiative" v={`${hero.stats.initiative >= 0 ? "+" : ""}${hero.stats.initiative}`} />
+              <StatLine k="Melee" v={`${hero.stats.melee >= 0 ? "+" : ""}${hero.stats.melee}`} />
+              <StatLine k="Ranged" v={`${hero.stats.ranged >= 0 ? "+" : ""}${hero.stats.ranged}`} />
             </div>
 
             <Divider />
@@ -179,11 +177,19 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <div className="eyebrow">Defense</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
               <StatLine k="AC" v={hero.stats.ac} />
-              <StatLine k="Flat" v={hero.stats.flat} />
-              <StatLine k="Touch" v={hero.stats.touch} />
-              <StatLine k="Fort" v={`+${hero.stats.fort}`} />
-              <StatLine k="Reflex" v={`+${hero.stats.reflex}`} />
-              <StatLine k="Will" v={`+${hero.stats.will}`} />
+              <StatLine k="Speed" v={`${hero.stats.speed} ft`} />
+            </div>
+
+            <Divider />
+
+            {/* 5e saving throws: one per ability (mod + proficiency where proficient),
+                computed by the engine read-model (server _character_sheet). */}
+            <div className="eyebrow">Saving Throws</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
+              {["STR","DEX","CON","INT","WIS","CHA"].map((s) => {
+                const v = (hero.stats.saves || {})[s.toLowerCase()] ?? 0;
+                return <StatLine key={s} k={s} v={`${v >= 0 ? "+" : ""}${v}`} />;
+              })}
             </div>
 
             <Divider />

@@ -209,7 +209,8 @@ function ScreenTable({ onNavigate, state, setState }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
         {/* Scene plate */}
         <div style={{ position: "relative", flex: "0 0 auto" }}>
-          <Placeholder
+          <Img
+            scope={scene.imageScope || ""}
             label={`scene · ${scene.caption || surface?.location?.name || activeCampaign.title || "Open Worlds"}`}
             h={260}
             framed

@@ -33,7 +33,7 @@
         {"title": "The Dark Urge",        "scope": "portrait:the-dark-urge",   "kind": "portrait"},
 
         {"title": "Elfsong Tavern",       "scope": "scene:elfsong-tavern",     "kind": "scene"},
-        {"title": "Lower City",           "scope": "scene:baldurs-gate",       "kind": "scene"},
+        {"title": "Lower City",           "scope": "scene:lower-city",         "kind": "scene"},
         {"title": "Moonrise Towers",      "scope": "scene:moonrise-towers",    "kind": "scene"},
         {"title": "Wyrm's Rock Fortress", "scope": "scene:wyrms-rock",         "kind": "scene"},
         {"title": "Candlekeep",           "scope": "scene:candlekeep",         "kind": "scene", "_flag": "lead image is wrong — needs explicit file. Candlekeep does not appear in BG3; the bg3.wiki page's lead is a 70px character-portrait icon, not a location still. No in-game Candlekeep scene exists on the wiki."},

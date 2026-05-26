@@ -370,8 +370,8 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(hero["stats"]["ac"], 17)
         self.assertEqual(hero["hp"], 22)
         self.assertEqual(hero["hpMax"], 28)
-        # CON save = +2 (mod) + 2 (proficient) = +4
-        self.assertEqual(hero["stats"]["fort"], 4)
+        # 5e CON save = +2 (mod) + 2 (proficient) = +4
+        self.assertEqual(hero["stats"]["saves"]["con"], 4)
         # persuasion = CHA mod (+4) + 2x proficiency (expertise) = +8
         persuasion = next(s for s in hero["skills"] if s["name"] == "Persuasion")
         self.assertEqual(persuasion["mod"], 8)

@@ -255,7 +255,7 @@ function capabilityForScreen(screen, nativeState) {
       ? { label: "Wired", tone: "emerald", detail: "Native bridge ready" }
       : { label: "Unavailable", tone: "crimson", detail: "Native bridge missing" };
   }
-  if (["launcher", "table", "combat", "map", "journal", "character", "inventory", "relations"].includes(screen)) {
+  if (["launcher", "table", "combat", "map", "journal", "character", "inventory", "relations", "acts"].includes(screen)) {
     return { label: "Wired", tone: "emerald", detail: "Backed by viewer read models" };
   }
   if (screen === "dialogue") {

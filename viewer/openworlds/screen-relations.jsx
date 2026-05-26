@@ -277,7 +277,7 @@ function NPCDetail({ n, onNavigate, campBeats }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <Placeholder label={n.short} w={120} h={148} framed />
+        <Img scope={n.id ? "portrait-" + n.id : ""} label={n.short} w={120} h={148} framed />
         <div style={{ flex: 1 }}>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>{n.role}</div>
           <h2 className="h1" style={{ fontSize: 20, marginTop: 2 }}>{n.name}</h2>
