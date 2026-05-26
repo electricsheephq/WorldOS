@@ -1,0 +1,92 @@
+{
+  "id": "second-tide-rising",
+  "name": "The Second Tide — A Faction Seizes the Mechanism",
+  "schema_version": 1,
+  "supersedes": [
+    "the compact is forty years old and the generation that signed it is nearly gone",
+    "no single power should ever get large enough to drown again",
+    "the compact has held",
+    "the compact survived",
+    "the mechanism is still active",
+    "the mechanism is cyclic",
+    "what is currently rising from the deep rim",
+    "something is rising from the deep rim",
+    "something has begun to rise from it",
+    "the compact is sixty days from a crisis"
+  ],
+  "world_state": {
+    "world_tenor": "grim",
+    "facts": {
+      "the_mechanism": "seized",
+      "the_compact": "broken",
+      "the_gray_basin": "destabilizing",
+      "vethis_bloc": "ascendant",
+      "tide_readers": "suppressed"
+    }
+  },
+  "era": "The Forty-Third Year of the Interregnum — and possibly its last. The mechanism beneath the Deep Rim was reached before the crisis became public, but the party that reached it did not destroy it. The Vethis Bloc holds the mechanism now: not the knowledge of it, not a political advantage from knowing about it — the actual architecture, occupied and held by Vethis divers at the Deep Rim's central structure. The Compact is broken. The Gray Basin's water is wrong in new ways. The Commonwealth has sixty days, perhaps less, before the Bloc demonstrates what it can do with what it holds.",
+  "premise_suffix": " In this telling, the mechanism was found and taken rather than destroyed — and the party that took it is not the party that would use it wisely. The Vethis Bloc's seizure of the Deep Rim structure has broken the Compact irrevocably: the other cities cannot pretend the non-aggression clause survives a threat of continental flooding. The Tide-Readers are being suppressed — Mira Scroll's research has been classified by the Bloc as a security matter — and the Salvagers' League is being pressured to redact its depth-logs. The Commonwealth is sixty days from a demonstration that changes what it means to be a city-state on the Basin's edge. Into a world that is deciding whether to resist or accommodate the new order, the player steps: the crisis not resolved but metastasized, and every faction calculating how much of themselves they can preserve.",
+  "standing_threads": [
+    "The Bloc's ultimatum: Kessal Vor has not yet made a public demand — the announcement is scheduled, the Compact cities have been warned privately, and the diplomatic window is still open, which is why the League and the Compact remnant are moving now rather than after the demonstration.",
+    "The suppressed evidence: Mira Scroll's full research has been classified; she managed to get copies out before the Bloc's agents arrived, and those copies are somewhere in the Commonwealth's remaining free cities — whoever finds them has the technical knowledge to understand what the mechanism can and cannot actually do, which is not what the Bloc is claiming it can do.",
+    "The League's fracture: the Salvagers' League has been told to sign a new licensing agreement that cedes control of all Deep Rim survey rights to the Vethis Bloc; the League's senior factors are split — some are willing to sign, some are not, and the split is happening in real time, in the dockside offices of Ironhull Station, which Vethis forces have not yet occupied."
+  ],
+  "history_append": [
+    "The seizure: a Vethis dive-team, acting on Tribune Kessal Vor's private intelligence, reached the Deep Rim's central structure ahead of the joint expedition the Compact Council had authorized; they occupied it, changed the access codes on the architecture's control points, and reported back to Vor that the site was secure before the Compact's team launched.",
+    "The Compact breaks: the Saltmere and Ironhull League representatives walked out of the emergency Council session when Vor refused to either vacate the structure or share its access with the full Council; the Compact has no enforcement mechanism, and Vor knows it; the document that held the Commonwealth together for forty years is now a historical artifact.",
+    "The Tide-Readers silenced: Mira Scroll's public statement about the mechanism's capabilities was classified as a security threat within forty-eight hours of the seizure; the Bloc's position is that her research constitutes a military secret, and two of her research colleagues have been detained as material witnesses."
+  ],
+  "story_seeds_append": [
+    "The copies: Mira Scroll got her research out in pieces, through three different couriers, before the classification order; the pieces are in Saltmere, the Ironhull Station, and one location she will only name to the right person under the right conditions — and together they explain exactly how the mechanism works and exactly what it cannot do, which the Bloc does not want the Commonwealth to know.",
+    "The League's deciding vote: the senior factors' vote on the new licensing agreement is forty-eight hours away; the vote is tied; the deciding factor is a woman named Calla Bryne who has not been seen at her usual berth since yesterday morning, and three separate factions need to know where she is and what she is going to decide.",
+    "Drev's position: the COLD LAMP is the League's most credible active vessel and Drev is the League's most credible living witness to the Deep Rim's actual conditions — which makes him an asset the Bloc wants neutralized and the resistance needs operational, and which puts him in exactly the position he spent six years trying to avoid."
+  ],
+  "fates": {
+    "npc-warden-estris": {
+      "status": "alive, operating without authority",
+      "where": "a safe address in Saltmere's upper city that is not the Compact records room",
+      "note": "The Compact is broken, which means her official position is dissolved; she is operating anyway, because someone has to coordinate the cities that have not yet chosen the Bloc's terms, and she is the only person who knows where every lever is. She is sixty-three and has three weeks of supplies and a very clear understanding of what happens if Saltmere signs the licensing agreement."
+    },
+    "npc-captain-drev": {
+      "status": "alive, under pressure",
+      "where": "the COLD LAMP at Ironhull Station, possibly for the last time",
+      "note": "The Bloc wants his depth-logs classified and his League vote guaranteed; the resistance needs his Basin knowledge and his credibility with the other captains; he has been told, by a Vethis envoy, that the COLD LAMP's survey license will not be renewed if he votes against the agreement. He is thinking about this with the same care he uses for equipment checks, which is to say: methodically, slowly, and already knowing the answer."
+    },
+    "npc-mira-scroll": {
+      "status": "alive, in hiding",
+      "where": "unknown — she is not where the Bloc thinks she is",
+      "note": "Her public statement cost her her laboratory and her colleagues' safety; she sent the research copies out, she said what she knew, and she is now somewhere in the Commonwealth's free cities with the rest of what she knows and a very strong opinion about what should be done with it. She will surface when she decides the right person has arrived."
+    },
+    "npc-tribune-kessal": {
+      "status": "ascendant, uneasy",
+      "where": "Vethis Isle, the council chambers",
+      "note": "Got exactly what he spent two years positioning for, and the having of it is not what the wanting was. He controls a mechanism that can end a civilization. He is a city-state tribune with fifteen years of political experience and no training for what he is holding, and three of his own council members are arguing about the demonstration date, and he has begun to understand that the thing he seized may not be as controllable as the Tide-Readers' suppressed research implied."
+    }
+  },
+  "companion_seeds": {
+    "npc-captain-drev": {
+      "arc": {
+        "arc_gates": [
+          {
+            "kind": "loyalty",
+            "threshold": 30,
+            "note": "Drev has been told the COLD LAMP's license won't survive a no-vote. The calculation he is running — crew safety versus the Basin's future versus whether the Bloc's claim about the mechanism is even accurate — is the same calculation he ran six years ago, and he ran it wrong. He names the crew member he lost on the Deep Rim dive only after you reach this depth, as the evidence for a conclusion he needs you to help him reach: that the Bloc is not going to use the mechanism carefully, and that the right kind of loss is the one you choose."
+          },
+          {
+            "kind": "personal_quest",
+            "threshold": 45,
+            "note": "The dive he can no longer avoid: the only way to know if the Bloc's technical claims about the mechanism are accurate — or if Mira Scroll's suppressed research is right that the mechanism's control is far more conditional than Vor is claiming — is to go back to the Deep Rim and look. Drev has not been back in six years. His personal arc is the mission that requires him to return to the place that scarred him, with someone he has decided to trust, to find out if the world can still be saved or only survived."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -25,
+          "decision_flag": "left_drev_exposed",
+          "note": "Under the second-tide ending, Drev's break is cold and specific: if you gambled lives he was responsible for and left him exposed when it counted, he signs the League licensing agreement — not because he believes in the Bloc, but because you were the alternative and the alternative proved unreliable. He files the paperwork, notifies the Bloc's envoy, and is at his usual berth the next morning. He does not explain. He has made a decision from evidence, the way he always does."
+        }
+      }
+    }
+  },
+  "license": "Original ClawDnD world content. CC-BY-4.0.",
+  "attribution": "Original work. The Tidal Commonwealth is a clean-room original setting — no WotC / Larian / Forgotten Realms / Baldur's Gate IP. CC-BY-4.0 © ClawDnD contributors."
+}

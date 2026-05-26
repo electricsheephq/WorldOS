@@ -314,3 +314,142 @@ def test_base_world_companion_arc_arms_without_an_ending():
     # the relationship gates (loyalty + personal-quest) seeded too — a full companion, not just a flip
     gate_kinds = {g.kind for g in drev.arc.arc_gates}
     assert {"loyalty", "personal_quest"} <= gate_kinds
+
+
+# ---------------------------------------------------------------------------
+# 10. Tidal Commonwealth endings: zero-skip seeding + companion_seeds + world_state
+# ---------------------------------------------------------------------------
+
+
+ENDING_MECHANISM_DESTROYED = "mechanism-destroyed"
+ENDING_SECOND_TIDE = "second-tide-rising"
+
+
+def test_ending_mechanism_destroyed_seeds_clean():
+    """mechanism-destroyed ending must seed with ZERO skip-diagnostics, set world_tenor=hopeful,
+    and apply Drev's ending-tied companion arc (loyalty + personal_quest gates, agenda)."""
+    world = _load_world()
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        c = content_mod.seed_world(world, ending=ENDING_MECHANISM_DESTROYED)
+    skip_lines = [ln for ln in buf.getvalue().splitlines() if "[content] skipping" in ln]
+    assert skip_lines == [], f"mechanism-destroyed ending emitted skips:\n" + "\n".join(skip_lines)
+    assert c.ending_id == ENDING_MECHANISM_DESTROYED
+    assert c.world_state is not None
+    assert c.world_state.world_tenor == "hopeful"
+    assert c.world_state.facts.get("the_mechanism") == "destroyed"
+    # Drev's ending-tied companion arc applied correctly
+    drev = c.characters[NPC_COMPANION_ID]
+    assert drev.arc is not None, "Drev must have an arc in this ending"
+    assert drev.arc.agenda is not None
+    assert drev.arc.agenda.trigger == "attitude_below"
+    gate_kinds = {g.kind for g in drev.arc.arc_gates}
+    assert {"loyalty", "personal_quest"} <= gate_kinds, (
+        f"mechanism-destroyed ending must seed loyalty + personal_quest gates; got {gate_kinds}"
+    )
+
+
+def test_ending_second_tide_seeds_clean():
+    """second-tide-rising ending must seed with ZERO skip-diagnostics, set world_tenor=grim,
+    and arm Drev's resistance-context companion arc with his flip intact."""
+    world = _load_world()
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        c = content_mod.seed_world(world, ending=ENDING_SECOND_TIDE)
+    skip_lines = [ln for ln in buf.getvalue().splitlines() if "[content] skipping" in ln]
+    assert skip_lines == [], f"second-tide-rising ending emitted skips:\n" + "\n".join(skip_lines)
+    assert c.ending_id == ENDING_SECOND_TIDE
+    assert c.world_state is not None
+    assert c.world_state.world_tenor == "grim"
+    assert c.world_state.facts.get("the_mechanism") == "seized"
+    assert c.world_state.facts.get("the_compact") == "broken"
+    # Drev's ending-tied companion arc applied correctly
+    drev = c.characters[NPC_COMPANION_ID]
+    assert drev.arc is not None, "Drev must have an arc in this ending"
+    assert drev.arc.agenda is not None
+    gate_kinds = {g.kind for g in drev.arc.arc_gates}
+    assert {"loyalty", "personal_quest"} <= gate_kinds
+
+
+def test_both_endings_round_trip():
+    """Both Tidal Commonwealth endings must survive a model_dump / model_validate round-trip."""
+    world = _load_world()
+    from models import Campaign
+    for eid in (ENDING_MECHANISM_DESTROYED, ENDING_SECOND_TIDE):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            c = content_mod.seed_world(world, ending=eid)
+        data = c.model_dump(mode="json")
+        reloaded = Campaign.model_validate(data)
+        assert reloaded.ending_id == eid, f"round-trip lost ending_id for {eid!r}"
+        assert reloaded.world_state is not None, f"round-trip lost world_state for {eid!r}"
+
+
+def test_ending_fates_applied():
+    """Both endings must land fates on the authored NPC roster."""
+    world = _load_world()
+    for eid, expected_npc, expected_substr in [
+        (ENDING_MECHANISM_DESTROYED, "npc-warden-estris", "desk"),
+        (ENDING_SECOND_TIDE, "npc-mira-scroll", "hiding"),
+    ]:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            c = content_mod.seed_world(world, ending=eid)
+        npc = c.characters.get(expected_npc)
+        assert npc is not None, f"{eid}: {expected_npc!r} not found in characters"
+        # fate note should be on the NPC's lore or notes field
+        npc_text = " ".join([
+            npc.notes or "",
+            npc.lore or "" if hasattr(npc, "lore") else "",
+            str(npc.model_dump(mode="json")),
+        ]).lower()
+        assert expected_substr in npc_text, (
+            f"{eid}: fate for {expected_npc!r} missing expected text {expected_substr!r}"
+        )
+
+
+def test_second_event_seeded():
+    """The second authored event (event-warden-summons) must seed correctly."""
+    world = _load_world()
+    c, stdout = _seed_world(world)
+    assert "event-warden-summons" in c.events, "event-warden-summons not seeded"
+    ev = c.events["event-warden-summons"]
+    assert ev.anchor_npc_id == "npc-warden-estris"
+    assert len(ev.options) >= 2
+
+
+def test_tide_readers_faction_arc_seeded():
+    """The Tide-Readers faction arc must seed with 3 stages and correct gauges."""
+    world = _load_world()
+    c, _ = _seed_world(world)
+    assert "arc-tide-readers-evidence" in c.faction_arcs, "Tide-Readers arc not seeded"
+    arc = c.faction_arcs["arc-tide-readers-evidence"]
+    assert len(arc.stages) == 3
+    assert arc.stages[0].gauge == "reputation"
+    assert arc.stages[1].gauge == "standing"
+    assert arc.stages[2].gauge == "standing"
+
+
+def test_lorebook_tidal_commonwealth_corpus():
+    """The Tidal Commonwealth lore corpus must have >= 7 pages and return hits for key topics."""
+    import lorebook
+    count = lorebook.page_count("tidal-commonwealth")
+    assert count >= 7, f"expected at least 7 lore pages, got {count}"
+    # each major topic must surface
+    topics = [
+        ("Drowning Tide catastrophe", "drowning-tide"),
+        ("Compact Warden", "compact"),
+        ("Gray Basin Deep Rim", "gray-basin"),
+        ("Salvagers League captain", "salvagers"),
+        ("Tide-Readers mechanism", "tide-readers"),
+        ("Vethis Bloc Tribune", "vethis"),
+        ("Warden Estris Vane", "warden"),
+        ("Captain Drev Ossian scar", "captain"),
+    ]
+    for query, expected_slug in topics:
+        hits = lorebook.lookup_lore("tidal-commonwealth", query, 3)
+        assert hits, f"lookup_lore({query!r}) returned no hits"
+        assert any(expected_slug in h["source"] for h in hits), (
+            f"lookup_lore({query!r}) did not surface expected page matching {expected_slug!r}; "
+            f"got: {[h['source'] for h in hits]}"
+        )
