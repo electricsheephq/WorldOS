@@ -623,12 +623,113 @@ def _text(value: object, default: str = "") -> str:
     return s if s else default
 
 
-def _openworlds_day_label(snapshot: dict) -> str:
+def _positive_int(value: object, default: int = 1) -> int:
+    return value if isinstance(value, int) and value > 0 else default
+
+
+def _openworlds_calendar_projection(snapshot: dict) -> dict:
+    calendar = snapshot.get("calendar") if isinstance(snapshot, dict) else None
+    day = _positive_int(snapshot.get("day") if isinstance(snapshot, dict) else None)
+    fallback = {
+        "available": False,
+        "canonical_day": day,
+        "label": _openworlds_legacy_day_label(snapshot),
+    }
+    if not isinstance(calendar, dict):
+        return fallback
+
+    months_raw = calendar.get("months")
+    months = [m for m in months_raw if isinstance(m, dict)] if isinstance(months_raw, list) else []
+    if not months:
+        return fallback
+
+    elapsed = day - 1
+    month_index = min(max(_positive_int(calendar.get("epoch_month"), 1) - 1, 0), len(months) - 1)
+    day_of_month = _positive_int(calendar.get("epoch_day"), 1)
+    first_days = _positive_int(months[month_index].get("days"), 1)
+    day_of_month = min(day_of_month, first_days)
+    year = calendar.get("epoch_year") if isinstance(calendar.get("epoch_year"), int) else 1
+    remaining = elapsed
+    while remaining:
+        month_days = _positive_int(months[month_index].get("days"), 1)
+        days_left = month_days - day_of_month
+        if remaining <= days_left:
+            day_of_month += remaining
+            remaining = 0
+        else:
+            remaining -= days_left + 1
+            day_of_month = 1
+            month_index += 1
+            if month_index >= len(months):
+                month_index = 0
+                year += 1
+
+    month = months[month_index]
+    weekdays_raw = calendar.get("weekdays")
+    weekdays = [_text(w) for w in weekdays_raw if _text(w)] if isinstance(weekdays_raw, list) else []
+    week_start = calendar.get("week_start_index") if isinstance(calendar.get("week_start_index"), int) else 0
+    weekday = weekdays[(week_start + elapsed) % len(weekdays)] if weekdays else ""
+    era = _text(calendar.get("era_suffix"))
+    era_suffix = f" {era}" if era else ""
+    month_name = _text(month.get("name"), "Month")
+    date_core = f"{day_of_month} {month_name} {year}{era_suffix}"
+    date_label = f"{weekday}, {date_core}" if weekday else date_core
+    time_of_day = _text(snapshot.get("time_of_day"))
+    label = date_label + (f" · {time_of_day}" if time_of_day else "")
+
+    moons = []
+    moons_raw = calendar.get("moons")
+    if isinstance(moons_raw, list):
+        for moon in moons_raw:
+            if not isinstance(moon, dict):
+                continue
+            cycle = _positive_int(moon.get("cycle_days"), 1)
+            epoch_phase = moon.get("epoch_phase_day") if isinstance(moon.get("epoch_phase_day"), int) else 0
+            age = (max(epoch_phase, 0) + elapsed) % cycle
+            phases_raw = moon.get("phase_names")
+            phases = [_text(p) for p in phases_raw if _text(p)] if isinstance(phases_raw, list) else []
+            if not phases:
+                phases = ["new", "waxing", "full", "waning"]
+            phase_index = min(len(phases) - 1, (age * len(phases)) // cycle)
+            moons.append(
+                {
+                    "name": _text(moon.get("name"), "Moon"),
+                    "age": age,
+                    "cycle_days": cycle,
+                    "phase": phases[phase_index],
+                }
+            )
+
+    return {
+        "available": True,
+        "calendar": _text(calendar.get("name"), "Calendar"),
+        "canonical_day": day,
+        "year": year,
+        "month": month_name,
+        "day_of_month": day_of_month,
+        "weekday": weekday,
+        "season": _text(month.get("season")),
+        "date_label": date_label,
+        "label": label,
+        "moons": moons,
+    }
+
+
+def _openworlds_legacy_day_label(snapshot: dict) -> str:
     day = snapshot.get("day")
     time_of_day = _text(snapshot.get("time_of_day"))
     if isinstance(day, int):
         return f"Day {day}" + (f" · {time_of_day}" if time_of_day else "")
     return time_of_day or "Unknown time"
+
+
+def _openworlds_day_label(snapshot: dict) -> str:
+    calendar = _openworlds_calendar_projection(snapshot)
+    return _text(calendar.get("label")) if calendar.get("available") else _openworlds_legacy_day_label(snapshot)
+
+
+def _openworlds_calendar(snapshot: dict) -> dict:
+    return _openworlds_calendar_projection(snapshot)
 
 
 def _party_cards(snapshot: dict) -> list[dict]:
@@ -1094,6 +1195,7 @@ def build_session_surface(
         "day": snapshot.get("day") if isinstance(snapshot.get("day"), int) else None,
         "time_of_day": _text(snapshot.get("time_of_day")),
         "dayLabel": _openworlds_day_label(snapshot),
+        "calendar": _openworlds_calendar(snapshot),
         "location": location,
         "scene": {
             "summary": summary,
@@ -2048,6 +2150,7 @@ def build_atlas_surface(
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
+        "calendar": _openworlds_calendar(snapshot),
         "current_location": current or {"id": "", "name": "Unknown location", "tags": []},
         "known_locations": locations,
         "edges": _atlas_edges(locations, snapshot),

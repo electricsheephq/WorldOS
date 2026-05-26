@@ -154,6 +154,60 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(say_action["ui"], "focus-say")
         self.assertNotIn("snapshot", json.dumps(surface))
 
+    def test_session_surface_projects_calendar_display_without_state_authority(self):
+        snapshot = {
+            "title": "Calendar Save",
+            "world_id": "calendar-test",
+            "day": 32,
+            "time_of_day": "dusk",
+            "calendar": {
+                "name": "Dale Reckoning",
+                "era_suffix": "DR",
+                "epoch_year": 1492,
+                "epoch_month": 1,
+                "epoch_day": 1,
+                "weekdays": ["Firstday", "Secondday", "Thirdday", "Fourthday", "Fifthday"],
+                "months": [
+                    {"name": "Hammer", "days": 30, "season": "Deepwinter"},
+                    {"name": "Alturiak", "days": 30, "season": "The Claw of Winter"},
+                ],
+                "moons": [
+                    {
+                        "name": "Selune",
+                        "cycle_days": 8,
+                        "phase_names": ["new", "waxing", "full", "waning"],
+                    }
+                ],
+            },
+            "party": ["pc"],
+            "characters": {"pc": {"id": "pc", "name": "Vela", "kind": "player"}},
+        }
+
+        surface = server.build_session_surface(snapshot, campaign_id="camp_calendar", live=True, is_live_view=True)
+
+        self.assertEqual(surface["day"], 32)
+        self.assertEqual(surface["time_of_day"], "dusk")
+        self.assertEqual(surface["dayLabel"], "Secondday, 2 Alturiak 1492 DR · dusk")
+        self.assertEqual(
+            surface["calendar"],
+            {
+                "available": True,
+                "calendar": "Dale Reckoning",
+                "canonical_day": 32,
+                "year": 1492,
+                "month": "Alturiak",
+                "day_of_month": 2,
+                "weekday": "Secondday",
+                "season": "The Claw of Winter",
+                "date_label": "Secondday, 2 Alturiak 1492 DR",
+                "label": "Secondday, 2 Alturiak 1492 DR · dusk",
+                "moons": [{"name": "Selune", "age": 7, "cycle_days": 8, "phase": "waning"}],
+            },
+        )
+        self.assertEqual(surface["state_authority"], "engine")
+        self.assertEqual(surface["write_lane"], "/move")
+        self.assertNotIn("calendar_write", json.dumps(surface))
+
     def test_session_surface_includes_combat_order_and_disabled_reasons(self):
         snapshot = {
             "party": ["pc"],

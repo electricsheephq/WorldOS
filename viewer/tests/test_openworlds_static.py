@@ -151,6 +151,18 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("window.combatSurfaceFromCampaign", source)
         self.assertIn("emptyState", source)
 
+    def test_openworlds_table_and_map_render_calendar_metadata(self):
+        for path in ("/openworlds/screen-table.jsx", "/openworlds/screen-map.jsx"):
+            with self.subTest(path=path):
+                status, ctype, body = self._get(path)
+
+                self.assertEqual(status, 200)
+                self.assertIn("text/babel", ctype)
+                source = body.decode("utf-8")
+                self.assertIn("surface?.calendar?.available", source)
+                self.assertIn("calendarMoon", source)
+                self.assertIn("calendarDetail", source)
+
     def test_openworlds_rejects_path_traversal(self):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)

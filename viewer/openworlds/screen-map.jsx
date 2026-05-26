@@ -146,6 +146,9 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const locationClocks = selected ? clocks.filter((c) => !c.location_id || c.location_id === selected.id) : clocks;
   const locationProjects = selected ? projects.filter((p) => !p.location_id || p.location_id === selected.id) : projects;
   const locationControl = selected ? controls.find((c) => c.location_id === selected.id) : null;
+  const calendar = surface?.calendar?.available ? surface.calendar : null;
+  const calendarMoon = Array.isArray(calendar?.moons) ? calendar.moons[0] : null;
+  const calendarDetail = calendar ? [calendar.season, calendarMoon ? `${calendarMoon.name}: ${calendarMoon.phase}` : ""].filter(Boolean).join(" · ") : "";
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 340px", gap: 14, padding: 14 }}>
@@ -159,6 +162,7 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
             <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 3 }}>
               {surface?.dayLabel || surfaceStatus}
             </div>
+            {calendarDetail && <div className="body-xs" style={{ color: "var(--b-700)", marginTop: 3 }}>{calendarDetail}</div>}
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {!campMode && ["dawn", "day", "dusk", "night"].map((t) => (

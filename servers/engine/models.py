@@ -1118,6 +1118,46 @@ class WorldState(_StrictModel):
         )
 
 
+class CalendarMonth(_StrictModel):
+    """One authored month in a campaign calendar.
+
+    This is display metadata only. The engine's authoritative clock remains
+    ``Campaign.day`` plus the tactical ``time_of_day`` phase.
+    """
+
+    name: str
+    days: int = Field(..., ge=1, le=1000)
+    season: str = ""
+
+
+class CalendarMoon(_StrictModel):
+    """A deterministic moon phase track derived from ``Campaign.day``."""
+
+    name: str
+    cycle_days: int = Field(..., ge=1, le=10000)
+    epoch_phase_day: int = Field(0, ge=0)
+    phase_names: list[str] = Field(default_factory=lambda: ["new", "waxing", "full", "waning"])
+
+
+class CampaignCalendar(_StrictModel):
+    """Clean-room, setting-agnostic calendar display metadata.
+
+    Day 1 of the campaign maps to ``epoch_year``/``epoch_month``/``epoch_day``.
+    The model deliberately stores no mutable cursor; every rendered date is a
+    pure projection from ``Campaign.day``.
+    """
+
+    name: str
+    era_suffix: str = ""
+    epoch_year: int = 1
+    epoch_month: int = Field(1, ge=1)
+    epoch_day: int = Field(1, ge=1)
+    weekdays: list[str] = Field(default_factory=list)
+    week_start_index: int = Field(0, ge=0)
+    months: list[CalendarMonth] = Field(default_factory=list)
+    moons: list[CalendarMoon] = Field(default_factory=list)
+
+
 class StrategicClock(_StrictModel):
     """A setting-agnostic strategic pressure clock.
 
@@ -1400,6 +1440,7 @@ class Campaign(_StrictModel):
     current_location_id: Optional[str] = None
     day: int = 1  # in-world day counter
     time_of_day: str = "morning"
+    calendar: Optional[CampaignCalendar] = None
     map_kind: Literal["hex", "none"] = "none"  # how the play-view renders the map
     # World-state boolean flags the DM/engine set to gate events — e.g. "prize_seized"
     # drives a companion's prize_seized agenda (S4). Additive: empty == today's behavior.

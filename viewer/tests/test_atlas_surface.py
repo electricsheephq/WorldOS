@@ -329,6 +329,45 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertNotIn("Sealed Grove", encoded)
         self.assertNotIn("sealed", encoded)
 
+    def test_atlas_surface_includes_calendar_projection_for_strategic_display(self):
+        snapshot = {
+            "title": "Calendar Map",
+            "world_id": "calendar-test",
+            "day": 32,
+            "time_of_day": "dusk",
+            "current_location_id": "gate",
+            "calendar": {
+                "name": "Dale Reckoning",
+                "era_suffix": "DR",
+                "epoch_year": 1492,
+                "epoch_month": 1,
+                "epoch_day": 1,
+                "weekdays": ["Firstday", "Secondday", "Thirdday", "Fourthday", "Fifthday"],
+                "months": [
+                    {"name": "Hammer", "days": 30, "season": "Deepwinter"},
+                    {"name": "Alturiak", "days": 30, "season": "The Claw of Winter"},
+                ],
+                "moons": [
+                    {
+                        "name": "Selune",
+                        "cycle_days": 8,
+                        "phase_names": ["new", "waxing", "full", "waning"],
+                    }
+                ],
+            },
+            "locations": {
+                "gate": {"id": "gate", "name": "Gate", "visited": True, "tags": ["town"]},
+            },
+        }
+
+        surface = server.build_atlas_surface(snapshot, campaign_id="camp_calendar", live=True, is_live_view=True)
+
+        self.assertEqual(surface["dayLabel"], "Secondday, 2 Alturiak 1492 DR · dusk")
+        self.assertEqual(surface["calendar"]["date_label"], "Secondday, 2 Alturiak 1492 DR")
+        self.assertEqual(surface["calendar"]["season"], "The Claw of Winter")
+        self.assertEqual(surface["calendar"]["moons"][0]["phase"], "waning")
+        self.assertTrue(surface["camp_available"])
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",
