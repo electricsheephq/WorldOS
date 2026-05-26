@@ -19,7 +19,7 @@
     "pk": "bg-midtier_wyrm-of-the-black-pool_cloud-of-insects",
     "fields": {
       "action_type": "LEGENDARY_ACTION",
-      "desc": "Dexterity Saving Throw: DC 17, one creature the dragon can see within 120 feet. Failure: 22 (4d10) Poison damage, and the target has Disadvantage on saving throws to maintain Concentration until the end of its next turn. Failure or Success: The dragon can't take this action again until the start of its next turn.",
+      "desc": "Dexterity Saving Throw: DC 17, one creature the wyrm can see within 120 feet. Failure: 22 (4d10) Poison damage, and the target has Disadvantage on saving throws to maintain Concentration until the end of its next turn. Failure or Success: The wyrm can't take this action again until the start of its next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Cloud of Insects",
@@ -34,7 +34,7 @@
     "pk": "bg-midtier_wyrm-of-the-black-pool_frightful-presence",
     "fields": {
       "action_type": "LEGENDARY_ACTION",
-      "desc": "The dragon uses Spellcasting to cast Fear. The dragon can't take this action again until the start of its next turn.",
+      "desc": "The wyrm uses Spellcasting to cast Fear. The wyrm can't take this action again until the start of its next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Frightful Presence",
@@ -49,7 +49,7 @@
     "pk": "bg-midtier_wyrm-of-the-black-pool_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The dragon makes three Rend attacks. It can replace one attack with a use of Spellcasting to cast Acid Arrow (level 3 version).",
+      "desc": "The wyrm makes three Rend attacks. It can replace one attack with a use of Spellcasting to cast Acid Arrow (level 3 version).",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -64,7 +64,7 @@
     "pk": "bg-midtier_wyrm-of-the-black-pool_pounce",
     "fields": {
       "action_type": "LEGENDARY_ACTION",
-      "desc": "The dragon can move up to half its Speed, and it makes one Rend attack.",
+      "desc": "The wyrm can move up to half its Speed, and it makes one Rend attack.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Pounce",
@@ -94,7 +94,7 @@
     "pk": "bg-midtier_wyrm-of-the-black-pool_spellcasting",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The dragon casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 17, +9 to hit with spell attacks):\n\n- **At Will:** Detect Magic, Fear, Acid Arrow\n- **1/Day Each:** Speak with Dead, Vitriolic Sphere",
+      "desc": "The wyrm casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 17, +9 to hit with spell attacks):\n\n- **At Will:** Detect Magic, Fear, Acid Arrow\n- **1/Day Each:** Speak with Dead, Vitriolic Sphere",
       "form_condition": null,
       "legendary_cost": null,
       "name": "Spellcasting",
@@ -124,7 +124,7 @@
     "pk": "bg-midtier_guild-torturer_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The assassin makes three attacks, using Shortsword or Light Crossbow in any combination.",
+      "desc": "The torturer makes three attacks, using Shortsword or Light Crossbow in any combination.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -139,7 +139,7 @@
     "pk": "bg-midtier_guild-torturer_shortsword",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Melee Attack Roll: +7, reach 5 ft. 7 (1d6 + 4) Piercing damage plus 17 (5d6) Poison damage, and the target has the Poisoned condition until the start of the assassin's next turn.",
+      "desc": "Melee Attack Roll: +7, reach 5 ft. 7 (1d6 + 4) Piercing damage plus 17 (5d6) Poison damage, and the target has the Poisoned condition until the start of the torturer's next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Shortsword",
@@ -184,7 +184,7 @@
     "pk": "bg-midtier_absolute-soul-seer_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The devil makes one Claws attack and one Tail attack, or it makes two Hurl Flame attacks.",
+      "desc": "The soul seer makes one Claws attack and one Tail attack, or it makes two Hurl Flame attacks.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -229,7 +229,7 @@
     "pk": "bg-midtier_avernus-bone-archer_infernal-sting",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Melee Attack Roll: +8, reach 10 ft. 15 (2d10 + 4) Piercing damage plus 18 (4d8) Poison damage, and the target has the Poisoned condition until the start of the devil's next turn. While Poisoned, the target can't regain Hit Points.",
+      "desc": "Melee Attack Roll: +8, reach 10 ft. 15 (2d10 + 4) Piercing damage plus 18 (4d8) Poison damage, and the target has the Poisoned condition until the start of the bone archer's next turn. While Poisoned, the target can't regain Hit Points.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Infernal Sting",
@@ -244,7 +244,7 @@
     "pk": "bg-midtier_avernus-bone-archer_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The devil makes two Claw attacks and one Infernal Sting attack.",
+      "desc": "The bone archer makes two Claw attacks and one Infernal Sting attack.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -274,7 +274,7 @@
     "pk": "bg-midtier_duergar-chain-master_conjure-infernal-chain",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The devil conjures a fiery chain to bind a creature. Dexterity Saving Throw: DC 15, one creature the devil can see within 60 feet. Failure: 9 (2d4 + 4) Fire damage, and the target has the Restrained condition until the end of the devil's next turn, at which point the chain disappears. If the target is Large or smaller, the devil moves the target up to 30 feet straight toward itself. Success: The chain disappears.",
+      "desc": "The chain master conjures a fiery chain to bind a creature. Dexterity Saving Throw: DC 15, one creature the chain master can see within 60 feet. Failure: 9 (2d4 + 4) Fire damage, and the target has the Restrained condition until the end of the chain master's next turn, at which point the chain disappears. If the target is Large or smaller, the chain master moves the target up to 30 feet straight toward itself. Success: The chain disappears.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Conjure Infernal Chain",
@@ -289,7 +289,7 @@
     "pk": "bg-midtier_duergar-chain-master_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The devil makes two Chain attacks and uses Conjure Infernal Chain.",
+      "desc": "The chain master makes two Chain attacks and uses Conjure Infernal Chain.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -304,7 +304,7 @@
     "pk": "bg-midtier_dukes-fallen-consular_entangling-rope",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Strength Saving Throw: DC 16, one creature the erinyes can see within 120 feet. Failure: 14 (4d6) Force damage, and the target has the Restrained condition until the rope is destroyed, the erinyes uses a Bonus Action to release the target, or the erinyes uses Entangling Rope again.",
+      "desc": "Strength Saving Throw: DC 16, one creature the consular can see within 120 feet. Failure: 14 (4d6) Force damage, and the target has the Restrained condition until the rope is destroyed, the consular uses a Bonus Action to release the target, or the consular uses Entangling Rope again.",
       "form_condition": "Requires Magic Rope",
       "legendary_cost": 1,
       "name": "Entangling Rope",
@@ -319,7 +319,7 @@
     "pk": "bg-midtier_dukes-fallen-consular_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The erinyes makes three Withering Sword attacks and can use Entangling Rope.",
+      "desc": "The consular makes three Withering Sword attacks and can use Entangling Rope.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -349,7 +349,7 @@
     "pk": "bg-midtier_flaming-fist-sergeant_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The gladiator makes three Spear attacks. It can replace one attack with a use of Shield Bash.",
+      "desc": "The sergeant makes three Spear attacks. It can replace one attack with a use of Shield Bash.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -364,7 +364,7 @@
     "pk": "bg-midtier_flaming-fist-sergeant_shield-bash",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Strength Saving Throw: DC 15, one creature within 5 feet that the gladiator can see. Failure: 9 (2d4 + 4) Bludgeoning damage. If the target is a Medium or smaller creature, it has the Prone condition.",
+      "desc": "Strength Saving Throw: DC 15, one creature within 5 feet that the sergeant can see. Failure: 9 (2d4 + 4) Bludgeoning damage. If the target is a Medium or smaller creature, it has the Prone condition.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Shield Bash",
@@ -409,7 +409,7 @@
     "pk": "bg-midtier_infernal-inquisitor_infernal-tail",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Dexterity Saving Throw: DC 17, one creature the devil can see within 10 feet. Failure: 10 (1d8 + 6) Necrotic damage, and the target receives an infernal wound if it doesn't have one. While wounded, the target loses 10 (3d6) Hit Points at the start of each of its turns. The wound closes after 1 minute, after a spell restores Hit Points to the target, or after the target or a creature within 5 feet of it takes an action to stanch the wound, doing so by succeeding on a DC 17 Wisdom (Medicine) check.",
+      "desc": "Dexterity Saving Throw: DC 17, one creature the inquisitor can see within 10 feet. Failure: 10 (1d8 + 6) Necrotic damage, and the target receives an infernal wound if it doesn't have one. While wounded, the target loses 10 (3d6) Hit Points at the start of each of its turns. The wound closes after 1 minute, after a spell restores Hit Points to the target, or after the target or a creature within 5 feet of it takes an action to stanch the wound, doing so by succeeding on a DC 17 Wisdom (Medicine) check.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Infernal Tail",
@@ -424,7 +424,7 @@
     "pk": "bg-midtier_infernal-inquisitor_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The devil makes three attacks, using Searing Fork or Hurl Flame in any combination. It can replace one attack with a use of Infernal Tail.",
+      "desc": "The inquisitor makes three attacks, using Searing Fork or Hurl Flame in any combination. It can replace one attack with a use of Infernal Tail.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -469,7 +469,7 @@
     "pk": "bg-midtier_absolute-cultist-warlock_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The mage makes three Arcane Burst attacks.",
+      "desc": "The warlock makes three Arcane Burst attacks.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -484,7 +484,7 @@
     "pk": "bg-midtier_absolute-cultist-warlock_spellcasting",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The mage casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 14):\n\n- **At Will:** Detect Magic, Light, Mage Armor, Mage Hand, Prestidigitation\n- **2/Day Each:** Fireball, Invisibility\n- **1/Day Each:** Cone of Cold, Fly",
+      "desc": "The warlock casts one of the following spells, using Intelligence as the spellcasting ability (spell save DC 14):\n\n- **At Will:** Detect Magic, Light, warlock Armor, warlock Hand, Prestidigitation\n- **2/Day Each:** Fireball, Invisibility\n- **1/Day Each:** Cone of Cold, Fly",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Spellcasting",
@@ -514,7 +514,7 @@
     "pk": "bg-midtier_avernus-touched-marauder_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The oni makes two Claw or Nightmare Ray attacks. It can replace one attack with a use of Spellcasting.",
+      "desc": "The marauder makes two Claw or Nightmare Ray attacks. It can replace one attack with a use of Spellcasting.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -529,7 +529,7 @@
     "pk": "bg-midtier_avernus-touched-marauder_nightmare-ray",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Ranged Attack Roll: +5, range 60 ft. 9 (2d6 + 2) Psychic damage, and the target has the Frightened condition until the start of the oni's next turn.",
+      "desc": "Ranged Attack Roll: +5, range 60 ft. 9 (2d6 + 2) Psychic damage, and the target has the Frightened condition until the start of the marauder's next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Nightmare Ray",
@@ -544,7 +544,7 @@
     "pk": "bg-midtier_avernus-touched-marauder_shape-shift",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The oni shape-shifts into a Small or Medium Humanoid or a Large Giant, or it returns to its true form. Other than its size, its game statistics are the same in each form. Any equipment it is wearing or carrying isn't transformed.",
+      "desc": "The marauder shape-shifts into a Small or Medium Humanoid or a Large Giant, or it returns to its true form. Other than its size, its game statistics are the same in each form. Any equipment it is wearing or carrying isn't transformed.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Shape-Shift",
@@ -559,7 +559,7 @@
     "pk": "bg-midtier_avernus-touched-marauder_spellcasting",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The oni casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 13):\n\n- **At Will:**\n- **1/Day Each:** Charm Person, Darkness, Gaseous Form, Sleep",
+      "desc": "The marauder casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 13):\n\n- **At Will:**\n- **1/Day Each:** Charm Person, Darkness, Gaseous Form, Sleep",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Spellcasting",
@@ -574,7 +574,7 @@
     "pk": "bg-midtier_sword-coast-privateer_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The pirate makes three attacks, using Rapier or Pistol in any combination.",
+      "desc": "The privateer makes three attacks, using Rapier or Pistol in any combination.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -604,7 +604,7 @@
     "pk": "bg-midtier_sword-coast-privateer_rapier",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Melee Attack Roll: +7, reach 5 ft. 13 (2d8 + 4) Piercing damage, and the pirate has Advantage on the next attack roll it makes before the end of this turn.",
+      "desc": "Melee Attack Roll: +7, reach 5 ft. 13 (2d8 + 4) Piercing damage, and the privateer has Advantage on the next attack roll it makes before the end of this turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Rapier",
@@ -619,7 +619,7 @@
     "pk": "bg-midtier_gortash-shadow-operative_baleful-command",
     "fields": {
       "action_type": "ACTION",
-      "desc": "Wisdom Saving Throw: DC 18, each enemy in a 30-foot Emanation originating from the rakshasa. Failure: 28 (8d6) Psychic damage, and the target has the Frightened and Incapacitated conditions until the start of the rakshasa's next turn.",
+      "desc": "Wisdom Saving Throw: DC 18, each enemy in a 30-foot Emanation originating from the operative. Failure: 28 (8d6) Psychic damage, and the target has the Frightened and Incapacitated conditions until the start of the operative's next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Baleful Command",
@@ -649,7 +649,7 @@
     "pk": "bg-midtier_gortash-shadow-operative_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The rakshasa makes three Cursed Touch attacks.",
+      "desc": "The operative makes three Cursed Touch attacks.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -664,7 +664,7 @@
     "pk": "bg-midtier_gortash-shadow-operative_spellcasting",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The rakshasa casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 18):\n\n- **At Will:** Detect Magic, Detect Thoughts, Disguise Self, Mage Hand, Minor Illusion\n- **1/Day Each:** Fly, Invisibility, Major Image, Plane Shift",
+      "desc": "The operative casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 18):\n\n- **At Will:** Detect Magic, Detect Thoughts, Disguise Self, Mage Hand, Minor Illusion\n- **1/Day Each:** Fly, Invisibility, Major Image, Plane Shift",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Spellcasting",
@@ -694,7 +694,7 @@
     "pk": "bg-midtier_steel-watch-sentinel_multiattack",
     "fields": {
       "action_type": "ACTION",
-      "desc": "The guardian makes two Fist attacks.",
+      "desc": "The sentinel makes two Fist attacks.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Multiattack",
@@ -754,7 +754,7 @@
     "pk": "bg-midtier_guild-torturer_cunning-action",
     "fields": {
       "action_type": "BONUS_ACTION",
-      "desc": "The assassin takes the Dash, Disengage, or Hide action.",
+      "desc": "The torturer takes the Dash, Disengage, or Hide action.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Cunning Action",
@@ -769,7 +769,7 @@
     "pk": "bg-midtier_absolute-cultist-warlock_misty-step-3-day",
     "fields": {
       "action_type": "BONUS_ACTION",
-      "desc": "The mage casts Misty Step, using the same spellcasting ability as Spellcasting.",
+      "desc": "The warlock casts Misty Step, using the same spellcasting ability as Spellcasting.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Misty Step",
@@ -784,7 +784,7 @@
     "pk": "bg-midtier_avernus-touched-marauder_invisibility",
     "fields": {
       "action_type": "BONUS_ACTION",
-      "desc": "The oni casts Invisibility on itself, requiring no spell components and using the same spellcasting ability as Spellcasting.",
+      "desc": "The marauder casts Invisibility on itself, requiring no spell components and using the same spellcasting ability as Spellcasting.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Invisibility",
@@ -799,7 +799,7 @@
     "pk": "bg-midtier_sword-coast-privateer_captain's-charm",
     "fields": {
       "action_type": "BONUS_ACTION",
-      "desc": "Wisdom Saving Throw: DC 14, one creature the pirate can see within 30 feet. Failure: The target has the Charmed condition until the start of the pirate's next turn.",
+      "desc": "Wisdom Saving Throw: DC 14, one creature the privateer can see within 30 feet. Failure: The target has the Charmed condition until the start of the privateer's next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Captain's Charm",
@@ -829,7 +829,7 @@
     "pk": "bg-midtier_absolute-cultist-warlock_protective-magic",
     "fields": {
       "action_type": "REACTION",
-      "desc": "The mage casts Counterspell or Shield in response to the spell's trigger, using the same spellcasting ability as Spellcasting.",
+      "desc": "The warlock casts Counterspell or Shield in response to the spell's trigger, using the same spellcasting ability as Spellcasting.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Protective Magic",
@@ -844,7 +844,7 @@
     "pk": "bg-midtier_duergar-chain-master_unnerving-gaze",
     "fields": {
       "action_type": "REACTION",
-      "desc": "_Trigger:_ A creature the devil can see starts its turn within 30 feet of the devil and can see the devil. _Response––Wisdom Saving Throw:_ DC 15, the triggering creature. _Failure:_ The target has the Frightened condition until the end of its turn. _Success:_ The target is immune to this devil’s Unnerving Gaze for 24 hours.",
+      "desc": "_Trigger:_ A creature the chain master can see starts its turn within 30 feet of the chain master and can see the chain master. _Response––Wisdom Saving Throw:_ DC 15, the triggering creature. _Failure:_ The target has the Frightened condition until the end of its turn. _Success:_ The target is immune to this chain master’s Unnerving Gaze for 24 hours.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Unnerving Gaze",
@@ -859,7 +859,7 @@
     "pk": "bg-midtier_dukes-fallen-consular_parry",
     "fields": {
       "action_type": "REACTION",
-      "desc": "_Trigger:_ The erinyes is hit by a melee attack roll while holding a weapon. _Response:_ The erinyes adds 4 to its AC against that attack, possibly causing it to miss.",
+      "desc": "_Trigger:_ The consular is hit by a melee attack roll while holding a weapon. _Response:_ The consular adds 4 to its AC against that attack, possibly causing it to miss.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Parry",
@@ -874,7 +874,7 @@
     "pk": "bg-midtier_flaming-fist-sergeant_parry",
     "fields": {
       "action_type": "REACTION",
-      "desc": "_Trigger:_ The gladiator is hit by a melee attack roll while holding a weapon. _Response:_ The gladiator adds 3 to its AC against that attack, possibly causing it to miss.",
+      "desc": "_Trigger:_ The sergeant is hit by a melee attack roll while holding a weapon. _Response:_ The sergeant adds 3 to its AC against that attack, possibly causing it to miss.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Parry",
@@ -889,7 +889,7 @@
     "pk": "bg-midtier_sword-coast-privateer_riposte",
     "fields": {
       "action_type": "REACTION",
-      "desc": "_Trigger:_ The pirate is hit by a melee attack roll while holding a weapon. _Response:_ The pirate adds 3 to its AC against that attack, possibly causing it to miss. On a miss, the pirate makes one Rapier attack against the triggering creature if within range.",
+      "desc": "_Trigger:_ The privateer is hit by a melee attack roll while holding a weapon. _Response:_ The privateer adds 3 to its AC against that attack, possibly causing it to miss. On a miss, the privateer makes one Rapier attack against the triggering creature if within range.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Riposte",
@@ -904,7 +904,7 @@
     "pk": "bg-midtier_steel-watch-sentinel_protection",
     "fields": {
       "action_type": "REACTION",
-      "desc": "_Trigger:_ An attack roll hits the wearer of the guardian’s amulet while the wearer is within 5 feet of the guardian. _Response:_ The wearer gains a +5 bonus to AC, including against the triggering attack and possibly causing it to miss, until the start of the guardian’s next turn.",
+      "desc": "_Trigger:_ An attack roll hits the wearer of the sentinel’s amulet while the wearer is within 5 feet of the sentinel. _Response:_ The wearer gains a +5 bonus to AC, including against the triggering attack and possibly causing it to miss, until the start of the sentinel’s next turn.",
       "form_condition": null,
       "legendary_cost": 1,
       "name": "Protection",
