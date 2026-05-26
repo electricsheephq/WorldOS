@@ -786,6 +786,50 @@ class Location(_StrictModel):
     travel_times: dict[str, int] = Field(default_factory=dict)  # connected location id -> walk minutes
 
 
+class WorldGraphNode(_StrictModel):
+    """Player-facing spatial metadata for an existing Location.
+
+    ``Campaign.locations`` remains canonical. This metadata may enrich Atlas and
+    travel displays, but it cannot create or authorize locations by itself.
+    """
+
+    location_id: str
+    x: Optional[float] = None
+    y: Optional[float] = None
+    biome: str = ""
+    terrain: str = ""
+    danger: int = Field(0, ge=0, le=10)
+    discovered: bool = True
+    atlas_layer: Literal["region", "settlement", "site", "dungeon", "route"] = "site"
+    tags: list[str] = Field(default_factory=list)
+
+
+class WorldGraphEdge(_StrictModel):
+    """Route metadata for an already-authorized Location connection."""
+
+    from_id: str
+    to_id: str
+    route_kind: Literal["street", "road", "trail", "sea", "river", "passage", "portal"] = "road"
+    minutes: Optional[int] = Field(None, ge=1)
+    distance: Optional[float] = Field(None, ge=0)
+    difficulty: Literal["easy", "normal", "hard", "hazardous"] = "normal"
+    danger: int = Field(0, ge=0, le=10)
+    tags: list[str] = Field(default_factory=list)
+
+
+class WorldGraph(_StrictModel):
+    """Additive strategic-map metadata owned by the engine.
+
+    This graph is deliberately subordinate to ``Location.connections``: edges
+    enrich existing travel links, they never authorize movement on their own.
+    """
+
+    nodes: dict[str, WorldGraphNode] = Field(default_factory=dict)
+    edges: list[WorldGraphEdge] = Field(default_factory=list)
+    seed: str = ""
+    provenance: str = "authored"
+
+
 class Faction(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("fac"))
     name: str
@@ -1353,6 +1397,7 @@ class Campaign(_StrictModel):
     # strict sibling of consequences/worldsim threads (never consumed by consequences.due).
     campaign_backlog: CampaignBacklog = Field(default_factory=CampaignBacklog)
     strategic_state: StrategicState = Field(default_factory=StrategicState)
+    world_graph: WorldGraph = Field(default_factory=WorldGraph)
     # Persistent camp-beat memory (#69). Read by camp_scene/scheduler, written only by an
     # explicit record path so prompt generation never advances campaign state by accident.
     camp_beats: CampBeatState = Field(default_factory=CampBeatState)

@@ -214,6 +214,67 @@ def test_seed_world_seeds_strategic_state_additively(capsys):
     assert "skipping strategic project" in out
 
 
+def test_seed_world_seeds_world_graph_metadata_without_authorizing_travel(capsys):
+    world = {
+        "id": "graph-test",
+        "name": "Graph Test",
+        "premise": "A compact graph fixture.",
+        "era": "now",
+        "regions": [
+            {"id": "loc-harbor", "name": "Harbor", "description": "docks", "connections": ["loc-hill"]},
+            {"id": "loc-hill", "name": "Hill", "description": "watchpost", "connections": ["loc-harbor"]},
+            {"id": "loc-sealed", "name": "Sealed", "description": "locked", "connections": []},
+        ],
+        "factions": [],
+        "npc_roster": [],
+        "history": [],
+        "standing_threads": [],
+        "starting_options": [{"location_id": "loc-harbor", "framing": "Start at the harbor."}],
+        "world_graph": {
+            "seed": "graph-fixture",
+            "provenance": "authored-test",
+            "nodes": [
+                {
+                    "location_id": "loc-harbor",
+                    "biome": "coast",
+                    "terrain": "docks",
+                    "danger": 2,
+                    "atlas_layer": "settlement",
+                    "tags": ["port"],
+                },
+                {"location_id": "loc-missing", "biome": "void"},
+            ],
+            "edges": [
+                {
+                    "from_id": "loc-harbor",
+                    "to_id": "loc-hill",
+                    "route_kind": "road",
+                    "minutes": 45,
+                    "difficulty": "easy",
+                    "danger": 1,
+                    "tags": ["patrolled"],
+                },
+                {"from_id": "loc-harbor", "to_id": "loc-sealed", "route_kind": "trail"},
+                {"from_id": "loc-harbor", "to_id": "loc-missing", "route_kind": "road"},
+            ],
+        },
+    }
+
+    c = content.seed_world(world)
+
+    assert set(c.world_graph.nodes) == {"loc-harbor"}
+    assert c.world_graph.nodes["loc-harbor"].biome == "coast"
+    assert len(c.world_graph.edges) == 1
+    assert c.world_graph.edges[0].from_id == "loc-harbor"
+    assert c.world_graph.edges[0].to_id == "loc-hill"
+    assert "loc-sealed" not in c.locations["loc-harbor"].connections
+
+    out = capsys.readouterr().out
+    assert "skipping world_graph node" in out
+    assert "not a canonical connection" in out
+    assert "unknown location" in out
+
+
 def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
     w = content.load_world_data("sundered-reach")
     with pytest.raises(ValueError, match="not a region"):
