@@ -75,7 +75,11 @@ struct RootView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: repoPath)
+        if let resolved = resolvedRepoPath(persist: true) {
+            campaignStore.reload(repoPath: resolved)
+        } else {
+            campaignStore.reload(repoPath: repoPath)
+        }
     }
 
     private func startOpenWorlds() {
@@ -87,8 +91,9 @@ struct RootView: View {
             webURL = nil
             launchMessage = "Starting the local viewer"
             do {
+                let resolvedRepoPath = try requireRepoPath()
                 let url = try processService.startViewer(
-                    repoPath: repoPath,
+                    repoPath: resolvedRepoPath,
                     preferredPort: preferredPort,
                     stateDir: stateDir
                 )
@@ -194,8 +199,9 @@ struct RootView: View {
 
     private func startViewerFromBridge(_ payload: [String: Any]) async throws -> [String: Any] {
         let campaignID = stringPayload(payload, "campaignID").flatMap { $0.isEmpty ? nil : $0 }
+        let resolvedRepoPath = try requireRepoPath()
         let url = try processService.startViewer(
-            repoPath: repoPath,
+            repoPath: resolvedRepoPath,
             preferredPort: preferredPort,
             stateDir: stateDir,
             campaignID: campaignID
@@ -211,9 +217,10 @@ struct RootView: View {
         let world = stringPayload(payload, "world") ?? defaultWorld
         let runId = stringPayload(payload, "runId").flatMap { $0.isEmpty ? nil : $0 } ?? Self.newRunID()
         let companions = stringPayload(payload, "companions") ?? ""
+        let resolvedRepoPath = try requireRepoPath()
         let url = try processService.startProviderSession(
             kind: provider,
-            repoPath: repoPath,
+            repoPath: resolvedRepoPath,
             world: world,
             runId: runId,
             preferredPort: preferredPort,
@@ -230,8 +237,9 @@ struct RootView: View {
         if let endpoint = processService.viewerEndpoint {
             return endpoint.dashboardURL
         }
+        let resolvedRepoPath = try requireRepoPath()
         let url = try processService.startViewer(
-            repoPath: repoPath,
+            repoPath: resolvedRepoPath,
             preferredPort: preferredPort,
             stateDir: stateDir
         )
@@ -241,8 +249,9 @@ struct RootView: View {
     }
 
     private func appStatusPayload(extra: [String: Any] = [:]) -> [String: Any] {
+        let currentRepoPath = resolvedRepoPath(persist: false) ?? repoPath
         var payload: [String: Any] = [
-            "repoPath": repoPath,
+            "repoPath": currentRepoPath,
             "stateDir": stateDir.isEmpty ? "default" : stateDir,
             "preferredPort": preferredPort,
             "defaultWorld": defaultWorld,
@@ -253,7 +262,7 @@ struct RootView: View {
             "runningProvider": processService.runningProvider?.rawValue ?? "",
             "lastError": processService.lastError ?? "",
             "preferences": [
-                "repoPath": repoPath,
+                "repoPath": currentRepoPath,
                 "preferredPort": preferredPort,
                 "stateDir": stateDir,
                 "selectedProvider": selectedProviderRaw,
@@ -321,7 +330,8 @@ struct RootView: View {
     }
 
     private func providerStatusesPayload() -> [[String: Any]] {
-        processService.providerStatuses(repoPath: repoPath, preferences: providerPreferences).map {
+        let currentRepoPath = resolvedRepoPath(persist: false) ?? repoPath
+        return processService.providerStatuses(repoPath: currentRepoPath, preferences: providerPreferences).map {
             [
                 "kind": $0.kind.rawValue,
                 "displayName": $0.kind.displayName,
@@ -331,6 +341,31 @@ struct RootView: View {
                 "launchable": $0.isLaunchable,
             ]
         }
+    }
+
+    private func requireRepoPath() throws -> String {
+        if let resolved = resolvedRepoPath(persist: true) {
+            return resolved
+        }
+        throw ProviderError.configuration(
+            "Repo path is not a ClawDnD checkout. Choose a checkout in Settings or set CLAWDND_REPO_ROOT."
+        )
+    }
+
+    private func resolvedRepoPath(persist: Bool) -> String? {
+        if let compatible = RepositoryLocator.openWorldsRepoPath(repoPath) {
+            if persist, compatible != repoPath {
+                repoPath = compatible
+            }
+            return compatible
+        }
+        if let discovered = RepositoryLocator.defaultOpenWorldsRepoPath() {
+            if persist, discovered != repoPath {
+                repoPath = discovered
+            }
+            return discovered
+        }
+        return nil
     }
 
     private var providerPreferences: ProviderPreferences {

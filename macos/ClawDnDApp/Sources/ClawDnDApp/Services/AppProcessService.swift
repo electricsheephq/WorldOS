@@ -62,6 +62,11 @@ final class AppProcessService: ObservableObject {
         guard RepositoryLocator.looksLikeRepo(repoURL) else {
             try throwAndRecord("Repo path is not a ClawDnD checkout: \(repoPath)")
         }
+        guard RepositoryLocator.supportsOpenWorldsViewer(repoURL) else {
+            try throwAndRecord(
+                "Repo checkout is missing OpenWorlds viewer routes. Update the checkout or choose an OpenWorlds-capable ClawDnD worktree: \(repoPath)"
+            )
+        }
         guard Shell.which("python3") != nil else {
             try throwAndRecord("python3 is missing. Install Python 3 before launching the viewer.")
         }
@@ -121,6 +126,11 @@ final class AppProcessService: ObservableObject {
         let repoURL = URL(fileURLWithPath: repoPath)
         guard RepositoryLocator.looksLikeRepo(repoURL) else {
             try throwAndRecord("Repo path is not a ClawDnD checkout: \(repoPath)")
+        }
+        guard RepositoryLocator.supportsOpenWorldsViewer(repoURL) else {
+            try throwAndRecord(
+                "Repo checkout is missing OpenWorlds viewer routes. Update the checkout or choose an OpenWorlds-capable ClawDnD worktree: \(repoPath)"
+            )
         }
 
         guard let port = PortFinder.firstFreePort(startingAt: preferredPort) else {
