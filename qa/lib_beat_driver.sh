@@ -247,3 +247,31 @@ else:
 json.dump(d, open(path, "w"), indent=2)
 PY
 }
+
+# Campaign Director advisory (#72): at the START of a beat, surface what the campaign OWES — an
+# untracked hook to add_quest, an NPC introduced but still silent, a due consequence to land — so
+# the DM is REMINDED structurally instead of relying on reach-for (the add_quest gap a QA run
+# exposed). Read-only (get_campaign_director never mutates). Echoes a short DIRECTOR block for the
+# DM beat prompt, or NOTHING when the campaign owes nothing / no snapshot yet. Non-fatal: a
+# transient uv error -> empty (the next beat re-reads).
+clawdnd_director_advisory() {
+  local root="$1" state_dir="$2" snap camp out
+  snap="$(clawdnd_snapshot_path "$state_dir")"
+  [ -n "$snap" ] || return 0
+  camp="$(basename "$(dirname "$snap")")"
+  out="$(CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
+import sys
+import server
+try:
+    r = server.get_campaign_director(sys.argv[1])
+    adv = (r or {}).get("advisory") or []
+    if adv:
+        print("DIRECTOR — what the campaign OWES right now (weave the TOP one into THIS beat; do not recite the list):")
+        for a in adv[:2]:
+            print(f"- {a}")
+except Exception:
+    pass
+PY
+)"
+  [ -n "$out" ] && printf '%s' "$out"
+}
