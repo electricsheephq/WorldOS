@@ -8,6 +8,7 @@ function ScreenTable({ onNavigate, state, setState }) {
     {};
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
   const [surface, setSurface] = React.useState(null);
+  const [advisory, setAdvisory] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const demoLog = Array.isArray(state?.tableLog) ? state.tableLog : [];
   const [log, setLog] = React.useState([]);
@@ -50,6 +51,15 @@ function ScreenTable({ onNavigate, state, setState }) {
       if (isCancelled()) return;
       setSurfaceStatus(error?.message || "unavailable");
     }
+    // GM Advisory (Campaign Director #72): a separate, best-effort fetch so a journal
+    // hiccup never blocks the table. Surfaces the top structural debt during play.
+    try {
+      const advResp = await fetch(`/journal-surface${query}`, { cache: "no-store" });
+      if (advResp.ok) {
+        const advPayload = await advResp.json();
+        if (!isCancelled()) setAdvisory(advPayload?.directorAdvisory || null);
+      }
+    } catch (error) { /* advisory is non-critical; keep last good */ }
   }, [campaignId, activeCampaign.source, activeCampaign.runId]);
 
   React.useEffect(() => {
@@ -255,6 +265,29 @@ function ScreenTable({ onNavigate, state, setState }) {
 
       {/* RIGHT — Quests + Quick stash + GM tools */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+        {advisory && Array.isArray(advisory.debts) && advisory.debts.length > 0 && (
+          <Panel framed style={{ padding: 18 }}>
+            <SectionTitle right={advisory.total_debts ? <Pill tone="crimson">{advisory.total_debts}</Pill> : null}>GM Advisory</SectionTitle>
+            <div className="body-sm muted" style={{ marginBottom: 8 }}>What the campaign owes the story.</div>
+            <div style={{
+              padding: "10px 12px",
+              background: "rgba(176,141,87,0.08)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3), inset 3px 0 0 " +
+                (advisory.debts[0].severity === "high" ? "var(--crimson)" : advisory.debts[0].severity === "low" ? "var(--b-400)" : "var(--royal)"),
+            }}>
+              <div className="eyebrow" style={{ fontSize: 9, color: "var(--crimson)" }}>
+                {(advisory.debts[0].kind || "debt").replace(/_/g, " ")}
+              </div>
+              <div className="hand" style={{ fontSize: 13, color: "var(--ink-700)", marginTop: 3 }}>
+                {advisory.debts[0].nudge}
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+              <button className="btn ghost sm" onClick={() => onNavigate("journal")}>Open chronicle</button>
+            </div>
+          </Panel>
+        )}
+
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Active Quests</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

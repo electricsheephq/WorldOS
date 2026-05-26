@@ -1,11 +1,48 @@
-/* Screen: Character Sheet — dense, codex/sourcebook style */
+/* Screen: Character Sheet — dense, codex/sourcebook style.
+   Wired to the live /character-surface read model (full party sheets projected from the
+   engine snapshot: classes, skills, spells, class_resources, conditions, AC, death saves).
+   Polls every 5s while visible; falls back to the demo party until the first fetch.
+   Layout/design unchanged from the prototype. */
 
 function ScreenCharacter({ onNavigate, state, setState }) {
-  const party = Array.isArray(state?.party) ? state.party : [];
-  const [active, setActive] = React.useState(() => party[0]?.id || "");
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  const party = (Array.isArray(surface?.party) && surface.party.length)
+    ? surface.party
+    : (Array.isArray(state?.party) ? state.party : []);
+  const [active, setActive] = React.useState("");
   const [tab, setTab] = React.useState("abilities");
   const [restOpen, setRestOpen] = React.useState(false);
   const toast = window.useToast ? window.useToast() : (() => {});
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/character-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`character surface ${response.status}`);
+      const payload = await response.json();
+      if (!isCancelled()) setSurface(payload);
+    } catch (error) { /* keep last good / demo fallback */ }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
 
   const hero = party.find((p) => p.id === active) || party[0];
 

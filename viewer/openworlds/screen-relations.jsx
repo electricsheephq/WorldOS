@@ -1,8 +1,50 @@
-/* Screen: Relations — factions (left) + NPCs (right) */
+/* Screen: Relations — factions (left) + NPCs (right).
+   Wired to the live /relations-surface read model (factions with reputation/tags, met
+   NPCs + companions with attitude + dossier banter/relationships, companion arcs). Polls
+   every 5s while visible; falls back to the demo constants until the first fetch.
+   Layout/design unchanged from the prototype. */
 
 function ScreenRelations({ onNavigate, state, setState }) {
-  const [selectedFaction, setSelectedFaction] = React.useState(FACTIONS[0]);
-  const [selectedNPC, setSelectedNPC] = React.useState(NPCS[0]);
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  const factions = (Array.isArray(surface?.factions) && surface.factions.length) ? surface.factions : FACTIONS;
+  const npcs = (Array.isArray(surface?.npcs) && surface.npcs.length) ? surface.npcs
+    : (surface ? [] : NPCS);
+  const [selectedFactionId, setSelectedFactionId] = React.useState("");
+  const [selectedNPCId, setSelectedNPCId] = React.useState("");
+  const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || FACTIONS[0];
+  const selectedNPC = npcs.find((n) => n.id === selectedNPCId) || npcs[0] || null;
+  const setSelectedFaction = (f) => setSelectedFactionId(f.id);
+  const setSelectedNPC = (n) => setSelectedNPCId(n.id);
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/relations-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`relations surface ${response.status}`);
+      const payload = await response.json();
+      if (!isCancelled()) setSurface(payload);
+    } catch (error) { /* keep last good / demo fallback */ }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, padding: 14, minHeight: 0 }}>
@@ -14,19 +56,19 @@ function ScreenRelations({ onNavigate, state, setState }) {
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Powers That</div>
             <h1 className="h1" style={{ fontSize: 22 }}>Factions</h1>
           </div>
-          <span className="muted body-sm">{FACTIONS.length} known</span>
+          <span className="muted body-sm">{factions.length} known</span>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 14, flex: 1, minHeight: 0 }}>
           {/* Faction list with banner colors */}
           <div style={{ overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-            {FACTIONS.map((f) => (
+            {factions.map((f) => (
               <button key={f.id} onClick={() => setSelectedFaction(f)} style={{
                 position: "relative",
                 padding: "10px 12px",
                 textAlign: "left",
-                background: selectedFaction.id === f.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.06)",
-                boxShadow: selectedFaction.id === f.id
+                background: selectedFaction?.id === f.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.06)",
+                boxShadow: selectedFaction?.id === f.id
                   ? "inset 0 0 0 1px var(--b-500), inset 4px 0 0 " + f.color + ", inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
                   : "inset 0 0 0 1px rgba(140,100,60,0.25), inset 4px 0 0 " + f.color,
                 cursor: "pointer",
@@ -38,11 +80,12 @@ function ScreenRelations({ onNavigate, state, setState }) {
                 <RepBar value={f.rep} max={100} threshold={f.threshold} />
               </button>
             ))}
+            {!factions.length && <div className="body-sm muted">No factions recorded yet.</div>}
           </div>
 
           {/* Faction detail */}
           <div style={{ overflow: "auto", display: "flex", flexDirection: "column" }}>
-            <FactionDetail f={selectedFaction} />
+            {selectedFaction ? <FactionDetail f={selectedFaction} /> : <div className="body-sm muted">No faction selected.</div>}
           </div>
         </div>
       </Panel>
@@ -54,18 +97,18 @@ function ScreenRelations({ onNavigate, state, setState }) {
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Persons We</div>
             <h1 className="h1" style={{ fontSize: 22 }}>Know</h1>
           </div>
-          <span className="muted body-sm">{NPCS.length} acquainted</span>
+          <span className="muted body-sm">{npcs.length} acquainted</span>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 14, flex: 1, minHeight: 0 }}>
           <div style={{ overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-            {NPCS.map((n) => (
+            {npcs.map((n) => (
               <button key={n.id} onClick={() => setSelectedNPC(n)} style={{
                 display: "grid", gridTemplateColumns: "44px 1fr", gap: 8, alignItems: "center",
                 padding: "6px 10px",
                 textAlign: "left",
-                background: selectedNPC.id === n.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.06)",
-                boxShadow: selectedNPC.id === n.id
+                background: selectedNPC?.id === n.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.06)",
+                boxShadow: selectedNPC?.id === n.id
                   ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
                   : "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 cursor: "pointer",
@@ -80,10 +123,11 @@ function ScreenRelations({ onNavigate, state, setState }) {
                 </div>
               </button>
             ))}
+            {!npcs.length && <div className="body-sm muted">No one met yet. NPCs appear here once the party speaks with them.</div>}
           </div>
 
           <div style={{ overflow: "auto" }}>
-            <NPCDetail n={selectedNPC} onNavigate={onNavigate} />
+            {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} /> : <div className="body-sm muted">No acquaintance selected.</div>}
           </div>
         </div>
       </Panel>
@@ -225,11 +269,43 @@ function NPCDetail({ n, onNavigate }) {
 
       <p className="body dropcap" style={{ marginTop: 0, fontSize: 14 }}>{n.body}</p>
 
+      {/* Companion dossier (#68): approval gauge + banter themes + standing ties. */}
+      {n.companion && (
+        <>
+          <Divider />
+          {typeof n.approval === "number" && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span className="eyebrow">Approval</span>
+                <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)" }}>{n.approval > 0 ? "+" : ""}{n.approval}</span>
+              </div>
+              <div style={{ height: 5, marginTop: 3, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)" }}>
+                <div style={{ position: "absolute", inset: 0, right: `${(1 - Math.max(0, Math.min(100, (n.approval + 100) / 2)) / 100) * 100}%`, background: "linear-gradient(180deg, var(--emerald), #2a6a30)" }} />
+              </div>
+            </div>
+          )}
+          {Array.isArray(n.banter_tags) && n.banter_tags.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Banter</div>
+              <div className="tag-row">{n.banter_tags.map((t) => <Pill key={t}>{t}</Pill>)}</div>
+            </div>
+          )}
+          {n.relationships && Object.keys(n.relationships).length > 0 && (
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Ties</div>
+              {Object.entries(n.relationships).map(([who, tie]) => (
+                <div key={who} className="hand muted" style={{ fontSize: 12 }}>{who}: {tie}</div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
       <Divider />
 
-      <SectionTitle>What stands between you</SectionTitle>
+      <SectionTitle>{n.companion ? "What they remember" : "What stands between you"}</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {n.dues.map((d, i) => (
+        {(n.dues || []).map((d, i) => (
           <div key={i} style={{
             padding: "8px 10px",
             background: d.fulfilled ? "rgba(95, 130, 70, 0.08)" : "rgba(176,141,87,0.06)",
@@ -245,6 +321,7 @@ function NPCDetail({ n, onNavigate }) {
             </div>
           </div>
         ))}
+        {!(n.dues || []).length && <div className="body-sm muted">Nothing recorded between you yet.</div>}
       </div>
 
       {n.lastSpoken && (
