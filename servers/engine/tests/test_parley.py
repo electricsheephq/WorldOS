@@ -347,3 +347,16 @@ def test_no_model_change_old_snapshot_round_trips():
     c = Campaign.model_validate(payload)
     assert c.title == "Legacy"
     assert c.events == [] if hasattr(c, "events") else True  # no events field added in P1-2
+
+
+# =========================================================================
+# M2: encounter_outlook raises when no XP can be resolved (silent all-clear fix)
+# =========================================================================
+
+
+def test_encounter_outlook_raises_when_no_xps_passed(outlook_campaign):
+    """encounter_outlook with neither monster_xps nor monster_ids must raise ValueError
+    rather than silently returning a misleading all-clear outlook."""
+    cid = outlook_campaign
+    with pytest.raises(ValueError, match="no XP to evaluate"):
+        server.encounter_outlook(cid)

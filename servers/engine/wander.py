@@ -39,6 +39,18 @@ BASE_RATE = 0.30
 # forest" reads as haunted (the more dangerous tag) before forest. Values are the
 # raw per-roll chance BEFORE modifiers.
 REGION_RATES: dict[str, float] = {
+    # overtly hostile — danger-adjective keywords FIRST so compound names like
+    # "The Haunted Wood" or "Cursed Mountain Pass" resolve to the right tier before
+    # any terrain noun (e.g. "wood", "mountain") can match first.
+    "dungeon": 0.50,
+    "ruin": 0.45,
+    "haunted": 0.50,
+    "cursed": 0.55,
+    "shadow": 0.50,
+    "blight": 0.50,
+    "dread": 0.55,
+    "deathly": 0.55,
+    "underdark": 0.55,
     # tame / civilized — patrolled, low risk
     "town": 0.08,
     "city": 0.08,
@@ -48,16 +60,6 @@ REGION_RATES: dict[str, float] = {
     "safe": 0.05,
     "haven": 0.05,
     "sanctuary": 0.05,
-    # ordinary wilderness — the default-ish overland danger
-    "hill": 0.30,
-    "forest": 0.32,
-    "wood": 0.32,
-    "fell": 0.32,
-    "moor": 0.32,
-    "coast": 0.28,
-    "river": 0.28,
-    "plain": 0.25,
-    "field": 0.25,
     # rough country — more likely to bite
     "marsh": 0.40,
     "swamp": 0.40,
@@ -68,22 +70,28 @@ REGION_RATES: dict[str, float] = {
     "frontier": 0.38,
     "wild": 0.40,
     "border": 0.36,
-    # overtly hostile — something is almost always out there
-    "dungeon": 0.50,
-    "ruin": 0.45,
-    "haunted": 0.50,
-    "cursed": 0.55,
-    "shadow": 0.50,
-    "underdark": 0.55,
-    "blight": 0.50,
-    "dread": 0.55,
-    "deathly": 0.55,
+    # ordinary wilderness — the default-ish overland danger
+    "hill": 0.30,
+    "forest": 0.32,
+    "wood": 0.32,
+    "fell": 0.32,
+    "moor": 0.32,
+    "coast": 0.28,
+    "river": 0.28,
+    "plain": 0.25,
+    "field": 0.25,
 }
 
 # A coarse danger TIER for each region keyword, used only to bias *which* creatures
 # get drawn (see REGION_CREATURES / _region_pool). Independent of REGION_RATES so a
 # region's frequency and its flavor can be tuned separately.
 _REGION_TIER: dict[str, str] = {
+    # danger-adjective keywords FIRST (same ordering discipline as REGION_RATES) so
+    # compound names like "The Haunted Wood" → undead, not forest.
+    "ruin": "undead", "haunted": "undead", "cursed": "undead",
+    "shadow": "undead", "blight": "undead", "dread": "undead",
+    "deathly": "undead", "dungeon": "undead",
+    "underdark": "underdark",
     "town": "civilized", "city": "civilized", "village": "civilized",
     "keep": "civilized", "road": "civilized", "safe": "civilized",
     "haven": "civilized", "sanctuary": "civilized",
@@ -91,11 +99,11 @@ _REGION_TIER: dict[str, str] = {
     "coast": "coast",
     "mountain": "mountain", "hill": "mountain", "waste": "mountain",
     "badland": "mountain",
+    "frontier": "mountain",  # frontier → mountain tier (rough country, elevated risk)
     "forest": "forest", "wood": "forest", "fell": "forest", "moor": "forest",
-    "ruin": "undead", "haunted": "undead", "cursed": "undead",
-    "shadow": "undead", "blight": "undead", "dread": "undead",
-    "deathly": "undead", "dungeon": "undead",
-    "underdark": "underdark",
+    "wild": "forest",  # wild → forest tier (untamed country)
+    "border": "civilized",  # border → civilized tier (contested but still a boundary region)
+    # plain/field intentionally absent: they fall through to BASE_RATE / "wilderness" tier
 }
 
 # Creature pools by flavor tier, in ROUGHLY ascending CR within each list. Every

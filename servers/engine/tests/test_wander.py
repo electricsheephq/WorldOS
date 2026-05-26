@@ -166,6 +166,34 @@ def test_region_creature_pools_all_resolve_in_bestiary():
 
 
 # =========================================================================
+# M1: compound-region keyword priority (danger-adjective before terrain noun)
+# =========================================================================
+
+
+@pytest.mark.parametrize(
+    "region,expected_tier,expected_rate_key",
+    [
+        ("The Haunted Wood", "undead", "haunted"),
+        ("Shadow Forest", "undead", "shadow"),
+        ("Cursed Mountain Pass", "undead", "cursed"),
+        ("Dread Swamp", "undead", "dread"),
+    ],
+)
+def test_compound_region_danger_adjective_wins(region, expected_tier, expected_rate_key):
+    """Danger-adjective keywords must match BEFORE terrain nouns in both REGION_RATES
+    and _REGION_TIER, so 'The Haunted Wood' → undead (not forest), etc."""
+    # _REGION_TIER resolution
+    assert wander._region_tier(region) == expected_tier, (
+        f"{region!r} resolved to {wander._region_tier(region)!r}, expected {expected_tier!r}"
+    )
+    # REGION_RATES resolution — the danger keyword's rate, not the terrain noun's rate
+    assert wander.encounter_chance(region) == wander.REGION_RATES[expected_rate_key], (
+        f"{region!r} encounter_chance is {wander.encounter_chance(region)}, "
+        f"expected REGION_RATES[{expected_rate_key!r}]={wander.REGION_RATES[expected_rate_key]}"
+    )
+
+
+# =========================================================================
 # INTEGRATION: engine seams stage real monster Characters + the payload
 # =========================================================================
 

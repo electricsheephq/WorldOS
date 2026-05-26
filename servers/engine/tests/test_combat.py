@@ -591,3 +591,55 @@ def test_action_surge_by_non_current_combatant_does_not_unlock_current_turns_sec
     server.attack(cid, cur, target, attack_bonus=5, damage_dice="1d6")
     with pytest.raises(ValueError, match="already attacked this turn"):
         server.attack(cid, cur, target, attack_bonus=5, damage_dice="1d6")
+
+
+# =========================================================================
+# Change 2: start_combat outlook fold-in
+# =========================================================================
+
+
+def test_start_combat_outlook_present_for_overmatch(tmp_path, monkeypatch):
+    """L3 party vs dragon-tier foe → start_combat view has 'outlook' with must_offer_out true.
+
+    Uses spawn_monster("Troll") — CR 5, 1800 XP — and two copies to hit the 2x+ overmatch
+    threshold for a level-3 party (deadly budget ~1600 XP, adjusted_xp for 2 trolls with
+    x1.5 multiplier = 5400, ratio ~3.375 > 2.0).  Must_offer_out fires for avg_level <= 5."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Outlook Fold-in Test")["id"]
+    # 4x level-3 player characters
+    pc_ids = [
+        server.create_character(cid, f"PC{i}", kind="player",
+                                class_name="fighter", level=3)["id"]
+        for i in range(4)
+    ]
+    # Spawn 2 Trolls — the spawn path sets xp_value on the Character automatically
+    spawned = server.spawn_monster(cid, "Troll", count=2)
+    troll_ids = [s["id"] for s in spawned["spawned"]]
+
+    view = server.start_combat(cid, pc_ids + troll_ids)
+    assert "outlook" in view, "over-matched fight must surface 'outlook' in start_combat view"
+    assert view["outlook"]["must_offer_out"] is True
+
+
+def test_start_combat_no_outlook_for_fair_fight(tmp_path, monkeypatch):
+    """A balanced fight (L5 party vs a single Bandit) must NOT add 'outlook' to the view.
+
+    Bandit = CR 1/8, 25 XP — trivially below even the easy budget for 4x L5 PCs.
+    The view must be UNCHANGED (no 'outlook' key added for a non-deadly fight)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Fair Fight Test")["id"]
+    pc_ids = [
+        server.create_character(cid, f"PC{i}", kind="player",
+                                class_name="fighter", level=5)["id"]
+        for i in range(4)
+    ]
+    # Spawn a Bandit (CR 1/8, 25 XP) — fair for 4x L5
+    spawned = server.spawn_monster(cid, "Bandit", count=1)
+    bandit_id = spawned["spawned"][0]["id"]
+
+    view = server.start_combat(cid, pc_ids + [bandit_id])
+    assert "outlook" not in view, "a fair/easy fight must NOT add 'outlook' to start_combat view"
