@@ -90,7 +90,6 @@ const OPENWORLDS_ICON_ALIASES = Object.freeze({
   economy: "economy.coins",
   item: "inventory.potion",
   locked: "inventory.locked",
-  map: "atlas.travel",
   potion: "inventory.potion",
   quest: "quest.scroll",
   rest: "camp.rest",

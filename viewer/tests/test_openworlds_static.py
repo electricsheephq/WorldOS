@@ -123,12 +123,15 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def test_openworlds_icon_registry_assets_are_local_and_attributed(self):
         index = (server._OPENWORLDS_DIR / "index.html").read_text(encoding="utf-8")
         registry = (server._OPENWORLDS_DIR / "icon-registry.jsx").read_text(encoding="utf-8")
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
         attribution = (server._OPENWORLDS_DIR / "assets" / "icons" / "ATTRIBUTION.md").read_text(encoding="utf-8")
 
         self.assertIn('src="icon-registry.jsx"', index)
         self.assertLess(index.index('src="icon-registry.jsx"'), index.index('src="chrome.jsx"'))
         self.assertIn("OPENWORLDS_ICON_MANIFEST", registry)
         self.assertNotIn("https://", registry)
+        self.assertNotIn('map: "atlas.travel"', registry)
+        self.assertIn("CHROME_BUILTIN_GLYPHS", chrome)
 
         icon_paths = sorted(set(re.findall(r'src: "([^"]+\.svg)"', registry)))
         self.assertGreaterEqual(len(icon_paths), 10)
