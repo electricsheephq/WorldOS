@@ -68,6 +68,135 @@ def test_pack_precedence_srd_wins_and_pack_adds(tmp_path, monkeypatch):
         bestiary._actions_by_source_parent.cache_clear()
 
 
+def _authored_pack(tmp_path, monsters):
+    import json as _json
+
+    pack = tmp_path / "mythic-workshop"
+    pack.mkdir()
+    (pack / "pack.json").write_text(_json.dumps({
+        "id": "mythic-workshop",
+        "title": "Mythic Workshop Test Pack",
+        "license": {"name": "CC-BY-4.0"},
+        "source": {"title": "Unit test fixture"},
+        "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+        "monsters": monsters,
+    }))
+    return tmp_path
+
+
+def test_authored_monster_pack_requires_record_metadata(tmp_path, monkeypatch):
+    root = _authored_pack(tmp_path, [{
+        "name": "Lantern Mireling",
+        "armor_class": 13,
+        "hit_points": 19,
+        "abilities": {"str": 8, "dex": 14, "con": 12, "int": 10, "wis": 13, "cha": 9},
+        "license": {"name": "CC-BY-4.0"},
+        "source": {"title": "Unit test fixture"},
+        # missing provenance on the record: pack metadata alone is not enough
+    }])
+    monkeypatch.setattr(bestiary, "_AUTHORED_ROOT", root)
+    bestiary._authored_entries.cache_clear()
+    try:
+        errors = bestiary.authored_validation_errors()
+        assert any("Lantern Mireling" in e and "provenance" in e for e in errors)
+        assert bestiary.stat_block("Lantern Mireling") is None
+    finally:
+        bestiary._authored_entries.cache_clear()
+        bestiary._index.cache_clear()
+
+
+def test_authored_monster_pack_adds_metadata_but_never_overrides_srd(tmp_path, monkeypatch):
+    root = _authored_pack(tmp_path, [
+        {
+            "name": "Wolf",
+            "armor_class": 99,
+            "hit_points": 999,
+            "abilities": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
+            "license": {"name": "CC-BY-4.0"},
+            "source": {"title": "Unit test fixture"},
+            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+        },
+        {
+            "name": "Lantern Mireling",
+            "size": "Small",
+            "type": "fey",
+            "armor_class": 13,
+            "hit_points": 19,
+            "hit_dice": "3d6+9",
+            "challenge_rating": "1/2",
+            "experience_points": 100,
+            "abilities": {"str": 8, "dex": 14, "con": 12, "int": 10, "wis": 13, "cha": 9},
+            "actions": [{"name": "Glimmer Claw", "desc": "A player-safe action summary."}],
+            "license": {"name": "CC-BY-4.0"},
+            "source": {"title": "Unit test fixture"},
+            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+        },
+    ])
+    monkeypatch.setattr(bestiary, "_AUTHORED_ROOT", root)
+    bestiary._authored_entries.cache_clear()
+    bestiary._index.cache_clear()
+    try:
+        assert bestiary.stat_block("Wolf")["hp"] == 11
+        errors = bestiary.authored_validation_errors()
+        assert any("Wolf" in e and "overrides SRD" in e for e in errors)
+
+        mireling = bestiary.stat_block("Lantern Mireling")
+        assert mireling["content_origin"] == "authored"
+        assert mireling["license"]["name"] == "CC-BY-4.0"
+        assert mireling["source"]["title"] == "Unit test fixture"
+        assert mireling["provenance"]["method"] == "hand-authored"
+        assert "Lantern Mireling" in bestiary.find("mire")
+    finally:
+        bestiary._authored_entries.cache_clear()
+        bestiary._index.cache_clear()
+
+
+def test_player_bestiary_projection_is_safe_and_read_only(tmp_path, monkeypatch):
+    root = _authored_pack(tmp_path, [{
+        "name": "Lantern Mireling",
+        "size": "Small",
+        "type": "fey",
+        "armor_class": 13,
+        "hit_points": 19,
+        "challenge_rating": "1/2",
+        "abilities": {"str": 8, "dex": 14, "con": 12, "int": 10, "wis": 13, "cha": 9},
+        "actions": [{"name": "Glimmer Claw", "desc": "Private tactics stay out of projection."}],
+        "private_notes": "ambushes wounded PCs",
+        "license": {"name": "CC-BY-4.0"},
+        "source": {"title": "Unit test fixture"},
+        "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+    }])
+    monkeypatch.setattr(bestiary, "_AUTHORED_ROOT", root)
+    bestiary._authored_entries.cache_clear()
+    bestiary._index.cache_clear()
+    try:
+        preview = bestiary.player_bestiary_preview("Lantern Mireling")
+        assert preview == {
+            "name": "Lantern Mireling",
+            "size": "Small",
+            "type": "fey",
+            "cr": "1/2",
+            "content_origin": "authored",
+            "source": {"title": "Unit test fixture"},
+            "license": {"name": "CC-BY-4.0"},
+            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+            "known_actions": ["Glimmer Claw"],
+        }
+        assert "hp" not in preview and "ac" not in preview
+        assert "private" not in repr(preview).lower()
+    finally:
+        bestiary._authored_entries.cache_clear()
+        bestiary._index.cache_clear()
+
+
+def test_server_list_bestiary_defaults_to_player_safe_projection():
+    out = server.list_bestiary("wolf", limit=20)
+    wolf = next(item for item in out["items"] if item["name"] == "Wolf")
+    assert wolf["content_origin"] == "srd"
+    assert "known_actions" in wolf
+    assert "hp" not in wolf and "ac" not in wolf and "abilities" not in wolf
+
+
 # --- damage resistance / immunity / vulnerability --------------------------
 
 

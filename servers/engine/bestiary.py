@@ -25,8 +25,11 @@ import encounter
 
 _ROOT = Path(__file__).resolve().parents[2] / "data" / "srd"
 _PRIMARY = _ROOT / "srd524"  # canonical SRD 5.2 — always wins a name collision
+_AUTHORED_ROOT = Path(__file__).resolve().parents[2] / "data" / "bestiary" / "authored"
 
 _ABILITIES = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+_ABILITY_SHORTS = ("str", "dex", "con", "int", "wis", "cha")
+_CONTENT_METADATA = ("license", "source", "provenance")
 
 
 def _dirs() -> list:
@@ -74,8 +77,142 @@ def _index() -> dict[str, dict]:
             if name:
                 key = name.lower()
                 if key not in out:  # FIRST-WINS — earlier dir (srd524) takes precedence
-                    out[key] = {"src": d.name, "row": c}
+                    out[key] = {"src": d.name, "row": c, "content_origin": "srd"}
+    for key, entry in _authored_entries()[0].items():
+        if key not in out:  # authored monsters fill gaps, never shadow SRD names
+            out[key] = entry
     return out
+
+
+def _authored_pack_dirs() -> list[Path]:
+    """Native authored monster pack dirs.
+
+    These are intentionally separate from ``data/srd`` fixture packs: authored records
+    need explicit license/source/provenance metadata and never participate in SRD
+    fixture precedence. A pack is a directory with one ``pack.json`` manifest.
+    """
+    if not _AUTHORED_ROOT.is_dir():
+        return []
+    return sorted(p for p in _AUTHORED_ROOT.iterdir() if p.is_dir() and (p / "pack.json").exists())
+
+
+def _read_json(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _metadata_errors(obj: dict, label: str) -> list[str]:
+    errors: list[str] = []
+    for field in _CONTENT_METADATA:
+        value = obj.get(field)
+        if not isinstance(value, dict) or not any(str(v).strip() for v in value.values()):
+            errors.append(f"{label} missing explicit {field} metadata")
+    return errors
+
+
+def _authored_abilities(raw: object) -> dict[str, int]:
+    data = raw if isinstance(raw, dict) else {}
+    out: dict[str, int] = {}
+    for short, full in zip(_ABILITY_SHORTS, _ABILITIES):
+        out[short] = int(data.get(short, data.get(full, 10)) or 10)
+    return out
+
+
+def _authored_actions(raw: object) -> list[dict]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        desc = str(row.get("desc", row.get("description", ""))).strip()
+        if name:
+            out.append({"name": name, "desc": desc, "action_type": str(row.get("action_type", "ACTION"))})
+    return out
+
+
+@functools.lru_cache(maxsize=None)
+def _authored_entries() -> tuple[dict[str, dict], tuple[str, ...]]:
+    """Load valid native authored monsters and collect validation errors.
+
+    The loader is intentionally strict about metadata and conservative about name
+    collisions. Invalid records are excluded from the runtime index; collisions against
+    SRD names are reported and skipped so authored packs cannot silently replace a
+    canonical SRD creature.
+    """
+    entries: dict[str, dict] = {}
+    errors: list[str] = []
+    srd_names = {
+        c.get("fields", {}).get("name", "").strip().lower()
+        for d in _dirs()
+        for c in _read_json(d / "Creature.json")
+        if c.get("fields", {}).get("name")
+    }
+    for pack_dir in _authored_pack_dirs():
+        pack_path = pack_dir / "pack.json"
+        try:
+            pack = _read_json(pack_path)
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"{pack_path}: unreadable authored monster pack: {exc}")
+            continue
+        if not isinstance(pack, dict):
+            errors.append(f"{pack_path}: authored monster pack must be a JSON object")
+            continue
+        pack_label = f"pack {pack.get('id') or pack_dir.name}"
+        errors.extend(_metadata_errors(pack, pack_label))
+        monsters = pack.get("monsters")
+        if not isinstance(monsters, list):
+            errors.append(f"{pack_label} missing monsters list")
+            continue
+        for row in monsters:
+            if not isinstance(row, dict):
+                errors.append(f"{pack_label} has non-object monster record")
+                continue
+            name = str(row.get("name", "")).strip()
+            record_label = f"{pack_label} monster {name or '<unnamed>'}"
+            record_errors = _metadata_errors(row, record_label)
+            if not name:
+                record_errors.append(f"{record_label} missing name")
+            key = name.lower()
+            if key in srd_names:
+                record_errors.append(f"{record_label} overrides SRD creature {name!r}; authored packs may only add net-new names")
+            if key in entries:
+                record_errors.append(f"{record_label} duplicates authored creature {name!r}")
+            if record_errors:
+                errors.extend(record_errors)
+                continue
+            fields = {
+                "name": name,
+                "size": str(row.get("size", "")),
+                "type": str(row.get("type", "")),
+                "armor_class": int(row.get("armor_class", row.get("ac", 10)) or 10),
+                "hit_points": int(row.get("hit_points", row.get("hp", 1)) or 1),
+                "hit_dice": str(row.get("hit_dice", "")),
+                "abilities": _authored_abilities(row.get("abilities")),
+                "challenge_rating": _norm_cr(row.get("challenge_rating", row.get("cr", "0"))),
+                "experience_points": int(row.get("experience_points", row.get("xp", 0)) or 0),
+                "proficiency_bonus": int(row.get("proficiency_bonus", 2) or 2),
+                "initiative_bonus": int(row.get("initiative_bonus", 0) or 0),
+                "damage_resistances": _as_list(row.get("damage_resistances")),
+                "damage_immunities": _as_list(row.get("damage_immunities")),
+                "damage_vulnerabilities": _as_list(row.get("damage_vulnerabilities")),
+                "condition_immunities": _as_list(row.get("condition_immunities")),
+                "actions": _authored_actions(row.get("actions")),
+            }
+            repo_root = Path(__file__).resolve().parents[2]
+            try:
+                src = str(pack_path.relative_to(repo_root))
+            except ValueError:
+                src = str(pack_path)
+            entries[key] = {
+                "src": src,
+                "content_origin": "authored",
+                "fields": fields,
+                "license": row["license"],
+                "source": row["source"],
+                "provenance": row["provenance"],
+            }
+    return entries, tuple(errors)
 
 
 def _norm_cr(cr) -> str:
@@ -102,6 +239,49 @@ def _as_list(value) -> list[str]:
     return [p.strip() for p in str(value).replace(";", ",").split(",") if p.strip()]
 
 
+def authored_validation_errors() -> list[str]:
+    """Validation errors for committed/native authored monster packs.
+
+    Read-only helper for CI, PR review, and future authoring UI work. Invalid authored
+    records are excluded from the bestiary index, so this can be surfaced without
+    mutating combat state or allowing unsafe content through.
+    """
+    return list(_authored_entries()[1])
+
+
+def _stat_block_from_authored(entry: dict, fallback_name: str) -> dict:
+    f = entry["fields"]
+    cr = _norm_cr(f.get("challenge_rating"))
+    xp = int(f.get("experience_points") or 0)
+    if xp == 0:
+        try:
+            xp = encounter.xp_for_cr(cr)
+        except ValueError:
+            xp = 0
+    return {
+        "name": f.get("name", fallback_name),
+        "size": f.get("size", ""),
+        "type": f.get("type", ""),
+        "ac": int(f.get("armor_class") or 10),
+        "hp": int(f.get("hit_points") or 1),
+        "hit_dice": f.get("hit_dice", ""),
+        "abilities": dict(f.get("abilities") or {}),
+        "cr": cr,
+        "xp": xp,
+        "proficiency_bonus": int(f.get("proficiency_bonus") or 2),
+        "initiative_bonus": int(f.get("initiative_bonus") or 0),
+        "damage_resistances": _as_list(f.get("damage_resistances")),
+        "damage_immunities": _as_list(f.get("damage_immunities")),
+        "damage_vulnerabilities": _as_list(f.get("damage_vulnerabilities")),
+        "condition_immunities": _as_list(f.get("condition_immunities")),
+        "actions": list(f.get("actions") or []),
+        "content_origin": "authored",
+        "license": entry["license"],
+        "source": entry["source"],
+        "provenance": entry["provenance"],
+    }
+
+
 def stat_block(name: str) -> Optional[dict]:
     """A flat, engine-shaped stat block for a creature by (case-insensitive) name,
     or None if unknown. Includes abilities, AC, HP, CR/XP, the damage
@@ -110,6 +290,8 @@ def stat_block(name: str) -> Optional[dict]:
     entry = _index().get(name.strip().lower())
     if entry is None:
         return None
+    if entry.get("content_origin") == "authored":
+        return _stat_block_from_authored(entry, name)
     row = entry["row"]
     f = row["fields"]
     abilities = {
@@ -141,14 +323,56 @@ def stat_block(name: str) -> Optional[dict]:
         "damage_vulnerabilities": _as_list(f.get("damage_vulnerabilities")),
         "condition_immunities": _as_list(f.get("condition_immunities")),
         "actions": _actions_by_source_parent().get((entry["src"], row.get("pk")), []),
+        "content_origin": "srd",
     }
+
+
+def player_bestiary_preview(name: str) -> Optional[dict]:
+    """Player-safe codex preview for a known creature.
+
+    This is deliberately narrower than ``stat_block``: no HP, AC, ability scores,
+    tactical notes, or action text. It is safe for viewer/browser projection and is
+    read-only over the bestiary index.
+    """
+    sb = stat_block(name)
+    if sb is None:
+        return None
+    preview = {
+        "name": sb["name"],
+        "size": sb.get("size", ""),
+        "type": sb.get("type", ""),
+        "cr": sb.get("cr", "0"),
+        "content_origin": sb.get("content_origin", "srd"),
+        "known_actions": [str(a.get("name", "")).strip() for a in sb.get("actions", []) if a.get("name")][:5],
+    }
+    if sb.get("content_origin") == "authored":
+        preview["source"] = sb["source"]
+        preview["license"] = sb["license"]
+        preview["provenance"] = sb["provenance"]
+    return preview
+
+
+def player_bestiary(query: str = "", limit: int = 20) -> dict:
+    """Read-only player-facing bestiary/codex projection."""
+    n = max(1, min(int(limit), 50))
+    names = find(query, n)
+    return {
+        "items": [p for name in names if (p := player_bestiary_preview(name)) is not None],
+        "validation_errors": authored_validation_errors(),
+    }
+
+
+def _entry_name(entry: dict) -> str:
+    if entry.get("content_origin") == "authored":
+        return entry["fields"]["name"]
+    return entry["row"]["fields"]["name"]
 
 
 def find(query: str, limit: int = 10) -> list[str]:
     """Creature names matching `query` (substring, case-insensitive), sorted. Deduped
     against the index (first-wins), so a pack's same-named creature never appears twice."""
     q = query.strip().lower()
-    names = sorted(e["row"]["fields"]["name"] for e in _index().values())
+    names = sorted(_entry_name(e) for e in _index().values())
     if not q:
         return names[:limit]
     return [n for n in names if q in n.lower()][:limit]
@@ -164,7 +388,7 @@ def _token_prefix_matches(name: str) -> list[str]:
         return []
     out = set()
     for e in _index().values():
-        cand = e["row"]["fields"]["name"]
+        cand = _entry_name(e)
         c_tokens = cand.lower().split()
         used = [False] * len(c_tokens)
         ok = True
@@ -201,13 +425,13 @@ def resolve(name: str) -> Optional[str]:
     key = name.strip().lower()
     idx = _index()
     if key in idx:
-        return idx[key]["row"]["fields"]["name"]
+        return _entry_name(idx[key])
     alias = _ALIASES.get(key)
     if alias and alias.strip().lower() in idx:
-        return idx[alias.strip().lower()]["row"]["fields"]["name"]
+        return _entry_name(idx[alias.strip().lower()])
     warrior = f"{key} warrior"
     if warrior in idx:
-        return idx[warrior]["row"]["fields"]["name"]
+        return _entry_name(idx[warrior])
     matches = find(name)
     if len(matches) == 1:
         return matches[0]

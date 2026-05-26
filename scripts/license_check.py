@@ -66,6 +66,26 @@ def _check_ingested_attribution(tracked: list[str]) -> list[str]:
     return errors
 
 
+def _check_authored_bestiary() -> list[str]:
+    """Validate native authored monster packs without importing or committing content."""
+    authored_root = ROOT / "data" / "bestiary" / "authored"
+    if not authored_root.exists():
+        return []
+    engine_dir = ROOT / "servers" / "engine"
+    sys.path.insert(0, str(engine_dir))
+    try:
+        import bestiary  # type: ignore
+    except Exception as exc:
+        return [f"authored bestiary validation unavailable: {exc}"]
+    try:
+        bestiary._authored_entries.cache_clear()
+        bestiary._index.cache_clear()
+        return [f"authored bestiary: {e}" for e in bestiary.authored_validation_errors()]
+    finally:
+        bestiary._authored_entries.cache_clear()
+        bestiary._index.cache_clear()
+
+
 def tracked_files() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
@@ -97,6 +117,7 @@ def main() -> int:
 
     # Ingested (wiki-derived) records/pages must each carry per-source attribution.
     errors.extend(_check_ingested_attribution(tracked))
+    errors.extend(_check_authored_bestiary())
 
     if errors:
         print("LICENSE CHECK FAILED:")

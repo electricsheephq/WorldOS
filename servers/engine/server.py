@@ -1635,6 +1635,25 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     }
 
 
+@mcp.tool()
+def list_bestiary(query: str = "", limit: int = 20, player_safe: bool = True) -> dict:
+    """Read-only bestiary/codex lookup.
+
+    Defaults to the player-safe projection: identity, type/size/CR, action names,
+    and authored-content license/source/provenance metadata only. It never mutates
+    bestiary packs, campaign state, or combat state. Pass ``player_safe=False`` only
+    for a DM-side preview that may include mechanical stat blocks.
+    """
+    n = max(1, min(int(limit), 50))
+    if player_safe:
+        return bestiary.player_bestiary(query, n)
+    names = bestiary.find(query, n)
+    return {
+        "items": [sb for name in names if (sb := bestiary.stat_block(name)) is not None],
+        "validation_errors": bestiary.authored_validation_errors(),
+    }
+
+
 def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) -> list[dict]:
     """Add `count` combat-ready monster Characters for a canonical bestiary name to the
     campaign (mutates; caller holds the lock + saves). Mirrors `spawn_monster`'s
