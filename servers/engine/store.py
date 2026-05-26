@@ -14,12 +14,17 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Optional
 
+from pydantic import ValidationError
+
 from models import Campaign, SessionLogEntry
+
+log = logging.getLogger(__name__)
 
 
 def state_dir() -> Path:
@@ -80,7 +85,41 @@ def load_campaign(campaign_id: str) -> Optional[Campaign]:
     path = _campaign_dir(campaign_id) / "snapshot.json"
     if not path.exists():
         return None
-    return Campaign.model_validate_json(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8")
+    try:
+        return Campaign.model_validate_json(raw)
+    except ValidationError:
+        pass
+
+    # Tolerant fallback: drop any top-level keys the current schema doesn't know
+    # about (removed/renamed fields from an older or newer snapshot).  We only
+    # attempt this at the TOP level of Campaign — sub-model strictness is
+    # intentionally preserved.  Per-rename migrations (old-key → new-key) are
+    # added here per-release as needed; this generic net only handles field
+    # removal / unknown keys.
+    import json
+    data: dict = json.loads(raw)
+    known = set(Campaign.model_fields)
+    dropped = [k for k in list(data) if k not in known]
+    if dropped:
+        log.warning(
+            "load_campaign(%s): dropping unrecognised top-level key(s) %s "
+            "— snapshot may be from a different schema version; "
+            "data in those fields is lost for this load.",
+            campaign_id,
+            dropped,
+        )
+        for k in dropped:
+            del data[k]
+
+    try:
+        return Campaign.model_validate(data)
+    except ValidationError as exc:
+        raise RuntimeError(
+            f"load_campaign({campaign_id!r}): snapshot is incompatible with the "
+            f"current schema and cannot be loaded even after stripping unknown "
+            f"top-level keys.  Validation error: {exc}"
+        ) from exc
 
 
 def list_campaigns() -> list[dict]:
