@@ -70,6 +70,7 @@ from models import (
     HouseRules,
     Item,
     Location,
+    PendingDamageBonus,
     PendingOnHitRider,
     Quest,
     RepeatSave,
@@ -3127,6 +3128,16 @@ def attack(
         # has advantage" marker) BEFORE the roll so we can both auto-apply its advantage
         # (via attack_modifiers) and consume it after this one attack resolves (#194).
         adv_marker = combat.advantage_granting_effect(target)
+        # Capture + CLEAR any pending damage-maneuver bonus (Battle Master Trip/Menacing,
+        # #213) the attacker declared via use_resource(superiority_dice, maneuver=…). The
+        # superiority die was rolled at spend time; THIS attack is the one strike that
+        # consumes it. Consume it whatever the outcome (the die is already spent — it can't
+        # carry to a later swing), but fold the rolled damage into the strike only on a HIT
+        # (a miss does no damage). None == no maneuver declared (the default path). Mirrors
+        # the adv_marker / on-hit-rider consume-once discipline so it can't double-apply.
+        man_bonus = attacker.pending_damage_bonus
+        if man_bonus is not None:
+            attacker.pending_damage_bonus = None
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
@@ -3172,15 +3183,32 @@ def attack(
             if warn:
                 result["range_warning"] = warn
         if hit:
-            if damage_rolls:
+            # A pending DAMAGE-maneuver bonus (#213) folds the already-rolled superiority die
+            # into THIS strike as one extra typed component. The die is NOT re-rolled and NOT
+            # crit-doubled (5e: only weapon dice double; the maneuver die is added once),
+            # which is exactly what apply_damage_components does — it takes pre-rolled amounts.
+            # Defaults to the weapon's damage_type when the maneuver didn't specify one, so the
+            # bonus shares the strike's resistance treatment unless typed otherwise.
+            man_part = None
+            if man_bonus is not None and man_bonus.amount > 0:
+                man_part = {
+                    "amount": man_bonus.amount,
+                    "type": man_bonus.damage_type or damage_type,
+                }
+            if damage_rolls or man_part is not None:
                 # MULTI-COMPONENT (#210): roll + crit-double EACH component on its own
                 # dice, then apply per-type resistance/immunity/vulnerability per
                 # component before summing. The pre-adjustment roll total per component
                 # is surfaced so the DM sees what each type contributed; the post-
-                # resistance figure lives in target_state["components"].
+                # resistance figure lives in target_state["components"]. A single-type
+                # strike carrying a maneuver bonus joins this path too (its one weapon
+                # component + the maneuver component), so the bonus lands as ONE hit.
                 comp_results: list[dict] = []
                 parts_for_apply: list[dict] = []
-                for spec in damage_rolls:
+                base_specs = damage_rolls or (
+                    [{"dice": damage_dice, "type": damage_type}] if damage_dice else []
+                )
+                for spec in base_specs:
                     cd = str(spec.get("dice", "") or "")
                     ct = str(spec.get("type", "") or "")
                     if not cd:
@@ -3192,6 +3220,16 @@ def attack(
                         {"type": ct, "total": ctotal, "expr": cexpr, "detail": cdmg.detail}
                     )
                     parts_for_apply.append({"amount": ctotal, "type": ct})
+                if man_part is not None:
+                    # The maneuver die is a flat pre-rolled add (no expr to re-roll/double).
+                    comp_results.append({
+                        "type": man_part["type"],
+                        "total": man_bonus.amount,
+                        "expr": man_bonus.expr,
+                        "detail": man_bonus.detail,
+                        "maneuver": man_bonus.source,
+                    })
+                    parts_for_apply.append(man_part)
                 outcome = combat.apply_damage_components(
                     target, parts_for_apply, crit=is_crit
                 )
@@ -3216,10 +3254,32 @@ def attack(
                 dmg = dice_mod.roll(expr)
                 outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
                 result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
+            if man_bonus is not None:
+                # Surface the maneuver's contribution explicitly so the DM/log sees the die
+                # that landed (and that it WAS applied), distinct from the weapon dice.
+                result["maneuver_damage"] = {
+                    "maneuver": man_bonus.source,
+                    "die": man_bonus.expr,
+                    "rolled": man_bonus.amount,
+                    "detail": man_bonus.detail,
+                    "applied": man_bonus.amount > 0,
+                }
             result["target_state"] = outcome
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
+        elif man_bonus is not None:
+            # The strike MISSED, so the maneuver die adds no damage — but it was already spent
+            # at use_resource time (and consumed above), so report it as spent-not-applied
+            # rather than silently swallowing it. The die does NOT carry to a later attack.
+            result["maneuver_damage"] = {
+                "maneuver": man_bonus.source,
+                "die": man_bonus.expr,
+                "rolled": man_bonus.amount,
+                "detail": man_bonus.detail,
+                "applied": False,
+                "note": "attack missed — superiority die spent but no damage added",
+            }
         # ON-HIT RIDER RESOLUTION (#186). An attack-roll spell (Guiding Bolt) recorded a
         # PENDING rider on the caster at cast_spell time instead of writing its timed effect
         # to the target. This attack resolves that spell attack when it's the caster striking
@@ -4892,14 +4952,36 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
 
 
 @mcp.tool()
-def use_resource(campaign_id: str, character_id: str, resource: str, amount: int = 1) -> dict:
+def use_resource(
+    campaign_id: str,
+    character_id: str,
+    resource: str,
+    amount: int = 1,
+    maneuver: str = "",
+    damage_type: str = "",
+) -> dict:
     """Spend from a depletable class-resource pool (Rage, Ki, Lay on Hands, Channel
     Divinity, Bardic Inspiration, Sorcery Points, Second Wind, Action Surge, Wild
     Shape, …). Deducts `amount` (default 1; for Lay on Hands pass the hit points to
     spend). Returns ``{ok: True, remaining, max, used}`` on success; ``{ok: False,
     error, remaining, max}`` without changing state when the character lacks that
     pool or hasn't enough left, so the DM gets a clean signal instead of an
-    exception. Pools refresh via short_rest / long_rest."""
+    exception. Pools refresh via short_rest / long_rest.
+
+    DAMAGE MANEUVER (Battle Master, #213): pass ``maneuver`` (the maneuver's name, e.g.
+    "Trip Attack" / "Menacing Attack") when the spent die is a DAMAGE maneuver — "add the
+    superiority die to the attack's damage roll." The engine ROLLS the pool's die (`amount`
+    × the resource's `size`, e.g. 1d8) at spend time and stashes the rolled total as a
+    PENDING damage bonus on the character; the NEXT ``attack()`` by this character folds it
+    into that strike's damage and clears it (consumed once — never double-applied), so the
+    maneuver's damage is REAL without the DM remembering to add it. The rolled die + bonus
+    are surfaced under ``maneuver_damage``. ``damage_type`` optionally types the added
+    damage (default "" == the same type as the weapon strike). A maneuver only makes sense
+    for a die pool: spending a POINT pool (no `size`) for a maneuver is refused with a clean
+    signal and NO state change. The maneuver's save/condition (Trip → prone, Menacing →
+    frightened) stays a separate DM ``saving_throw`` call — only the DAMAGE bonus is wired
+    here. ADDITIVE: omit ``maneuver`` (the default) and a spend is byte-identical to before
+    — no pending bonus is ever set, so a non-maneuver pool behaves exactly as today."""
     if amount < 1:
         raise ValueError("amount must be >= 1")
     with campaign_lock(campaign_id):
@@ -4921,7 +5003,48 @@ def use_resource(campaign_id: str, character_id: str, resource: str, amount: int
                 "remaining": remaining,
                 "max": res.max,
             }
+        # A DAMAGE maneuver adds the spent die to the next attack's damage — so the pool MUST
+        # roll a die. Refuse a maneuver against a point pool (no `size`) up front, BEFORE
+        # spending, so the DM gets a clean signal instead of a silently-wasted point with no
+        # bonus (and no phantom pending record gets written). Inert when `maneuver` is empty.
+        man = maneuver.strip()
+        if man and not res.size.strip():
+            return {
+                "ok": False,
+                "error": (
+                    f"{resource!r} is a point pool (no die) — a damage maneuver needs a "
+                    f"die pool like Superiority Dice; nothing spent"
+                ),
+                "resource": resource,
+                "remaining": remaining,
+                "max": res.max,
+            }
         res.used += amount
+        man_damage = None
+        if man:
+            # Roll the spent die(s) NOW (engine-rolls-and-tells, like an on-hit rider): one
+            # source of truth — the result is fixed at declare time, and the next attack just
+            # reads it. `amount` × the pool's die size (1 die per maneuver in 5e RAW, so this
+            # is 1d8 for the default Superiority Die).
+            die_expr = f"{amount}{res.size.strip()}"
+            roll = dice_mod.roll(die_expr)
+            bonus = max(0, roll.total)
+            ch.pending_damage_bonus = PendingDamageBonus(
+                amount=bonus,
+                source=man,
+                resource=resource,
+                expr=die_expr,
+                detail=roll.detail,
+                damage_type=damage_type.strip(),
+            )
+            man_damage = {
+                "maneuver": man,
+                "die": die_expr,
+                "rolled": bonus,
+                "detail": roll.detail,
+                "damage_type": damage_type.strip(),
+                "applies_to": "next attack's damage",
+            }
         # Action Surge grants a fresh Action this turn — so the Attack-action economy
         # (attack()) must allow another Attack action's worth of strikes. Record it on
         # the combat when spent mid-fight by the CURRENT combatant (resets each turn in
@@ -4935,7 +5058,7 @@ def use_resource(campaign_id: str, character_id: str, resource: str, amount: int
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         new = ch.class_resources[resource]
-        return {
+        out = {
             "ok": True,
             "resource": resource,
             "spent": amount,
@@ -4944,6 +5067,9 @@ def use_resource(campaign_id: str, character_id: str, resource: str, amount: int
             "used": new.used,
             "recharge": new.recharge,
         }
+        if man_damage is not None:
+            out["maneuver_damage"] = man_damage
+        return out
 
 
 @mcp.tool()

@@ -532,6 +532,30 @@ class ActiveEffect(_StrictModel):
     imposes_condition: Optional[Condition] = None
 
 
+class PendingDamageBonus(_StrictModel):
+    """A DECLARED-but-not-yet-applied extra damage roll the NEXT attack folds in (#213).
+
+    A Battle Master damage maneuver (Trip Attack, Menacing Attack, …) reads "you add the
+    superiority die to the attack's damage roll." But declaring the maneuver and resolving
+    the strike are two engine calls (`use_resource(superiority_dice, maneuver=…)` then
+    `attack`), so — exactly like a spell's on-hit rider (PendingOnHitRider, #186) — the die
+    is ROLLED when the resource is spent and stashed HERE on the combatant; the next
+    `attack()` adds `amount` to that strike's damage and clears this record (consumed once,
+    never double-applied). One source of truth: the roll happens at spend time so the bonus
+    is real without the DM remembering, and the attack just reads the rolled total.
+
+    ADDITIVE: `Character.pending_damage_bonus` defaults to None, so every existing snapshot
+    round-trips unchanged and a `use_resource` call with NO maneuver never creates one — a
+    plain superiority-die spend (or any other pool) behaves exactly as today."""
+
+    amount: int  # the already-rolled die result added to the next attack's damage
+    source: str = ""  # the maneuver name (Trip Attack, Menacing Attack, …) for surfacing
+    resource: str = ""  # the pool it was spent from (e.g. "superiority_dice")
+    expr: str = ""  # the die expression rolled (e.g. "1d8") for the surfaced breakdown
+    detail: str = ""  # the dice-roller's human detail (e.g. "1d8[6] = 6")
+    damage_type: str = ""  # type of the added damage; "" == same type as the weapon strike
+
+
 class PendingOnHitRider(_StrictModel):
     """An attack-roll spell's ON-HIT rider effect that has NOT yet landed (#186).
 
@@ -613,6 +637,12 @@ class Character(_StrictModel):
     # target only when the spell attack hits (see PendingOnHitRider, #186). Empty ==
     # today's behavior; held on the CASTER so attack() can match attacker→target.
     pending_on_hit_riders: list[PendingOnHitRider] = Field(default_factory=list)
+    # A DECLARED-but-not-yet-applied extra damage roll the NEXT attack folds in — a Battle
+    # Master damage maneuver (Trip/Menacing Attack) rolls its superiority die at
+    # use_resource(superiority_dice, maneuver=…) time and stashes the result here; the next
+    # attack() adds it to that strike's damage and clears it (see PendingDamageBonus, #213).
+    # None == today's behavior; a maneuver-less use_resource never sets it.
+    pending_damage_bonus: Optional[PendingDamageBonus] = None
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves

@@ -1847,3 +1847,166 @@ def test_next_turn_monster_no_action_advances_freely(tmp_path, monkeypatch):
     # Monster takes no action — next_turn must NOT raise
     view = server.next_turn(cid)
     assert view["active"] is True
+
+
+# =========================================================================
+# Battle Master DAMAGE maneuver (#213): use_resource(superiority_dice, maneuver=…)
+# rolls the die and the NEXT attack folds it into that strike's damage.
+# =========================================================================
+
+
+def _rigged_roller(d20_total: int, fixed: dict[str, int]):
+    """A deterministic dice_mod.roll: d20 expressions return `d20_total` (hit/miss
+    control); any other expression returns a fixed total looked up by its (space-stripped)
+    text, defaulting to 0 so an unexpected expr is loud rather than silently '6'."""
+    from dice import DiceRoll
+
+    def _roll(expr, advantage=False, disadvantage=False, seed=None):
+        e = expr.replace(" ", "").lower()
+        if e.startswith("1d20"):
+            return DiceRoll(
+                expression=expr, total=d20_total, rolls=[d20_total - 5],
+                modifier=5, detail=f"{expr}={d20_total}", is_d20=True,
+                natural=max(1, min(20, d20_total - 5)),
+            )
+        total = fixed.get(e, 0)
+        return DiceRoll(expression=expr, total=total, rolls=[total], detail=f"{expr}[{total}]={total}")
+
+    return _roll
+
+
+def _bm_combat(server, monkeypatch, tmp_path, *, die_total: int, weapon_total: int, d20: int = 25):
+    """Start a Hero-vs-Goblin fight with the Hero current, a 6-die superiority pool (d8),
+    and a rigged roller: 1d8 -> `die_total`, 1d6+3 -> `weapon_total`, d20 -> `d20`."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Battle Master")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=20, armor_class=12)["id"]
+    gob = server.create_character(cid, "Goblin", kind="monster", max_hp=40, armor_class=10)["id"]
+    server.set_class_resource(cid, hero, "superiority_dice", max=6, recharge="short", size="d8")
+    # Hero must be the current combatant to take an action-attack; rig initiative so the
+    # higher-init Hero goes first (start_combat rolls 1d20+init for each).
+    server.start_combat(cid, [hero, gob])
+    if server.get_state(cid)["current_turn"] != hero:
+        server.next_turn(cid)  # 2-combatant order — advance to the Hero
+    assert server.get_state(cid)["current_turn"] == hero
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged_roller(d20, {"1d8": die_total, "1d6+3": weapon_total}))
+    return cid, hero, gob
+
+
+def test_damage_maneuver_die_rolled_on_spend_and_pending(tmp_path, monkeypatch):
+    # use_resource(superiority_dice, maneuver=…) ROLLS the die and stashes a pending bonus.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    spent = server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    assert spent["ok"] is True
+    assert spent["remaining"] == 5  # one die spent
+    md = spent["maneuver_damage"]
+    assert md["maneuver"] == "Trip Attack" and md["die"] == "1d8" and md["rolled"] == 6
+    # The rolled bonus is now pending on the character.
+    pdb = server.get_character(cid, hero)["pending_damage_bonus"]
+    assert pdb is not None and pdb["amount"] == 6 and pdb["source"] == "Trip Attack"
+
+
+def test_damage_maneuver_adds_die_to_triggering_attack(tmp_path, monkeypatch):
+    # The core fix: after spending a die for a maneuver, the next attack's damage STRICTLY
+    # exceeds the weapon alone by the rolled die (7 weapon + 6 die = 13).
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["hit"] is True
+    # weapon (7) + superiority die (6) folded into ONE hit.
+    assert res["damage"]["total"] == 13
+    assert res["damage"]["applied_total"] == 13  # no resistance on the goblin
+    assert res["maneuver_damage"]["rolled"] == 6 and res["maneuver_damage"]["applied"] is True
+    # The target actually took the full 13 (40 - 13 = 27).
+    assert server.get_character(cid, gob)["current_hp"] == 27
+    # >= +1 over the weapon alone (the regression guard from the issue).
+    assert res["damage"]["total"] >= 7 + 1
+
+
+def test_damage_maneuver_strictly_exceeds_weapon_max(tmp_path, monkeypatch):
+    # Sharper form of the issue's assert: a maneuver strike must exceed even the MAX of the
+    # weapon+mod alone. Weapon 1d6+3 maxes at 9; with the die it lands at 9 + 1 = 10 (die=1).
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=1, weapon_total=9)
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Menacing Attack")
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    weapon_max = 6 + 3  # 1d6+3
+    assert res["damage"]["total"] >= weapon_max + 1
+
+
+def test_normal_attack_without_maneuver_unchanged(tmp_path, monkeypatch):
+    # ADDITIVE: a normal attack with no maneuver spent is exactly the weapon's damage — no
+    # bonus, no maneuver_damage key, the single-type path is untouched.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["hit"] is True
+    assert res["damage"]["total"] == 7  # weapon only
+    assert "maneuver_damage" not in res
+    assert res["damage"].get("expr") == "1d6+3"  # stayed on the byte-identical single-type path
+    assert server.get_character(cid, gob)["current_hp"] == 33  # 40 - 7
+
+
+def test_maneuver_die_consumed_once_not_double_applied(tmp_path, monkeypatch):
+    # The pending bonus is consumed by the FIRST attack only — a second attack the same
+    # combat (e.g. via Extra Attack) gets the weapon alone, never the die again.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    server.update_character(cid, hero, {"extra_attacks": 1})  # two attacks this action
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    first = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert first["damage"]["total"] == 13  # 7 + 6 (die applied once)
+    # Pending bonus cleared after the first strike.
+    assert server.get_character(cid, gob)["pending_damage_bonus"] is None
+    assert server.get_character(cid, hero)["pending_damage_bonus"] is None
+    second = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert second["damage"]["total"] == 7  # weapon ONLY — the die is gone
+    assert "maneuver_damage" not in second
+
+
+def test_maneuver_die_on_miss_spent_but_no_damage(tmp_path, monkeypatch):
+    # A MISS consumes the declared die (it was spent at use_resource time) but adds no
+    # damage — and it does NOT carry to a later attack.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7, d20=2)
+    # Goblin AC bumped so the rigged low d20 misses.
+    server.update_character(cid, gob, {"armor_class": 20})
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    res = server.attack(cid, hero, gob, attack_bonus=0, damage_dice="1d6+3", damage_type="slashing")
+    assert res["hit"] is False
+    assert res["maneuver_damage"]["applied"] is False
+    assert server.get_character(cid, gob)["current_hp"] == 40  # untouched
+    # The die did not survive to the next swing.
+    assert server.get_character(cid, hero)["pending_damage_bonus"] is None
+
+
+def test_maneuver_on_point_pool_refused_no_spend(tmp_path, monkeypatch):
+    # A damage maneuver needs a DIE pool. Declaring one against a point pool (Ki, no `size`)
+    # is refused with a clean signal and NO spend / no pending bonus.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    cid = server.create_campaign("Point pool")["id"]
+    monk = server.create_character(cid, "Monk", kind="player", max_hp=20)["id"]
+    server.set_class_resource(cid, monk, "ki", max=5, recharge="short")  # no size -> point pool
+    out = server.use_resource(cid, monk, "ki", maneuver="Trip Attack")
+    assert out["ok"] is False and "point pool" in out["error"]
+    sheet = server.get_character(cid, monk)
+    assert sheet["class_resources"]["ki"]["used"] == 0  # nothing spent
+    assert sheet["pending_damage_bonus"] is None
+
+
+def test_maneuver_die_typed_damage_respects_resistance(tmp_path, monkeypatch):
+    # A maneuver with an explicit damage_type lands as that type — and a resistant target
+    # halves only the maneuver component (the weapon's type is untouched). Trip 'Attack' with
+    # fire damage (a homebrew flourish) on a fire-resistant foe: weapon 7 slashing (full) +
+    # die 6 fire -> 3 = 10 to HP, but the rolled-sum surfaced total is 13.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    server.update_character(cid, gob, {"damage_resistances": ["fire"]})
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack", damage_type="fire")
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["damage"]["total"] == 13  # pre-resistance rolled sum (7 + 6)
+    assert res["damage"]["applied_total"] == 10  # 7 slashing + 3 (6 fire halved)
+    assert server.get_character(cid, gob)["current_hp"] == 30  # 40 - 10
