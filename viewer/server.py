@@ -37,6 +37,7 @@ import importlib.util
 import json
 import mimetypes
 import os
+import re
 import subprocess
 import sys
 import time
@@ -50,6 +51,7 @@ _HERE = Path(__file__).resolve().parent
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
 _OPENWORLDS_DIR_ENV = "CLAWDND_OPENWORLDS_DIR"
+_BETA_CHANNEL_DIR_ENV = "CLAWDND_BETA_CHANNEL_DIR"
 _OPENWORLDS_ROUTE = "/openworlds"
 _OPENWORLDS_MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -70,6 +72,15 @@ def _openworlds_dir() -> Path:
     """
     override = os.environ.get(_OPENWORLDS_DIR_ENV, "").strip()
     return Path(override).expanduser() if override else _HERE / "openworlds"
+
+
+def _beta_channel_dir() -> Path | None:
+    """Optional local Sparkle channel root exposed through loopback HTTP."""
+    override = os.environ.get(_BETA_CHANNEL_DIR_ENV, "").strip()
+    if not override:
+        return None
+    root = Path(override).expanduser()
+    return root if root.is_dir() else None
 
 # The constrained move palette — the SAME lane the engine facade enforces. A human
 # acting via the dashboard must not be able to POST DM-side narration ("the dragon
@@ -2814,6 +2825,49 @@ def _openworlds_asset(route: str) -> Path | None:
     return target if target.is_file() else None
 
 
+def _beta_channel_asset(route: str) -> Path | None:
+    """Resolve a local-beta Sparkle artifact path under the configured channel root."""
+    root = _beta_channel_dir()
+    if root is None:
+        return None
+    if route == "/appcast.xml":
+        target_name = "appcast.xml"
+    else:
+        target_name = unquote(route.lstrip("/"))
+    if "/" in target_name or target_name.startswith("."):
+        return None
+    if target_name != "appcast.xml" and not target_name.startswith("ClawDnD-"):
+        return None
+    try:
+        root_resolved = root.resolve()
+        target = (root_resolved / target_name).resolve()
+        target.relative_to(root_resolved)
+    except (OSError, ValueError):
+        return None
+    return target if target.is_file() else None
+
+
+def _loopback_base_url(handler: BaseHTTPRequestHandler) -> str:
+    host = handler.headers.get("Host", "").strip() or "127.0.0.1"
+    return f"http://{host}"
+
+
+def _rewritten_appcast(handler: BaseHTTPRequestHandler, appcast: Path) -> bytes:
+    """Serve the local appcast with artifact links rewritten to this viewer's port."""
+    text = appcast.read_text(encoding="utf-8")
+    base = _loopback_base_url(handler).rstrip("/") + "/"
+    root = _beta_channel_dir()
+    if root is not None:
+        for candidate in (root, root.resolve()):
+            try:
+                text = text.replace(candidate.as_uri().rstrip("/") + "/", base)
+            except ValueError:
+                continue
+    text = re.sub(r"http://127\.0\.0\.1:\d+/", base, text)
+    text = re.sub(r"http://localhost:\d+/", base, text)
+    return text.encode("utf-8")
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
@@ -2936,6 +2990,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif route in ("/dashboard", "/dashboard.html"):
             html = (_HERE / "dashboard.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
+        elif route == "/appcast.xml":
+            appcast = _beta_channel_asset(route)
+            if appcast is None:
+                self._send(404, b"not found", "text/plain")
+            else:
+                self._send(200, _rewritten_appcast(self, appcast), "application/xml; charset=utf-8")
+        elif route.startswith("/ClawDnD-"):
+            asset = _beta_channel_asset(route)
+            if asset is None:
+                self._send(404, b"not found", "text/plain")
+            else:
+                self._send(200, asset.read_bytes(), _openworlds_mime(asset))
         elif route == "/openworlds/config.json":
             self._json(_openworlds_config())
         elif route == "/openworlds/campaigns.json":

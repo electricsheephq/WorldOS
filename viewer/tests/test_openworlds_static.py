@@ -26,9 +26,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
         self._old_openworlds = os.environ.get("CLAWDND_OPENWORLDS_DIR")
+        self._old_beta_channel = os.environ.get("CLAWDND_BETA_CHANNEL_DIR")
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         os.environ.pop("CLAWDND_OPENWORLDS_DIR", None)
+        os.environ.pop("CLAWDND_BETA_CHANNEL_DIR", None)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -50,6 +52,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_OPENWORLDS_DIR", None)
         else:
             os.environ["CLAWDND_OPENWORLDS_DIR"] = self._old_openworlds
+        if self._old_beta_channel is None:
+            os.environ.pop("CLAWDND_BETA_CHANNEL_DIR", None)
+        else:
+            os.environ["CLAWDND_BETA_CHANNEL_DIR"] = self._old_beta_channel
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -100,6 +106,51 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", ctype)
         self.assertEqual(body, b"bundled openworlds beta")
+
+    def test_local_beta_appcast_is_served_over_loopback_http(self):
+        beta = self._tmp / "beta-channel"
+        beta.mkdir()
+        (beta / "ClawDnD-0.3.0-beta.1.zip").write_bytes(b"zip")
+        (beta / "ClawDnD-0.3.0-beta.1.md").write_text("notes", encoding="utf-8")
+        (beta / "appcast.xml").write_text(
+            f"""
+            <rss>
+              <channel>
+                <item>
+                  <sparkle:releaseNotesLink>{beta.as_uri()}/ClawDnD-0.3.0-beta.1.md</sparkle:releaseNotesLink>
+                  <enclosure url="http://127.0.0.1:8765/ClawDnD-0.3.0-beta.1.zip" />
+                </item>
+              </channel>
+            </rss>
+            """,
+            encoding="utf-8",
+        )
+        os.environ["CLAWDND_BETA_CHANNEL_DIR"] = str(beta)
+
+        status, ctype, body = self._get("/appcast.xml")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/xml", ctype)
+        source = body.decode("utf-8")
+        expected_base = f"http://{self._host}:{self._port}/"
+        self.assertIn(f"{expected_base}ClawDnD-0.3.0-beta.1.zip", source)
+        self.assertIn(f"{expected_base}ClawDnD-0.3.0-beta.1.md", source)
+        self.assertNotIn("file://", source)
+        self.assertNotIn("http://127.0.0.1:8765/", source)
+
+    def test_local_beta_artifacts_are_path_guarded(self):
+        beta = self._tmp / "beta-channel"
+        beta.mkdir()
+        (beta / "ClawDnD-0.3.0-beta.1.zip").write_bytes(b"zip")
+        os.environ["CLAWDND_BETA_CHANNEL_DIR"] = str(beta)
+
+        status, ctype, body = self._get("/ClawDnD-0.3.0-beta.1.zip")
+
+        self.assertEqual(status, 200)
+        self.assertIn("zip", ctype)
+        self.assertEqual(body, b"zip")
+        self.assertEqual(self._status("/../ClawDnD-0.3.0-beta.1.zip"), 404)
+        self.assertEqual(self._status("/not-clawdnd.zip"), 404)
 
     def test_openworlds_config_is_browser_safe_metadata(self):
         status, ctype, body = self._get("/openworlds/config.json")

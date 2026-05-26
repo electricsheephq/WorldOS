@@ -36,6 +36,7 @@ struct RootView: View {
                     navigationError: $webViewErrorMessage,
                     nativeRequestHandler: handleNativeRequest
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
             } else {
                 OpenWorldsLaunchOverlay(
@@ -97,6 +98,7 @@ struct RootView: View {
                     preferredPort: preferredPort,
                     stateDir: stateDir
                 )
+                updateAppcastFeedURL()
                 launchMessage = "Waiting for OpenWorlds"
                 try await waitForOpenWorlds(url)
                 guard !Task.isCancelled else { return }
@@ -170,12 +172,14 @@ struct RootView: View {
             return try await startViewerFromBridge(request.payload)
         case "stopViewer":
             processService.stopViewer()
+            updaterService.setFeedURL(nil)
             webURL = nil
             return appStatusPayload()
         case "startProviderSession":
             return try await startProviderFromBridge(request.payload)
         case "stopProvider":
             processService.stopProvider()
+            updaterService.setFeedURL(nil)
             return appStatusPayload()
         case "diagnostics":
             return ["diagnostics": processService.diagnostics]
@@ -206,6 +210,7 @@ struct RootView: View {
             stateDir: stateDir,
             campaignID: campaignID
         )
+        updateAppcastFeedURL()
         try await waitForOpenWorlds(url)
         webURL = url
         return appStatusPayload(extra: ["url": url.absoluteString])
@@ -228,6 +233,7 @@ struct RootView: View {
             stateDir: stateDir,
             preferences: providerPreferences
         )
+        updateAppcastFeedURL()
         try await waitForOpenWorlds(url)
         webURL = url
         return appStatusPayload(extra: ["url": url.absoluteString, "runId": runId])
@@ -243,9 +249,14 @@ struct RootView: View {
             preferredPort: preferredPort,
             stateDir: stateDir
         )
+        updateAppcastFeedURL()
         try await waitForOpenWorlds(url)
         webURL = url
         return processService.viewerEndpoint?.dashboardURL ?? url
+    }
+
+    private func updateAppcastFeedURL() {
+        updaterService.setFeedURL(processService.viewerEndpoint?.appcastURL)
     }
 
     private func appStatusPayload(extra: [String: Any] = [:]) -> [String: Any] {
@@ -423,7 +434,7 @@ private final class OpenWorldsChromeHostView: NSView {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
-            window.styleMask.remove(.titled)
+            window.styleMask.insert(.titled)
             window.styleMask.insert(.resizable)
             window.toolbar = nil
             window.backgroundColor = .black

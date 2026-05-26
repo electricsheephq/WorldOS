@@ -71,12 +71,16 @@ Every OpenWorlds screen should expose one of these labels:
 Sparkle is the beta distribution lane for #134. Maintainers currently use a
 Lexar-backed local channel at `/Volumes/LEXAR/Codex/clawdnd-beta-channel`.
 Contributors can use a different local channel by setting `BETA_OUTPUT_DIR` and,
-when needed, `CLAWDND_FEED_URL` before running the packaging script.
+when needed, `CLAWDND_FEED_URL` before running the packaging script. Sparkle
+must fetch appcasts over HTTP(S), so the app points Sparkle at the running
+loopback viewer, and the viewer serves the local channel artifacts without
+moving game state into the app bundle.
 
 Local maintainer setup:
 
 - app bundle: `/Volumes/LEXAR/Codex/clawdnd-beta-channel/ClawDnD.app`
-- update feed: `file:///Volumes/LEXAR/Codex/clawdnd-beta-channel/appcast.xml`
+- update feed: `http://127.0.0.1:<viewer-port>/appcast.xml`
+- local channel files: `/Volumes/LEXAR/Codex/clawdnd-beta-channel/appcast.xml`
 - release script: `script/package_macos_beta.sh`
 - bundle id: `dev.clawdnd.app`
 - version/build: `0.3.0` / `2026052601` for `0.3.0-beta.1`
@@ -86,7 +90,7 @@ Contributor override example:
 
 ```bash
 BETA_OUTPUT_DIR="$HOME/ClawDnD-beta-channel" \
-CLAWDND_FEED_URL="file://$HOME/ClawDnD-beta-channel/appcast.xml" \
+CLAWDND_FEED_URL="http://127.0.0.1:8765/appcast.xml" \
 ./script/package_macos_beta.sh --version 0.3.0 --build 2026052601 --channel local-beta
 ```
 
@@ -108,6 +112,9 @@ Implementation goals:
 - Package `viewer/openworlds/` into `ClawDnD.app/Contents/Resources/openworlds`
   and launch the repo-backed Python viewer with `CLAWDND_OPENWORLDS_DIR` pointing
   at those bundled assets when available.
+- Launch the viewer with `CLAWDND_BETA_CHANNEL_DIR` when a local beta channel is
+  configured, so `/appcast.xml` and `ClawDnD-*` artifacts are served from the
+  same loopback host/port as the OpenWorlds shell.
 
 ## Window Chrome Lane
 

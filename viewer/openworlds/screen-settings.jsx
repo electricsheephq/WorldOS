@@ -313,7 +313,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
             Check for Updates
           </BrassButton>
           <p className="body-sm muted" style={{ marginTop: 12 }}>
-            Local beta updates use the file-based appcast in the Lexar release channel. Campaign state remains in the configured repo/state directory.
+            Local beta updates are served from the Lexar release channel through this viewer's loopback feed. Campaign state remains in the configured repo/state directory.
           </p>
         </Panel>
       </div>

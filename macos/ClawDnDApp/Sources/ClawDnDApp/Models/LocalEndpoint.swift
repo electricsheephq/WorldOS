@@ -28,6 +28,10 @@ struct LocalEndpoint: Identifiable, Equatable {
         return components?.url ?? url.appendingPathComponent("openworlds/")
     }
 
+    var appcastURL: URL {
+        url.appendingPathComponent("appcast.xml")
+    }
+
     var monitorURL: URL {
         url.appendingPathComponent("monitor")
     }

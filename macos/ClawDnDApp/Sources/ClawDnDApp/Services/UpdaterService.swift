@@ -2,13 +2,16 @@ import Foundation
 import Sparkle
 
 @MainActor
-final class UpdaterService: ObservableObject {
+final class UpdaterService: NSObject, ObservableObject, SPUUpdaterDelegate {
     @Published private(set) var lastCheckRequestedAt: Date?
     @Published private(set) var lastError: String?
 
-    private let updaterController: SPUStandardUpdaterController?
+    private var updaterController: SPUStandardUpdaterController?
+    private var overrideFeedURL: URL?
 
-    init() {
+    override init() {
+        super.init()
+
         let feedURL = (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let publicKey = (Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String)?
@@ -23,10 +26,15 @@ final class UpdaterService: ObservableObject {
         } else {
             updaterController = SPUStandardUpdaterController(
                 startingUpdater: true,
-                updaterDelegate: nil,
+                updaterDelegate: self,
                 userDriverDelegate: nil
             )
         }
+    }
+
+    func setFeedURL(_ feedURL: URL?) {
+        overrideFeedURL = feedURL
+        lastError = nil
     }
 
     var statusPayload: [String: Any] {
@@ -35,7 +43,7 @@ final class UpdaterService: ObservableObject {
             "version": info["CFBundleShortVersionString"] as? String ?? "0.0.0",
             "build": info["CFBundleVersion"] as? String ?? "0",
             "bundleIdentifier": info["CFBundleIdentifier"] as? String ?? "",
-            "feedURL": info["SUFeedURL"] as? String ?? "",
+            "feedURL": currentFeedURLString,
             "channel": info["ClawDnDUpdateChannel"] as? String ?? "local-beta",
             "canCheckForUpdates": updaterController?.updater.canCheckForUpdates ?? false,
             "publicKeyConfigured": (info["SUPublicEDKey"] as? String)?.isEmpty == false,
@@ -55,10 +63,42 @@ final class UpdaterService: ObservableObject {
         guard updaterController.updater.canCheckForUpdates else {
             throw ProviderError.configuration("Sparkle updater is not ready to check for updates yet.")
         }
+        guard let feedURL = currentFeedURL, ["http", "https"].contains(feedURL.scheme?.lowercased() ?? "") else {
+            lastError = "Sparkle feed is not reachable over HTTP yet. Start the viewer first."
+            throw ProviderError.configuration(lastError ?? "Sparkle feed is not reachable over HTTP yet.")
+        }
         lastCheckRequestedAt = Date()
         lastError = nil
         updaterController.checkForUpdates(nil)
         return statusPayload
+    }
+
+    @objc(feedURLStringForUpdater:)
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        overrideFeedURL?.absoluteString
+    }
+
+    @objc(updater:didAbortWithError:)
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        lastError = error.localizedDescription
+    }
+
+    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        lastError = error?.localizedDescription
+    }
+
+    private var currentFeedURLString: String {
+        overrideFeedURL?.absoluteString
+            ?? (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? "")
+    }
+
+    private var currentFeedURL: URL? {
+        URL(string: currentFeedURLString.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private static let isoDateFormatter = ISO8601DateFormatter()

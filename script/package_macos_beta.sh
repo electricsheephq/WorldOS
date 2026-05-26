@@ -36,8 +36,9 @@ Environment:
   BETA_OUTPUT_DIR               Output directory for the local beta channel.
                                 Defaults to /Volumes/LEXAR/Codex/clawdnd-beta-channel
   CLAWDND_FEED_URL              Sparkle feed URL written into Info.plist.
-                                Defaults to file://${BETA_OUTPUT_DIR:-/Volumes/LEXAR/Codex/clawdnd-beta-channel}/appcast.xml
+                                Defaults to http://127.0.0.1:8765/appcast.xml
   CLAWDND_DOWNLOAD_URL_PREFIX   Optional URL prefix passed to Sparkle generate_appcast.
+                                Defaults to http://127.0.0.1:8765/
 USAGE
 }
 
@@ -132,6 +133,7 @@ write_info_plist() {
   local channel="$4"
   local public_key="$5"
   local feed_url="$6"
+  local beta_channel_root="$7"
 
   cat >"$plist_path" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -158,6 +160,8 @@ write_info_plist() {
   <string>$(xml_escape "$build")</string>
   <key>ClawDnDUpdateChannel</key>
   <string>$(xml_escape "$channel")</string>
+  <key>ClawDnDLocalBetaChannelPath</key>
+  <string>$(xml_escape "$beta_channel_root")</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
@@ -294,12 +298,13 @@ main() {
   prerelease="$(printf '%s' "$prerelease" | tr -d '[:space:]')"
   [[ -n "$prerelease" ]] || fail "pre-release suffix must not be empty"
 
-  local script_dir repo_root package_dir public_key_file feed_url
+  local script_dir repo_root package_dir public_key_file feed_url download_url_prefix
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "${script_dir}/.." && pwd)"
   package_dir="${repo_root}/macos/ClawDnDApp"
   public_key_file="${package_dir}/SparklePublicKey.txt"
-  feed_url="${CLAWDND_FEED_URL:-file://${OUTPUT_ROOT}/appcast.xml}"
+  download_url_prefix="${CLAWDND_DOWNLOAD_URL_PREFIX:-http://127.0.0.1:8765/}"
+  feed_url="${CLAWDND_FEED_URL:-${download_url_prefix%/}/appcast.xml}"
 
   [[ "$repo_root" == /Volumes/LEXAR/repos/* ]] || fail "repo must be under /Volumes/LEXAR/repos; found ${repo_root}"
   [[ "$OUTPUT_ROOT" == /Volumes/LEXAR/Codex/* ]] || fail "output root must be under /Volumes/LEXAR/Codex"
@@ -339,7 +344,7 @@ main() {
   rm -rf "$staging_dir"
   mkdir -p "${app_path}/Contents/MacOS" "${app_path}/Contents/Resources" "${app_path}/Contents/Frameworks"
   install -m 755 "$executable_path" "${app_path}/Contents/MacOS/${EXECUTABLE_NAME}"
-  write_info_plist "${app_path}/Contents/Info.plist" "$version" "$build" "$channel" "$public_key" "$feed_url"
+  write_info_plist "${app_path}/Contents/Info.plist" "$version" "$build" "$channel" "$public_key" "$feed_url" "$OUTPUT_ROOT"
   plutil -lint "${app_path}/Contents/Info.plist" >/dev/null
   copy_sparkle_framework "$package_dir" "${app_path}/Contents/Frameworks"
   ditto "${repo_root}/viewer/openworlds" "${app_path}/Contents/Resources/openworlds"
@@ -365,9 +370,7 @@ main() {
   cp "${zip_path%.zip}.md" "$appcast_src/"
 
   local appcast_args=("$generate_appcast_path" --ed-key-file "$PRIVATE_KEY_FILE" -o "$appcast_path")
-  if [[ -n "${CLAWDND_DOWNLOAD_URL_PREFIX:-}" ]]; then
-    appcast_args+=(--download-url-prefix "$CLAWDND_DOWNLOAD_URL_PREFIX")
-  fi
+  appcast_args+=(--download-url-prefix "$download_url_prefix")
   appcast_args+=("$appcast_src")
   "${appcast_args[@]}" >/dev/null
 

@@ -11,6 +11,7 @@ final class AppProcessService: ObservableObject {
     @Published var lastError: String?
     @Published var providerLaunchMetadata: ProviderLaunchMetadata?
     @Published var openWorldsAssetsPath: String?
+    @Published var localBetaChannelPath: String?
 
     private var viewerProcess: ManagedProcess?
     private var providerProcess: ManagedProcess?
@@ -24,6 +25,7 @@ final class AppProcessService: ObservableObject {
         Viewer: \(viewerEndpoint?.url.absoluteString ?? "stopped")
         Viewer status: \(viewerEndpoint?.status.rawValue ?? "stopped")
         OpenWorlds assets: \(openWorldsAssetsPath ?? "repo default")
+        Local beta channel: \(localBetaChannelPath ?? "not configured")
         Active campaign: \(activeCampaignID ?? "none")
         Running provider: \(runningProvider?.rawValue ?? "none")
         Last error: \(lastError ?? "none")
@@ -82,6 +84,7 @@ final class AppProcessService: ObservableObject {
             env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
         }
         attachBundledOpenWorldsAssets(to: &env)
+        attachLocalBetaChannel(to: &env)
         let args = ["python3", "viewer/server.py", campaignID ?? "", String(port)]
         let managed = try launchManagedProcess(
             name: "viewer",
@@ -167,6 +170,7 @@ final class AppProcessService: ObservableObject {
         providerLog = ""
         var providerEnvironment = request.environment
         attachBundledOpenWorldsAssets(to: &providerEnvironment)
+        attachLocalBetaChannel(to: &providerEnvironment)
         let metadata = ProviderLaunchMetadata(
             kind: kind,
             processName: request.name,
@@ -361,6 +365,32 @@ final class AppProcessService: ObservableObject {
         let indexURL = assetsURL.appendingPathComponent("index.html")
         guard FileManager.default.fileExists(atPath: indexURL.path) else { return nil }
         return assetsURL
+    }
+
+    private func attachLocalBetaChannel(to environment: inout [String: String]) {
+        guard let channelURL = localBetaChannel() else {
+            localBetaChannelPath = nil
+            return
+        }
+        environment["CLAWDND_BETA_CHANNEL_DIR"] = channelURL.path
+        localBetaChannelPath = channelURL.path
+    }
+
+    private func localBetaChannel() -> URL? {
+        let fileManager = FileManager.default
+        if let rawPath = Bundle.main.object(forInfoDictionaryKey: "ClawDnDLocalBetaChannelPath") as? String {
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath, isDirectory: true)
+            if fileManager.fileExists(atPath: url.appendingPathComponent("appcast.xml").path) {
+                return url
+            }
+        }
+
+        let appDirectory = Bundle.main.bundleURL.deletingLastPathComponent()
+        if fileManager.fileExists(atPath: appDirectory.appendingPathComponent("appcast.xml").path) {
+            return appDirectory
+        }
+
+        return nil
     }
 
     private func throwAndRecord(_ message: String) throws -> Never {
