@@ -1,13 +1,49 @@
-/* Screen: Inventory & Stash */
+/* Screen: Inventory & Stash.
+   Wired to the live /inventory-surface read model (each party member's pack + currency,
+   plus a flat shared-stash view). Polls every 5s while visible; falls back to the demo
+   data until the first fetch. The per-hero coin purse comes from the live currency.
+   Layout/design unchanged from the prototype. */
 
 function ScreenInventory({ onNavigate, state, setState }) {
-  const party = Array.isArray(state?.party) ? state.party : [];
-  const stash = Array.isArray(state?.stash) ? state.stash : [];
-  const [selectedItem, setSelectedItem] = React.useState(() => stash[3] || stash[0] || null);
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  const party = (Array.isArray(surface?.party) && surface.party.length)
+    ? surface.party
+    : (Array.isArray(state?.party) ? state.party : []);
   const [filter, setFilter] = React.useState("all");
-  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
+  const [activeHero, setActiveHero] = React.useState("");
+  const [selectedItem, setSelectedItem] = React.useState(null);
   const [ctxMenu, setCtxMenu] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/inventory-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`inventory surface ${response.status}`);
+      const payload = await response.json();
+      if (!isCancelled()) setSurface(payload);
+    } catch (error) { /* keep last good / demo fallback */ }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
 
   const hero = party.find((p) => p.id === activeHero) || party[0] || {
     name: "Hero",
@@ -17,6 +53,24 @@ function ScreenInventory({ onNavigate, state, setState }) {
     class: "Adventurer",
     equipped: [],
   };
+  // When wired, the stash is the active hero's own pack (live surface); the prototype
+  // fallback used a global demo stash. Either way the center grid + filters are unchanged.
+  const stash = (surface && Array.isArray(hero.items)) ? hero.items
+    : (Array.isArray(surface?.stash) ? surface.stash
+      : (Array.isArray(state?.stash) ? state.stash : []));
+
+  React.useEffect(() => {
+    if (party.length && !party.some((p) => p.id === activeHero)) {
+      setActiveHero(party[0]?.id || "");
+    }
+  }, [party, activeHero]);
+
+  React.useEffect(() => {
+    if (!selectedItem || !stash.some((i) => i.id === selectedItem.id)) {
+      setSelectedItem(stash[0] || null);
+    }
+  }, [stash, selectedItem]);
+
   const filtered = filter === "all"
     ? stash
     : stash.filter((i) => i.type === filter);
@@ -29,6 +83,20 @@ function ScreenInventory({ onNavigate, state, setState }) {
         <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
         <h2 className="h1" style={{ fontSize: 22 }}>{hero.name}</h2>
         <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>Lv {hero.level} {hero.class}</div>
+
+        {/* Hero switcher — pick whose pack to view (live surface gives each their own). */}
+        {party.length > 1 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
+            {party.map((p) => (
+              <button key={p.id} onClick={() => setActiveHero(p.id)} className="pill" style={{
+                cursor: "pointer",
+                background: activeHero === p.id ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.08)",
+                color: activeHero === p.id ? "var(--w-300)" : "var(--ink-700)",
+                boxShadow: activeHero === p.id ? "inset 0 0 0 1px var(--b-600)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
+              }}>{(p.name || "").split(" ")[0]}</button>
+            ))}
+          </div>
+        )}
 
         {/* Hero portrait + slots */}
         <div style={{ position: "relative", marginTop: 16, padding: "0 8px" }}>
@@ -77,9 +145,13 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
         <div className="eyebrow" style={{ marginTop: 14 }}>Coin Purse</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
-          <CoinSlot tone="#d4b97a" label="GP" val="232" />
-          <CoinSlot tone="#c0c0c0" label="SP" val="68" />
-          <CoinSlot tone="#b08860" label="CP" val="14" />
+          <CoinSlot tone="#e5e4e2" label="PP" val={String(hero.currency?.pp ?? 0)} />
+          <CoinSlot tone="#d4b97a" label="GP" val={String(hero.currency?.gp ?? 232)} />
+          <CoinSlot tone="#c0c0c0" label="SP" val={String(hero.currency?.sp ?? 68)} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+          <CoinSlot tone="#b08860" label="EP" val={String(hero.currency?.ep ?? 0)} />
+          <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency?.cp ?? 14)} />
         </div>
       </Panel>
 

@@ -1650,6 +1650,885 @@ def build_atlas_surface(
     }
 
 
+# ── Campaign Director advisory (issue #72) ────────────────────────────────────
+# The viewer is a downstream reader. To surface the Campaign Director's structural
+# debts (journal "GM Advisory" + the table widget) we PREFER the engine's own pure
+# detectors (scene_debt.detect + director.compute) by building a Campaign model from
+# the resolved snapshot — this gives the exact same ranked top-3 the DM's
+# get_campaign_director tool returns, for ANY snapshot the viewer projects (play store
+# OR a QA/catalog run). If the engine/pydantic isn't importable we degrade to a
+# snapshot-only heuristic covering the cheap, structural debt kinds. Read-only: it
+# detects + advises off in-memory facts, never mutating fiction or the snapshot.
+
+def _director_advisory(snapshot: dict, *, limit: int = 3) -> dict:
+    """Return ``{"debts": [...], "advisory": [...], "total_debts": int, "source": str}``
+    for a snapshot. Each debt row is ``{id, kind, subject, detail, severity, nudge}``.
+    Empty debts == no structural debts (or no snapshot)."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    if not snapshot:
+        return {"debts": [], "advisory": [], "total_debts": 0, "source": "empty"}
+    engine = _load_engine_server()
+    if engine is not None:
+        try:
+            import models as _models  # the engine dir is on sys.path after _load_engine_server
+            import scene_debt as _sd
+            import director as _director
+
+            campaign = _models.Campaign.model_validate(snapshot)
+            ranked = _director.compute(campaign)  # already top-3, highest severity first
+            all_live = _sd.detect(campaign)
+            rows: list[dict] = []
+            for debt, nudge in zip(ranked.get("debts", []), ranked.get("advisory", [])):
+                if not isinstance(debt, dict):
+                    continue
+                rows.append({
+                    "id": _text(debt.get("id")),
+                    "kind": _text(debt.get("kind")),
+                    "subject": _text(debt.get("subject")),
+                    "detail": _text(debt.get("detail")),
+                    "severity": _text(debt.get("severity"), "med"),
+                    "nudge": _text(nudge),
+                })
+            return {
+                "debts": rows[:limit],
+                "advisory": [r["nudge"] for r in rows[:limit]],
+                "total_debts": int(ranked.get("total_debts", len(all_live))),
+                "source": "engine.director",
+            }
+        except Exception:
+            pass  # fall through to the snapshot-only heuristic
+    return _director_advisory_heuristic(snapshot, limit=limit)
+
+
+_SEV_RANK = {"high": 0, "med": 1, "low": 2}
+
+
+def _director_advisory_heuristic(snapshot: dict, *, limit: int = 3) -> dict:
+    """Snapshot-only fallback for the Campaign Director (no engine/pydantic). Detects the
+    cheap, purely-structural debt kinds the DM advisory cares about from raw snapshot
+    facts: engaged-but-untracked hooks, overdue authored consequences, and active quests
+    with no recent decision callback. Ranked high→med→low to mirror director.compute."""
+    quests = snapshot.get("quests") if isinstance(snapshot.get("quests"), dict) else {}
+    hooks = snapshot.get("quest_hooks") if isinstance(snapshot.get("quest_hooks"), list) else []
+    consequences = snapshot.get("consequences") if isinstance(snapshot.get("consequences"), list) else []
+    decisions = snapshot.get("decisions") if isinstance(snapshot.get("decisions"), list) else []
+    day = snapshot.get("day") if isinstance(snapshot.get("day"), int) else 1
+
+    def _decision_text() -> str:
+        out: list[str] = []
+        for d in decisions:
+            if isinstance(d, dict):
+                out.append(" ".join(_text(d.get(k)) for k in ("summary", "rationale", "chosen")))
+                opts = d.get("options")
+                if isinstance(opts, list):
+                    out.append(" ".join(_text(o) for o in opts))
+        return " ".join(out).lower()
+
+    blob = _decision_text()
+    rows: list[dict] = []
+
+    # hook_untracked: a hook marked active (player bit) with no tracked quest referencing it.
+    quest_titles = [_text(q.get("title")).lower() for q in quests.values() if isinstance(q, dict)]
+    quest_blob = " ".join(filter(None, [*quest_titles, *quests.keys()])).lower()
+    for h in hooks:
+        if not isinstance(h, dict):
+            continue
+        status = _text(h.get("status"), "open").lower()
+        if status == "resolved":
+            continue
+        hid = _text(h.get("id"))
+        htitle = _text(h.get("title"))
+        engaged = status == "active" or (hid and hid.lower() in blob) or (htitle and htitle.lower() in blob)
+        tracked = (hid and hid.lower() in quest_blob) or (htitle and htitle.lower() in quest_blob)
+        if engaged and not tracked:
+            label = htitle or hid or "this hook"
+            rows.append({
+                "id": f"hook:{hid}", "kind": "hook_untracked", "subject": hid,
+                "detail": f"Hook '{label}' is active but has no tracked Quest.",
+                "severity": "high",
+                "nudge": f"Untracked hook '{label}' — call add_quest to promote it into a tracked quest.",
+            })
+
+    # due_consequence: an authored (non-thread) consequence past its trigger day, not fired.
+    for con in consequences:
+        if not isinstance(con, dict) or _text(con.get("thread_id")) or bool(con.get("fired")):
+            continue
+        trigger = con.get("trigger_day")
+        if isinstance(trigger, int) and trigger <= day:
+            overdue = day - trigger
+            note = _text(con.get("note") or con.get("text"))
+            rows.append({
+                "id": f"con:{_text(con.get('id'))}", "kind": "due_consequence", "subject": _text(con.get("id")),
+                "detail": f"Consequence is due ({overdue}d overdue).",
+                "severity": "high" if overdue >= 2 else "med",
+                "nudge": f"Consequence due ({overdue}d overdue) — call check_consequences: '{note[:60]}'." if overdue else f"Consequence is due — call check_consequences: '{note[:60]}'.",
+            })
+
+    # quest_stalled: active quest with no decision callback (campaign must be past day 5).
+    if day > 5:
+        for qid, q in quests.items():
+            if not isinstance(q, dict) or _text(q.get("status"), "active").lower() != "active":
+                continue
+            title = _text(q.get("title"))
+            if (qid.lower() in blob) or (title and title.lower() in blob):
+                continue
+            rows.append({
+                "id": f"quest:{qid}", "kind": "quest_stalled", "subject": _text(qid),
+                "detail": f"Quest '{title or qid}' has no story callback recently.",
+                "severity": "med",
+                "nudge": f"Quest '{title or qid}' has stalled — weave an advancement beat to move it forward.",
+            })
+
+    rows.sort(key=lambda r: _SEV_RANK.get(r["severity"], 9))
+    return {
+        "debts": rows[:limit],
+        "advisory": [r["nudge"] for r in rows[:limit]],
+        "total_debts": len(rows),
+        "source": "viewer.heuristic",
+    }
+
+
+def _journal_quests(snapshot: dict) -> list[dict]:
+    """Project every quest into the journal's shape (id/title/label/tone/status/objective +
+    a checklist of objectives with done flags + entries). Status is normalized to the
+    journal's tabs: active / complete / rumor (a hook-less, open-only state)."""
+    quests = snapshot.get("quests")
+    locs = snapshot.get("locations")
+    out: list[dict] = []
+    if not isinstance(quests, dict):
+        return out
+    for qid, row in quests.items():
+        if not isinstance(row, dict):
+            continue
+        raw_status = _text(row.get("status"), "active").lower()
+        if raw_status in {"completed", "complete", "resolved"}:
+            status, label, tone = "complete", "Resolved", "emerald"
+        elif raw_status in {"failed"}:
+            status, label, tone = "complete", "Failed", "crimson"
+        else:
+            status, label, tone = "active", "Active", "crimson"
+        objectives_raw = row.get("objectives")
+        completed = row.get("completed_objectives")
+        completed_set = {str(o) for o in completed} if isinstance(completed, list) else set()
+        objectives: list[dict] = []
+        next_objective = ""
+        if isinstance(objectives_raw, list):
+            for item in objectives_raw:
+                text = _text(item)
+                if not text:
+                    continue
+                done = text in completed_set
+                objectives.append({"text": text, "done": done})
+                if not done and not next_objective:
+                    next_objective = text
+        if not next_objective:
+            next_objective = _text(row.get("description"), "Continue the investigation.")
+        location_id = _text(row.get("location_id"))
+        region = ""
+        if isinstance(locs, dict) and location_id:
+            loc = locs.get(location_id)
+            if isinstance(loc, dict):
+                region = _text(loc.get("region")) or _text(loc.get("name"), location_id)
+        out.append({
+            "id": _text(qid),
+            "title": _text(row.get("title"), _text(qid, "Quest")),
+            "label": label,
+            "tone": tone,
+            "status": status,
+            "region": region,
+            "objective": next_objective,
+            "entry": _text(row.get("description"), "No chronicle entry has been recorded for this quest yet."),
+            "objectives": objectives,
+            "entries": [],
+            "location_id": location_id,
+        })
+    return out
+
+
+def _journal_hooks(snapshot: dict) -> list[dict]:
+    """Project unresolved quest_hooks as journal 'rumors' (the lore-derived seeds the DM
+    hasn't promoted yet). Spine hooks are flagged; resolved ones are dropped."""
+    hooks = snapshot.get("quest_hooks")
+    out: list[dict] = []
+    if not isinstance(hooks, list):
+        return out
+    for h in hooks:
+        if not isinstance(h, dict):
+            continue
+        status = _text(h.get("status"), "open").lower()
+        if status == "resolved":
+            continue
+        title = _text(h.get("title")) or _text(h.get("grievance")) or _text(h.get("id"), "A rumor")
+        out.append({
+            "id": _text(h.get("id"), title),
+            "title": title,
+            "label": "Spine" if bool(h.get("spine")) else "Rumor",
+            "tone": "royal" if bool(h.get("spine")) else "",
+            "status": "rumor",
+            "spine": bool(h.get("spine")),
+            "objective": _text(h.get("note")) or _text(h.get("arc_back")) or "An unverified thread the party has not yet pulled.",
+            "entry": _text(h.get("note"), "Heard third-hand. The accounts vary."),
+            "objectives": [],
+            "entries": [],
+        })
+    return out
+
+
+def build_journal_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project a browser-safe OpenWorlds quest journal from engine-owned state: every
+    tracked quest (active/complete), unresolved hooks as rumors, and the Campaign
+    Director's top structural debts (issue #72) as a GM advisory."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    quests = _journal_quests(snapshot) + _journal_hooks(snapshot)
+    advisory = _director_advisory(snapshot)
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "world": _text(snapshot.get("world_id"), "unknown"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "quests": quests,
+        "directorAdvisory": advisory,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
+# ── Character sheets surface (full party read model) ──────────────────────────
+
+def _ability_mod(score: object) -> int:
+    s = _num(score)
+    return ((int(s) - 10) // 2) if s is not None else 0
+
+
+def _skill_bonus_from_sheet(ch: dict, skill: str) -> int:
+    """Mirror Character.skill_bonus off raw snapshot fields: ability modifier of the
+    skill's governing ability + proficiency (doubled on expertise)."""
+    ability = _SKILL_ABILITIES.get(skill)
+    if ability is None:
+        return 0
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    bonus = _ability_mod(abilities.get(ability))
+    prof = _num(ch.get("proficiency_bonus"))
+    prof = int(prof) if prof is not None else 2
+    expertise = ch.get("skill_expertise") if isinstance(ch.get("skill_expertise"), list) else []
+    proficiencies = ch.get("skill_proficiencies") if isinstance(ch.get("skill_proficiencies"), list) else []
+    if skill in expertise:
+        bonus += 2 * prof
+    elif skill in proficiencies:
+        bonus += prof
+    return bonus
+
+
+# Skill -> governing ability key (SRD 5.2), mirroring models.SKILL_ABILITIES.
+_SKILL_ABILITIES = {
+    "acrobatics": "dexterity", "animal_handling": "wisdom", "arcana": "intelligence",
+    "athletics": "strength", "deception": "charisma", "history": "intelligence",
+    "insight": "wisdom", "intimidation": "charisma", "investigation": "intelligence",
+    "medicine": "wisdom", "nature": "intelligence", "perception": "wisdom",
+    "performance": "charisma", "persuasion": "charisma", "religion": "intelligence",
+    "sleight_of_hand": "dexterity", "stealth": "dexterity", "survival": "wisdom",
+}
+
+_ABILITY_KEYS = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+
+
+def _character_sheet(cid: str, ch: dict) -> dict:
+    """One party character's full sheet for the heroes screen, mapping 5e snapshot fields
+    into the shape screen-character.jsx renders (stats block, skills, spells, class
+    resources, conditions, death saves). Pathfinder-only cells (touch/flat/CMB) are
+    derived sensibly from 5e data so the existing layout still reads."""
+    klass, level = _class_summary(ch)
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    stats = {k[:3]: (_num(abilities.get(k)) if _num(abilities.get(k)) is not None else 10) for k in _ABILITY_KEYS}
+    ac = _num(ch.get("armor_class"))
+    ac = int(ac) if ac is not None else 10
+    dex_mod = _ability_mod(abilities.get("dexterity"))
+    prof = _num(ch.get("proficiency_bonus"))
+    prof = int(prof) if prof is not None else 2
+    init_bonus = _num(ch.get("initiative_bonus"))
+    speed = _num(ch.get("speed"))
+    cur_hp = _num(ch.get("current_hp"))
+    max_hp = _num(ch.get("max_hp"))
+    # Saving throws: ability mod (+ proficiency for proficient abilities). The engine stores
+    # saving_throw_proficiencies as the SRD short ability codes (str/dex/con/int/wis/cha),
+    # so match on the 3-letter prefix of the full name as well as the full name itself.
+    save_profs = {str(s).strip().lower() for s in (ch.get("saving_throw_proficiencies") or [])}
+    def _save(ability: str) -> int:
+        b = _ability_mod(abilities.get(ability))
+        proficient = ability in save_profs or ability[:3] in save_profs
+        return b + prof if proficient else b
+    stats.update({
+        "ac": ac,
+        "flat": ac - dex_mod if dex_mod else ac,  # 5e has no flat-footed; show AC minus DEX as a proxy
+        "touch": 10 + dex_mod,
+        "fort": _save("constitution"),
+        "reflex": _save("dexterity"),
+        "will": _save("wisdom"),
+        "bab": prof,
+        "melee": prof + _ability_mod(abilities.get("strength")),
+        "ranged": prof + dex_mod,
+        "cmb": prof + _ability_mod(abilities.get("strength")),
+        "cmd": 10 + prof + _ability_mod(abilities.get("strength")) + dex_mod,
+        "initiative": int(init_bonus) if init_bonus is not None else dex_mod,
+        "speed": int(speed) if speed is not None else 30,
+    })
+
+    # Skills: project the SRD skill list with sheet-correct bonuses (proficient first).
+    proficiencies = ch.get("skill_proficiencies") if isinstance(ch.get("skill_proficiencies"), list) else []
+    expertise = ch.get("skill_expertise") if isinstance(ch.get("skill_expertise"), list) else []
+    skill_ids = list(dict.fromkeys([*proficiencies, *expertise, *_SKILL_ABILITIES.keys()]))
+    skills = [
+        {"name": sk.replace("_", " ").title(), "mod": _skill_bonus_from_sheet(ch, sk),
+         "proficient": sk in proficiencies or sk in expertise, "expertise": sk in expertise}
+        for sk in skill_ids if sk in _SKILL_ABILITIES
+    ]
+
+    # Spells: group known/prepared by inferred level using spell_slots presence; the
+    # snapshot stores spell names (not full blocks), so group everything as a flat list
+    # the SpellsTab renders ("Known" group).
+    spells_known = [s for s in (ch.get("spells_known") or []) if isinstance(s, str)]
+    spells_prepared = set(s for s in (ch.get("spells_prepared") or []) if isinstance(s, str))
+    spells = []
+    if spells_known:
+        spells.append({
+            "level": "Known",
+            "list": [
+                {"name": s, "school": "—", "time": "prepared" if s in spells_prepared else "known", "glyph": "spell"}
+                for s in spells_known
+            ],
+        })
+
+    # Class resources (Rage/Ki/etc.) — depletable pools the sheet can show as features.
+    class_resources = []
+    cr = ch.get("class_resources")
+    if isinstance(cr, dict):
+        for rid, pool in cr.items():
+            if not isinstance(pool, dict):
+                continue
+            mx = _num(pool.get("max"))
+            used = _num(pool.get("used"))
+            class_resources.append({
+                "id": _text(rid),
+                "name": _text(rid).replace("_", " ").title(),
+                "max": int(mx) if mx is not None else 0,
+                "used": int(used) if used is not None else 0,
+                "remaining": (int(mx) - int(used)) if (mx is not None and used is not None) else None,
+                "recharge": _text(pool.get("recharge"), "long"),
+            })
+
+    conditions = [str(c).replace("_", " ").title() for c in (ch.get("conditions") or []) if str(c)]
+    death = ch.get("death_saves") if isinstance(ch.get("death_saves"), dict) else {}
+    features = [_text(f) for f in (ch.get("features") or []) if _text(f)]
+    equipped = [
+        {"slot": _text(it.get("slot"), "Worn"), "name": _text(it.get("name")), "glyph": _text(it.get("name"), "item").lower()}
+        for it in (ch.get("inventory") or []) if isinstance(it, dict) and bool(it.get("equipped")) and _text(it.get("name"))
+    ]
+
+    return {
+        "id": cid,
+        "name": _text(ch.get("name"), cid),
+        "short": "portrait",
+        "race": _text(ch.get("race")),
+        "class": klass,
+        "archetype": _text((ch.get("classes") or [{}])[0].get("subclass") if isinstance(ch.get("classes"), list) and ch.get("classes") else "") or _text(ch.get("background")),
+        "alignment": _text(ch.get("alignment"), "Unaligned"),
+        "level": level or 1,
+        "xp": int(_num(ch.get("xp")) or 0),
+        "xpMax": _xp_for_next_level(level or 1),
+        "hp": int(cur_hp) if cur_hp is not None else 1,
+        "hpMax": int(max_hp) if max_hp is not None else 1,
+        "tempHp": int(_num(ch.get("temp_hp")) or 0),
+        "stats": stats,
+        "skills": skills,
+        "spells": spells,
+        "classResources": class_resources,
+        "conditions": conditions,
+        "exhaustion": int(_num(ch.get("exhaustion")) or 0),
+        "concentration": _text(ch.get("concentration")),
+        "deathSaves": {
+            "successes": int(_num(death.get("successes")) or 0),
+            "failures": int(_num(death.get("failures")) or 0),
+        },
+        "dead": bool(ch.get("dead")),
+        "stable": bool(ch.get("stable")),
+        "equipped": equipped,
+        "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in features],
+        "abilities": [],
+        "proficiencies": features,
+        "classFeatures": [{"name": f, "detail": ""} for f in features],
+        "traits": [],
+        "dr": {"value": ", ".join(_text(x) for x in (ch.get("damage_resistances") or []) if _text(x)) or "None",
+               "energy": ", ".join(_text(x) for x in (ch.get("damage_immunities") or []) if _text(x)) or "None"},
+        "lineage": _text(ch.get("backstory")) or _text(ch.get("personality")) or "No lineage recorded.",
+    }
+
+
+# SRD 5e XP thresholds per level (index 0 unused); used to fill the heroes screen XP bar.
+_XP_THRESHOLDS = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000,
+                  100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000]
+
+
+def _xp_for_next_level(level: int) -> int:
+    if level < 1:
+        return 300
+    if level >= len(_XP_THRESHOLDS) - 1:
+        return _XP_THRESHOLDS[-1]
+    return _XP_THRESHOLDS[level + 1]
+
+
+def _character_party(snapshot: dict) -> list[dict]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[dict] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if isinstance(ch, dict):
+            out.append(_character_sheet(cid, ch))
+    return out
+
+
+def build_character_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project the full party's character sheets from engine-owned state for the heroes
+    screen. Each hero carries classes/skills/spells/class_resources/conditions/AC/death
+    saves projected from the 5e snapshot into the screen's render shape."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "party": _character_party(snapshot),
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
+# ── Inventory surface (per-character packs + currency) ────────────────────────
+
+_ITEM_TYPE_HINTS = (
+    (("longsword", "sword", "axe", "bow", "dagger", "mace", "spear", "rapier", "blade", "hammer", "staff", "club", "crossbow"), "weapon"),
+    (("armor", "shield", "mail", "plate", "helm", "cloak", "leather", "buckler"), "armor"),
+    (("potion", "scroll", "wand", "elixir", "draught", "vial", "oil", "reagent", "charm", "candle"), "spell"),
+)
+
+
+def _infer_item_type(name: str, item: dict) -> str:
+    explicit = _text(item.get("type"))
+    if explicit:
+        return explicit
+    low = name.lower()
+    for needles, kind in _ITEM_TYPE_HINTS:
+        if any(n in low for n in needles):
+            return kind
+    if item.get("requires_attunement") or item.get("attuned"):
+        return "rare"
+    return "common"
+
+
+def _inventory_items(cid: str, ch: dict) -> list[dict]:
+    inventory = ch.get("inventory")
+    out: list[dict] = []
+    if not isinstance(inventory, list):
+        return out
+    for idx, item in enumerate(inventory):
+        if not isinstance(item, dict):
+            continue
+        name = _text(item.get("name"))
+        if not name:
+            continue
+        qty = _num(item.get("quantity"))
+        weight = _num(item.get("weight"))
+        out.append({
+            "id": f"{cid}:{idx}:{name}",
+            "owner": cid,
+            "name": name,
+            "qty": int(qty) if qty is not None else 1,
+            "type": _infer_item_type(name, item),
+            "glyph": _text(item.get("glyph"), name.lower()),
+            "equipped": bool(item.get("equipped")),
+            "weight": f"{weight:g} lb" if weight is not None and weight > 0 else "—",
+            "desc": _text(item.get("description"), "No description recorded."),
+            "attunement": bool(item.get("requires_attunement")),
+            "attuned": bool(item.get("attuned")),
+            "properties": [p for p in (["attuned"] if item.get("attuned") else []) ],
+        })
+    return out
+
+
+def _currency_for(ch: dict) -> dict:
+    cur = ch.get("currency") if isinstance(ch.get("currency"), dict) else {}
+    return {k: int(_num(cur.get(k)) or 0) for k in ("cp", "sp", "ep", "gp", "pp")}
+
+
+def _inventory_party(snapshot: dict) -> list[dict]:
+    chars = snapshot.get("characters")
+    party = snapshot.get("party")
+    if not isinstance(chars, dict) or not isinstance(party, list):
+        return []
+    out: list[dict] = []
+    for cid in party:
+        if not isinstance(cid, str):
+            continue
+        ch = chars.get(cid)
+        if not isinstance(ch, dict):
+            continue
+        klass, level = _class_summary(ch)
+        items = _inventory_items(cid, ch)
+        out.append({
+            "id": cid,
+            "name": _text(ch.get("name"), cid),
+            "short": "portrait",
+            "class": klass,
+            "level": level or 1,
+            "alignment": _text(ch.get("alignment"), "Unaligned"),
+            "currency": _currency_for(ch),
+            "equipped": [
+                {"slot": _text(it.get("slot"), "Worn"), "name": _text(it.get("name")), "glyph": _text(it.get("name"), "item").lower()}
+                for it in (ch.get("inventory") or []) if isinstance(it, dict) and bool(it.get("equipped")) and _text(it.get("name"))
+            ],
+            "items": items,
+        })
+    return out
+
+
+def build_inventory_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project each party character's inventory (name/qty/type/glyph/equipped) + currency
+    from engine-owned state for the stash screen."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    party = _inventory_party(snapshot)
+    # Flat shared-stash view (all party items) for the center grid, plus per-hero packs.
+    stash: list[dict] = []
+    for member in party:
+        stash.extend(member.get("items", []))
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "party": party,
+        "stash": stash,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
+# ── Relations surface (factions + companions + met NPCs) ──────────────────────
+
+_FACTION_COLORS = ["#22305E", "#6E1D1D", "#7a6644", "#2f5a3a", "#7a3d6e", "#3a4a5a"]
+
+
+def _reputation_to_bar(rep: int) -> int:
+    """Map a -100..100 reputation onto the 0..100 bar the RepBar component renders."""
+    return max(0, min(100, int(round((rep + 100) / 2))))
+
+
+def _standing_label(rep: int) -> str:
+    if rep <= -40:
+        return "Hostile"
+    if rep < 0:
+        return "Wary"
+    if rep < 30:
+        return "Civil"
+    if rep < 70:
+        return "Cordial"
+    return "Welcome"
+
+
+def _relations_factions(snapshot: dict) -> list[dict]:
+    factions = snapshot.get("factions")
+    out: list[dict] = []
+    if not isinstance(factions, dict):
+        return out
+    for i, (fid, row) in enumerate(factions.items()):
+        if not isinstance(row, dict):
+            continue
+        rep = _num(row.get("reputation"))
+        rep = int(rep) if rep is not None else 0
+        tags = [str(t) for t in row.get("tags", []) if str(t)] if isinstance(row.get("tags"), list) else []
+        name = _text(row.get("name"), _text(fid, "Faction"))
+        out.append({
+            "id": _text(fid),
+            "name": name,
+            "short": _text(row.get("description"))[:48] or "a standing power",
+            "kind": "Faction",
+            "color": _FACTION_COLORS[i % len(_FACTION_COLORS)],
+            "sigil": name[:1].upper() or "✦",
+            "motto": tags[0].title() if tags else "",
+            "seat": "",
+            "rep": _reputation_to_bar(rep),
+            "reputation": rep,
+            "tags": tags,
+            "threshold": {"hostile": 25, "neutral": 50, "friendly": 75},
+            "standing": _standing_label(rep),
+            "lastContact": "",
+            "body": _text(row.get("description"), "Little is recorded of this faction's dealings with the party."),
+            "events": [],
+            "offers": tags,
+        })
+    return out
+
+
+def _attitude_disposition(ch: dict) -> str:
+    """Map an NPC's attitude_value (-100..100) / free-text attitude onto the screen's
+    disposition buckets (friend / ally / neutral / cool / enemy)."""
+    val = _num(ch.get("attitude_value"))
+    if val is not None and val != 0:
+        if val >= 60:
+            return "friend"
+        if val >= 20:
+            return "ally"
+        if val <= -40:
+            return "enemy"
+        if val < 0:
+            return "cool"
+        return "neutral"
+    attitude = _text(ch.get("attitude")).lower()
+    if any(w in attitude for w in ("ally", "friend", "warm", "devoted", "loyal")):
+        return "friend"
+    if any(w in attitude for w in ("hostile", "enemy", "foe")):
+        return "enemy"
+    if any(w in attitude for w in ("guarded", "wary", "cold", "cool", "suspicious")):
+        return "cool"
+    return "neutral"
+
+
+def _relations_npcs(snapshot: dict) -> list[dict]:
+    """Project NPCs the party has actually met (kind=='npc') + companions, with attitude
+    and (for companions) the dossier's banter/relationship facts + arc state."""
+    chars = snapshot.get("characters")
+    locs = snapshot.get("locations")
+    party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
+    out: list[dict] = []
+    if not isinstance(chars, dict):
+        return out
+    for cid, ch in chars.items():
+        if not isinstance(ch, dict):
+            continue
+        kind = _text(ch.get("kind"))
+        is_companion = kind == "companion" or cid in party and kind != "player"
+        if kind == "player":
+            continue
+        if kind == "npc" and not bool(ch.get("met")) and not _text(ch.get("attitude")) and _num(ch.get("attitude_value")) in (None, 0):
+            continue  # a roster stranger the party hasn't met — don't list (mirror scene_debt scoping)
+        if kind == "monster" and not is_companion:
+            continue
+        loc_id = _text(ch.get("location_id"))
+        location = loc_id
+        if isinstance(locs, dict) and loc_id:
+            loc = locs.get(loc_id)
+            if isinstance(loc, dict):
+                location = _text(loc.get("name"), loc_id)
+        dossier = ch.get("companion_dossier") if isinstance(ch.get("companion_dossier"), dict) else {}
+        approval = _num(ch.get("attitude_value"))
+        row = {
+            "id": _text(cid),
+            "name": _text(ch.get("name"), cid),
+            "short": "portrait",
+            "role": ("Companion" if is_companion else "NPC") + (f" · {_text(ch.get('attitude'))}" if _text(ch.get("attitude")) else ""),
+            "kind": kind,
+            "companion": bool(is_companion),
+            "location": location or "Unknown",
+            "faction": "",
+            "disposition": _attitude_disposition(ch),
+            "approval": int(approval) if approval is not None else None,
+            "attitude": _text(ch.get("attitude")),
+            "body": _text(ch.get("backstory")) or _text(ch.get("personality")) or _text(ch.get("notes")) or "Little is known of them yet.",
+            "banter_tags": [str(t) for t in dossier.get("banter_tags", []) if str(t)] if isinstance(dossier.get("banter_tags"), list) else [],
+            "relationships": {str(k): str(v) for k, v in dossier.get("relationships", {}).items()} if isinstance(dossier.get("relationships"), dict) else {},
+            "values": [str(v) for v in dossier.get("values", []) if str(v)] if isinstance(dossier.get("values"), list) else [],
+            "dues": [{"text": str(m), "fulfilled": False} for m in (ch.get("memory") or [])[:4] if str(m)],
+            "lastSpoken": (ch.get("memory") or [""])[-1] if isinstance(ch.get("memory"), list) and ch.get("memory") else "",
+            "lastSpokenAt": location or "",
+        }
+        out.append(row)
+    return out
+
+
+def _relations_companion_arcs(snapshot: dict) -> list[dict]:
+    """Project companion personal-quest arcs (campaign.companion_quest_arcs) — the
+    character-owned arc lifecycle, with each stage's status."""
+    arcs = snapshot.get("companion_quest_arcs")
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    out: list[dict] = []
+    if not isinstance(arcs, dict):
+        return out
+    for aid, arc in arcs.items():
+        if not isinstance(arc, dict):
+            continue
+        comp_id = _text(arc.get("companion_id"))
+        comp = chars.get(comp_id) if isinstance(chars.get(comp_id), dict) else {}
+        stages = [
+            {"title": _text(s.get("title")), "status": _text(s.get("status"), "locked"), "note": _text(s.get("note"))}
+            for s in (arc.get("stages") or []) if isinstance(s, dict) and _text(s.get("title"))
+        ]
+        out.append({
+            "id": _text(aid),
+            "companion_id": comp_id,
+            "companion": _text(comp.get("name"), comp_id),
+            "title": _text(arc.get("title"), "Personal arc"),
+            "status": _text(arc.get("status"), "locked"),
+            "note": _text(arc.get("note")),
+            "stages": stages,
+        })
+    return out
+
+
+def build_relations_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project the relations web from engine-owned state: factions (name/reputation/tags),
+    met NPCs + companions (attitude, dossier banter/relationships), and companion arcs."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "factions": _relations_factions(snapshot),
+        "npcs": _relations_npcs(snapshot),
+        "companionArcs": _relations_companion_arcs(snapshot),
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
+# ── Parley surface (sheet-correct social options for the lead PC) — UI of #141 ─
+
+_PARLEY_CORE_SKILLS = ("persuasion", "deception", "intimidation", "insight")
+_PARLEY_DC_BAND = {"easy": 10, "medium": 14, "hard": 18}
+
+
+def _lead_pc(snapshot: dict) -> tuple[str, dict]:
+    """The default parley actor: the first PLAYER in the party, else the first party
+    member, else any character. Mirrors server._lead_pc_id."""
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
+    for pid in party:
+        ch = chars.get(pid) if isinstance(pid, str) else None
+        if isinstance(ch, dict) and _text(ch.get("kind")) == "player":
+            return pid, ch
+    for pid in party:
+        ch = chars.get(pid) if isinstance(pid, str) else None
+        if isinstance(ch, dict):
+            return pid, ch
+    for cid, ch in chars.items():
+        if isinstance(ch, dict):
+            return cid, ch
+    return "", {}
+
+
+def _suggested_parley_dc(difficulty: str, house_difficulty: str) -> int:
+    base = _PARLEY_DC_BAND.get(difficulty.strip().lower(), _PARLEY_DC_BAND["medium"])
+    shift = {"hard": 2, "easy": -2}.get(house_difficulty, 0)
+    return base + shift
+
+
+def build_parley_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+    difficulty: str = "medium",
+) -> dict:
+    """Project a parley menu for the lead PC: actor + per-skill {skill, modifier,
+    suggested_dc} + alignment + free_form. Prefers the engine's own
+    generate_parley_options (loaded via models.Campaign) for sheet-correct modifiers;
+    degrades to a snapshot-only computation mirroring it. Closes the UI side of #141."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    actor_id, actor = _lead_pc(snapshot)
+    base = {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "actor": _text(actor.get("name"), actor_id),
+        "actor_id": actor_id,
+        "alignment": _text(actor.get("alignment")),
+        "free_form": True,
+        "difficulty": difficulty,
+        "guidance": (
+            "Author 2-4 SHORT options tagged by alignment + skill+DC + a "
+            "reputation/consequence hint, then ALWAYS leave a free-form path. These are "
+            "slots, not lines — voice the prose yourself."
+        ),
+        "skills": [],
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+    if not actor_id or not actor:
+        base["source"] = "empty"
+        return base
+
+    # Default skill set: the actor's proficient/expertise skills UNION the four core
+    # social skills (mirror generate_parley_options' default), stable order.
+    proficiencies = actor.get("skill_proficiencies") if isinstance(actor.get("skill_proficiencies"), list) else []
+    expertise = actor.get("skill_expertise") if isinstance(actor.get("skill_expertise"), list) else []
+    chosen = list(dict.fromkeys([*proficiencies, *expertise]))
+    for s in _PARLEY_CORE_SKILLS:
+        if s not in chosen:
+            chosen.append(s)
+    house = ""
+    hr = snapshot.get("house_rules")
+    if isinstance(hr, dict):
+        house = _text(hr.get("difficulty"))
+    dc = _suggested_parley_dc(difficulty, house)
+
+    skill_rows: list[dict] = []
+    for sk in chosen:
+        if sk not in _SKILL_ABILITIES:
+            continue
+        skill_rows.append({
+            "skill": sk,
+            "label": sk.replace("_", " ").title(),
+            "modifier": _skill_bonus_from_sheet(actor, sk),
+            "suggested_dc": dc,
+            "proficient": sk in proficiencies or sk in expertise,
+            "expertise": sk in expertise,
+            "core": sk in _PARLEY_CORE_SKILLS,
+        })
+    base["skills"] = skill_rows
+    base["source"] = "viewer.snapshot"
+    return base
+
+
 def _relative_time_label(ts: float, *, now: float) -> str:
     if ts <= 0:
         return "unknown"
@@ -2838,6 +3717,37 @@ class _Handler(BaseHTTPRequestHandler):
             return override
         return self._resolve_campaign()
 
+    def _serve_simple_surface(self, qs: dict, builder) -> None:
+        """Dispatch a snapshot-only read-model surface (journal/character/inventory/
+        relations/parley). Mirrors the /atlas-surface handler exactly: a catalog ?source/
+        ?run ref wins (a QA/parallel run), else the per-request ?campaign view override,
+        else the lazily-attached campaign; an absent/empty snapshot degrades to a graceful
+        empty surface. `builder(snapshot, campaign_id=, live=, is_live_view=) -> dict`."""
+        live = _live_play()
+        catalog_ref = _session_surface_catalog_ref(qs)
+        if catalog_ref is not None:
+            cid, raw_snap, _campaign_dir_path, root_is_current = catalog_ref
+            self._json(builder(
+                raw_snap,
+                campaign_id=cid,
+                live=live,
+                is_live_view=bool(live and root_is_current and cid == self.campaign_id),
+            ))
+            return
+        cid = self._view_campaign(qs)
+        if not cid:
+            self._json(builder({}, campaign_id="", live=live, is_live_view=False))
+            return
+        raw_snap = _read_snapshot(cid)
+        if not isinstance(raw_snap, dict):
+            raw_snap = {}
+        self._json(builder(
+            raw_snap,
+            campaign_id=cid,
+            live=live,
+            is_live_view=live and cid == self.campaign_id,
+        ))
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -3011,6 +3921,30 @@ class _Handler(BaseHTTPRequestHandler):
                 live=live,
                 is_live_view=live and cid == self.campaign_id,
             ))
+        elif route == "/journal-surface":
+            # The quest journal read model: tracked quests + unresolved hooks (as rumors)
+            # + the Campaign Director's top structural debts (#72) as a GM advisory.
+            self._serve_simple_surface(parse_qs(parsed.query), build_journal_surface)
+        elif route == "/character-surface":
+            # The party's full character sheets (classes/skills/spells/resources/AC/death
+            # saves) projected from the engine snapshot into the heroes screen shape.
+            self._serve_simple_surface(parse_qs(parsed.query), build_character_surface)
+        elif route == "/inventory-surface":
+            # Each party member's pack (name/qty/type/glyph/equipped) + currency.
+            self._serve_simple_surface(parse_qs(parsed.query), build_inventory_surface)
+        elif route == "/relations-surface":
+            # Factions (reputation/tags) + met NPCs/companions (attitude, dossier facts)
+            # + companion personal-quest arcs.
+            self._serve_simple_surface(parse_qs(parsed.query), build_relations_surface)
+        elif route == "/parley-surface":
+            # Sheet-correct social options for the lead PC (per-skill modifier + suggested
+            # DC + alignment + free_form) — the UI side of #141. ?difficulty tunes the DC band.
+            qs = parse_qs(parsed.query)
+            difficulty = _text((qs.get("difficulty") or [""])[0], "medium")
+            self._serve_simple_surface(
+                qs,
+                lambda snap, **kw: build_parley_surface(snap, difficulty=difficulty, **kw),
+            )
         elif route == _OPENWORLDS_ROUTE:
             suffix = f"?{parsed.query}" if parsed.query else ""
             self._redirect(f"{_OPENWORLDS_ROUTE}/{suffix}")

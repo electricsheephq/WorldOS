@@ -1,9 +1,56 @@
-/* Screen: Quest Journal — handwritten chronicle / two-page spread */
+/* Screen: Quest Journal — handwritten chronicle / two-page spread.
+   Wired to the live /journal-surface read model (tracked quests + unresolved hooks as
+   rumors + the Campaign Director advisory). Polls every 5s while visible; degrades to a
+   graceful empty when there is no snapshot. Design unchanged from the prototype. */
 
 function ScreenJournal({ onNavigate, state, setState }) {
-  const quests = Array.isArray(state?.quests) ? state.quests : [];
-  const [activeQuest, setActiveQuest] = React.useState(() => quests[0]?.id || "");
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  const surfaceQuests = Array.isArray(surface?.quests) ? surface.quests : null;
+  const quests = surfaceQuests || (Array.isArray(state?.quests) ? state.quests : []);
+  const advisory = surface?.directorAdvisory || { debts: [], total_debts: 0 };
+  const [activeQuest, setActiveQuest] = React.useState("");
   const [tab, setTab] = React.useState("active");
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/journal-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`journal surface ${response.status}`);
+      const payload = await response.json();
+      if (isCancelled()) return;
+      setSurface(payload);
+    } catch (error) {
+      if (isCancelled()) return;
+      /* keep last good surface; the demo fallback shows until first success */
+    }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
+
+  React.useEffect(() => {
+    if (quests.length && !quests.some((q) => q.id === activeQuest)) {
+      setActiveQuest(quests[0]?.id || "");
+    }
+  }, [quests, activeQuest]);
+
   const quest = quests.find((q) => q.id === activeQuest) || quests[0] || {
     label: "Empty",
     title: "No quest selected",
@@ -58,7 +105,36 @@ function ScreenJournal({ onNavigate, state, setState }) {
               <div className="hand" style={{ fontSize: 13, color: "var(--ink-600)", marginTop: 4 }}>{q.objective}</div>
             </button>
           ))}
+          {!quests.filter((q) => (tab === "active" ? q.status === "active" : tab === "complete" ? q.status === "complete" : q.status === "rumor")).length && (
+            <div className="body-sm muted" style={{ padding: "8px 4px" }}>
+              {tab === "active" ? "No active quests in the chronicle yet." : tab === "complete" ? "Nothing has been resolved or failed yet." : "No rumors or untracked hooks."}
+            </div>
+          )}
         </div>
+
+        {/* GM Advisory — Campaign Director (#72): structural debts the campaign owes. */}
+        {Array.isArray(advisory.debts) && advisory.debts.length > 0 && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed rgba(80,50,20,0.3)" }}>
+            <div className="eyebrow" style={{ color: "var(--crimson)", marginBottom: 6 }}>
+              GM Advisory{advisory.total_debts ? ` · ${advisory.total_debts}` : ""}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {advisory.debts.map((d) => (
+                <div key={d.id} style={{
+                  padding: "7px 9px",
+                  background: "rgba(176,141,87,0.06)",
+                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25), inset 3px 0 0 " +
+                    (d.severity === "high" ? "var(--crimson)" : d.severity === "low" ? "var(--b-400)" : "var(--royal)"),
+                }}>
+                  <div className="eyebrow" style={{ fontSize: 8, color: "var(--ink-600)" }}>
+                    {(d.kind || "debt").replace(/_/g, " ")}
+                  </div>
+                  <div className="hand" style={{ fontSize: 12, color: "var(--ink-700)", marginTop: 2 }}>{d.nudge}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Panel>
 
       {/* RIGHT — Two-page spread */}
