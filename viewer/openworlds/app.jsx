@@ -10,6 +10,13 @@ function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
   const [screen, setScreen] = React.useState("launcher");
   const [campMode, setCampMode] = React.useState(false);
+  const [nativeState, setNativeState] = React.useState(() => ({
+    bridge: Boolean(window.OpenWorldsNative?.hasBridge?.()),
+    appStatus: null,
+    dependencies: [],
+    providers: [],
+    error: "",
+  }));
   const [t, setTweak] = (window.useTweaks
     ? window.useTweaks(TWEAK_DEFAULTS)
     : [TWEAK_DEFAULTS, () => {}]);
@@ -63,6 +70,41 @@ function App() {
     loadCampaignCatalog();
     return () => { cancelled = true; };
   }, []);
+
+  const refreshNative = React.useCallback(async () => {
+    const bridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
+    if (!bridge) {
+      setNativeState((s) => ({ ...s, bridge: false, error: "Native bridge unavailable" }));
+      return;
+    }
+    try {
+      const appStatus = await window.OpenWorldsNative.request("appStatus", {});
+      setNativeState({
+        bridge: true,
+        appStatus,
+        dependencies: Array.isArray(appStatus?.dependencies) ? appStatus.dependencies : [],
+        providers: Array.isArray(appStatus?.providers) ? appStatus.providers : [],
+        error: appStatus?.lastError || "",
+      });
+    } catch (error) {
+      setNativeState((s) => ({
+        ...s,
+        bridge: false,
+        error: error?.message || "Native bridge unavailable",
+      }));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    refreshNative();
+    const onReady = () => refreshNative();
+    window.addEventListener("clawdnd:native-ready", onReady);
+    const timer = window.setInterval(refreshNative, 5000);
+    return () => {
+      window.removeEventListener("clawdnd:native-ready", onReady);
+      window.clearInterval(timer);
+    };
+  }, [refreshNative]);
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -122,6 +164,8 @@ function App() {
         campaign={current.title}
         location={SCREEN_TITLES[screen]}
         day={current.day}
+        capability={capabilityForScreen(screen, nativeState)}
+        nativeStatus={nativeState}
       />
       <div className="app">
         <NavRail current={screen} onNavigate={navigate} />
@@ -130,7 +174,16 @@ function App() {
           <div className="stage" style={{ flex: 1, minHeight: 0 }}>
             <div className="parchment">
               <div className="stage-inner">
-                <ScreenRouter screen={screen} state={state} setState={setState} onNavigate={navigate} campMode={campMode} setCampMode={setCampMode} />
+                <ScreenRouter
+                  screen={screen}
+                  state={state}
+                  setState={setState}
+                  onNavigate={navigate}
+                  campMode={campMode}
+                  setCampMode={setCampMode}
+                  nativeState={nativeState}
+                  refreshNative={refreshNative}
+                />
               </div>
             </div>
           </div>
@@ -196,7 +249,22 @@ const SCREEN_TITLES = {
   settings: "Setting",
 };
 
-function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode }) {
+function capabilityForScreen(screen, nativeState) {
+  if (screen === "settings") {
+    return nativeState?.bridge
+      ? { label: "Wired", tone: "emerald", detail: "Native bridge ready" }
+      : { label: "Unavailable", tone: "crimson", detail: "Native bridge missing" };
+  }
+  if (["launcher", "table", "combat", "map"].includes(screen)) {
+    return { label: "Wired", tone: "emerald", detail: "Backed by viewer read models" };
+  }
+  if (screen === "dialogue") {
+    return { label: "Provider required", tone: "royal", detail: "Requires a provider session" };
+  }
+  return { label: "Display-only", tone: "brass", detail: "Prototype surface awaiting a read model" };
+}
+
+function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative }) {
   switch (screen) {
     case "launcher":  return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
     case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} />;
@@ -213,7 +281,7 @@ function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMo
     case "bestiary":  return <ScreenBestiary state={state} setState={setState} onNavigate={onNavigate} />;
     case "merchant":  return <ScreenMerchant state={state} setState={setState} onNavigate={onNavigate} />;
     case "dialogue":  return <ScreenDialogue state={state} setState={setState} onNavigate={onNavigate} />;
-    case "settings":  return <ScreenSettings state={state} setState={setState} onNavigate={onNavigate} />;
+    case "settings":  return <ScreenSettings state={state} setState={setState} onNavigate={onNavigate} nativeState={nativeState} refreshNative={refreshNative} />;
     default:          return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
   }
 }

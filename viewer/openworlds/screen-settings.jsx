@@ -1,7 +1,7 @@
 /* Screen: Settings — audio, video, controls, save slots, accessibility */
 
-function ScreenSettings({ onNavigate, state, setState }) {
-  const [section, setSection] = React.useState("audio");
+function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNative }) {
+  const [section, setSection] = React.useState("native");
   const [audio, setAudio] = React.useState({ master: 72, music: 60, sfx: 80, ambience: 50, voice: 70, duckMusic: true, crossfade: true });
   const [display, setDisplay] = React.useState({ scale: 100, contrast: 50, vignette: true, paperGrain: true, candleGlow: true });
   const [gameplay, setGameplay] = React.useState({ auto: 15, narration: "balanced", dice: "visible", dangerHints: true, confirmDestructive: true, aiPartyRolls: false });
@@ -9,6 +9,7 @@ function ScreenSettings({ onNavigate, state, setState }) {
   const [accessibility, setAccessibility] = React.useState({ dyslexic: false, reducedMotion: false, captions: true, contrast: false, underlineChoices: false });
 
   const SECTIONS = [
+    { id: "native", label: "ClawDnD" },
     { id: "audio", label: "Sound" },
     { id: "display", label: "Display" },
     { id: "gameplay", label: "Gameplay" },
@@ -54,6 +55,10 @@ function ScreenSettings({ onNavigate, state, setState }) {
 
       {/* RIGHT — section content */}
       <Panel framed style={{ padding: 28, overflow: "auto" }}>
+        {section === "native" && (
+          <NativeAppSection nativeState={nativeState} refreshNative={refreshNative} />
+        )}
+
         {section === "audio" && (
           <SettingsSection title="The Sound of the Chronicle" eyebrow="Mixing board" ordinal="I.">
             <Slider label="Master" value={audio.master} onChange={(v) => setAudio({ ...audio, master: v })} />
@@ -209,6 +214,103 @@ function ScreenSettings({ onNavigate, state, setState }) {
         )}
       </Panel>
     </div>
+  );
+}
+
+function NativeAppSection({ nativeState, refreshNative }) {
+  const toast = window.useToast ? window.useToast() : (() => {});
+  const app = nativeState?.appStatus || {};
+  const viewer = app.viewer || {};
+  const providers = Array.isArray(nativeState?.providers) ? nativeState.providers : [];
+  const dependencies = Array.isArray(nativeState?.dependencies) ? nativeState.dependencies : [];
+  const bridgeReady = Boolean(nativeState?.bridge);
+
+  const nativeAction = async (type, payload = {}) => {
+    if (!window.OpenWorldsNative?.hasBridge?.()) {
+      toast({ kind: "danger", title: "Native bridge unavailable", body: "OpenWorlds is running outside the ClawDnD macOS app." });
+      return;
+    }
+    try {
+      await window.OpenWorldsNative.request(type, payload);
+      await refreshNative?.();
+      toast({ kind: "ok", title: "Native action complete", body: type });
+    } catch (error) {
+      toast({ kind: "danger", title: "Native action failed", body: error?.message || String(error) });
+    }
+  };
+
+  const startProvider = () => {
+    const prefs = app.preferences || {};
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 19).replace(/[-:T]/g, "").replace(/^(\d{8})(\d{6})$/, "$1-$2");
+    nativeAction("startProviderSession", {
+      provider: prefs.selectedProvider || app.selectedProvider || "claude",
+      world: prefs.defaultWorld || app.defaultWorld || "baldurs-gate",
+      runId: `play-${stamp}`,
+      companions: "",
+    });
+  };
+
+  return (
+    <SettingsSection title="ClawDnD Native App" eyebrow="Supervisor bridge" ordinal="I.">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <Pill tone={bridgeReady ? "emerald" : "crimson"}>{bridgeReady ? "Wired" : "Unavailable"}</Pill>
+        <Pill tone={viewer.status === "running" ? "emerald" : "royal"}>Viewer {viewer.status || "stopped"}</Pill>
+        {app.runningProvider && <Pill tone="royal">Provider {app.runningProvider}</Pill>}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Panel framed style={{ padding: 18 }}>
+          <SectionTitle>App Status</SectionTitle>
+          <StatLine k="Repo" v={app.repoPath || "unknown"} />
+          <StatLine k="State" v={app.stateDir || "default"} />
+          <StatLine k="Port" v={viewer.port || app.preferredPort || "auto"} />
+          <StatLine k="World" v={app.defaultWorld || "baldurs-gate"} />
+          <StatLine k="Last error" v={app.lastError || nativeState?.error || "none"} />
+        </Panel>
+
+        <Panel framed style={{ padding: 18 }}>
+          <SectionTitle>Native Actions</SectionTitle>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <BrassButton size="sm" onClick={() => nativeAction("startViewer")}>Start Viewer</BrassButton>
+            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("stopViewer")}>Stop Viewer</BrassButton>
+            <BrassButton size="sm" onClick={startProvider}>Start Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("stopProvider")}>Stop Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("copyDiagnostics")}>Copy Diagnostics</BrassButton>
+            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("openFallbackDashboard")}>Debug Dashboard</BrassButton>
+          </div>
+          <p className="body-sm muted" style={{ marginTop: 12 }}>
+            Native actions supervise local processes only. Game intent still travels through the existing engine/player move lane.
+          </p>
+        </Panel>
+      </div>
+
+      <Divider />
+      <SectionTitle>Providers</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+        {providers.map((p) => (
+          <Panel key={p.kind} framed style={{ padding: 16 }}>
+            <div className="eyebrow" style={{ color: "var(--crimson)" }}>{p.displayName || p.kind}</div>
+            <h3 style={{ margin: "4px 0 8px", fontFamily: "var(--f-display)", letterSpacing: "0.08em" }}>{p.availability}</h3>
+            <div className="body-sm muted">{p.detail}</div>
+          </Panel>
+        ))}
+        {!providers.length && (
+          <div className="body-sm muted">Provider status is unavailable until the native bridge is connected.</div>
+        )}
+      </div>
+
+      <Divider />
+      <SectionTitle>Dependencies</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+        {dependencies.map((d) => (
+          <div key={d.command} className={`capability-badge ${d.installed ? "emerald" : "crimson"}`} style={{ justifyContent: "space-between" }}>
+            <span>{d.command}</span>
+            <span className="capability-source">{d.installed ? "ready" : "missing"}</span>
+          </div>
+        ))}
+      </div>
+    </SettingsSection>
   );
 }
 

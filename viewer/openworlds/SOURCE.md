@@ -21,6 +21,7 @@ The production viewer route maps source files into this directory as follows:
 | `openworlds/Open Worlds.html` | `viewer/openworlds/index.html` |
 | `openworlds/styles.css` | `viewer/openworlds/styles.css` |
 | `openworlds/data.js` | `viewer/openworlds/data.js` |
+| native bridge helper | `viewer/openworlds/native-bridge.js` |
 | `openworlds/app.jsx` | `viewer/openworlds/app.jsx` |
 | `openworlds/chrome.jsx` | `viewer/openworlds/chrome.jsx` |
 | `openworlds/tooltip.jsx` | `viewer/openworlds/tooltip.jsx` |

@@ -2849,6 +2849,13 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, obj) -> None:
         self._send(200, json.dumps(obj).encode("utf-8"), "application/json")
 
+    def _redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _serve_image(self, scope: str) -> None:
         """GET /image?scope=<scope> — serve the most-recent cached image for a scope.
 
@@ -3004,7 +3011,10 @@ class _Handler(BaseHTTPRequestHandler):
                 live=live,
                 is_live_view=live and cid == self.campaign_id,
             ))
-        elif route == _OPENWORLDS_ROUTE or route.startswith(f"{_OPENWORLDS_ROUTE}/"):
+        elif route == _OPENWORLDS_ROUTE:
+            suffix = f"?{parsed.query}" if parsed.query else ""
+            self._redirect(f"{_OPENWORLDS_ROUTE}/{suffix}")
+        elif route.startswith(f"{_OPENWORLDS_ROUTE}/"):
             asset = _openworlds_asset(route)
             if asset is None:
                 self._send(404, b"not found", "text/plain")

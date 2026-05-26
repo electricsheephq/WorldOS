@@ -47,16 +47,27 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
+        status, headers, body = self._get_with_headers(path)
+        return status, headers.get("Content-Type", ""), body
+
+    def _get_with_headers(self, path: str) -> tuple[int, http.client.HTTPMessage, bytes]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
         try:
             conn.request("GET", path)
             response = conn.getresponse()
-            return response.status, response.headers.get("Content-Type", ""), response.read()
+            return response.status, response.headers, response.read()
         finally:
             conn.close()
 
     def _status(self, path: str) -> int:
         return self._get(path)[0]
+
+    def test_openworlds_without_trailing_slash_redirects_to_directory_route(self):
+        status, headers, body = self._get_with_headers("/openworlds")
+
+        self.assertEqual(status, 302)
+        self.assertEqual(headers.get("Location"), "/openworlds/")
+        self.assertEqual(body, b"")
 
     def test_openworlds_index_uses_local_runtime_assets(self):
         status, ctype, body = self._get("/openworlds/")
@@ -67,6 +78,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn(b'vendor/react-dom-18.3.1.development.js', body)
         self.assertIn(b'vendor/babel-standalone-7.29.0.min.js', body)
         self.assertIn(b'vendor/google-fonts.css', body)
+        self.assertIn(b'native-bridge.js', body)
         self.assertNotIn(b"https://unpkg.com", body)
         self.assertNotIn(b"https://fonts.googleapis.com", body)
         self.assertNotIn(b"tweaks-panel.jsx", body)
