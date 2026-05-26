@@ -16,16 +16,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   const onResume = () => {
     const nextCampaign = campaigns.some((c) => c.id === selected) ? selected : campaigns[0]?.id;
     if (!nextCampaign) return;
-    const campaign = campaigns.find((c) => c.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
-    if (campaign?.resumeUrl) {
-      window.location.assign(campaign.resumeUrl);
-      return;
-    }
-    if (campaign?.monitorUrl) {
-      window.location.assign(campaign.monitorUrl);
-      return;
-    }
     onNavigate("table");
   };
 

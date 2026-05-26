@@ -232,6 +232,34 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--b-300);
+  align-items: center;
+}
+
+.capability-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 250px;
+  padding: 4px 8px;
+  border: 1px solid rgba(176, 141, 87, 0.5);
+  background: rgba(20, 12, 6, 0.34);
+  color: var(--b-100);
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-app-region: no-drag;
+}
+
+.capability-badge.emerald { color: #b9e0bd; border-color: rgba(47, 90, 58, 0.8); }
+.capability-badge.crimson { color: #f0c0ba; border-color: rgba(154, 42, 42, 0.8); }
+.capability-badge.royal { color: #c8d3ff; border-color: rgba(59, 82, 148, 0.8); }
+.capability-badge.brass { color: var(--b-100); border-color: rgba(176, 141, 87, 0.85); }
+
+.capability-source {
+  color: var(--b-300);
+  opacity: 0.8;
+  letter-spacing: 0.12em;
 }
 
 /* ===== App layout (nav rail + stage) ===== */

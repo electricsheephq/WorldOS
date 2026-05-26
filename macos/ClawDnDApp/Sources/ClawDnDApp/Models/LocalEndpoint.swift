@@ -23,7 +23,9 @@ struct LocalEndpoint: Identifiable, Equatable {
     }
 
     var openWorldsURL: URL {
-        url.appendingPathComponent("openworlds")
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.path = "/openworlds/"
+        return components?.url ?? url.appendingPathComponent("openworlds/")
     }
 
     var monitorURL: URL {

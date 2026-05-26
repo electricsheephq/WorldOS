@@ -353,7 +353,19 @@ function TabBar({ current, onNavigate }) {
   );
 }
 
-function TitleBar({ campaign, location, day }) {
+function CapabilityBadge({ capability, nativeStatus }) {
+  if (!capability) return null;
+  const tone = capability.tone || "brass";
+  const bridge = nativeStatus?.bridge ? "native" : "browser";
+  return (
+    <span className={`capability-badge ${tone}`} title={capability.detail || ""}>
+      <span>{capability.label}</span>
+      <span className="capability-source">{bridge}</span>
+    </span>
+  );
+}
+
+function TitleBar({ campaign, location, day, capability, nativeStatus }) {
   return (
     <div className="title-bar">
       <div className="traffic-lights" aria-hidden="true">
@@ -366,6 +378,7 @@ function TitleBar({ campaign, location, day }) {
         {location && (<><em>·</em><span>{location}</span></>)}
       </div>
       <div className="title-end">
+        <CapabilityBadge capability={capability} nativeStatus={nativeStatus} />
         {day && <span>{day}</span>}
       </div>
     </div>
@@ -375,5 +388,5 @@ function TitleBar({ campaign, location, day }) {
 Object.assign(window, {
   NAV_GROUPS, NAV_BOTTOM, ALL_NAV, getGroupForScreen, getDefaultScreen,
   Glyph, CornerOrnament, Divider, SectionTitle, Pill,
-  Placeholder, IconPlate, BrassButton, Panel, NavRail, TabBar, TitleBar,
+  Placeholder, IconPlate, BrassButton, Panel, NavRail, TabBar, CapabilityBadge, TitleBar,
 });
