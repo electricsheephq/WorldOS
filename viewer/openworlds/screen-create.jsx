@@ -26,8 +26,18 @@ function ScreenCreate({ onNavigate, state, setState }) {
   const next = () => setStep(Math.min(steps.length - 1, step + 1));
   const prev = () => setStep(Math.max(0, step - 1));
 
+  const _badge = { label: "Preview", tone: "muted", detail: "Character creation is display-only — completing the wizard does not persist a hero to the engine." };
+
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "240px 1fr 280px", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
+
+      {/* Prototype banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+        <CapabilityBadge capability={_badge} nativeStatus={null} />
+        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — hero creation is not yet wired to the engine. No character will be saved.</span>
+      </div>
+
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "240px 1fr 280px", gap: 14, minHeight: 0 }}>
 
       {/* LEFT — wizard steps */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column" }}>
@@ -90,7 +100,7 @@ function ScreenCreate({ onNavigate, state, setState }) {
           {step < steps.length - 1 ? (
             <BrassButton onClick={next}>Continue →</BrassButton>
           ) : (
-            <BrassButton onClick={() => onNavigate("table")} tone="crimson">Bind the hero</BrassButton>
+            <BrassButton disabled tone="crimson" title="Not yet wired — hero creation is display-only">Bind the hero (preview only)</BrassButton>
           )}
         </div>
       </Panel>
@@ -144,6 +154,7 @@ function ScreenCreate({ onNavigate, state, setState }) {
           {hero.points}
         </div>
       </Panel>
+      </div>
     </div>
   );
 }

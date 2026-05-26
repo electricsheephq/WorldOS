@@ -18,8 +18,18 @@ function ScreenBestiary({ onNavigate, state, setState }) {
     }
   }, [filtered, selected?.id]);
 
+  const _badge = { label: "Preview", tone: "muted", detail: "Bestiary is display-only — entries are static demo data, not live engine read-models." };
+
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "280px 1fr", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
+
+      {/* Prototype banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+        <CapabilityBadge capability={_badge} nativeStatus={null} />
+        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — not yet wired to the engine. Entries shown are demo data.</span>
+      </div>
+
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr", gap: 14, minHeight: 0 }}>
 
       {/* LEFT — index */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -80,6 +90,7 @@ function ScreenBestiary({ onNavigate, state, setState }) {
 
       {/* RIGHT — entry */}
       {selected ? <BestiaryEntry entry={selected} tab={tab} /> : <Panel framed><div className="muted">Nothing selected.</div></Panel>}
+      </div>
     </div>
   );
 }

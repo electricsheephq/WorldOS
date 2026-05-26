@@ -18,8 +18,18 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
   const inv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
 
+  const _badge = { label: "Preview", tone: "muted", detail: "The Market is display-only — stock is demo data and transactions are not persisted to the engine." };
+
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
+
+      {/* Prototype banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+        <CapabilityBadge capability={_badge} nativeStatus={null} />
+        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — merchant stock is demo data; purchases are not wired to the engine inventory.</span>
+      </div>
+
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, minHeight: 0 }}>
 
       {/* LEFT — Merchant info + haggle */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
@@ -229,11 +239,12 @@ function ScreenMerchant({ onNavigate, state, setState }) {
           <BrassButton onClick={() => {
             setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
             setCart([]);
-          }} style={{ width: "100%" }} disabled={cart.length === 0 || coins.gp + balanceDelta < 0}>
-            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"}
+          }} style={{ width: "100%" }} disabled={cart.length === 0 || coins.gp + balanceDelta < 0} title="Display-only — transaction is not saved to the engine">
+            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"} <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
           </BrassButton>
         </div>
       </Panel>
+      </div>
     </div>
   );
 }
