@@ -50,6 +50,19 @@
           {"kind": "romance", "threshold": 40, "note": "Her engine mended at last, Karlach is making up for stolen years — and a bond that reaches this depth turns her grin your way: the most alive person in the room, choosing you to spend the borrowed time with."}
         ]
       }
+    },
+    "npc-minsc": {
+      "arc": {
+        "arc_gates": [
+          {"kind": "loyalty", "threshold": 35, "note": "Minsc gives his whole heart to a comrade who fights for the small and the helpless — reach this and Boo himself vouches for you: a friendship sworn unto death, the surest blade at your back."}
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -20,
+          "decision_flag": "took_bribe",
+          "note": "Minsc cannot abide a hero who sells out the helpless for a devil's coin. He swings his sword AT evil, never bargains with it — and a friend who has taken such a bargain has, in his plain and absolute reckoning, become the very thing they were meant to fight. If the bond has already curdled, the betrayal is grief, not malice: Boo turns his small black eyes away first, and then Minsc draws — booming, heartbroken, certain — to stop what his friend has let them become. He is, to the last, exactly himself: 'EVIL must be punished — even when it wears the face of a friend! Especially then! GO FOR THE EYES, Boo — but weep after.'"
+        }
+      }
     }
   },
   "license": "FREE, unofficial Fan Content. Original ClawDnD prose describing a post-BG3 world-STATE (plot-branch facts only), released under CC-BY-4.0 as fan content under the Wizards Fan Content Policy (+ Larian for BG3 elements). NOT official, NOT endorsed, never sold. No in-game text is reproduced.",
