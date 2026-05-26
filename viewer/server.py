@@ -412,6 +412,22 @@ def build_options_response(campaign_id: Optional[str], character_id: Optional[st
     }
 
 
+def build_bestiary_response(query: str = "", limit: int = 20) -> dict:
+    """GET /bestiary-surface read model.
+
+    Bridges to the engine-owned player-safe bestiary projection. It exposes no write
+    path and does not import or call any campaign/combat mutation helper.
+    """
+    engine = _load_engine_server()
+    if engine is None:
+        return {
+            "items": [],
+            "validation_errors": [],
+            "error": f"engine import failed: {_ENGINE_IMPORT_ERROR}",
+        }
+    return engine.bestiary.player_bestiary(query, limit)
+
+
 def _display_location(snapshot: dict) -> str:
     loc_id = snapshot.get("current_location_id")
     locs = snapshot.get("locations")
@@ -4176,6 +4192,17 @@ class _Handler(BaseHTTPRequestHandler):
             cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
             character_id = (qs.get("character") or [""])[0]
             self._json(build_options_response(cid, character_id))
+        elif route == "/bestiary-surface":
+            # Read-only player-safe bestiary/codex projection. No campaign or combat
+            # mutation route is exposed here; the engine returns only public preview fields.
+            qs = parse_qs(parsed.query)
+            query = (qs.get("q") or qs.get("query") or [""])[0]
+            raw_limit = (qs.get("limit") or ["20"])[0]
+            try:
+                limit = int(raw_limit)
+            except (TypeError, ValueError):
+                limit = 20
+            self._json(build_bestiary_response(query, limit))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).
