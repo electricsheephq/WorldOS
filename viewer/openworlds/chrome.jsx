@@ -212,6 +212,29 @@ function Placeholder({ label, w, h, framed, style, children, className }) {
   );
 }
 
+// The render bridge (#W2a): show generated/ingested art from the viewer's `/image?scope=…`
+// endpoint, falling back to the styled <Placeholder> when no art is cached (404) — so the UI
+// is beautiful when art exists and graceful when it doesn't (the default null-image path).
+// `scope` follows the engine convention: a location_id for a scene, `portrait-<character_id>`
+// for an NPC/PC, `item-<item_id>` for an item icon. Empty scope → placeholder (no fetch).
+function Img({ scope, label, w, h, framed, style, className, fit = "cover" }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [scope]);
+  if (!scope || failed) {
+    return <Placeholder label={label} w={w} h={h} framed={framed} style={style} className={className} />;
+  }
+  return (
+    <img
+      src={`/image?scope=${encodeURIComponent(scope)}`}
+      alt={label || ""}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`ow-img ${framed ? "framed" : ""} ${className || ""}`}
+      style={{ width: w, height: h, objectFit: fit, display: "block", ...(style || {}) }}
+    />
+  );
+}
+
 function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onClick, active, style }) {
   return (
     <button
@@ -388,5 +411,5 @@ function TitleBar({ campaign, location, day, capability, nativeStatus }) {
 Object.assign(window, {
   NAV_GROUPS, NAV_BOTTOM, ALL_NAV, getGroupForScreen, getDefaultScreen,
   Glyph, CornerOrnament, Divider, SectionTitle, Pill,
-  Placeholder, IconPlate, BrassButton, Panel, NavRail, TabBar, CapabilityBadge, TitleBar,
+  Placeholder, Img, IconPlate, BrassButton, Panel, NavRail, TabBar, CapabilityBadge, TitleBar,
 });

@@ -105,6 +105,20 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn(b"fonts/", body)
         self.assertNotIn(b"https://", body)
 
+    def test_openworlds_render_bridge_fetches_image_endpoint(self):
+        # #W2a: the Img component (chrome.jsx) fetches the viewer /image endpoint and falls
+        # back to <Placeholder>; the relations screen uses it for NPC portraits (scope
+        # "portrait-<id>"). Proves generated/ingested art renders instead of always-placeholder.
+        _s, _c, chrome = self._get("/openworlds/chrome.jsx")
+        chrome_src = chrome.decode("utf-8")
+        self.assertIn("/image?scope=", chrome_src)
+        self.assertIn("function Img(", chrome_src)
+        self.assertIn("onError", chrome_src)  # 404 -> graceful placeholder fallback
+        _s2, _c2, rel = self._get("/openworlds/screen-relations.jsx")
+        rel_src = rel.decode("utf-8")
+        self.assertIn("Img scope=", rel_src)
+        self.assertIn("portrait-", rel_src)
+
     def test_openworlds_combat_screen_binds_viewer_combat_surface(self):
         status, ctype, body = self._get("/openworlds/screen-combat.jsx")
 
