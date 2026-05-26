@@ -103,7 +103,30 @@ def _quest_has_decision_callback(c: Campaign, quest_id: str, quest_title: str, w
     return False
 
 
-# ── 6 structural detectors ───────────────────────────────────────────────────
+def _quest_has_followon(c: Campaign, quest_id: str, quest_title: str) -> bool:
+    """Return True if a resolved quest already has SOME payoff/echo wired: a
+    scheduled Consequence that grew from it (the rule-of-three ``evolves_from:<id>``
+    note, or any consequence whose text/note references the quest id/title), or a
+    quest_hook that arcs back to it (by id reference in its fields). Used to tell a
+    resolved-but-echoing thread from a resolved-and-forgotten one."""
+    title_lower = (quest_title or "").lower()
+    evolves_note = f"evolves_from:{quest_id}"
+    for con in c.consequences:
+        if con.note == evolves_note:
+            return True
+        blob = (con.text + " " + con.note).lower()
+        if quest_id in blob or (title_lower and title_lower in blob):
+            return True
+    for h in c.quest_hooks:
+        blob = (h.title + " " + h.arc_back + " " + h.note).lower()
+        if quest_id in blob or (title_lower and title_lower in blob):
+            return True
+        if quest_id in h.prereq:
+            return True
+    return False
+
+
+# ── structural detectors ──────────────────────────────────────────────────────
 
 
 def _detect_hook_untracked(c: Campaign) -> list[SceneDebt]:
@@ -154,6 +177,37 @@ def _detect_quest_stalled(c: Campaign) -> list[SceneDebt]:
                 ),
                 severity="med",
                 evidence={"quest_id": q.id, "quest_title": q.title, "campaign_day": c.day},
+            )
+        )
+    return debts
+
+
+def _detect_quest_no_followon(c: Campaign) -> list[SceneDebt]:
+    """thread_no_payoff — a RESOLVED Quest (status == 'completed') with NO follow-on:
+    empty ``evolves_to`` AND no consequence/hook referencing it. The rule-of-three
+    nudge: every thread should echo. ADVISORY only (severity low) — the Director
+    surfaces it so the DM can set ``evolves_to`` / schedule a callback; the engine
+    NEVER auto-acts. A quest that already evolves (``evolves_to`` set) or already has
+    a payoff wired is NOT flagged."""
+    debts: list[SceneDebt] = []
+    for q in c.quests.values():
+        if q.status != "completed":
+            continue  # only resolved threads can lack a payoff
+        if (q.evolves_to or "").strip():
+            continue  # already evolves -> not a debt
+        if _quest_has_followon(c, q.id, q.title):
+            continue  # already echoed via a consequence/hook
+        debts.append(
+            SceneDebt(
+                id=_debt_id("thread_no_payoff", q.id),
+                kind="thread_no_payoff",
+                subject=q.id,
+                detail=(
+                    f"Resolved thread '{q.title}' has no payoff/echo — consider a "
+                    f"callback (set evolves_to) so it lingers instead of ending one-and-done."
+                ),
+                severity="low",
+                evidence={"quest_id": q.id, "quest_title": q.title, "status": q.status},
             )
         )
     return debts
@@ -315,9 +369,10 @@ def detect(c: Campaign) -> list[SceneDebt]:
     (today's behavior). Old snapshots without ``scene_debts`` round-trip
     unchanged — this function reads state, never mutates it.
 
-    The six debt kinds detected:
+    The debt kinds detected:
     - ``hook_untracked``: an engaged quest_hook with no tracked Quest.
     - ``quest_stalled``: an active Quest with no story beat in ≥ QUEST_STALL_DAYS.
+    - ``thread_no_payoff``: a resolved Quest with no follow-on (rule-of-three nudge).
     - ``choice_without_outcome``: a Decision offered (options present) but chosen=''.
     - ``due_consequence``: a non-thread Consequence past trigger_day, not fired.
     - ``thread_pressure``: a worldsim thread-beat overdue (world_tick not called).
@@ -326,6 +381,7 @@ def detect(c: Campaign) -> list[SceneDebt]:
     debts: list[SceneDebt] = []
     debts.extend(_detect_hook_untracked(c))
     debts.extend(_detect_quest_stalled(c))
+    debts.extend(_detect_quest_no_followon(c))
     debts.extend(_detect_choice_without_outcome(c))
     debts.extend(_detect_due_consequence(c))
     debts.extend(_detect_thread_pressure(c))
