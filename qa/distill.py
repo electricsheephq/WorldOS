@@ -24,6 +24,38 @@ def _short(v, n=220) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _audit_fields(res) -> list[str]:
+    """Surface engine-auto-fired mechanics that the 240-char tool_result preview truncates,
+    so the scorer can AUDIT them tool-sourced rather than only in DM prose (a recurring
+    Angry-DM finding). Currently: next_turn's ``repeat_saves`` (Hold Person/Monster
+    end-of-turn escape saves, #209) and attack/use_resource ``maneuver_damage`` (the Battle
+    Master superiority die, #213). Best-effort: a non-JSON or shape-mismatched result yields
+    nothing (the normal truncated `← …` preview line still stands)."""
+    try:
+        data = json.loads(res) if isinstance(res, str) else res
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    out: list[str] = []
+    for rs in data.get("repeat_saves", []) or []:
+        if not isinstance(rs, dict):
+            continue
+        verdict = "ENDS" if rs.get("ended") else ("saved" if rs.get("success") else "held")
+        out.append(
+            f"    `↳ repeat-save: {rs.get('name', '?')} on {rs.get('character_id', '?')} — "
+            f"{str(rs.get('ability', '?')).upper()} {rs.get('roll', '?')} (nat {rs.get('natural', '?')}) "
+            f"vs DC {rs.get('dc', '?')} → {verdict}`"
+        )
+    md = data.get("maneuver_damage")
+    if isinstance(md, dict):
+        out.append(
+            f"    `↳ maneuver-damage: {md.get('maneuver', '?')} {md.get('die', '?')}="
+            f"{md.get('rolled', '?')} applied={md.get('applied', md.get('applies_to', '?'))}`"
+        )
+    return out
+
+
 def _content_blocks(msg: dict):
     """A message's content may be a string or a list of typed blocks."""
     content = msg.get("content", [])
@@ -63,6 +95,7 @@ def distill(path: Path) -> tuple[str, Counter]:
                             x.get("text", "") for x in res if isinstance(x, dict)
                         )
                     lines_out.append(f"    `← {_short(res, 240)}`")
+                    lines_out.extend(_audit_fields(res))
         elif etype == "result":
             cost = ev.get("total_cost_usd", "?")
             turns = ev.get("num_turns", "?")
