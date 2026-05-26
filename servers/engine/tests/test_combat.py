@@ -86,6 +86,78 @@ def test_concentration_dc():
     assert combat.apply_damage(ch2, 30)["concentration_dc"] == 15  # max(10, 15)
 
 
+# --- multi-component damage (#210): per-type resolution, summed as one hit ---
+def test_apply_damage_components_sums_both_types():
+    """Two typed components with no resistance apply their full sum as one hit
+    (Ghoul Bite: 7 piercing + 4 necrotic = 11 to HP)."""
+    ch = mk(kind="monster", max_hp=30, current_hp=30)
+    out = combat.apply_damage_components(
+        ch, [{"amount": 7, "type": "piercing"}, {"amount": 4, "type": "necrotic"}]
+    )
+    assert ch.current_hp == 19  # 30 - 11
+    assert out["total_adjusted"] == 11
+    assert out["components"] == [
+        {"type": "piercing", "raw": 7, "adjusted": 7},
+        {"type": "necrotic", "raw": 4, "adjusted": 4},
+    ]
+
+
+def test_apply_damage_components_per_type_resistance_halves_only_the_matching_one():
+    """Resistance to ONE component's type halves only that component; the other is full.
+    necrotic-resistant target: 8 piercing (full) + 6 necrotic (->3) = 11 to HP."""
+    ch = mk(kind="monster", max_hp=40, current_hp=40, damage_resistances=["necrotic"])
+    out = combat.apply_damage_components(
+        ch, [{"amount": 8, "type": "piercing"}, {"amount": 6, "type": "necrotic"}]
+    )
+    assert out["components"] == [
+        {"type": "piercing", "raw": 8, "adjusted": 8},
+        {"type": "necrotic", "raw": 6, "adjusted": 3},
+    ]
+    assert out["total_adjusted"] == 11 and ch.current_hp == 29
+
+
+def test_apply_damage_components_per_type_immunity_zeroes_only_the_matching_one():
+    ch = mk(kind="monster", max_hp=40, current_hp=40, damage_immunities=["necrotic"])
+    out = combat.apply_damage_components(
+        ch, [{"amount": 5, "type": "piercing"}, {"amount": 9, "type": "necrotic"}]
+    )
+    assert out["total_adjusted"] == 5 and ch.current_hp == 35  # necrotic zeroed
+
+
+def test_apply_damage_components_single_component_identical_to_apply_damage():
+    """A one-element component list is arithmetically identical to apply_damage(damage_type=…)."""
+    a = mk(kind="monster", max_hp=40, current_hp=40, damage_resistances=["fire"])
+    b = mk(kind="monster", max_hp=40, current_hp=40, damage_resistances=["fire"])
+    o_single = combat.apply_damage(a, 10, damage_type="fire")
+    o_multi = combat.apply_damage_components(b, [{"amount": 10, "type": "fire"}])
+    assert a.current_hp == b.current_hp == 35
+    assert o_multi["damage_to_hp"] == o_single["damage_to_hp"]
+    assert o_multi["total_adjusted"] == 5
+
+
+def test_apply_damage_components_half_on_save_halves_each_component_first():
+    """half=True halves EACH component before its per-type adjustment (save-for-half,
+    mixed types): 10 piercing -> 5; 8 cold -> 4 then resisted -> 2; sum 7."""
+    ch = mk(kind="monster", max_hp=40, current_hp=40, damage_resistances=["cold"])
+    out = combat.apply_damage_components(
+        ch, [{"amount": 10, "type": "piercing"}, {"amount": 8, "type": "cold"}], half=True
+    )
+    assert out["components"] == [
+        {"type": "piercing", "raw": 10, "adjusted": 5},
+        {"type": "cold", "raw": 8, "adjusted": 2},
+    ]
+    assert out["total_adjusted"] == 7 and ch.current_hp == 33
+
+
+def test_apply_damage_components_concentration_dc_uses_combined_total():
+    """The concentration DC is half the COMBINED damage taken (one hit), not per component."""
+    ch = mk(max_hp=80, current_hp=80, concentration="Bless")
+    out = combat.apply_damage_components(
+        ch, [{"amount": 12, "type": "piercing"}, {"amount": 12, "type": "necrotic"}]
+    )
+    assert out["concentration_dc"] == 12  # max(10, 24//2)
+
+
 # --- healing ---
 def test_healing_revives_from_dying():
     ch = mk(max_hp=10, current_hp=0)
@@ -1052,6 +1124,306 @@ def test_next_turn_brief_absent_when_combat_not_active(tmp_path, monkeypatch):
     import pytest
     with pytest.raises(ValueError):
         server.next_turn(cid)  # must raise when combat is not active
+
+
+# =========================================================================
+# Issue #210: multi-component damage in attack()
+# Issue #211: Multiattack COMPOSITION (which attacks, not just count)
+# =========================================================================
+
+
+# --- #210 / #211 pure parser units (no I/O) ---
+
+
+def test_parse_damage_components_ghoul_bite():
+    """The Ghoul Bite desc -> ordered [piercing 1d6+2, necrotic 1d6] components (#210)."""
+    import server
+
+    desc = "Melee Attack Roll: +4, reach 5 ft. 5 (1d6 + 2) Piercing damage plus 3 (1d6) Necrotic damage."
+    comps = server._parse_damage_components(desc)
+    assert comps == [
+        {"dice": "1d6+2", "type": "piercing"},
+        {"dice": "1d6", "type": "necrotic"},
+    ]
+
+
+def test_parse_attack_action_attaches_damage_rolls_only_when_multi_type():
+    """A multi-type attack carries damage_rolls; a single-type attack does NOT (no churn)."""
+    import server
+
+    bite = server._parse_attack_action({
+        "name": "Bite", "action_type": "ACTION",
+        "desc": "Melee Attack Roll: +4, reach 5 ft. 5 (1d6 + 2) Piercing damage plus 3 (1d6) Necrotic damage.",
+    })
+    assert bite["damage"] == "1d6+2" and bite["damage_type"] == "piercing"
+    assert bite["damage_rolls"] == [
+        {"dice": "1d6+2", "type": "piercing"},
+        {"dice": "1d6", "type": "necrotic"},
+    ]
+    claw = server._parse_attack_action({
+        "name": "Claw", "action_type": "ACTION",
+        "desc": "Melee Attack Roll: +4, reach 5 ft. 4 (1d4 + 2) Slashing damage. If the target...",
+    })
+    assert claw["damage"] == "1d4+2" and claw["damage_type"] == "slashing"
+    assert "damage_rolls" not in claw  # single-type: no multi-component surface
+
+
+@pytest.mark.parametrize(
+    "desc,expected",
+    [
+        ("The ghoul makes two Bite attacks.", ["Bite", "Bite"]),
+        ("It makes one Claw attack and one Bite attack.", ["Claw", "Bite"]),
+        (
+            "The creature makes one Ram attack, one Bite attack, and one Claw attack.",
+            ["Ram", "Bite", "Claw"],
+        ),
+        ("The dragon makes three Rend attacks.", ["Rend", "Rend", "Rend"]),
+    ],
+)
+def test_parse_multiattack_composition(desc, expected):
+    """Multiattack desc -> ordered list of the SPECIFIC attack names, with repeats (#211)."""
+    import server
+
+    assert server._parse_multiattack_composition(desc) == expected
+
+
+def test_parse_multiattack_composition_unparseable_returns_empty():
+    """A Multiattack with no '<count> <name> attack(s)' clause degrades to [] (caller
+    falls back to count-only surfacing — never aborts)."""
+    import server
+
+    assert server._parse_multiattack_composition("The creature uses its dreadful presence.") == []
+
+
+# --- #211 end-to-end: monster_combat surfaces the Ghoul's two-Bite composition ---
+
+
+def test_monster_combat_surfaces_ghoul_multiattack_composition(tmp_path, monkeypatch):
+    """The Ghoul's Multiattack is 'two Bite attacks' — monster_combat must surface the
+    SPECIFIC sequence [Bite, Bite] (each with its piercing+necrotic damage_rolls), not
+    just the count, so the DM issues two Bites rather than improvising Bite+Claw (#211).
+    The Claw (a separate single-action option with the paralysis rider) stays in the
+    general attacks list but is NOT part of the Multiattack sequence."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Ghoul Multiattack #211")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=30)["id"]
+    res = server.spawn_monster(cid, "Ghoul")
+    ghoul_id = res["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, ghoul_id])
+    entries = {e["id"]: e for e in view["monster_combat"]}
+    g = entries[ghoul_id]
+
+    assert g["attacks_per_turn"] == 2
+    assert "multiattack" in g, "Ghoul monster_combat must carry the Multiattack composition"
+    seq = g["multiattack"]["sequence"]
+    assert [a["name"] for a in seq] == ["Bite", "Bite"], (
+        f"Ghoul Multiattack should be two Bites; got {[a['name'] for a in seq]}"
+    )
+    # Each surfaced Bite carries its full multi-component damage (#210 ties into #211).
+    for bite in seq:
+        assert bite["damage_rolls"] == [
+            {"dice": "1d6+2", "type": "piercing"},
+            {"dice": "1d6", "type": "necrotic"},
+        ], f"each Bite must surface piercing+necrotic damage_rolls; got {bite.get('damage_rolls')}"
+    # The Claw is still available as a separate attack option, but not in the sequence.
+    attack_names = {a["name"] for a in g["attacks"]}
+    assert "Claw" in attack_names and "Bite" in attack_names
+
+
+def test_turn_brief_surfaces_ghoul_multiattack_composition(tmp_path, monkeypatch):
+    """The per-turn brief (the surface the DM reads each turn) carries the Ghoul's
+    Multiattack composition when it is the Ghoul's turn (#211 + #166)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    # Rig initiative so the Ghoul goes first: hero rolls 1, ghoul rolls 25.
+    _n = [0]
+    _orig = server.dice_mod.roll
+
+    def _rigged(expression, **kw):
+        if expression.startswith("1d20"):
+            _n[0] += 1
+            from dice import DiceRoll
+            total = 1 if _n[0] == 1 else 25
+            return DiceRoll(expression=expression, total=total, rolls=[total], is_d20=True, natural=total)
+        return _orig(expression, **kw)
+
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+
+    cid = server.create_campaign("Ghoul Brief #211")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=30)["id"]
+    res = server.spawn_monster(cid, "Ghoul")
+    ghoul_id = res["spawned"][0]["id"]
+
+    server.start_combat(cid, [pc, ghoul_id])
+    # Ghoul first → next_turn advances to PC; pass PC; next_turn wraps back to Ghoul.
+    nt1 = server.next_turn(cid)
+    server.use_action(cid, pc, "skip")
+    nt2 = server.next_turn(cid)
+    ghoul_brief = next(
+        (nt["turn_brief"] for nt in (nt1, nt2)
+         if nt.get("turn_brief", {}).get("name", "").startswith("Ghoul")),
+        None,
+    )
+    assert ghoul_brief is not None, "expected a Ghoul turn_brief"
+    atk = ghoul_brief["attack"]
+    assert atk["attacks_per_turn"] == 2
+    assert "multiattack" in atk, "Ghoul turn_brief must carry the Multiattack composition"
+    assert [a["name"] for a in atk["multiattack"]["sequence"]] == ["Bite", "Bite"]
+
+
+def test_monster_combat_no_multiattack_key_for_single_attack_monster(tmp_path, monkeypatch):
+    """A monster with NO Multiattack (Wolf) has no 'multiattack' composition key —
+    additive: the count-only surfacing is unchanged for non-Multiattack monsters (#211)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Wolf No-Multiattack #211")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    res = server.spawn_monster(cid, "Wolf")
+    wolf_id = res["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, wolf_id])
+    w = {e["id"]: e for e in view["monster_combat"]}[wolf_id]
+    assert w["attacks_per_turn"] == 1
+    assert "multiattack" not in w, "no-Multiattack monster must not gain a composition key"
+
+
+# --- #210 end-to-end through attack() ---
+
+
+def _crit_then_fixed(component_total: int = 5):
+    """A dice.roll stub: every d20 is a natural-20 crit; every damage expr returns
+    `component_total` and records the expression it was asked to roll (so a test can
+    assert each component's dice were crit-doubled)."""
+    from dice import DiceRoll
+
+    seen: list[str] = []
+
+    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+        if expression.startswith("1d20"):
+            return DiceRoll(expression=expression, total=30, rolls=[20], is_d20=True, natural=20, crit=True)
+        seen.append(expression)
+        return DiceRoll(expression=expression, total=component_total, rolls=[component_total], detail=f"{expression}={component_total}")
+
+    return _roll, seen
+
+
+def test_attack_multi_component_rolls_and_crit_doubles_each(tmp_path, monkeypatch):
+    """attack(damage_rolls=[...]) rolls BOTH components, crit-doubles EACH component's
+    dice (leaving flat mods), and surfaces a per-component breakdown (#210)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    roll, seen = _crit_then_fixed(component_total=5)
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+
+    cid = server.create_campaign("Multi-component crit #210")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    foe = server.create_character(cid, "Foe", kind="monster", max_hp=80, armor_class=5)["id"]
+    server.start_combat(cid, [hero, foe])
+    cur = server.get_state(cid)["current_turn"]
+    other = foe if cur == hero else hero
+
+    r = server.attack(
+        cid, cur, other, attack_bonus=4,
+        damage_rolls=[{"dice": "1d6+2", "type": "piercing"}, {"dice": "1d6", "type": "necrotic"}],
+    )
+    assert r["crit"] is True and r["hit"] is True
+    # Each component's DICE doubled (flat +2 preserved); both components were rolled.
+    assert seen == ["2d6+2", "2d6"], f"expected crit-doubled component exprs; got {seen}"
+    dmg = r["damage"]
+    assert dmg["type"] == "piercing + necrotic"
+    assert dmg["total"] == 10  # 5 + 5 pre-resistance
+    assert [(c["type"], c["total"]) for c in dmg["components"]] == [("piercing", 5), ("necrotic", 5)]
+    # Both components landed (no resistance): 10 to HP.
+    assert server.get_character(cid, other)["current_hp"] == 70
+
+
+def test_attack_multi_component_per_type_resistance_halves_only_matching(tmp_path, monkeypatch):
+    """attack(damage_rolls=[...]) against a target resistant to one component's type
+    halves ONLY that component (#210). necrotic-resistant: 5 piercing + (5 necrotic ->2)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    from dice import DiceRoll
+
+    def roll(expression, advantage=False, disadvantage=False, seed=None):
+        if expression.startswith("1d20"):
+            return DiceRoll(expression=expression, total=19, rolls=[15], is_d20=True, natural=15, crit=False)
+        return DiceRoll(expression=expression, total=5, rolls=[5], detail="x")
+
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+
+    cid = server.create_campaign("Multi-component resist #210")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    foe = server.create_character(cid, "Foe", kind="monster", max_hp=80, armor_class=5)["id"]
+    server.update_character(cid, foe, {"damage_resistances": ["necrotic"]})
+    server.start_combat(cid, [hero, foe])
+    cur = server.get_state(cid)["current_turn"]
+    other = foe if cur == hero else hero
+
+    r = server.attack(
+        cid, cur, other, attack_bonus=4,
+        damage_rolls=[{"dice": "1d6+2", "type": "piercing"}, {"dice": "1d6", "type": "necrotic"}],
+    )
+    assert r["damage"]["total"] == 10  # pre-resistance rolled sum
+    assert r["damage"]["applied_total"] == 7  # 5 piercing + 5//2 necrotic
+    applied = {c["type"]: c["applied"] for c in r["damage"]["components"]}
+    assert applied == {"piercing": 5, "necrotic": 2}
+    assert server.get_character(cid, other)["current_hp"] == 73  # 80 - 7
+
+
+def test_attack_single_damage_dice_unchanged(tmp_path, monkeypatch):
+    """A single-damage_dice attack (no damage_rolls) is byte-identical to before:
+    result["damage"] keeps its scalar {total,type,expr,detail} shape, no components (#210)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    from dice import DiceRoll
+
+    def roll(expression, advantage=False, disadvantage=False, seed=None):
+        if expression.startswith("1d20"):
+            return DiceRoll(expression=expression, total=19, rolls=[15], is_d20=True, natural=15, crit=False)
+        return DiceRoll(expression=expression, total=7, rolls=[7], detail="1d6+2=7")
+
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+
+    cid = server.create_campaign("Single dice unchanged #210")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    foe = server.create_character(cid, "Foe", kind="monster", max_hp=80, armor_class=5)["id"]
+    server.start_combat(cid, [hero, foe])
+    cur = server.get_state(cid)["current_turn"]
+    other = foe if cur == hero else hero
+
+    r = server.attack(cid, cur, other, attack_bonus=4, damage_dice="1d6+2", damage_type="slashing")
+    assert sorted(r["damage"].keys()) == ["detail", "expr", "total", "type"]
+    assert r["damage"] == {"total": 7, "type": "slashing", "expr": "1d6+2", "detail": "1d6+2=7"}
+    assert "components" not in r["damage"]
+    assert server.get_character(cid, other)["current_hp"] == 73
+
+
+def test_attack_requires_some_damage_spec(tmp_path, monkeypatch):
+    """attack() with neither damage_dice nor damage_rolls is rejected up front with a
+    clear message (damage_dice became optional for the multi-component path) — no
+    state change, no confusing deep dice error."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("No damage spec #210")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=40, armor_class=10)["id"]
+    foe = server.create_character(cid, "Foe", kind="monster", max_hp=80, armor_class=5)["id"]
+    server.start_combat(cid, [hero, foe])
+    cur = server.get_state(cid)["current_turn"]
+    other = foe if cur == hero else hero
+
+    hp_before = server.get_character(cid, other)["current_hp"]
+    with pytest.raises(ValueError, match="attack needs damage"):
+        server.attack(cid, cur, other, attack_bonus=4)
+    # No state change: the action economy did not advance and HP is untouched.
+    assert server.get_character(cid, other)["current_hp"] == hp_before
+    assert server.get_state(cid)["current_turn"] == cur
 
 
 # =========================================================================

@@ -252,26 +252,33 @@ def _damage_type_matches(dt: str, entries: list[str]) -> bool:
     return bool(dt) and any(dt in e.lower() for e in entries)
 
 
-def apply_damage(
-    ch: Character, amount: int, crit: bool = False, half: bool = False, damage_type: str = ""
-) -> dict:
-    """Apply damage with full SRD order: halve-on-save -> apply the target's
-    resistance/immunity/vulnerability for `damage_type` -> temp HP absorb -> floor
-    at 0 -> massive-damage instant death -> dying transition -> death-save failure
-    if hit while already down -> concentration-check DC. If half=True (a successful
-    save vs a 'half on save' spell), the incoming amount is halved (rounded down)
-    first; per SRD, resistance/vulnerability apply after other modifiers. Mutates ch."""
+def _adjust_for_type(ch: Character, amount: int, damage_type: str) -> int:
+    """Apply the target's immunity (->0), vulnerability (->x2), or resistance (->//2)
+    for a SINGLE damage type, in that precedence order (SRD: a creature can't be both
+    resistant and vulnerable to the same type, but if listed, immunity wins, then
+    vulnerability, then resistance — matching apply_damage's historical order). An
+    untyped or unmatched component is returned unchanged. Pure arithmetic, no mutation."""
     amount = max(0, amount)
-    if half:
-        amount //= 2
-    dt = damage_type.strip().lower()
-    if amount > 0 and dt:
-        if _damage_type_matches(dt, ch.damage_immunities):
-            amount = 0
-        elif _damage_type_matches(dt, ch.damage_vulnerabilities):
-            amount *= 2
-        elif _damage_type_matches(dt, ch.damage_resistances):
-            amount //= 2
+    dt = (damage_type or "").strip().lower()
+    if amount <= 0 or not dt:
+        return amount
+    if _damage_type_matches(dt, ch.damage_immunities):
+        return 0
+    if _damage_type_matches(dt, ch.damage_vulnerabilities):
+        return amount * 2
+    if _damage_type_matches(dt, ch.damage_resistances):
+        return amount // 2
+    return amount
+
+
+def _apply_total_to_hp(ch: Character, amount: int, crit: bool) -> dict:
+    """Apply an already-typed-and-adjusted damage TOTAL to the character: temp HP
+    absorb -> floor at 0 -> massive-damage instant death -> dying transition ->
+    death-save failure if hit while already down -> concentration-check DC. Shared by
+    apply_damage (single type) and apply_damage_components (summed multi-type) so the
+    downstream HP/death/concentration pipeline runs exactly ONCE on the net total
+    (per SRD: resistance applies per component, but you take the combined damage as a
+    single hit for temp-HP, death-saves, and concentration). Mutates ch."""
     if ch.dead:
         return {"absorbed": 0, "damage_to_hp": 0, "concentration_dc": None, **status(ch)}
 
@@ -316,6 +323,53 @@ def apply_damage(
         # DC is half the damage TAKEN (min 10) — temp HP absorbing it doesn't dodge the check.
         conc_dc = max(10, damage_taken // 2)
     return {"absorbed": absorbed, "damage_to_hp": to_hp, "concentration_dc": conc_dc, **status(ch)}
+
+
+def apply_damage(
+    ch: Character, amount: int, crit: bool = False, half: bool = False, damage_type: str = ""
+) -> dict:
+    """Apply damage with full SRD order: halve-on-save -> apply the target's
+    resistance/immunity/vulnerability for `damage_type` -> temp HP absorb -> floor
+    at 0 -> massive-damage instant death -> dying transition -> death-save failure
+    if hit while already down -> concentration-check DC. If half=True (a successful
+    save vs a 'half on save' spell), the incoming amount is halved (rounded down)
+    first; per SRD, resistance/vulnerability apply after other modifiers. Mutates ch."""
+    amount = max(0, amount)
+    if half:
+        amount //= 2
+    amount = _adjust_for_type(ch, amount, damage_type)
+    return _apply_total_to_hp(ch, amount, crit)
+
+
+def apply_damage_components(
+    ch: Character, components: list[dict], crit: bool = False, half: bool = False
+) -> dict:
+    """Apply a MULTI-COMPONENT hit — a list of ``{"amount": int, "type": str}`` parts —
+    where each part carries its OWN damage type (e.g. a Ghoul Bite: piercing PLUS
+    necrotic). Per SRD each component's resistance/immunity/vulnerability is computed
+    INDEPENDENTLY against its own type; the surviving amounts are then summed and taken
+    as a SINGLE hit for temp-HP, the downed/death pipeline, and the concentration check
+    (you take the combined damage at once, not as separate hits). With ``half=True``
+    each component is halved first (a save-for-half spell with mixed types), then the
+    per-type adjustment applies — same per-component order as the single-type path.
+
+    Returns the same shape as apply_damage PLUS a ``components`` breakdown listing each
+    part's ``{type, raw, adjusted}`` and a ``total_adjusted`` (the summed damage that
+    reached the HP pipeline) so the caller can surface exactly what landed per type.
+    A single-component list is arithmetically identical to apply_damage(damage_type=...)."""
+    breakdown: list[dict] = []
+    total = 0
+    for part in components or []:
+        raw = max(0, int(part.get("amount", 0) or 0))
+        dtype = str(part.get("type", "") or "")
+        amt = raw // 2 if half else raw
+        adjusted = _adjust_for_type(ch, amt, dtype)
+        total += adjusted
+        breakdown.append({"type": dtype, "raw": raw, "adjusted": adjusted})
+    out = _apply_total_to_hp(ch, total, crit)
+    out["components"] = breakdown
+    out["total_adjusted"] = total
+    return out
 
 
 def apply_healing(ch: Character, amount: int) -> dict:
