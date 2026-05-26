@@ -316,6 +316,65 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["skills"], [])
         self.assertTrue(surface["free_form"])
 
+    # ── parley: Layer 3 stumble-into Event block ───────────────────────────────
+
+    def test_parley_surface_omits_event_block_without_live_event(self):
+        # the base snapshot has no `events` key -> no event block (today's freeform parley)
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertNotIn("event", surface)
+        self.assertTrue(surface["free_form"])
+
+    def test_parley_surface_attaches_live_event_options(self):
+        # a manual-trigger, unresolved Event surfaces its authored options as the menu slots
+        snap = dict(_SNAPSHOT)
+        snap["events"] = {
+            "event_bribe": {
+                "id": "event_bribe", "trigger": "manual", "prompt": "Raphael offers a deal.",
+                "anchor_npc_id": "olwen",
+                "options": [
+                    {"label": "Take the bribe", "tag": "CN", "skill": "deception", "dc": 15},
+                    {"label": "Refuse", "tag": "LG"},
+                ],
+            }
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertTrue(surface["free_form"])  # free-form path STAYS (never a closed set)
+        self.assertIn("event", surface)
+        block = surface["event"]
+        self.assertEqual(block["id"], "event_bribe")
+        self.assertEqual(block["prompt"], "Raphael offers a deal.")
+        self.assertEqual(block["resolve_with"], "resolve_event")
+        self.assertEqual(block["options"][0], {"label": "Take the bribe", "tag": "CN", "skill": "deception", "dc": 15})
+        self.assertEqual(block["options"][1], {"label": "Refuse", "tag": "LG", "skill": "", "dc": 0})
+        self.assert_no_private_keys(surface)
+
+    def test_parley_surface_hides_resolved_and_trigger_unmet_events(self):
+        snap = dict(_SNAPSHOT)
+        snap["day"] = 4
+        snap["events"] = {
+            "event_done": {"id": "event_done", "trigger": "manual", "resolved": True,
+                            "prompt": "spent", "options": [{"label": "X"}]},
+            "event_future": {"id": "event_future", "trigger": "day_reached", "trigger_threshold": 99,
+                              "prompt": "not yet", "options": [{"label": "Y"}]},
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertNotIn("event", surface)  # nothing live
+
+    def test_parley_surface_event_trigger_reads_snapshot_flag(self):
+        snap = dict(_SNAPSHOT)
+        snap["flags"] = {"met_raphael": True}
+        snap["events"] = {
+            "event_gated": {"id": "event_gated", "trigger": "flag_set", "trigger_value": "met_raphael",
+                             "prompt": "He returns.", "options": [{"label": "Greet"}]},
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertIn("event", surface)
+        self.assertEqual(surface["event"]["id"], "event_gated")
+
 
 if __name__ == "__main__":
     unittest.main()

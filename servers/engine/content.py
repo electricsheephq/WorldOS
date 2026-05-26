@@ -25,6 +25,7 @@ from models import (
     CompanionDossier,
     Character,
     DowntimeProject,
+    Event,
     Faction,
     FactionAsset,
     Location,
@@ -673,6 +674,15 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
             if dossier is not None:
                 ch.companion_dossier = dossier
 
+    # ADDITIVE (Quest & Arc engine, Layer 3): the chosen ending may ALSO seed stumble-into
+    # Events — so the post-state shapes which decisionals stumble into the party (Raphael's
+    # bribe under one ending, the Flaming Fist's offer under another). Folded onto whatever the
+    # base world already seeded; a malformed entry degrades (skip-one), like companion_seeds.
+    # No `events` key in the overlay is a no-op. Runs here so a `reputation_at` trigger can be
+    # ref-checked against the (already-seeded) factions.
+    ov_id = overlay.get("id", overlay.get("name", "?"))
+    _seed_events_block(c, overlay.get("events"), where=f"ending overlay {ov_id!r}")
+
 
 def _seed_strategic_state(c: Campaign, world: dict) -> None:
     """Seed optional strategic board data from world.json.
@@ -781,6 +791,63 @@ def _seed_strategic_state(c: Campaign, world: dict) -> None:
         c.strategic_state.projects[project.id] = project
 
     c.strategic_state.last_tick_day = c.day
+
+
+def _seed_events_block(c: Campaign, raw, *, where: str) -> int:
+    """Fold an OPTIONAL authored `events` block onto the campaign (Quest & Arc engine, Layer 3).
+    Mutates `c.events`; returns the count seeded.
+
+    The block is a list of Event objects OR a dict mapping id -> Event object. Each entry is
+    validated into an `Event`; a present-but-MALFORMED entry (wrong shape, a `reputation_at`
+    trigger naming a missing faction, a forbidden extra key) is SKIPPED with a diagnostic —
+    DEGRADE-not-abort, exactly the companion_seeds / world_state / strategic contract — never
+    aborting start_world. A missing/None/non-collection block is a no-op (today's behavior).
+
+    A `reputation_at` trigger whose `trigger_faction_id` isn't a seeded faction is skipped (the
+    trigger could never satisfy and signals an authoring typo). Other triggers reference only
+    flags/day, which are open by design, so they aren't ref-checked. An explicit id collision
+    (two events with the same id) keeps the first and skips the rest, logged."""
+    if raw is None:
+        return 0
+    if isinstance(raw, dict):
+        entries = list(raw.values())
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        print(f"[content] skipping malformed events block in {where} (not a list or object)")
+        return 0
+    seeded = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            print(f"[content] skipping events entry in {where} (not an object)")
+            continue
+        try:
+            event = Event.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed event in {where}")
+            continue
+        # A reputation_at trigger naming a faction not in this world can never fire — almost
+        # always an authoring typo. Skip it (degrade) so the board stays clean.
+        if event.trigger == "reputation_at" and event.trigger_faction_id not in c.factions:
+            print(
+                f"[content] skipping event {event.id!r} in {where}: "
+                f"reputation_at trigger names unknown faction {event.trigger_faction_id!r}"
+            )
+            continue
+        if event.id in c.events:
+            print(f"[content] skipping event {event.id!r} in {where}: duplicate event id (keeping the first)")
+            continue
+        c.events[event.id] = event
+        seeded += 1
+    return seeded
+
+
+def _seed_events(c: Campaign, world: dict) -> None:
+    """Seed authored stumble-into Events from `world['events']` (Quest & Arc engine, Layer 3).
+
+    Runs AFTER factions are seeded (so a `reputation_at` trigger can be ref-checked). Additive
+    + degrade-not-abort: a world with no `events` key seeds nothing (today's behavior)."""
+    _seed_events_block(c, world.get("events"), where="world events block")
 
 
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
@@ -1095,6 +1162,11 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
         c.factions[faction.id] = faction
 
     _seed_strategic_state(c, world)
+
+    # Authored stumble-into Events (Quest & Arc engine, Layer 3). Runs after factions so a
+    # `reputation_at` trigger can be ref-checked. Additive: a world with no `events` key is a
+    # no-op (today's behavior). The ending overlay may add MORE events (see _apply_ending_overlay).
+    _seed_events(c, world)
 
     # Roster NPCs exist in state (recallable, voiced) but are not party members — the
     # DM pulls them in or invents freely. Each NPC's hook is stored as a memory fact.
