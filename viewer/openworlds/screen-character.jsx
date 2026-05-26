@@ -196,8 +196,8 @@ function ScreenCharacter({ onNavigate, state, setState }) {
 
             <div className="eyebrow">Equipped</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-              {hero.equipped.map((it) => (
-                <div key={it.slot} style={{
+              {hero.equipped.map((it, i) => (
+                <div key={`${it.slot}-${it.name || i}`} style={{
                   display: "flex", gap: 8, alignItems: "center",
                   padding: 8,
                   background: "rgba(176,141,87,0.08)",
