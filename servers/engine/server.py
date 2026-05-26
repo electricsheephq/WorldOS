@@ -2064,6 +2064,24 @@ def start_combat(campaign_id: str, combatant_ids: list[str]) -> dict:
             f"Combat begins: {names}.",
             {"event": "combat_start", "round": c.combat.round, "combatants": ordered},
         )
+        # Fold in over-match outlook for DM-staged set-pieces (not just wander encounters):
+        # any time monsters are in the fight the DM may have forgotten to call
+        # encounter_outlook, so we auto-surface `must_offer_out` here.  We only attach
+        # `outlook` when the fight is over-matched (must_offer_out OR deadly) so a
+        # fair fight's view stays UNCHANGED (purely additive).
+        monster_ids_in_combat = [
+            cid for cid in combatant_ids
+            if c.characters.get(cid) is not None and c.characters[cid].kind == "monster"
+        ]
+        if monster_ids_in_combat and _party_levels(c):
+            try:
+                monster_xps = _resolve_monster_xps(c, None, monster_ids_in_combat)
+            except ValueError:
+                monster_xps = []
+            if monster_xps:
+                outlook = _outlook_for_xps(_party_levels(c), monster_xps)
+                if outlook.get("must_offer_out") or outlook.get("band") == "deadly":
+                    view["outlook"] = outlook
         save_campaign(c)
         return view
 
@@ -4357,6 +4375,8 @@ def encounter_outlook(
     may kill. Read-only."""
     c = _require(campaign_id)
     xps = _resolve_monster_xps(c, monster_xps, monster_ids)
+    if not xps:
+        raise ValueError("pass monster_xps or monster_ids — no XP to evaluate")
     levels = _party_levels(c)
     return _outlook_for_xps(levels, xps)
 
@@ -4370,6 +4390,7 @@ def _outlook_for_xps(party_levels: list[int], monster_xps: list[int]) -> dict:
     Returns ``{band, overmatch_ratio, avg_party_level, must_offer_out, guidance}``.
     `overmatch_ratio = adjusted_xp / deadly_threshold`; `must_offer_out =
     avg_party_level <= 5 and overmatch_ratio >= 2.0` (the troll/dragon boundary)."""
+    assert party_levels, "party_levels must be non-empty"
     avg_party_level = sum(party_levels) / len(party_levels)
     deadly = encounter.xp_thresholds(party_levels)["deadly"]
     adjusted = encounter.adjusted_xp(monster_xps)
