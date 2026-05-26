@@ -14,21 +14,21 @@ PROCEDURE — follow exactly, no deviation:
 4. Run 3 FULL combat rounds. In each round:
    a. Call next_turn(campaign_id) to advance the initiative tracker.
    b. For each combatant whose turn it is, resolve their action with a real engine call:
-      - Aldric (fighter): attack(campaign_id, attacker_id=player_id, target_id=<a bandit or captain>, weapon="longsword")
-      - Maren (cleric): alternate between cast_spell(campaign_id, caster_id=companion_id, spell_name="Guiding Bolt", target_id=<a hostile>) and apply_healing(campaign_id, target_id=player_id, amount=<roll result>) after Cure Wounds — use saving_throw(campaign_id, character_id=<target>, dc=<Maren's spell save DC>, ability="constitution") for save-or-half spells.
-      - Monsters: attack(campaign_id, attacker_id=<monster_id>, target_id=<player_id or companion_id>, weapon=<their weapon name from notes>)
+      - Aldric (Battle Master fighter): attack(campaign_id, attacker_id=player_id, target_id=<a hostile>, attack_bonus=6, damage_dice="1d8+4", damage_type="slashing") (longsword: STR +4 & proficiency +2 = +6; the engine rolls vs AC and applies damage). Aldric has Superiority Dice — at least once, spend one on a maneuver: call use_resource(campaign_id, character_id=player_id, resource="superiority_dice") for the die, then resolve the maneuver's rider as SEPARATE calls (Trip Attack -> saving_throw(..., ability="str") and on a fail add_condition(..., condition="prone"); Menacing -> a WIS save then condition="frightened").
+      - Maren (War Domain cleric): rotate her spells so BOTH families are exercised. First read her DC once via spell_save_dc(campaign_id, character_id=companion_id) — never invent it. At least once cast a SAVE-spell: cast_spell(campaign_id, character_id=companion_id, spell_name="Hold Person", target_id=<the Bandit Captain>) (or "Bane"), then roll the target's save with saving_throw(campaign_id, character_id=<target>, dc=<that DC>, ability="wis") (Hold Person = WIS save; Bane = "cha"), and on a FAILED save call add_condition(campaign_id, character_id=<target>, condition="paralyzed") for Hold Person. Otherwise alternate cast_spell(character_id=companion_id, spell_name="Guiding Bolt"/"Sacred Flame", target_id=<hostile>) and apply_healing(campaign_id, target_id=player_id, amount=<roll result>) after Cure Wounds.
+      - Monsters: attack(campaign_id, attacker_id=<monster_id>, target_id=<player_id or companion_id>, attack_bonus=<from the monster's notes>, damage_dice=<from notes>, damage_type=<from notes>). The GHOUL: on a Claw HIT, resolve its paralysis RIDER as a SEPARATE call — saving_throw(campaign_id, character_id=<the target>, dc=10, ability="con"); on a FAILED save call add_condition(campaign_id, character_id=<the target>, condition="paralyzed"). Run the rider even if the hit would not have killed. (Ability codes are 3-letter: str/dex/con/int/wis/cha.)
    c. Every number (to-hit, damage, save DC) comes from a tool call — never invent dice.
-   d. If a combatant drops to 0 HP, call remove_combatant(campaign_id, character_id=<id>) and one sentence of narration.
+   d. If a combatant drops to 0 HP, call remove_combatant(campaign_id, character_id=<id>) and one sentence of narration. (The lone Bandit should fall fast — that validates the kill/XP path.)
    e. One sentence of narration per round (vivid, present-tense). No more.
 
 5. After round 3 (or when all hostiles are removed), call end_combat(campaign_id).
 
-6. Call end_session(campaign_id, summary="Combat sprint — 3 rounds vs Bandits + Bandit Captain.").
+6. Call end_session(campaign_id, summary="Combat sprint — 3 rounds vs a Bandit, a Bandit Captain, and a Ghoul.").
 
 7. STOP. Do not add epilogue, do not call any other tools.
 
 RULES:
 - Every mechanical outcome must come from a tool call, not prose invention.
-- No hand-waving ("they defeat the bandits") — each attack, save, and damage value is a real roll.
+- No hand-waving ("they defeat the bandits") — each attack, save, damage value, and rider (the Ghoul's paralysis, a maneuver's effect, a save-spell's condition) is a real, separate tool call.
 - One sentence of narration per round maximum; keep it present-tense and punchy.
 - If a tool errors, log the error text and continue with the next combatant — do not abort.
