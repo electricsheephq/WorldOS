@@ -1402,6 +1402,22 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
         )
         if dossier is not None:
             ch.companion_dossier = dossier
+        # ADDITIVE (#221, the generativity boundary the 2nd-seed spike surfaced): a roster
+        # entry may ALSO carry an OPTIONAL companion `arc` — the relationship gauge + arc
+        # gates + the sealed `agenda` that flips the companion on a decision/attitude break.
+        # In Baldur's Gate this is seeded per-ENDING (companion_seeds in the overlay), so the
+        # SAME companion turns differently under different endings; but a world WITHOUT endings
+        # (a fresh universe like the Tidal Commonwealth) had NO surface to arm a companion flip
+        # at all. Loading `arc` here from the base roster closes that gap — any world can author
+        # a companion who turns, right where the companion is defined. A malformed arc DEGRADES
+        # (the NPC gets no arc), never aborting the seed; no `arc` key -> arc stays None (today's
+        # behavior). An ending overlay's companion_seeds runs LATER (`_apply_ending_overlay`,
+        # after this loop) so an ending still OVERRIDES the base arc — endings keep the last word.
+        if isinstance(npc.get("arc"), dict):
+            try:
+                ch.arc = CompanionArc.model_validate(npc["arc"])
+            except (ValidationError, ValueError, TypeError):
+                print(f"[content] skipping malformed arc in npc_roster entry {ch.name!r}")
         c.characters[ch.id] = ch
 
     _seed_settlement_pressure(c, world)
