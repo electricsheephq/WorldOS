@@ -31,8 +31,18 @@ function ScreenForge({ onNavigate, state, setState }) {
     });
   };
 
+  const _badge = { label: "Preview", tone: "muted", detail: "Forge is display-only — crafting rolls are simulated and results are not persisted to the engine." };
+
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "260px 1fr 300px", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
+
+      {/* Prototype banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
+        <CapabilityBadge capability={_badge} nativeStatus={null} />
+        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — crafting is not yet wired to the engine. Rolls are simulated; nothing is saved.</span>
+      </div>
+
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 300px", gap: 14, minHeight: 0 }}>
 
       {/* LEFT: Recipe categories + list */}
       <Panel framed style={{ padding: 18, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -187,11 +197,11 @@ function ScreenForge({ onNavigate, state, setState }) {
               </div>
             </div>
 
-            <BrassButton tone="crimson" onClick={craft} style={{ width: "100%", marginTop: 14 }}>
-              ⚒ To the forge
+            <BrassButton tone="crimson" onClick={craft} style={{ width: "100%", marginTop: 14 }} title="Simulated only — result is not persisted to the engine">
+              ⚒ To the forge <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
             </BrassButton>
             <div className="hand muted" style={{ fontSize: 11, marginTop: 4, textAlign: "center" }}>
-              Crafting happens at next rest.
+              Crafting happens at next rest. (display-only — not saved)
             </div>
           </>
         )}
@@ -220,6 +230,7 @@ function ScreenForge({ onNavigate, state, setState }) {
           ))}
         </div>
       </Panel>
+      </div>
     </div>
   );
 }
