@@ -15,6 +15,8 @@ function ScreenJournal({ onNavigate, state, setState }) {
   const surfaceQuests = Array.isArray(surface?.quests) ? surface.quests : null;
   const quests = surfaceQuests || (Array.isArray(state?.quests) ? state.quests : []);
   const advisory = surface?.directorAdvisory || { debts: [], total_debts: 0 };
+  // Scheduled quest-evolution callbacks (#120) — the "this thread will return" threads.
+  const threads = Array.isArray(surface?.threads) ? surface.threads : [];
   const [activeQuest, setActiveQuest] = React.useState("");
   const [tab, setTab] = React.useState("active");
 
@@ -173,6 +175,18 @@ function ScreenJournal({ onNavigate, state, setState }) {
               Inscribed {quest.dateOpened || "Day 9 of Gozran"}
             </div>
 
+            {/* Rule-of-three evolution badge (#120): a quest carrying an evolves_to hook
+                will echo back. Display-only telegraph; icon-free. */}
+            {quest.evolvesTo && (
+              <div style={{ marginTop: 8 }}>
+                <Pill tone="royal">
+                  {quest.callbackInDays > 0
+                    ? `This thread will return · echoes in ${quest.callbackInDays} day${quest.callbackInDays === 1 ? "" : "s"}`
+                    : "This thread will return"}
+                </Pill>
+              </div>
+            )}
+
             <Divider />
 
             <p className="body dropcap" style={{ marginTop: 0 }}>
@@ -247,6 +261,36 @@ function ScreenJournal({ onNavigate, state, setState }) {
                 </div>
               ))}
             </div>
+
+            {/* Threads & Callbacks (#120): scheduled quest-evolution echoes — a resolved
+                quest's pending "this thread will return" callback. Display-only. */}
+            {threads.length > 0 && (
+              <>
+                <Divider />
+                <div className="eyebrow" style={{ color: "var(--crimson)" }}>Threads & Callbacks</div>
+                <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>What will return</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                  {threads.map((t) => {
+                    const tone = t.status === "due" ? "var(--crimson)" : t.status === "fired" ? "var(--emerald)" : "var(--royal)";
+                    return (
+                      <div key={t.id} style={{
+                        padding: "8px 10px",
+                        background: "rgba(176,141,87,0.06)",
+                        boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25), inset 3px 0 0 " + tone,
+                      }}>
+                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                          <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.06em", color: "var(--ink-900)" }}>
+                            {t.questTitle}
+                          </span>
+                          <span className="eyebrow" style={{ fontSize: 8, color: "var(--ink-600)" }}>{t.label}</span>
+                        </div>
+                        <div className="hand" style={{ fontSize: 12, color: "var(--ink-700)", marginTop: 2 }}>{t.note}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
             {/* Wax seal */}
             <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 12 }}>

@@ -1829,6 +1829,11 @@ def _journal_quests(snapshot: dict) -> list[dict]:
             loc = locs.get(location_id)
             if isinstance(loc, dict):
                 region = _text(loc.get("region")) or _text(loc.get("name"), location_id)
+        # Rule-of-three evolution (#120): a quest carrying an `evolves_to` hook/seed will
+        # echo back as a scheduled callback once resolved. Surface the badge display-only.
+        evolves_to = _text(row.get("evolves_to"))
+        callback_raw = _num(row.get("callback_in_days"))
+        callback_in_days = int(callback_raw) if callback_raw is not None else 0
         out.append({
             "id": _text(qid),
             "title": _text(row.get("title"), _text(qid, "Quest")),
@@ -1841,6 +1846,8 @@ def _journal_quests(snapshot: dict) -> list[dict]:
             "objectives": objectives,
             "entries": [],
             "location_id": location_id,
+            "evolvesTo": evolves_to,
+            "callbackInDays": callback_in_days if evolves_to else 0,
         })
     return out
 
@@ -1874,6 +1881,62 @@ def _journal_hooks(snapshot: dict) -> list[dict]:
     return out
 
 
+# The deterministic Consequence.note tag the engine writes when a resolved quest with an
+# `evolves_to` hook schedules its follow-on (server._evolution_note -> "evolves_from:<id>").
+# It's a stable contract — both authored by and guarded on by the engine — so the journal
+# can project scheduled evolutions read-only by matching this prefix.
+_EVOLUTION_NOTE_PREFIX = "evolves_from:"
+
+
+def _journal_evolutions(snapshot: dict) -> list[dict]:
+    """Project scheduled quest-evolution callbacks (#120) — the "this thread will return"
+    threads. Reads `consequences` whose `note` is the engine's deterministic
+    ``evolves_from:<quest_id>`` tag (server._maybe_schedule_quest_evolution), links each
+    back to its resolved quest, and marks it due / pending against the current in-world
+    day. Display-only: it never schedules, fires, or mutates anything. World-sim background
+    beats (a non-empty ``thread_id``) are NOT evolutions and are skipped."""
+    cons = snapshot.get("consequences")
+    quests = snapshot.get("quests") if isinstance(snapshot.get("quests"), dict) else {}
+    out: list[dict] = []
+    if not isinstance(cons, list):
+        return out
+    day = _num(snapshot.get("day"))
+    day = int(day) if day is not None else 0
+    for con in cons:
+        if not isinstance(con, dict):
+            continue
+        note = _text(con.get("note"))
+        if not note.startswith(_EVOLUTION_NOTE_PREFIX):
+            continue
+        if _text(con.get("thread_id")):
+            continue  # a worldsim background beat, not a quest evolution
+        quest_id = note[len(_EVOLUTION_NOTE_PREFIX):].strip()
+        q = quests.get(quest_id) if isinstance(quests.get(quest_id), dict) else {}
+        trigger_day = _num(con.get("trigger_day"))
+        trigger_day = int(trigger_day) if trigger_day is not None else day
+        fired = bool(con.get("fired"))
+        due = (not fired) and trigger_day <= day
+        out.append({
+            "id": _text(con.get("id"), note),
+            "questId": quest_id,
+            "questTitle": _text(q.get("title"), quest_id or "a resolved thread"),
+            "evolvesTo": _text(q.get("evolves_to")),
+            "triggerDay": trigger_day,
+            "fired": fired,
+            "due": due,
+            "status": "fired" if fired else ("due" if due else "pending"),
+            "label": "Echo paid" if fired else ("Echo due" if due else "Echo pending"),
+            # Player-facing telegraph — never the engine's DM-only "weave a follow-on beat"
+            # prompt text. Display-only.
+            "note": (
+                f"A resolved thread waits to return"
+                + (f" on day {trigger_day}." if not due and not fired else
+                   (" now." if due else "; it has already echoed back."))
+            ),
+        })
+    return out
+
+
 def build_journal_surface(
     snapshot: dict,
     *,
@@ -1893,6 +1956,8 @@ def build_journal_surface(
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
         "quests": quests,
+        # Scheduled quest-evolution callbacks (#120) — the "Threads & Callbacks" sub-list.
+        "threads": _journal_evolutions(snapshot),
         "directorAdvisory": advisory,
         "live": bool(live),
         "is_live_view": bool(is_live_view),
@@ -2321,6 +2386,66 @@ def _attitude_disposition(ch: dict) -> str:
     return "neutral"
 
 
+# Mirror of companion_arc.ATTITUDE_WARN_{LOW,HIGH} (the engine's danger band). A LIVE
+# (unfired) `attitude_below` agenda whose companion sits in [-40, -20] AND below the
+# agenda's breaking point is "approaching a fracture" — the engine emits an advisory
+# `betrayal_warning` from `evaluate()`; here we recompute the SAME band read-only from the
+# snapshot so the relations screen can telegraph it. Display-only: never mutates, never
+# fires anything, reads only the approval gauge + the (engine-set) decision_flag presence.
+_ATTITUDE_WARN_HIGH = -20  # upper edge: the bond has clearly soured
+_ATTITUDE_WARN_LOW = -40   # lower edge: below this it's already deep-red / near-snap
+
+
+def _betrayal_warning(ch: dict, snapshot: dict) -> dict | None:
+    """Advisory "approaching a breaking point" telegraph for a companion, recomputed
+    read-only from the snapshot (mirrors companion_arc._betrayal_warning).
+
+    Returns a small advisory dict ONLY when the companion carries a LIVE (unfired)
+    ``attitude_below`` agenda AND its ``attitude_value`` sits in the danger band
+    [_ATTITUDE_WARN_LOW, _ATTITUDE_WARN_HIGH] AND has crossed below the agenda's
+    breaking point (``value``). None otherwise. Reads the sealed agenda's TRIGGER/VALUE/
+    FIRED only to decide *whether* a warning is live — it NEVER surfaces the agenda's
+    private intent (`note`/`decision_flag` name), so no DM-only fiction leaks. The
+    ``decision_active`` flag is a plain bool: True when the agenda names a content flag
+    that is present+True in ``Campaign.flags`` (a recorded choice has already spiked the
+    odds), so the screen can foreshadow harder."""
+    arc = ch.get("arc")
+    if not isinstance(arc, dict):
+        return None
+    agenda = arc.get("agenda")
+    if not isinstance(agenda, dict):
+        return None
+    if agenda.get("trigger") != "attitude_below" or bool(agenda.get("fired")):
+        return None
+    threshold = _num(agenda.get("value"))
+    av = _num(ch.get("attitude_value"))
+    if threshold is None or av is None:
+        return None
+    threshold = int(threshold)
+    av = int(av)
+    # Only warn while in the band AND actually below the agenda's breaking point (an
+    # agenda whose threshold is even lower isn't live yet).
+    if not (_ATTITUDE_WARN_LOW <= av <= _ATTITUDE_WARN_HIGH):
+        return None
+    if av >= threshold:
+        return None
+    flags = snapshot.get("flags") if isinstance(snapshot.get("flags"), dict) else {}
+    decision_flag = _text(agenda.get("decision_flag"))
+    decision_active = bool(flags.get(decision_flag)) if decision_flag else False
+    return {
+        "attitude_value": av,
+        "threshold": threshold,
+        "band": [_ATTITUDE_WARN_LOW, _ATTITUDE_WARN_HIGH],
+        "decision_active": decision_active,
+        "label": "Bond fracturing",
+        "note": (
+            "This companion is approaching a breaking point — their bond has soured into "
+            "the danger band."
+            + (" A choice you made has deepened the rift." if decision_active else "")
+        ),
+    }
+
+
 def _relations_npcs(snapshot: dict) -> list[dict]:
     """Project NPCs the party has actually met (kind=='npc') + companions, with attitude
     and (for companions) the dossier's banter/relationship facts + arc state."""
@@ -2360,6 +2485,9 @@ def _relations_npcs(snapshot: dict) -> list[dict]:
             "faction": "",
             "disposition": _attitude_disposition(ch),
             "approval": int(approval) if approval is not None else None,
+            # Advisory telegraph (#118): present (a dict) only for a companion whose live
+            # attitude_below agenda sits in the danger band; None otherwise. Display-only.
+            "betrayalWarning": _betrayal_warning(ch, snapshot) if is_companion else None,
             "attitude": _text(ch.get("attitude")),
             "body": _text(ch.get("backstory")) or _text(ch.get("personality")) or _text(ch.get("notes")) or "Little is known of them yet.",
             "banter_tags": [str(t) for t in dossier.get("banter_tags", []) if str(t)] if isinstance(dossier.get("banter_tags"), list) else [],

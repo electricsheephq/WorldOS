@@ -243,6 +243,35 @@ function DispositionDot({ d }) {
   );
 }
 
+function BetrayalWarning({ w }) {
+  // Advisory "approaching a breaking point" telegraph (#118) — display-only, icon-free.
+  // Crimson left-rule mirrors the journal's high-severity GM advisory styling.
+  const band = Array.isArray(w?.band) && w.band.length === 2 ? `${w.band[0]}..${w.band[1]}` : "danger band";
+  return (
+    <div style={{
+      marginBottom: 10,
+      padding: "8px 10px",
+      background: "rgba(110, 29, 29, 0.10)",
+      boxShadow: "inset 0 0 0 1px rgba(110,29,29,0.35), inset 3px 0 0 var(--crimson)",
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <span className="eyebrow" style={{ color: "var(--crimson)" }}>{w?.label || "Bond fracturing"}</span>
+        <span style={{ fontFamily: "var(--f-mono)", fontSize: 9, color: "var(--ink-600)" }}>
+          {typeof w?.attitude_value === "number" ? `${w.attitude_value} / band ${band}` : band}
+        </span>
+      </div>
+      <div className="hand" style={{ fontSize: 12, color: "var(--ink-700)", marginTop: 3 }}>
+        {w?.note || "This companion is approaching a breaking point."}
+      </div>
+      {w?.decision_active && (
+        <div className="hand muted" style={{ fontSize: 11, marginTop: 3, color: "var(--crimson)" }}>
+          A recorded choice has deepened the rift.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NPCDetail({ n, onNavigate }) {
   return (
     <div>
@@ -284,6 +313,10 @@ function NPCDetail({ n, onNavigate }) {
               </div>
             </div>
           )}
+          {/* Betrayal-warning band (#118): advisory telegraph when a companion's bond has
+              soured into the engine's danger band. Read-only — surfaced from the engine's
+              own `betrayal_warning`; never an action. */}
+          {n.betrayalWarning && <BetrayalWarning w={n.betrayalWarning} />}
           {Array.isArray(n.banter_tags) && n.banter_tags.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               <div className="eyebrow" style={{ marginBottom: 4 }}>Banter</div>
@@ -574,4 +607,4 @@ const NPCS = [
   },
 ];
 
-Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, RepBar, DispositionDot, FACTIONS, NPCS });
+Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, RepBar, DispositionDot, FACTIONS, NPCS });

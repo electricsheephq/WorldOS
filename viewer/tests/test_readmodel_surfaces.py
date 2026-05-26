@@ -11,6 +11,7 @@ is model-conformant (it round-trips through the engine's Campaign model), so the
 Campaign Director advisory exercises the engine.director detection path.
 """
 
+import copy
 import http.client
 import importlib.util
 import json
@@ -195,6 +196,7 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(surface["campaign_id"], "")
         self.assertEqual(surface["quests"], [])
+        self.assertEqual(surface["threads"], [])
         self.assertEqual(surface["directorAdvisory"]["debts"], [])
 
     def test_director_advisory_uses_engine_detection_path(self):
@@ -211,6 +213,77 @@ class ReadModelSurfaceTests(unittest.TestCase):
         advisory = server._director_advisory(bad)
         self.assertEqual(advisory["source"], "viewer.heuristic")
         self.assertIn("hook_untracked", {d["kind"] for d in advisory["debts"]})
+
+    def test_journal_surface_quest_carries_evolution_badge_and_threads_callback(self):
+        # Quest-evolution / callback (#120): a resolved quest carrying `evolves_to` +
+        # `callback_in_days`, plus the engine's scheduled `evolves_from:<id>` Consequence,
+        # surfaces as both a per-quest badge AND a "Threads & Callbacks" thread row.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["quests"]["q2"]["evolves_to"] = "h-reckoning"  # q2 is the completed quest
+        snap["quests"]["q2"]["callback_in_days"] = 3
+        # the engine schedules this on resolve (note == "evolves_from:<quest_id>"); day=12
+        snap["consequences"].append({
+            "id": "c_evo", "trigger_day": 15, "fired": False, "thread_id": "",
+            "text": "Bring back / evolve the resolved thread 'The Ferryman's Tab'.",
+            "note": "evolves_from:q2",
+        })
+        self._write("camp_marches", snap)
+        status, surface = self._get_json("/journal-surface?campaign=camp_marches")
+        self.assertEqual(status, 200)
+
+        # (a) per-quest badge fields
+        q2 = {q["id"]: q for q in surface["quests"]}["q2"]
+        self.assertEqual(q2["evolvesTo"], "h-reckoning")
+        self.assertEqual(q2["callbackInDays"], 3)
+        # a quest WITHOUT an evolves_to hook carries neither
+        q1 = {q["id"]: q for q in surface["quests"]}["q1"]
+        self.assertEqual(q1["evolvesTo"], "")
+        self.assertEqual(q1["callbackInDays"], 0)
+
+        # (b) the Threads & Callbacks sub-list projects the scheduled evolution
+        threads = {t["id"]: t for t in surface["threads"]}
+        self.assertIn("c_evo", threads)
+        thread = threads["c_evo"]
+        self.assertEqual(thread["questId"], "q2")
+        self.assertEqual(thread["questTitle"], "The Ferryman's Tab")
+        self.assertEqual(thread["evolvesTo"], "h-reckoning")
+        self.assertEqual(thread["triggerDay"], 15)
+        self.assertFalse(thread["fired"])
+        self.assertFalse(thread["due"])  # trigger_day 15 > current day 12
+        self.assertEqual(thread["status"], "pending")
+        self.assertTrue(thread["note"])
+        self.assert_no_private_keys(surface)
+
+    def test_journal_threads_marks_due_and_skips_worldsim_beats(self):
+        # A pending evolution whose trigger_day has arrived is `due`; a worldsim background
+        # beat (a non-empty thread_id, even with an evolves_from-looking note) is NOT an
+        # evolution and must be skipped.
+        snap = copy.deepcopy(_SNAPSHOT)  # day = 12
+        snap["quests"]["q2"]["evolves_to"] = "h-reckoning"
+        snap["consequences"].append({
+            "id": "c_due", "trigger_day": 12, "fired": False, "thread_id": "",
+            "text": "It returns now.", "note": "evolves_from:q2",
+        })
+        snap["consequences"].append({
+            "id": "c_ws", "trigger_day": 12, "fired": False, "thread_id": "standing-war",
+            "text": "A world beat.", "note": "evolves_from:q2",
+        })
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/journal-surface?campaign=camp_marches")
+        threads = {t["id"]: t for t in surface["threads"]}
+        self.assertIn("c_due", threads)
+        self.assertTrue(threads["c_due"]["due"])
+        self.assertEqual(threads["c_due"]["status"], "due")
+        self.assertNotIn("c_ws", threads)  # worldsim beat excluded
+        self.assertEqual(len(surface["threads"]), 1)
+
+    def test_journal_threads_empty_when_no_quest_evolution_scheduled(self):
+        # The baseline conformant snapshot schedules no evolution -> no threads, and the
+        # completed quest carries an empty evolvesTo.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/journal-surface?campaign=camp_marches")
+        self.assertEqual(surface["threads"], [])
+        self.assertEqual({q["id"]: q for q in surface["quests"]}["q2"]["evolvesTo"], "")
 
     # ── character ───────────────────────────────────────────────────────────────
 
@@ -283,6 +356,72 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(arcs["a1"]["companion"], "Mira of the Inkstain")
         self.assertEqual([s["status"] for s in arcs["a1"]["stages"]], ["active", "locked"])
         self.assert_no_private_keys(surface)
+        # baseline companion (no arc) carries no betrayal warning
+        self.assertIsNone(npcs["mira"]["betrayalWarning"])
+
+    def _snapshot_with_companion_agenda(self, *, attitude_value, threshold, fired=False,
+                                        trigger="attitude_below", decision_flag="", flags=None):
+        """A model-conformant copy of _SNAPSHOT where the companion `mira` carries a sealed
+        attitude_below agenda + a given attitude, so the betrayal-warning band (#118) can be
+        exercised. Round-trips through the engine Campaign model (strict), matching the
+        established conformant-snapshot pattern."""
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["mira"]["attitude_value"] = attitude_value
+        agenda = {"trigger": trigger, "value": threshold, "fired": fired, "note": "sealed: turns on the party"}
+        if decision_flag:
+            agenda["decision_flag"] = decision_flag
+        snap["characters"]["mira"]["arc"] = {"arc_gates": [], "agenda": agenda}
+        if flags is not None:
+            snap["flags"] = flags
+        return snap
+
+    def test_relations_surface_betrayal_warning_present_when_companion_in_danger_band(self):
+        # mira at -28 with a live attitude_below agenda (threshold -10) sits in the engine's
+        # danger band [-40, -20] AND below the breaking point -> the advisory surfaces.
+        snap = self._snapshot_with_companion_agenda(attitude_value=-28, threshold=-10)
+        self._write("camp_marches", snap)
+        status, surface = self._get_json("/relations-surface?campaign=camp_marches")
+        self.assertEqual(status, 200)
+        npcs = {n["id"]: n for n in surface["npcs"]}
+        warning = npcs["mira"]["betrayalWarning"]
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning["attitude_value"], -28)
+        self.assertEqual(warning["threshold"], -10)
+        self.assertEqual(warning["band"], [-40, -20])
+        self.assertFalse(warning["decision_active"])
+        self.assertTrue(warning["note"])
+        # the sealed agenda's private intent never leaks into the surface
+        self.assert_no_private_keys(surface)
+
+    def test_relations_surface_betrayal_warning_flags_a_recorded_decision(self):
+        # A decision_flag set+True in Campaign.flags marks the rift as choice-deepened.
+        snap = self._snapshot_with_companion_agenda(
+            attitude_value=-35, threshold=-10, decision_flag="took_bribe", flags={"took_bribe": True})
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/relations-surface?campaign=camp_marches")
+        warning = {n["id"]: n for n in surface["npcs"]}["mira"]["betrayalWarning"]
+        self.assertIsNotNone(warning)
+        self.assertTrue(warning["decision_active"])
+
+    def test_relations_surface_omits_betrayal_warning_outside_the_band(self):
+        # Every off-band case must omit the warning (mirror companion_arc._betrayal_warning):
+        #  - attitude above the band (not yet fracturing)
+        #  - attitude in band but still at/above the agenda's breaking point
+        #  - agenda already fired (the betrayal is the event, not a warning)
+        #  - a non-attitude_below trigger sitting in the band
+        cases = [
+            ("above_band", dict(attitude_value=-10, threshold=-5)),
+            ("at_or_above_threshold", dict(attitude_value=-30, threshold=-35)),
+            ("already_fired", dict(attitude_value=-30, threshold=-10, fired=True)),
+            ("wrong_trigger", dict(attitude_value=-30, threshold=20, trigger="day_reached")),
+        ]
+        for name, kwargs in cases:
+            with self.subTest(case=name):
+                cid = f"camp_{name}"  # a distinct campaign dir per case (no rewrite clash)
+                snap = self._snapshot_with_companion_agenda(**kwargs)
+                self._write(cid, snap)
+                _status, surface = self._get_json(f"/relations-surface?campaign={cid}")
+                self.assertIsNone({n["id"]: n for n in surface["npcs"]}["mira"]["betrayalWarning"])
 
     # ── parley ───────────────────────────────────────────────────────────────
 
