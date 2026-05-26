@@ -129,3 +129,53 @@ def test_load_genuinely_incompatible_raises(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="incompatible with the current schema"):
         store.load_campaign(cid)
+
+
+# ---------------------------------------------------------------------------
+# (e) observability version-stamp: save→load preserves schema_version +
+#     engine_sha, and an OLD snapshot lacking both fields still loads (defaults)
+# ---------------------------------------------------------------------------
+
+def test_save_stamps_and_roundtrips_version_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+
+    c = Campaign(title="Versioned Campaign")
+    store.save_campaign(c)
+
+    # The save path stamps engine_sha (== the cached resolver) and keeps schema_version set.
+    assert c.engine_sha == store.engine_sha()
+    assert c.schema_version == 1
+
+    loaded = store.load_campaign(c.id)
+    assert loaded is not None
+    assert loaded.schema_version == c.schema_version
+    assert loaded.engine_sha == c.engine_sha
+
+
+def test_engine_sha_is_stamped_onto_disk(tmp_path, monkeypatch):
+    """The serialized snapshot on disk carries engine_sha — the whole point of the stamp."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    c = Campaign(title="On-disk SHA")
+    path = store.save_campaign(c)
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert "engine_sha" in on_disk
+    assert "schema_version" in on_disk
+    assert on_disk["engine_sha"] == store.engine_sha()
+    assert on_disk["schema_version"] == 1
+
+
+def test_load_old_snapshot_without_version_fields(tmp_path, monkeypatch):
+    """An OLD snapshot predating the version-stamp (no schema_version / engine_sha keys at all)
+    must still load, falling back to the model defaults — the additive-default contract."""
+    snapshot = _minimal_snapshot()
+    snapshot.pop("schema_version", None)
+    snapshot.pop("engine_sha", None)
+    assert "schema_version" not in snapshot and "engine_sha" not in snapshot
+    cid = _write_snapshot(tmp_path, monkeypatch, snapshot)
+
+    result = store.load_campaign(cid)
+    assert result is not None
+    assert isinstance(result, Campaign)
+    # Defaults applied for the absent fields.
+    assert result.schema_version == 1
+    assert result.engine_sha == ""

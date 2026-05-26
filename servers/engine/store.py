@@ -16,6 +16,7 @@ import contextlib
 import fcntl
 import logging
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
@@ -25,6 +26,36 @@ from pydantic import ValidationError
 from models import Campaign, SessionLogEntry
 
 log = logging.getLogger(__name__)
+
+# Resolved-once cache for the engine's short git SHA. `None` = not yet resolved; a string
+# (possibly "") = resolved. We stamp this onto every saved snapshot so a campaign records the
+# engine version that last wrote it. Sentinel-based so a genuine "" (git unavailable) is cached
+# and we don't re-shell on every save.
+_ENGINE_SHA: Optional[str] = None
+
+
+def engine_sha() -> str:
+    """The engine's short git commit SHA, resolved once and cached.
+
+    Best-effort and never fatal: a missing git, a non-repo checkout, or any subprocess error
+    yields "" (and that "" is cached, so we never re-shell). Run with cwd pinned to this module's
+    directory so the SHA reflects the ENGINE repo regardless of the server's working directory."""
+    global _ENGINE_SHA
+    if _ENGINE_SHA is None:
+        try:
+            out = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+            _ENGINE_SHA = out.stdout.strip()
+        except Exception:
+            # git missing / not a repo / timeout / anything — degrade to "", never abort a save.
+            _ENGINE_SHA = ""
+    return _ENGINE_SHA
 
 
 def state_dir() -> Path:
@@ -76,6 +107,13 @@ def _atomic_write(path: Path, data: str) -> None:
 
 def save_campaign(campaign: Campaign) -> Path:
     campaign.updated_at = time.time()
+    # Version-stamp the snapshot: record the engine SHA that wrote it (cached, best-effort —
+    # never aborts a save) and make sure schema_version is populated. schema_version's authority
+    # is the manual constant on the Campaign model (default 1, bumped only on a breaking schema
+    # change); we don't overwrite it here so an intentionally-pinned value survives a re-save.
+    campaign.engine_sha = engine_sha()
+    if not campaign.schema_version:
+        campaign.schema_version = Campaign.model_fields["schema_version"].default
     path = _campaign_dir(campaign.id) / "snapshot.json"
     _atomic_write(path, campaign.model_dump_json(indent=2))
     return path

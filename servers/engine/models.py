@@ -990,6 +990,14 @@ class Campaign(_StrictModel):
     created_at: float = Field(default_factory=_now)
     updated_at: float = Field(default_factory=_now)
 
+    # Observability / versioning (additive — defaulted so every existing snapshot round-trips).
+    # `schema_version` is a MANUAL constant we bump only on a breaking (non-additive) schema
+    # change, so a loaded snapshot records which schema generation wrote it. `engine_sha` is the
+    # engine's short git commit SHA at save time, stamped by store.save_campaign — instant
+    # "what engine version was this campaign last written by". Pairs with the #165 tolerant load.
+    schema_version: int = 1
+    engine_sha: str = ""
+
     current_location_id: Optional[str] = None
     day: int = 1  # in-world day counter
     time_of_day: str = "morning"
