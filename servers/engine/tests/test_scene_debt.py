@@ -148,6 +148,67 @@ class TestQuestStalled:
         assert debts == []
 
 
+# ── thread_no_payoff (rule-of-three) ──────────────────────────────────────────
+
+class TestQuestNoFollowon:
+    def test_resolved_quest_no_followon_detected(self):
+        c = _camp()
+        q = Quest(title="Slay the Bandit King", status="completed")  # no evolves_to, no echo
+        c.quests[q.id] = q
+        debts = scene_debt.detect(c)
+        assert any(d.kind == "thread_no_payoff" and d.subject == q.id for d in debts)
+
+    def test_resolved_quest_with_evolves_to_clean(self):
+        c = _camp()
+        q = Quest(title="Slay the Bandit King", status="completed", evolves_to="hook_lieutenant")
+        c.quests[q.id] = q
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts == []
+
+    def test_active_quest_not_flagged(self):
+        c = _camp()
+        q = Quest(title="In Progress", status="active")  # not resolved yet
+        c.quests[q.id] = q
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts == []
+
+    def test_resolved_quest_with_scheduled_evolution_clean(self):
+        c = _camp()
+        q = Quest(title="Echoing Deed", status="completed")  # evolves_to empty...
+        c.quests[q.id] = q
+        # ...but a follow-on Consequence already grew from it (the engine scheduled one)
+        c.consequences.append(
+            Consequence(trigger_day=5, text="The deed echoes.", note=f"evolves_from:{q.id}")
+        )
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts == []
+
+    def test_resolved_quest_referenced_by_hook_clean(self):
+        c = _camp()
+        q = Quest(title="The Stolen Crown", status="completed")
+        c.quests[q.id] = q
+        # A hook arcs back to this resolved quest by id -> it already echoes
+        h = _hook(title="Aftermath", status="open")
+        h.arc_back = f"follows from {q.id}"
+        c.quest_hooks.append(h)
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts == []
+
+    def test_advisory_severity_is_low(self):
+        c = _camp()
+        q = Quest(title="One And Done", status="completed")
+        c.quests[q.id] = q
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts and debts[0].severity == "low"
+
+    def test_failed_quest_not_flagged(self):
+        c = _camp()
+        q = Quest(title="Botched Job", status="failed")  # only 'completed' is a resolved payoff candidate
+        c.quests[q.id] = q
+        debts = [d for d in scene_debt.detect(c) if d.kind == "thread_no_payoff"]
+        assert debts == []
+
+
 # ── choice_without_outcome ────────────────────────────────────────────────────
 
 class TestChoiceWithoutOutcome:
@@ -318,8 +379,9 @@ class TestCleanCampaign:
         # A resolved hook
         h = _hook(title="Done Hook", status="resolved")
         c.quest_hooks.append(h)
-        # A completed quest
-        q = Quest(title="Finished Quest", status="completed")
+        # A completed quest that already echoes (rule-of-three): evolves_to set, so
+        # the thread_no_payoff nudge does NOT fire — a fully-tidy campaign.
+        q = Quest(title="Finished Quest", status="completed", evolves_to="hook_followup")
         c.quests[q.id] = q
         # A decision with a chosen
         c.decisions.append(_decision("We chose wisely", options=["a", "b"], chosen="a"))

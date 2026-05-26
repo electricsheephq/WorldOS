@@ -533,6 +533,14 @@ class Quest(_StrictModel):
     completed_objectives: list[str] = Field(default_factory=list)
     giver_id: Optional[str] = None  # the NPC who gave the quest
     location_id: Optional[str] = None  # where it's anchored
+    # Rule-of-three evolution (Quest & Arc engine, Layer 1) — ADDITIVE: empty ==
+    # today's behavior exactly, old snapshots round-trip. When a quest resolves
+    # (status -> completed) AND `evolves_to` is set, the engine SCHEDULES a
+    # follow-on Consequence so the thread lingers/echoes instead of being
+    # one-and-done. The DM weaves the resulting prompt; the engine never
+    # auto-acts on the fiction.
+    evolves_to: str = ""  # a follow-on hook/quest id or a free seed tag the DM weaves on callback
+    callback_in_days: int = 0  # in-world days from resolution before the evolution surfaces (0 = immediately due)
 
 
 class Location(_StrictModel):
@@ -930,7 +938,7 @@ class SceneDebt(_StrictModel):
     Old snapshots without this field deserialise unchanged.
 
     kind values:
-        hook_untracked, quest_stalled, choice_without_outcome,
+        hook_untracked, quest_stalled, thread_no_payoff, choice_without_outcome,
         due_consequence, thread_pressure, npc_introduced_silent
     severity: low | med | high
     """

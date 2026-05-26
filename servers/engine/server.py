@@ -60,6 +60,7 @@ from models import (
     CompanionDossier,
     CompanionQuestArc,
     Condition,
+    Consequence,
     DeathSaves,
     Decision,
     Faction,
@@ -5706,9 +5707,58 @@ def add_quest(
         return {"id": q.id, "title": q.title, "status": q.status}
 
 
+def _evolution_note(quest_id: str) -> str:
+    """The deterministic `Consequence.note` tag that links a scheduled evolution
+    back to the quest it grew from. Used both to author the link and to guard
+    against double-scheduling on a re-resolve. Format: ``evolves_from:<quest_id>``."""
+    return f"evolves_from:{quest_id}"
+
+
+def _maybe_schedule_quest_evolution(c: Campaign, q: Quest) -> Optional[Consequence]:
+    """Rule-of-three evolution (Quest & Arc engine, Layer 1). When a quest reaches
+    a RESOLVED terminal state (status == "completed") AND carries an ``evolves_to``
+    hook/seed, SCHEDULE a follow-on ``Consequence`` so the thread lingers and
+    surfaces later via the existing ``check_consequences`` path (immediately if
+    ``callback_in_days`` is 0, or on a later return). The DM weaves the prompt; the
+    engine never auto-acts on the fiction.
+
+    ADDITIVE + idempotent: empty ``evolves_to`` schedules nothing (today's behavior).
+    The guard is the deterministic ``evolves_from:<quest_id>`` note — if an evolution
+    consequence for this quest already exists, re-resolving does NOT double-schedule.
+    Caller MUST hold the campaign lock (engine is the sole writer). Returns the new
+    Consequence, or None if nothing was scheduled.
+
+    NOTE on traceability: the link back to the quest is carried in ``note``
+    (``evolves_from:<quest_id>``), NOT in ``Consequence.thread_id`` — a non-empty
+    ``thread_id`` marks a worldsim background beat that ``consequences.due()`` /
+    ``check_consequences`` deliberately SKIP (those surface only via ``world_tick``).
+    Using ``thread_id`` here would silently hide the evolution from the DM, so the
+    quest id rides in ``note`` instead, which preserves both surfacing and trace-back."""
+    if q.status != "completed":
+        return None
+    if not (q.evolves_to or "").strip():
+        return None
+    note = _evolution_note(q.id)
+    # Idempotency: never double-schedule if this quest already spawned an evolution.
+    if any(con.note == note for con in c.consequences):
+        return None
+    in_days = max(0, int(q.callback_in_days))
+    text = (
+        f"Bring back / evolve the resolved thread '{q.title}' -> {q.evolves_to}: "
+        f"weave a follow-on beat that pays off this quest."
+    )
+    return consequences_mod.schedule(c, in_days=in_days, text=text, note=note)
+
+
 @mcp.tool()
 def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -> dict:
-    """Resolve a quest. status: completed | failed | active."""
+    """Resolve a quest. status: completed | failed | active.
+
+    Rule-of-three evolution (Quest & Arc engine, Layer 1): if the quest resolves
+    (status -> completed) and carries an ``evolves_to`` follow-on, the engine
+    schedules a Consequence so the thread echoes later (surfaced via
+    check_consequences). Additive + idempotent: empty ``evolves_to`` == today's
+    behavior; re-resolving never double-schedules."""
     if status not in ("completed", "failed", "active"):
         raise ValueError("status must be completed | failed | active")
     with campaign_lock(campaign_id):
@@ -5717,8 +5767,16 @@ def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -
         if q is None:
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
+        evolution = _maybe_schedule_quest_evolution(c, q)
         save_campaign(c)
-        return {"id": q.id, "title": q.title, "status": q.status}
+        out = {"id": q.id, "title": q.title, "status": q.status}
+        if evolution is not None:
+            out["evolution_scheduled"] = {
+                "consequence_id": evolution.id,
+                "trigger_day": evolution.trigger_day,
+                "evolves_to": q.evolves_to,
+            }
+        return out
 
 
 @mcp.tool()
