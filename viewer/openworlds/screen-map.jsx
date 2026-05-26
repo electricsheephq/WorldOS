@@ -1,41 +1,166 @@
-/* Screen: World Map — hand-drawn cartography with location nodes */
+/* Screen: World Map - engine-owned atlas and strategic read model */
 
-function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
-  const locations = Array.isArray(state?.locations) ? state.locations : [];
-  const party = Array.isArray(state?.party) ? state.party : [];
-  const [selected, setSelected] = React.useState(() => locations.find((l) => l.current) || locations[0] || null);
+function atlasSurfaceFromCampaign(activeCampaign, state) {
+  const campaignId = activeCampaign?.campaign_id || state?.activeCampaign || activeCampaign?.id || "";
+  const params = new URLSearchParams();
+  if (campaignId) params.set("campaign", campaignId);
+  if (activeCampaign?.source) params.set("source", activeCampaign.source);
+  if (activeCampaign?.runId) params.set("run", activeCampaign.runId);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const activeCampaign =
+    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns[0] ||
+    {};
+  const surfaceQuery = window.atlasSurfaceFromCampaign(activeCampaign, state);
+  const campaignId = activeCampaign?.campaign_id || state?.activeCampaign || activeCampaign?.id || "";
+  const [surface, setSurface] = React.useState(null);
+  const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
+  const [selectedId, setSelectedId] = React.useState("");
   const [time, setTime] = React.useState("dusk");
+  const [busyTravel, setBusyTravel] = React.useState("");
   const [talkPartner, setTalkPartner] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
 
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/atlas-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`atlas surface ${response.status}`);
+      const payload = await response.json();
+      if (isCancelled()) return;
+      setSurface(payload);
+      setSurfaceStatus("ready");
+      const label = (payload.dayLabel || "").toLowerCase();
+      if (label.includes("night")) setTime("night");
+      else if (label.includes("dawn") || label.includes("morning")) setTime("dawn");
+      else if (label.includes("dusk") || label.includes("evening")) setTime("dusk");
+      else if (label.includes("day") || label.includes("noon")) setTime("day");
+    } catch (error) {
+      if (isCancelled()) return;
+      setSurfaceStatus(error?.message || "unavailable");
+    }
+  }, [surfaceQuery]);
+
   React.useEffect(() => {
-    if (locations.length === 0) {
-      if (selected) setSelected(null);
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => {
+      if (cancelled) return;
+      await loadSurface(() => cancelled);
+    };
+    const stopPolling = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const startPolling = () => {
+      if (timer === null) timer = window.setInterval(guardedLoad, 7000);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        guardedLoad();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => {
+      cancelled = true;
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadSurface]);
+
+  const locations = Array.isArray(surface?.known_locations) ? surface.known_locations : [];
+  const edges = Array.isArray(surface?.edges) ? surface.edges : [];
+  const travelOptions = Array.isArray(surface?.travel_options) ? surface.travel_options : [];
+  const quests = Array.isArray(surface?.quest_markers) ? surface.quest_markers : [];
+  const clocks = Array.isArray(surface?.strategic_clocks) ? surface.strategic_clocks : [];
+  const projects = Array.isArray(surface?.downtime_projects) ? surface.downtime_projects : [];
+  const controls = Array.isArray(surface?.region_control) ? surface.region_control : [];
+  const currentLocation = surface?.current_location || {};
+  const selected =
+    locations.find((l) => l.id === selectedId) ||
+    locations.find((l) => l.id === currentLocation.id) ||
+    locations[0] ||
+    null;
+  const selectedTravel = selected ? travelOptions.find((t) => t.to === selected.id) : null;
+  const canCamp = Boolean(surface?.camp_available);
+  const canAct = Boolean(surface?.can_act);
+
+  React.useEffect(() => {
+    if (!selectedId || !locations.some((l) => l.id === selectedId)) {
+      setSelectedId(currentLocation.id || locations[0]?.id || "");
+    }
+  }, [currentLocation.id, locations, selectedId]);
+
+  const postTravel = async (option) => {
+    if (!option?.available || !option?.move || !canAct) {
+      toast({
+        kind: "danger",
+        eyebrow: "Travel",
+        title: option?.name ? `Cannot travel to ${option.name}` : "Travel unavailable",
+        body: option?.disabled_reason || "This atlas is read-only.",
+      });
       return;
     }
-    if (!selected || !locations.find((l) => l.id === selected.id)) {
-      setSelected(locations.find((l) => l.current) || locations[0] || null);
+    setBusyTravel(option.to);
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...option.move, campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      toast({ kind: "quest", title: "Travel intent sent", body: option.name || option.to });
+      onNavigate("table");
+    } catch (error) {
+      toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      setBusyTravel("");
     }
-  }, [locations, selected?.id]);
-
-  const beginRest = () => {
-    toast({ kind: "rest", eyebrow: "Long rest", title: "The camp settles", body: "10 hours pass. Wounds knit. Spells return. The road is patient." });
-    setCampMode && setCampMode(false);
-    setTalkPartner(null);
-    setTimeout(() => onNavigate("character"), 600);
   };
 
-  return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 340px", gap: 14, padding: 14 }}>
+  const beginRest = () => {
+    toast({
+      kind: "rest",
+      eyebrow: "Camp",
+      title: canCamp ? "Camp is visible" : "Camp unavailable",
+      body: canCamp
+        ? "The atlas can show camp mode, but rest resolution remains engine-owned."
+        : "The current location is not marked as a camp or rest point.",
+    });
+  };
 
-      {/* MAP CANVAS */}
+  const locationQuests = selected ? quests.filter((q) => !q.location_id || q.location_id === selected.id) : quests;
+  const locationClocks = selected ? clocks.filter((c) => !c.location_id || c.location_id === selected.id) : clocks;
+  const locationProjects = selected ? projects.filter((p) => !p.location_id || p.location_id === selected.id) : projects;
+  const locationControl = selected ? controls.find((c) => c.location_id === selected.id) : null;
+
+  return (
+    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 340px", gap: 14, padding: 14 }}>
       <Panel framed style={{ padding: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, position: "relative", zIndex: 3, flex: "0 0 auto" }}>
-          <div>
-            <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Stolen Marches</div>
-            <h1 className="h1" style={{ fontSize: 24 }}>{campMode ? "Camp" : "World Atlas"}</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, position: "relative", zIndex: 3, flex: "0 0 auto", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow" style={{ color: "var(--crimson)" }}>{surface?.world || "Open Worlds"}</div>
+            <h1 className="h1" style={{ fontSize: 24, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {campMode ? "Camp" : "World Atlas"}
+            </h1>
+            <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 3 }}>
+              {surface?.dayLabel || surfaceStatus}
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {!campMode && ["dawn", "day", "dusk", "night"].map((t) => (
               <button key={t} onClick={() => setTime(t)} className="pill" style={{
                 cursor: "pointer",
@@ -44,221 +169,265 @@ function ScreenMap({ onNavigate, state, setState, campMode, setCampMode }) {
                 boxShadow: time === t ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
               }}>{t}</button>
             ))}
-            <BrassButton size="sm" tone={campMode ? "" : "ghost"} onClick={() => setCampMode && setCampMode(!campMode)}>
-              {campMode ? "✺ Camped" : "Make Camp"}
+            <BrassButton size="sm" tone={campMode ? "" : "ghost"} onClick={() => setCampMode && setCampMode(!campMode)} disabled={!canCamp}>
+              {campMode ? "Camped" : "Make Camp"}
             </BrassButton>
+            <BrassButton size="sm" tone="ghost" onClick={() => loadSurface()}>Refresh</BrassButton>
           </div>
         </div>
 
-        {/* Map surface */}
         <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
-          {/* Aged map background */}
-          <div style={{
-            position: "absolute", inset: 0,
-            background:
-              `radial-gradient(ellipse at 30% 25%, rgba(120, 80, 30, 0.25), transparent 50%),
-               radial-gradient(ellipse at 75% 70%, rgba(100, 60, 20, 0.3), transparent 55%),
-               radial-gradient(ellipse at 15% 80%, rgba(160, 110, 60, 0.18), transparent 40%),
-               linear-gradient(135deg, #c8a878 0%, #b89868 40%, #a08055 100%)`,
-            boxShadow: "inset 0 0 80px rgba(60, 30, 10, 0.6)",
-          }}>
-            {/* Terrain pattern overlay using SVG */}
-            <svg width="100%" height="100%" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, opacity: 0.6 }}>
-              <defs>
-                <pattern id="forest" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M10 4 L13 14 L7 14 Z" fill="rgba(40,60,30,0.6)" />
-                </pattern>
-                <pattern id="hills" x="0" y="0" width="40" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M0 18 Q 10 10 20 18 T 40 18" fill="none" stroke="rgba(90, 50, 20, 0.4)" strokeWidth="1" />
-                </pattern>
-                <pattern id="water" x="0" y="0" width="20" height="14" patternUnits="userSpaceOnUse">
-                  <path d="M0 7 Q 5 4 10 7 T 20 7" fill="none" stroke="rgba(30, 60, 90, 0.5)" strokeWidth="1" />
-                </pattern>
-                <filter id="paper">
-                  <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" />
-                  <feColorMatrix values="0 0 0 0 0.4  0 0 0 0 0.25  0 0 0 0 0.1  0 0 0 0.15 0" />
-                  <feComposite in2="SourceGraphic" operator="in" />
-                </filter>
-              </defs>
-
-              {/* Forest blobs */}
-              <path d="M80 100 Q 150 80 220 110 T 380 120 Q 420 200 360 240 T 200 280 Q 100 260 80 180 Z" fill="url(#forest)" opacity="0.7" />
-              <path d="M520 80 Q 620 60 700 100 T 880 130 Q 900 220 820 260 T 620 280 Q 540 240 520 160 Z" fill="url(#forest)" opacity="0.55" />
-              <path d="M200 380 Q 300 360 380 400 T 540 440 Q 500 500 380 510 T 200 480 Q 160 440 200 380 Z" fill="url(#forest)" opacity="0.6" />
-
-              {/* Hills */}
-              <rect x="600" y="350" width="350" height="80" fill="url(#hills)" opacity="0.5" />
-              <rect x="50" y="450" width="200" height="60" fill="url(#hills)" opacity="0.4" />
-
-              {/* River */}
-              <path d="M -20 200 Q 200 220 360 260 T 700 320 Q 850 360 1020 380" stroke="rgba(60, 100, 130, 0.7)" strokeWidth="6" fill="none" />
-              <path d="M -20 200 Q 200 220 360 260 T 700 320 Q 850 360 1020 380" fill="url(#water)" stroke="none" />
-
-              {/* Roads */}
-              <path d="M 100 540 Q 220 480 320 460 T 540 380 Q 680 320 820 280" stroke="rgba(80, 40, 10, 0.7)" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-              <path d="M 540 380 Q 600 300 660 200 T 720 60" stroke="rgba(80, 40, 10, 0.7)" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-
-              {/* Compass rose */}
-              <g transform="translate(900, 510)" opacity="0.85">
-                <circle r="40" fill="none" stroke="rgba(60,30,10,0.6)" strokeWidth="1" />
-                <circle r="32" fill="none" stroke="rgba(60,30,10,0.4)" strokeWidth="0.5" />
-                <path d="M 0 -38 L 4 0 L 0 38 L -4 0 Z" fill="rgba(120, 30, 30, 0.7)" />
-                <path d="M -38 0 L 0 -4 L 38 0 L 0 4 Z" fill="rgba(60,30,10,0.7)" />
-                <text y="-44" textAnchor="middle" fontFamily="Cinzel" fontSize="9" fill="rgba(60,30,10,0.9)">N</text>
-                <text y="52" textAnchor="middle" fontFamily="Cinzel" fontSize="9" fill="rgba(60,30,10,0.9)">S</text>
-                <text x="-48" y="3" textAnchor="middle" fontFamily="Cinzel" fontSize="9" fill="rgba(60,30,10,0.9)">W</text>
-                <text x="48" y="3" textAnchor="middle" fontFamily="Cinzel" fontSize="9" fill="rgba(60,30,10,0.9)">E</text>
-              </g>
-
-              {/* Region label */}
-              <text x="500" y="80" textAnchor="middle" fontFamily="Cinzel" fontSize="36" fill="rgba(60, 30, 10, 0.25)" letterSpacing="8" fontWeight="600">THE STOLEN MARCHES</text>
-              <text x="180" y="500" textAnchor="middle" fontFamily="Cinzel" fontSize="20" fill="rgba(60, 30, 10, 0.3)" letterSpacing="4">Thorn River</text>
-              <text x="800" y="450" textAnchor="middle" fontFamily="Cinzel" fontSize="18" fill="rgba(60, 30, 10, 0.3)" letterSpacing="3">Old Hills</text>
-
-              {/* Roads/connections between locations */}
-              {locations.map((loc) =>
-                loc.connections?.map((cId) => {
-                  const target = locations.find((l) => l.id === cId);
-                  if (!target) return null;
-                  return (
-                    <line key={`${loc.id}-${cId}`}
-                      x1={loc.x * 10} y1={loc.y * 6}
-                      x2={target.x * 10} y2={target.y * 6}
-                      stroke="rgba(60, 30, 10, 0.4)" strokeWidth="1.5" strokeDasharray="3 4" />
-                  );
-                })
-              )}
-            </svg>
-
-            {/* Time-of-day overlay */}
-            <div style={{
-              position: "absolute", inset: 0,
-              background: time === "night"
-                ? "linear-gradient(180deg, rgba(20, 30, 60, 0.55), rgba(20, 20, 40, 0.65))"
-                : time === "dusk"
-                ? "linear-gradient(180deg, rgba(80, 30, 20, 0.18), rgba(40, 20, 40, 0.25))"
-                : time === "dawn"
-                ? "linear-gradient(180deg, rgba(255, 200, 120, 0.18), rgba(255, 150, 80, 0.12))"
-                : "transparent",
-              pointerEvents: "none",
-              transition: "background 400ms",
-            }} />
-
-            {/* Location nodes */}
-            {locations.map((loc) => (
-              <button
-                key={loc.id}
-                onClick={() => setSelected(loc)}
-                style={{
-                  position: "absolute",
-                  left: `${loc.x}%`,
-                  top: `${loc.y}%`,
-                  transform: "translate(-50%, -100%)",
-                  background: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                <LocationPin loc={loc} selected={selected?.id === loc.id} time={time} />
-              </button>
-            ))}
-          </div>
+          {campMode && window.CampSidebar ? (
+            <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
+              <window.CampSidebar
+                state={state}
+                onExit={() => { setCampMode && setCampMode(false); setTalkPartner(null); }}
+                onBeginRest={beginRest}
+                onTalk={setTalkPartner}
+                talkPartner={talkPartner}
+              />
+            </div>
+          ) : (
+            <AtlasMap locations={locations} edges={edges} selected={selected} time={time} onSelect={setSelectedId} />
+          )}
         </div>
 
-        {/* Bottom party portraits strip — now a separate row in the flex column */}
         <div style={{
           marginTop: 10,
-          display: "flex", gap: 6,
+          display: "flex",
+          gap: 6,
           padding: 8,
           background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
           boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 0 2px var(--b-500), inset 0 0 0 3px var(--w-200)",
           zIndex: 3,
           flex: "0 0 auto",
+          alignItems: "center",
         }}>
-          {party.map((p) => (
-            <div key={p.id} style={{ width: 48, height: 48, position: "relative" }}>
-              <Placeholder label={p.short} w="100%" h="100%" framed />
-              <div style={{
-                position: "absolute", bottom: 0, left: 0, right: 0,
-                height: 3,
-                background: "linear-gradient(90deg, #2a8c39, #5cd56a)",
-                width: `${(p.hp / p.hpMax) * 100}%`,
-              }} />
-            </div>
-          ))}
+          <Pill tone={surface?.is_live_view ? "emerald" : "crimson"} dot>{surface?.is_live_view ? "Live" : "Read-only"}</Pill>
+          <Pill dot>{locations.length} known</Pill>
+          <Pill dot>{clocks.filter((c) => c.urgent).length + projects.filter((p) => p.urgent).length} urgent</Pill>
           <div style={{ flex: 1 }} />
-          <div style={{ color: "var(--b-200)", fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", alignSelf: "center", padding: "0 8px" }}>
-            Day 12 · {time} · 29 Gozran
+          <div style={{ color: "var(--b-200)", fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 8px" }}>
+            Last strategic tick: {surface?.last_world_tick || "none"}
           </div>
         </div>
       </Panel>
 
-      {/* SIDE — Location detail OR Camp panel */}
-      {campMode ? (
-        <window.CampSidebar
-          state={state}
-          onExit={() => { setCampMode && setCampMode(false); setTalkPartner(null); }}
-          onBeginRest={beginRest}
-          onTalk={setTalkPartner}
-          talkPartner={talkPartner}
-        />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
-          <Panel framed style={{ padding: 22 }}>
-            {selected ? (
-              <>
-                <div className="eyebrow" style={{ color: "var(--crimson)" }}>{selected.region || "The Stolen Marches"}</div>
-                <h2 className="h1" style={{ fontSize: 22 }}>{selected.name}</h2>
-                <div className="hand" style={{ fontSize: 14, marginTop: 2 }}>{selected.distance} · {selected.travel}</div>
-
-                <Divider />
-
-                <Placeholder label={`${selected.short || "location vignette"} · painted`} h={120} framed />
-
-                <p className="body dropcap" style={{ marginTop: 12, fontSize: 15 }}>
-                  {selected.description}
-                </p>
-
-                <Divider />
-
-                <div className="tag-row">
-                  {selected.tags.map((t) => <Pill key={t} tone={t === "danger" ? "crimson" : t === "rest" ? "emerald" : ""}>{t}</Pill>)}
-                </div>
-
-                <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
-                  <BrassButton onClick={() => {
-                    toast({ kind: "quest", title: "The party travels to " + selected.name, body: selected.travel + " · " + selected.distance });
-                    onNavigate("table");
-                  }}>Travel here</BrassButton>
-                  <BrassButton tone="ghost" size="sm" onClick={() => toast({ title: "Marked: " + selected.name, body: "Linzi makes a note." })}>Mark</BrassButton>
-                </div>
-              </>
-            ) : <div className="muted">Pick a place upon the map.</div>}
-          </Panel>
-
-          <Panel framed style={{ padding: 22, flex: 1, overflow: "auto" }}>
-            <SectionTitle>Discovered</SectionTitle>
-            <div className="body-sm" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {locations.filter((l) => l.discovered).map((l) => (
-                <button key={l.id} onClick={() => setSelected(l)} style={{
-                  display: "flex", justifyContent: "space-between", textAlign: "left",
-                  padding: "8px 12px", cursor: "pointer",
-                  background: selected?.id === l.id ? "rgba(176,141,87,0.18)" : "transparent",
-                  boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.2)",
-                }}>
-                  <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{l.name}</span>
-                  <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10 }}>{l.distance}</span>
-                </button>
-              ))}
-            </div>
-          </Panel>
-        </div>
-      )}
+      <AtlasSidebar
+        selected={selected}
+        travel={selectedTravel}
+        currentId={currentLocation.id}
+        busyTravel={busyTravel}
+        canAct={canAct}
+        quests={locationQuests}
+        clocks={locationClocks}
+        projects={locationProjects}
+        control={locationControl}
+        allLocations={locations}
+        onSelect={setSelectedId}
+        onTravel={postTravel}
+        onMark={(loc) => toast({ title: "Local mark only", body: loc?.name ? `${loc.name} marked in this view.` : "Pick a location first." })}
+      />
     </div>
   );
 }
 
-function LocationPin({ loc, selected, time }) {
+function AtlasMap({ locations, edges, selected, time, onSelect }) {
+  return (
+    <div style={{ position: "relative", height: "100%" }}>
+      <div style={{
+        position: "absolute", inset: 0,
+        background:
+          `radial-gradient(ellipse at 30% 25%, rgba(120, 80, 30, 0.25), transparent 50%),
+           radial-gradient(ellipse at 75% 70%, rgba(100, 60, 20, 0.3), transparent 55%),
+           radial-gradient(ellipse at 15% 80%, rgba(160, 110, 60, 0.18), transparent 40%),
+           linear-gradient(135deg, #c8a878 0%, #b89868 40%, #a08055 100%)`,
+        boxShadow: "inset 0 0 80px rgba(60, 30, 10, 0.6)",
+        overflow: "hidden",
+      }}>
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, opacity: 0.72 }}>
+          <defs>
+            <pattern id="atlasForest" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+              <path d="M2 .7 L2.8 2.8 L1.2 2.8 Z" fill="rgba(40,60,30,0.48)" />
+            </pattern>
+            <pattern id="atlasHills" x="0" y="0" width="8" height="4" patternUnits="userSpaceOnUse">
+              <path d="M0 3.5 Q 2 1.5 4 3.5 T 8 3.5" fill="none" stroke="rgba(90,50,20,0.35)" strokeWidth=".25" />
+            </pattern>
+          </defs>
+          <path d="M8 15 Q15 12 22 16 T38 18 Q42 32 36 40 T20 45 Q10 42 8 30 Z" fill="url(#atlasForest)" />
+          <path d="M58 12 Q68 9 76 16 T94 22 Q95 37 83 44 T64 43 Q55 37 58 22 Z" fill="url(#atlasForest)" opacity="0.78" />
+          <rect x="62" y="62" width="32" height="14" fill="url(#atlasHills)" opacity="0.72" />
+          <path d="M-2 38 Q20 40 36 46 T70 54 Q85 60 102 64" stroke="rgba(60,100,130,0.55)" strokeWidth="1.5" fill="none" />
+          {edges.map((edge, i) => {
+            const from = locations.find((l) => l.id === edge.from);
+            const to = locations.find((l) => l.id === edge.to);
+            if (!from || !to) return null;
+            return (
+              <line key={`${edge.from}-${edge.to}-${i}`}
+                x1={from.x} y1={from.y}
+                x2={to.x} y2={to.y}
+                stroke="rgba(60,30,10,0.48)" strokeWidth="0.45" strokeDasharray="1 1" />
+            );
+          })}
+          <g transform="translate(89, 86)" opacity="0.85">
+            <circle r="6" fill="none" stroke="rgba(60,30,10,0.56)" strokeWidth=".35" />
+            <path d="M0 -5.5 L.7 0 L0 5.5 L-.7 0 Z" fill="rgba(120,30,30,0.7)" />
+            <path d="M-5.5 0 L0 -.7 L5.5 0 L0 .7 Z" fill="rgba(60,30,10,0.7)" />
+            <text y="-7" textAnchor="middle" fontFamily="Cinzel" fontSize="2" fill="rgba(60,30,10,0.9)">N</text>
+          </g>
+          <text x="50" y="12" textAnchor="middle" fontFamily="Cinzel" fontSize="5" fill="rgba(60,30,10,0.24)" letterSpacing="1.5">OPEN WORLDS ATLAS</text>
+        </svg>
+
+        <div style={{
+          position: "absolute", inset: 0,
+          background: time === "night"
+            ? "linear-gradient(180deg, rgba(20, 30, 60, 0.55), rgba(20, 20, 40, 0.65))"
+            : time === "dusk"
+            ? "linear-gradient(180deg, rgba(80, 30, 20, 0.18), rgba(40, 20, 40, 0.25))"
+            : time === "dawn"
+            ? "linear-gradient(180deg, rgba(255, 200, 120, 0.18), rgba(255, 150, 80, 0.12))"
+            : "transparent",
+          pointerEvents: "none",
+          transition: "background 400ms",
+        }} />
+
+        {locations.map((loc) => (
+          <button
+            key={loc.id}
+            onClick={() => onSelect(loc.id)}
+            style={{
+              position: "absolute",
+              left: `${loc.x}%`,
+              top: `${loc.y}%`,
+              transform: "translate(-50%, -100%)",
+              background: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            <LocationPin loc={loc} selected={selected?.id === loc.id} />
+          </button>
+        ))}
+
+        {!locations.length && (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+            <div style={{ textAlign: "center", maxWidth: 320 }}>
+              <div className="eyebrow" style={{ color: "var(--crimson)" }}>No atlas data</div>
+              <h2 className="h1" style={{ fontSize: 22, marginTop: 6 }}>The map has not been discovered</h2>
+              <p className="body-sm" style={{ color: "var(--ink-700)", marginTop: 8 }}>Known locations will appear here once the engine snapshot includes them.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests, clocks, projects, control, allLocations, onSelect, onTravel, onMark }) {
+  const travelDisabled = !travel?.available || !canAct || Boolean(busyTravel) || selected?.id === currentId;
+  const travelReason = selected?.id === currentId ? "current location" : (travel?.disabled_reason || "no engine-backed route");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
+      <Panel framed style={{ padding: 22 }}>
+        {selected ? (
+          <>
+            <div className="eyebrow" style={{ color: "var(--crimson)" }}>{selected.region || "Unknown reach"}</div>
+            <h2 className="h1" style={{ fontSize: 22 }}>{selected.name}</h2>
+            <div className="hand" style={{ fontSize: 14, marginTop: 2 }}>
+              {selected.current ? "Current location" : (travel?.minutes ? `${travel.minutes} minutes away` : "Known location")}
+            </div>
+
+            <Divider />
+            <Placeholder label={`${selected.name} - painted location`} h={118} framed />
+            <p className="body dropcap" style={{ marginTop: 12, fontSize: 15 }}>
+              {selected.description || "No public description has been recorded for this place yet."}
+            </p>
+
+            <Divider />
+            <div className="tag-row">
+              {(selected.tags || []).length
+                ? selected.tags.map((t) => <Pill key={t} tone={t === "danger" ? "crimson" : t === "rest" ? "emerald" : ""}>{t}</Pill>)
+                : <Pill>known</Pill>}
+            </div>
+
+            {control && (
+              <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <Pill tone="emerald">Control: {control.controller || "unclaimed"}</Pill>
+                <Pill>Stability {control.stability}</Pill>
+                <Pill tone={control.unrest > 50 ? "crimson" : ""}>Unrest {control.unrest}</Pill>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
+              <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
+                {busyTravel === selected.id ? "Sending..." : "Travel here"}
+              </BrassButton>
+              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}>Mark</BrassButton>
+            </div>
+            {travelDisabled && (
+              <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>{travelReason}</div>
+            )}
+          </>
+        ) : <div className="muted">Pick a place upon the map.</div>}
+      </Panel>
+
+      <Panel framed style={{ padding: 18, flex: 1, overflow: "auto" }}>
+        <SectionTitle>Strategic Context</SectionTitle>
+        <StrategicList label="Quests" items={quests} empty="No active quest markers here." render={(q) => (
+          <ContextRow key={q.id} title={q.title} meta={q.objective || q.status || "active"} />
+        )} />
+        <StrategicList label="Clocks" items={clocks} empty="No strategic clocks here." render={(c) => (
+          <ContextRow key={c.id} title={c.title} meta={`${c.kind} - ${c.progress}/${c.target}`} urgent={c.urgent} />
+        )} />
+        <StrategicList label="Projects" items={projects} empty="No downtime projects here." render={(p) => (
+          <ContextRow key={p.id} title={p.title} meta={`${p.status} - ${p.progress_days}/${p.duration_days} days`} urgent={p.urgent} />
+        )} />
+
+        <Divider />
+        <SectionTitle>Discovered</SectionTitle>
+        <div className="body-sm" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {allLocations.map((loc) => (
+            <button key={loc.id} onClick={() => onSelect(loc.id)} style={{
+              display: "flex", justifyContent: "space-between", textAlign: "left",
+              padding: "8px 12px", cursor: "pointer",
+              background: selected?.id === loc.id ? "rgba(176,141,87,0.18)" : "transparent",
+              boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.2)",
+            }}>
+              <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{loc.name}</span>
+              <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10 }}>{loc.current ? "here" : loc.region}</span>
+            </button>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function StrategicList({ label, items, empty, render }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="eyebrow" style={{ color: "var(--ink-600)", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {items.length ? items.map(render) : <div className="body-sm" style={{ color: "var(--ink-600)" }}>{empty}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ContextRow({ title, meta, urgent }) {
+  return (
+    <div style={{
+      padding: "8px 10px",
+      background: urgent ? "rgba(120,32,32,0.12)" : "rgba(176,141,87,0.08)",
+      boxShadow: urgent ? "inset 0 0 0 1px rgba(120,32,32,0.22)" : "inset 0 0 0 1px rgba(140,100,60,0.18)",
+    }}>
+      <div style={{ fontFamily: "var(--f-display)", fontSize: 11, color: urgent ? "var(--crimson)" : "var(--ink-900)", letterSpacing: "0.08em" }}>{title}</div>
+      {meta && <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 2 }}>{meta}</div>}
+    </div>
+  );
+}
+
+function LocationPin({ loc, selected }) {
   const isCurrent = loc.current;
   const isVisited = loc.visited;
   const [hover, setHover] = React.useState(false);
@@ -269,7 +438,6 @@ function LocationPin({ loc, selected, time }) {
       onMouseLeave={() => setHover(false)}
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, position: "relative" }}
     >
-      {/* Banner label */}
       <div style={{
         position: "relative",
         padding: "4px 14px 4px",
@@ -290,7 +458,6 @@ function LocationPin({ loc, selected, time }) {
       }}>
         {loc.name}
       </div>
-      {/* Pin */}
       <div style={{
         width: 12, height: 12, borderRadius: "50%",
         background: isCurrent
@@ -304,7 +471,6 @@ function LocationPin({ loc, selected, time }) {
         animation: isCurrent ? "flicker 2.4s ease-in-out infinite" : "none",
       }} />
 
-      {/* Hover preview card */}
       {hover && !selected && (
         <div style={{
           position: "absolute",
@@ -318,7 +484,7 @@ function LocationPin({ loc, selected, time }) {
           pointerEvents: "none",
           animation: "tooltip-in 140ms ease both",
         }}>
-          <Placeholder label={loc.short || "vignette"} h={70} framed style={{ width: "100%" }} />
+          <Placeholder label={`${loc.name} vignette`} h={70} framed style={{ width: "100%" }} />
           <div className="eyebrow" style={{ color: "var(--crimson)", marginTop: 8, fontSize: 9 }}>
             {loc.region || "Unknown reach"}
           </div>
@@ -326,9 +492,9 @@ function LocationPin({ loc, selected, time }) {
             {loc.name}
           </div>
           <div className="hand" style={{ fontSize: 12, color: "var(--ink-600)", marginTop: 2 }}>
-            {loc.distance} · {loc.travel}
+            {loc.current ? "Current location" : "Known route"}
           </div>
-          {loc.tags && (
+          {loc.tags && loc.tags.length > 0 && (
             <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
               {loc.tags.slice(0, 3).map((t) => <Pill key={t} tone={t === "danger" ? "crimson" : t === "rest" ? "emerald" : ""}>{t}</Pill>)}
             </div>
@@ -339,4 +505,4 @@ function LocationPin({ loc, selected, time }) {
   );
 }
 
-Object.assign(window, { ScreenMap, LocationPin });
+Object.assign(window, { ScreenMap, LocationPin, atlasSurfaceFromCampaign });

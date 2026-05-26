@@ -1368,6 +1368,287 @@ def build_combat_surface(
     }
 
 
+def _atlas_locations(snapshot: dict) -> dict[str, dict]:
+    locs = snapshot.get("locations") if isinstance(snapshot, dict) else None
+    return locs if isinstance(locs, dict) else {}
+
+
+def _atlas_visible_location_ids(snapshot: dict) -> list[str]:
+    locs = _atlas_locations(snapshot)
+    current_id = _text(snapshot.get("current_location_id"))
+    visible: list[str] = []
+    for loc_id, row in locs.items():
+        if not isinstance(row, dict):
+            continue
+        lid = _text(row.get("id"), _text(loc_id))
+        if not lid:
+            continue
+        if lid == current_id:
+            visible.append(lid)
+            continue
+        if bool(row.get("hidden")):
+            continue
+        discovered = row.get("discovered")
+        if discovered is False and not bool(row.get("visited")):
+            continue
+        if bool(row.get("visited")) or discovered is True or discovered is None:
+            visible.append(lid)
+    return visible
+
+
+def _atlas_hex_position(loc: dict, idx: int) -> tuple[int, int]:
+    raw = loc.get("hex")
+    q = r = None
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        q, r = _num(raw[0]), _num(raw[1])
+    if q is not None and r is not None:
+        x = 50 + int(q) * 18 + int(r) * 9
+        y = 50 + int(r) * 14
+        return max(8, min(92, x)), max(10, min(88, y))
+    x = 24 + (idx % 4) * 18
+    y = 24 + (idx // 4) * 18
+    return max(8, min(92, x)), max(10, min(88, y))
+
+
+def _atlas_tags(row: dict) -> list[str]:
+    raw = row.get("tags")
+    if isinstance(raw, list):
+        return [_text(t).lower() for t in raw if _text(t)]
+    out: list[str] = []
+    for key in ("danger", "rest", "town", "camp", "safe"):
+        if bool(row.get(key)):
+            out.append(key)
+    return out
+
+
+def _atlas_known_locations(snapshot: dict) -> list[dict]:
+    locs = _atlas_locations(snapshot)
+    visible_ids = _atlas_visible_location_ids(snapshot)
+    current_id = _text(snapshot.get("current_location_id"))
+    out: list[dict] = []
+    for idx, loc_id in enumerate(visible_ids):
+        row = locs.get(loc_id)
+        if not isinstance(row, dict):
+            continue
+        x, y = _atlas_hex_position(row, idx)
+        name = _text(row.get("name"), loc_id)
+        out.append({
+            "id": loc_id,
+            "name": name,
+            "description": _text(row.get("description")),
+            "region": _text(row.get("region"), _text(snapshot.get("world_id"), "World")),
+            "visited": bool(row.get("visited")) or loc_id == current_id,
+            "current": loc_id == current_id,
+            "x": x,
+            "y": y,
+            "tags": _atlas_tags(row),
+            "connections": [
+                _text(c) for c in row.get("connections", [])
+                if isinstance(row.get("connections"), list) and _text(c) in visible_ids
+            ],
+        })
+    out.sort(key=lambda l: (not l["current"], l["name"]))
+    return out
+
+
+def _atlas_edges(locations: list[dict]) -> list[dict]:
+    known = {loc["id"] for loc in locations}
+    seen: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for loc in locations:
+        src = loc["id"]
+        for dst in loc.get("connections", []):
+            if dst not in known:
+                continue
+            key = tuple(sorted((src, dst)))
+            if key in seen or src == dst:
+                continue
+            seen.add(key)
+            out.append({"from": key[0], "to": key[1]})
+    return out
+
+
+def _atlas_move_reason(snapshot: dict, *, live: bool, is_live_view: bool) -> str | None:
+    if not _atlas_locations(snapshot):
+        return "no map data"
+    if not live:
+        return "no live move sink"
+    if not is_live_view:
+        return "viewing non-live campaign"
+    if isinstance(snapshot.get("combat"), dict) and snapshot["combat"].get("active"):
+        return "cannot travel during active combat"
+    return None
+
+
+def _atlas_travel_options(snapshot: dict, locations: list[dict], *, live: bool, is_live_view: bool) -> list[dict]:
+    locs = _atlas_locations(snapshot)
+    current_id = _text(snapshot.get("current_location_id"))
+    current = locs.get(current_id) if current_id else None
+    if not isinstance(current, dict):
+        return []
+    known = {loc["id"]: loc for loc in locations}
+    travel_times = current.get("travel_times") if isinstance(current.get("travel_times"), dict) else {}
+    disabled = _atlas_move_reason(snapshot, live=live, is_live_view=is_live_view)
+    out: list[dict] = []
+    for dst in current.get("connections", []) if isinstance(current.get("connections"), list) else []:
+        dst_id = _text(dst)
+        target = known.get(dst_id)
+        if not target:
+            continue
+        minutes = travel_times.get(dst_id)
+        minutes = minutes if isinstance(minutes, int) and not isinstance(minutes, bool) else None
+        item = {
+            "to": dst_id,
+            "name": target["name"],
+            "minutes": minutes,
+            "available": disabled is None,
+            "disabled_reason": disabled,
+        }
+        if disabled is None:
+            item["move"] = {"kind": "do", "text": f"Travel to {target['name']}"}
+        out.append(item)
+    return out
+
+
+def _atlas_faction_name(snapshot: dict, faction_id: str) -> str:
+    factions = snapshot.get("factions")
+    row = factions.get(faction_id) if isinstance(factions, dict) else None
+    return _text(row.get("name"), faction_id) if isinstance(row, dict) else faction_id
+
+
+def _atlas_quest_markers(snapshot: dict, visible_ids: set[str]) -> list[dict]:
+    quests = snapshot.get("quests")
+    if not isinstance(quests, dict):
+        return []
+    out: list[dict] = []
+    for qid, row in quests.items():
+        if not isinstance(row, dict):
+            continue
+        status = _text(row.get("status"), "active")
+        if status not in {"active", "open"}:
+            continue
+        loc_id = _text(row.get("location_id"))
+        if loc_id and loc_id not in visible_ids:
+            continue
+        objectives = row.get("objectives") if isinstance(row.get("objectives"), list) else []
+        completed = set(row.get("completed_objectives") if isinstance(row.get("completed_objectives"), list) else [])
+        objective = next((_text(o) for o in objectives if _text(o) and o not in completed), "")
+        out.append({
+            "id": _text(qid),
+            "title": _text(row.get("title"), _text(qid)),
+            "status": status,
+            "location_id": loc_id,
+            "objective": objective,
+        })
+    return out[:12]
+
+
+def _atlas_strategic(snapshot: dict, visible_ids: set[str]) -> tuple[list[dict], list[dict], list[dict], int]:
+    st = snapshot.get("strategic_state")
+    if not isinstance(st, dict):
+        return [], [], [], 0
+    clocks: list[dict] = []
+    for cid, row in (st.get("clocks") if isinstance(st.get("clocks"), dict) else {}).items():
+        if not isinstance(row, dict):
+            continue
+        loc_id = _text(row.get("region_id") or row.get("location_id"))
+        if loc_id and loc_id not in visible_ids:
+            continue
+        progress = _num(row.get("progress")) or 0
+        target = _num(row.get("target")) or 1
+        remaining = max(0, int(target) - int(progress))
+        clocks.append({
+            "id": _text(row.get("id"), _text(cid)),
+            "title": _text(row.get("title"), _text(cid)),
+            "kind": _text(row.get("kind"), "threat"),
+            "location_id": loc_id,
+            "progress": int(progress),
+            "target": int(target),
+            "remaining": remaining,
+            "urgent": remaining <= 1 or (target > 0 and progress / target >= 0.75),
+        })
+    projects: list[dict] = []
+    for pid, row in (st.get("projects") if isinstance(st.get("projects"), dict) else {}).items():
+        if not isinstance(row, dict):
+            continue
+        loc_id = _text(row.get("location_id"))
+        if loc_id and loc_id not in visible_ids:
+            continue
+        progress = _num(row.get("progress_days")) or 0
+        duration = _num(row.get("duration_days")) or 1
+        remaining = max(0, int(duration) - int(progress))
+        status = _text(row.get("status"), "planned")
+        projects.append({
+            "id": _text(row.get("id"), _text(pid)),
+            "title": _text(row.get("title"), _text(pid)),
+            "kind": _text(row.get("kind"), "other"),
+            "location_id": loc_id,
+            "status": status,
+            "progress_days": int(progress),
+            "duration_days": int(duration),
+            "remaining_days": remaining,
+            "urgent": status in {"active", "paused"} and remaining <= 2,
+        })
+    regions: list[dict] = []
+    for rid, row in (st.get("regions") if isinstance(st.get("regions"), dict) else {}).items():
+        if not isinstance(row, dict):
+            continue
+        loc_id = _text(row.get("location_id"), _text(rid))
+        if loc_id not in visible_ids:
+            continue
+        regions.append({
+            "location_id": loc_id,
+            "controller": _atlas_faction_name(snapshot, _text(row.get("controller_id"))),
+            "stability": int(_num(row.get("stability")) or 0),
+            "unrest": int(_num(row.get("unrest")) or 0),
+            "tags": [_text(t) for t in row.get("tags", []) if isinstance(row.get("tags"), list) and _text(t)],
+        })
+    last_tick_day = int(_num(st.get("last_tick_day")) or 0)
+    clocks.sort(key=lambda c: (not c["urgent"], c["remaining"], c["title"]))
+    projects.sort(key=lambda p: (not p["urgent"], p["remaining_days"], p["title"]))
+    return clocks[:12], projects[:12], regions[:12], last_tick_day
+
+
+def build_atlas_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project a browser-safe OpenWorlds atlas from engine-owned campaign state."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    locations = _atlas_known_locations(snapshot)
+    visible_ids = {loc["id"] for loc in locations}
+    current_id = _text(snapshot.get("current_location_id"))
+    current = next((loc for loc in locations if loc["id"] == current_id), None)
+    travel_options = _atlas_travel_options(snapshot, locations, live=live, is_live_view=is_live_view)
+    clocks, projects, regions, last_tick_day = _atlas_strategic(snapshot, visible_ids)
+    current_tags = set(current.get("tags", [])) if current else set()
+    camp_available = bool(current and current_tags.intersection({"rest", "town", "safe", "camp"}))
+    return {
+        "campaign_id": campaign_id,
+        "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
+        "world": _text(snapshot.get("world_id"), "unknown"),
+        "dayLabel": _openworlds_day_label(snapshot),
+        "current_location": current or {"id": "", "name": "Unknown location", "tags": []},
+        "known_locations": locations,
+        "edges": _atlas_edges(locations),
+        "travel_options": travel_options,
+        "quest_markers": _atlas_quest_markers(snapshot, visible_ids),
+        "strategic_clocks": clocks,
+        "downtime_projects": projects,
+        "region_control": regions,
+        "camp_available": camp_available,
+        "last_world_tick": last_tick_day,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": "/move",
+    }
+
+
 def _relative_time_label(ts: float, *, now: float) -> str:
     if ts <= 0:
         return "unknown"
@@ -2486,6 +2767,7 @@ def _openworlds_config() -> dict:
         "campaign_catalog": "/openworlds/campaigns.json",
         "session_surface": "/session-surface",
         "combat_surface": "/combat-surface",
+        "atlas_surface": "/atlas-surface",
         "state_authority": "engine",
         "write_lane": "/move",
         "demo_data": False,
@@ -2694,6 +2976,32 @@ class _Handler(BaseHTTPRequestHandler):
                 live=live,
                 is_live_view=live and cid == self.campaign_id,
                 recent_events=_session_event_tail(cid),
+            ))
+        elif route == "/atlas-surface":
+            qs = parse_qs(parsed.query)
+            live = _live_play()
+            catalog_ref = _session_surface_catalog_ref(qs)
+            if catalog_ref is not None:
+                cid, raw_snap, _campaign_dir_path, root_is_current = catalog_ref
+                self._json(build_atlas_surface(
+                    raw_snap,
+                    campaign_id=cid,
+                    live=live,
+                    is_live_view=bool(live and root_is_current and cid == self.campaign_id),
+                ))
+                return
+            cid = self._view_campaign(qs)
+            if not cid:
+                self._json(build_atlas_surface({}, campaign_id="", live=live, is_live_view=False))
+                return
+            raw_snap = _read_snapshot(cid)
+            if not isinstance(raw_snap, dict):
+                raw_snap = {}
+            self._json(build_atlas_surface(
+                raw_snap,
+                campaign_id=cid,
+                live=live,
+                is_live_view=live and cid == self.campaign_id,
             ))
         elif route == _OPENWORLDS_ROUTE or route.startswith(f"{_OPENWORLDS_ROUTE}/"):
             asset = _openworlds_asset(route)

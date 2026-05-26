@@ -105,6 +105,17 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("TOKENS.map", source)
         self.assertNotIn("setTokens", source)
 
+    def test_openworlds_map_screen_binds_viewer_atlas_surface(self):
+        status, ctype, body = self._get("/openworlds/screen-map.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('fetch("/atlas-surface', source)
+        self.assertIn('fetch("/move"', source)
+        self.assertIn("window.atlasSurfaceFromCampaign", source)
+        self.assertNotIn("state?.locations", source)
+
     def test_openworlds_rejects_path_traversal(self):
         self.assertEqual(self._status("/openworlds/../server.py"), 404)
         self.assertEqual(self._status("/openworlds/%2e%2e/server.py"), 404)
@@ -413,6 +424,91 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(surface["title"], "QA Combat Save")
         self.assertEqual(surface["encounter"]["round"], 4)
         self.assertEqual(surface["selectedTokenId"], "gob")
+        self.assertFalse(surface["can_act"])
+        self.assertFalse(surface["is_live_view"])
+
+    def test_atlas_surface_route_projects_selected_campaign_safely(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_map"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_map",
+                "title": "Atlas Save",
+                "world_id": "baldurs-gate",
+                "current_location_id": "gate",
+                "locations": {
+                    "gate": {
+                        "name": "Basilisk Gate",
+                        "connections": ["market", "hidden"],
+                        "visited": True,
+                        "tags": ["town", "rest"],
+                        "notes": "private gate note",
+                    },
+                    "market": {
+                        "name": "Rain Market",
+                        "connections": ["gate"],
+                        "discovered": True,
+                    },
+                    "hidden": {
+                        "name": "Hidden Crypt",
+                        "hidden": True,
+                        "notes": "private crypt note",
+                    },
+                },
+                "quests": {
+                    "q1": {"title": "Find the Seller", "status": "active", "location_id": "market"},
+                },
+                "dm_notes": "private atlas agenda",
+            },
+        )
+
+        status, ctype, body = self._get("/atlas-surface?campaign=camp_map")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_map")
+        self.assertEqual(surface["state_authority"], "engine")
+        self.assertEqual(surface["write_lane"], "/move")
+        self.assertEqual(surface["current_location"]["name"], "Basilisk Gate")
+        self.assertEqual([loc["id"] for loc in surface["known_locations"]], ["gate", "market"])
+        self.assertEqual(surface["edges"], [{"from": "gate", "to": "market"}])
+        self.assertTrue(surface["camp_available"])
+        encoded = json.dumps(surface)
+        self.assertNotIn("Hidden Crypt", encoded)
+        self.assertNotIn("private", encoded)
+        self.assert_no_private_keys(surface)
+
+    def test_atlas_surface_route_projects_catalog_run_read_only(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        qa_campaign = repo_root / "qa" / "state" / "wave3-red" / "campaigns" / "camp_qa"
+        self._write_snapshot(
+            qa_campaign,
+            {
+                "id": "camp_qa",
+                "title": "QA Atlas Save",
+                "current_location_id": "qa-gate",
+                "locations": {
+                    "qa-gate": {"name": "QA Gate", "connections": ["qa-market"], "visited": True},
+                    "qa-market": {"name": "QA Market", "visited": True},
+                },
+            },
+        )
+        self._write_snapshot(
+            self._tmp / "campaigns" / "camp_live",
+            {"id": "camp_live", "title": "Live Atlas Save", "party": [], "characters": {}},
+        )
+        _QuietHandler.campaign_id = "camp_live"
+
+        status, _ctype, body = self._get("/atlas-surface?source=qa&run=wave3-red&campaign=camp_qa")
+
+        self.assertEqual(status, 200)
+        surface = json.loads(body.decode("utf-8"))
+        self.assertEqual(surface["campaign_id"], "camp_qa")
+        self.assertEqual(surface["title"], "QA Atlas Save")
+        self.assertEqual(surface["current_location"]["name"], "QA Gate")
         self.assertFalse(surface["can_act"])
         self.assertFalse(surface["is_live_view"])
 
