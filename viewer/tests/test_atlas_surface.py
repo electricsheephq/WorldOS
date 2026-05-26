@@ -211,6 +211,96 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["known_locations"][0]["connections"], [])
         self.assertEqual(surface["region_control"][0]["tags"], [])
 
+    def test_atlas_surface_projects_world_graph_metadata_without_unlocking_hidden_routes(self):
+        snapshot = {
+            "id": "camp_graph",
+            "title": "Graph Roads",
+            "world_id": "graph-test",
+            "current_location_id": "gate",
+            "locations": {
+                "gate": {
+                    "id": "gate",
+                    "name": "Gate",
+                    "connections": ["market"],
+                    "visited": True,
+                    "travel_times": {},
+                },
+                "market": {
+                    "id": "market",
+                    "name": "Market",
+                    "connections": ["gate"],
+                    "visited": True,
+                },
+                "sealed": {
+                    "id": "sealed",
+                    "name": "Sealed Grove",
+                    "connections": [],
+                    "hidden": True,
+                },
+            },
+            "world_graph": {
+                "nodes": {
+                    "gate": {
+                        "location_id": "gate",
+                        "biome": "coast",
+                        "terrain": "cobbled gate road",
+                        "danger": 2,
+                        "atlas_layer": "settlement",
+                        "tags": ["patrolled"],
+                    },
+                    "sealed": {
+                        "location_id": "sealed",
+                        "biome": "forest",
+                        "danger": 8,
+                    },
+                },
+                "edges": [
+                    {
+                        "from_id": "gate",
+                        "to_id": "market",
+                        "route_kind": "street",
+                        "minutes": 15,
+                        "difficulty": "easy",
+                        "danger": 1,
+                        "tags": ["lamplit"],
+                    },
+                    {
+                        "from_id": "gate",
+                        "to_id": "sealed",
+                        "route_kind": "trail",
+                        "minutes": 5,
+                        "danger": 9,
+                    },
+                ],
+            },
+        }
+
+        surface = server.build_atlas_surface(snapshot, campaign_id="camp_graph", live=True, is_live_view=True)
+
+        gate = surface["known_locations"][0]
+        self.assertEqual(gate["id"], "gate")
+        self.assertEqual(gate["biome"], "coast")
+        self.assertEqual(gate["terrain"], "cobbled gate road")
+        self.assertEqual(gate["danger"], 2)
+        self.assertEqual(gate["atlas_layer"], "settlement")
+        self.assertEqual(surface["edges"], [
+            {
+                "from": "gate",
+                "to": "market",
+                "route_kind": "street",
+                "difficulty": "easy",
+                "minutes": 15,
+                "danger": 1,
+                "tags": ["lamplit"],
+            }
+        ])
+        self.assertEqual(surface["travel_options"][0]["to"], "market")
+        self.assertEqual(surface["travel_options"][0]["route_kind"], "street")
+        self.assertEqual(surface["travel_options"][0]["minutes"], 15)
+        encoded = json.dumps(surface)
+        self.assertNotIn("Sealed Grove", encoded)
+        self.assertNotIn("sealed", encoded)
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",

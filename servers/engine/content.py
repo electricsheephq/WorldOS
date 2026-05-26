@@ -33,6 +33,9 @@ from models import (
     Quest,
     RegionControl,
     StrategicClock,
+    WorldGraph,
+    WorldGraphEdge,
+    WorldGraphNode,
     WorldState,
 )
 from store import safe_path_segment  # path-containment guard for world/adventure ids
@@ -934,6 +937,68 @@ def _seed_faction_arcs(c: Campaign, world: dict) -> None:
     _seed_faction_arcs_block(c, world.get("faction_arcs"), where="world faction_arcs block")
 
 
+def _seed_world_graph(c: Campaign, world: dict) -> None:
+    """Seed optional WorldGraph metadata from world.json.
+
+    Graph nodes/edges are player-facing metadata only. They are skipped unless
+    they refer to existing locations and edges already authorized by
+    ``Location.connections``.
+    """
+    raw = world.get("world_graph")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        print("[content] skipping malformed world_graph block (not an object)")
+        return
+
+    graph = WorldGraph(
+        seed=str(raw.get("seed", "")),
+        provenance=str(raw.get("provenance") or "authored"),
+    )
+    nodes = raw.get("nodes")
+    node_values = nodes.values() if isinstance(nodes, dict) else _as_list_lenient(raw, "nodes")
+    for entry in node_values:
+        if not isinstance(entry, dict):
+            print("[content] skipping world_graph node (not an object)")
+            continue
+        try:
+            node = WorldGraphNode.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed world_graph node")
+            continue
+        if node.location_id not in c.locations:
+            print(f"[content] skipping world_graph node {node.location_id!r}: unknown location")
+            continue
+        graph.nodes[node.location_id] = node
+
+    for entry in _as_list_lenient(raw, "edges"):
+        if not isinstance(entry, dict):
+            print("[content] skipping world_graph edge (not an object)")
+            continue
+        try:
+            edge = WorldGraphEdge.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print("[content] skipping malformed world_graph edge")
+            continue
+        src = c.locations.get(edge.from_id)
+        dst = c.locations.get(edge.to_id)
+        if src is None or dst is None:
+            print(
+                "[content] skipping world_graph edge "
+                f"{edge.from_id!r}->{edge.to_id!r}: unknown location"
+            )
+            continue
+        if edge.to_id not in src.connections and edge.from_id not in dst.connections:
+            print(
+                "[content] skipping world_graph edge "
+                f"{edge.from_id!r}->{edge.to_id!r}: not a canonical connection"
+            )
+            continue
+        graph.edges.append(edge)
+
+    c.world_graph = graph
+
+
 def _seed_campaign_backlog(c: Campaign, world: dict) -> None:
     """Seed the PROACTIVE living-world backlog (P0) — the world's own off-screen to-do, so the
     campaign advances when in-fiction time passes (P1 tick_backlog) instead of only reacting to
@@ -1252,6 +1317,7 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             faction.id = fac["id"]
         c.factions[faction.id] = faction
 
+    _seed_world_graph(c, world)
     _seed_strategic_state(c, world)
 
     # Faction-growth questlines (Quest & Arc engine, faction arcs / #127). Runs AFTER factions are

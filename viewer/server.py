@@ -1720,20 +1720,26 @@ def _atlas_tags(row: dict) -> list[str]:
     return out
 
 
+def _safe_str_list(raw: object) -> list[str]:
+    return [_text(item) for item in raw if _text(item)] if isinstance(raw, list) else []
+
+
 def _atlas_known_locations(snapshot: dict) -> list[dict]:
     locs = _atlas_locations(snapshot)
     visible_ids = _atlas_visible_location_ids(snapshot)
     current_id = _text(snapshot.get("current_location_id"))
+    graph = _atlas_world_graph(snapshot)
     out: list[dict] = []
     for idx, loc_id in enumerate(visible_ids):
         row = locs.get(loc_id)
         if not isinstance(row, dict):
             continue
+        node_meta = _atlas_node_meta(graph, loc_id)
         x, y = _atlas_hex_position(row, idx)
         name = _text(row.get("name"), loc_id)
         connections = row.get("connections")
         connections = connections if isinstance(connections, list) else []
-        out.append({
+        item = {
             "id": loc_id,
             "name": name,
             "description": _text(row.get("description")),
@@ -1744,13 +1750,66 @@ def _atlas_known_locations(snapshot: dict) -> list[dict]:
             "y": y,
             "tags": _atlas_tags(row),
             "connections": [_text(c) for c in connections if _text(c) in visible_ids],
-        })
+        }
+        if node_meta:
+            item.update({
+                "biome": _text(node_meta.get("biome")),
+                "terrain": _text(node_meta.get("terrain")),
+                "danger": node_meta.get("danger") if isinstance(node_meta.get("danger"), int) else 0,
+                "atlas_layer": _text(node_meta.get("atlas_layer"), "site"),
+                "graph_tags": _safe_str_list(node_meta.get("tags")),
+            })
+        out.append(item)
     out.sort(key=lambda loc: (not loc["current"], loc["name"]))
     return out
 
 
-def _atlas_edges(locations: list[dict]) -> list[dict]:
+def _atlas_world_graph(snapshot: dict) -> dict:
+    graph = snapshot.get("world_graph")
+    return graph if isinstance(graph, dict) else {}
+
+
+def _atlas_node_meta(graph: dict, loc_id: str) -> dict:
+    nodes = graph.get("nodes")
+    row = nodes.get(loc_id) if isinstance(nodes, dict) else None
+    return row if isinstance(row, dict) else {}
+
+
+def _atlas_edge_meta(graph: dict, src: str, dst: str) -> dict:
+    edges = graph.get("edges")
+    if not isinstance(edges, list):
+        return {}
+    for row in edges:
+        if not isinstance(row, dict):
+            continue
+        a = _text(row.get("from_id"))
+        b = _text(row.get("to_id"))
+        if {a, b} == {src, dst}:
+            return row
+    return {}
+
+
+def _atlas_edge_payload(meta: dict) -> dict:
+    if not meta:
+        return {}
+    out: dict = {}
+    for key in ("route_kind", "difficulty"):
+        value = _text(meta.get(key))
+        if value:
+            out[key] = value
+    for key in ("minutes", "danger"):
+        value = meta.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            out[key] = value
+    tags = _safe_str_list(meta.get("tags"))
+    if tags:
+        out["tags"] = tags
+    return out
+
+
+def _atlas_edges(locations: list[dict], snapshot: dict | None = None) -> list[dict]:
     known = {loc["id"] for loc in locations}
+    graph = _atlas_world_graph(snapshot or {})
     seen: set[tuple[str, str]] = set()
     out: list[dict] = []
     for loc in locations:
@@ -1762,7 +1821,9 @@ def _atlas_edges(locations: list[dict]) -> list[dict]:
             if key in seen or src == dst:
                 continue
             seen.add(key)
-            out.append({"from": key[0], "to": key[1]})
+            item = {"from": key[0], "to": key[1]}
+            item.update(_atlas_edge_payload(_atlas_edge_meta(graph, src, dst)))
+            out.append(item)
     return out
 
 
@@ -1786,6 +1847,7 @@ def _atlas_travel_options(snapshot: dict, locations: list[dict], *, live: bool, 
         return []
     known = {loc["id"]: loc for loc in locations}
     travel_times = current.get("travel_times") if isinstance(current.get("travel_times"), dict) else {}
+    graph = _atlas_world_graph(snapshot)
     disabled = _atlas_move_reason(snapshot, live=live, is_live_view=is_live_view)
     out: list[dict] = []
     for dst in current.get("connections", []) if isinstance(current.get("connections"), list) else []:
@@ -1795,6 +1857,9 @@ def _atlas_travel_options(snapshot: dict, locations: list[dict], *, live: bool, 
             continue
         minutes = travel_times.get(dst_id)
         minutes = minutes if isinstance(minutes, int) and not isinstance(minutes, bool) else None
+        edge_meta = _atlas_edge_meta(graph, current_id, dst_id)
+        edge_payload = _atlas_edge_payload(edge_meta)
+        minutes = minutes if minutes is not None else edge_payload.get("minutes")
         item = {
             "to": dst_id,
             "name": target["name"],
@@ -1802,6 +1867,9 @@ def _atlas_travel_options(snapshot: dict, locations: list[dict], *, live: bool, 
             "available": disabled is None,
             "disabled_reason": disabled,
         }
+        for key in ("route_kind", "difficulty", "danger", "tags"):
+            if key in edge_payload:
+                item[key] = edge_payload[key]
         if disabled is None:
             item["move"] = {"kind": "do", "text": f"Travel to {target['name']}"}
         out.append(item)
@@ -1933,7 +2001,7 @@ def build_atlas_surface(
         "dayLabel": _openworlds_day_label(snapshot),
         "current_location": current or {"id": "", "name": "Unknown location", "tags": []},
         "known_locations": locations,
-        "edges": _atlas_edges(locations),
+        "edges": _atlas_edges(locations, snapshot),
         "travel_options": travel_options,
         "quest_markers": _atlas_quest_markers(snapshot, visible_ids),
         "strategic_clocks": clocks,
