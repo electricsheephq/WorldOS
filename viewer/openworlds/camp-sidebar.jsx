@@ -212,7 +212,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
                     opacity: isDragging ? 0.4 : 1,
                   }}
                 >
-                  <Placeholder label={p.short || "portrait"} w="100%" h={56} framed />
+                  <Img scope={p.id ? "portrait-" + p.id : ""} label={p.short || "portrait"} w="100%" h={56} framed />
                 </button>
                 <div className="hand" style={{ fontSize: 10, marginTop: 2, color: "var(--ink-700)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {p.name.split(" ")[0]}
@@ -347,7 +347,7 @@ function RoleSlot({ icon, label, summary, summaryValue, detail, hero, onDrop, on
       <div style={{ position: "relative" }}>
         {hero ? (
           <>
-            <Placeholder label={hero.short || "portrait"} w={56} h={68} framed />
+            <Img scope={hero.id ? "portrait-" + hero.id : ""} label={hero.short || "portrait"} w={56} h={68} framed />
             <button onClick={onClear} style={{
               position: "absolute", top: -6, right: -6,
               width: 18, height: 18, borderRadius: "50%",
@@ -410,7 +410,7 @@ function WatchSlot({ num, hero, value, onDrop, onClear, onDragOver }) {
       }}>{num}</span>
       {hero ? (
         <>
-          <Placeholder label={hero.short || "portrait"} w="100%" h={60} framed />
+          <Img scope={hero.id ? "portrait-" + hero.id : ""} label={hero.short || "portrait"} w="100%" h={60} framed />
           <div className="hand" style={{ fontSize: 11, marginTop: 4, color: "var(--ink-700)" }}>
             {hero.name.split(" ")[0]} <span style={{ color: "var(--emerald)" }}>{value}</span>
           </div>
@@ -444,7 +444,7 @@ function SpecialRoleRow({ hero, role }) {
       background: "rgba(176,141,87,0.06)",
       boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
     }}>
-      <Placeholder label={hero.short || "portrait"} w={44} h={54} framed />
+      <Img scope={hero.id ? "portrait-" + hero.id : ""} label={hero.short || "portrait"} w={44} h={54} framed />
       <div>
         <div className="eyebrow" style={{ color: "var(--ink-700)", fontSize: 9 }}>{hero.name.split(" ")[0]}</div>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.06em", color: "var(--ink-900)", marginTop: 2 }}>
@@ -498,7 +498,7 @@ function TalkPanel({ hero, onClose }) {
       <div style={{
         display: "grid", gridTemplateColumns: "60px 1fr", gap: 10, marginBottom: 10,
       }}>
-        <Placeholder label={hero.short || "portrait"} w={60} h={72} framed />
+        <Img scope={hero.id ? "portrait-" + hero.id : ""} label={hero.short || "portrait"} w={60} h={72} framed />
         <div className="body" style={{ color: "var(--p-200)", fontSize: 14, fontStyle: "italic", lineHeight: 1.4 }}>
           <span style={{ color: "var(--crimson-bright)", fontSize: 22, fontFamily: "var(--f-display)" }}>"</span>
           {reply ? reply.heroReply : conv.openingPrompt}

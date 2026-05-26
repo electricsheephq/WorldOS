@@ -2747,8 +2747,8 @@ _ABILITY_KEYS = ("strength", "dexterity", "constitution", "intelligence", "wisdo
 def _character_sheet(cid: str, ch: dict) -> dict:
     """One party character's full sheet for the heroes screen, mapping 5e snapshot fields
     into the shape screen-character.jsx renders (stats block, skills, spells, class
-    resources, conditions, death saves). Pathfinder-only cells (touch/flat/CMB) are
-    derived sensibly from 5e data so the existing layout still reads."""
+    resources, conditions, death saves). All-5e: six per-ability saving throws (mod +
+    proficiency), AC, proficiency bonus, melee/ranged attack bonus, initiative, speed."""
     klass, level = _class_summary(ch)
     abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
     stats = {k[:3]: (_num(abilities.get(k)) if _num(abilities.get(k)) is not None else 10) for k in _ABILITY_KEYS}
@@ -2771,16 +2771,19 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         return b + prof if proficient else b
     stats.update({
         "ac": ac,
-        "flat": ac - dex_mod if dex_mod else ac,  # 5e has no flat-footed; show AC minus DEX as a proxy
-        "touch": 10 + dex_mod,
-        "fort": _save("constitution"),
-        "reflex": _save("dexterity"),
-        "will": _save("wisdom"),
-        "bab": prof,
+        # 5e saving throws: one per ability (mod + proficiency where proficient). No
+        # touch/flat-footed AC or CMB/CMD — those are Pathfinder/3.5, not 5e.
+        "saves": {
+            "str": _save("strength"),
+            "dex": _save("dexterity"),
+            "con": _save("constitution"),
+            "int": _save("intelligence"),
+            "wis": _save("wisdom"),
+            "cha": _save("charisma"),
+        },
+        "proficiency_bonus": prof,
         "melee": prof + _ability_mod(abilities.get("strength")),
         "ranged": prof + dex_mod,
-        "cmb": prof + _ability_mod(abilities.get("strength")),
-        "cmd": 10 + prof + _ability_mod(abilities.get("strength")) + dex_mod,
         "initiative": int(init_bonus) if init_bonus is not None else dex_mod,
         "speed": int(speed) if speed is not None else 30,
     })

@@ -112,7 +112,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
         {/* Hero portrait + slots */}
         <div style={{ position: "relative", marginTop: 16, padding: "0 8px" }}>
-          <Placeholder label={`${hero.short} · full art`} h={220} framed style={{ width: "100%" }} />
+          <Img scope={hero.id ? "portrait-" + hero.id : ""} label={`${hero.short} · full art`} h={220} framed style={{ width: "100%" }} />
 
           {/* Equipment slots ringing portrait */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginTop: 10 }}>
@@ -245,13 +245,13 @@ function ScreenInventory({ onNavigate, state, setState }) {
           onClose={() => setCtxMenu(null)}
           items={[
             { label: "Examine", icon: "◈", hint: "E", onClick: () => toast({ kind: "item", title: ctxMenu.item.name, body: ctxMenu.item.desc }) },
-            { label: "Equip", icon: "⚔", hint: "Q", disabled: !ctxMenu.item.slot, onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
-            { label: "Use", icon: "✦", disabled: ctxMenu.item.type !== "spell", onClick: () => toast({ kind: "item", title: "Used: " + ctxMenu.item.name }) },
+            { label: "Equip (preview)", icon: "⚔", hint: "Q", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
+            { label: "Use (preview)", icon: "✦", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: "Used: " + ctxMenu.item.name }) },
             { divider: true },
-            { label: "Give to " + hero.name.split(" ")[0], icon: "→", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " given to " + hero.name }) },
-            { label: "Mark as trash", icon: "◌", onClick: () => toast({ title: "Marked: " + ctxMenu.item.name }) },
+            { label: "Give to " + hero.name.split(" ")[0] + " (preview)", icon: "→", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " given to " + hero.name }) },
+            { label: "Mark as trash (preview)", icon: "◌", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ title: "Marked: " + ctxMenu.item.name }) },
             { divider: true },
-            { label: "Drop", icon: "▾", tone: "crimson", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
+            { label: "Drop (preview)", icon: "▾", tone: "crimson", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
           ]}
         />
       )}
@@ -379,11 +379,11 @@ function ItemDetail({ item, hero, toast }) {
       )}
 
       <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>
-        <BrassButton size="sm" onClick={() => toast && toast({ kind: "item", title: item.name + " given to " + hero.name, body: hero.name.split(" ")[0] + " stows it in their pack." })}>
-          Give to {hero.name.split(" ")[0]}
+        <BrassButton size="sm" disabled title="Display-only — not saved to the engine" onClick={() => toast && toast({ kind: "item", title: item.name + " given to " + hero.name, body: hero.name.split(" ")[0] + " stows it in their pack." })}>
+          Give to {hero.name.split(" ")[0]} (preview)
         </BrassButton>
-        <BrassButton tone="ghost" size="sm">Examine</BrassButton>
-        <BrassButton tone="ghost" size="sm">Drop</BrassButton>
+        <BrassButton tone="ghost" size="sm" onClick={() => toast && toast({ kind: "item", title: item.name, body: item.desc })}>Examine</BrassButton>
+        <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Drop (preview)</BrassButton>
       </div>
     </div>
   );

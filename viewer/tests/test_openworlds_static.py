@@ -242,6 +242,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         (campaign_dir / "sessions" / "sess_1.jsonl").write_text("{}", encoding="utf-8")
         _QuietHandler.campaign_id = "camp_live"
 
+        # Isolate the catalog's repo-local roots (play-state/*, qa/state/*) under tmp so
+        # a dev worktree that happens to hold local QA runs doesn't leak into the count.
+        server._HERE = self._tmp / "viewer"
+
         status, ctype, body = self._get("/openworlds/campaigns.json")
 
         self.assertEqual(status, 200)
