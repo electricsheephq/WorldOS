@@ -188,6 +188,24 @@ def _ingested_images_root() -> Path:
     return _REPO_ROOT / "content" / "worlds" / "_private"
 
 
+_SCOPE_PREFIXES = {"portrait", "scene", "item", "map", "npc", "char", "pc", "loc", "location", "region", "scope"}
+
+
+def _scope_key(scope: Optional[str]) -> str:
+    """Normalize a scope to a separator/prefix-agnostic NAME key so the UI's engine-id
+    scopes match the ingest manifest's readable slugs (the W2 integration seam): the screens
+    fetch ``portrait-<character_id>`` / ``<location_id>`` while ingested art is keyed
+    ``portrait:<slug>`` / ``scene:<slug>``. Lowercase; unify ``:`` / ``_`` / space to ``-``;
+    drop LEADING kind/entity prefix tokens. e.g. ``portrait-npc-shadowheart`` and
+    ``portrait:shadowheart`` both -> ``shadowheart``; ``loc-elfsong-tavern`` and
+    ``scene:elfsong-tavern`` both -> ``elfsong-tavern``."""
+    s = str(scope or "").lower().replace(":", "-").replace("_", "-").replace(" ", "-")
+    toks = [t for t in s.split("-") if t]
+    while toks and toks[0] in _SCOPE_PREFIXES:
+        toks.pop(0)
+    return "-".join(toks)
+
+
 def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
     """Look up a wiki_ingest.json descriptor for scope across ALL world _private dirs.
 
@@ -219,6 +237,30 @@ def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
             continue
         if isinstance(d, dict):
             return d
+    # Normalized-key fallback (W2 integration): the UI fetches engine-id scopes
+    # (portrait-<character_id>, <location_id>) while ingested assets are keyed by manifest
+    # slugs (portrait:<slug>, scene:<slug>). When the exact safe-scope dir misses, match by
+    # normalized name-key so wiki art resolves regardless of separator/prefix. Same path
+    # containment guard. This is what makes the render bridge SHOW the ingested portraits.
+    want = _scope_key(scope)
+    if not want:
+        return None
+    for world_dir in root.iterdir():
+        images_dir = world_dir / "images"
+        if not images_dir.is_dir():
+            continue
+        for sub in images_dir.iterdir():
+            desc_path = sub / "wiki_ingest.json"
+            if not desc_path.exists():
+                continue
+            try:
+                if root.resolve() not in desc_path.resolve().parents:
+                    continue
+                d = json.loads(desc_path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if isinstance(d, dict) and _scope_key(d.get("scope")) == want:
+                return d
     return None
 
 
