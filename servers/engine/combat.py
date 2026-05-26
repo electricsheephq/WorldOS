@@ -217,6 +217,28 @@ def melee_auto_crit(target: Character, is_ranged: bool = False) -> bool:
     return (not is_ranged) and bool(_AUTO_CRIT_TARGET & set(target.conditions))
 
 
+def crit_source(atk_crit: bool, atk_natural: int, is_crit: bool, target: Character) -> str:
+    """WHY a hit critted — so the DM narrates the right reason (#219: the DM was narrating
+    'CRIT — nat 20' on a paralyzed target whose crit actually came from the SRD melee-vs-
+    helpless rule, not the die). Pure, no mutation. Returns:
+      ""                    — not a crit
+      "nat_20"              — a natural 20 on the attack die
+      "expanded_crit_range" — a roll-crit on a lower natural (Champion 19–20, etc.)
+      "condition_paralyzed" / "condition_unconscious" — the auto-crit vs a helpless target
+      "condition_auto_crit" — auto-crit with neither named condition still present (fallback)
+    `atk_crit` is whether the ATTACK ROLL itself critted; `is_crit` is the final crit flag
+    (roll-crit OR condition auto-crit), so a pure condition auto-crit has atk_crit False."""
+    if not is_crit:
+        return ""
+    if atk_crit:
+        return "nat_20" if atk_natural == 20 else "expanded_crit_range"
+    if Condition.PARALYZED in target.conditions:
+        return "condition_paralyzed"
+    if Condition.UNCONSCIOUS in target.conditions:
+        return "condition_unconscious"
+    return "condition_auto_crit"
+
+
 def _ensure_unconscious(ch: Character) -> None:
     if Condition.UNCONSCIOUS not in ch.conditions:
         ch.conditions.append(Condition.UNCONSCIOUS)

@@ -2010,3 +2010,22 @@ def test_maneuver_die_typed_damage_respects_resistance(tmp_path, monkeypatch):
     assert res["damage"]["total"] == 13  # pre-resistance rolled sum (7 + 6)
     assert res["damage"]["applied_total"] == 10  # 7 slashing + 3 (6 fire halved)
     assert server.get_character(cid, gob)["current_hp"] == 30  # 40 - 10
+
+
+def test_crit_source_attributes_the_right_reason():
+    """#219: crit_source names WHY a hit critted, so the DM stops narrating 'nat 20' on a
+    paralyzed-target auto-crit. Pure helper; '' when not a crit."""
+    healthy = mk()
+    paralyzed = mk(conditions=[Condition.PARALYZED])
+    unconscious = mk(conditions=[Condition.UNCONSCIOUS])
+    # not a crit -> ""
+    assert combat.crit_source(False, 13, False, healthy) == ""
+    # a natural 20 roll-crit
+    assert combat.crit_source(True, 20, True, healthy) == "nat_20"
+    # a roll-crit on a lower natural (expanded crit range, e.g. Champion 19-20)
+    assert combat.crit_source(True, 19, True, healthy) == "expanded_crit_range"
+    # condition auto-crit (atk roll did NOT crit, but is_crit is True) -> the named condition
+    assert combat.crit_source(False, 15, True, paralyzed) == "condition_paralyzed"
+    assert combat.crit_source(False, 7, True, unconscious) == "condition_unconscious"
+    # a roll-crit takes precedence in naming even if the target also happens to be helpless
+    assert combat.crit_source(True, 20, True, paralyzed) == "nat_20"
