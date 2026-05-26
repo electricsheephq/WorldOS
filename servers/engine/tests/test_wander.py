@@ -191,8 +191,11 @@ def _monster_ids(c: Campaign) -> list[str]:
     return [i for i, ch in c.characters.items() if ch.kind == "monster"]
 
 
-def test_roll_wandering_encounter_stages_sized_foes_and_payload(party_camp):
+def test_roll_wandering_encounter_stages_sized_foes_and_payload(party_camp, monkeypatch):
     cid, start, _forest = party_camp
+    # pin the TYPE to combat (a wandering encounter is now typed — most aren't fights),
+    # but let the REAL foe-sizing path run so the band assertion below is genuine.
+    monkeypatch.setattr(wander, "_weighted_choice", lambda *a, **k: "combat")
     out = server.roll_wandering_encounter(cid, difficulty="medium")
     # payload shape mirrors world_beats: a staged dict the DM narrates from
     assert out["staged"] is True
@@ -228,8 +231,11 @@ def test_roll_wandering_encounter_does_not_start_combat(party_camp):
 
 def test_forced_travel_leg_stages_encounter(party_camp, monkeypatch):
     cid, _start, forest = party_camp
-    # force the per-region roll to always hit so the seam is deterministic in test
+    # force the per-region roll to always hit, AND pin the type to combat (a wandering
+    # encounter is now typed — most aren't fights), so the foe-anchoring assertion is
+    # deterministic; the typed-pick variety is exercised in test_typed_encounters.py.
     monkeypatch.setattr(wander, "roll_encounter", lambda *a, **k: True)
+    monkeypatch.setattr(wander, "_weighted_choice", lambda *a, **k: "combat")
     out = server.travel_to(cid, forest, advance_time=True)
     assert out["to"] == forest
     we = out["wandering_encounter"]

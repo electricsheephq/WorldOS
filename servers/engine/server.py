@@ -885,13 +885,13 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
             # A phase elapsed (overland travel): expire timed spell effects whose
             # duration ran out (minute/round-scale die on any phase advance).
             result["expired_effects"] = _expire_clock_effects_all(c)
-            # Kingmaker-style WANDERING ENCOUNTER: a time-advancing travel leg may be
-            # ambushed. Roll for the DESTINATION's region (mirroring how world_beats
-            # rides this same seam); on a hit, stage region-appropriate foes sized to
-            # the party and surface them under `wandering_encounter`. The DM narrates
-            # the ambush and start_combat's the staged foes — we never auto-fight.
-            # Skip the ambush roll if a fight is already live (parity with long_rest /
-            # roll_wandering_encounter) — don't stage a second encounter mid-combat.
+            # Kingmaker-style WANDERING ENCOUNTER: a time-advancing travel leg may
+            # spring something. Roll for the DESTINATION's region (mirroring how
+            # world_beats rides this same seam); on a hit, stage a TYPED encounter
+            # (combat / skill / social / hazard / boon — most are NOT fights) under
+            # `wandering_encounter`. A combat type spawns sized foes + an outlook; the DM
+            # runs the encounter per its `type`. Combat never auto-fights. Skip the roll
+            # if a fight is already live (parity with long_rest / roll_wandering_encounter).
             dest_loc = c.locations.get(destination_id)
             if not c.combat.active:
                 staged = _stage_wandering_encounter(
@@ -1683,42 +1683,67 @@ def _stage_wandering_encounter(
 ) -> Optional[dict]:
     """Roll + (on a hit) STAGE a Kingmaker-style wandering encounter (mutates; caller
     holds the lock + saves). Composes the pure `wander` module with the existing spawn
-    path:
+    path. As of the typed-encounter wave a wandering encounter is no longer ALWAYS a
+    fight — `wander.pick_typed_encounter` picks a TYPE (combat / skill / social /
+    hazard / boon; most of which are NOT combat), so travel/camp feels VARIED:
 
       1. unless `force`, roll `wander.roll_encounter(region, modifiers)` — a miss (or
          the `house_rules.wandering_encounters` flag being off) returns None and leaves
          the campaign untouched (today's behavior);
-      2. on a hit, `wander.pick_encounter` chooses region-appropriate foe(s) sized to
-         the LIVING party's XP budget for `difficulty`;
-      3. spawn those foes as monster Characters via `_spawn_creature_chars`, anchored at
-         `location_id` (defaults to the party's current location) so they're already in
-         the campaign, ready to fight;
-      4. return the **`wandering_encounter`** payload the seam merges into its result
-         (mirroring `world_beats`): ``{staged, region, foes, difficulty, surprise,
-         encounter_xp}``. `surprise` is a coin flip the DM HONORS (ambush → the foes act
-         first). Combat is NOT auto-started — the DM narrates the ambush and calls
-         `start_combat` on the staged foe ids.
+      2. on a hit, `wander.pick_typed_encounter` picks the TYPE + its fields, sized to
+         the LIVING party's XP budget (combat) / DC-banded off house difficulty
+         (skill/social/hazard);
+      3. for a COMBAT pick: spawn the foes as monster Characters via
+         `_spawn_creature_chars`, anchored at `location_id` (defaults to the party's
+         current location) so they're already in the campaign, ready to fight, AND fold
+         in the SRD over-match `outlook` (the same math as `encounter_outlook` — band,
+         overmatch_ratio, must_offer_out, guidance) so the DM gets the must-offer-an-out
+         signal automatically. For a NON-combat pick: spawn NOTHING, return the typed
+         descriptor for the DM to run (skill_check / social_check / a save / narrate);
+      4. return the **`wandering_encounter`** payload (mirroring `world_beats`). It now
+         ALWAYS carries `type` + type-specific fields; combat additionally carries
+         `foes`/`difficulty`/`surprise`/`encounter_xp` + `outlook`. `surprise` is a coin
+         flip the DM HONORS. Combat is NOT auto-started — the DM narrates + calls
+         `start_combat` on the staged foe ids (and surfaces a cost-bearing OUT when
+         `outlook.must_offer_out`).
 
-    Returns None when nothing was staged (flag off, roll missed, empty party, or the
-    region pool yielded no creature) so the seam simply omits the key."""
+    Returns None when nothing was staged (flag off, roll missed) so the seam simply
+    omits the key. A combat pick that can't spawn / can't size degrades to a boon
+    inside `pick_typed_encounter`, so a hit always yields SOME staged encounter."""
     if not force and not c.house_rules.wandering_encounters:
         return None
     region = region or ""
     if not force and not wander.roll_encounter(region, modifiers, rng=rng):
         return None
     levels = _party_levels(c)
-    specs = wander.pick_encounter(levels, region, target_difficulty=difficulty, rng=rng)
-    if not specs:
-        return None
-    where = location_id if location_id is not None else c.current_location_id
     r = rng or random.Random()
+    picked = wander.pick_typed_encounter(
+        levels,
+        region,
+        rng=r,
+        target_difficulty=difficulty,
+        house_difficulty=c.house_rules.difficulty,
+    )
+    etype = picked.get("type", "combat")
+    base = {"staged": True, "type": etype, "region": region}
+
+    if etype != "combat":
+        # skill / social / hazard / boon — no foes spawned; hand the DM the descriptor.
+        descriptor = {k: v for k, v in picked.items() if k != "type"}
+        return {**base, **descriptor}
+
+    # combat — spawn the foes AND fold in the over-match outlook.
+    where = location_id if location_id is not None else c.current_location_id
     foes: list[dict] = []
+    foe_xps: list[int] = []
     encounter_xp = 0
-    for spec in specs:
+    for spec in picked.get("foes", []):
         ids = _spawn_creature_chars(c, spec["name"], spec["count"], where)
         if not ids:
             continue
-        encounter_xp += int(spec.get("xp_each") or 0) * len(ids)
+        xp_each = int(spec.get("xp_each") or 0)
+        encounter_xp += xp_each * len(ids)
+        foe_xps.extend([xp_each] * len(ids))
         foes.append(
             {
                 "name": spec["name"],
@@ -1731,12 +1756,15 @@ def _stage_wandering_encounter(
     if not foes:
         return None  # everything failed to spawn -> treat as no encounter (no half-staged state)
     return {
-        "staged": True,
-        "region": region,
+        **base,
         "difficulty": difficulty,
         "surprise": r.random() < 0.5,
         "foes": foes,
         "encounter_xp": encounter_xp,
+        # the SAME over-match math the DM would get from encounter_outlook, computed off
+        # the staged foes' XP — so the must-offer-an-out signal rides along automatically
+        # (the Wave-12 fix: no new tool to remember).
+        "outlook": _outlook_for_xps(levels, foe_xps),
     }
 
 
@@ -3744,9 +3772,11 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
     CAMP WATCH (Kingmaker-style): the night the rest actually rolls the clock over (the
     FIRST member's rest that overnight — so a per-member party rolls ONCE, not once each)
     rolls a wandering-encounter check for the camp's region. On a hit the result carries a
-    `wandering_encounter` payload (foes already staged in the campaign, ready to fight) for
-    the DM to narrate as a night ambush and `start_combat`. Pass `watch` (e.g. "careful",
-    "camouflaged", "hidden") to lower the ambush chance — a well-kept watch / concealed
+    `wandering_encounter` payload with a `type` (combat / skill / social / hazard / boon —
+    most are NOT a night ambush): combat stages sized foes + an `outlook` for the DM to
+    `start_combat`; the other types hand the DM a descriptor (an obstacle to skill-check, a
+    visitor to parley, a hazard to save against, or a quiet boon). Pass `watch` (e.g.
+    "careful", "camouflaged", "hidden") to lower the chance — a well-kept watch / concealed
     camp is safer. Disabled by `house_rules.wandering_encounters = False`."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -4328,13 +4358,24 @@ def encounter_outlook(
     c = _require(campaign_id)
     xps = _resolve_monster_xps(c, monster_xps, monster_ids)
     levels = _party_levels(c)
-    avg_party_level = sum(levels) / len(levels)
+    return _outlook_for_xps(levels, xps)
 
-    deadly = encounter.xp_thresholds(levels)["deadly"]
-    adjusted = encounter.adjusted_xp(xps)
+
+def _outlook_for_xps(party_levels: list[int], monster_xps: list[int]) -> dict:
+    """The SRD over-match outlook for `monster_xps` vs `party_levels` — the shared
+    math behind both the `encounter_outlook` tool AND the wandering-encounter staging
+    seam (so a staged combat carries the exact same band/ratio/flag the DM would get
+    from calling the tool by hand). Pure: no campaign I/O.
+
+    Returns ``{band, overmatch_ratio, avg_party_level, must_offer_out, guidance}``.
+    `overmatch_ratio = adjusted_xp / deadly_threshold`; `must_offer_out =
+    avg_party_level <= 5 and overmatch_ratio >= 2.0` (the troll/dragon boundary)."""
+    avg_party_level = sum(party_levels) / len(party_levels)
+    deadly = encounter.xp_thresholds(party_levels)["deadly"]
+    adjusted = encounter.adjusted_xp(monster_xps)
     # deadly is always > 0 (the SRD table has no zero), so this division is safe.
     overmatch_ratio = round(adjusted / deadly, 2)
-    band = encounter.encounter_difficulty(levels, xps)
+    band = encounter.encounter_difficulty(party_levels, monster_xps)
     must_offer_out = (avg_party_level <= 5) and (overmatch_ratio >= 2.0)
 
     if must_offer_out:
@@ -5361,16 +5402,26 @@ def roll_wandering_encounter(campaign_id: str, region: str = "", difficulty: str
     the DM, a QA harness, or the "Stir the world" UI button).
 
     Unlike the automatic checks on time-advancing `travel_to` / `long_rest` (which only
-    fire on a probabilistic per-region roll), this ALWAYS stages an encounter: it picks
-    region-appropriate foe(s) sized to the LIVING party's XP budget for `difficulty`
-    (easy/medium/hard/deadly), spawns them as monster Characters anchored at the party's
-    current location, and returns them under `wandering_encounter`:
-    ``{staged, region, difficulty, surprise, foes:[{name,count,cr,xp_each,ids}],
-    encounter_xp}``. `region` defaults to the party's current location's region. The foes
-    are now IN the campaign, ready to fight — narrate the ambush, honor `surprise`, then
-    `start_combat` with the returned foe ids. (Combat is never auto-started.) Returns
-    ``{"staged": False}`` only if no creature could be sized (an empty/all-down party is
-    floored to level 1, so it still stages)."""
+    fire on a probabilistic per-region roll), this ALWAYS stages an encounter. It picks a
+    TYPED encounter for the region (`wander.pick_typed_encounter`) — most are NOT fights:
+
+      * ``{type:"combat", ...}`` — region foe(s) sized to the LIVING party's XP budget
+        for `difficulty`, spawned as monster Characters anchored at the party's current
+        location, plus `surprise`, `encounter_xp`, and an `outlook`
+        ``{band, overmatch_ratio, must_offer_out, guidance}`` (the `encounter_outlook`
+        math, folded in): narrate the ambush, honor `surprise`, surface a cost-bearing
+        OUT when `must_offer_out`, then `start_combat` with the returned foe ids. (Combat
+        is never auto-started.)
+      * ``{type:"skill", challenge, skill, dc}`` — a region obstacle; run `skill_check`.
+      * ``{type:"social", who, stance, skill, dc}`` — a road-meeting; voice the NPC + a
+        Parley moment, then `social_check`.
+      * ``{type:"hazard", peril, save_or_skill, dc}`` — a danger; run a save or skill.
+      * ``{type:"boon", find}`` — a small positive find; just narrate it.
+
+    Every payload carries `staged`, `type`, and `region`. `region` defaults to the
+    party's current location's region. Returns ``{"staged": False}`` only if a combat
+    pick's foes all failed to spawn (an empty/all-down party is floored to level 1, and a
+    combat pick that can't size degrades to a boon, so it effectively always stages)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
