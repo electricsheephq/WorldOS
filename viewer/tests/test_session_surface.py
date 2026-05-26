@@ -190,6 +190,76 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(_find_action(surface, "attack")["disabled_reason"], "action spent")
         self.assertEqual(_find_action(surface, "reaction")["disabled_reason"], "reaction spent")
 
+    def test_session_surface_projects_action_context_and_write_lane_metadata(self):
+        snapshot = {
+            "title": "Due Consequence",
+            "summary": "The council waits for the party's answer.",
+            "day": 8,
+            "time_of_day": "night",
+            "current_location_id": "council",
+            "locations": {
+                "council": {
+                    "name": "Council Hall",
+                    "description": "Lanterns burn low.",
+                    "notes": "private council leverage",
+                },
+            },
+            "party": ["pc"],
+            "characters": {"pc": {"id": "pc", "name": "Vela", "kind": "player"}},
+            "quests": {
+                "q_council": {
+                    "title": "The Council Vote",
+                    "description": "Choose who receives the charter.",
+                    "status": "active",
+                    "objectives": ["Name a claimant"],
+                    "notes": "private winning answer",
+                },
+            },
+            "consequences": [
+                {
+                    "id": "charter_due",
+                    "trigger_day": 7,
+                    "resolved": False,
+                    "note": "private baron betrayal",
+                },
+                {
+                    "id": "winter_later",
+                    "trigger_day": 12,
+                    "fired": False,
+                    "note": "private winter plan",
+                },
+            ],
+            "dm_notes": "private session agenda",
+        }
+
+        surface = server.build_session_surface(
+            snapshot,
+            campaign_id="camp_context",
+            live=False,
+            is_live_view=False,
+        )
+
+        self.assertEqual(surface["writeLane"]["endpoint"], "/move")
+        self.assertEqual(surface["writeLane"]["authority"], "engine")
+        self.assertFalse(surface["writeLane"]["writesCampaignSnapshot"])
+        self.assertIn("do", surface["writeLane"]["allowedKinds"])
+        self.assertEqual([a["id"] for a in surface["enabledActions"]], [])
+        blocked = {a["id"]: a for a in surface["blockedActions"]}
+        self.assertEqual(blocked["continue"]["disabled_reason"], "no live move sink")
+        self.assertEqual(blocked["attack"]["disabled_reason"], "not in combat")
+        self.assertEqual(surface["actionContext"]["scene"]["location"], "Council Hall")
+        self.assertEqual(surface["actionContext"]["quests"][0]["title"], "The Council Vote")
+        self.assertEqual(surface["actionContext"]["consequences"]["dueCount"], 1)
+        self.assertEqual(surface["actionContext"]["consequences"]["pendingCount"], 1)
+        self.assertEqual(surface["actionContext"]["consequences"]["signals"][0]["id"], "charter_due")
+        action_model_blocked = {a["id"]: a for a in surface["actionModel"]["blockedActions"]}
+        self.assertEqual(action_model_blocked["continue"]["disabled_reason"], "no live move sink")
+        encoded = json.dumps(surface)
+        self.assertNotIn("private", encoded)
+        self.assertNotIn("baron", encoded)
+        self.assertNotIn("winning answer", encoded)
+        self.assert_no_private_keys(surface)
+
     def test_session_event_tail_rejects_unsafe_active_session_id(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         campaign_dir = root / "campaigns" / "camp_safe"

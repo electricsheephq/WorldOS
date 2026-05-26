@@ -867,6 +867,87 @@ def _session_available_actions(action_model: dict) -> list[dict]:
     return out
 
 
+def _session_action_buckets(actions: list[dict]) -> tuple[list[dict], list[dict]]:
+    enabled: list[dict] = []
+    blocked: list[dict] = []
+    for action in actions:
+        item = dict(action)
+        if item.get("available"):
+            item.pop("disabled_reason", None)
+            enabled.append(item)
+        else:
+            item["disabled_reason"] = _text(item.get("disabled_reason"), "not available")
+            blocked.append(item)
+    return enabled, blocked
+
+
+def _session_write_lane_metadata() -> dict:
+    return {
+        "endpoint": "/move",
+        "method": "POST",
+        "authority": "engine",
+        "payload": "player_move_intent",
+        "writesCampaignSnapshot": False,
+        "allowedKinds": sorted(_MOVE_KINDS),
+    }
+
+
+def _session_consequence_context(snapshot: dict) -> dict:
+    current_day = snapshot.get("day") if isinstance(snapshot.get("day"), int) else None
+    consequences = snapshot.get("consequences")
+    signals: list[dict] = []
+    due_count = 0
+    pending_count = 0
+    if isinstance(consequences, list):
+        for idx, consequence in enumerate(consequences):
+            if not isinstance(consequence, dict):
+                continue
+            resolved = bool(consequence.get("resolved") or consequence.get("fired"))
+            trigger_day = consequence.get("trigger_day", consequence.get("day"))
+            trigger = trigger_day if isinstance(trigger_day, int) and not isinstance(trigger_day, bool) else None
+            due = bool(not resolved and current_day is not None and trigger is not None and trigger <= current_day)
+            if due:
+                due_count += 1
+            elif not resolved:
+                pending_count += 1
+            signal = {
+                "id": _text(consequence.get("id"), f"consequence-{idx + 1}"),
+                "status": "resolved" if resolved else ("due" if due else "pending"),
+            }
+            if trigger is not None:
+                signal["triggerDay"] = trigger
+            signals.append(signal)
+            if len(signals) >= 6:
+                break
+    return {
+        "dueCount": due_count,
+        "pendingCount": pending_count,
+        "signals": signals,
+    }
+
+
+def _session_action_context(snapshot: dict, location: dict, summary: str, quests: list[dict]) -> dict:
+    return {
+        "scene": {
+            "summary": summary,
+            "location": _text(location.get("name"), "Unknown location"),
+            "time": _openworlds_day_label(snapshot),
+        },
+        "quests": [
+            {
+                "id": _text(q.get("id")),
+                "title": _text(q.get("title")),
+                "objective": _text(q.get("objective")),
+                "status": _text(q.get("status"), "active"),
+                "location": _text(q.get("location")),
+            }
+            for q in quests[:4]
+            if isinstance(q, dict)
+        ],
+        "consequences": _session_consequence_context(snapshot),
+    }
+
+
 def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
     out: list[dict] = []
     for row in raw_events or []:
@@ -997,11 +1078,14 @@ def build_session_surface(
     action_model = build_action_model(snapshot, live=live, is_live_view=is_live_view)
     combat_view = build_combat_view(snapshot)
     actions = _session_available_actions(action_model)
+    enabled_actions, blocked_actions = _session_action_buckets(actions)
     combat_active = bool(combat_view.get("active"))
     round_no = combat_view.get("round")
+    active_quests = _session_active_quests(snapshot)
     summary = _text(snapshot.get("summary"))
     if not summary:
         summary = _text(location.get("description"), f"The party is gathered near {location['name']}.")
+    action_context = _session_action_context(snapshot, location, summary, active_quests)
 
     return {
         "campaign_id": campaign_id,
@@ -1018,7 +1102,7 @@ def build_session_surface(
         },
         "party": party,
         "conditions": _session_conditions(party),
-        "activeQuests": _session_active_quests(snapshot),
+        "activeQuests": active_quests,
         "quickInventory": _session_quick_inventory(snapshot),
         "encounter": {
             "active": combat_active,
@@ -1037,6 +1121,9 @@ def build_session_surface(
             if isinstance(row, dict)
         ],
         "availableActions": actions,
+        "enabledActions": enabled_actions,
+        "blockedActions": blocked_actions,
+        "actionContext": action_context,
         "recentEvents": _session_recent_events(recent_events),
         "actionModel": action_model,
         "combatView": combat_view,
@@ -1045,6 +1132,7 @@ def build_session_surface(
         "can_act": bool(live and is_live_view),
         "state_authority": "engine",
         "write_lane": "/move",
+        "writeLane": _session_write_lane_metadata(),
     }
 
 
@@ -3786,6 +3874,11 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
             },
         ],
     }
+    actions = _session_available_actions(model)
+    enabled_actions, blocked_actions = _session_action_buckets(actions)
+    model["writeLane"] = _session_write_lane_metadata()
+    model["enabledActions"] = enabled_actions
+    model["blockedActions"] = blocked_actions
     return model
 
 
