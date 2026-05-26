@@ -310,6 +310,103 @@ class CompanionQuestArc(_StrictModel):
         return self
 
 
+# --- Quest & Arc engine, Layer 3: first-class Event / ParleyOption / Outcome ----------------
+# The Kingmaker "stumble-into" decisional: a content-authored choice point whose options carry a
+# DETERMINISTIC ripple (set a flag, shift faction reputation, schedule a Consequence) AND can STAGE
+# the already-merged Layer-2 companion flip by setting a `decision_flag`. A THIN first-class wrapper
+# over machinery that already ships — no new resolver, no new state machine:
+#   * the ripple reuses worldsim._apply_structured_effect byte-for-byte;
+#   * the L2 flip reuses CompanionAgenda.decision_flag (Layer 2) — they meet at Campaign.flags;
+#   * the schedule echo reuses consequences.schedule (Layer 1's rule-of-three pattern).
+# ADDITIVE: a campaign with no events behaves exactly as today; old snapshots round-trip.
+
+# A contract-safe trigger reads ONLY engine-MUTATED values (flags / faction reputation / day) —
+# never near-constant fiction (the questgen.py:7-19 discipline). Mirrors the CompanionAgenda
+# trigger vocabulary so there is one mental model for "when does an arc beat become available".
+EventTrigger = Literal["manual", "flag_set", "day_reached", "reputation_at"]
+
+
+class Outcome(_StrictModel):
+    """The DETERMINISTIC ripple a chosen ParleyOption applies (Quest & Arc engine, Layer 3).
+
+    The payload reuses worldsim._apply_structured_effect's keys BYTE-FOR-BYTE (so a picked
+    option ripples through the exact same engine path a backlog item / strategic project does),
+    plus three thin extension keys the resolver handles inline:
+
+      * the shared keys (applied via _apply_structured_effect): ``flag`` -> campaign.flags[flag]
+        = True; ``faction_id`` + ``reputation_delta`` -> clamped reputation shift;
+        ``controller_id`` + ``location_id`` -> a ``control:loc=fac`` flag; ``npc_name`` -> an
+        ``arrival:`` stub flag.
+      * ``decision_flag`` (NEW — the L2<->L3 seam): sets ``campaign.flags[decision_flag] = True``,
+        identical to ``record_decision(sets_flag=...)``. This ARMS any ``attitude_below``
+        CompanionAgenda whose ``decision_flag`` matches — the owner's "take the bribe -> the
+        knight-companion turns". Layer 3 sets the flag; the already-merged Layer 2 reads it.
+      * ``schedule_in_days`` + ``schedule_text`` (NEW): schedules a follow-on Consequence via
+        consequences.schedule (the rule-of-three echo) so the choice lingers/returns later.
+      * ``narrate`` (NEW): a DM-facing one-liner — the human-readable summary of the ripple
+        (passed as the `fallback` to _apply_structured_effect).
+
+    EVERY value is CONTENT-defined; the engine never invents a flag name or a reputation delta.
+    An empty Outcome is a pure no-op (the engine still records the pick; nothing else moves).
+    Setting-agnostic: no engine-coded taxonomy, same discipline as the merged L1/L2."""
+
+    # --- keys shared with worldsim._apply_structured_effect (applied verbatim through it) ---
+    flag: str = ""  # -> campaign.flags[flag] = True
+    faction_id: str = ""  # paired with reputation_delta -> clamped -100..100 shift
+    reputation_delta: int = 0
+    controller_id: str = ""  # paired with location_id -> a `control:loc=fac` flag
+    location_id: str = ""
+    npc_name: str = ""  # -> an `arrival:<name>` stub flag
+    # --- the three thin extension keys the resolver handles inline ---
+    decision_flag: str = ""  # NEW: campaign.flags[decision_flag]=True — arms a matching L2 agenda
+    schedule_in_days: int = 0  # NEW: with schedule_text -> consequences.schedule (rule-of-three echo)
+    schedule_text: str = ""
+    narrate: str = ""  # DM-facing one-liner (the _apply_structured_effect `fallback`)
+
+
+class ParleyOption(_StrictModel):
+    """One tagged choice in an Event's parley menu (Quest & Arc engine, Layer 3).
+
+    Mirrors the slot shape `generate_parley_options` supplies (an alignment/skill `tag`, an
+    optional `skill`+`dc` the DM may gate the pick behind) but ADDS a deterministic `outcome`:
+    where today the DM hand-routes a freeform pick to skill_check / social_check / record_decision,
+    a ParleyOption already KNOWS its ripple. The engine never authors the prose — the `label` is a
+    short tagged choice the DM voices; resolution is the `outcome`."""
+
+    label: str  # the short tagged choice the player picks ("Take the bribe — CN")
+    tag: str = ""  # an alignment/skill hint (mirrors generate_parley_options' tagging guidance)
+    skill: str = ""  # optional gated check the DM may run before applying the outcome (routes to skill_check)
+    dc: int = 0
+    outcome: "Outcome" = Field(default_factory=lambda: Outcome())
+
+
+class Event(_StrictModel):
+    """A first-class stumble-into decisional (Quest & Arc engine, Layer 3).
+
+    A content-authored choice point: when its contract-safe ``trigger`` holds (flags / faction
+    reputation / day — never fiction), ``present_events`` surfaces it as a soft nudge; the DM
+    voices the ``prompt`` and the ``options`` (relayed to the player via the #141 parley surface),
+    and ``resolve_event`` applies the chosen option's deterministic Outcome. IDEMPOTENT: a fired
+    Event sets ``resolved=True`` and never re-presents / re-applies (like a fired Consequence)."""
+
+    id: str = Field(default_factory=lambda: _new_id("event"))
+    trigger: EventTrigger = "manual"  # how the Event becomes available (default: DM/content surfaces it)
+    # The predicate operands the trigger reads (engine-mutated values only):
+    #   flag_set     -> trigger_value is the flag name; available when campaign.flags[name] is True.
+    #   day_reached  -> trigger_threshold is the day; available when campaign.day >= threshold.
+    #   reputation_at-> trigger_faction_id + trigger_threshold; available when that faction's
+    #                   reputation >= threshold (or <= threshold when threshold is negative — the
+    #                   sign picks the direction, mirroring the design's `reputation_delta` sign use).
+    #   manual       -> always available until resolved (the DM/content drops it; the default).
+    trigger_value: str = ""  # flag name for `flag_set`
+    trigger_faction_id: str = ""  # faction id for `reputation_at`
+    trigger_threshold: int = 0  # day for `day_reached`; reputation level for `reputation_at`
+    prompt: str = ""  # the situation the DM voices
+    options: list["ParleyOption"] = Field(default_factory=list)  # the tagged choices; freeform is ALWAYS also allowed (#141)
+    anchor_npc_id: str = ""  # optional canon-NPC binding (the owner's priority — bind to a roster NPC)
+    resolved: bool = False  # idempotency: a fired Event never re-presents or re-applies
+
+
 class CompanionDossier(_StrictModel):
     """A companion's structured identity — the OPERATIONAL state the engine's living-world
     systems act on (camp scheduling, banter selection, approval causes, companion quest
@@ -1102,6 +1199,14 @@ class Campaign(_StrictModel):
     # tracked Quest objects; explicit server APIs advance them and optionally project status
     # into linked Quests. Empty == old snapshots load unchanged.
     companion_quest_arcs: dict[str, CompanionQuestArc] = Field(default_factory=dict)
+    # First-class stumble-into Events (Quest & Arc engine, Layer 3). Content-authored decisionals
+    # whose options carry a deterministic Outcome (a world ripple + optionally a Layer-2
+    # decision_flag that arms a companion flip). Surfaced read-only by present_events when their
+    # contract-safe trigger holds; applied by resolve_event. Empty == today's behavior byte-for-
+    # byte; old snapshots lacking the key round-trip to this empty default. Mirrors
+    # companion_quest_arcs; seeded from a world/ending `events` block (content.py). Engine
+    # sole-writer (resolve_event under campaign_lock + save_campaign).
+    events: dict[str, "Event"] = Field(default_factory=dict)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions

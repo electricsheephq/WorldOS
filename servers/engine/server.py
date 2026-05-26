@@ -26,6 +26,7 @@ import consequences as consequences_mod
 import content as content_mod
 import dice as dice_mod
 import encounter
+import events as events_mod
 import generator
 import imagegen
 import inventory
@@ -4893,6 +4894,7 @@ def generate_parley_options(
     difficulty: str = "medium",
     skills: Optional[list[str]] = None,
     include_alignment: bool = True,
+    event_id: str = "",
 ) -> dict:
     """Call this BEFORE narrating a social encounter or any choice point: it lays out the
     PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
@@ -4915,7 +4917,16 @@ def generate_parley_options(
     a chosen skill option -> ``skill_check(actor, skill, dc)``; a social option vs a tracked
     NPC -> ``social_check`` (or ``target_name`` for a scene extra); a combat option ->
     ``start_combat``; a free-form/alignment beat you adjudicate, then ``record_decision``
-    (and optional ``adjust_reputation``). Read-only."""
+    (and optional ``adjust_reputation``). Read-only.
+
+    Quest & Arc engine, Layer 3 — `event_id` (OPTIONAL): when a first-class stumble-into Event
+    is live (from ``present_events``), pass its id to attach the Event's AUTHORED options to the
+    surface as ``event: {id, prompt, options:[{label, tag, skill, dc}]}``. The Event's options
+    are the menu slots; the free-form path is STILL always present (never a closed set). A picked
+    Event option routes to ``resolve_event(campaign_id, event_id, option_label)`` (the engine
+    applies its deterministic ripple) — not to skill_check/record_decision. An unknown
+    `event_id` or one that is already resolved simply omits the block (degrades to today's
+    freeform parley)."""
     c = _require(campaign_id)
     aid = actor_id or _lead_pc_id(c)
     if not aid:
@@ -4955,6 +4966,22 @@ def generate_parley_options(
     }
     if include_alignment:
         out["alignment"] = actor.alignment
+    # Quest & Arc engine, Layer 3: when a live Event is named, attach its authored options as
+    # the menu slots (the free-form path above stays). A resolved/unknown Event omits the block,
+    # degrading to today's freeform parley. resolve_event applies a picked option's ripple.
+    if event_id:
+        ev = c.events.get(event_id)
+        if ev is not None and not ev.resolved:
+            out["event"] = {
+                "id": ev.id,
+                "prompt": ev.prompt,
+                "anchor_npc_id": ev.anchor_npc_id,
+                "options": [
+                    {"label": opt.label, "tag": opt.tag, "skill": opt.skill, "dc": opt.dc}
+                    for opt in ev.options
+                ],
+                "resolve_with": "resolve_event",
+            }
     return out
 
 
@@ -6108,6 +6135,86 @@ def record_decision(
         if flag:
             out["flag"] = flag
         return out
+
+
+@mcp.tool()
+def present_events(campaign_id: str) -> dict:
+    """Surface the first-class stumble-into EVENTS that are available right now (Quest & Arc
+    engine, Layer 3) — the Kingmaker-style decisionals whose moment has arrived. Call it each
+    beat like `check_consequences` / `check_companion_arc`: it returns the unresolved Events
+    whose CONTRACT-SAFE trigger holds (a set flag, a faction's reputation reaching a level, or a
+    reached day — never fiction), so you can drop a soft nudge ("a man in Flaming-Fist colors
+    falls into step beside you...") and lay out its tagged options.
+
+    Each returned Event carries its `prompt` (the situation you voice), its `options` (tagged
+    choices the player picks — relay them via the parley surface; a free-form path is ALWAYS
+    also allowed), and any `anchor_npc_id` (bind the scene to that canon NPC). READ-ONLY: it
+    never fires or mutates anything; resolved Events are skipped (idempotent). When the player
+    picks an option, call `resolve_event(campaign_id, event_id, option_label)` to apply its
+    deterministic ripple — that is the engine resolution; you narrate the result."""
+    c = _require(campaign_id)
+    available = events_mod.present(c)
+    return {
+        "events": [
+            {
+                "id": ev.id,
+                "prompt": ev.prompt,
+                "trigger": ev.trigger,
+                "anchor_npc_id": ev.anchor_npc_id,
+                "options": [
+                    {"label": opt.label, "tag": opt.tag, "skill": opt.skill, "dc": opt.dc}
+                    for opt in ev.options
+                ],
+            }
+            for ev in available
+        ],
+        "free_form": True,  # the player may ALWAYS act outside the menu (#141 — never a closed set)
+    }
+
+
+@mcp.tool()
+def resolve_event(campaign_id: str, event_id: str, option_label: str) -> dict:
+    """Resolve a stumble-into EVENT by applying the chosen option's DETERMINISTIC outcome
+    (Quest & Arc engine, Layer 3) — the engine ripples; you narrate. Call this AFTER the player
+    picks one of the options `present_events` laid out (a free-form pick the player invents is
+    NOT an Event option — adjudicate that yourself, then record_decision / adjust_reputation as
+    usual).
+
+    Looks up the Event by `event_id` and the chosen `option_label` (case-insensitive), then
+    applies that option's `Outcome` through the SAME engine path the living world uses: a set
+    `flag`, a clamped faction `reputation_delta`, a `control:`/`arrival:` marker, an optional
+    follow-on Consequence scheduled `schedule_in_days` out (the thread lingers), and — the
+    decision-gated flip — an optional `decision_flag` set True in `Campaign.flags`, which ARMS a
+    matching `attitude_below` companion agenda (the owner's "take the bribe -> the knight turns";
+    same store as `record_decision(sets_flag=...)`). Then marks the Event resolved.
+
+    IDEMPOTENT: re-resolving an already-resolved Event is a no-op (applies nothing) — calling it
+    twice is safe. Returns the narrated line + what moved (`flags_set`, `rep_shift`, `scheduled`,
+    `decision_flag`) for you to weave. If you set a `decision_flag`, follow up with
+    `check_companion_arc` to see whether the spiked betrayal fires."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        event = c.events.get(event_id)
+        if event is None:
+            raise ValueError(f"no event {event_id!r} in campaign")
+        if event.resolved:
+            # Idempotency: a fired Event applies NOTHING on a re-resolve. No save needed (no
+            # mutation), so a double-call can never double-ripple.
+            return {
+                "event_id": event.id,
+                "resolved": True,
+                "noop": True,
+                "note": "event already resolved — no effect applied",
+            }
+        option = events_mod.find_option(event, option_label)
+        if option is None:
+            labels = [opt.label for opt in event.options]
+            raise ValueError(
+                f"event {event_id!r} has no option labelled {option_label!r}; options are {labels}"
+            )
+        result = events_mod.resolve(c, event, option)
+        save_campaign(c)
+        return result
 
 
 @mcp.tool()

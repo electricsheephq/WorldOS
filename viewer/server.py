@@ -2458,6 +2458,74 @@ def _suggested_parley_dc(difficulty: str, house_difficulty: str) -> int:
     return base + shift
 
 
+def _parley_event_trigger_holds(event: dict, snapshot: dict) -> bool:
+    """Snapshot-side mirror of engine `events.trigger_holds` (Quest & Arc engine, Layer 3) —
+    reads ONLY the engine-mutated flags / faction reputation / day already in the snapshot
+    (contract-safe; no fiction). Kept in lock-step with servers/engine/events.py so the viewer
+    surfaces exactly the Events the engine's `present_events` would. An unknown trigger or a
+    malformed operand degrades to "not available" (never raises)."""
+    trig = event.get("trigger") or "manual"
+    if trig == "manual":
+        return True
+    flags = snapshot.get("flags") if isinstance(snapshot.get("flags"), dict) else {}
+    if trig == "flag_set":
+        name = str(event.get("trigger_value") or "")
+        return bool(name) and bool(flags.get(name))
+    if trig == "day_reached":
+        try:
+            day = int(snapshot.get("day", 1))
+            return day >= int(event.get("trigger_threshold", 0))
+        except (TypeError, ValueError):
+            return False
+    if trig == "reputation_at":
+        factions = snapshot.get("factions") if isinstance(snapshot.get("factions"), dict) else {}
+        fac = factions.get(str(event.get("trigger_faction_id") or ""))
+        if not isinstance(fac, dict):
+            return False
+        try:
+            rep = int(fac.get("reputation", 0))
+            target = int(event.get("trigger_threshold", 0))
+        except (TypeError, ValueError):
+            return False
+        return rep <= target if target < 0 else rep >= target
+    return False
+
+
+def _live_parley_event(snapshot: dict) -> dict | None:
+    """The first UNRESOLVED, trigger-met Event in the snapshot (by id, stable), projected to the
+    surface shape ``{id, prompt, anchor_npc_id, options:[{label, tag, skill, dc}], resolve_with}``
+    — or None when no Event is live. Mirrors engine `events.present` (deterministic id order,
+    skips resolved). Read-only; the viewer never resolves — a picked option relays via /move and
+    the DM agent calls `resolve_event`."""
+    raw_events = snapshot.get("events")
+    if not isinstance(raw_events, dict):
+        return None
+    for _eid, ev in sorted(raw_events.items(), key=lambda kv: kv[0]):
+        if not isinstance(ev, dict) or ev.get("resolved"):
+            continue
+        if not _parley_event_trigger_holds(ev, snapshot):
+            continue
+        raw_opts = ev.get("options") if isinstance(ev.get("options"), list) else []
+        options = [
+            {
+                "label": _text(o.get("label")),
+                "tag": _text(o.get("tag")),
+                "skill": _text(o.get("skill")),
+                "dc": int(o.get("dc", 0)) if isinstance(o.get("dc"), (int, float)) else 0,
+            }
+            for o in raw_opts
+            if isinstance(o, dict)
+        ]
+        return {
+            "id": _text(ev.get("id")),
+            "prompt": _text(ev.get("prompt")),
+            "anchor_npc_id": _text(ev.get("anchor_npc_id")),
+            "options": options,
+            "resolve_with": "resolve_event",
+        }
+    return None
+
+
 def build_parley_surface(
     snapshot: dict,
     *,
@@ -2469,7 +2537,14 @@ def build_parley_surface(
     """Project a parley menu for the lead PC: actor + per-skill {skill, modifier,
     suggested_dc} + alignment + free_form. Prefers the engine's own
     generate_parley_options (loaded via models.Campaign) for sheet-correct modifiers;
-    degrades to a snapshot-only computation mirroring it. Closes the UI side of #141."""
+    degrades to a snapshot-only computation mirroring it. Closes the UI side of #141.
+
+    Quest & Arc engine, Layer 3: when a first-class stumble-into Event is live (unresolved +
+    its contract-safe trigger holds in the snapshot), an optional ``event`` block is added —
+    ``{id, prompt, anchor_npc_id, options:[{label, tag, skill, dc}], resolve_with}`` — so the
+    authored Event options surface as the menu slots. The free-form path STAYS (never a closed
+    set, #141 guard); a picked option still relays via /move and the DM agent calls
+    `resolve_event`. No live Event -> no block (today's freeform parley, byte-for-byte)."""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     actor_id, actor = _lead_pc(snapshot)
     base = {
@@ -2493,6 +2568,12 @@ def build_parley_surface(
         "state_authority": "engine",
         "write_lane": "/move",
     }
+    # Quest & Arc engine, Layer 3: surface a live stumble-into Event's authored options as the
+    # menu slots when one is available. Independent of the actor's sheet (a stumble-into is about
+    # the situation), so it attaches even on the empty/no-actor path. The free-form path stays.
+    live_event = _live_parley_event(snapshot)
+    if live_event is not None:
+        base["event"] = live_event
     if not actor_id or not actor:
         base["source"] = "empty"
         return base

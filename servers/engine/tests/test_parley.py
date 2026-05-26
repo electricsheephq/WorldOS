@@ -341,12 +341,15 @@ def test_both_tools_registered():
 
 
 def test_no_model_change_old_snapshot_round_trips():
-    # Phases 1-2 add no fields; a minimal legacy snapshot still validates unchanged
-    # (the additive-round-trip contract, trivially satisfied since the model is untouched).
+    # The Event+Parley SCAFFOLD (Phases 1-2) added no model fields; a minimal legacy snapshot
+    # still validates unchanged (the additive-round-trip contract). NOTE: the Quest & Arc engine
+    # Layer 3 later added `Campaign.events` (a dict, mirroring companion_quest_arcs) — still
+    # additive, so a legacy snapshot deserializes with events == {} (see
+    # test_event_parley_layer3.test_old_campaign_snapshot_without_events_deserializes_unchanged).
     payload = {"title": "Legacy", "house_rules": {"difficulty": "standard"}}
     c = Campaign.model_validate(payload)
     assert c.title == "Legacy"
-    assert c.events == [] if hasattr(c, "events") else True  # no events field added in P1-2
+    assert c.events == {}  # Layer 3's events dict defaults empty for a pre-L3 snapshot
 
 
 # =========================================================================
