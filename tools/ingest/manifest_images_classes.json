@@ -1,0 +1,39 @@
+{
+ "_comment": "Baseline CLASS + RACE art from bg3.wiki — the DEFAULT fallback portrait for GENERATED player-characters with no canon portrait (a generated Tiefling Rogue falls back to race:tiefling / class:rogue art instead of a blank placeholder). Canon NPCs are covered by manifest_images_characters.json. Official wiki images are © Larian → land ONLY in gitignored content/worlds/_private/<world>/images/ (owner local play, never committed). Scopes use the colon form (class:fighter / race:tiefling) to mirror the existing portrait:<slug> convention, which the viewer's _safe_scope renders as class_fighter / race_tiefling dirs; the /image?scope= endpoint resolves class-fighter / race-tiefling via its normalized-key fallback. Re-run: python3 tools/ingest/wiki_images.py tools/ingest/manifest_images_classes.json",
+ "world_id": "baldurs-gate",
+ "rate_delay_seconds": 0.4,
+ "sources": [
+  {
+   "wiki": "bg3.wiki",
+   "script_path": "/w",
+   "license": "© Larian Studios / bg3.wiki — official game image, NOT redistributable; cached to gitignored _private/ for personal local play only (Fan Content Policy).",
+   "attribution": "Image from bg3.wiki (© Larian Studios). Unofficial, non-commercial fan use; local-only, never committed.",
+   "images": [
+    {"title": "Barbarian", "scope": "class:barbarian", "kind": "portrait"},
+    {"title": "Bard", "scope": "class:bard", "kind": "portrait"},
+    {"title": "Cleric", "scope": "class:cleric", "kind": "portrait"},
+    {"title": "Druid", "scope": "class:druid", "kind": "portrait"},
+    {"title": "Fighter", "scope": "class:fighter", "kind": "portrait"},
+    {"title": "Monk", "scope": "class:monk", "kind": "portrait"},
+    {"title": "Paladin", "scope": "class:paladin", "kind": "portrait"},
+    {"title": "Ranger", "scope": "class:ranger", "kind": "portrait"},
+    {"title": "Rogue", "scope": "class:rogue", "kind": "portrait"},
+    {"title": "Sorcerer", "scope": "class:sorcerer", "kind": "portrait"},
+    {"title": "Warlock", "scope": "class:warlock", "kind": "portrait"},
+    {"title": "Wizard", "scope": "class:wizard", "kind": "portrait"},
+
+    {"title": "Human", "scope": "race:human", "kind": "portrait"},
+    {"title": "Elf", "scope": "race:elf", "kind": "portrait"},
+    {"title": "Half-Elf", "scope": "race:half-elf", "kind": "portrait"},
+    {"title": "Drow", "scope": "race:drow", "kind": "portrait"},
+    {"title": "Githyanki", "scope": "race:githyanki", "kind": "portrait"},
+    {"title": "Tiefling", "scope": "race:tiefling", "kind": "portrait"},
+    {"title": "Dwarf", "scope": "race:dwarf", "kind": "portrait"},
+    {"title": "Halfling", "scope": "race:halfling", "kind": "portrait"},
+    {"title": "Gnome", "scope": "race:gnome", "kind": "portrait"},
+    {"title": "Half-Orc", "scope": "race:half-orc", "kind": "portrait"},
+    {"title": "Dragonborn", "scope": "race:dragonborn", "kind": "portrait"}
+   ]
+  }
+ ]
+}
