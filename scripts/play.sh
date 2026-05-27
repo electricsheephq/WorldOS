@@ -132,11 +132,11 @@ trap 'kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2
     curl -s --max-time 2 "http://127.0.0.1:$PORT/state" >/dev/null 2>&1 && break
     sleep 1
   done
-  (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/dashboard") \
-    || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/dashboard") || true ) &
+  (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/openworlds/") \
+    || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/openworlds/") || true ) &
 
-echo "ClawDnD — playing in the dashboard → http://127.0.0.1:$PORT/dashboard"
-echo "  Opening the world… the dashboard fills in as the DM narrates the first scene."
+echo "ClawDnD — playing in OpenWorlds → http://127.0.0.1:$PORT/openworlds/"
+echo "  Opening the world… OpenWorlds fills in as the DM narrates the first scene."
 echo "  Act via the palette (Say / Do / Continue, dice & combat, click-to-travel). Ctrl-C to stop."
 echo "  Save dir: $STATE_DIR"
 
