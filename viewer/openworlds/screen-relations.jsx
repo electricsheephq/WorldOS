@@ -1,7 +1,8 @@
 /* Screen: Relations — factions (left) + NPCs (right).
    Wired to the live /relations-surface read model (factions with reputation/tags, met
    NPCs + companions with attitude + dossier banter/relationships, companion arcs). Polls
-   every 5s while visible; falls back to the demo constants until the first fetch.
+   every 5s while visible. Before the first fetch (or if it fails) the screen shows honest
+   empty-states — it never falls back to demo data.
    Layout/design unchanged from the prototype. */
 
 function ScreenRelations({ onNavigate, state, setState }) {
@@ -13,21 +14,18 @@ function ScreenRelations({ onNavigate, state, setState }) {
       )
     : "";
   const [surface, setSurface] = React.useState(null);
-  // Gate on whether a live surface exists (mirror the NPC pattern below), NOT on
-  // `.length` — a factionless live campaign must show an empty state, never the demo
-  // Pathfinder factions. Only fall back to FACTIONS when there's no surface at all.
-  const factions = surface ? (Array.isArray(surface.factions) ? surface.factions : []) : FACTIONS;
-  const npcs = (Array.isArray(surface?.npcs) && surface.npcs.length) ? surface.npcs
-    : (surface ? [] : NPCS);
+  // Live surface only — never fall back to bundled demo data. Until the first fetch (or
+  // if it fails) both lists are empty and the panels show honest empty-states.
+  const factions = Array.isArray(surface?.factions) ? surface.factions : [];
+  const npcs = Array.isArray(surface?.npcs) ? surface.npcs : [];
   const campBeats = surface?.campBeats || null;
   // Companion personal-quest arcs (from /relations-surface `companionArcs`): each is
   // { id, companion_id, companion, title, status, note, stages:[{title,status,note}] }.
   const companionArcs = Array.isArray(surface?.companionArcs) ? surface.companionArcs : [];
   const [selectedFactionId, setSelectedFactionId] = React.useState("");
   const [selectedNPCId, setSelectedNPCId] = React.useState("");
-  // Resolve to the live selection or first live faction; do NOT fall back to FACTIONS[0]
-  // (a demo Pathfinder faction) when the live list is empty — that would leak demo data
-  // into the detail pane. The render already handles a null selection gracefully.
+  // Resolve to the live selection or first live faction; when the live list is empty the
+  // selection stays null and the render shows an honest empty-state.
   const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || null;
   const selectedNPC = npcs.find((n) => n.id === selectedNPCId) || npcs[0] || null;
   const setSelectedFaction = (f) => setSelectedFactionId(f.id);
@@ -39,7 +37,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
       if (!response.ok) throw new Error(`relations surface ${response.status}`);
       const payload = await response.json();
       if (!isCancelled()) setSurface(payload);
-    } catch (error) { /* keep last good / demo fallback */ }
+    } catch (error) { /* keep the last good surface; empty-states show until the first success */ }
   }, [surfaceQuery]);
 
   React.useEffect(() => {
@@ -503,233 +501,4 @@ function CampBeatLedger({ npcId, campBeats }) {
   );
 }
 
-const FACTIONS = [
-  {
-    id: "wardens",
-    name: "Road Wardens of Restov",
-    short: "knightly order",
-    kind: "Sword-company",
-    color: "#22305E",
-    sigil: "✚",
-    motto: "By the road, by the stone",
-    seat: "Restov · Brevoy",
-    rep: 64, threshold: { hostile: 25, neutral: 50, friendly: 75 },
-    standing: "Cordial",
-    lastContact: "9 days past",
-    body: "The Wardens keep the post-roads passable, by patrol, by stone, and by occasional necessary brutality. Cassian is sworn. The order remembers oaths longer than men remember to keep them.",
-    events: [
-      { when: "9 days past", text: "Cassian accepted Warden Olwen's writ. The party agreed to investigate the Lanternrest in lieu of payment." },
-      { when: "21 days past", text: "Reported the deserter Falgrim seen riding south of Tines. Order added our names to its ledger." },
-      { when: "spring", text: "Vell, drunk, brawled with a Warden corporal. Vell, sober, paid the fine. The fine was not in coin." },
-    ],
-    offers: ["safe-conduct writs", "stable beds in Warden halls", "first claim on bounties", "intelligence on bandit movements"],
-  },
-  {
-    id: "stag",
-    name: "The Stag Lord's Company",
-    short: "bandit lord",
-    kind: "Outlaw warband",
-    color: "#6E1D1D",
-    sigil: "♛",
-    motto: "Salt and silence",
-    seat: "Fort of bones · undisclosed",
-    rep: 8, threshold: { hostile: 30, neutral: 60 },
-    standing: "Hostile",
-    lastContact: "12 days past",
-    body: "Bandits who think themselves a kingdom. The Stag Lord pays in salt, not gold; this matters to those who count. They are not many but they are everywhere, and they are oddly disciplined for men who answer to a name no one has heard spoken aloud.",
-    events: [
-      { when: "12 days past", text: "Bandit Falgrim raided Oleg's east wall. Oleg lost two crates. Falgrim lost an ear." },
-      { when: "29 days past", text: "Three of their company found in the Thorn Ford, bound and floating. Authorship unattributed." },
-      { when: "midwinter", text: "First confirmed reference to the Stag Lord by name, by a deserter who did not last the week." },
-    ],
-    offers: ["nothing you want"],
-  },
-  {
-    id: "olegs",
-    name: "Oleg's Trading Post",
-    short: "lone trade-house",
-    kind: "Independent",
-    color: "#7a6644",
-    sigil: "❦",
-    motto: "Open until dusk",
-    seat: "Cliff-back · North Outskirts",
-    rep: 78, threshold: { hostile: 20, neutral: 40, friendly: 70 },
-    standing: "Welcome",
-    lastContact: "today",
-    body: "A trade-house under a cliff that does not pretend to be anything else. Oleg keeps the books and the silences; Svetlana keeps everything else. They are friends, and they will tell you so by feeding you and refusing your coin.",
-    events: [
-      { when: "today", text: "Sold us 6 rations and a brass compass at last week's price. Svetlana would not let us pay for the salt." },
-      { when: "9 days past", text: "Asked us to deal with the Stag Lord's company. We agreed. Reputation +20." },
-    ],
-    offers: ["fair prices", "back-room bed", "first refusal on rare components", "Svetlana's stew, free of charge"],
-  },
-  {
-    id: "elk",
-    name: "Order of the Elk",
-    short: "sylvan priesthood",
-    kind: "Holy order",
-    color: "#2f5a3a",
-    sigil: "𓃥",
-    motto: "What the antlers remember",
-    seat: "Temple of the Elk · Stagwood",
-    rep: 44, threshold: { hostile: 20, neutral: 40, friendly: 70 },
-    standing: "Civil",
-    lastContact: "26 days past",
-    body: "An older religion than the maps allow for. The antlers on the temple roof are new wool, old bone. The priests speak softly because the wood listens. They will let you camp, but only on the western edge.",
-    events: [
-      { when: "26 days past", text: "Vell left two silver in the offering bowl. The priestess returned one." },
-      { when: "last spring", text: "Mira wrote down a hymn she heard sung by a child. The priestess asked her to burn the parchment. Mira did." },
-    ],
-    offers: ["sanctuary by night", "healing for the desperate", "the Elk's regard"],
-  },
-  {
-    id: "pitax",
-    name: "Court of Pitax",
-    short: "decadent court",
-    kind: "City-state",
-    color: "#7a3d6e",
-    sigil: "♚",
-    motto: "Beauty as decree",
-    seat: "Pitax · 14 days east",
-    rep: 35, threshold: { hostile: 25, neutral: 50, friendly: 75 },
-    standing: "Cool",
-    lastContact: "last summer",
-    body: "The court of Pitax considers itself an aesthetic movement and the rest of the Marches a slow embarrassment. They keep poets on stipend and assassins on retainer. The two roles overlap.",
-    events: [
-      { when: "last summer", text: "Mira was offered a chronicler's post. She declined. The offer was repeated three times." },
-    ],
-    offers: ["letters of introduction", "patronage (with strings)", "trouble"],
-  },
-  {
-    id: "league",
-    name: "Technic League",
-    short: "scholarly cult",
-    kind: "Foreign order",
-    color: "#3a4a5a",
-    sigil: "⚙",
-    motto: "All that is hidden",
-    seat: "Reported only · Stagwood",
-    rep: 22, threshold: { hostile: 30, neutral: 60 },
-    standing: "Wary",
-    lastContact: "rumour only",
-    body: "From outside the Marches. They collect things. They are oddly polite about it.",
-    events: [
-      { when: "9 days past", text: "Smoke seen rising from the Stagwood, wrong colour. Linzi made a sketch. Linzi is afraid of the sketch." },
-    ],
-    offers: ["unknown"],
-  },
-];
-
-const NPCS = [
-  {
-    id: "svetlana",
-    name: "Svetlana Leveton",
-    short: "S·portrait",
-    role: "Trader's wife · ally",
-    location: "Oleg's Trading Post",
-    faction: "Oleg's Trading Post",
-    disposition: "ally",
-    body: "Married to Oleg. Runs the post and the silences of the post in equal measure. She has chosen to consider you, for the moment, an improvement on circumstance.",
-    dues: [
-      { text: "Investigate the Lanternrest before reaching Odrun.", fulfilled: false, note: "She has not asked again. She is waiting." },
-      { text: "Deal with the Stag Lord's raiders.", fulfilled: false },
-      { text: "Return the brass key, if not used.", fulfilled: false },
-    ],
-    lastSpoken: "May the Inheritor walk with you. Oleg will pretend he is not relieved — that is his way.",
-    lastSpokenAt: "Oleg's, evening of the 12th",
-  },
-  {
-    id: "oleg",
-    name: "Oleg Leveton",
-    short: "O·portrait",
-    role: "Trader · uneasy ally",
-    location: "Oleg's Trading Post",
-    faction: "Oleg's Trading Post",
-    disposition: "friend",
-    body: "Trader by trade and by temperament. Would have been a miller if the river had favoured him. The eastern wall has more spear-marks than the others.",
-    dues: [
-      { text: "Pay him back for the brass compass.", fulfilled: false, note: "He has not asked. He will." },
-      { text: "Buy something from him at full price.", fulfilled: true, note: "Cassian, for the spellbook." },
-    ],
-    lastSpoken: "If you mean to look, look. I will not be pressed for prices.",
-    lastSpokenAt: "Oleg's, the same evening",
-  },
-  {
-    id: "olwen",
-    name: "Toll-keeper Olwen",
-    short: "O·toll",
-    role: "Warden of the south gate",
-    location: "Gate of Tines",
-    faction: "Road Wardens",
-    disposition: "neutral",
-    body: "Wears the Warden colours; will not say a word he has not weighed first. Stamped your writ once and did not stamp it the second time. Did not say why.",
-    dues: [
-      { text: "Ask him a second time, in better light.", fulfilled: false },
-      { text: "Pay the gate-toll if it is asked.", fulfilled: false },
-    ],
-    lastSpoken: "The seal is correct. That is not the problem.",
-    lastSpokenAt: "Gate of Tines, 5 Gozran",
-  },
-  {
-    id: "linzi",
-    name: "Linzi",
-    short: "L·portrait",
-    role: "Chronicler · party",
-    location: "with the party, always",
-    faction: null,
-    disposition: "friend",
-    body: "Halfling, chronicler, refuses the word 'bard.' Writes the chronicle by candle when there is candle and by memory when there is not. Is in some real sense the reason the engine works.",
-    dues: [
-      { text: "Read what she has written, when she offers.", fulfilled: false },
-    ],
-    lastSpoken: "I am not a character. I am a chronicler.",
-    lastSpokenAt: "every camp",
-  },
-  {
-    id: "crow",
-    name: "The Crow",
-    short: "crow",
-    role: "Watcher · unmoving",
-    location: "Lanternrest gable",
-    faction: null,
-    disposition: "cool",
-    body: "Sits the gable of the Lanternrest. Has not moved in three days. The wind moves around it.",
-    dues: [
-      { text: "Find out whose crow.", fulfilled: false },
-      { text: "Do not feed the crow.", fulfilled: true, note: "Mira tried. Mira regretted." },
-    ],
-    lastSpoken: null,
-  },
-  {
-    id: "stag-lord",
-    name: "The Stag Lord",
-    short: "lord·portrait",
-    role: "Antagonist · uncrowned",
-    location: "Fort of bones (rumoured)",
-    faction: "The Stag Lord's Company",
-    disposition: "enemy",
-    body: "Nobody who has come back has said. The bandits speak his name like a prayer they do not believe in.",
-    dues: [
-      { text: "Find the fort.", fulfilled: false },
-      { text: "End him, or be ended.", fulfilled: false },
-    ],
-    lastSpoken: null,
-  },
-  {
-    id: "priestess",
-    name: "Priestess Eira",
-    short: "E·priestess",
-    role: "Of the Elk",
-    location: "Temple of the Elk",
-    faction: "Order of the Elk",
-    disposition: "neutral",
-    body: "Speaks soft. Listens harder than she speaks. Returned Vell's second silver. Did not return his first.",
-    dues: [
-      { text: "Visit the temple before the new moon.", fulfilled: false },
-    ],
-    lastSpoken: "What you owe, you owe. What you do not, you do not.",
-    lastSpokenAt: "Temple of the Elk, last spring",
-  },
-];
-
-Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, CompanionArcCard, RepBar, DispositionDot, FACTIONS, NPCS });
+Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, CompanionArcCard, RepBar, DispositionDot });

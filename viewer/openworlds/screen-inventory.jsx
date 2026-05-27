@@ -384,9 +384,11 @@ function ItemDetail({ item, hero, toast }) {
           <div className="eyebrow">Marginalia</div>
           <div className="hand" style={{ fontSize: 14, marginTop: 6, color: "var(--ink-700)" }}>
             "{item.lore}"
-            <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
-              — {item.loreBy || "Linzi, scribe"}
-            </div>
+            {item.loreBy && (
+              <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
+                — {item.loreBy}
+              </div>
+            )}
           </div>
         </>
       )}
