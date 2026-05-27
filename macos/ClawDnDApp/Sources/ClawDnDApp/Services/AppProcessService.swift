@@ -74,12 +74,25 @@ final class AppProcessService: ObservableObject {
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
         }
-        let args = ["python3", "viewer/server.py", campaignID ?? "", String(port)]
+        // IMPORTANT: launch the viewer with an ABSOLUTE script path and an
+        // internal-disk working directory — NOT a relative path with cwd=repoURL.
+        // When the repo lives on an external/removable volume (e.g. /Volumes/...),
+        // Python's interpreter init calls getcwd() to absolutize a *relative* script
+        // arg; that getcwd enumerates the volume mount and can hang indefinitely in
+        // the kernel (open$NOCANCEL) under TCC removable-volume gating or an
+        // Endpoint-Security file-scanner, because the app is launched via
+        // LaunchServices with an ad-hoc signature. An absolute script path + a cwd
+        // on the internal disk avoids that volume enumeration entirely; server.py
+        // resolves all of its assets from __file__, so cwd is irrelevant to it.
+        env["CLAWDND_REPO_ROOT"] = repoURL.path
+        let serverScript = repoURL.appendingPathComponent("viewer/server.py").path
+        let safeCWD = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let args = ["python3", serverScript, campaignID ?? "", String(port)]
         let managed = try launchManagedProcess(
             name: "viewer",
             executable: "/usr/bin/env",
             arguments: args,
-            workingDirectory: repoURL,
+            workingDirectory: safeCWD,
             environment: env,
             stream: .supervisor
         )
