@@ -4,6 +4,9 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
+  const [summoning, setSummoning] = React.useState(false);
+  const [summonError, setSummonError] = React.useState("");
+  const toast = window.useToast ? window.useToast() : (() => {});
   const active = campaigns.find((c) => c.id === selected) || campaigns[0] || null;
 
   React.useEffect(() => {
@@ -14,11 +17,56 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     setSelected(fallback);
   }, [campaigns, selected, state?.activeCampaign]);
 
+  // Begin a live, playable session. Inside the native ClawDnD app this asks the supervisor
+  // to start a provider session (scripts/play.sh: a move-sink-wired viewer + a claude -p
+  // Dungeon Master). The app repoints its WebView at that live viewer on a fresh port, so
+  // the page reloads and app.jsx auto-lands us in the table once a provider is running.
+  // Outside the app (a plain 8799 browser preview) there is no DM to attach — fall back to
+  // the read-only table so the surface stays reachable.
+  const startPlay = async (world) => {
+    if (summoning) return;
+    if (!window.OpenWorldsNative?.hasBridge?.()) {
+      onNavigate("table");
+      return;
+    }
+    setSummonError("");
+    setSummoning(true);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    try {
+      const reply = await window.OpenWorldsNative.request("startProviderSession", {
+        provider: "claude",
+        world: world || "baldurs-gate",
+        runId: `play-${stamp}`,
+        companions: "",
+      });
+      // Drive the reload to the live, sink-wired viewer from JS using the URL the bridge
+      // returns — don't rely on the native WebView re-binding its own state across the async
+      // hop. The live viewer boots fresh and app.jsx auto-routes into the table once the
+      // provider is running. (location.assign re-runs the native bridge user-script there.)
+      const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
+      if (liveUrl) {
+        window.location.assign(liveUrl);
+        return;
+      }
+      setSummoning(false);
+      setSummonError("The session started, but its live viewer address was missing.");
+    } catch (error) {
+      setSummoning(false);
+      setSummonError(error?.message || String(error));
+      toast({
+        kind: "danger",
+        title: "Could not summon the Dungeon Master",
+        body: error?.message || String(error),
+      });
+    }
+  };
+
   const onResume = () => {
     const nextCampaign = campaigns.some((c) => c.id === selected) ? selected : campaigns[0]?.id;
     if (!nextCampaign) return;
+    const c = campaigns.find((x) => x.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
-    onNavigate("table");
+    startPlay(c?.world);
   };
 
   return (
@@ -226,12 +274,17 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                     borderTop: "1px solid rgba(140,100,60,0.3)",
                     display: "flex", gap: 8,
                   }}>
-                    <BrassButton onClick={onResume} size="lg" style={{ flex: 1 }}>
-                      {c.canResume ? "Resume Chronicle" : "View Chronicle"}
+                    <BrassButton onClick={onResume} size="lg" style={{ flex: 1 }} disabled={summoning}>
+                      {summoning ? "Summoning the Dungeon Master…" : (c.canResume ? "Resume Chronicle" : "View Chronicle")}
                     </BrassButton>
                     <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")}>Roster</BrassButton>
                     <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")}>Journal</BrassButton>
                   </div>
+                  {summonError && (
+                    <div className="hand" style={{ color: "var(--crimson)", fontSize: 13, marginTop: 10 }}>
+                      {summonError}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -242,7 +295,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
       {showNew && <NewCampaignModal onClose={() => setShowNew(false)} onCreate={(c) => {
         setState((s) => ({ ...s, campaigns: [c, ...(Array.isArray(s.campaigns) ? s.campaigns : [])], activeCampaign: c.id }));
         setShowNew(false);
-        onNavigate("table");
+        startPlay(c.world);
       }} />}
     </div>
   );

@@ -4,6 +4,25 @@
 # Keep this dependency-free: these helpers run before uv/Claude/Python environments
 # are provisioned, so failures need to be clear in a plain macOS Terminal window.
 
+# Make user-installed tools findable regardless of how play was started.
+# A GUI launch (Finder/Dock → LaunchServices, or the native app's provider bridge) inherits
+# launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so claude (~/.local/bin) and
+# uv/python3 (Homebrew) aren't on PATH and clawdnd_missing_commands would fail closed. Prepend
+# the standard macOS tool locations so the dashboard launches identically from a Terminal, a
+# double-click, or the app. Idempotent — skips any dir already on PATH; skips dirs that don't exist.
+clawdnd_augment_path() {
+  local d
+  for d in "$HOME/.local/bin" /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin; do
+    [ -d "$d" ] || continue
+    case ":$PATH:" in
+      *":$d:"*) ;;
+      *) PATH="$d:$PATH" ;;
+    esac
+  done
+  export PATH
+}
+clawdnd_augment_path
+
 clawdnd_missing_commands() {
   local missing=() cmd
   for cmd in "$@"; do

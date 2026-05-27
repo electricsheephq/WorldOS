@@ -110,7 +110,12 @@ function App() {
     }
 
     loadCampaignCatalog();
-    return () => { cancelled = true; };
+    // Re-poll: a live play session mints its campaign a few seconds after the page loads (the
+    // DM's first turn), so a one-shot load would miss it and the launcher/table would stick to
+    // whatever stale save existed at boot. Polling keeps `current` fresh so the auto-follow
+    // effect below can bind the table to the live campaign the moment it appears.
+    const timer = window.setInterval(loadCampaignCatalog, 4000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
   const refreshNative = React.useCallback(async () => {
@@ -147,6 +152,35 @@ function App() {
       window.clearInterval(timer);
     };
   }, [refreshNative]);
+
+  // Auto-land in the session when a live DM (provider) is attached. The launcher's "Resume /
+  // Begin" calls the native startProviderSession bridge, which repoints the WebView at the
+  // live, move-sink-wired viewer on a fresh port — the page reloads here at the launcher, and
+  // this carries the player straight into the play surface. Fires once per load (a ref guard),
+  // so manual navigation back to the launcher mid-session is respected.
+  const didAutoRoute = React.useRef(false);
+  React.useEffect(() => {
+    if (didAutoRoute.current) return;
+    if (nativeState?.appStatus?.runningProvider && screen === "launcher") {
+      didAutoRoute.current = true;
+      setScreen("table");
+    }
+  }, [nativeState, screen]);
+
+  // During a live play session (a DM provider is attached), keep the active campaign bound to
+  // the viewer's CURRENT (live) campaign. The DM mints this run's campaign a few seconds after
+  // the page loads, so the initial catalog pick can be a stale save; once the re-poll surfaces
+  // the live campaign as `current`, follow it so the party/surface and can_act track the real
+  // session (the chronicle already follows the live run via /chat). Outside a play session the
+  // launcher's manual selection is left untouched.
+  React.useEffect(() => {
+    if (!nativeState?.appStatus?.runningProvider) return;
+    const list = Array.isArray(state?.campaigns) ? state.campaigns : [];
+    const liveCampaign = list.find((c) => c.current) || list.find((c) => c.live);
+    if (liveCampaign && liveCampaign.id !== state?.activeCampaign) {
+      setState((s) => ({ ...s, activeCampaign: liveCampaign.id }));
+    }
+  }, [state?.campaigns, state?.activeCampaign, nativeState]);
 
   // Keyboard shortcuts
   React.useEffect(() => {

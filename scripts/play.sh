@@ -124,8 +124,15 @@ viewer_supervisor() {
   done
 }
 viewer_supervisor &  SUP=$!
-# On any exit: kill the supervisor (so it can't respawn) and the live viewer it tracks.
-trap 'kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null' EXIT INT TERM
+# On any exit: kill the supervisor (so it can't respawn) and the live viewer it tracks. CRITICAL:
+# INT/TERM must CLEAN UP **and EXIT** — a bare `trap … TERM` runs the handler and then RESUMES the
+# main loop, so closing the app / `kill` couldn't stop a wedged run (it took kill -9, and the human-
+# paced loop below has no idle ceiling, so it would spin `sleep 2` forever). Separate the EXIT trap
+# (cleanup) from the signal traps (cleanup + exit) so a normal `kill` actually stops it. (Mirrors
+# play_party.sh.)
+_play_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
+trap _play_cleanup EXIT
+trap '_play_cleanup; exit 130' INT TERM
 
 # Open the browser once the dashboard is actually serving (after the campaign exists).
 ( for _ in $(seq 1 60); do
