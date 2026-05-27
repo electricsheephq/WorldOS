@@ -12,6 +12,9 @@ function ScreenCreate({ onNavigate, state, setState }) {
     abilities: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 },
     points: 27,
   });
+  const [summoning, setSummoning] = React.useState(false);
+  const [summonError, setSummonError] = React.useState("");
+  const toast = window.useToast ? window.useToast() : (() => {});
 
   const steps = [
     { id: "race", label: "Lineage" },
@@ -26,7 +29,62 @@ function ScreenCreate({ onNavigate, state, setState }) {
   const next = () => setStep(Math.min(steps.length - 1, step + 1));
   const prev = () => setStep(Math.max(0, step - 1));
 
-  const _badge = { label: "Preview", tone: "muted", detail: "Character creation is display-only — completing the wizard does not persist a hero to the engine." };
+  // Bind the authored hero into a real, playable game. Mirrors screen-launcher's startPlay:
+  // serialize the wizard's choices into a compact hero spec, hand it to the native supervisor
+  // through the SAME startProviderSession bridge (one new optional `hero` field), and reload
+  // onto the live, move-sink-wired viewer the bridge returns. play.sh pre-seeds this exact PC
+  // via the engine (the sole writer) before the DM's first turn, so the hero the player
+  // authored is the hero they play. Outside the native app (a plain browser preview) there is
+  // no supervisor to summon — fall back to the read-only table so the surface stays reachable.
+  const bindHero = async () => {
+    if (summoning) return;
+    if (!window.OpenWorldsNative?.hasBridge?.()) {
+      onNavigate("table");
+      return;
+    }
+    const spec = {
+      name: (hero.name || "").trim() || "Unnamed Hero",
+      race: hero.race,
+      class: hero.class,
+      level: 1,
+      abilities: hero.abilities,
+      background: hero.background,
+      alignment: hero.alignment,
+      skills: BACKGROUNDS[hero.background]?.skills || [],
+    };
+    setSummonError("");
+    setSummoning(true);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    try {
+      const reply = await window.OpenWorldsNative.request("startProviderSession", {
+        provider: "claude",
+        world: "baldurs-gate",
+        runId: `play-${stamp}`,
+        companions: "",
+        hero: JSON.stringify(spec),
+      });
+      // Drive the reload to the live viewer from JS using the URL the bridge returns (same as
+      // screen-launcher) — the live viewer boots fresh and app.jsx auto-routes into the table
+      // once the provider is running.
+      const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
+      if (liveUrl) {
+        window.location.assign(liveUrl);
+        return;
+      }
+      setSummoning(false);
+      setSummonError("The hero was bound, but the live viewer address was missing.");
+    } catch (error) {
+      setSummoning(false);
+      setSummonError(error?.message || String(error));
+      toast({
+        kind: "danger",
+        title: "Could not bind the hero",
+        body: error?.message || String(error),
+      });
+    }
+  };
+
+  const _badge = { label: "Live", tone: "emerald", detail: "Binding the hero pre-seeds this exact character into a new game through the engine, then opens it live." };
 
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
@@ -34,7 +92,7 @@ function ScreenCreate({ onNavigate, state, setState }) {
       {/* Prototype banner */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
         <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — hero creation is not yet wired to the engine. No character will be saved.</span>
+        <span className="hand muted" style={{ fontSize: 12 }}>Bind seeds this hero into a fresh game through the engine and opens it live.</span>
       </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "240px 1fr 280px", gap: 14, minHeight: 0 }}>
@@ -95,14 +153,21 @@ function ScreenCreate({ onNavigate, state, setState }) {
           borderTop: "1px solid rgba(140,100,60,0.3)",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
-          <BrassButton tone="ghost" onClick={prev} disabled={step === 0}>← Back</BrassButton>
+          <BrassButton tone="ghost" onClick={prev} disabled={step === 0 || summoning}>← Back</BrassButton>
           <span className="muted body-sm">Step {step + 1} of {steps.length}</span>
           {step < steps.length - 1 ? (
             <BrassButton onClick={next}>Continue →</BrassButton>
           ) : (
-            <BrassButton disabled tone="crimson" title="Not yet wired — hero creation is display-only">Bind the hero (preview only)</BrassButton>
+            <BrassButton tone="crimson" onClick={bindHero} disabled={summoning}>
+              {summoning ? "Binding the hero…" : "Bind the hero"}
+            </BrassButton>
           )}
         </div>
+        {summonError && (
+          <div className="hand" style={{ color: "var(--crimson)", fontSize: 13, marginTop: 10, textAlign: "right" }}>
+            {summonError}
+          </div>
+        )}
       </Panel>
 
       {/* RIGHT — live hero summary */}

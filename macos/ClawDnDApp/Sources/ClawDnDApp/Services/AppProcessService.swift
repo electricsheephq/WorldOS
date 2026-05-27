@@ -112,6 +112,7 @@ final class AppProcessService: ObservableObject {
         runId: String,
         preferredPort: Int,
         companions: String,
+        hero: String = "",
         stateDir: String,
         preferences: ProviderPreferences
     ) throws -> URL {
@@ -134,6 +135,7 @@ final class AppProcessService: ObservableObject {
                 runId: runId,
                 port: port,
                 companions: companions,
+                hero: hero,
                 repoPath: repoURL,
                 preferences: preferences
             )

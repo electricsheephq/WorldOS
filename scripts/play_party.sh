@@ -69,7 +69,10 @@ CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 # --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
 # Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
 # replaces this process, so a solo launch is indistinguishable from running play.sh
-# directly — no ensemble code path, no extra cost, no behavior drift.
+# directly — no ensemble code path, no extra cost, no behavior drift. NOTE: exec PRESERVES
+# the environment, so an authored-hero spec in CLAWDND_PLAY_HERO (set by the Creation
+# wizard's Bind, which always launches solo with companions:"") carries straight through to
+# play.sh, where it pre-seeds the player's PC. No handling is needed here.
 if [ -z "${COMPANION_SPEC//[[:space:]]/}" ]; then
   # Preserve which arguments the user actually supplied. That keeps the common double-click
   # path as an implicit/default-port launch, so play.sh can pick a clean fallback port instead

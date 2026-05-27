@@ -87,6 +87,61 @@ PY
 DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
 chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
 
+# --- OPTIONAL: pre-seed a PLAYER-authored hero before the DM's first turn. ---------------
+# When the Creation wizard's "Bind" runs, it passes the authored hero through the native
+# bridge as CLAWDND_PLAY_HERO (a compact JSON spec). We then mint that EXACT PC via the
+# engine's own tools — the same precedent play_party.sh uses to pre-seed companions — so the
+# engine stays the sole writer and the hero the player authored is the hero they play. With
+# CLAWDND_PLAY_HERO UNSET this whole block is skipped and the DM invents the PC live, exactly
+# as before (this path is byte-unchanged). Spec fields: {name, race, class, level, abilities
+# {str..cha}, background, alignment, skills[]}; race/class ids map 1:1 to engine SRD keys, and
+# AbilityScores accepts the str/dex/… shorthand directly. Prints {campaign_id, pc:{id,name,
+# race,class}} which we parse to re-ground the DM opener onto the existing PC.
+HERO_CAMP=""; HERO_PC_ID=""; HERO_PC_NAME=""; HERO_PC_RACE=""; HERO_PC_CLASS=""
+if [ -n "${CLAWDND_PLAY_HERO:-}" ]; then
+  HERO_SEED_JSON="$(CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "$CLAWDND_PLAY_HERO" <<'PY'
+import json, sys
+world, spec_raw = sys.argv[1], sys.argv[2]
+import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
+
+spec = json.loads(spec_raw)
+# A new campaign in this world with an active session — the authored PC is then minted
+# into it with a full SRD sheet (saves, HP, proficiency, class AC, slots, gear, party).
+camp = server.start_world(world)["campaign_id"]
+server.start_session(camp, title="Authored hero")
+try:
+    level = int(spec.get("level", 1) or 1)
+except (TypeError, ValueError):
+    level = 1
+pc = server.create_character(
+    camp,
+    spec.get("name") or "Unnamed Hero",
+    kind="player",
+    race=spec.get("race", "") or "",
+    class_name=spec.get("class", "") or "",
+    level=level,
+    abilities=spec.get("abilities") or None,  # {str..cha}; AbilityScores accepts the shorthand
+    background=spec.get("background", "") or "",
+    skills=spec.get("skills") or None,
+    apply_srd_defaults=True,
+)
+print(json.dumps({
+    "campaign_id": camp,
+    "pc": {"id": pc["id"], "name": pc["name"],
+           "race": spec.get("race", "") or "", "class": spec.get("class", "") or ""},
+}))
+PY
+)"
+  if [ -z "$HERO_SEED_JSON" ]; then echo "[play] hero pre-seed FAILED — see above; falling back to DM-invents-PC" >&2; else
+    HERO_CAMP="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.campaign_id // ""')"
+    HERO_PC_ID="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.id // ""')"
+    HERO_PC_NAME="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.name // ""')"
+    HERO_PC_RACE="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.race // ""')"
+    HERO_PC_CLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.class // ""')"
+    echo "[play] seeded authored hero: $HERO_PC_NAME ($HERO_PC_RACE $HERO_PC_CLASS) in campaign $HERO_CAMP"
+  fi
+fi
+
 # One DM turn (claude -p, full plugin, resumed across the session). Echoes the reply text.
 dm_turn() {
   local first="$1" msg="$2" out resume=()
@@ -149,7 +204,24 @@ echo "  Save dir: $STATE_DIR"
 
 # The DM opens the world live and hands you a character + an open moment. This relies on
 # the SHIPPED dungeon-master skill (its "Generating a world live" mode) — not a QA brief.
-DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+# TWO openers: (1) the DEFAULT, where the DM invents the PC live (unchanged); (2) when the
+# player AUTHORED a hero in the Creation wizard, the campaign + PC ALREADY EXIST (pre-seeded
+# above), so the DM must NOT start_world and must NOT create a character — it re-grounds via
+# get_state and opens a scene around the EXISTING authored PC.
+if [ -n "$HERO_CAMP" ]; then
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+
+Begin a SOLO session in a living world for a single human player who will act through the dashboard. The player AUTHORED their own character in the Creation wizard, so the world AND the player's character ALREADY EXIST — they were pre-seeded for you:
+- This session's campaign ALREADY EXISTS: use campaign_id=$HERO_CAMP for EVERY engine call. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN the pre-seeded PC.
+- The player's character ALREADY EXISTS: \"$HERO_PC_NAME\" (a $HERO_PC_RACE $HERO_PC_CLASS), id=$HERO_PC_ID, already in the party with a full sheet. DO NOT create a character and DO NOT reroll their stats — this is the hero the player built.
+- call get_state(\"$HERO_CAMP\") FIRST to read the world bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster) AND the existing party so you know who $HERO_PC_NAME is.
+- start_session only if get_state shows no active session.
+- Open a human-scale, personal scene grounded in the world's canon, built around the EXISTING player character $HERO_PC_NAME, with real quoted dialogue, and hand the player an open moment + a clear, real choice.
+- A companion should ENTER as part of that opening scene — a roster legend (recruit_companion / load_canon_character) or an original — someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together), NOT a name that silently appears in the party. Recruit them into the party as that meeting lands.
+
+Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
+else
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a SOLO session in a living world for a single human player who will act through the dashboard:
 - start_world(\"$WORLD\") and read the returned bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster). If it returns existing_campaigns, start fresh.
@@ -159,6 +231,7 @@ Begin a SOLO session in a living world for a single human player who will act th
 - A companion should ENTER as part of that opening scene — a roster legend (recruit_companion / load_canon_character) or an original — someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together), NOT a name that silently appears in the party. Recruit them into the party as that meeting lands.
 
 Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
+fi
 chatlog dm "$DMSG"; DM_TURNS=1
 
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn

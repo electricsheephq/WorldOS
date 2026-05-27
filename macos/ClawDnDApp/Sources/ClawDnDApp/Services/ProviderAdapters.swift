@@ -9,6 +9,7 @@ protocol ProviderAdapter {
         runId: String,
         port: Int,
         companions: String,
+        hero: String,
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest
@@ -50,6 +51,7 @@ struct ClaudeProvider: ProviderAdapter {
         runId: String,
         port: Int,
         companions: String,
+        hero: String,
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
@@ -62,11 +64,20 @@ struct ClaudeProvider: ProviderAdapter {
             args.append(companions)
         }
 
+        // An authored-hero spec (from the Creation wizard) rides as an ENV var, not a positional
+        // arg — adding a 5th positional would shift the optional companion-spec slot. play.sh
+        // reads CLAWDND_PLAY_HERO and pre-seeds that exact PC before the DM's first turn.
+        var environment = budgetEnvironment(preferences)
+        let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHero.isEmpty {
+            environment["CLAWDND_PLAY_HERO"] = trimmedHero
+        }
+
         return ProviderLaunchRequest(
             name: "Claude game",
             executable: "/usr/bin/env",
             arguments: ["bash"] + args,
-            environment: budgetEnvironment(preferences),
+            environment: environment,
             workingDirectory: repoPath,
             message: "Claude session starting on port \(port)."
         )
@@ -120,9 +131,13 @@ struct CodexProvider: ProviderAdapter {
         runId: String,
         port: Int,
         companions: String,
+        hero: String,
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
+        // hero (authored-PC spec) is only consumed by the Claude play path today; accepted here
+        // to satisfy the protocol and ignored.
+        _ = hero
         guard Shell.which("codex") != nil else {
             throw ProviderError.missingDependency("Codex CLI is missing. Install codex before starting a Codex provider session.")
         }
@@ -205,9 +220,13 @@ struct OpenClawProvider: ProviderAdapter {
         runId: String,
         port: Int,
         companions: String,
+        hero: String,
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
+        // hero (authored-PC spec) is only consumed by the Claude play path today; accepted here
+        // to satisfy the protocol and ignored.
+        _ = hero
         let command = preferences.openClawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else {
             throw ProviderError.configuration("OpenClaw provider is not launch-configured. Set an OpenClaw provider command in Settings.")

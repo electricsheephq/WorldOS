@@ -199,6 +199,10 @@ struct RootView: View {
         let world = stringPayload(payload, "world") ?? defaultWorld
         let runId = stringPayload(payload, "runId").flatMap { $0.isEmpty ? nil : $0 } ?? Self.newRunID()
         let companions = stringPayload(payload, "companions") ?? ""
+        // Optional authored-hero spec (JSON) from the Creation wizard's Bind. When present, the
+        // play script pre-seeds this exact PC via the engine before the DM's first turn; when
+        // absent (the launcher's Begin/Resume path), the DM invents the PC as before.
+        let hero = stringPayload(payload, "hero") ?? ""
         let url = try processService.startProviderSession(
             kind: provider,
             repoPath: repoPath,
@@ -206,6 +210,7 @@ struct RootView: View {
             runId: runId,
             preferredPort: preferredPort,
             companions: companions,
+            hero: hero,
             stateDir: stateDir,
             preferences: providerPreferences
         )
