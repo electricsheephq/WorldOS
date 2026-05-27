@@ -10,16 +10,16 @@ function ScreenTable({ onNavigate, state, setState }) {
   const [surface, setSurface] = React.useState(null);
   const [advisory, setAdvisory] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
-  const demoLog = Array.isArray(state?.tableLog) ? state.tableLog : [];
+  const demoLog = [];
   const [log, setLog] = React.useState([]);
   const [input, setInput] = React.useState("");
   const logRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const toast = window.useToast ? window.useToast() : (() => {});
-  const fallbackParty = Array.isArray(state?.party) ? state.party : [];
+  const fallbackParty = [];
   const party = Array.isArray(surface?.party) && surface.party.length ? surface.party : fallbackParty;
-  const quests = Array.isArray(surface?.activeQuests) ? surface.activeQuests : (Array.isArray(state?.quests) ? state.quests : []);
-  const stash = Array.isArray(surface?.quickInventory) ? surface.quickInventory : (Array.isArray(state?.stash) ? state.stash : []);
+  const quests = Array.isArray(surface?.activeQuests) ? surface.activeQuests : [];
+  const stash = Array.isArray(surface?.quickInventory) ? surface.quickInventory : [];
   const conditions = Array.isArray(surface?.conditions) ? surface.conditions : [];
   const recentEvents = Array.isArray(surface?.recentEvents) ? surface.recentEvents : [];
   const actions = Array.isArray(surface?.availableActions) ? surface.availableActions : [];
@@ -191,7 +191,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 active={activeHero === p.id}
                 onClick={() => setActiveHero(p.id)}
               />
-            )) : <div className="body-sm muted">No party members in the current read model.</div>}
+            )) : <div className="body-sm muted">No party</div>}
           </div>
         </Panel>
 
@@ -244,7 +244,7 @@ function ScreenTable({ onNavigate, state, setState }) {
           <div ref={logRef} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
-            )) : <div className="body-sm muted">No recent table events have been written yet.</div>}
+            )) : <div className="body-sm muted">No moves yet</div>}
           </div>
 
           {/* Action bar */}
@@ -320,7 +320,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 <div className="hand" style={{ fontSize: 13, color: "var(--ink-600)", marginTop: 2 }}>{q.objective}</div>
               </button>
             ))}
-            {!visibleQuests.length && <div className="body-sm muted">No active quests in the current read model.</div>}
+            {!visibleQuests.length && <div className="body-sm muted">No active quests</div>}
           </div>
         </Panel>
 
@@ -330,7 +330,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             {stash.slice(0, 8).map((it) => (
               <IconPlate key={it.id} size={48} label={it.name || it.glyph || "Item"} glyph={it.icon || it.glyph || "inventory.potion"} framed />
             ))}
-            {!stash.length && <div className="body-sm muted" style={{ gridColumn: "1 / -1" }}>No quick inventory items.</div>}
+            {!stash.length && <div className="body-sm muted" style={{ gridColumn: "1 / -1" }}>Inventory empty</div>}
           </div>
           <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between" }}>
             <Stat label="Items" value={stash.length} />

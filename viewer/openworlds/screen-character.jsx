@@ -1,7 +1,7 @@
 /* Screen: Character Sheet — dense, codex/sourcebook style.
    Wired to the live /character-surface read model (full party sheets projected from the
    engine snapshot: classes, skills, spells, class_resources, conditions, AC, death saves).
-   Polls every 5s while visible; falls back to the demo party until the first fetch.
+   Polls every 5s while visible; renders an empty state until the first live fetch (never the demo party).
    Layout/design unchanged from the prototype. */
 
 function ScreenCharacter({ onNavigate, state, setState }) {
@@ -13,9 +13,10 @@ function ScreenCharacter({ onNavigate, state, setState }) {
       )
     : "";
   const [surface, setSurface] = React.useState(null);
+  // LIVE party from the /character-surface read-model only — never the Pathfinder demo party.
   const party = (Array.isArray(surface?.party) && surface.party.length)
     ? surface.party
-    : (Array.isArray(state?.party) ? state.party : []);
+    : [];
   const [active, setActive] = React.useState("");
   const [tab, setTab] = React.useState("abilities");
   const [restOpen, setRestOpen] = React.useState(false);
@@ -264,18 +265,23 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         </div>
       </div>
 
-      {restOpen && <RestPrepareModal hero={hero} onClose={() => setRestOpen(false)} toast={toast} setState={setState} />}
+      {restOpen && <RestPrepareModal hero={hero} party={party} onClose={() => setRestOpen(false)} toast={toast} setState={setState} />}
     </div>
   );
 }
 
-function RestPrepareModal({ hero, onClose, toast, setState }) {
+function RestPrepareModal({ hero, party, onClose, toast, setState }) {
   const [step, setStep] = React.useState("rest");
   const [restType, setRestType] = React.useState("long");
   const [prepared, setPrepared] = React.useState({});
+  // Watch order is drawn from the LIVE party (first names), never the hardcoded demo trio.
+  const watchOrder = (Array.isArray(party) ? party : []).map((p) => (p.name || "").split(" ")[0]).filter(Boolean);
 
   const availableSpells = hero.spells || [];
-  const slots = { 0: 4, 1: 3, 2: 1 };
+  // Data-driven from the live hero. The /character-surface read-model does not project
+  // spell-slot counts (it carries spell names only), so this stays empty rather than
+  // inventing the old 4/3/1 — every slot row is gated on max > 0, so empty = no fabricated pips.
+  const slots = (hero.spellSlots && typeof hero.spellSlots === "object") ? hero.spellSlots : {};
 
   const toggleSpell = (lv, name) => {
     const cur = prepared[lv] || [];
@@ -351,18 +357,22 @@ function RestPrepareModal({ hero, onClose, toast, setState }) {
               <Divider />
 
               <SectionTitle>Watch order</SectionTitle>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["Mira", "Cassian", "Vell"].map((p, i) => (
-                  <div key={p} style={{
-                    flex: 1, padding: "8px 10px", textAlign: "center",
-                    background: "rgba(176,141,87,0.08)",
-                    boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
-                  }}>
-                    <div className="eyebrow" style={{ fontSize: 9 }}>Watch {i + 1}</div>
-                    <div style={{ fontFamily: "var(--f-display)", fontSize: 13, color: "var(--ink-900)", marginTop: 2 }}>{p}</div>
-                  </div>
-                ))}
-              </div>
+              {watchOrder.length > 0 ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  {watchOrder.map((p, i) => (
+                    <div key={`${p}-${i}`} style={{
+                      flex: 1, padding: "8px 10px", textAlign: "center",
+                      background: "rgba(176,141,87,0.08)",
+                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                    }}>
+                      <div className="eyebrow" style={{ fontSize: 9 }}>Watch {i + 1}</div>
+                      <div style={{ fontFamily: "var(--f-display)", fontSize: 13, color: "var(--ink-900)", marginTop: 2 }}>{p}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="muted body-sm">No party to set a watch.</div>
+              )}
 
               <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
                 <BrassButton tone="ghost" onClick={onClose}>Not yet</BrassButton>

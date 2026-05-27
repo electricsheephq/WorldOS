@@ -1,7 +1,10 @@
 /* Screen: Forge — item & spell crafting */
 
 function ScreenForge({ onNavigate, state, setState }) {
-  const party = Array.isArray(state?.party) ? state.party : [];
+  // Display-only prototype: not yet wired to a live crafting read-model. There is no live
+  // party binding here, so `state.party` is the (non-canonical Pathfinder demo) source —
+  // never use it. Keep the party empty and render a clean empty-state below.
+  const party = [];
   const [category, setCategory] = React.useState("smith");
   const [selected, setSelected] = React.useState(RECIPES_LIST[0]);
   const [crafter, setCrafter] = React.useState("vell");
@@ -153,20 +156,26 @@ function ScreenForge({ onNavigate, state, setState }) {
       {/* RIGHT: Crafter + Forge button + history */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <SectionTitle>Hands at the bench</SectionTitle>
-        <div style={{ display: "flex", gap: 6 }}>
-          {party.map((p) => (
-            <button key={p.id} onClick={() => setCrafter(p.id)} style={{
-              flex: 1,
-              padding: 4,
-              background: crafter === p.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
-              boxShadow: crafter === p.id ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)" : "inset 0 0 0 1px rgba(140,100,60,0.25)",
-              cursor: "pointer",
-            }}>
-              <Placeholder label={p.short || "portrait"} w="100%" h={56} framed />
-              <div className="hand" style={{ fontSize: 11, marginTop: 4, color: "var(--ink-700)" }}>{p.name.split(" ")[0]}</div>
-            </button>
-          ))}
-        </div>
+        {party.length > 0 ? (
+          <div style={{ display: "flex", gap: 6 }}>
+            {party.map((p) => (
+              <button key={p.id} onClick={() => setCrafter(p.id)} style={{
+                flex: 1,
+                padding: 4,
+                background: crafter === p.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
+                boxShadow: crafter === p.id ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)" : "inset 0 0 0 1px rgba(140,100,60,0.25)",
+                cursor: "pointer",
+              }}>
+                <Placeholder label={p.short || "portrait"} w="100%" h={56} framed />
+                <div className="hand" style={{ fontSize: 11, marginTop: 4, color: "var(--ink-700)" }}>{p.name.split(" ")[0]}</div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="muted body-sm" style={{ marginTop: 4 }}>
+            Forge — prototype. Not yet wired to a live crafting read-model.
+          </div>
+        )}
 
         {selected && !selected.locked && hero && (
           <>

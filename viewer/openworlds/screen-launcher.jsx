@@ -52,6 +52,22 @@ function ScreenLauncher({ onNavigate, state, setState }) {
           <div style={{ marginTop: 56 }}>
             <SectionTitle ordinal="I.">Chronicles</SectionTitle>
             <div style={{ display: "grid", gap: 12 }}>
+              {campaigns.length === 0 && (
+                <div style={{
+                  padding: "28px 22px",
+                  textAlign: "center",
+                  background: "rgba(176,141,87,0.06)",
+                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                }}>
+                  <div style={{ fontSize: 26, color: "var(--crimson)", lineHeight: 1, marginBottom: 8 }}>✦</div>
+                  <div style={{ fontFamily: "var(--f-display)", fontSize: 16, letterSpacing: "0.06em", color: "var(--ink-900)" }}>
+                    No campaigns yet
+                  </div>
+                  <div className="hand muted" style={{ fontSize: 14, marginTop: 4 }}>
+                    Start your first adventure.
+                  </div>
+                </div>
+              )}
               {campaigns.map((c) => (
                 <CampaignRow key={c.id} c={c} selected={selected === c.id} onSelect={() => setSelected(c.id)} />
               ))}
@@ -324,7 +340,7 @@ function PartyPortrait({ portrait, small }) {
 
 function NewCampaignModal({ onClose, onCreate }) {
   const [name, setName] = React.useState("");
-  const [system, setSystem] = React.useState("Pathfinder 1e");
+  const [system, setSystem] = React.useState("D&D 5e");
   const [tone, setTone] = React.useState("Heroic");
 
   const create = () => {
@@ -337,7 +353,7 @@ function NewCampaignModal({ onClose, onCreate }) {
       sessions: 0,
       region: "Unwritten",
       day: "Day 1",
-      party: [{ name: "Cassian", short: "C·portrait" }],
+      party: [],
       recap: "The first page is bare. What will you write upon it?",
     });
   };
@@ -366,7 +382,7 @@ function NewCampaignModal({ onClose, onCreate }) {
           </FormField>
 
           <FormField label="System">
-            <SegRadio value={system} onChange={setSystem} options={["Pathfinder 1e", "D&D 5e", "Free Form"]} />
+            <SegRadio value={system} onChange={setSystem} options={["D&D 5e", "Pathfinder 1e", "Free Form"]} />
           </FormField>
 
           <FormField label="Narrative tone">

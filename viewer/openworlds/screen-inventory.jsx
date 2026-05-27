@@ -1,7 +1,8 @@
 /* Screen: Inventory & Stash.
    Wired to the live /inventory-surface read model (each party member's pack + currency,
-   plus a flat shared-stash view). Polls every 5s while visible; falls back to the demo
-   data until the first fetch. The per-hero coin purse comes from the live currency.
+   plus a flat shared-stash view). Polls every 5s while visible. Before the first fetch
+   (or if it fails) the screen shows a clean empty-state — it never falls back to demo
+   data. The per-hero coin purse comes from the live currency.
    Layout/design unchanged from the prototype. */
 
 /* W2c: item-icon scope helper — lowercase, non-alphanumeric → "-". Used as a fallback
@@ -29,9 +30,10 @@ function ScreenInventory({ onNavigate, state, setState }) {
       )
     : "";
   const [surface, setSurface] = React.useState(null);
+  // Live party only — never fall back to the bundled demo data (PF1e leak).
   const party = (Array.isArray(surface?.party) && surface.party.length)
     ? surface.party
-    : (Array.isArray(state?.party) ? state.party : []);
+    : [];
   const [filter, setFilter] = React.useState("all");
   const [activeHero, setActiveHero] = React.useState("");
   const [selectedItem, setSelectedItem] = React.useState(null);
@@ -61,19 +63,10 @@ function ScreenInventory({ onNavigate, state, setState }) {
     return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
   }, [loadSurface]);
 
-  const hero = party.find((p) => p.id === activeHero) || party[0] || {
-    name: "Hero",
-    short: "Hero",
-    alignment: "Unaligned",
-    level: 1,
-    class: "Adventurer",
-    equipped: [],
-  };
-  // When wired, the stash is the active hero's own pack (live surface); the prototype
-  // fallback used a global demo stash. Either way the center grid + filters are unchanged.
-  const stash = (surface && Array.isArray(hero.items)) ? hero.items
-    : (Array.isArray(surface?.stash) ? surface.stash
-      : (Array.isArray(state?.stash) ? state.stash : []));
+  const hero = party.find((p) => p.id === activeHero) || party[0] || null;
+  // The stash is the active hero's own pack (live surface); never the demo stash.
+  const stash = (hero && Array.isArray(hero.items)) ? hero.items
+    : (Array.isArray(surface?.stash) ? surface.stash : []);
 
   React.useEffect(() => {
     if (party.length && !party.some((p) => p.id === activeHero)) {
@@ -90,6 +83,23 @@ function ScreenInventory({ onNavigate, state, setState }) {
   const filtered = filter === "all"
     ? stash
     : stash.filter((i) => i.type === filter);
+
+  // No live hero yet (pre-fetch, fetch failed, or an empty party) — clean empty-state
+  // instead of dereferencing a fabricated hero or leaking demo data.
+  if (!hero) {
+    return (
+      <div className="screen" style={{ height: "100%", display: "grid", placeItems: "center", padding: 14 }}>
+        <Panel framed style={{ padding: 40, textAlign: "center", maxWidth: 420 }}>
+          <div className="eyebrow" style={{ color: "var(--ink-600)" }}>Inventory &amp; Stash</div>
+          <h2 className="h1" style={{ fontSize: 20, marginTop: 6 }}>No party in this world</h2>
+          <p className="hand muted" style={{ fontSize: 14, marginTop: 8 }}>
+            Select a hero to view their pack and coin purse. Once a campaign is live,
+            each member's inventory appears here.
+          </p>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr 320px", gap: 14, padding: 14 }}>
@@ -138,38 +148,21 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
         <Divider />
 
-        <SectionTitle>Weapon Set</SectionTitle>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-          {[1,2,3,4].map((n) => (
-            <div key={n} style={{ textAlign: "center" }}>
-              <Placeholder label={n === 1 ? "longsword" : ""} w="100%" h={44} framed />
-              <div className="eyebrow" style={{ fontSize: 8, marginTop: 4 }}>{toRoman(n)}</div>
-            </div>
-          ))}
-        </div>
+        {/* Weapon Set + Encumbrance were removed: the live /inventory-surface exposes no
+            loadout/weapon-set concept and no carry-capacity or STR, and per-item weight is a
+            display string ("3 lb"/"—") that isn't reliably summable — any bar here would be a
+            fabricated number. The equipment slots above already show worn gear from
+            hero.equipped (live). Coin Purse below is the hero's live currency. */}
 
-        <Divider />
-
-        <div className="eyebrow">Encumbrance</div>
-        <div style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span className="hand" style={{ fontSize: 13 }}>Medium load</span>
-            <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-700)" }}>123.7 / 240 lb</span>
-          </div>
-          <div style={{ height: 10, marginTop: 6, background: "rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)", position: "relative" }}>
-            <div style={{ position: "absolute", inset: 0, right: "48%", background: "linear-gradient(180deg, var(--b-200), var(--b-500))", boxShadow: "inset 0 1px 0 rgba(255,250,220,0.6)" }} />
-          </div>
-        </div>
-
-        <div className="eyebrow" style={{ marginTop: 14 }}>Coin Purse</div>
+        <div className="eyebrow">Coin Purse</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
           <CoinSlot tone="#e5e4e2" label="PP" val={String(hero.currency?.pp ?? 0)} />
-          <CoinSlot tone="#d4b97a" label="GP" val={String(hero.currency?.gp ?? 232)} />
-          <CoinSlot tone="#c0c0c0" label="SP" val={String(hero.currency?.sp ?? 68)} />
+          <CoinSlot tone="#d4b97a" label="GP" val={String(hero.currency?.gp ?? 0)} />
+          <CoinSlot tone="#c0c0c0" label="SP" val={String(hero.currency?.sp ?? 0)} />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
           <CoinSlot tone="#b08860" label="EP" val={String(hero.currency?.ep ?? 0)} />
-          <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency?.cp ?? 14)} />
+          <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency?.cp ?? 0)} />
         </div>
       </Panel>
 
@@ -200,33 +193,49 @@ function ScreenInventory({ onNavigate, state, setState }) {
         </div>
 
         {/* Stash grid */}
-        <div style={{
-          flex: 1, overflow: "auto",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
-          gap: 8,
-          padding: 12,
-          background: "rgba(80,50,20,0.06)",
-          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
-          alignContent: "start",
-        }}>
-          {filtered.map((it) => (
-            <ItemSlot
-              key={it.id}
-              item={it}
-              selected={selectedItem?.id === it.id}
-              onClick={() => setSelectedItem(it)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setSelectedItem(it);
-                setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
-              }}
-            />
-          ))}
-          {Array.from({ length: Math.max(0, 60 - filtered.length) }).map((_, i) => (
-            <Placeholder key={`e${i}`} w="100%" h={68} label="" />
-          ))}
-        </div>
+        {stash.length === 0 ? (
+          <div style={{
+            flex: 1, display: "grid", placeItems: "center", textAlign: "center",
+            padding: 24,
+            background: "rgba(80,50,20,0.06)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+          }}>
+            <div>
+              <div className="eyebrow" style={{ color: "var(--ink-600)" }}>Empty pack</div>
+              <div className="hand muted" style={{ fontSize: 14, marginTop: 6 }}>
+                {(hero.name || "").split(" ")[0] || "This hero"} is carrying nothing yet.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            flex: 1, overflow: "auto",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
+            gap: 8,
+            padding: 12,
+            background: "rgba(80,50,20,0.06)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+            alignContent: "start",
+          }}>
+            {filtered.map((it) => (
+              <ItemSlot
+                key={it.id}
+                item={it}
+                selected={selectedItem?.id === it.id}
+                onClick={() => setSelectedItem(it)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSelectedItem(it);
+                  setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
+                }}
+              />
+            ))}
+            {Array.from({ length: Math.max(0, 60 - filtered.length) }).map((_, i) => (
+              <Placeholder key={`e${i}`} w="100%" h={68} label="" />
+            ))}
+          </div>
+        )}
 
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="muted body-sm">{filtered.length} items · {stash.length} total</span>

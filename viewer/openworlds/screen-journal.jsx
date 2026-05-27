@@ -3,6 +3,15 @@
    rumors + the Campaign Director advisory). Polls every 5s while visible; degrades to a
    graceful empty when there is no snapshot. Design unchanged from the prototype. */
 
+// Stable "fig. N" caption number (1–9) derived from a quest's identity, so it does NOT
+// re-roll on every 5s surface poll (which made the caption flicker). Deterministic hash.
+function figNumber(key) {
+  const s = String(key == null ? "" : key);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (Math.abs(h) % 9) + 1;
+}
+
 function ScreenJournal({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -169,7 +178,10 @@ function ScreenJournal({ onNavigate, state, setState }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 56, position: "relative" }}>
           {/* LEFT PAGE — quest narrative */}
           <div>
-            <div className="eyebrow" style={{ color: "var(--crimson)" }}>{quest.label} · {quest.region || "The Stolen Marches"}</div>
+            {/* Region — show ONLY when the surface provides it (mirror quest.inscribed
+                below); never the hardcoded "The Stolen Marches" (a Pathfinder Kingmaker
+                demo region). A live quest without a region shows just the label. */}
+            <div className="eyebrow" style={{ color: "var(--crimson)" }}>{quest.label}{quest.region ? ` · ${quest.region}` : ""}</div>
             <h1 className="h1" style={{ fontSize: 28, marginTop: 4 }}>{quest.title}</h1>
             {/* Inscription date — show ONLY when the surface provides it (truthy); never a
                 hardcoded fake. The journal-surface (_journal_quests) does not currently emit
@@ -210,14 +222,20 @@ function ScreenJournal({ onNavigate, state, setState }) {
               <div style={{ marginTop: 20, padding: 6, transform: "rotate(-1deg)" }}>
                 <Placeholder label={`sketch · ${quest.sketch}`} h={140} framed />
                 <div className="hand" style={{ textAlign: "center", fontSize: 12, marginTop: 6, color: "var(--ink-700)" }}>
-                  fig. {Math.floor(Math.random() * 9) + 1} — {quest.sketch}
+                  fig. {figNumber(quest.id || quest.title || quest.sketch)} — {quest.sketch}
                 </div>
               </div>
             )}
 
-            <div style={{ marginTop: 20, fontFamily: "var(--f-hand)", fontSize: 13, color: "var(--ink-600)", borderTop: "1px dashed rgba(80,50,20,0.3)", paddingTop: 8 }}>
-              — Linzi, scribe and reluctant cartographer
-            </div>
+            {/* Chronicler signature — show ONLY when the surface names a chronicler
+                (quest-level, else campaign-level). "Linzi, scribe and reluctant
+                cartographer" was a hardcoded Pathfinder demo NPC; never stamp a fake
+                signature on a live quest. */}
+            {(quest.chronicler || surface?.chronicler) && (
+              <div style={{ marginTop: 20, fontFamily: "var(--f-hand)", fontSize: 13, color: "var(--ink-600)", borderTop: "1px dashed rgba(80,50,20,0.3)", paddingTop: 8 }}>
+                — {quest.chronicler || surface.chronicler}
+              </div>
+            )}
           </div>
 
           {/* RIGHT PAGE — objectives, NPCs, related */}

@@ -1,14 +1,50 @@
 /* Camp Sidebar — D&D 5e party role assignment during a long rest */
 
 function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
-  const party = Array.isArray(state?.party) ? state.party : [];
-  // Role assignments (each portrait slot maps to a hero id, or null)
+  // LIVE party for the active campaign. The camp sidebar has no dedicated surface route, so it
+  // reuses the same /character-surface read-model screen-character.jsx polls (it carries `.party`).
+  // We never fall back to `state.party` (the non-canonical Pathfinder demo party).
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  const party = Array.isArray(surface?.party) ? surface.party : [];
+
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/character-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`character surface ${response.status}`);
+      const payload = await response.json();
+      if (!isCancelled()) setSurface(payload);
+    } catch (error) { /* keep last good — no demo fallback */ }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
+
+  // Role assignments (each portrait slot maps to a hero id, or null). Start unassigned —
+  // the old demo ids (mira/linzi/cassian/vell) would reference the Pathfinder demo party.
   const [roles, setRoles] = React.useState({
-    hunting: "mira",
+    hunting: null,
     camouflage: null,
-    cooking: "linzi",
-    watch1: "cassian",
-    watch2: "vell",
+    cooking: null,
+    watch1: null,
+    watch2: null,
   });
   const [recipe, setRecipe] = React.useState("hearty");
   const [healing, setHealing] = React.useState("spells");
@@ -197,8 +233,13 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       {/* Companions — drag source + talk affordance */}
       <Panel framed style={{ padding: 12 }}>
         <SectionTitle right={
-          <span className="muted body-sm" style={{ fontSize: 10 }}>drag to assign</span>
+          party.length > 0
+            ? <span className="muted body-sm" style={{ fontSize: 10 }}>drag to assign</span>
+            : null
         }>The Party</SectionTitle>
+        {party.length === 0 && (
+          <div className="muted body-sm">No party in camp. Camp is empty.</div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
           {party.map((p) => {
             const wantsToTalk = TALK_PROMPTS[p.id]?.openingPrompt;

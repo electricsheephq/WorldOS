@@ -8,7 +8,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
 
-  const stash = Array.isArray(state?.stash) ? state.stash : [];
+  // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
+  // read-model, so this stays empty — we never fall back to the bundled demo stash (PF1e
+  // leak). If a live merchant surface is ever wired, prefer it here; until then [].
+  const stash = Array.isArray(state?.merchantStash) ? state.merchantStash : [];
   const merchant = MERCHANTS.find((m) => m.id === merchantId) || MERCHANTS[0];
   const buyTotal = cart.reduce((s, i) => s + (i.mode === "buy" ? i.price : 0), 0);
   const sellTotal = cart.reduce((s, i) => s + (i.mode === "sell" ? i.price : 0), 0);
@@ -172,6 +175,18 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                   </tr>
                 );
               })}
+              {inv.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ ...tdStyle, padding: "40px 16px", textAlign: "center" }}>
+                    <div className="eyebrow" style={{ color: "var(--ink-600)" }}>
+                      {tab === "buy" ? "No wares on offer" : "Nothing to sell"}
+                    </div>
+                    <div className="hand muted" style={{ fontSize: 13, marginTop: 6 }}>
+                      Merchant — prototype. Not yet wired to a live shop read-model.
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

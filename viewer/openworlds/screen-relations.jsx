@@ -13,7 +13,10 @@ function ScreenRelations({ onNavigate, state, setState }) {
       )
     : "";
   const [surface, setSurface] = React.useState(null);
-  const factions = (Array.isArray(surface?.factions) && surface.factions.length) ? surface.factions : FACTIONS;
+  // Gate on whether a live surface exists (mirror the NPC pattern below), NOT on
+  // `.length` — a factionless live campaign must show an empty state, never the demo
+  // Pathfinder factions. Only fall back to FACTIONS when there's no surface at all.
+  const factions = surface ? (Array.isArray(surface.factions) ? surface.factions : []) : FACTIONS;
   const npcs = (Array.isArray(surface?.npcs) && surface.npcs.length) ? surface.npcs
     : (surface ? [] : NPCS);
   const campBeats = surface?.campBeats || null;
@@ -22,7 +25,10 @@ function ScreenRelations({ onNavigate, state, setState }) {
   const companionArcs = Array.isArray(surface?.companionArcs) ? surface.companionArcs : [];
   const [selectedFactionId, setSelectedFactionId] = React.useState("");
   const [selectedNPCId, setSelectedNPCId] = React.useState("");
-  const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || FACTIONS[0];
+  // Resolve to the live selection or first live faction; do NOT fall back to FACTIONS[0]
+  // (a demo Pathfinder faction) when the live list is empty — that would leak demo data
+  // into the detail pane. The render already handles a null selection gracefully.
+  const selectedFaction = factions.find((f) => f.id === selectedFactionId) || factions[0] || null;
   const selectedNPC = npcs.find((n) => n.id === selectedNPCId) || npcs[0] || null;
   const setSelectedFaction = (f) => setSelectedFactionId(f.id);
   const setSelectedNPC = (n) => setSelectedNPCId(n.id);
