@@ -2,7 +2,7 @@
 
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
-  const [merchantId, setMerchantId] = React.useState("oleg");
+  const [merchantId, setMerchantId] = React.useState("gate-sundries");
   const [hoverItem, setHoverItem] = React.useState(null);
   const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
@@ -63,7 +63,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
         <SectionTitle>Haggle</SectionTitle>
         <div className="muted body-sm" style={{ marginBottom: 6 }}>
-          Mira insists. Cassian disapproves. The price moves either way.
+          Coin talks in the Lower City. Lean on the price and watch it move.
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
           <BrassButton size="sm" tone="ghost" onClick={() => setHaggle(Math.max(0, haggle - 5))}>−5%</BrassButton>
@@ -282,31 +282,31 @@ const tdStyle = {
 
 const MERCHANTS = [
   {
-    id: "oleg",
-    name: "Oleg Leveton",
-    short: "O·portrait",
-    subtitle: "Master of his post, by his post.",
-    location: "Oleg's Trading Post",
-    greeting: "If you mean to look, look. I will not be pressed for prices on what I'm not selling at the back of the bargain. The crossbow bolts are by the door. The salt is not for sale today.",
+    id: "gate-sundries",
+    name: "Quartermaster Dell",
+    short: "Q·portrait",
+    subtitle: "What the Gate spares, she sells.",
+    location: "the Heapside Market",
+    greeting: "If you mean to look, look — but mind the press, half of Heapside still sleeps under a tarp since the Watch came down. The bolts are by the door. The healing draughts are behind the counter, and they are not cheap, because nothing in the Lower City is, anymore.",
     repLabel: "Cautiously fond",
     rep: 42,
-    disposition: "open until dusk · closes early on Sundays",
+    disposition: "open until dusk · shuttered when the Watch patrols",
     stock: [
       { id: "m1", name: "Crossbow bolts", type: "weapon", glyph: "bolts", qty: 30, weight: "3 lb", price: 6, desc: "Standard. Iron-tipped. The fletching is reused." },
       { id: "m2", name: "Travel rations", type: "common", glyph: "rations", qty: 12, weight: "12 lb", price: 24, desc: "Hardtack, salted pork, hard cheese, dried apple." },
-      { id: "m3", name: "Iron lantern", type: "common", glyph: "lantern", qty: 1, weight: "2 lb", price: 7, desc: "Wick included. Oil sold separately, by the merchant's wife." },
-      { id: "m4", name: "Lantern oil", type: "common", glyph: "oil flask", qty: 4, weight: "1 lb", price: 1, desc: "One pint. Burns six hours, four in wind." },
+      { id: "m3", name: "Iron lantern", type: "common", glyph: "lantern", qty: 1, weight: "2 lb", price: 7, desc: "Wick included. Oil sold separately, by the stall two rows over." },
+      { id: "m4", name: "Lantern oil", type: "common", glyph: "oil flask", qty: 4, weight: "1 lb", price: 1, desc: "One pint. Burns six hours, four in the river wind off the Chionthar." },
       { id: "m5", name: "Studded leather", type: "armor", glyph: "leather armor", qty: 1, weight: "20 lb", price: 25, desc: "Sized for a medium frame. Belt may need a hole punched." },
-      { id: "m6", name: "Handaxes", type: "weapon", glyph: "axe pair", qty: 6, weight: "4 lb", price: 8, desc: "A set of three, light and balanced for throwing. Forged in the capital, edged here." },
+      { id: "m6", name: "Handaxes", type: "weapon", glyph: "axe pair", qty: 6, weight: "4 lb", price: 8, desc: "A set of three, light and balanced for throwing. Forged upriver, edged here at the Gate." },
       { id: "m7", name: "Bandage roll", type: "common", glyph: "bandage", qty: 8, weight: "0.5 lb", price: 1, desc: "Linen. Clean. Mostly clean." },
       { id: "m8", name: "Potion of Healing", type: "spell", glyph: "red potion", qty: 3, weight: "0.5 lb", price: 50, desc: "Restores 2d4+2 HP. Tastes of iron and elderberry." },
       { id: "m9", name: "Antitoxin", type: "spell", glyph: "green vial", qty: 2, weight: "0.5 lb", price: 50, desc: "Advantage on saving throws against poison for 1 hour." },
       { id: "m10", name: "Climbing kit", type: "common", glyph: "rope & pitons", qty: 2, weight: "10 lb", price: 80, desc: "Rope, pitons, hammer. Used. The hammer is new." },
-      { id: "m11", name: "Compass", type: "common", glyph: "brass compass", qty: 1, weight: "0.5 lb", price: 25, desc: "Brass. The needle drifts twelve degrees east of true. Oleg knows this and has not said so." },
+      { id: "m11", name: "Compass", type: "common", glyph: "brass compass", qty: 1, weight: "0.5 lb", price: 25, desc: "Brass. The needle drifts twelve degrees east of true. Dell knows this and has not said so." },
       { id: "m12", name: "Heavy crossbow", type: "weapon", glyph: "heavy crossbow", qty: 1, weight: "8 lb", price: 50, desc: "Reliable. Slow. The kind of weapon you have time to be sorry about firing." },
-      { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged in the capital. Tested at Tines, by Oleg's brother, who is no longer with us." },
-      { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. Oleg does not stock these often; he stocks them for Cassian." },
-      { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Sourced from the Old Hills. Useful against more things than you think." },
+      { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged upriver. Tested at Wyrm's Crossing, by a man no longer with us." },
+      { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. She rarely stocks them — Sorcerous Sundries keeps the good paper." },
+      { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Hauled up the salt-roads south. Useful against more things than you think." },
       { id: "m16", name: "Wax candle (×6)", type: "common", glyph: "candles", qty: 4, weight: "1 lb", price: 4, desc: "Beeswax. Burns long. Useful for vigils and for less wholesome purposes." },
     ],
   },
