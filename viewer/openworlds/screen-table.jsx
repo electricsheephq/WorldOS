@@ -12,6 +12,8 @@ function ScreenTable({ onNavigate, state, setState }) {
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const demoLog = [];
   const [log, setLog] = React.useState([]);
+  const [chatBeats, setChatBeats] = React.useState([]);
+  const chatCursor = React.useRef(0);
   const [input, setInput] = React.useState("");
   const logRef = React.useRef(null);
   const inputRef = React.useRef(null);
@@ -39,7 +41,7 @@ function ScreenTable({ onNavigate, state, setState }) {
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
   const readOnlyReason = blockedActions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
-  const visibleLog = surface ? [...recentEvents, ...log] : [...demoLog, ...log];
+  const visibleLog = surface ? [...recentEvents, ...chatBeats, ...log] : [...demoLog, ...log];
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
 
@@ -69,6 +71,25 @@ function ScreenTable({ onNavigate, state, setState }) {
         if (!isCancelled()) setAdvisory(advPayload?.directorAdvisory || null);
       }
     } catch (error) { /* advisory is non-critical; keep last good */ }
+    // Live DM narration (#242 EPIC C): tail /chat so the player sees the DM's prose beats +
+    // their own lines during a LIVE session — not just engine recentEvents. Best-effort;
+    // empty/no-op when no chat is configured (read-only view). Mirrors dashboard.html's poll.
+    try {
+      const cParams = new URLSearchParams(params);
+      cParams.set("since", String(chatCursor.current));
+      const cResp = await fetch(`/chat?${cParams.toString()}`, { cache: "no-store" });
+      if (cResp.ok) {
+        const cPayload = await cResp.json();
+        const items = Array.isArray(cPayload.items) ? cPayload.items : [];
+        if (!isCancelled() && items.length) {
+          const beats = items.map((it) => it.role === "player"
+            ? { kind: "dialog", who: "You", text: it.text }
+            : { kind: "narration", text: it.text });
+          setChatBeats((prev) => [...prev, ...beats]);
+        }
+        if (!isCancelled() && typeof cPayload.next === "number") chatCursor.current = cPayload.next;
+      }
+    } catch (error) { /* chat tail is non-critical; keep last good */ }
   }, [campaignId, activeCampaign.source, activeCampaign.runId]);
 
   React.useEffect(() => {
