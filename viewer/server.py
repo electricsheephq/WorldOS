@@ -3631,6 +3631,7 @@ def build_openworlds_campaign_summary(
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     live = (now - last_played) < 90
     location = _display_location(snapshot)
+    loc_id = _text(snapshot.get("current_location_id"))
     world = _text(snapshot.get("world_id"), "unknown")
     title = _text(snapshot.get("title"), campaign_id)
     ruleset = _text(snapshot.get("ruleset"), "D&D 5e")
@@ -3667,6 +3668,8 @@ def build_openworlds_campaign_summary(
         "day": day,
         "world": world,
         "location": location,
+        "locationId": loc_id,
+        "imageScope": (f"location:{loc_id}" if loc_id else ""),
         "party": party,
         "partyCount": len(party),
         "activeQuestCount": active_quests,

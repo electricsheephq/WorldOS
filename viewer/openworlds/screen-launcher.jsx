@@ -4,6 +4,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
+  const active = campaigns.find((c) => c.id === selected) || campaigns[0] || null;
 
   React.useEffect(() => {
     if (campaigns.some((c) => c.id === selected)) return;
@@ -27,10 +28,12 @@ function ScreenLauncher({ onNavigate, state, setState }) {
         {/* LEFT: Hero with title plate */}
         <div>
           <div style={{ position: "relative" }}>
-            <Placeholder
+            <Img
+              scope={active?.imageScope || ""}
               label="cover illustration · 16:9 · painted hero scene"
               h={360}
               framed
+              fit="cover"
               style={{ width: "100%" }}
             />
             <div
@@ -137,7 +140,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
               <div>
                 {/* Top vignette with overlaid label */}
                 <div style={{ position: "relative" }}>
-                  <Placeholder label={`vignette · ${region.toLowerCase()}`} h={140} style={{ width: "100%", boxShadow: "none" }} />
+                  <Img scope={c.imageScope || ""} label={`vignette · ${region.toLowerCase()}`} h={140} fit="cover" style={{ width: "100%", boxShadow: "none" }} />
                   <div style={{
                     position: "absolute", inset: 0,
                     background: "linear-gradient(180deg, transparent 40%, rgba(40, 25, 10, 0.85) 100%)",
@@ -195,7 +198,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                   <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(party.length, 1)}, 1fr)`, gap: 8 }}>
                     {party.map((p, i) => (
                       <div key={i} style={{ textAlign: "center" }}>
-                        <Placeholder label={p.short || "portrait"} w="100%" h={70} framed />
+                        <Img scope={p.id ? "portrait-" + p.id : ""} label={p.name || p.short || "portrait"} w="100%" h={70} framed fit="cover" />
                         <div className="hand" style={{ fontSize: 12, marginTop: 4, color: "var(--ink-700)" }}>{p.name}</div>
                       </div>
                     ))}
@@ -210,7 +213,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                   <SectionTitle ordinal="·">Where last we stood</SectionTitle>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 14, alignItems: "start" }}>
                     <div style={{ transform: "rotate(-2deg)" }}>
-                      <Placeholder label="sketch · last scene" w={100} h={120} framed />
+                      <Img scope={c.imageScope || ""} label="sketch · last scene" w={100} h={120} framed fit="cover" />
                     </div>
                     <p className="body dropcap" style={{ marginTop: 0, fontSize: 15 }}>
                       {c.recap || "This chronicle is ready to continue."}
@@ -248,8 +251,9 @@ function ScreenLauncher({ onNavigate, state, setState }) {
 function normalizeCampaignParty(party) {
   if (!Array.isArray(party)) return [];
   return party.map((p) => {
-    if (typeof p === "string") return { name: p, short: "portrait" };
+    if (typeof p === "string") return { id: "", name: p, short: "portrait" };
     return {
+      id: p?.id || "",
       name: p?.name || "Unknown",
       short: p?.short || "portrait",
       kind: p?.kind || "",
