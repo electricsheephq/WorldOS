@@ -9,7 +9,9 @@ function ScreenActs({ onNavigate, state, setState }) {
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
   const [surface, setSurface] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
-  const acts = (Array.isArray(surface?.acts) && surface.acts.length) ? surface.acts : (surface ? [] : ACTS);
+  // Acts come from the live /acts-surface read model only. Until the first fetch returns we
+  // show nothing (empty timeline + honest empty-state) — never a hardcoded demo chronicle.
+  const acts = Array.isArray(surface?.acts) ? surface.acts : [];
   const currentAct = acts.find((a) => a.id === surface?.currentActId) || acts.find((a) => a.current) || acts[0] || null;
   const [selectedActId, setSelectedActId] = React.useState("");
   const selectedAct = acts.find((a) => a.id === selectedActId) || currentAct;
@@ -276,101 +278,4 @@ function ActDetail({ act, surface }) {
   );
 }
 
-const ACTS = [
-  {
-    id: "1",
-    numeral: "I",
-    name: "Restov, in Pharast",
-    subtitle: "Of being hired, and of leaving.",
-    status: "complete",
-    outcome: "South",
-    duration: "Pharast · 9 days",
-    beginDate: "27 Pharast",
-    endDate: "5 Gozran",
-    heroLevel: "1 → 2",
-    illustration: "Restov gates at sunrise",
-    synopsis: "The party assembled in Restov by separate roads and the same purpose, which none of them named the same way. Cassian was sworn to the Wardens. Mira was paid in advance. Vell came because Vell had run out of reasons to stay. Linzi came because Linzi was always going to come. They left through the south gate on the third morning, and the gate-keeper did not look at them twice.",
-    choices: [
-      { title: "Took the Warden writ", when: "29 Pharast", body: "Cassian accepted the contract to investigate the Lanternrest before reaching Odrun. The party agreed to honour it even if it meant the longer road.", tone: "good", consequence: "Warden reputation +20. The Stag Lord's company watches you now." },
-      { title: "Paid the ferryman", when: "1 Gozran", body: "Vell tried to pay the ferry in copper. The ferryman declined. The party paid in silver.", tone: "neutral", consequence: "No bridges burnt at Restov Crossing." },
-    ],
-    memories: [
-      { sketch: "the Warden hall at dawn", text: "Cassian set his sword on the table without drawing it. The Warden Olwen nodded once.", when: "27 Pharast" },
-      { sketch: "south gate at sunrise", text: "The gate-keeper did not look up. Mira found this an excellent omen, and Linzi disagreed.", when: "29 Pharast" },
-    ],
-    partyAtStart: [
-      { name: "Cassian", short: "C·portrait" },
-      { name: "Mira", short: "M·portrait" },
-      { name: "Vell", short: "V·portrait" },
-      { name: "Linzi", short: "L·portrait" },
-    ],
-  },
-  {
-    id: "2",
-    numeral: "II",
-    name: "Of Toll Roads and Quiet Inns",
-    subtitle: "The long road to Odrun.",
-    status: "current",
-    duration: "Gozran · 12 days so far",
-    beginDate: "5 Gozran",
-    endDate: null,
-    heroLevel: "3",
-    illustration: "the Lanternrest at dusk, crow on the gable",
-    synopsis: "Twelve days on the south road. The Thorn Ford crossed; the gate of Tines refused; the Lanternrest reached at dusk on the twelfth evening, and the lantern over the door not lit, and the crow on the gable not moved. The party makes camp in the courtyard tonight. Tomorrow the chronicle decides whether the door opens to a knock or to a shoulder.",
-    choices: [
-      { title: "Spared the bandit Falgrim's ear", when: "9 Gozran", body: "Vell took the ear and let the man ride south. The party agreed Vell knew what he was doing. Vell did not say.", tone: "ill", consequence: "Falgrim is rumoured to be raising men against you. Reputation with the Stag Lord's company drops further. Stag rep -8." },
-      { title: "Did not pay the gate-toll at Tines", when: "5 Gozran", body: "Toll-keeper Olwen took our writ, looked at it, and handed it back unstamped. The party found another road.", tone: "good", consequence: "Gate of Tines remains closed to us. Warden reputation neutral; Olwen's standing unclear." },
-    ],
-    memories: [
-      { sketch: "Mira at the inn door", text: "She heard the floorboard. The floorboard heard her hearing it. Nothing moved.", when: "12 Gozran, dusk" },
-      { sketch: "the brass key in firelight", text: "Warm against the palm. Should not have been warm.", when: "12 Gozran, third watch" },
-    ],
-    partyAtStart: [
-      { name: "Cassian", short: "C·portrait" },
-      { name: "Mira", short: "M·portrait" },
-      { name: "Vell", short: "V·portrait" },
-      { name: "Linzi", short: "L·portrait" },
-    ],
-  },
-  {
-    id: "3",
-    numeral: "III",
-    name: "Beneath the Lanternrest",
-    subtitle: "What waits in the eastern hallway.",
-    status: "future",
-    duration: null,
-    beginDate: null,
-    heroLevel: null,
-    synopsis: null,
-    choices: [],
-    memories: [],
-  },
-  {
-    id: "4",
-    numeral: "IV",
-    name: "Of Salt and the Stag",
-    subtitle: "An accounting of debts.",
-    status: "future",
-    duration: null,
-    beginDate: null,
-    heroLevel: null,
-    synopsis: null,
-    choices: [],
-    memories: [],
-  },
-  {
-    id: "5",
-    numeral: "V",
-    name: "The Road's End",
-    subtitle: "Or its turning.",
-    status: "future",
-    duration: null,
-    beginDate: null,
-    heroLevel: null,
-    synopsis: null,
-    choices: [],
-    memories: [],
-  },
-];
-
-Object.assign(window, { ScreenActs, ActSpineRow, ActDetail, ACTS });
+Object.assign(window, { ScreenActs, ActSpineRow, ActDetail });

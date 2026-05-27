@@ -404,7 +404,7 @@ function TitleBar({ campaign, location, day, capability, nativeStatus }) {
         <span className="traffic-light zoom" />
       </div>
       <div className="title-text">
-        <span>Open Worlds</span><em>·</em><span>{campaign || "The Long Road to Odrun"}</span>
+        <span>Open Worlds</span><em>·</em><span>{campaign || "Open Worlds"}</span>
         {location && (<><em>·</em><span>{location}</span></>)}
       </div>
       <div className="title-end">

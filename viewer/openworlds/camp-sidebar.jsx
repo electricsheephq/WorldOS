@@ -3,7 +3,7 @@
 function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   // LIVE party for the active campaign. The camp sidebar has no dedicated surface route, so it
   // reuses the same /character-surface read-model screen-character.jsx polls (it carries `.party`).
-  // We never fall back to `state.party` (the non-canonical Pathfinder demo party).
+  // We never fall back to `state.party` (the non-canonical demo party).
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
         (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
@@ -38,7 +38,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   }, [loadSurface]);
 
   // Role assignments (each portrait slot maps to a hero id, or null). Start unassigned —
-  // the old demo ids (mira/linzi/cassian/vell) would reference the Pathfinder demo party.
+  // the live party drives this; the old demo party's ids are never present.
   const [roles, setRoles] = React.useState({
     hunting: null,
     camouflage: null,
@@ -129,7 +129,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       <Panel framed style={{ padding: 12 }}>
         <SectionTitle>Healing</SectionTitle>
         <CampRadio value={healing} onChange={setHealing} options={[
-          { value: "spells", label: "Use healing spells & abilities before resting", detail: "Cassian: 2 Cure Wounds." },
+          { value: "spells", label: "Use healing spells & abilities before resting", detail: "Spend prepared healing before camp." },
           { value: "natural", label: "Natural healing only", detail: "Slower, no spell cost." },
         ]} />
       </Panel>
@@ -587,12 +587,9 @@ function TalkPanel({ hero, onClose }) {
   );
 }
 
-const SPECIAL_ROLES = {
-  cassian: { name: "Maintain Armor", detail: "Sees to the buckles. +1 AC for tomorrow." },
-  vell: { name: "Sharpen Weapons", detail: "Iron on whetstone. +1 damage for tomorrow." },
-  mira: { name: "Patrol Perimeter", detail: "Quiet steps. -2 to ambush chance." },
-  linzi: { name: "Bardic Inspiration", detail: "Linzi's enthusiasm grants advantage on one camp-duty check." },
-};
+// Camp-duty flavor keyed by hero id. The live party supplies its own ids; without a per-hero
+// entry every idle companion falls back to the generic "Stand watch" card above — no demo names.
+const SPECIAL_ROLES = {};
 
 const RECIPES = {
   hearty: { name: "Hearty Meal", bonus: "+2 Constitution saving throws until next rest." },
@@ -600,39 +597,10 @@ const RECIPES = {
   stew: { name: "Trail Stew", bonus: "Regain 1 extra Hit Die on your next long rest." },
 };
 
+// Fireside conversations keyed by hero id. The live party supplies its own ids, so without a
+// per-hero entry the talk affordance stays hidden and TalkPanel uses the generic prompt below —
+// no demo companions are invented here.
 const TALK_PROMPTS = {
-  cassian: {
-    openingPrompt: "I will tell you a thing I have not told the others — I have not drawn a blade in a Warden hall in seven years. I am not certain whether that is honour or its imitation.",
-    responses: [
-      { tag: "Lawful Good", text: "Honour. There is no version of that that is imitation.", heroReply: "You make me want to believe you. That is a useful thing in a captain." },
-      { tag: "Chaotic", text: "It is whatever you need it to be tomorrow. Tonight it is rest.", heroReply: "You are a poor philosopher and a good companion. I will take both." },
-      { text: "Why have you not drawn?", heroReply: "Because the one I would have drawn against was my teacher. He died first. I was not given the chance to learn whether I would have." },
-    ],
-  },
-  mira: {
-    openingPrompt: "I have written you down badly twice this week. The first time I called you brave. The second I left out an adjective entirely. I am embarrassed about both.",
-    responses: [
-      { text: "Brave is not wrong.", heroReply: "Brave is what people put in margins. I am trying for the body of the page." },
-      { tag: "Chaotic", text: "Leave more adjectives out. I am tired of them.", heroReply: "That is the most useful thing you have said to me. I will start tonight." },
-      { text: "Read me what you have so far.", heroReply: "Tomorrow. I want to fix one more thing before you hear it as written." },
-    ],
-  },
-  vell: {
-    openingPrompt: "The Iron-Shod taught me one prayer. I do not say it any more. I was wondering if you would mind me telling you why.",
-    responses: [
-      { text: "Tell me.", heroReply: "The prayer asks the stone to remember you. The stone does not need to be asked. That is the whole of it." },
-      { tag: "Lawful Good", text: "If you do not wish to say it, you do not have to.", heroReply: "I thank you for that. I think I will say it tomorrow regardless. To the camp, before we leave it. So it has been said once." },
-      { text: "Why did you leave them?", heroReply: "Because I asked a question. They thought it impolite. I thought it the only question. We were both correct." },
-    ],
-  },
-  linzi: {
-    openingPrompt: "This is the part of the night when I write down what we did today. I am asking your permission, formally, before I write down what you did today.",
-    responses: [
-      { text: "Write what you saw.", heroReply: "I always do. I will note that you said so." },
-      { tag: "Chaotic", text: "Write down what I would have done if I were braver.", heroReply: "I will write down what you did. The chronicle is generous about counterfactuals when read aloud, not when read." },
-      { text: "Don't write the part with the door.", heroReply: "I will write the door. I will not write what you said about it. That is a compromise." },
-    ],
-  },
   _default: {
     openingPrompt: "Sit. The fire is low. There is room.",
     responses: [
