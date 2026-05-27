@@ -2,8 +2,8 @@
   "_comment": "S2.5 CHARACTER ingest scope for the Unofficial Baldur's Gate 3+ Universe Seed. Pulls post-BG3 canon character profiles (companions + key NPCs) into clean JSON records under content/worlds/<world_id>/characters/<slug>.json, which ClawDnD can later load as NPCs of the 'baldurs-gate' world. TEXT/DATA ONLY — no images are fetched or committed (portraits are handled separately, local-only). Unlike manifest.json (lore, single Fandom wiki), characters span TWO wikis with DIFFERENT licenses, so each source carries its own wiki host, MediaWiki script_path, license, and attribution string. A title that doesn't resolve is skipped, not fatal.",
   "world_id": "baldurs-gate",
   "cache_subdir": "characters",
-  "max_pages": 60,
-  "rate_delay_seconds": 0.75,
+  "max_pages": 2200,
+  "rate_delay_seconds": 0.5,
   "max_chars_per_field": 2500,
   "sources": [
     {
@@ -12,6 +12,11 @@
       "script_path": "/w",
       "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
       "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+      "categories": [
+        "Companions",
+        "Replacement_characters",
+        "Characters"
+      ],
       "titles": [
         "Shadowheart",
         "Astarion",
