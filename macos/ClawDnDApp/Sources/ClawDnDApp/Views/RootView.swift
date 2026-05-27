@@ -100,11 +100,21 @@ struct RootView: View {
     }
 
     private func waitForOpenWorlds(_ url: URL) async throws {
-        let deadline = Date().addingTimeInterval(8)
+        // Host strain can push the viewer's first bind well past the old 8s budget even
+        // when the port is free; 25s tolerates a slow start instead of falsely reporting
+        // "could not connect" while the viewer is still coming up.
+        let start = Date()
+        let deadline = start.addingTimeInterval(25)
+        let slowStartThreshold: TimeInterval = 8
+        var announcedSlowStart = false
         var lastError = "not ready"
 
         while Date() < deadline {
             try Task.checkCancellation()
+            if !announcedSlowStart, Date().timeIntervalSince(start) > slowStartThreshold {
+                announcedSlowStart = true
+                launchMessage = "Still starting the viewer (host is busy)…"
+            }
             do {
                 var request = URLRequest(url: url)
                 request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData

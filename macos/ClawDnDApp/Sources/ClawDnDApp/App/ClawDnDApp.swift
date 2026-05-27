@@ -14,6 +14,12 @@ struct ClawDnDApp: App {
                 .environmentObject(processService)
                 .environmentObject(campaignStore)
                 .frame(minWidth: 1120, minHeight: 720)
+                .onAppear {
+                    // Hand the delegate a reference so it can reap child processes
+                    // (viewer/provider) when the app terminates. Without this, the
+                    // local python3 viewer is orphaned across quit/relaunch and holds ports.
+                    appDelegate.processService = processService
+                }
         }
         WindowGroup("Debug Control Center", id: "debug-control-center") {
             DebugControlCenterView()
@@ -39,8 +45,22 @@ struct ClawDnDApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    // Set by the App once the scene appears; used only to reap child processes on quit.
+    weak var processService: AppProcessService?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Reap the local viewer and any running provider so quitting/relaunching the
+        // app never leaves orphaned `python3 viewer/server.py` processes holding ports.
+        // applicationWillTerminate runs on the main thread, matching AppProcessService's
+        // @MainActor isolation, so these calls are safe synchronously.
+        MainActor.assumeIsolated {
+            processService?.stopViewer()
+            processService?.stopProvider()
+        }
     }
 }
