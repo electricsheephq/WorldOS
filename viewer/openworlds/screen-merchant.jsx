@@ -40,7 +40,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
         <h2 className="h1" style={{ fontSize: 22 }}>{merchant.name}</h2>
         <div className="hand" style={{ fontSize: 14, marginTop: 2 }}>{merchant.subtitle}</div>
 
-        <Placeholder label={`${merchant.short} · portrait`} h={180} framed style={{ width: "100%", marginTop: 14 }} />
+        <Img scope={merchant.id ? "portrait-" + (merchant.id || merchant.slug || "") : ""} label={`${merchant.short} · portrait`} h={180} framed fit="cover" style={{ width: "100%", marginTop: 14 }} />
 
         <Divider />
 

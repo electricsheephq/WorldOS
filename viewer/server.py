@@ -308,6 +308,45 @@ def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
     return _newest_json_descriptor(_images_dir(scope))
 
 
+def _portrait_class_race_fallback(scope: Optional[str], campaign_id: str) -> Optional[dict]:
+    """Generated-PC portrait fallback (EPIC A). A ``portrait-<id>`` scope with no ingested
+    or generated art falls back to the character's CLASS then RACE baseline art (ingested to
+    _private as ``class-<class>`` / ``race-<race>``). Canon characters resolve directly and
+    never reach here; this only fires for generated/homebrew PCs, so they show a class/race
+    face instead of a blank placeholder. Read-only, campaign-scoped; a miss just stays a miss."""
+    raw = (scope or "").strip().lower()
+    if not raw.startswith(("portrait", "pc", "char", "npc")):
+        return None
+    key = _scope_key(scope)
+    if not key or not campaign_id:
+        return None
+    snap = _read_snapshot(campaign_id)
+    chars = snap.get("characters") if isinstance(snap, dict) else None
+    if not isinstance(chars, dict):
+        return None
+    ch = chars.get(key)
+    if not isinstance(ch, dict):
+        for cid, cand in chars.items():
+            if isinstance(cand, dict) and (_scope_key(cid) == key or _scope_key(cand.get("name", "")) == key):
+                ch = cand
+                break
+    if not isinstance(ch, dict):
+        return None
+    candidates: list[str] = []
+    cls_name, _lvl = _class_summary(ch)
+    base = cls_name.split(" / ")[0].split("(")[0].strip().split()
+    if base:
+        candidates.append("class-" + _scope_key(base[0]))
+    race = _scope_key(ch.get("race") or ch.get("lineage") or "")
+    if race:
+        candidates.append("race-" + race)
+    for cand_scope in candidates:
+        desc = _latest_descriptor(cand_scope)
+        if desc is not None:
+            return desc
+    return None
+
+
 def _campaign_recency(snap_path: Path) -> float:
     """Most-recent-activity time for a campaign (#38: auto-follow the live run).
 
@@ -4833,6 +4872,9 @@ class _Handler(BaseHTTPRequestHandler):
         comes from the descriptor's `mime_type` (default image/png). Pure reader — never
         imports the engine, never writes."""
         desc = _latest_descriptor(scope)
+        if not desc:
+            # EPIC A: a generated PC with no canon portrait falls back to class/race art.
+            desc = _portrait_class_race_fallback(scope, self.campaign_id or _pick_campaign(None) or "")
         if not desc:
             self._send(404, b"no image", "text/plain")
             return
