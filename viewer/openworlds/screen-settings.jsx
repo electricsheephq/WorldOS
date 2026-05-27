@@ -227,11 +227,8 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
                 ))}
               </div>
             ) : (
-              <div>
-                <PreviewBanner>Display-only — the live campaign catalog has not loaded; the slots below are demo data.</PreviewBanner>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  {SAVE_SLOTS.map((s, i) => <SaveSlot key={i} s={s} active={i === 0} />)}
-                </div>
+              <div className="hand muted" style={{ padding: "24px 8px", textAlign: "center", fontSize: 15 }}>
+                No saved chronicles yet. Begin a chronicle from the Worlds shelf and it will be anchored here.
               </div>
             )}
           </SettingsSection>
@@ -245,17 +242,16 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
                   Open Worlds is a chronicle engine for tabletop games — a parchment laid across a Mac window, kept by an attentive but unintrusive scribe. Built by candlelight, intended for long roads and patient evenings.
                 </p>
                 <Divider />
-                <StatLine k="Version" v="0.7.2 — Lanternrest build" />
+                <StatLine k="Version" v="1.0.0" />
                 <StatLine k="Engine" v="Chronicle II / Scribe-of-roads" />
-                <StatLine k="System" v="Pathfinder 1e · D&D 5e · Free Form" />
-                <StatLine k="Built" v="29 Gozran, 4717" />
+                <StatLine k="System" v="D&D 5e · Free Form" />
               </div>
               <div>
                 <SectionTitle>Acknowledgements</SectionTitle>
                 <ul className="body" style={{ paddingLeft: 16, margin: 0 }}>
                   <li>To every Game Master who ever lit a candle and a cigarette at the same table.</li>
-                  <li>To Linzi, scribe of the Stolen Marches, who insists she is not a character.</li>
-                  <li>To the long road between Restov and Odrun, where this engine first occurred to us.</li>
+                  <li>To the scribes who insist they are not characters — and to the worlds that prove them wrong.</li>
+                  <li>To the long roads where this engine first occurred to us, walked by patient evening.</li>
                 </ul>
                 <Divider />
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -619,15 +615,6 @@ function KeybindRow({ kb }) {
   );
 }
 
-const SAVE_SLOTS = [
-  { name: "The Lanternrest, before dusk", chronicle: "Long Road to Odrun · Ch II", time: "now", auto: false, party: 4, dayLabel: "Day 12 · 29 Gozran" },
-  { name: "Auto-save", chronicle: "Long Road to Odrun · Ch II", time: "12 min ago", auto: true, party: 4, dayLabel: "Day 12 · 29 Gozran" },
-  { name: "Thorn Ford crossed", chronicle: "Long Road to Odrun · Ch II", time: "yesterday", auto: false, party: 4, dayLabel: "Day 11" },
-  { name: "Beneath the Drowned Cathedral", chronicle: "Bone Kings · Ch VI", time: "three weeks", auto: false, party: 3, dayLabel: "Day 41 · winter" },
-  { name: "After the gate-keeper", chronicle: "Long Road to Odrun · Ch I", time: "last month", auto: false, party: 3, dayLabel: "Day 4" },
-  { name: "Quicksave", chronicle: "Long Road to Odrun · Ch II", time: "3 hr ago", auto: true, party: 4, dayLabel: "Day 12" },
-];
-
 function SaveSlot({ s, active }) {
   return (
     <div style={{
@@ -656,4 +643,4 @@ function SaveSlot({ s, active }) {
   );
 }
 
-Object.assign(window, { ScreenSettings, SettingsSection, Slider, Toggle, SelectRow, Radio, KEYBINDS, KeybindRow, SAVE_SLOTS, SaveSlot });
+Object.assign(window, { ScreenSettings, SettingsSection, Slider, Toggle, SelectRow, Radio, KEYBINDS, KeybindRow, SaveSlot });

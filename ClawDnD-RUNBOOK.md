@@ -266,6 +266,21 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 - **REUSE before rebuild.** The Quest-Arc engine reused the companion stage-machine; #143
   variants reused the shipped `_resolve_quest_variants` resolver. The engine is usually
   ~80–90% there — find the existing primitive.
+- **Demo-leak: verify with a repo-wide GREP, not per-screen spot-checks.** "I previewed
+  screen X and it looked clean" is a WEAK assertion — a screen's LIVE read-model path can be
+  clean while its FALLBACK / prototype data (shown on an empty campaign or a non-wired tab)
+  still leaks. The runbook twice over-claimed "zero PF leak" off live spot-checks; a
+  `grep -rniE "linzi|cassian|oleg|stag lord|stolen marches|kingmaker|pathfinder…"` over
+  `viewer/openworlds/*.{jsx,js}` then found the Kingmaker demo hardcoded in EIGHT screens
+  (data.js, bestiary, forge, acts, camp-sidebar, chrome, dialogue, relations, inventory).
+  The honest fix everywhere: gate to the live `/*-surface` read-model with a BG-neutral
+  empty-state; never a demo fallback; never invent BG content. Grep is the invariant scan.
+- **Multi-process UI-wiring bugs: RUN/instrument, don't theorize.** Chasing "why didn't the
+  WebView repoint" by reasoning (timing? Swift @State? a 302?) went in circles; the answers
+  came from running it — `curl /session-surface` (can_act=true on the live campaign proved
+  the engine path), killing the app's read-only viewer to learn which port the WebView was
+  on, reading the live state dir. The true root (a campaign-SELECTION race) was none of the
+  first three hypotheses. (= the first-principles skill's "Step 1.5 — run the system".)
 
 ---
 
@@ -331,13 +346,40 @@ The detailed queue below is now mostly HISTORICAL — read `implementation-notes
 - **Party-ensemble betrayal validation** — `run_party.sh` not exercised since L2 shipped;
   restore it to validate the decision-flip in play.
 
-### The SIBLING DESKTOP lane — DON'T COLLIDE
-Another agent owns the **macOS / OpenWorlds Swift shell**. Stay in the engine/content/QA
-lane. Open PRs that are **theirs** (leave them): **#150** (macOS beta-distribution),
-**#182** (OpenWorlds attributed icon-registry), **#187** (campaign-calendar display), plus
-drafts **#190** (dice-parser decision), **#191** (worldgraph skeleton), **#192** (private
-compendium import sidecar). Many `viewer/openworlds-*` worktrees are 0-commits-ahead =
-already merged (the app on main is their combined result).
+### NATIVE DESKTOP APP — the play path (IN SCOPE; was the sibling lane)
+The macOS/OpenWorlds Swift shell is now part of this lane (the old "another agent owns it,
+stay out" note is retired; those PRs #150/#182/#187/#190-192 are merged). The app
+(`macos/ClawDnDApp/`, built by `script/build_and_run.sh run` → `dist/ClawDnD.app`) is a
+WKWebView loading the **live worktree** viewer at `/openworlds/` — so a **viewer/JS change
+lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op).
+
+**How in-app PLAY works (2026-05-27 cont.26 — the read-only→functional fix):**
+- The OpenWorlds launcher Play buttons call the native bridge
+  `OpenWorldsNative.request("startProviderSession",{provider,world,runId,companions})`
+  (`screen-launcher.jsx`). Swift `RootView.startProviderFromBridge` →
+  `AppProcessService.startProviderSession` shells **`scripts/play.sh`** on a fresh port and
+  returns `{url}`; the JS then `window.location.assign(reply.url)` — drive the reload from
+  **JS**, not the Swift `webURL` @State (which didn't repoint reliably across the async hop).
+- `play.sh` IS the play loop: it binds a viewer with `CLAWDND_PLAYER_MOVES` +
+  `CLAWDND_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
+  move sink. `POST /move` → sink; `/chat?since=` → DM narration the Session tails.
+- **`can_act = _live_play() AND is_live_view`**, and `is_live_view` requires
+  `cid == self.campaign_id`. The viewer launches with an EMPTY campaign id; `_resolve_campaign`
+  lazily sets `self.campaign_id` to the **current** campaign (`_pick_campaign`). So the
+  ★gotcha★: the SPA must VIEW the live/current campaign — `app.jsx` auto-routes launcher→table
+  when `runningProvider` is set, **re-polls `campaigns.json` (4s), and auto-follows the
+  `current` campaign** so the surface binds to the DM-minted run, not a stale save the
+  one-shot catalog pick had selected. Verify playable: `curl /session-surface` → `can_act:true`.
+- **Footguns (all fixed cont.26, watch for regressions):** (1) a Finder/Dock GUI launch gets
+  launchd's minimal PATH → `claude`/`uv` not found; `launch_common.sh:clawdnd_augment_path`
+  prepends `~/.local/bin`+Homebrew. (2) `play.sh`/`play_party.sh` traps must SEPARATE EXIT
+  (cleanup) from INT/TERM (cleanup+`exit`) or SIGTERM resumes the loop (wedged orphan). (3)
+  `AppProcessService` does NOT kill its viewer child on app SIGTERM → orphaned viewers accrue
+  across relaunches (still open — terminate-on-quit TODO). (4) `play.sh` always starts a
+  FRESH campaign (true resume-by-id is a later enhancement).
+- **Critical files:** `RootView.swift` (startProviderSession bridge), `ProviderAdapters.swift`
+  (shells play.sh, ClaudeProvider.detect), `AppProcessService.swift` (PortFinder), `WebView.swift`
+  (bridge user-script `window.ClawDnDNative`), `screen-launcher.jsx` + `app.jsx`, `scripts/play.sh`.
 
 ---
 

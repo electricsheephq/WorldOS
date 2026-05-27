@@ -439,7 +439,7 @@ function NewCampaignModal({ onClose, onCreate }) {
           </FormField>
 
           <FormField label="System">
-            <SegRadio value={system} onChange={setSystem} options={["D&D 5e", "Pathfinder 1e", "Free Form"]} />
+            <SegRadio value={system} onChange={setSystem} options={["D&D 5e", "Free Form"]} />
           </FormField>
 
           <FormField label="Narrative tone">
