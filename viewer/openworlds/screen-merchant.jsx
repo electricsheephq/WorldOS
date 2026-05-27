@@ -1,5 +1,14 @@
 /* Screen: Merchant / Market — buying, selling, haggling */
 
+/* W2d: item-icon scope helper — mirrors screen-inventory's slug()/itemScope(). Ingested
+   item art is keyed by a name-slug ("item:<slug>"); the server normalises "item-<slug>" to
+   the same key. Build the scope from a slug of the item NAME so wiki icons resolve, with a
+   graceful 404 → <Placeholder> fallback inside <Img>. */
+function mItemScope(item) {
+  const s = (window.slug ? window.slug(item && item.name) : "");
+  return s ? "item-" + s : "";
+}
+
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
   const [merchantId, setMerchantId] = React.useState("gate-sundries");
@@ -144,7 +153,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                     }}
                   >
                     <td style={{ ...tdStyle, width: 50 }}>
-                      <Placeholder label={it.glyph} w={36} h={36} framed />
+                      <Img scope={mItemScope(it)} label={it.glyph || it.name} w={36} h={36} fit="contain" framed />
                     </td>
                     <td style={tdStyle}>
                       <div style={{
@@ -222,7 +231,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 background: "rgba(176,141,87,0.08)",
                 boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
               }}>
-                <Placeholder label={it.glyph} w={32} h={32} framed />
+                <Img scope={mItemScope(it)} label={it.glyph || it.name} w={32} h={32} fit="contain" framed />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.06em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {it.name}
@@ -312,4 +321,4 @@ const MERCHANTS = [
   },
 ];
 
-Object.assign(window, { ScreenMerchant, MERCHANTS });
+Object.assign(window, { ScreenMerchant, MERCHANTS, mItemScope });

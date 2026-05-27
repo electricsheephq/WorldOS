@@ -1,5 +1,14 @@
 /* Screen: Forge — item & spell crafting */
 
+/* W2d: item-icon scope helper — mirrors screen-inventory's slug()/itemScope(). Recipes craft
+   a real item (its `name`) and components are named reagents; build "item-<slug(name)>" so
+   wiki icons resolve, with graceful 404 → <Placeholder> fallback inside <Img>. Obscure
+   crafting reagents with no wiki page simply fall back to the placeholder glyph. */
+function fItemScope(name) {
+  const s = (window.slug ? window.slug(name) : "");
+  return s ? "item-" + s : "";
+}
+
 function ScreenForge({ onNavigate, state, setState }) {
   // Crafting-roll prototype: the recipe mechanics + roll simulation are display-only (not
   // persisted to the engine). The crafters at the bench, however, are bound to the LIVE
@@ -129,7 +138,9 @@ function ScreenForge({ onNavigate, state, setState }) {
               cursor: "pointer", textAlign: "left",
               opacity: r.locked ? 0.5 : 1,
             }}>
-              <Placeholder label={r.glyph} w={36} h={36} framed />
+              {r.locked
+                ? <Placeholder label={r.glyph} w={36} h={36} framed />
+                : <Img scope={fItemScope(r.name)} label={r.glyph || r.name} w={36} h={36} fit="contain" framed />}
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.05em", color: r.locked ? "var(--ink-600)" : "var(--ink-900)" }}>
                   {r.locked ? "?????" : r.name}
@@ -153,7 +164,7 @@ function ScreenForge({ onNavigate, state, setState }) {
         {selected && !selected.locked ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 22, alignItems: "start" }}>
-              <Placeholder label={selected.glyph + " · plate"} h={180} framed />
+              <Img scope={fItemScope(selected.name)} label={selected.glyph + " · plate"} h={180} fit="contain" framed />
               <div>
                 <div className="eyebrow" style={{ color: "var(--crimson)" }}>{CATEGORY_LABEL[selected.category]} · {selected.tier}</div>
                 <h1 className="h1" style={{ marginTop: 2, fontSize: 24 }}>{selected.name}</h1>
@@ -299,7 +310,7 @@ function ComponentSlot({ component, have }) {
       background: ok ? "rgba(95, 130, 70, 0.08)" : "rgba(176,141,87,0.06)",
       boxShadow: "inset 0 0 0 1px " + (ok ? "rgba(95,130,70,0.4)" : "rgba(140,100,60,0.3)"),
     }}>
-      <Placeholder label={component.glyph} w="100%" h={48} framed />
+      <Img scope={fItemScope(component.name)} label={component.glyph || component.name} w="100%" h={48} fit="contain" framed />
       <div style={{
         fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.04em",
         color: "var(--ink-900)", marginTop: 6,
@@ -453,4 +464,4 @@ const RECIPES_LIST = [
   { id: "e3", category: "enchant", tier: "IV", locked: true, name: "?????", glyph: "?" },
 ];
 
-Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL });
+Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL, fItemScope });
