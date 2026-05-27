@@ -2860,20 +2860,61 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         for sk in skill_ids if sk in _SKILL_ABILITIES
     ]
 
-    # Spells: group known/prepared by inferred level using spell_slots presence; the
-    # snapshot stores spell names (not full blocks), so group everything as a flat list
-    # the SpellsTab renders ("Known" group).
+    # Spells: the snapshot stores spell NAMES only (no per-spell level/school blocks), so
+    # we render the names the engine actually carries — never fabricating. Prepared spells
+    # are the union of spells_prepared and spells_known marked prepared; we surface the full
+    # known/prepared list grouped under "Prepared" / "Known" so a caster with spells SHOWS
+    # them and a caster with none shows an honest empty list (the SpellsTab fallback).
     spells_known = [s for s in (ch.get("spells_known") or []) if isinstance(s, str)]
-    spells_prepared = set(s for s in (ch.get("spells_prepared") or []) if isinstance(s, str))
+    prepared_list = [s for s in (ch.get("spells_prepared") or []) if isinstance(s, str)]
+    spells_prepared = set(prepared_list)
     spells = []
-    if spells_known:
+    if prepared_list:
+        spells.append({
+            "level": "Prepared",
+            "list": [
+                {"name": s, "school": "—", "time": "prepared", "glyph": "spell"}
+                for s in prepared_list
+            ],
+        })
+    # Known-but-not-prepared spells get their own group so the distinction stays honest.
+    known_only = [s for s in spells_known if s not in spells_prepared]
+    if known_only:
         spells.append({
             "level": "Known",
             "list": [
-                {"name": s, "school": "—", "time": "prepared" if s in spells_prepared else "known", "glyph": "spell"}
-                for s in spells_known
+                {"name": s, "school": "—", "time": "known", "glyph": "spell"}
+                for s in known_only
             ],
         })
+
+    # Spell slots: the engine owns ch.spell_slots {level: {maximum, used}}. Surface the
+    # per-level slot track (total + remaining) so a caster's slots show even when no spell
+    # NAMES are stored. Sorted ascending by level. Empty for non-casters.
+    spell_slots_raw = ch.get("spell_slots")
+    spell_slots = []
+    if isinstance(spell_slots_raw, dict):
+        def _slot_lvl(k):
+            try:
+                return int(k)
+            except (TypeError, ValueError):
+                return 99
+        for lvl in sorted(spell_slots_raw.keys(), key=_slot_lvl):
+            pool = spell_slots_raw.get(lvl)
+            if not isinstance(pool, dict):
+                continue
+            mx = _num(pool.get("maximum"))
+            used = _num(pool.get("used"))
+            mx = int(mx) if mx is not None else 0
+            used = int(used) if used is not None else 0
+            if mx <= 0:
+                continue
+            spell_slots.append({
+                "level": _slot_lvl(lvl),
+                "max": mx,
+                "used": used,
+                "remaining": max(0, mx - used),
+            })
 
     # Class resources (Rage/Ki/etc.) — depletable pools the sheet can show as features.
     class_resources = []
@@ -2918,6 +2959,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "stats": stats,
         "skills": skills,
         "spells": spells,
+        "spellSlots": spell_slots,
         "classResources": class_resources,
         "conditions": conditions,
         "exhaustion": int(_num(ch.get("exhaustion")) or 0),
@@ -2936,6 +2978,14 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "traits": [],
         "dr": {"value": ", ".join(_text(x) for x in (ch.get("damage_resistances") or []) if _text(x)) or "None",
                "energy": ", ".join(_text(x) for x in (ch.get("damage_immunities") or []) if _text(x)) or "None"},
+        # Lineage: race is the engine's authoritative lineage field; subrace/racial traits
+        # are surfaced when the snapshot carries them (the engine model has none today, so
+        # they degrade to empty honestly). `lineageNote` keeps any backstory/personality
+        # flavor the character set; the screen falls back to an honest empty-state when
+        # neither race nor flavor exists.
+        "subrace": _text(ch.get("subrace")),
+        "raceTraits": [_text(t) for t in (ch.get("racial_traits") or ch.get("race_traits") or []) if _text(t)],
+        "lineageNote": _text(ch.get("backstory")) or _text(ch.get("personality")),
         "lineage": _text(ch.get("backstory")) or _text(ch.get("personality")) or "No lineage recorded.",
     }
 

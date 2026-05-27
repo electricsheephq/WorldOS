@@ -232,9 +232,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
           {/* Right column: lineage + traits */}
           <Panel framed style={{ padding: 22, overflow: "auto" }}>
             <SectionTitle ordinal="·">Lineage</SectionTitle>
-            <p className="body dropcap" style={{ marginTop: 0, fontSize: 15 }}>
-              {hero.lineage}
-            </p>
+            <LineagePanel hero={hero} />
 
             <Divider />
 
@@ -658,46 +656,119 @@ function spellGroupLabel(level) {
   return (typeof level === "number" || /^\d+$/.test(String(level))) ? `Level ${level}` : String(level);
 }
 
-function SpellsTab({ hero }) {
-  // Data-driven from the /character-surface read-model. The surface does not project
-  // spell-slot counts, so we render only what it provides (known/prepared spells) and
-  // fall back to an honest empty state — no hardcoded class label, no fabricated slots.
-  const groups = (Array.isArray(hero.spells) ? hero.spells : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+function LineagePanel({ hero }) {
+  // Surface the engine's authoritative lineage: race (+ subrace) as the heading, the
+  // racial traits the snapshot carries, and any backstory/personality flavor note. Honest
+  // empty-state only when the snapshot truly records no race and no flavor — never invent.
+  const race = (hero.race || "").trim();
+  const subrace = (hero.subrace || "").trim();
+  const traits = Array.isArray(hero.raceTraits) ? hero.raceTraits.filter(Boolean) : [];
+  const note = (hero.lineageNote || "").trim();
 
-  if (!groups.length) {
-    return (
-      <div>
-        <SectionTitle ordinal="·">Spellbook</SectionTitle>
-        <div className="muted body-sm" style={{ marginTop: 8 }}>No spells prepared.</div>
-      </div>
-    );
+  if (!race && !note) {
+    return <p className="body muted" style={{ marginTop: 0, fontSize: 14 }}>No lineage recorded for this hero.</p>;
   }
 
   return (
     <div>
-      <SectionTitle ordinal="·">Spellbook</SectionTitle>
-      {groups.map((group) => (
-        <div key={group.level} style={{ marginTop: 16 }}>
-          <SectionTitle>{spellGroupLabel(group.level)}</SectionTitle>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {group.list.map((sp) => (
-              <div key={sp.name} style={{
-                display: "flex", gap: 10, padding: 10,
-                background: "rgba(176,141,87,0.08)",
-                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
-              }}>
-                <Placeholder label={sp.glyph} w={36} h={36} framed />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
-                    {sp.name}
-                  </div>
-                  <div className="body-sm muted">{sp.school} · {sp.time}</div>
-                </div>
-              </div>
-            ))}
+      {race && (
+        <div style={{ marginBottom: note ? 10 : 0 }}>
+          <div style={{ fontFamily: "var(--f-display)", fontSize: 18, letterSpacing: "0.04em", color: "var(--ink-900)" }}>
+            {race}
           </div>
+          {subrace && <div className="muted body-sm" style={{ marginTop: 2 }}>{subrace}</div>}
         </div>
-      ))}
+      )}
+      {traits.length > 0 && (
+        <ul className="body-sm" style={{ margin: "6px 0 0", paddingLeft: 18, color: "var(--ink-700)" }}>
+          {traits.map((t) => (<li key={t}>{t}</li>))}
+        </ul>
+      )}
+      {note && (
+        <p className="body dropcap" style={{ marginTop: race ? 10 : 0, marginBottom: 0, fontSize: 15 }}>
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SpellSlotTrack({ slots }) {
+  // Render the engine's per-level spell-slot pools as pip tracks (filled = available,
+  // hollow = spent). Pure read-model projection (hero.spellSlots); no mutation.
+  if (!Array.isArray(slots) || !slots.length) return null;
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <SectionTitle>Spell Slots</SectionTitle>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+        {slots.map((s) => (
+          <div key={s.level} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-800)", minWidth: 64 }}>
+              Level {s.level}
+            </span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {Array.from({ length: s.max }).map((_, i) => (
+                <span key={i} title={i < s.remaining ? "available" : "spent"} style={{
+                  width: 12, height: 12, borderRadius: "50%",
+                  background: i < s.remaining
+                    ? "radial-gradient(circle at 30% 30%, var(--gold-glow, #f4d27b), var(--b-500))"
+                    : "transparent",
+                  boxShadow: "inset 0 0 0 1px var(--b-500)",
+                }} />
+              ))}
+            </div>
+            <span className="muted body-sm">{s.remaining} / {s.max}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SpellsTab({ hero }) {
+  // Data-driven from the /character-surface read-model. The surface projects spell-slot
+  // pools (hero.spellSlots) and the spell NAMES the engine carries (hero.spells, grouped
+  // Prepared/Known). We render the slot track always (when a caster has slots) and the
+  // spell list when present — falling back to an honest empty state for the names, since
+  // the snapshot stores no spell blocks to fabricate from.
+  const groups = (Array.isArray(hero.spells) ? hero.spells : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+  const slots = Array.isArray(hero.spellSlots) ? hero.spellSlots : [];
+  const isCaster = slots.length > 0 || groups.length > 0;
+
+  return (
+    <div>
+      <SectionTitle ordinal="·">Spellbook</SectionTitle>
+      <SpellSlotTrack slots={slots} />
+      {groups.length ? (
+        groups.map((group) => (
+          <div key={group.level} style={{ marginTop: 16 }}>
+            <SectionTitle>{spellGroupLabel(group.level)}</SectionTitle>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {group.list.map((sp) => (
+                <div key={sp.name} style={{
+                  display: "flex", gap: 10, padding: 10,
+                  background: "rgba(176,141,87,0.08)",
+                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+                }}>
+                  <Placeholder label={sp.glyph} w={36} h={36} framed />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                      {sp.name}
+                    </div>
+                    <div className="body-sm muted">{sp.school} · {sp.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="muted body-sm" style={{ marginTop: slots.length ? 16 : 8 }}>
+          {isCaster
+            ? "No spells prepared yet — this hero holds open slots but has bound no spells to the page."
+            : "This hero prepares no spells."}
+        </div>
+      )}
     </div>
   );
 }
@@ -723,4 +794,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard });

@@ -10,6 +10,30 @@ function atlasSurfaceFromCampaign(activeCampaign, state) {
   return query ? `?${query}` : "";
 }
 
+// Compact label for a map node so dense clusters stay legible. Drops a leading article,
+// keeps the most distinctive words, and caps the length — the full name still shows for
+// the selected / current / hovered node and in the hover card. Pure presentation; never
+// changes the layout or the engine's `name`.
+function atlasShortLabel(name) {
+  const full = (name || "").trim();
+  if (!full) return "";
+  const dropArticle = (s) => s.replace(/^(?:the|a|an)\s+/i, "").trim();
+  // District / qualified names ("Baldur's Gate — Lower Market", "Citadel: Vault") carry
+  // the distinctive part AFTER the separator — keep that so the chip reads "Lower Market".
+  let candidate = full;
+  const sep = full.split(/\s*[—–\-:·|]\s+/);
+  if (sep.length > 1) {
+    const tail = sep[sep.length - 1].trim();
+    if (tail) candidate = tail;
+  }
+  candidate = dropArticle(candidate);
+  if (candidate.length <= 14) return candidate;
+  // "X & the Y" / "X of Y" — keep the trailing noun, minus any article.
+  const conj = dropArticle(candidate.split(/\s+(?:&|and|of)\s+/i).pop().trim());
+  const base = conj.length <= 14 ? conj : conj.split(/\s+/)[0];
+  return base.length <= 16 ? base : base.slice(0, 15) + "…";
+}
+
 function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -573,6 +597,11 @@ function LocationPin({ loc, selected }) {
   const isCurrent = loc.current;
   const isVisited = loc.visited;
   const [hover, setHover] = React.useState(false);
+  // The full label is reserved for the node in focus (selected / current / hovered);
+  // every other node shows a compact label so the dense city centre stays legible. The
+  // full name remains one hover away (and in the hover card below).
+  const active = selected || isCurrent || hover;
+  const labelText = active ? loc.name : window.atlasShortLabel(loc.name);
 
   return (
     <div
@@ -582,7 +611,7 @@ function LocationPin({ loc, selected }) {
     >
       <div style={{
         position: "relative",
-        padding: "4px 14px 4px",
+        padding: active ? "4px 14px 4px" : "3px 9px 3px",
         background: selected
           ? "linear-gradient(180deg, var(--crimson) 0%, #5a1414 100%)"
           : isCurrent
@@ -590,20 +619,22 @@ function LocationPin({ loc, selected }) {
           : "linear-gradient(180deg, var(--p-100), var(--p-300))",
         color: selected || isCurrent ? "var(--p-100)" : "var(--ink-800)",
         fontFamily: "var(--f-display)",
-        fontSize: 10,
-        letterSpacing: "0.12em",
+        fontSize: active ? 10 : 9,
+        letterSpacing: active ? "0.12em" : "0.06em",
         textTransform: "uppercase",
+        opacity: active ? 1 : 0.92,
         boxShadow: selected
           ? "inset 0 0 0 1px #3a0e0e, 0 0 16px -2px rgba(244, 100, 100, 0.6)"
           : "inset 0 0 0 1px var(--b-500), 0 2px 4px rgba(0,0,0,0.4)",
         whiteSpace: "nowrap",
+        zIndex: active ? 6 : 1,
       }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           {(() => {
             const iconId = loc.current ? "atlas.travel" : (loc.tags || []).includes("rest") ? "camp.rest" : "settlement.tavern";
             return window.OpenWorldsIcon?.has?.(iconId) ? <window.OpenWorldsIcon id={iconId} size={11} /> : null;
           })()}
-          {loc.name}
+          {labelText}
         </span>
       </div>
       <div style={{
@@ -709,4 +740,4 @@ function ClockDial({ phase }) {
   );
 }
 
-Object.assign(window, { ScreenMap, LocationPin, atlasSurfaceFromCampaign, atlasTimePhase, ClockDial });
+Object.assign(window, { ScreenMap, LocationPin, atlasSurfaceFromCampaign, atlasShortLabel, atlasTimePhase, ClockDial });

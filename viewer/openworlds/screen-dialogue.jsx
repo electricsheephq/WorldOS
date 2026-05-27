@@ -160,12 +160,24 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
           }}>
             Parley · {surface.dayLabel || "the table"}
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span className="pill" style={{ background: "rgba(20,10,4,0.55)", color: "var(--p-100)", boxShadow: "inset 0 0 0 1px var(--b-500)" }}>
-              {canAct ? "Live" : "Read-only"}
-            </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Live vs read-only — explained on hover so the badge isn't bare. */}
+            <window.Tooltip
+              side="bottom"
+              content={canAct
+                ? "Live session attached — picking an approach sends a real check to the DM."
+                : "No live session attached. You can browse approaches, but the DM voices and rolls them — attach a live session to act."}>
+              <span className="pill" style={{ background: "rgba(20,10,4,0.55)", color: "var(--p-100)", boxShadow: "inset 0 0 0 1px var(--b-500)", cursor: "help" }}>
+                {canAct ? "Live" : "Read-only · DM rolls"}
+              </span>
+            </window.Tooltip>
+            {/* Approach difficulty for THIS attempt — sets the suggested DC of the check
+                the engine projects (easy 10 / medium 14 / hard 18, before any house shift). */}
+            <window.Tooltip side="bottom" content="Approach difficulty for this attempt — sets the suggested DC of the check below (easy ≈ 10 · medium ≈ 14 · hard ≈ 18).">
+              <span className="eyebrow" style={{ color: "var(--p-100)", letterSpacing: "0.16em", fontSize: 9, cursor: "help" }}>DC</span>
+            </window.Tooltip>
             {DIFFICULTY_OPTIONS.map((d) => (
-              <button key={d} onClick={() => setDifficulty(d)} className="btn sm" style={{
+              <button key={d} onClick={() => setDifficulty(d)} className="btn sm" title={`Set this attempt's approach difficulty to ${d}`} style={{
                 textTransform: "capitalize",
                 background: difficulty === d ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(20,10,4,0.5)",
                 color: difficulty === d ? "var(--w-300)" : "var(--p-100)",
