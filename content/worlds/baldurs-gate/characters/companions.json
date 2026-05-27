@@ -1,0 +1,17 @@
+{
+  "name": "Companions",
+  "race": "",
+  "class": "",
+  "level": "",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Companions are playable characters who can join and fight alongside the player character. Each has their own motivations, personality, and approval, which increases or decreases according to choices made throughout the game. At high approval levels, many companions can be romanced. Conversely, a companion may leave the party or even try to kill the player character if their approval becomes too low.\n\nThe default class of companions can be changed. However, for story purposes, the game acts as if they still have their original class.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "even, characterful",
+  "source_url": "https://bg3.wiki/wiki/Companions",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

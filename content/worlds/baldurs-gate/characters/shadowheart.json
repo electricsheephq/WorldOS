@@ -1,7 +1,5 @@
 {
   "name": "Shadowheart",
-  "playable": false,
-  "role": "hero",
   "race": "Half-elf",
   "class": "Cleric",
   "level": "1",

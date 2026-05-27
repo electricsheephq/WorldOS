@@ -1,0 +1,22 @@
+{
+  "name": "Caïros",
+  "race": "Tiefling",
+  "class": "Fighter",
+  "level": "9",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Caïros is the envoy of the Stone Lord, and can be found in the middle of an argument with the Guild on the Western Beach in Rivington during Act Three.\n\n__NOTOC__",
+  "equipment": [],
+  "relationships": [
+    "Blunt Skuncher",
+    "Funglesby",
+    "Old Flake-Eyes",
+    "Shiv Dahlia"
+  ],
+  "voice_hint": "tiefling fighter (voiced by Christopher York)",
+  "source_url": "https://bg3.wiki/wiki/Ca%C3%AFros",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

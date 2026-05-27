@@ -1,0 +1,17 @@
+{
+  "name": "Zelrin",
+  "race": "Githyanki",
+  "class": "Monk",
+  "level": "9",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "High Gish'ra Zelrin is a Gish'ra encountered at the beginning of Act Three attacking the party during a long rest. He is part of Orpheus' honour guard, and is fighting to free him.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "githyanki monk (voiced by Stefan Chanyaem)",
+  "source_url": "https://bg3.wiki/wiki/Zelrin",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Alfira",
+  "race": "Tiefling",
+  "class": "Bard",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Alfira is part of the group of tiefling refugees who were exiled from Elturel, and Bardic apprentice to a woman named Lihala. On the journey to the Emerald Grove, they were attacked by gnolls and Lihala was killed. Alfira has since been trying to compose a eulogy for her.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "tiefling bard (voiced by Rebecca Hanssen)",
+  "source_url": "https://bg3.wiki/wiki/Alfira",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

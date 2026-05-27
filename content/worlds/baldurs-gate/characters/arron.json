@@ -1,0 +1,17 @@
+{
+  "name": "Arron",
+  "race": "Halfling",
+  "class": "Fighter",
+  "level": "3",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Arron is a halfling trader who is located in The Hollow of the Emerald Grove in Act One.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "halfling fighter (voiced by George Naylor)",
+  "source_url": "https://bg3.wiki/wiki/Arron",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

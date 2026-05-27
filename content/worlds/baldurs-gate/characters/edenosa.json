@@ -1,0 +1,17 @@
+{
+  "name": "Edenosa",
+  "race": "Gnome",
+  "class": "Cleric",
+  "level": "10",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Manip Edenosa is a gnome cleric, a Manip of the Flaming Fist and a True Soul. She can found in the Lower City during Act Three.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "gnome cleric (voiced by Holly-Marie Michael)",
+  "source_url": "https://bg3.wiki/wiki/Edenosa",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

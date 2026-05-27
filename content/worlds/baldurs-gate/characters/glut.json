@@ -1,0 +1,17 @@
+{
+  "name": "Glut",
+  "race": "Myconid",
+  "class": "",
+  "level": "4",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Glut was the sovereign of a myconid circle, now displaced after duergar killed its people. Without a circle, Glut took shelter with Sovereign Spaw's in the Ebonlake Grotto. However, it holds resentment towards Spaw for not giving aid despite its pleas during the attack.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "myconid (voiced by Matt Addis)",
+  "source_url": "https://bg3.wiki/wiki/Glut",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

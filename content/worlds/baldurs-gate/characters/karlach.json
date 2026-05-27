@@ -1,7 +1,5 @@
 {
   "name": "Karlach",
-  "playable": false,
-  "role": "hero",
   "race": "Tiefling",
   "class": "Barbarian",
   "level": "1",
@@ -12,17 +10,6 @@
   "backstory": "Trapped in Avernus under Zariel's banner due to the machinations of those she trusted the most, Karlach has been fighting in the [https://forgottenrealms.fandom.com/wiki/Blood_War Blood War] for a decade, away from all that she loved. With the incursion of the nautiloid to the Nine Hells, fate would smile on her and give her a way out, only to turn on her just as quickly. Now, free at last, though with an unwelcome guest in her head, she must protect her hard-won liberty with her life as she seeks revenge on those who betrayed her many years ago. With a malfunctioning engine for a heart, and a burning desire to live, will she be able to save herself, or will the Hells finally catch up with her, sooner rather than later?",
   "equipment": [],
   "relationships": [],
-  "companion_dossier": {
-    "wound": "a decade lost in Avernus, betrayed by someone she trusted",
-    "wants": ["live every moment she was robbed of", "settle the score with the one who sold her"],
-    "fears": ["the engine failing before she has truly lived"],
-    "values": ["loyalty", "joy", "freedom"],
-    "approval_likes": ["protecting friends", "seizing life's simple pleasures"],
-    "approval_dislikes": ["cruelty for its own sake", "cold calculation that treats people as tools"],
-    "banter_tags": ["second_chances", "rage_and_warmth", "the_cost_of_revenge"],
-    "camp_prompts": ["wonders aloud what she'll do with a life she never expected to keep"],
-    "relationships": {"npc-wyll": "fast friend", "npc-astarion": "kindred survivor of an abuser"}
-  },
   "voice_hint": "tiefling barbarian (voiced by Samantha Béart)",
   "source_url": "https://bg3.wiki/wiki/Karlach",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",

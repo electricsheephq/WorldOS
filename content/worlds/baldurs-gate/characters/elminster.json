@@ -1,0 +1,17 @@
+{
+  "name": "Elminster",
+  "race": "Human/Construct",
+  "class": "Wizard",
+  "level": "20",
+  "alignment": "",
+  "appearance": "Elminster wears a flowing orange-red robe with a matching hat, whose drooped steeple hangs backwards. Luscious silver locks of hair pour outward from the wide brim of his hat and blend into an equally long beard, between which sits a round, wizened face. A brilliant blue sash, decorated with jewels and signets, is draped between his right shoulder and left hip. Completing his finery is a necklace of gold and silver plates with a single blood-red jewel, along with a matching belt. In stark contrast to this opulent getup, he wields a single plain, unenchanted quarterstaff.\n\nThough bearing his normal appearance, the Elminster who appears in game is a construct. If defeated, it melts into a pile of water, strongly implying it to be a of the real wizard.",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Elminster Aumar, commonly known as Elminster, is a legendary wizard who appears in Baldur's Gate 3. He is one of the current Chosen of the Goddess Mystra and plays a key recurring role in the story of Gale. He is first encountered under the name Weary Traveller.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human/construct wizard (voiced by Crispin Redman)",
+  "source_url": "https://bg3.wiki/wiki/Elminster",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

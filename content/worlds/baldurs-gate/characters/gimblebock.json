@@ -1,0 +1,17 @@
+{
+  "name": "Gimblebock",
+  "race": "Gnome",
+  "class": "Fighter",
+  "level": "2",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "__notoc__\n\nGimblebock is a gnome bandit leader who is looting the Overgrown Ruins in Act One.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "gnome fighter (voiced by Glen McCready)",
+  "source_url": "https://bg3.wiki/wiki/Gimblebock",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

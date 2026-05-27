@@ -1,0 +1,17 @@
+{
+  "name": "Ignur",
+  "race": "Human",
+  "class": "Cleric",
+  "level": "12",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Ignur is a Black Gauntlet of Bane in Wyrm's Rock Fortress.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human cleric (voiced by Nicholas Aaron)",
+  "source_url": "https://bg3.wiki/wiki/Ignur",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

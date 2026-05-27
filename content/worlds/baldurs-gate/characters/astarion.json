@@ -1,7 +1,5 @@
 {
   "name": "Astarion",
-  "playable": false,
-  "role": "hero",
   "race": "Elf",
   "class": "Rogue",
   "level": "1",

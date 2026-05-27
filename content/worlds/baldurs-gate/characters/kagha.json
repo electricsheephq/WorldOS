@@ -1,0 +1,17 @@
+{
+  "name": "Kagha",
+  "race": "Elf",
+  "class": "Druid",
+  "level": "5",
+  "alignment": "",
+  "appearance": "",
+  "personality": "Kagha is willing to take drastic action to prove her authority over the Emerald Grove. She views the tiefling refugees as parasites and refers to them as devils and a rot to be cleansed.\n\nKagha justifies her violent actions as those of a watchful broodmother. As such, Kagha admires drow and duergar for their culture of aggressive self-preservation. If the player character is a drow or duergar, she approves of their presence, calling it a gift.",
+  "mannerisms": "",
+  "backstory": "Kagha is a wood elven druid in the Emerald Grove during Act One. She was Halsin's Second Druid, but has named herself First Druid in his absence. She started the Rite of Thorns to seal the Grove off, no matter the consequences.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "elf druid (voiced by Clare Corbett)",
+  "source_url": "https://bg3.wiki/wiki/Kagha",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

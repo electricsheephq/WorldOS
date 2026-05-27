@@ -1,0 +1,17 @@
+{
+  "name": "Lanni",
+  "race": "Halfling",
+  "class": "Ranger",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Harper Lanni is a lightfoot halfling ranger and Harper. Depending on if one of the original Harper allies are dead, she can take their place and help the party during the Assault on Moonrise Towers and be a potential ally during Confront the Elder Brain.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "halfling ranger (voiced by Serena Manteghi)",
+  "source_url": "https://bg3.wiki/wiki/Lanni",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

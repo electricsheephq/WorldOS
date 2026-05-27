@@ -1,7 +1,5 @@
 {
   "name": "Wyll",
-  "playable": false,
-  "role": "hero",
   "race": "Human",
   "class": "Warlock",
   "level": "1",

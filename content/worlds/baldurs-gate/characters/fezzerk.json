@@ -1,0 +1,17 @@
+{
+  "name": "Fezzerk",
+  "race": "Goblin",
+  "class": "Fighter",
+  "level": "3",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "__notoc__\n\nFezzerk leads a gang of goblins at Blighted Village in Act One, tormenting an unfortunate deep gnome as part of the Rescue the Gnome quest. Depending on whether he is spared, he can make a minor appearance in Act Two.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "goblin fighter (voiced by Declan Perring)",
+  "source_url": "https://bg3.wiki/wiki/Fezzerk",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

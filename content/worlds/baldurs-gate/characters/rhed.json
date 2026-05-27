@@ -1,0 +1,17 @@
+{
+  "name": "Rhed",
+  "race": "Gold dwarf",
+  "class": "Fighter",
+  "level": "7",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Fist Rhed is a gold dwarf Flaming Fist in Act Two. He can help the party during the Assault on Moonrise Towers.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "gold dwarf fighter (voiced by Oliver Cudbill)",
+  "source_url": "https://bg3.wiki/wiki/Rhed",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

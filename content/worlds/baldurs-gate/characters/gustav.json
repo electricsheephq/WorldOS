@@ -1,0 +1,17 @@
+{
+  "name": "Gustav",
+  "race": "Dog",
+  "class": "",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Gustav is a courier dog employed by Angry Mar'hyah at the Sword Coast Couriers in Rivington during Act Three.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "dog (voiced by Peter Hannah)",
+  "source_url": "https://bg3.wiki/wiki/Gustav",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

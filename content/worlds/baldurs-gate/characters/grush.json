@@ -1,0 +1,17 @@
+{
+  "name": "Grush",
+  "race": "Goblin",
+  "class": "Fighter",
+  "level": "2",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "__notoc__\n\nLookout Grush is a goblin stationed at the Shattered Sanctum in Act One. He and Torturer Spike are interrogating Liam next to the Bloodied Shrine.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "goblin fighter (voiced by Adam Diggle)",
+  "source_url": "https://bg3.wiki/wiki/Grush",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

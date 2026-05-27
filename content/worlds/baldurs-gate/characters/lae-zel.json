@@ -1,7 +1,5 @@
 {
   "name": "Lae'zel",
-  "playable": false,
-  "role": "hero",
   "race": "Githyanki",
   "class": "Fighter",
   "level": "1",

@@ -1,0 +1,17 @@
+{
+  "name": "Florrick",
+  "race": "Elf",
+  "class": "Wizard",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Florrick is professional and dutiful in her role as a leading member of Baldur's Gate's government. While an advisor, she prefers to be direct and on-hand when it comes to handling problems which plague the city, such as the disappearance of Ulder Ravengard. Being straightforward and honest in her dealings makes her quite a rarity in the oft corrupt ranks of the city's elite.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "elf wizard (voiced by Karen Bryson)",
+  "source_url": "https://bg3.wiki/wiki/Florrick",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Gristle",
+  "race": "Worg",
+  "class": "",
+  "level": "2",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Gristle is a named white Worg found inside Flymm Cargo along with other Worgs Cuddleface, Rrripper, Snapp, and Snarrrl. They attack on sight, as soon as the door is opened.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "worg",
+  "source_url": "https://bg3.wiki/wiki/Gristle",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

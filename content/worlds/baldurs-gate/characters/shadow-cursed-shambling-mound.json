@@ -1,0 +1,21 @@
+{
+  "name": "Shadow-Cursed Shambling Mound",
+  "race": "Shambling Mound",
+  "class": "",
+  "level": "9",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "A Shadow-Cursed Shambling Mound is a type of Shambling Mound boss enemy found in the Shadow-Cursed Lands of Act Two.",
+  "equipment": [],
+  "relationships": [
+    "Shadow-Cursed Harper - 2x",
+    "Shadow-Cursed Needle Blight - 6x",
+    "Shadow-Cursed Vine Blight - 2x"
+  ],
+  "voice_hint": "shambling mound",
+  "source_url": "https://bg3.wiki/wiki/Shadow-Cursed_Shambling_Mound",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}
