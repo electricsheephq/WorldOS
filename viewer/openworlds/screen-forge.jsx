@@ -1,13 +1,23 @@
 /* Screen: Forge — item & spell crafting */
 
 function ScreenForge({ onNavigate, state, setState }) {
-  // Display-only prototype: not yet wired to a live crafting read-model. There is no live
-  // party binding here, so `state.party` is the (non-canonical Pathfinder demo) source —
-  // never use it. Keep the party empty and render a clean empty-state below.
-  const party = [];
+  // Crafting-roll prototype: the recipe mechanics + roll simulation are display-only (not
+  // persisted to the engine). The crafters at the bench, however, are bound to the LIVE
+  // party from /character-surface — never a hardcoded demo roster. When the live party is
+  // empty, the bench shows an honest empty-state below.
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  // LIVE party from the /character-surface read-model only — never a demo roster.
+  const party = (Array.isArray(surface?.party) && surface.party.length) ? surface.party : [];
   const [category, setCategory] = React.useState("smith");
   const [selected, setSelected] = React.useState(RECIPES_LIST[0]);
-  const [crafter, setCrafter] = React.useState("vell");
+  const [crafter, setCrafter] = React.useState("");
   const [log, setLog] = React.useState([
     { when: "yesterday", who: "the scribe", item: "Scroll of Light", success: true },
     { when: "2 days past", who: "the smith", item: "Iron-shod boots (repair)", success: true },
@@ -15,9 +25,46 @@ function ScreenForge({ onNavigate, state, setState }) {
   ]);
   const toast = window.useToast ? window.useToast() : (() => {});
 
+  const loadSurface = React.useCallback(async (isCancelled = () => false) => {
+    try {
+      const response = await fetch("/character-surface" + surfaceQuery, { cache: "no-store" });
+      if (!response.ok) throw new Error(`character surface ${response.status}`);
+      const payload = await response.json();
+      if (!isCancelled()) setSurface(payload);
+    } catch (error) { /* keep last good; empty-state shows until the first success */ }
+  }, [surfaceQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const guardedLoad = async () => { if (!cancelled) await loadSurface(() => cancelled); };
+    const stopPolling = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const startPolling = () => { if (timer === null) timer = window.setInterval(guardedLoad, 5000); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") { guardedLoad(); startPolling(); } else { stopPolling(); }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    handleVisibility();
+    return () => { cancelled = true; stopPolling(); document.removeEventListener("visibilitychange", handleVisibility); };
+  }, [loadSurface]);
+
+  React.useEffect(() => {
+    if (party.length > 0 && !party.find((p) => p.id === crafter)) {
+      setCrafter(party[0].id);
+    }
+  }, [party, crafter]);
+
   const recipes = RECIPES_LIST.filter((r) => r.category === category);
   const hero = party.find((p) => p.id === crafter) || party[0];
-  const skillBonus = selected && hero ? (CRAFTER_SKILL[hero.id]?.[selected.skill] ?? 4) : 0;
+  // Derive the crafting bonus from the live hero's projected skills (the /character-surface
+  // `skills` array of { name, mod }); fall back to a neutral default when the surface does
+  // not carry a matching skill — never a hardcoded per-crafter table.
+  const skillBonus = (() => {
+    if (!selected || !hero) return 0;
+    const skills = Array.isArray(hero.skills) ? hero.skills : [];
+    const match = skills.find((s) => String(s?.name || "").toLowerCase() === String(selected.skill || "").toLowerCase());
+    return (match && typeof match.mod === "number") ? match.mod : 4;
+  })();
   const successChance = selected ? Math.max(5, Math.min(95, (skillBonus - selected.dc + 20) * 5)) : 0;
 
   const craft = () => {
@@ -135,7 +182,7 @@ function ScreenForge({ onNavigate, state, setState }) {
             <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>
               "{selected.note}"
               <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
-                — {selected.noteBy || "Linzi, scribe"}
+                — {selected.noteBy || "the chronicle"}
               </div>
             </div>
           </>
@@ -173,7 +220,7 @@ function ScreenForge({ onNavigate, state, setState }) {
           </div>
         ) : (
           <div className="muted body-sm" style={{ marginTop: 4 }}>
-            Forge — prototype. Not yet wired to a live crafting read-model.
+            Your party's crafters appear here once you have a hero.
           </div>
         )}
 
@@ -272,12 +319,6 @@ const CATEGORY_LABEL = {
   enchant: "Enchanting",
 };
 
-const CRAFTER_SKILL = {
-  cassian: { "Smith's Tools": 5, "Alchemist's Supplies": 2, Arcana: 8, History: 2 },
-  mira: { "Smith's Tools": 3, "Alchemist's Supplies": 4, Arcana: 6, History: 8 },
-  vell: { "Smith's Tools": 9, "Alchemist's Supplies": 1, Arcana: 0, History: 1 },
-};
-
 const RECIPES_LIST = [
   // Smithing
   {
@@ -289,7 +330,7 @@ const RECIPES_LIST = [
       { name: "Oil", glyph: "oil flask", qty: 1, have: 3 },
       { name: "Iron filings", glyph: "filings", qty: 1, have: 2 },
     ],
-    note: "Vell does this every fourth rest whether he needs to or not. Says it calms him. I am not arguing.",
+    note: "Done every fourth rest whether the edge needs it or not — it steadies the hands.",
   },
   {
     id: "s2", category: "smith", tier: "II", name: "Iron-shod boots (repair)",
@@ -326,7 +367,7 @@ const RECIPES_LIST = [
       { name: "Glass vial", glyph: "vial", qty: 1, have: 4 },
       { name: "Spring water", glyph: "flask", qty: 1, have: 6 },
     ],
-    note: "Mira tried twice. Mira is in the ledger. Mira will try again.",
+    note: "Easy to spoil, easy to retry — the materials are forgiving. Try again at next rest.",
   },
   {
     id: "a2", category: "alchemy", tier: "II", name: "Antitoxin",
@@ -348,7 +389,7 @@ const RECIPES_LIST = [
       { name: "Sulfur", glyph: "sulfur", qty: 1, have: 1 },
       { name: "Glass vial", glyph: "vial", qty: 1, have: 4 },
     ],
-    note: "Naphtha is bought from Oleg. Oleg does not always sell it.",
+    note: "Naphtha is bought from the quartermaster; not always in stock.",
   },
 
   // Scribing
@@ -361,7 +402,7 @@ const RECIPES_LIST = [
       { name: "Brass ink", glyph: "inkpot", qty: 1, have: 2 },
       { name: "Quill", glyph: "quill", qty: 1, have: 1 },
     ],
-    note: "Cassian writes these to keep his hand in. Linzi reads them aloud before they are sealed.",
+    note: "A good first scroll to keep your hand in. Read it aloud once before the wax is set.",
   },
   {
     id: "sc2", category: "scribe", tier: "II", name: "Scroll of Cure Wounds",
@@ -372,7 +413,7 @@ const RECIPES_LIST = [
       { name: "Brass ink", glyph: "inkpot", qty: 1, have: 2 },
       { name: "Holy ash", glyph: "ash", qty: 1, have: 1 },
     ],
-    note: "Cleric absent. Improvised by Cassian. Worked twice in three tries.",
+    note: "For when no cleric is at hand. Improvised work — succeeds about two tries in three.",
   },
   {
     id: "sc3", category: "scribe", tier: "III", name: "Scroll of Mage Armor",
@@ -383,7 +424,7 @@ const RECIPES_LIST = [
       { name: "Blue wax", glyph: "wax", qty: 1, have: 1 },
       { name: "Spell focus shard", glyph: "shard", qty: 1, have: 1 },
     ],
-    note: "Linzi writes these in her own hand. Says they cast better that way.",
+    note: "Best written by hand, slowly. The patient scribes swear they cast better that way.",
   },
 
   // Enchanting
@@ -396,7 +437,7 @@ const RECIPES_LIST = [
       { name: "Spring water", glyph: "flask", qty: 1, have: 6 },
       { name: "Salt", glyph: "salt", qty: 1, have: 4 },
     ],
-    note: "Useful at the Lanternrest. Wholly useless against the crow on the gable, in case you were wondering.",
+    note: "Useful in a haunted hall. Wholly useless against an ordinary crow, in case you were wondering.",
   },
   {
     id: "e2", category: "enchant", tier: "III", name: "Ring of Warding",
@@ -407,9 +448,9 @@ const RECIPES_LIST = [
       { name: "River pearl", glyph: "pearl", qty: 2, have: 2 },
       { name: "Hammer", glyph: "hammer", qty: 1, have: 1 },
     ],
-    note: "Vell forges, Cassian binds. They argue for an hour about whose name goes on it. Neither does.",
+    note: "One smith forges, another binds. They argue for an hour about whose name goes on it. Neither does.",
   },
   { id: "e3", category: "enchant", tier: "IV", locked: true, name: "?????", glyph: "?" },
 ];
 
-Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CRAFTER_SKILL, CATEGORY_LABEL });
+Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL });
