@@ -1,5 +1,14 @@
 /* Screen: Bestiary / Codex — encounters, lore, NPCs */
 
+// Slug a creature name into the /image scope segment, EXACTLY as screen-inventory's
+// slug() does (lowercase, [^a-z0-9]+ -> "-", trimmed). Ingested creature art is keyed
+// "creature:<slug>"; the viewer's _scope_key normalises that and "creature-<slug>" to the
+// same key ("creature" is NOT a stripped prefix), so the art resolves regardless of
+// separator. Mirrors the id derivation below so the scope tracks the entry.
+function creatureSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
 // Map one live /bestiary-surface item (player_bestiary_preview shape:
 // { name, size, type, cr, content_origin, known_actions[], source?, license?, provenance? })
 // onto the codex entry shape this screen renders. Fields the player-safe preview does NOT
@@ -10,10 +19,13 @@ function liveBestiaryEntry(item) {
   const size = String(item?.size || "").trim();
   const type = String(item?.type || "").trim();
   const descriptor = [size, type].filter(Boolean).join(" · ");
+  const cslug = creatureSlug(name);
   return {
     id: "live:" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || Math.random().toString(36).slice(2)),
     name: name || "Unknown",
     short: name.slice(0, 6).toLowerCase() || "?",
+    // /image scope for the creature plate; "" → graceful placeholder (no fetch / 404).
+    imageScope: cslug ? "creature-" + cslug : "",
     short_descriptor: descriptor,
     subtitle: "",
     size,
@@ -157,7 +169,7 @@ function ScreenBestiary({ onNavigate, state, setState }) {
               cursor: "pointer",
               textAlign: "left",
             }}>
-              <Placeholder label={e.short} w={36} h={44} framed />
+              <Img scope={e.unknown ? "" : e.imageScope} label={e.short} w={36} h={44} framed />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.06em", color: e.unknown ? "var(--ink-600)" : "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: e.unknown ? "italic" : "normal" }}>
                   {e.unknown ? "?????" : e.name}
@@ -209,7 +221,10 @@ function BestiaryEntry({ entry, tab }) {
     <Panel framed style={{ padding: 28, overflow: "auto" }}>
       <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 22, alignItems: "start" }}>
         <div>
-          <Placeholder label={`${entry.short} · plate`} h={240} framed />
+          {/* Full-width within the 200px detail column (like screen-inventory's hero plate):
+              w="100%" keeps the art inside its column; the placeholder fallback was already
+              column-width, so this matches its footprint while letting real art fill the frame. */}
+          <Img scope={tab === "creatures" ? entry.imageScope : ""} label={`${entry.short} · plate`} w="100%" h={240} framed />
           {entry.cr && (
             <div style={{ marginTop: 8, padding: 8, background: "rgba(176,141,87,0.1)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)" }}>
               <div className="eyebrow text-center" style={{ textAlign: "center" }}>Challenge</div>

@@ -1,0 +1,400 @@
+{
+ "_comment": "Creature art from bg3.wiki for the Bestiary/Codex creature plates (EPIC D). Each entry maps a bg3.wiki creature page -> creature:<slug> where <slug> is the live bestiary creature name slugged exactly as screen-bestiary.jsx derives it (toLowerCase, [^a-z0-9]+ -> '-', trimmed). The viewer's _scope_key normalises 'creature:<slug>' and the UI's 'creature-<slug>' to the SAME key ('creature' is NOT a stripped prefix), so ingested art resolves. SUFFIXED 2024-SRD names map to the matching bg3.wiki bare-name page (Goblin -> goblin-warrior/boss/minion; Bugbear -> bugbear-warrior/stalker; Bear -> black/brown/polar). A few canon pages stand in for a family (Red Dragon -> the red chromatic line). Official wiki images are (c) Larian -> land ONLY in gitignored content/worlds/_private/<world>/images/, never committed. Re-run: python3 tools/ingest/wiki_images.py tools/ingest/manifest_images_creatures.json",
+ "world_id": "baldurs-gate",
+ "rate_delay_seconds": 0.4,
+ "sources": [
+  {
+   "wiki": "bg3.wiki",
+   "script_path": "/w",
+   "license": "(c) Larian Studios / bg3.wiki - official game image, NOT redistributable; cached to gitignored _private/ for personal local play only (Fan Content Policy).",
+   "attribution": "Image from bg3.wiki ((c) Larian Studios). Unofficial, non-commercial fan use; local-only, never committed.",
+   "images": [
+    {
+     "title": "Air Elemental",
+     "scope": "creature:air-elemental",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bat",
+     "scope": "creature:bat",
+     "kind": "portrait"
+    },
+    {
+     "title": "Blink Dog",
+     "scope": "creature:blink-dog",
+     "kind": "portrait"
+    },
+    {
+     "title": "Boar",
+     "scope": "creature:boar",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bulette",
+     "scope": "creature:bulette",
+     "kind": "portrait"
+    },
+    {
+     "title": "Cat",
+     "scope": "creature:cat",
+     "kind": "portrait"
+    },
+    {
+     "title": "Cloaker",
+     "scope": "creature:cloaker",
+     "kind": "portrait"
+    },
+    {
+     "title": "Crab",
+     "scope": "creature:crab",
+     "kind": "portrait"
+    },
+    {
+     "title": "Deva",
+     "scope": "creature:deva",
+     "kind": "portrait"
+    },
+    {
+     "title": "Djinni",
+     "scope": "creature:djinni",
+     "kind": "portrait"
+    },
+    {
+     "title": "Doppelganger",
+     "scope": "creature:doppelganger",
+     "kind": "portrait"
+    },
+    {
+     "title": "Drider",
+     "scope": "creature:drider",
+     "kind": "portrait"
+    },
+    {
+     "title": "Dryad",
+     "scope": "creature:dryad",
+     "kind": "portrait"
+    },
+    {
+     "title": "Earth Elemental",
+     "scope": "creature:earth-elemental",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ettercap",
+     "scope": "creature:ettercap",
+     "kind": "portrait"
+    },
+    {
+     "title": "Fire Elemental",
+     "scope": "creature:fire-elemental",
+     "kind": "portrait"
+    },
+    {
+     "title": "Flesh Golem",
+     "scope": "creature:flesh-golem",
+     "kind": "portrait"
+    },
+    {
+     "title": "Frog",
+     "scope": "creature:frog",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ghast",
+     "scope": "creature:ghast",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ghost",
+     "scope": "creature:ghost",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ghoul",
+     "scope": "creature:ghoul",
+     "kind": "portrait"
+    },
+    {
+     "title": "Giant Eagle",
+     "scope": "creature:giant-eagle",
+     "kind": "portrait"
+    },
+    {
+     "title": "Giant Spider",
+     "scope": "creature:giant-spider",
+     "kind": "portrait"
+    },
+    {
+     "title": "Harpy",
+     "scope": "creature:harpy",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hyena",
+     "scope": "creature:hyena",
+     "kind": "portrait"
+    },
+    {
+     "title": "Imp",
+     "scope": "creature:imp",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mimic",
+     "scope": "creature:mimic",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mummy",
+     "scope": "creature:mummy",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mummy Lord",
+     "scope": "creature:mummy-lord",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ochre Jelly",
+     "scope": "creature:ochre-jelly",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ogre",
+     "scope": "creature:ogre",
+     "kind": "portrait"
+    },
+    {
+     "title": "Owlbear",
+     "scope": "creature:owlbear",
+     "kind": "portrait"
+    },
+    {
+     "title": "Phase Spider",
+     "scope": "creature:phase-spider",
+     "kind": "portrait"
+    },
+    {
+     "title": "Rat",
+     "scope": "creature:rat",
+     "kind": "portrait"
+    },
+    {
+     "title": "Raven",
+     "scope": "creature:raven",
+     "kind": "portrait"
+    },
+    {
+     "title": "Shadow",
+     "scope": "creature:shadow",
+     "kind": "portrait"
+    },
+    {
+     "title": "Shambling Mound",
+     "scope": "creature:shambling-mound",
+     "kind": "portrait"
+    },
+    {
+     "title": "Skeleton",
+     "scope": "creature:skeleton",
+     "kind": "portrait"
+    },
+    {
+     "title": "Spider",
+     "scope": "creature:spider",
+     "kind": "portrait"
+    },
+    {
+     "title": "Vampire spawn",
+     "scope": "creature:vampire-spawn",
+     "kind": "portrait"
+    },
+    {
+     "title": "Water Elemental",
+     "scope": "creature:water-elemental",
+     "kind": "portrait"
+    },
+    {
+     "title": "Werewolf",
+     "scope": "creature:werewolf",
+     "kind": "portrait"
+    },
+    {
+     "title": "Wolf",
+     "scope": "creature:wolf",
+     "kind": "portrait"
+    },
+    {
+     "title": "Worg",
+     "scope": "creature:worg",
+     "kind": "portrait"
+    },
+    {
+     "title": "Wraith",
+     "scope": "creature:wraith",
+     "kind": "portrait"
+    },
+    {
+     "title": "Zombie",
+     "scope": "creature:zombie",
+     "kind": "portrait"
+    },
+    {
+     "title": "Goblin",
+     "scope": "creature:goblin-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Goblin",
+     "scope": "creature:goblin-boss",
+     "kind": "portrait"
+    },
+    {
+     "title": "Goblin",
+     "scope": "creature:goblin-minion",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bugbear",
+     "scope": "creature:bugbear-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bugbear",
+     "scope": "creature:bugbear-stalker",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hobgoblin",
+     "scope": "creature:hobgoblin-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hobgoblin",
+     "scope": "creature:hobgoblin-captain",
+     "kind": "portrait"
+    },
+    {
+     "title": "Gnoll",
+     "scope": "creature:gnoll-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Kobold",
+     "scope": "creature:kobold-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Sahuagin",
+     "scope": "creature:sahuagin-warrior",
+     "kind": "portrait"
+    },
+    {
+     "title": "Minotaur",
+     "scope": "creature:minotaur-of-baphomet",
+     "kind": "portrait"
+    },
+    {
+     "title": "Minotaur",
+     "scope": "creature:minotaur-skeleton",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bear",
+     "scope": "creature:black-bear",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bear",
+     "scope": "creature:brown-bear",
+     "kind": "portrait"
+    },
+    {
+     "title": "Bear",
+     "scope": "creature:polar-bear",
+     "kind": "portrait"
+    },
+    {
+     "title": "Red Dragon",
+     "scope": "creature:adult-red-dragon",
+     "kind": "portrait"
+    },
+    {
+     "title": "Red Dragon",
+     "scope": "creature:young-red-dragon",
+     "kind": "portrait"
+    },
+    {
+     "title": "Red Dragon",
+     "scope": "creature:red-dragon-wyrmling",
+     "kind": "portrait"
+    },
+    {
+     "title": "Red Dragon",
+     "scope": "creature:ancient-red-dragon",
+     "kind": "portrait"
+    },
+    {
+     "title": "Ooze",
+     "scope": "creature:gray-ooze",
+     "kind": "portrait"
+    },
+    {
+     "title": "Succubus & Incubus",
+     "scope": "creature:succubus",
+     "kind": "portrait"
+    },
+    {
+     "title": "Succubus & Incubus",
+     "scope": "creature:incubus",
+     "kind": "portrait"
+    },
+    {
+     "title": "Crawling Claw",
+     "scope": "creature:swarm-of-crawling-claws",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mephit",
+     "scope": "creature:dust-mephit",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mephit",
+     "scope": "creature:ice-mephit",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mephit",
+     "scope": "creature:magma-mephit",
+     "kind": "portrait"
+    },
+    {
+     "title": "Mephit",
+     "scope": "creature:steam-mephit",
+     "kind": "portrait"
+    },
+    {
+     "title": "Pixie",
+     "scope": "creature:sprite",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hag",
+     "scope": "creature:green-hag",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hag",
+     "scope": "creature:night-hag",
+     "kind": "portrait"
+    },
+    {
+     "title": "Hag",
+     "scope": "creature:sea-hag",
+     "kind": "portrait"
+    }
+   ]
+  }
+ ]
+}
