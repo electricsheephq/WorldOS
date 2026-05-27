@@ -881,6 +881,27 @@ def _openworlds_day_label(snapshot: dict) -> str:
     return _text(calendar.get("label")) if calendar.get("available") else _openworlds_legacy_day_label(snapshot)
 
 
+# Map the engine's free-form ``time_of_day`` string onto the four atlas day/night phases
+# the World Map shades by. Clock-driven: the viewer reads this off the live snapshot rather
+# than sniffing the day label, so the Dawn/Day/Dusk/Night indicator can never disagree with
+# the campaign clock. Unknown / empty → "day" (neutral, no tint).
+def _openworlds_time_phase(snapshot: dict) -> str:
+    raw = _text(snapshot.get("time_of_day") if isinstance(snapshot, dict) else "").lower()
+    if not raw:
+        return "day"
+    # First substring match wins, so order specific phrases (e.g. "afternoon") ahead of
+    # their broader roots ("noon"). Dawn/dusk/night roots are unambiguous.
+    for needle, phase in (
+        ("midnight", "night"), ("night", "night"),
+        ("daybreak", "dawn"), ("dawn", "dawn"), ("sunrise", "dawn"), ("morning", "dawn"),
+        ("twilight", "dusk"), ("dusk", "dusk"), ("sunset", "dusk"), ("evening", "dusk"),
+        ("afternoon", "day"), ("midday", "day"), ("noon", "day"), ("day", "day"),
+    ):
+        if needle in raw:
+            return phase
+    return "day"
+
+
 def _openworlds_calendar(snapshot: dict) -> dict:
     return _openworlds_calendar_projection(snapshot)
 
@@ -2303,6 +2324,8 @@ def build_atlas_surface(
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
+        "time_of_day": _text(snapshot.get("time_of_day")),
+        "time_phase": _openworlds_time_phase(snapshot),
         "calendar": _openworlds_calendar(snapshot),
         "current_location": current or {"id": "", "name": "Unknown location", "tags": []},
         "known_locations": locations,

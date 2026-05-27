@@ -139,6 +139,8 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["state_authority"], "engine")
         self.assertEqual(surface["write_lane"], "/move")
         self.assertEqual(surface["current_location"]["id"], "gate")
+        self.assertEqual(surface["time_of_day"], "dusk")
+        self.assertEqual(surface["time_phase"], "dusk")
         self.assertEqual([loc["id"] for loc in surface["known_locations"]], ["gate", "market"])
         self.assertEqual(surface["known_locations"][0]["tags"], ["town", "rest"])
         self.assertEqual(surface["edges"], [{"from": "gate", "to": "market"}])
@@ -174,6 +176,26 @@ class AtlasSurfaceTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, encoded)
         self.assert_no_private_keys(surface)
+
+    def test_atlas_surface_time_phase_is_clock_driven(self):
+        base = {
+            "current_location_id": "gate",
+            "locations": {"gate": {"id": "gate", "name": "Gate", "visited": True}},
+        }
+        cases = {
+            "morning": "dawn",
+            "high noon": "day",
+            "afternoon": "day",
+            "evening": "dusk",
+            "deep night": "night",
+            "": "day",
+        }
+        for tod, expected in cases.items():
+            surface = server.build_atlas_surface(
+                {**base, "time_of_day": tod}, campaign_id="c", live=True, is_live_view=True
+            )
+            self.assertEqual(surface["time_phase"], expected, f"time_of_day={tod!r}")
+            self.assertEqual(surface["time_of_day"], tod)
 
     def test_atlas_surface_fails_closed_when_not_live(self):
         snapshot = {

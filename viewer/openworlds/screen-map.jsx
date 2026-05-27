@@ -21,7 +21,6 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const [surface, setSurface] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const [selectedId, setSelectedId] = React.useState("");
-  const [time, setTime] = React.useState("dusk");
   const [busyTravel, setBusyTravel] = React.useState("");
   const [talkPartner, setTalkPartner] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
@@ -34,11 +33,6 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
       if (isCancelled()) return;
       setSurface(payload);
       setSurfaceStatus("ready");
-      const label = (payload.dayLabel || "").toLowerCase();
-      if (label.includes("night")) setTime("night");
-      else if (label.includes("dawn") || label.includes("morning")) setTime("dawn");
-      else if (label.includes("dusk") || label.includes("evening")) setTime("dusk");
-      else if (label.includes("day") || label.includes("noon")) setTime("day");
     } catch (error) {
       if (isCancelled()) return;
       setSurfaceStatus(error?.message || "unavailable");
@@ -94,6 +88,10 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const selectedTravel = selected ? travelOptions.find((t) => t.to === selected.id) : null;
   const canCamp = Boolean(surface?.camp_available);
   const canAct = Boolean(surface?.can_act);
+  // Day/night is CLOCK-DRIVEN: read the engine's normalized phase off the surface (falling
+  // back to a sniff of the legacy day label for older builds). There is no manual toggle —
+  // the indicator always reflects the live campaign clock.
+  const time = window.atlasTimePhase(surface);
 
   React.useEffect(() => {
     if (!selectedId || !locations.some((l) => l.id === selectedId)) {
@@ -164,33 +162,21 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
             </div>
             {calendarDetail && <div className="body-xs" style={{ color: "var(--b-700)", marginTop: 3 }}>{calendarDetail}</div>}
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {!campMode && ["dawn", "day", "dusk", "night"].map((t) => (
-              <button key={t} onClick={() => setTime(t)} className="pill" style={{
-                cursor: "pointer",
-                background: time === t ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.1)",
-                color: time === t ? "var(--w-300)" : "var(--ink-700)",
-                boxShadow: time === t ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
-              }}>{t}</button>
-            ))}
-            <BrassButton size="sm" tone={campMode ? "" : "ghost"} onClick={() => setCampMode && setCampMode(!campMode)} disabled={!canCamp}>
-              {campMode ? "Camped" : "Make Camp"}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            {!campMode && <ClockDial phase={time} />}
+            <BrassButton
+              size={campMode ? "sm" : ""}
+              tone={campMode ? "" : "crimson"}
+              onClick={() => setCampMode && setCampMode(!campMode)}
+              disabled={!campMode && !canCamp}
+              style={!campMode ? { boxShadow: canCamp ? "0 0 18px -4px var(--gold-glow)" : undefined } : undefined}
+            >
+              {window.OpenWorldsIcon?.has?.("camp.rest") && <window.OpenWorldsIcon id="camp.rest" size={15} />}
+              {campMode ? " Leave Camp" : " Make Camp"}
             </BrassButton>
             <BrassButton size="sm" tone="ghost" onClick={() => loadSurface()}>Refresh</BrassButton>
           </div>
         </div>
-
-        {!campMode && selected && (
-          <Img
-            scope={selected.id ? "location:" + selected.id : ""}
-            label={selected.name}
-            w="100%"
-            h={90}
-            framed
-            fit="cover"
-            style={{ marginBottom: 8, flex: "0 0 auto" }}
-          />
-        )}
 
         <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
           {campMode && window.CampSidebar ? (
@@ -204,7 +190,15 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
               />
             </div>
           ) : (
-            <AtlasMap locations={locations} edges={edges} selected={selected} time={time} onSelect={setSelectedId} />
+            <AtlasMap
+              locations={locations}
+              edges={edges}
+              selected={selected}
+              currentId={currentLocation.id}
+              region={surface?.world}
+              time={time}
+              onSelect={setSelectedId}
+            />
           )}
         </div>
 
@@ -242,13 +236,130 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
         allLocations={locations}
         onSelect={setSelectedId}
         onTravel={postTravel}
-        onMark={(loc) => toast({ title: "Local mark only", body: loc?.name ? `${loc.name} marked in this view.` : "Pick a location first." })}
       />
     </div>
   );
 }
 
-function AtlasMap({ locations, edges, selected, time, onSelect }) {
+// ── Deterministic spatial layout ──────────────────────────────────────────────
+// The engine snapshot rarely carries real hex coordinates, so the atlas would
+// otherwise collapse into a rigid 4-column grid (every node at x∈{24,42,60,78}).
+// We instead lay the location GRAPH out spatially with a seeded force simulation:
+// node-id hashes seed start positions (stable across the 7s poll), edges act as
+// springs, and all nodes repel, so a connected web of 20+ sites spreads into a
+// readable map. If a node DOES carry a distinct engine hex (loc.x/loc.y not on
+// the fallback grid), we honor it as a pinned anchor.
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < (str || "").length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967295; // 0..1
+}
+
+// The values _atlas_hex_position emits for its index fallback (no engine hex).
+const ATLAS_FALLBACK_XS = new Set([24, 42, 60, 78]);
+function nodeHasEngineHex(loc) {
+  // A pinned node deviates from the fallback lattice (xs in {24,42,60,78}, ys a
+  // multiple-of-18 ladder). Anything off that lattice came from a real hex.
+  if (!ATLAS_FALLBACK_XS.has(loc.x)) return true;
+  return (loc.y - 24) % 18 !== 0 && (loc.y - 24) % 14 !== 0;
+}
+
+function computeAtlasLayout(locations, edges) {
+  const n = locations.length;
+  if (!n) return {};
+  const PAD = 12, SPAN = 100 - PAD * 2;
+  const idx = new Map(locations.map((l, i) => [l.id, i]));
+  const px = new Float64Array(n), py = new Float64Array(n), pinned = new Array(n).fill(false);
+
+  locations.forEach((loc, i) => {
+    if (nodeHasEngineHex(loc)) {
+      px[i] = loc.x; py[i] = loc.y; pinned[i] = true;
+    } else {
+      // Seed on a golden-angle spiral jittered by the id hash → spread, deterministic.
+      const a = i * 2.399963 + hashSeed(loc.id) * 6.283;
+      const rad = 8 + Math.sqrt((i + 0.5) / n) * 36;
+      px[i] = 50 + Math.cos(a) * rad;
+      py[i] = 50 + Math.sin(a) * rad * 0.82;
+    }
+  });
+
+  const adj = edges
+    .map((e) => [idx.get(e.from), idx.get(e.to)])
+    .filter(([a, b]) => a != null && b != null);
+
+  const ITER = 320, REPULSE = 240, SPRING = 0.035, IDEAL = 26;
+  for (let step = 0; step < ITER; step++) {
+    const fx = new Float64Array(n), fy = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let dx = px[i] - px[j], dy = py[i] - py[j];
+        let d2 = dx * dx + dy * dy || 0.01;
+        const f = REPULSE / d2;
+        const d = Math.sqrt(d2);
+        fx[i] += (dx / d) * f; fy[i] += (dy / d) * f;
+        fx[j] -= (dx / d) * f; fy[j] -= (dy / d) * f;
+      }
+    }
+    for (const [a, b] of adj) {
+      let dx = px[b] - px[a], dy = py[b] - py[a];
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const f = (d - IDEAL) * SPRING;
+      fx[a] += (dx / d) * f * d; fy[a] += (dy / d) * f * d;
+      fx[b] -= (dx / d) * f * d; fy[b] -= (dy / d) * f * d;
+    }
+    const cool = 0.9 * (1 - step / ITER) + 0.04;
+    for (let i = 0; i < n; i++) {
+      if (pinned[i]) continue;
+      px[i] += Math.max(-4, Math.min(4, fx[i] * cool));
+      py[i] += Math.max(-4, Math.min(4, fy[i] * cool));
+    }
+  }
+
+  // Normalize into the padded 0..100 viewport (preserve aspect of the spread).
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    minX = Math.min(minX, px[i]); maxX = Math.max(maxX, px[i]);
+    minY = Math.min(minY, py[i]); maxY = Math.max(maxY, py[i]);
+  }
+  const w = maxX - minX || 1, h = maxY - minY || 1, scale = SPAN / Math.max(w, h);
+  const offX = PAD + (SPAN - w * scale) / 2, offY = PAD + (SPAN - h * scale) / 2;
+  const out = {};
+  locations.forEach((loc, i) => {
+    out[loc.id] = {
+      x: Math.round((offX + (px[i] - minX) * scale) * 10) / 10,
+      y: Math.round((offY + (py[i] - minY) * scale) * 10) / 10,
+    };
+  });
+  return out;
+}
+
+// Route styling by the edge's engine-declared kind / danger (display-only).
+function edgeStyle(edge) {
+  const kind = (edge.route_kind || "").toLowerCase();
+  const danger = typeof edge.danger === "number" ? edge.danger : 0;
+  if (danger >= 6) return { stroke: "rgba(120,32,32,0.62)", width: 0.7, dash: "1.4 1" };
+  if (kind === "street" || kind === "road") return { stroke: "rgba(60,30,10,0.6)", width: 0.85, dash: "" };
+  if (kind === "river" || kind === "ferry" || kind === "sea") return { stroke: "rgba(40,90,120,0.6)", width: 0.7, dash: "" };
+  return { stroke: "rgba(60,30,10,0.46)", width: 0.5, dash: "1.6 1.2" };
+}
+
+function AtlasMap({ locations, edges, selected, currentId, region, time, onSelect }) {
+  // Recompute only when the set of nodes/edges changes — NOT on every 7s poll tick,
+  // so pins don't jiggle while the live clock and selection update around them.
+  const layoutKey = React.useMemo(
+    () => locations.map((l) => l.id).join("|") + "::" + edges.map((e) => `${e.from}>${e.to}`).join("|"),
+    [locations, edges]
+  );
+  const layout = React.useMemo(
+    () => computeAtlasLayout(locations, edges),
+    [layoutKey] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const at = (id) => layout[id] || { x: 50, y: 50 };
+  const regionScope = region ? "map-" + String(region).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
+
   return (
     <div style={{ position: "relative", height: "100%" }}>
       <div style={{
@@ -261,7 +372,15 @@ function AtlasMap({ locations, edges, selected, time, onSelect }) {
         boxShadow: "inset 0 0 80px rgba(60, 30, 10, 0.6)",
         overflow: "hidden",
       }}>
-        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, opacity: 0.72 }}>
+        {/* Optional region-map backdrop (scope `map-<region>`); 404 → the parchment
+            styling below shows through (the Img placeholder is transparent here). */}
+        {regionScope && (
+          <div style={{ position: "absolute", inset: 0, opacity: 0.5, mixBlendMode: "multiply", pointerEvents: "none" }}>
+            <Img scope={regionScope} label="" w="100%" h="100%" fit="cover" className="atlas-backdrop" />
+          </div>
+        )}
+
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, opacity: 0.78 }}>
           <defs>
             <pattern id="atlasForest" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
               <path d="M2 .7 L2.8 2.8 L1.2 2.8 Z" fill="rgba(40,60,30,0.48)" />
@@ -275,14 +394,18 @@ function AtlasMap({ locations, edges, selected, time, onSelect }) {
           <rect x="62" y="62" width="32" height="14" fill="url(#atlasHills)" opacity="0.72" />
           <path d="M-2 38 Q20 40 36 46 T70 54 Q85 60 102 64" stroke="rgba(60,100,130,0.55)" strokeWidth="1.5" fill="none" />
           {edges.map((edge, i) => {
-            const from = locations.find((l) => l.id === edge.from);
-            const to = locations.find((l) => l.id === edge.to);
-            if (!from || !to) return null;
+            const from = at(edge.from), to = at(edge.to);
+            if (!layout[edge.from] || !layout[edge.to]) return null;
+            const s = edgeStyle(edge);
+            const touchesCurrent = edge.from === currentId || edge.to === currentId;
+            const touchesSelected = selected && (edge.from === selected.id || edge.to === selected.id);
             return (
               <line key={`${edge.from}-${edge.to}-${i}`}
-                x1={from.x} y1={from.y}
-                x2={to.x} y2={to.y}
-                stroke="rgba(60,30,10,0.48)" strokeWidth="0.45" strokeDasharray="1 1" />
+                x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                stroke={touchesSelected ? "rgba(120,32,32,0.8)" : touchesCurrent ? "rgba(180,141,87,0.85)" : s.stroke}
+                strokeWidth={touchesSelected || touchesCurrent ? s.width + 0.35 : s.width}
+                strokeDasharray={s.dash}
+                strokeLinecap="round" />
             );
           })}
           <g transform="translate(89, 86)" opacity="0.85">
@@ -307,23 +430,27 @@ function AtlasMap({ locations, edges, selected, time, onSelect }) {
           transition: "background 400ms",
         }} />
 
-        {locations.map((loc) => (
-          <button
-            key={loc.id}
-            onClick={() => onSelect(loc.id)}
-            style={{
-              position: "absolute",
-              left: `${loc.x}%`,
-              top: `${loc.y}%`,
-              transform: "translate(-50%, -100%)",
-              background: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
-            <LocationPin loc={loc} selected={selected?.id === loc.id} />
-          </button>
-        ))}
+        {locations.map((loc) => {
+          const p = at(loc.id);
+          return (
+            <button
+              key={loc.id}
+              onClick={() => onSelect(loc.id)}
+              style={{
+                position: "absolute",
+                left: `${p.x}%`,
+                top: `${p.y}%`,
+                transform: "translate(-50%, -100%)",
+                background: "none",
+                cursor: "pointer",
+                padding: 0,
+                transition: "left 500ms, top 500ms",
+              }}
+            >
+              <LocationPin loc={loc} selected={selected?.id === loc.id} />
+            </button>
+          );
+        })}
 
         {!locations.length && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
@@ -339,7 +466,7 @@ function AtlasMap({ locations, edges, selected, time, onSelect }) {
   );
 }
 
-function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests, clocks, projects, control, allLocations, onSelect, onTravel, onMark }) {
+function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests, clocks, projects, control, allLocations, onSelect, onTravel }) {
   const travelDisabled = !travel?.available || !canAct || Boolean(busyTravel) || selected?.id === currentId;
   const travelReason = selected?.id === currentId ? "current location" : (travel?.disabled_reason || "no engine-backed route");
   return (
@@ -378,7 +505,6 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
               <BrassButton disabled={travelDisabled} onClick={() => onTravel(travel)}>
                 {window.OpenWorldsIcon?.has?.("atlas.travel") && <window.OpenWorldsIcon id="atlas.travel" size={14} />} {busyTravel === selected.id ? "Sending..." : "Travel here"}
               </BrassButton>
-              <BrassButton tone="ghost" size="sm" onClick={() => onMark(selected)}>{window.OpenWorldsIcon?.has?.("quest.scroll") && <window.OpenWorldsIcon id="quest.scroll" size={13} />} Mark</BrassButton>
             </div>
             {travelDisabled && (
               <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>{travelReason}</div>
@@ -527,4 +653,60 @@ function LocationPin({ loc, selected }) {
   );
 }
 
-Object.assign(window, { ScreenMap, LocationPin, atlasSurfaceFromCampaign });
+// Resolve the day/night phase from the LIVE campaign clock. Prefers the surface's
+// engine-normalized `time_phase` (server `_openworlds_time_phase`); falls back to a
+// sniff of `time_of_day`/`dayLabel` for older builds that predate the field. Never a
+// user choice — the atlas shades whatever the engine clock says.
+function atlasTimePhase(surface) {
+  const phase = (surface?.time_phase || "").toLowerCase();
+  if (["dawn", "day", "dusk", "night"].includes(phase)) return phase;
+  const label = String(surface?.time_of_day || surface?.dayLabel || "").toLowerCase();
+  if (label.includes("night") || label.includes("midnight")) return "night";
+  if (label.includes("dawn") || label.includes("morning") || label.includes("sunrise")) return "dawn";
+  if (label.includes("dusk") || label.includes("evening") || label.includes("sunset")) return "dusk";
+  return "day";
+}
+
+// Display-only clock indicator. Lights the segment for the live phase; it is NOT
+// clickable (the campaign clock owns the time of day, not the viewer).
+function ClockDial({ phase }) {
+  const PHASES = [
+    { id: "dawn", glyph: "◓", title: "Dawn" },
+    { id: "day", glyph: "☀", title: "Day" },
+    { id: "dusk", glyph: "◒", title: "Dusk" },
+    { id: "night", glyph: "☾", title: "Night" },
+  ];
+  const active = PHASES.find((p) => p.id === phase) || PHASES[1];
+  return (
+    <div
+      title={`Campaign clock: ${active.title}`}
+      aria-label={`Time of day: ${active.title} (set by the campaign clock)`}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 2, padding: "3px 6px",
+        background: "rgba(176,141,87,0.1)",
+        boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+        borderRadius: 2,
+      }}
+    >
+      {PHASES.map((p) => {
+        const on = p.id === phase;
+        return (
+          <span key={p.id} title={p.title} style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 18, fontSize: 12, lineHeight: 1,
+            color: on ? "var(--w-300)" : "var(--ink-600)",
+            background: on ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+            boxShadow: on ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.5)" : "none",
+            opacity: on ? 1 : 0.55,
+          }}>{p.glyph}</span>
+        );
+      })}
+      <span style={{
+        marginLeft: 4, fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.14em",
+        textTransform: "uppercase", color: "var(--ink-700)",
+      }}>{active.title}</span>
+    </div>
+  );
+}
+
+Object.assign(window, { ScreenMap, LocationPin, atlasSurfaceFromCampaign, atlasTimePhase, ClockDial });
