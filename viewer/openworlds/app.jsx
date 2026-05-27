@@ -223,6 +223,28 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Deep-link the active screen via the URL hash (e.g. #character, #battle→combat).
+  // Lets a screen be linked/bookmarked directly and makes headless QA captures of a
+  // specific screen possible. On mount we honor the hash; hashchange re-routes live.
+  React.useEffect(() => {
+    const VALID = new Set([
+      "launcher", "table", "combat", "dialogue", "map", "character", "inventory",
+      "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
+      "seed", "settings",
+    ]);
+    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory" };
+    const fromHash = () => {
+      const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
+      if (!raw) return null;
+      return VALID.has(raw) ? raw : (ALIAS[raw] || null);
+    };
+    const initial = fromHash();
+    if (initial) setScreen(initial);
+    const onHash = () => { const id = fromHash(); if (id) setScreen(id); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const navigate = (id, opts) => {
     if (opts?.openCamp) setCampMode(true);
     setScreen(id);
