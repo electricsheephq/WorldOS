@@ -1,0 +1,23 @@
+{
+  "name": "Oliver",
+  "race": "Tiefling",
+  "class": "",
+  "level": "1",
+  "alignment": "",
+  "appearance": "Oliver appears to be a small olive-skinned tiefling child with grotesque shadowed gashes infecting his right eye and torso. \n\nIf the interacting party member passes an check to sense his true nature, the aesthetics of the Shadow Curse are wiped from his body. Subsequently, he resembles more of a typical tiefling child, with his heterochromia still intact. Certain classes gain bonuses to this check, while Monks can choose an alternative check.",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Oliver can be encountered during Act Two in the House in Deep Shadows, within the Shadow-Cursed Lands region.",
+  "equipment": [],
+  "relationships": [
+    "Daddy",
+    "Mummy",
+    "Nightdome",
+    "Shadow Plush - may be summoned as often as every other round after the first",
+    "Shadow Friend - 5x (5 additional Shadow Friends are summoned each round by Oliver)"
+  ],
+  "voice_hint": "tiefling (voiced by Clare Corbett)",
+  "source_url": "https://bg3.wiki/wiki/Oliver",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

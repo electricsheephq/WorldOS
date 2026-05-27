@@ -1,7 +1,5 @@
 {
   "name": "Gale",
-  "playable": false,
-  "role": "hero",
   "race": "Human",
   "class": "Wizard",
   "level": "1",
@@ -12,17 +10,6 @@
   "backstory": "A prodigy of magic, Gale is a wizard of great talent and equally great ambition. Once a Chosen of Mystra, his quest to prove himself to his goddess resulted in him being cursed with a long-forgotten form of magic, a ticking time bomb with an all-consuming hunger. Now bereft of Mystra’s favor and condemned by a tadpole in his head, Gale must find a way to free himself from both the curse and this unwelcome guest.",
   "equipment": [],
   "relationships": [],
-  "companion_dossier": {
-    "wound": "fell from a goddess's favor by overreaching for forbidden magic",
-    "wants": ["earn back the forgiveness he lost", "prove his worth is more than his mistakes"],
-    "fears": ["that his pride will repeat the catastrophe", "being merely ordinary"],
-    "values": ["knowledge", "redemption", "care for his companions"],
-    "approval_likes": ["curiosity and learning", "tending to the party's wellbeing"],
-    "approval_dislikes": ["wanton destruction of knowledge", "reckless cruelty"],
-    "banter_tags": ["ambition_and_its_price", "scholar_of_the_arcane", "seeking_forgiveness"],
-    "camp_prompts": ["offers to cook, then steers the talk toward a lesson half-confessed"],
-    "relationships": {}
-  },
   "voice_hint": "human wizard (voiced by Tim Downie)",
   "source_url": "https://bg3.wiki/wiki/Gale",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",

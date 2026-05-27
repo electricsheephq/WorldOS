@@ -1,0 +1,17 @@
+{
+  "name": "Wise Sentinel",
+  "race": "Dark Justiciar",
+  "class": "Cleric",
+  "level": "7",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "The Wise Sentinel is a unique type of Undead guarding the secret shrine to Shar underneath the statue of Ketheric Thorm in Reithwin Town's square. Its abilities mirror that of a Cleric, and fitting of its role it has very high Wisdom.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "dark justiciar cleric",
+  "source_url": "https://bg3.wiki/wiki/Wise_Sentinel",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

@@ -1,7 +1,5 @@
 {
   "name": "Halsin",
-  "playable": false,
-  "role": "hero",
   "race": "Elf",
   "class": "Druid",
   "level": "1",

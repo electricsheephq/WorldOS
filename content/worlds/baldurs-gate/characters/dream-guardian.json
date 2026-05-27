@@ -1,0 +1,17 @@
+{
+  "name": "Dream Guardian",
+  "race": "Any (except Dragonborn), Default Lolth-sworn drow",
+  "class": "",
+  "level": "12",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "The Dream Guardian is a mysterious armoured figure that interacts with the player character and their party throughout the game.\n\nTheir appearance is specific to each member of the party, with Karlach describing them as a \"golden paladin\" and Gale referring to them as female, while the player character sees a version created by the player which can be any gender and playable race except dragonborn. Their default appearance in character creation is a female Lolth-sworn drow.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "any (except dragonborn), default lolth-sworn drow (voiced by [https://www.imdb.com/name/nm6946524 Díana Bermudez] (feminine),[https://www.imdb.com/name/nm15121053 Ethan Reid] (masculine))",
+  "source_url": "https://bg3.wiki/wiki/Dream_Guardian",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

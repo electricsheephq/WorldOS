@@ -1,0 +1,17 @@
+{
+  "name": "Glingo",
+  "race": "Human",
+  "class": "Bard",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Glingo Trapeze-Master is a Human Bard at the Circus of the Last Days, where he performs as a juggler. Glingo was mentored by Dribbles, and hopes to open for him one day.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human bard (voiced by Azaan Symes)",
+  "source_url": "https://bg3.wiki/wiki/Glingo",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

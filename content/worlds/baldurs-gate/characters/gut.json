@@ -1,0 +1,30 @@
+{
+  "name": "Gut",
+  "race": "Goblin",
+  "class": "",
+  "level": "4",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Priestess Gut is one of the spiritual leaders of the cult. She is one of three leaders at the Shattered Sanctum, alongside Minthara and Dror Ragzlin.",
+  "equipment": [],
+  "relationships": [
+    "Booyahg Shekt",
+    "Devout Mrak",
+    "Devout Muzul",
+    "Gribbo",
+    "Tracker Azak",
+    "Warlock Greez",
+    "Tracker Tozad",
+    "Erna",
+    "Lookout Grush",
+    "Roah Moonglow",
+    "Torturer Spike",
+    "Yerle"
+  ],
+  "voice_hint": "goblin (voiced by Katy Brittain)",
+  "source_url": "https://bg3.wiki/wiki/Gut",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Antinia",
+  "race": "Human",
+  "class": "Fighter",
+  "level": "8",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Antinia the Goon is a human NPC in the Lower City of Baldur's Gate. She can be found near the Grey Harbour Docks, as part of Churg Elvek's mob, ready to bring Volo to \"justice\".\n\n__NOTOC__",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human fighter (voiced by Anna Leong Brophy)",
+  "source_url": "https://bg3.wiki/wiki/Antinia",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

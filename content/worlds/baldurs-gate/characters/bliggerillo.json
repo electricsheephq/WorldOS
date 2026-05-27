@@ -1,0 +1,17 @@
+{
+  "name": "Bliggerillo",
+  "race": "Halfling",
+  "class": "",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Bliggerillo is a halfling civilian upset at the lies being peddled by the Baldur's Mouth Gazette in the Lower City during Act Three.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "halfling (voiced by Jason Nwoga)",
+  "source_url": "https://bg3.wiki/wiki/Bliggerillo",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

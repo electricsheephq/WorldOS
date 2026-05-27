@@ -1,0 +1,17 @@
+{
+  "name": "Dhourn",
+  "race": "Drow",
+  "class": "Wizard",
+  "level": "4",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Xargrim, Filro and Dhourn were trying to find the Adamantine Forge somewhere within the Underdark. Dhourn was responsible for finding the physical location. However, after discovering information about the forge each explorer wanted the glory for himself, and the three turned on each other.\n\nDhourn hired a mercenary group and planned an ambush for Xargrim, who in turn planned to ambush Dhourn. The two argued until Xargrim unleashed a Spectator who petrified Dhourn and his mercenaries. Dhourn's party remained in stasis long enough for his Memory Shard to fade.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "drow wizard",
+  "source_url": "https://bg3.wiki/wiki/Dhourn",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

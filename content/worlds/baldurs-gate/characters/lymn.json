@@ -1,0 +1,17 @@
+{
+  "name": "Lymn",
+  "race": "Tiefling",
+  "class": "Ranger",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Harper Lymn is a Harper who patrols Last Light Inn during Act Two. She can help the party during Assault on Moonrise Towers and be a potential ally during Confront the Elder Brain.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "tiefling ranger (voiced by Hara Yannas)",
+  "source_url": "https://bg3.wiki/wiki/Lymn",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

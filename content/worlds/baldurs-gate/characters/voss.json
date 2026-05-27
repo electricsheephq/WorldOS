@@ -1,0 +1,17 @@
+{
+  "name": "Voss",
+  "race": "Githyanki",
+  "class": "Fighter",
+  "level": "12",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Voss is a legendary Kith'rak in githyanki society who reports directly to the lich queen Vlaakith CLVII. Per Lae'zel and lore found in-game, Voss has been the right-hand knight of Vlaakith and her predecessors, dating back to Vlaakith I, who succeeded the first githyanki leader Gith thousands of years in the past. Qudenos the Red Dragon is his mount and closest comrade.\n\nVoss is direct and ruthless, expecting the deference due both his rank and possession of Vlaakith's personal silver sword. Other gith characters, including Lae'zel, hold him in esteem and may even be cowed by his presence. He still talks with and may even be friendly to non-gith, but githyanki party members or those who appear as a githyanki by use of have special interactions with Voss that reflect their place in gith society.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "githyanki fighter (voiced by Richard Cotton)",
+  "source_url": "https://bg3.wiki/wiki/Voss",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

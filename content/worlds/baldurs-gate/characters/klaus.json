@@ -1,0 +1,17 @@
+{
+  "name": "Klaus",
+  "race": "Wood elf",
+  "class": "Sorcerer",
+  "level": "8",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Klaus is a wood elf at the Circus of the Last Days. Along with Benji, he is tasked with sniffing people out. If Benji smells blood, they do not allow entrance to the circus.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "wood elf sorcerer (voiced by Thomas Mitchells)",
+  "source_url": "https://bg3.wiki/wiki/Klaus",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

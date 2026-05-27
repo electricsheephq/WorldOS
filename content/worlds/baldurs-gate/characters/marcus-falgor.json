@@ -1,0 +1,20 @@
+{
+  "name": "Marcus Falgor",
+  "race": "Aberration, Human (former)",
+  "class": "",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Fist Marcus is a former member of the Flaming Fist, now turned into an elite agent of the Cult of the Absolute during Act Two.",
+  "equipment": [],
+  "relationships": [
+    "13x (if fought in Last Light Inn's courtyard)",
+    "6x (if fought in Isobel's room)"
+  ],
+  "voice_hint": "aberration, human (former) (voiced by Scott Joseph)",
+  "source_url": "https://bg3.wiki/wiki/Marcus_Falgor",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

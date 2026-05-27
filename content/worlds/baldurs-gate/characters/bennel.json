@@ -1,0 +1,17 @@
+{
+  "name": "Bennel",
+  "race": "Human",
+  "class": "Paladin",
+  "level": "8",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Zealot Bennel is a seasoned human Zealot of the Absolute and officer in Act Two. He can be found on a the first floor balcony of Moonrise Towers.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human paladin (voiced by Stefan Chanyaem)",
+  "source_url": "https://bg3.wiki/wiki/Bennel",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

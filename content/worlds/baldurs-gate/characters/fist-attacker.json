@@ -1,0 +1,17 @@
+{
+  "name": "Fist Attacker",
+  "race": "Gold Dwarf or Human",
+  "class": "Fighter",
+  "level": "8",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Fist Attackers are summonable allies during Confront the Elder Brain, using their halberds and formation tactics to protect the city against the Absolutist forces' incursion.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "gold dwarf or human fighter",
+  "source_url": "https://bg3.wiki/wiki/Fist_Attacker",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

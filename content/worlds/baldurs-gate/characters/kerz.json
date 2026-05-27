@@ -1,0 +1,17 @@
+{
+  "name": "Kerz",
+  "race": "Half-orc",
+  "class": "Paladin",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Kerz lived many years as a paladin and mercenary, years which took a hard toll on them. Befriending a group of pleasant ogres, they laid down their weapons and taught a rudimentary etiquette class, before the ogres were attacked one night, and Kerz once more took up their steel.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "half-orc paladin",
+  "source_url": "https://bg3.wiki/wiki/Kerz",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

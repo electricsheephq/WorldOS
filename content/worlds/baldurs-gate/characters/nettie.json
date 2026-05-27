@@ -1,0 +1,17 @@
+{
+  "name": "Nettie",
+  "race": "Dwarf",
+  "class": "Druid",
+  "level": "3",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Nettie is a dwarven druid in the Circle of the Emerald Grove in Act One. Nettie is a student under First Druid Halsin. In his absence, she is the primary healer in the Emerald Grove.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "dwarf druid (voiced by Charlene McKenna)",
+  "source_url": "https://bg3.wiki/wiki/Nettie",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

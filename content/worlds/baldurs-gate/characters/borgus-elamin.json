@@ -1,0 +1,17 @@
+{
+  "name": "Borgus Elamin",
+  "race": "Elf",
+  "class": "Wizard",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Borgus Elamin is an elven member of the Zhentarim visiting Sharess' Caress in Wyrm's Crossing in Act Three. He is whispering to Earspoon.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "elf wizard (voiced by Jay Taylor)",
+  "source_url": "https://bg3.wiki/wiki/Borgus_Elamin",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

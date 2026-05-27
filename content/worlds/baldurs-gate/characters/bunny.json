@@ -1,0 +1,17 @@
+{
+  "name": "Bunny",
+  "race": "Human",
+  "class": "",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Bunny is a human child waiting for her parents to arrange passage out of Baldur's Gate during Act Three.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "human (voiced by Tilly Steele)",
+  "source_url": "https://bg3.wiki/wiki/Bunny",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

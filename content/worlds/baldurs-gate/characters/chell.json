@@ -1,0 +1,17 @@
+{
+  "name": "Chell",
+  "race": "Asmodeus tiefling",
+  "class": "",
+  "level": "1",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Chell is one of the tiefling refugees seeking shelter at the Emerald Grove in Act One. She only appears as a replacement character for Alfira during the camp celebration if Alfira is dead.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "asmodeus tiefling (voiced by Amy McAllister)",
+  "source_url": "https://bg3.wiki/wiki/Chell",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}

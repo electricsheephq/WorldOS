@@ -1,0 +1,17 @@
+{
+  "name": "Elifer",
+  "race": "Elf",
+  "class": "Ranger",
+  "level": "6",
+  "alignment": "",
+  "appearance": "",
+  "personality": "",
+  "mannerisms": "",
+  "backstory": "Harper Elifer is a wood elf ranger who is part of the Harpers in Act Two. She guards the entrance to the Last Light Inn, stopping and questioning any newcomers that happen to arrive in front of the sanctuary.",
+  "equipment": [],
+  "relationships": [],
+  "voice_hint": "elf ranger (voiced by Luyanda Unati Lewis-Nyawo)",
+  "source_url": "https://bg3.wiki/wiki/Elifer",
+  "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+}
