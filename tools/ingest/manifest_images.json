@@ -66,7 +66,38 @@
         {"title": "Adamantine Splint Armour",   "scope": "item:adamantine-splint-armour","kind": "item"},
         {"title": "Bhaalist Armour",            "scope": "item:bhaalist-armour",         "kind": "item"},
         {"title": "Armour of Agility",          "scope": "item:armour-of-agility",       "kind": "item"},
-        {"title": "Orphic Hammer",              "scope": "item:orphic-hammer",           "kind": "item"}
+        {"title": "Orphic Hammer",              "scope": "item:orphic-hammer",           "kind": "item"},
+
+        {"_common_gear_comment": "Common starting/early-game SRD gear so a typical level 1-5 kit renders (the legendary list above is endgame-only; basic gear like Chain Mail / Longsword previously had no icon, leaving blank Inventory tiles). The viewer builds an item scope as 'item-' + slug(item.name) where slug = name.toLowerCase().replace(/[^a-z0-9]+/g,'-') (viewer/openworlds/screen-inventory.jsx), and server _scope_key drops the leading 'item' token — so each scope slug below MUST equal slug(NAME) for the exact item name the engine uses. Those names come from the SRD dump (data/srd/srd524/{Armor,Weapon}.json) and the starting-kit tables (servers/engine/server.py _STARTING_ARMOR/_STARTING_WEAPON), which use American spellings ('Leather Armor', 'Plate Armor'); the bg3.wiki page TITLE (independent of scope) uses British 'Armour', so title and scope intentionally differ for armours. All titles WebFetch-verified against bg3.wiki 2026-05-27 to resolve to a real item-icon (or item-render) lead. Packs (Explorer's Pack) are intentionally omitted — no single-icon page. 'Ring Mail' omitted: bg3.wiki has no such page (404). Adventuring-gear consumables beyond Potion of Healing (Torch, Rations) omitted: their bg3.wiki leads are not clean inventory icons.",
+         "title": "Padded Armour",             "scope": "item:padded-armor",            "kind": "item"},
+        {"title": "Leather Armour",             "scope": "item:leather-armor",           "kind": "item"},
+        {"title": "Studded Leather Armour",     "scope": "item:studded-leather-armor",   "kind": "item"},
+        {"title": "Hide Armour",                "scope": "item:hide-armor",              "kind": "item"},
+        {"title": "Chain Shirt",                "scope": "item:chain-shirt",             "kind": "item"},
+        {"title": "Scale Mail",                 "scope": "item:scale-mail",              "kind": "item"},
+        {"title": "Breastplate",                "scope": "item:breastplate",             "kind": "item"},
+        {"title": "Half Plate Armour",          "scope": "item:half-plate-armor",        "kind": "item"},
+        {"title": "Chain Mail",                 "scope": "item:chain-mail",              "kind": "item"},
+        {"title": "Splint Armour",              "scope": "item:splint-armor",            "kind": "item"},
+        {"title": "Plate Armour",               "scope": "item:plate-armor",             "kind": "item"},
+        {"title": "Shields (equipment)",        "scope": "item:shield",                  "kind": "item"},
+
+        {"title": "Dagger",                     "scope": "item:dagger",                  "kind": "item"},
+        {"title": "Club",                       "scope": "item:club",                    "kind": "item"},
+        {"title": "Quarterstaff",               "scope": "item:quarterstaff",            "kind": "item"},
+        {"title": "Handaxe",                    "scope": "item:handaxe",                 "kind": "item"},
+        {"title": "Mace",                       "scope": "item:mace",                    "kind": "item"},
+        {"title": "Spear",                      "scope": "item:spear",                   "kind": "item"},
+        {"title": "Light Crossbow",             "scope": "item:light-crossbow",          "kind": "item"},
+        {"title": "Shortbow",                   "scope": "item:shortbow",                "kind": "item"},
+        {"title": "Longbow",                    "scope": "item:longbow",                 "kind": "item"},
+        {"title": "Shortsword",                 "scope": "item:shortsword",              "kind": "item"},
+        {"title": "Longsword",                  "scope": "item:longsword",               "kind": "item"},
+        {"title": "Rapier",                     "scope": "item:rapier",                  "kind": "item"},
+        {"title": "Greataxe",                   "scope": "item:greataxe",                "kind": "item"},
+        {"title": "Greatsword",                 "scope": "item:greatsword",              "kind": "item"},
+
+        {"title": "Potion of Healing",          "scope": "item:potion-of-healing",       "kind": "item"}
       ]
     }
   ]
