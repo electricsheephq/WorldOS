@@ -9,9 +9,9 @@ function ScreenForge({ onNavigate, state, setState }) {
   const [selected, setSelected] = React.useState(RECIPES_LIST[0]);
   const [crafter, setCrafter] = React.useState("vell");
   const [log, setLog] = React.useState([
-    { when: "yesterday", who: "Cassian", item: "Scroll of Light", success: true },
-    { when: "2 days past", who: "Vell", item: "Iron-shod boots (repair)", success: true },
-    { when: "5 days past", who: "Mira", item: "Potion of Healing", success: false, note: "DC missed by 3" },
+    { when: "yesterday", who: "the scribe", item: "Scroll of Light", success: true },
+    { when: "2 days past", who: "the smith", item: "Iron-shod boots (repair)", success: true },
+    { when: "5 days past", who: "a companion", item: "Potion of Healing", success: false, note: "DC missed by 3" },
   ]);
   const toast = window.useToast ? window.useToast() : (() => {});
 

@@ -69,8 +69,8 @@ function ScreenSeed({ onNavigate, state, setState }) {
         <Divider />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <StatLine k="Seeded" v="27th of Firstthaw, 1147" />
-          <StatLine k="By" v="Linzi (chronicler)" />
+          <StatLine k="Seeded" v="20th of Nightal, 1492 DR" />
+          <StatLine k="By" v="the chronicle" />
           <StatLine k="Pattern" v="9b3d-2f1e-77ac" />
           <StatLine k="Engine" v="Chronicle II" />
         </div>
@@ -184,7 +184,7 @@ function ScreenSeed({ onNavigate, state, setState }) {
 
         <SectionTitle ordinal="VI.">Chronicler's notes</SectionTitle>
         <textarea
-          defaultValue="Linzi keeps the book. Do not edit her entries even when they are wrong. Especially when they are wrong."
+          defaultValue="The chronicle keeps the book. Do not edit its entries even when they are wrong. Especially when they are wrong."
           style={{
             width: "100%", minHeight: 90, padding: 12,
             background: "rgba(255,250,230,0.5)",

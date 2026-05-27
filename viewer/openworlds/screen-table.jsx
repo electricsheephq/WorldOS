@@ -218,6 +218,12 @@ function ScreenTable({ onNavigate, state, setState }) {
           />
           {/* Glow + caption */}
           <div className="candleglow" style={{ width: 200, height: 200, left: "30%", top: "30%" }} />
+          {/* Readability scrim — keeps the caption legible over any scene art (#242 G) */}
+          <div style={{
+            position: "absolute", left: 0, right: 0, bottom: 0, height: "62%",
+            background: "linear-gradient(180deg, rgba(20,12,4,0) 0%, rgba(20,12,4,0.55) 55%, rgba(20,12,4,0.9) 100%)",
+            pointerEvents: "none",
+          }} />
           <div style={{
             position: "absolute", bottom: 14, left: 14, right: 14,
             display: "flex", justifyContent: "space-between", alignItems: "flex-end",
@@ -226,7 +232,11 @@ function ScreenTable({ onNavigate, state, setState }) {
             <div style={{ minWidth: 0, maxWidth: "min(620px, 62%)" }}>
               <Pill tone="royal" dot>{surface?.dayLabel || activeCampaign.day || "Unknown time"}</Pill>
               {calendarDetail && <div className="body-xs" title={calendarDetail} style={{ marginTop: 4, color: "var(--p-150)", textShadow: "0 1px 2px rgba(0,0,0,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{calendarDetail}</div>}
-              <div className="hand" style={{ marginTop: 6, color: "var(--p-100)", fontSize: 16, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
+              <div className="hand" style={{
+                marginTop: 6, color: "#f4ecd8", fontSize: 16, lineHeight: 1.45,
+                textShadow: "0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,0.6)",
+                display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+              }}>
                 {scene.summary || activeCampaign.recap || "The table is waiting for a campaign snapshot."}
               </div>
             </div>
