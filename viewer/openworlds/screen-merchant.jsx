@@ -57,17 +57,8 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
   const inv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
 
-  const _badge = { label: "Preview", tone: "muted", detail: "The Market is display-only — stock is demo data and transactions are not persisted to the engine." };
-
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
-
-      {/* Prototype banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
-        <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — merchant stock is demo data; purchases are not wired to the engine inventory.</span>
-      </div>
-
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, minHeight: 0 }}>
 
       {/* LEFT — Merchant info + haggle */}
@@ -346,12 +337,12 @@ const tdStyle = {
 
 const MERCHANTS = [
   {
-    id: "gate-sundries",
-    name: "Quartermaster Dell",
+    id: "talli",
+    name: "Quartermaster Talli",
     short: "Q·portrait",
-    subtitle: "What the Gate spares, she sells.",
-    location: "the Heapside Market",
-    greeting: "If you mean to look, look — but mind the press, half of Heapside still sleeps under a tarp since the Watch came down. The bolts are by the door. The healing draughts are behind the counter, and they are not cheap, because nothing in the Lower City is, anymore.",
+    subtitle: "The Harpers' quartermaster, and the woman the road found.",
+    location: "the Last Light Inn",
+    greeting: "Come in, then. Mind the curse outside — the lantern's covenant ends a step past the threshold. The bolts are sharp, the rations dry, the draughts honest. Coin first, then the catalogue. Harpers don't quibble, but we don't subsidize the careless either.",
     repLabel: "Cautiously fond",
     rep: 42,
     disposition: "open until dusk · shuttered when the Watch patrols",

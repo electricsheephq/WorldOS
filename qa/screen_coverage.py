@@ -117,9 +117,10 @@ def audit_image_endpoints(port: int) -> dict:
         "portrait-astarion", "portrait-gale", "portrait-karlach",
         "portrait-lae-zel", "portrait-shadowheart", "portrait-wyll",
         "portrait-halsin",
-        # Major BG canon NPCs.
+        # Major BG canon NPCs (use the canonical slug — the engine + ingest pipeline
+        # writes "the-emperor" as the actual scope key).
         "portrait-jaheira", "portrait-minsc", "portrait-withers",
-        "portrait-volo", "portrait-emperor",
+        "portrait-volo", "portrait-the-emperor",
         # Scenes (the headline BG locations).
         "scene-lower-city", "scene-upper-city", "scene-elfsong-tavern",
         "scene-baldurs-mouth", "scene-sorcerous-sundries",

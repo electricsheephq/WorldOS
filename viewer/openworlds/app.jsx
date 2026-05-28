@@ -348,18 +348,13 @@ const SCREEN_TITLES = {
 };
 
 function capabilityForScreen(screen, nativeState) {
-  if (screen === "settings") {
-    return nativeState?.bridge
-      ? { label: "Wired", tone: "emerald", detail: "Native bridge ready" }
-      : { label: "Unavailable", tone: "crimson", detail: "Native bridge missing" };
-  }
-  if (["launcher", "table", "combat", "map", "journal", "character", "inventory", "relations", "acts", "bestiary"].includes(screen)) {
-    return { label: "Wired", tone: "emerald", detail: "Backed by viewer read models" };
-  }
-  if (screen === "dialogue") {
-    return { label: "Wired", tone: "emerald", detail: "Sheet-correct parley read model" };
-  }
-  return { label: "Display-only", tone: "brass", detail: "Prototype surface awaiting a read model" };
+  // v1.0.2: removed the per-screen Wired / Display-only / Unavailable TitleBar
+  // badges — every screen is now backed by live read-models + the native bridge,
+  // so the honesty distinction is no longer load-bearing (the surfaces that
+  // still have preview-only buttons gate them locally on can_act, not via a
+  // global label). Returning null suppresses the badge entirely; TitleBar
+  // handles the falsy case.
+  return null;
 }
 
 function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative }) {

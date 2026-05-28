@@ -1,0 +1,26 @@
+{
+  "_comment": "Faction crests / insignia for the OpenWorlds Relations screen. Probed by qa/screen_coverage.py as 'faction-<slug>'. The viewer's _scope_key (viewer/server.py) now strips the 'faction' prefix so faction-<slug> and faction:<slug> normalize to <slug>. Same © + gitignored _private/ rules as portraits (bg3.wiki dual-license; never committed).",
+  "world_id": "baldurs-gate",
+  "rate_delay_seconds": 0.4,
+  "sources": [
+    {
+      "wiki": "bg3.wiki",
+      "script_path": "/w",
+      "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights). Non-commercial fan use.",
+      "attribution": "Image from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Unofficial, non-commercial fan content. Subject to Larian Studios' and Wizards of the Coast's Fan Content Policies.",
+      "images": [
+        {"title": "Flaming Fist",            "scope": "faction:flaming-fist",     "kind": "faction"},
+        {"title": "Zhentarim",                "scope": "faction:zhentarim",        "kind": "faction"},
+        {"title": "Harpers",                  "scope": "faction:harpers",          "kind": "faction"},
+        {"title": "The Absolute",             "scope": "faction:absolute",         "kind": "faction"},
+        {"title": "Guild (Baldur's Gate)",    "scope": "faction:guild",            "kind": "faction"},
+        {"title": "Order of the Gauntlet",    "scope": "faction:order-of-the-gauntlet", "kind": "faction"},
+        {"title": "Lords' Alliance",          "scope": "faction:lords-alliance",   "kind": "faction"},
+        {"title": "Emerald Enclave",          "scope": "faction:emerald-enclave",  "kind": "faction"},
+        {"title": "Knights of the Shield",    "scope": "faction:knights-of-the-shield", "kind": "faction"},
+        {"title": "Society of Brilliance",    "scope": "faction:society-of-brilliance", "kind": "faction"},
+        {"title": "Patriar",                  "scope": "faction:patriars",         "kind": "faction"}
+      ]
+    }
+  ]
+}

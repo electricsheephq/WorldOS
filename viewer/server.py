@@ -189,7 +189,7 @@ def _ingested_images_root() -> Path:
     return _REPO_ROOT / "content" / "worlds" / "_private"
 
 
-_SCOPE_PREFIXES = {"portrait", "scene", "item", "map", "npc", "char", "pc", "loc", "location", "region", "scope"}
+_SCOPE_PREFIXES = {"portrait", "scene", "item", "map", "npc", "char", "pc", "loc", "location", "region", "scope", "faction", "creature", "class", "race"}
 
 
 def _scope_key(scope: Optional[str]) -> str:

@@ -1,0 +1,395 @@
+{
+  "duration_s": 407.11159491539,
+  "image_audit": {
+    "hit": 49,
+    "probes": {
+      "class-barbarian": {
+        "bytes": 73801,
+        "ok": true,
+        "status": 200
+      },
+      "class-bard": {
+        "bytes": 25101,
+        "ok": true,
+        "status": 200
+      },
+      "class-cleric": {
+        "bytes": 23837,
+        "ok": true,
+        "status": 200
+      },
+      "class-druid": {
+        "bytes": 27265,
+        "ok": true,
+        "status": 200
+      },
+      "class-fighter": {
+        "bytes": 21204,
+        "ok": true,
+        "status": 200
+      },
+      "class-monk": {
+        "bytes": 22986,
+        "ok": true,
+        "status": 200
+      },
+      "class-paladin": {
+        "bytes": 112437,
+        "ok": true,
+        "status": 200
+      },
+      "class-ranger": {
+        "bytes": 28011,
+        "ok": true,
+        "status": 200
+      },
+      "class-rogue": {
+        "bytes": 96366,
+        "ok": true,
+        "status": 200
+      },
+      "class-sorcerer": {
+        "bytes": 20386,
+        "ok": true,
+        "status": 200
+      },
+      "class-warlock": {
+        "bytes": 23130,
+        "ok": true,
+        "status": 200
+      },
+      "class-wizard": {
+        "bytes": 23677,
+        "ok": true,
+        "status": 200
+      },
+      "faction-flaming-fist": {
+        "bytes": 58922,
+        "ok": true,
+        "status": 200
+      },
+      "faction-harpers": {
+        "bytes": 131648,
+        "ok": true,
+        "status": 200
+      },
+      "faction-zhentarim": {
+        "bytes": 359646,
+        "ok": true,
+        "status": 200
+      },
+      "item-chain-mail": {
+        "bytes": 35275,
+        "ok": true,
+        "status": 200
+      },
+      "item-greataxe": {
+        "bytes": 44536,
+        "ok": true,
+        "status": 200
+      },
+      "item-lantern": {
+        "bytes": 21580,
+        "ok": true,
+        "status": 200
+      },
+      "item-longsword": {
+        "bytes": 42096,
+        "ok": true,
+        "status": 200
+      },
+      "item-potion-of-healing": {
+        "bytes": 34102,
+        "ok": true,
+        "status": 200
+      },
+      "item-rations": {
+        "bytes": 2296,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-astarion": {
+        "bytes": 1348277,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-gale": {
+        "bytes": 883713,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-halsin": {
+        "bytes": 165032,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-jaheira": {
+        "bytes": 526120,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-karlach": {
+        "bytes": 1350729,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-lae-zel": {
+        "bytes": 1042761,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-minsc": {
+        "bytes": 789557,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-shadowheart": {
+        "bytes": 1373966,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-the-emperor": {
+        "bytes": 541012,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-volo": {
+        "bytes": 1549397,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-withers": {
+        "bytes": 819766,
+        "ok": true,
+        "status": 200
+      },
+      "portrait-wyll": {
+        "bytes": 1285255,
+        "ok": true,
+        "status": 200
+      },
+      "race-dragonborn": {
+        "bytes": 52172,
+        "ok": true,
+        "status": 200
+      },
+      "race-drow": {
+        "bytes": 104152,
+        "ok": true,
+        "status": 200
+      },
+      "race-dwarf": {
+        "bytes": 100142,
+        "ok": true,
+        "status": 200
+      },
+      "race-elf": {
+        "bytes": 5598,
+        "ok": true,
+        "status": 200
+      },
+      "race-githyanki": {
+        "bytes": 523442,
+        "ok": true,
+        "status": 200
+      },
+      "race-gnome": {
+        "bytes": 530501,
+        "ok": true,
+        "status": 200
+      },
+      "race-half-elf": {
+        "bytes": 490634,
+        "ok": true,
+        "status": 200
+      },
+      "race-half-orc": {
+        "bytes": 42196,
+        "ok": true,
+        "status": 200
+      },
+      "race-halfling": {
+        "bytes": 104656,
+        "ok": true,
+        "status": 200
+      },
+      "race-human": {
+        "bytes": 525147,
+        "ok": true,
+        "status": 200
+      },
+      "race-tiefling": {
+        "bytes": 441744,
+        "ok": true,
+        "status": 200
+      },
+      "scene-baldurs-mouth": {
+        "bytes": 1081834,
+        "ok": true,
+        "status": 200
+      },
+      "scene-elfsong-tavern": {
+        "bytes": 845154,
+        "ok": true,
+        "status": 200
+      },
+      "scene-lower-city": {
+        "bytes": 904100,
+        "ok": true,
+        "status": 200
+      },
+      "scene-sorcerous-sundries": {
+        "bytes": 3549562,
+        "ok": true,
+        "status": 200
+      },
+      "scene-upper-city": {
+        "bytes": 533120,
+        "ok": true,
+        "status": 200
+      }
+    },
+    "rate": 1.0,
+    "total": 49
+  },
+  "pass": {
+    "image_render": true,
+    "screen_render": true
+  },
+  "screen_render_rate": 1.0,
+  "screens": [
+    {
+      "label": "Launcher / Chronicles",
+      "png_bytes": 1662866,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/launcher.png",
+      "screen": "launcher",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/launcher.png ( 1662866 bytes)"
+    },
+    {
+      "label": "Session / Table",
+      "png_bytes": 1436791,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/table.png",
+      "screen": "table",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/table.png ( 1436791 bytes)"
+    },
+    {
+      "label": "Combat / Battle",
+      "png_bytes": 1065581,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/combat.png",
+      "screen": "combat",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/combat.png ( 1065581 bytes)"
+    },
+    {
+      "label": "Parley / Dialogue",
+      "png_bytes": 1603695,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/dialogue.png",
+      "screen": "dialogue",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/dialogue.png ( 1603695 bytes)"
+    },
+    {
+      "label": "World Atlas / Map",
+      "png_bytes": 1407294,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/map.png",
+      "screen": "map",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/map.png ( 1407294 bytes)"
+    },
+    {
+      "label": "Character Sheet",
+      "png_bytes": 924323,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/character.png",
+      "screen": "character",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/character.png (  924323 bytes)"
+    },
+    {
+      "label": "Inventory / Stash",
+      "png_bytes": 1042120,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/inventory.png",
+      "screen": "inventory",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/inventory.png ( 1042120 bytes)"
+    },
+    {
+      "label": "Item Forge",
+      "png_bytes": 835885,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/forge.png",
+      "screen": "forge",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/forge.png (  835885 bytes)"
+    },
+    {
+      "label": "Relations",
+      "png_bytes": 1038813,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/relations.png",
+      "screen": "relations",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/relations.png ( 1038813 bytes)"
+    },
+    {
+      "label": "Quest Journal",
+      "png_bytes": 612406,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/journal.png",
+      "screen": "journal",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/journal.png (  612406 bytes)"
+    },
+    {
+      "label": "Codex / Bestiary",
+      "png_bytes": 765083,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/bestiary.png",
+      "screen": "bestiary",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/bestiary.png (  765083 bytes)"
+    },
+    {
+      "label": "Acts",
+      "png_bytes": 861508,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/acts.png",
+      "screen": "acts",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/acts.png (  861508 bytes)"
+    },
+    {
+      "label": "Market / Merchant",
+      "png_bytes": 882934,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/merchant.png",
+      "screen": "merchant",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/merchant.png (  882934 bytes)"
+    },
+    {
+      "label": "Creation Plane",
+      "png_bytes": 900092,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/create.png",
+      "screen": "create",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/create.png (  900092 bytes)"
+    },
+    {
+      "label": "World Seed",
+      "png_bytes": 891387,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/seed.png",
+      "screen": "seed",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/seed.png (  891387 bytes)"
+    },
+    {
+      "label": "Settings",
+      "png_bytes": 821228,
+      "png_path": "qa/runs/sweep-20260528-233434/shots/settings.png",
+      "screen": "settings",
+      "shot_ok": true,
+      "shot_stdout": "OK qa/runs/sweep-20260528-233434/shots/settings.png (  821228 bytes)"
+    }
+  ],
+  "started_at": 1779986074.400529,
+  "thresholds": {
+    "image": 0.95
+  },
+  "viewer_port": 8766
+}

@@ -1,0 +1,25 @@
+{
+  "_comment": "Map images for the OpenWorlds World Atlas screen. screen-map.jsx builds 'map-' + slug(region) as the backdrop scope; this manifest fills those scopes from bg3.wiki + the Forgotten Realms map set. Same © + gitignored _private/ rules as portraits (bg3.wiki dual-license; never committed).",
+  "world_id": "baldurs-gate",
+  "rate_delay_seconds": 0.4,
+  "sources": [
+    {
+      "wiki": "bg3.wiki",
+      "script_path": "/w",
+      "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual). Non-commercial fan use.",
+      "attribution": "Image from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Unofficial, non-commercial fan content.",
+      "images": [
+        {"title": "Baldur's Gate",         "scope": "map:baldur-s-gate",       "kind": "map"},
+        {"title": "Lower City",            "scope": "map:lower-city",          "kind": "map"},
+        {"title": "Upper City",            "scope": "map:upper-city",          "kind": "map"},
+        {"title": "Outer City",            "scope": "map:outer-city",          "kind": "map"},
+        {"title": "Rivington",             "scope": "map:rivington",           "kind": "map"},
+        {"title": "Wyrm's Crossing",       "scope": "map:wyrms-crossing",      "kind": "map"},
+        {"title": "Sword Coast",           "scope": "map:sword-coast",         "kind": "map"},
+        {"title": "Faerûn",                "scope": "map:faerun",              "kind": "map"},
+        {"title": "Underdark",             "scope": "map:underdark",           "kind": "map"},
+        {"title": "Shadow-Cursed Lands",   "scope": "map:shadow-cursed-lands", "kind": "map"}
+      ]
+    }
+  ]
+}
