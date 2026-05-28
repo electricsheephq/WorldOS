@@ -62,8 +62,21 @@ build_bundle() {
 </plist>
 PLIST
 
+  # Sign with a Developer ID identity if available so the signature is STABLE
+  # across rebuilds. Ad-hoc signatures (`--sign -`) produce a NEW cdhash on each
+  # build, which causes security software (e.g. NordVPN Threat Protection's file
+  # scanner) to re-evaluate the binary every time — that re-evaluation can hang
+  # the freshly-launched app's first directory enumerations in the kernel
+  # (open$NOCANCEL) for tens of seconds. A Developer ID signature is stable AND
+  # generally pre-trusted, so the scan is cached/skipped after the first launch.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+    if [ -n "$SIGN_IDENTITY" ]; then
+      codesign --force --sign "$SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null 2>&1 \
+        || codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+    else
+      codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
