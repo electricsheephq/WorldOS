@@ -398,12 +398,11 @@ function CapabilityBadge({ capability, nativeStatus }) {
 function TitleBar({ campaign, location, day, capability, nativeStatus }) {
   return (
     <div className="title-bar">
-      <div className="traffic-lights" aria-hidden="true">
-        <span className="traffic-light close" />
-        <span className="traffic-light min" />
-        <span className="traffic-light zoom" />
-      </div>
-      <div className="title-text">
+      {/* The macOS window now shows the REAL native traffic lights (RootView.swift)
+          floating at top-left over this transparent bar, so we no longer draw fake
+          CSS lights (they'd double up). Pad the title left to clear the native
+          buttons; harmless in a plain browser where there are none. */}
+      <div className="title-text" style={{ paddingLeft: 76 }}>
         <span>Open Worlds</span><em>·</em><span>{campaign || "Open Worlds"}</span>
         {location && (<><em>·</em><span>{location}</span></>)}
       </div>

@@ -34,6 +34,15 @@ build_bundle() {
   cp "$bin_path" "$APP_BINARY"
   chmod +x "$APP_BINARY"
 
+  # App icon (the brass d20 + claw-scratch mark). Copy the prebuilt .icns into
+  # Contents/Resources and reference it via CFBundleIconFile so Finder / Dock /
+  # the title bar show a real icon instead of the generic executable placeholder.
+  local icon_src="$ROOT_DIR/assets/icon/ClawDnD.icns"
+  if [ -f "$icon_src" ]; then
+    mkdir -p "$APP_CONTENTS/Resources"
+    cp "$icon_src" "$APP_CONTENTS/Resources/ClawDnD.icns"
+  fi
+
   cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,6 +58,10 @@ build_bundle() {
   <string>$DISPLAY_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>ClawDnD</string>
+  <key>CFBundleIconName</key>
+  <string>ClawDnD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>

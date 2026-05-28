@@ -364,22 +364,31 @@ private final class OpenWorldsChromeHostView: NSView {
     static func configure(_ window: NSWindow?) {
         guard let window else { return }
         DispatchQueue.main.async {
+            // Keep the immersive edge-to-edge look (transparent, hidden title text,
+            // content under the title bar) BUT keep the window a real titled window
+            // so the native traffic lights actually WORK — previously .titled was
+            // removed and all three standard buttons were hidden, leaving close /
+            // minimize / zoom inert (the chrome.jsx "lights" are decorative CSS).
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.titled)
             window.styleMask.insert(.fullSizeContentView)
-            window.styleMask.remove(.titled)
             window.styleMask.insert(.resizable)
+            window.styleMask.insert(.miniaturizable)
+            window.styleMask.insert(.closable)
             window.toolbar = nil
             window.backgroundColor = .black
             window.isOpaque = true
             window.isMovableByWindowBackground = true
 
+            // Show the real, functional macOS traffic lights (they float at top-left
+            // over the immersive content thanks to fullSizeContentView).
             [
                 NSWindow.ButtonType.closeButton,
                 .miniaturizeButton,
                 .zoomButton
             ].forEach { button in
-                window.standardWindowButton(button)?.isHidden = true
+                window.standardWindowButton(button)?.isHidden = false
             }
         }
     }
