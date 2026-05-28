@@ -222,11 +222,28 @@ function Placeholder({ label, w, h, framed, style, children, className }) {
 // is beautiful when art exists and graceful when it doesn't (the default null-image path).
 // `scope` follows the engine convention: a location_id for a scene, `portrait-<character_id>`
 // for an NPC/PC, `item-<item_id>` for an item icon. Empty scope → placeholder (no fetch).
+function PortraitSilhouette() {
+  // A neutral head-and-shoulders silhouette for a character with no ingested face.
+  // Deliberately NOT a class/race heraldic crest — a coat of arms is not a person.
+  return (
+    <svg viewBox="0 0 64 64" width="56%" height="56%" aria-hidden="true"
+         style={{ opacity: 0.5, color: "var(--b-500, #8c7a52)" }}>
+      <circle cx="32" cy="23" r="13" fill="currentColor" />
+      <path d="M9 60c0-13 10-21 23-21s23 8 23 21z" fill="currentColor" />
+    </svg>
+  );
+}
+
 function Img({ scope, label, w, h, framed, style, className, fit = "cover" }) {
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => { setFailed(false); }, [scope]);
+  const isPortrait = /(^|[-:/])(portrait|pc|npc|char)/i.test(scope || "");
   if (!scope || failed) {
-    return <Placeholder label={label} w={w} h={h} framed={framed} style={style} className={className} />;
+    return (
+      <Placeholder label={isPortrait ? "" : label} w={w} h={h} framed={framed} style={style} className={className}>
+        {isPortrait ? <PortraitSilhouette /> : undefined}
+      </Placeholder>
+    );
   }
   return (
     <img

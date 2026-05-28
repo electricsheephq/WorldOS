@@ -329,14 +329,17 @@ def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
     return _newest_json_descriptor(_images_dir(scope))
 
 
-def _portrait_class_race_fallback(scope: Optional[str], campaign_id: str) -> Optional[dict]:
-    """Generated-PC portrait fallback (EPIC A). A ``portrait-<id>`` scope with no ingested
-    or generated art falls back to the character's CLASS then RACE baseline art (ingested to
-    _private as ``class-<class>`` / ``race-<race>``). Canon characters resolve directly and
-    never reach here; this only fires for generated/homebrew PCs, so they show a class/race
-    face instead of a blank placeholder. Read-only, campaign-scoped; a miss just stays a miss."""
+def _portrait_by_name(scope: Optional[str], campaign_id: str) -> Optional[dict]:
+    """Resolve a ``portrait-<engine-id>`` scope by the character's NAME when the id itself
+    has no art. PCs are minted with opaque engine ids (``char_09bfb0ec913c``) while canon
+    NPCs keep readable slug ids (``npc-astarion``) that resolve directly. A canon character
+    pulled into the party as a PC therefore requests ``portrait-char_…`` — a miss — even
+    though their real ingested face lives at ``portrait-<name-slug>``. This bridges that gap:
+    look the character up in the snapshot, then retry the lookup keyed by canon_id / name
+    slug, so canon faces render on every screen. Returns None (→ silhouette placeholder)
+    only when the character genuinely has no ingested face. Read-only; a miss stays a miss."""
     raw = (scope or "").strip().lower()
-    if not raw.startswith(("portrait", "pc", "char", "npc")):
+    if not raw.startswith(("portrait", "pc", "npc", "char")):
         return None
     key = _scope_key(scope)
     if not key or not campaign_id:
@@ -353,15 +356,17 @@ def _portrait_class_race_fallback(scope: Optional[str], campaign_id: str) -> Opt
                 break
     if not isinstance(ch, dict):
         return None
-    candidates: list[str] = []
-    cls_name, _lvl = _class_summary(ch)
-    base = cls_name.split(" / ")[0].split("(")[0].strip().split()
-    if base:
-        candidates.append("class-" + _scope_key(base[0]))
-    race = _scope_key(ch.get("race") or ch.get("lineage") or "")
-    if race:
-        candidates.append("race-" + race)
-    for cand_scope in candidates:
+    tries: list[str] = []
+    for fld in ("canon_id", "canonical_id", "slug"):
+        v = ch.get(fld)
+        if isinstance(v, str) and v.strip():
+            tries.append("portrait-" + _scope_key(v))
+    name = ch.get("name")
+    if isinstance(name, str) and name.strip():
+        tries.append("portrait-" + _scope_key(name))
+    for cand_scope in tries:
+        if _scope_key(cand_scope) == key:
+            continue  # same miss we already tried
         desc = _latest_descriptor(cand_scope)
         if desc is not None:
             return desc
@@ -4996,9 +5001,14 @@ class _Handler(BaseHTTPRequestHandler):
         imports the engine, never writes."""
         desc = _latest_descriptor(scope)
         if not desc:
-            # EPIC A: a generated PC with no canon portrait falls back to class/race art.
-            desc = _portrait_class_race_fallback(scope, self.campaign_id or _pick_campaign(None) or "")
+            # A PC pulled from canon is minted with an opaque engine id (portrait-char_…);
+            # retry by the character's name slug so their real ingested face still resolves.
+            desc = _portrait_by_name(scope, self.campaign_id or _pick_campaign(None) or "")
         if not desc:
+            # A character with no real face 404s here and the UI shows a portrait-shaped
+            # silhouette placeholder. We deliberately do NOT substitute a class/race heraldic
+            # crest — a coat of arms is not a person's face, and dressing a faceless PC in one
+            # reads as a bug, not art. Canon NPCs resolve to real ingested portraits above.
             self._send(404, b"no image", "text/plain")
             return
         ctype = desc.get("mime_type")
@@ -5056,6 +5066,13 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         route = parsed.path
         if route in ("/", "/index.html"):
+            # The root used to serve the pre-OpenWorlds raw-DOM dashboard (viewer/index.html).
+            # OpenWorlds (/openworlds/) is the real, current UI the desktop app loads, so the
+            # root now redirects there — hitting 127.0.0.1:<port>/ in a browser shows the same
+            # app the native shell does, never the legacy view. The old dashboards stay
+            # reachable at their explicit /dashboard and /legacy paths for reference.
+            self._redirect(f"{_OPENWORLDS_ROUTE}/")
+        elif route in ("/legacy", "/legacy.html"):
             html = (_HERE / "index.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
         elif route in ("/dashboard", "/dashboard.html"):
