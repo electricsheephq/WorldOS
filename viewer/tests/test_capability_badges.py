@@ -84,8 +84,12 @@ class CapabilityBadgeTests(unittest.TestCase):
     def test_forge_screen_has_capability_badge(self):
         self._assert_has_capability_badge("/openworlds/screen-forge.jsx")
 
-    def test_merchant_screen_has_capability_badge(self):
-        self._assert_has_capability_badge("/openworlds/screen-merchant.jsx")
+    # v1.0.2: the Merchant screen's "Preview" CapabilityBadge banner was removed
+    # as part of the UI honesty cleanup (Phase-4 wiring already lifted BUY →
+    # POST /move on can_act, so the surface is no longer prototype-only; the
+    # global TitleBar badges were retired in app.jsx capabilityForScreen). The
+    # remaining preview-only surfaces (bestiary / create / forge / seed) still
+    # carry the badge until cycle 3's wiring lifts them.
 
     def test_seed_screen_has_capability_badge(self):
         self._assert_has_capability_badge("/openworlds/screen-seed.jsx")
