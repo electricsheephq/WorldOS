@@ -4872,6 +4872,35 @@ def _openworlds_asset(route: str) -> Path | None:
     return target if target.is_file() else None
 
 
+def _openworlds_asset_version() -> str:
+    """A cache-busting token that changes whenever any local script source changes.
+    The OpenWorlds SPA loads its modules via plain <script src="X.jsx"> tags with no
+    version, and a long-lived WebView (the native app's WKWebView) or browser profile
+    can hold a STALE copy of those modules across launches — so a player relaunches and
+    still sees retired UI (e.g. old honesty badges). Stamping the src with ?v=<mtime>
+    forces every client to re-fetch the moment a .jsx/.js changes."""
+    latest = 0.0
+    try:
+        for p in _OPENWORLDS_DIR.iterdir():
+            if p.suffix.lower() in (".jsx", ".js") and p.is_file():
+                latest = max(latest, p.stat().st_mtime)
+    except OSError:
+        return "0"
+    return str(int(latest))
+
+
+def _openworlds_index_bytes(asset: Path) -> bytes:
+    """Serve the OpenWorlds index.html with each local script src version-stamped, so a
+    cached WebView/browser never renders against stale modules (see
+    _openworlds_asset_version)."""
+    html = asset.read_text(encoding="utf-8")
+    ver = _openworlds_asset_version()
+    # Stamp the more specific .jsx" first so the .js" pass can't touch an already-stamped
+    # .jsx?v=... (which contains no .js" substring). Vendor .js are stamped too — harmless.
+    html = html.replace('.jsx"', f'.jsx?v={ver}"').replace('.js"', f'.js?v={ver}"')
+    return html.encode("utf-8")
+
+
 class _Handler(BaseHTTPRequestHandler):
     campaign_id = ""  # set on the class before serving
     transcript_path = ""  # optional agent-transcript .jsonl to tail for /activity
@@ -5153,6 +5182,8 @@ class _Handler(BaseHTTPRequestHandler):
             asset = _openworlds_asset(route)
             if asset is None:
                 self._send(404, b"not found", "text/plain")
+            elif asset.name == "index.html" and asset.parent == _OPENWORLDS_DIR:
+                self._send(200, _openworlds_index_bytes(asset), _openworlds_mime(asset))
             else:
                 self._send(200, asset.read_bytes(), _openworlds_mime(asset))
         elif route == "/campaigns":

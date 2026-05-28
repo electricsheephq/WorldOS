@@ -40,6 +40,23 @@ function ScreenInventory({ onNavigate, state, setState }) {
   const [ctxMenu, setCtxMenu] = React.useState(null);
   const toast = window.useToast ? window.useToast() : (() => {});
 
+  // Phase-4 wiring: when a live session is attached the surface reports can_act +
+  // campaign_id, so equip/use/give/drop land as a constrained `do`/`use_item` move on
+  // the engine via POST /move (the DM resolves it). When can_act is false the actions
+  // stay honestly display-only — they never silently no-op a "saved" claim.
+  const canAct = Boolean(surface?.can_act);
+  const campaignId = surface?.campaign_id || "";
+  const postInvMove = React.useCallback((kind, fields, okToast) => {
+    fetch("/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, campaign: campaignId, ...fields }),
+    }).then((r) => {
+      if (!r.ok) throw new Error("move " + r.status);
+      toast(okToast);
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+  }, [campaignId, toast]);
+
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     try {
       const response = await fetch("/inventory-surface" + surfaceQuery, { cache: "no-store" });
@@ -249,7 +266,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
       {/* RIGHT — Item detail */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
-        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} /> : <div className="muted">Select an item.</div>}
+        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} /> : <div className="muted">Select an item.</div>}
       </Panel>
 
       {ctxMenu && (
@@ -258,13 +275,20 @@ function ScreenInventory({ onNavigate, state, setState }) {
           onClose={() => setCtxMenu(null)}
           items={[
             { label: "Examine", icon: "◈", hint: "E", onClick: () => toast({ kind: "item", title: ctxMenu.item.name, body: ctxMenu.item.desc }) },
-            { label: "Equip (preview)", icon: "⚔", hint: "Q", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
-            { label: "Use (preview)", icon: "✦", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: "Used: " + ctxMenu.item.name }) },
+            canAct
+              ? { label: "Equip", icon: "⚔", hint: "Q", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("do", { text: "I equip " + ctxMenu.item.name + "." }, { kind: "item", title: "Equipping " + ctxMenu.item.name, body: hero.name + " takes it up — relayed to the DM." }) }
+              : { label: "Equip (preview)", icon: "⚔", hint: "Q", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
+            canAct
+              ? { label: "Use", icon: "✦", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("use_item", { name: ctxMenu.item.name, text: "I use " + ctxMenu.item.name + "." }, { kind: "item", title: "Using " + ctxMenu.item.name, body: "Relayed to the DM." }) }
+              : { label: "Use (preview)", icon: "✦", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "item", title: "Used: " + ctxMenu.item.name }) },
             { divider: true },
-            { label: "Give to " + hero.name.split(" ")[0] + " (preview)", icon: "→", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " given to " + hero.name }) },
-            { label: "Mark as trash (preview)", icon: "◌", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ title: "Marked: " + ctxMenu.item.name }) },
+            canAct
+              ? { label: "Hand to a companion", icon: "→", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("do", { text: "I hand the " + ctxMenu.item.name + " to a companion." }, { kind: "item", title: "Handing over " + ctxMenu.item.name, body: "Relayed to the DM." }) }
+              : { label: "Hand to a companion (preview)", icon: "→", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " handed over" }) },
             { divider: true },
-            { label: "Drop (preview)", icon: "▾", tone: "crimson", disabled: true, title: "Display-only — not saved to the engine", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
+            canAct
+              ? { label: "Drop", icon: "▾", tone: "crimson", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("do", { text: "I drop the " + ctxMenu.item.name + "." }, { kind: "danger", title: "Dropping " + ctxMenu.item.name, body: "Relayed to the DM — you will not get it back unless you fetch it yourself." }) }
+              : { label: "Drop (preview)", icon: "▾", tone: "crimson", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
           ]}
         />
       )}
@@ -339,7 +363,7 @@ function ItemSlot({ item, selected, onClick, onContextMenu }) {
   );
 }
 
-function ItemDetail({ item, hero, toast }) {
+function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
@@ -394,11 +418,23 @@ function ItemDetail({ item, hero, toast }) {
       )}
 
       <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>
-        <BrassButton size="sm" disabled title="Display-only — not saved to the engine" onClick={() => toast && toast({ kind: "item", title: item.name + " given to " + hero.name, body: hero.name.split(" ")[0] + " stows it in their pack." })}>
-          Give to {hero.name.split(" ")[0]} (preview)
-        </BrassButton>
+        {canAct ? (
+          <BrassButton size="sm" title="Relays to the DM via /move — the engine resolves it" onClick={() => postInvMove("use_item", { name: item.name, text: "I use " + item.name + "." }, { kind: "item", title: "Using " + item.name, body: "Relayed to the DM." })}>
+            Use
+          </BrassButton>
+        ) : (
+          <BrassButton size="sm" disabled title="Display-only — start a live session to act" onClick={() => toast && toast({ kind: "item", title: "Used: " + item.name })}>
+            Use (preview)
+          </BrassButton>
+        )}
         <BrassButton tone="ghost" size="sm" onClick={() => toast && toast({ kind: "item", title: item.name, body: item.desc })}>Examine</BrassButton>
-        <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Drop (preview)</BrassButton>
+        {canAct ? (
+          <BrassButton tone="ghost" size="sm" title="Relays to the DM via /move — the engine resolves it" onClick={() => postInvMove("do", { text: "I drop the " + item.name + "." }, { kind: "danger", title: "Dropping " + item.name, body: "Relayed to the DM." })}>
+            Drop
+          </BrassButton>
+        ) : (
+          <BrassButton tone="ghost" size="sm" disabled title="Display-only — start a live session to act">Drop (preview)</BrassButton>
+        )}
       </div>
     </div>
   );
