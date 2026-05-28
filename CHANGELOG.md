@@ -12,6 +12,76 @@ Nothing queued yet.
 
 ---
 
+## [1.0.1] — 2026-05-28
+
+**Phase-4 action lanes + native-app reliability + the seven canon dossiers.** Wires the
+last two display-only prototype screens (Merchant, Forge) into the live `/move` sink so a
+running session can actually transact through them; seeds machine-usable
+`companion_dossier` blocks on the seven BG3 origin heroes (the engine's living-world
+systems — banter, approval, arc gates, camp prompts — now have a real anchor for the
+canon cast); and ships a stack of native-app reliability + unblock work for a class of
+host-environment hangs (security-software file scanning on freshly-rebuilt ad-hoc
+signatures).
+
+### Added
+
+- **Merchant — BUY relays a structured `do` move on /move when `can_act`** (Phase-4
+  action lane). Reads `surface.can_act` + `campaign_id` from `/character-surface` and
+  POSTs `{kind:"do", text:"I buy X and Y from <merchant> for N gp, haggled Z% off"}` so
+  the DM resolves the purchase via the engine's `buy_item` tool. The honest "(preview)"
+  / "(live)" label flips with `can_act`.
+- **Forge — Craft relays a structured `check` move on /move when `can_act`** (Phase-4
+  action lane). The /character-surface fetch was already in place for the live-party
+  crafter selector; now the craft button posts `{kind:"check", skill, dc, name, text}`
+  during a live session. The Workshop Ledger records "relayed (DC X)" entries; the DM
+  rolls + narrates. Banner + capability badge flip "Live" / "Display-only preview"
+  honestly.
+- **Companion dossiers for the seven BG3 origin heroes** (Astarion / Gale / Karlach /
+  Lae'zel / Shadowheart / Wyll / Halsin). Each carries a terse machine-usable
+  `companion_dossier` with `wound`, `wants`, `fears`, `values`, `approval_likes` /
+  `approval_dislikes`, `banter_tags`, `camp_prompts` — lore-faithful tags, never long
+  copied prose (per the licensing guard). The engine's living-world systems now have
+  real anchors for the canon cast instead of `note` strings buried in prompts. Also
+  reaffirms `playable=false` + `role="hero"` so the seven legends are encounterable
+  NPCs of the post-BG3 Faerûn, never roll-able player characters.
+- **URL-hash screen deep-link** (`/openworlds/#character`, `#battle`, `#parley`, etc.,
+  with aliases `battle→combat`, `parley→dialogue`, `market→merchant`,
+  `chronicles→launcher`, `stash→inventory`). Real feature (linkable / bookmarkable
+  screens) and the foundation of the autonomous headless-Chrome QA workflow.
+- **`script/unblock_native_app.sh`** — one-shot helper that reaps stale processes, kills
+  NordVPN's Shield + privileged helper (one sudo prompt; they auto-restart), rebuilds
+  the app, opens it, and polls for the viewer to bind. Designed for fast recovery when
+  a freshly-rebuilt ad-hoc-signed binary trips a security scanner re-evaluation.
+
+### Changed
+
+- **Build script now prefers a Developer ID signature** when one is in the keychain
+  (falls back to ad-hoc otherwise). A Developer ID signature has the SAME cdhash across
+  rebuilds AND is generally pre-trusted by security software, so subsequent rebuilds
+  don't re-trip the file scanner. First run prompts the standard macOS Keychain
+  "Always Allow" dialog; after one click, every future rebuild signs silently. This is
+  the foundation Sparkle auto-update would build on.
+- **App viewer-subprocess launch hardened.** Passes an ABSOLUTE script path
+  (`<repo>/viewer/server.py`) and sets the working directory to an internal-disk temp
+  dir (`NSTemporaryDirectory`) instead of the repo URL. Python's interpreter init no
+  longer calls `getcwd()` on an external/removable volume — a kernel-level enumeration
+  that some security scanners hang on `open$NOCANCEL`. `server.py` resolves all of its
+  assets from `__file__`, so the cwd change is transparent to it.
+- **Repo can be checked out anywhere.** Verified by cloning into `~/ClawDnD-val` on
+  internal disk in parallel with the LEXAR worktree; the build + the test suites + the
+  whole OpenWorlds screen set all run identically from either location.
+
+### Fixed
+
+- Four pre-existing failing engine tests (`test_list_canon_characters_playable_filter`,
+  `test_start_character_pickup_rejects_hero_accepts_minor`,
+  `test_canon_character_record_carries_a_dossier`,
+  `test_load_canon_character_populates_dossier`) — root cause was the seven origin-hero
+  JSON files missing `playable` / `role` flags AND the new `companion_dossier` block.
+  Engine suite is now **1385 / 1385 passing**; viewer suite stays at 90 / 90.
+
+---
+
 ## [1.0.0] — 2026-05-27
 
 **The Living-World Engine — release milestone.** This release rounds off the deterministic
