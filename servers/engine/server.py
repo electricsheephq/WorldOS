@@ -973,6 +973,7 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
             sk = srd_tables.class_skills(cname)
             ch.skill_proficiencies = list(sk.get("from", []))[: int(sk.get("count", 0))]
         _recompute_spellcasting(ch)
+        _seed_starting_spells(ch, cname, level)
         _recompute_class_resources(ch)
     except ValueError:
         pass  # unknown class -> keep the explicit values
@@ -1014,6 +1015,52 @@ def _seed_starting_gear(ch, class_name: str) -> None:
         ch.inventory.append(Item(name=armor, equipped=True, description="Starting armor."))
     ch.inventory.append(Item(name=_STARTING_WEAPON[cname], equipped=True, description="Starting weapon."))
     ch.inventory.append(Item(name="Explorer's Pack", description="Bedroll, rations, rope, torches, and the like."))
+
+
+# Class -> a small, canonical starting spell loadout (cantrips always-known + a few prepared
+# leveled spells). Every name resolves in the srd524 casting DB so cast_spell works out of the
+# box. This exists because _recompute_spellcasting only sizes SLOTS — without seeding spells a
+# freshly-built caster has slots but NOTHING to cast (QA: a level-3 Wizard shipped with an empty
+# spellbook and never cast once). Half-casters (paladin/ranger) gain spells at L2, so they are
+# seeded only from level 2. Generic SRD spells — no proprietary list copied.
+_STARTING_SPELLS: dict[str, dict[str, list[str]]] = {
+    "wizard":   {"cantrips": ["Fire Bolt", "Mage Hand", "Light"],
+                 "spells": ["Magic Missile", "Shield", "Mage Armor", "Detect Magic"]},
+    "sorcerer": {"cantrips": ["Fire Bolt", "Ray of Frost", "Light"],
+                 "spells": ["Magic Missile", "Shield", "Burning Hands"]},
+    "cleric":   {"cantrips": ["Sacred Flame", "Guidance", "Light"],
+                 "spells": ["Cure Wounds", "Bless", "Guiding Bolt", "Healing Word", "Shield of Faith"]},
+    "druid":    {"cantrips": ["Druidcraft", "Produce Flame", "Guidance"],
+                 "spells": ["Cure Wounds", "Entangle", "Thunderwave"]},
+    "bard":     {"cantrips": ["Vicious Mockery", "Mage Hand"],
+                 "spells": ["Cure Wounds", "Healing Word", "Dissonant Whispers"]},
+    "warlock":  {"cantrips": ["Eldritch Blast", "Chill Touch"],
+                 "spells": ["Hex", "Hellish Rebuke", "Charm Person"]},
+    "paladin":  {"cantrips": [],
+                 "spells": ["Bless", "Cure Wounds", "Shield of Faith"]},
+    "ranger":   {"cantrips": [],
+                 "spells": ["Hunter's Mark", "Cure Wounds", "Ensnaring Strike"]},
+}
+
+
+def _seed_starting_spells(ch, class_name: str, level: int) -> None:
+    """Give a freshly-built caster a canonical, castable starter loadout so they can actually
+    cast from turn one. Cantrips land in spells_known (always available); leveled spells land in
+    BOTH spells_known and spells_prepared so casting works whether the class is a known- or a
+    prepared-caster. Only fires when BOTH spell lists are empty (respects a template/canon record
+    that supplied its own spells) and only for the caster classes above. Half-casters wait for L2."""
+    cname = (class_name or "").lower()
+    loadout = _STARTING_SPELLS.get(cname)
+    if not loadout:
+        return
+    if ch.spells_known or ch.spells_prepared:
+        return  # respect spells a template / canon record already supplied
+    if cname in ("paladin", "ranger") and level < 2:
+        return  # half-casters have no spells (or slots) until level 2
+    cantrips = list(loadout.get("cantrips", []))
+    spells = list(loadout.get("spells", []))
+    ch.spells_known = cantrips + spells
+    ch.spells_prepared = list(spells)
 
 
 @mcp.tool()

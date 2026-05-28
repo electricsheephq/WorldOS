@@ -154,3 +154,23 @@ def test_concentration_replacement():  # M2
     assert server.get_character(cid, cleric)["concentration"] == "Bless"
     server.cast_spell(cid, cleric, "Shield of Faith")  # 2nd concentration spell drops Bless
     assert server.get_character(cid, cleric)["concentration"] == "Shield of Faith"
+
+
+def test_caster_ships_with_a_castable_starter_loadout():
+    """A freshly-built caster must get a real, castable spellbook — slots without spells
+    leaves a wizard unable to cast (QA: a level-3 Wizard shipped with an empty spellbook and
+    never cast once). A martial class gets none."""
+    cid = server.create_campaign("S")["id"]
+    wiz = server.create_character(cid, "Dal", kind="player", class_name="Wizard", level=3,
+                                  apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    sheet = server.get_character(cid, wiz)
+    known = set(sheet["spells_known"]) | set(sheet["spells_prepared"])
+    assert known, "a level-3 wizard must know at least some spells"
+    assert "Magic Missile" in known
+    # The seeded spells must actually resolve through the cast path.
+    server.cast_spell(cid, wiz, "Magic Missile")  # raises if not known / not castable
+    # A martial class gets no spellbook.
+    ftr = server.create_character(cid, "Brawn", kind="player", class_name="Fighter", level=3,
+                                  apply_srd_defaults=True)["id"]
+    fsheet = server.get_character(cid, ftr)
+    assert not fsheet["spells_known"] and not fsheet["spells_prepared"]
