@@ -382,7 +382,15 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
     [layoutKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const at = (id) => layout[id] || { x: 50, y: 50 };
-  const regionScope = region ? "map-" + String(region).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
+  // Region → backdrop map scope. The atlas spans Sword Coast geography (Baldur's Gate
+  // districts AND Candlekeep / Elturel / Wyrm's Crossing), so the real Sword Coast
+  // regional map is the right backdrop for the baldurs-gate world — and it's a static
+  // image (the city page's own lead media is a webm an <img> can't render). Curated
+  // per-region; falls back to map-<region> then the parchment styling for any world
+  // without a dedicated backdrop. (#atlas-worldmap)
+  const REGION_BACKDROP = { "baldurs-gate": "map-sword-coast" };
+  const regionSlug = region ? String(region).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
+  const regionScope = REGION_BACKDROP[regionSlug] || (regionSlug ? "map-" + regionSlug : "");
 
   return (
     <div style={{ position: "relative", height: "100%" }}>
