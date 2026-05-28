@@ -38,10 +38,26 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"  # the player's structured moves (It.1)
-python3 - "$ROOT/qa/qa.mcp.json" "$STATE_DIR" "$DM_CFG" <<'PY'
+python3 - "$ROOT/qa/qa.mcp.json" "$STATE_DIR" "$DM_CFG" "$ROOT" <<'PY'
 import json, sys
-cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
-json.dump(cfg, open(sys.argv[3], "w"))
+cfg_path, state, out, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+cfg = json.load(open(cfg_path))
+# RE-ROOT every MCP server's `--directory` at THIS repo ($ROOT) so the DM engine,
+# rules, and voice run the SAME code as the rest of the harness + the snapshot writer
+# (the player facade is already launched from $ROOT). The committed qa.mcp.json template
+# may hardcode a DIFFERENT absolute checkout (e.g. a stale sibling clone); if the DM
+# engine runs older models.py than the writer, EVERY DM tool call fails with
+# "extra_forbidden" on the newer snapshot fields and the DM silently falls back to
+# narrating — no real travel/combat/state (the version-skew that RED-capped two sessions).
+for name, srv in cfg.get("mcpServers", {}).items():
+    args = srv.get("args", [])
+    if "--directory" in args:
+        i = args.index("--directory")
+        pkg = args[i + 1].rstrip("/").split("/servers/")[-1]  # "engine" | "rules" | "voice"
+        args[i + 1] = f"{root}/servers/{pkg}"
+    if name == "clawdnd-engine":
+        srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
+json.dump(cfg, open(out, "w"))
 PY
 # The player gets ONLY the constrained move facade (clawdnd-player): it acts through
 # tools, never free-text narration; moves land in $MOVES for the orchestrator to relay.

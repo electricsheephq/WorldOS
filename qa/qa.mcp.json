@@ -3,20 +3,41 @@
     "clawdnd-engine": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "/Volumes/LEXAR/repos/ClawDnD/servers/engine", "server.py"],
-      "env": { "CLAWDND_STATE_DIR": "/Volumes/LEXAR/repos/ClawDnD/qa/state" }
+      "args": [
+        "run",
+        "--directory",
+        "/Users/lume/ClawDnD-val/servers/engine",
+        "server.py"
+      ],
+      "env": {
+        "CLAWDND_STATE_DIR": "/Users/lume/ClawDnD-val/qa/state"
+      }
     },
     "clawdnd-rules": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "/Volumes/LEXAR/repos/ClawDnD/servers/rules", "server.py"],
-      "env": { "CLAWDND_RULES_OFFLINE": "1" }
+      "args": [
+        "run",
+        "--directory",
+        "/Users/lume/ClawDnD-val/servers/rules",
+        "server.py"
+      ],
+      "env": {
+        "CLAWDND_RULES_OFFLINE": "1"
+      }
     },
     "clawdnd-voice": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "/Volumes/LEXAR/repos/ClawDnD/servers/voice", "server.py"],
-      "env": { "CLAWDND_TTS_BACKEND": "null" }
+      "args": [
+        "run",
+        "--directory",
+        "/Users/lume/ClawDnD-val/servers/voice",
+        "server.py"
+      ],
+      "env": {
+        "CLAWDND_TTS_BACKEND": "null"
+      }
     }
   }
 }
