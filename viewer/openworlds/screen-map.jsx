@@ -547,15 +547,23 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
 
       <Panel framed style={{ padding: 18, flex: 1, overflow: "auto" }}>
         <SectionTitle>Strategic Context</SectionTitle>
-        <StrategicList label="Quests" items={quests} empty="No active quest markers here." render={(q) => (
-          <ContextRow key={q.id} title={q.title} meta={q.objective || q.status || "active"} />
-        )} />
-        <StrategicList label="Clocks" items={clocks} empty="No strategic clocks here." render={(c) => (
-          <ContextRow key={c.id} title={c.title} meta={`${c.kind} - ${c.progress}/${c.target}`} urgent={c.urgent} />
-        )} />
-        <StrategicList label="Projects" items={projects} empty="No downtime projects here." render={(p) => (
-          <ContextRow key={p.id} title={p.title} meta={`${p.status} - ${p.progress_days}/${p.duration_days} days`} urgent={p.urgent} />
-        )} />
+        {quests.length === 0 && clocks.length === 0 && projects.length === 0 ? (
+          <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>
+            No active threads in this region yet — quests, clocks, and downtime projects appear here as they develop.
+          </div>
+        ) : (
+          <>
+            <StrategicList label="Quests" items={quests} empty="No active quest markers here." render={(q) => (
+              <ContextRow key={q.id} title={q.title} meta={q.objective || q.status || "active"} />
+            )} />
+            <StrategicList label="Clocks" items={clocks} empty="No strategic clocks here." render={(c) => (
+              <ContextRow key={c.id} title={c.title} meta={`${c.kind} - ${c.progress}/${c.target}`} urgent={c.urgent} />
+            )} />
+            <StrategicList label="Projects" items={projects} empty="No downtime projects here." render={(p) => (
+              <ContextRow key={p.id} title={p.title} meta={`${p.status} - ${p.progress_days}/${p.duration_days} days`} urgent={p.urgent} />
+            )} />
+          </>
+        )}
 
         <Divider />
         <SectionTitle>Discovered</SectionTitle>

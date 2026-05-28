@@ -107,22 +107,8 @@ function ScreenBestiary({ onNavigate, state, setState }) {
     }
   }, [filtered, selected?.id]);
 
-  const _badge = wired
-    ? { label: "Live", tone: "emerald", detail: "Wired to the engine's player-safe /bestiary-surface read model." }
-    : { label: "Preview", tone: "muted", detail: "Loading the live bestiary from the engine." };
-
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
-
-      {/* Surface banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
-        <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>
-          {wired
-            ? "Creatures are live from the engine's player-safe bestiary; the search box queries the codex. Persons & lore are recorded as the chronicle unfolds."
-            : "Loading the live bestiary from the engine."}
-        </span>
-      </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr", gap: 14, minHeight: 0 }}>
 

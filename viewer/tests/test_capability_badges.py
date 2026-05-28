@@ -75,24 +75,21 @@ class CapabilityBadgeTests(unittest.TestCase):
             f"{screen_path} must render a <CapabilityBadge> so players know it is display-only",
         )
 
-    def test_bestiary_screen_has_capability_badge(self):
-        self._assert_has_capability_badge("/openworlds/screen-bestiary.jsx")
-
-    def test_create_screen_has_capability_badge(self):
-        self._assert_has_capability_badge("/openworlds/screen-create.jsx")
-
     def test_forge_screen_has_capability_badge(self):
         self._assert_has_capability_badge("/openworlds/screen-forge.jsx")
 
     # v1.0.2: the Merchant screen's "Preview" CapabilityBadge banner was removed
     # as part of the UI honesty cleanup (Phase-4 wiring already lifted BUY →
     # POST /move on can_act, so the surface is no longer prototype-only; the
-    # global TitleBar badges were retired in app.jsx capabilityForScreen). The
-    # remaining preview-only surfaces (bestiary / create / forge / seed) still
-    # carry the badge until cycle 3's wiring lifts them.
-
-    def test_seed_screen_has_capability_badge(self):
-        self._assert_has_capability_badge("/openworlds/screen-seed.jsx")
+    # global TitleBar badges were retired in app.jsx capabilityForScreen).
+    #
+    # v1.0.2 (honesty cleanup, cont.): the bestiary / create / seed banners were
+    # likewise retired — bestiary is a live /bestiary-surface read model and
+    # create binds the hero through the engine, so neither is prototype-only;
+    # the seed screen keeps its disabled "Sow the change" button (with a quiet
+    # tooltip) to stay honest about re-seeding not being wired, but no longer
+    # carries the loud banner. Forge remains the sole banner-bearing surface
+    # until its wiring lands.
 
 
 if __name__ == "__main__":

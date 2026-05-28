@@ -84,16 +84,8 @@ function ScreenCreate({ onNavigate, state, setState }) {
     }
   };
 
-  const _badge = { label: "Live", tone: "emerald", detail: "Binding the hero pre-seeds this exact character into a new game through the engine, then opens it live." };
-
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
-
-      {/* Prototype banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
-        <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Bind seeds this hero into a fresh game through the engine and opens it live.</span>
-      </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "240px 1fr 280px", gap: 14, minHeight: 0 }}>
 
