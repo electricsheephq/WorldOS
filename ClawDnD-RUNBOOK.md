@@ -1,5 +1,12 @@
 # ClawDnD — RUNBOOK (READ FIRST on resume)
 
+> **Before anything: confirm you are in the canonical checkout and know the right UI.**
+> `CLAUDE.md` (repo root, auto-loaded) is the hub — canonical checkout is
+> `/Users/lume/ClawDnD-val` (== GitHub `100yenadmin/ClawDnD` main; the `/Volumes/LEXAR/…`
+> copies are DEPRECATED), the UI is OpenWorlds at `/openworlds/` (the root is the legacy
+> dashboard), and it carries the full project map + read order. See also the auto-memory
+> `clawdnd-canonical-setup`.
+
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
 > project, architecture, the load-bearing invariants you must not violate, the exact dev

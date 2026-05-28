@@ -58,3 +58,37 @@ ingested face shows a neutral silhouette — never a class/race heraldic crest.
 Engine: `uv run --directory servers/engine python -m pytest tests/ -q` (single-process, ~15s,
 1400+ tests). Viewer: `uv run --directory viewer pytest -q tests/`. Prefer GitHub CI for the
 full sweep when the main disk is tight; engine single-process locally is light.
+
+---
+
+## Project map — read order + where everything lives
+An agent resuming this project should read in this order, then consult the rest by need:
+
+1. **`CLAUDE.md`** (this file) — checkout/UI/run guardrails + this map. Auto-loaded.
+2. **`ClawDnD-RUNBOOK.md`** — the compaction-resilience doc: architecture, invariants, dev/QA loops, lessons, work queue. READ FIRST after this.
+3. **`ClawDnD-NORTH-STAR.md`** — *what "great" means* (the optimization target). The score is a **proxy** for the felt prestige-CRPG session; come here when score and gut disagree.
+4. **`qa/SCORECARD.md`** — the running results ledger (every scored run). 
+5. Latest **session runbook**: `/Volumes/LEXAR/Codex/session-notes/<date>/clawdnd-*/` (`implementation-notes.html` or `runbook.html`) — the in-flight day-log. Current sprint: `2026-05-27/clawdnd-1.0-autonomous-sprint/runbook.html`.
+
+### How we measure (the fitness function — still the gate)
+Defined in **`qa/SCORING.md`**. A run = **1 hard behavioral gate** + **3 LLM lenses (1–5)**:
+- **Behavioral gate** (`qa/assert_behavioral.py`) — deterministic PASS/FAIL: dice rolled, clock advanced, party visited ≥2 locations, new NPC met, player moves resolved, no dangling combat/conditions. RED caps the lenses.
+- **Mechanical** lens → `qa/rubric.md` (5e/rules/tool-fidelity). **Target ≥ 4.5.**
+- **Story-craft / "Tolkien"** lens → `qa/rubric_tolkien.md` (grandeur/character/prose/momentum/theme; act-aware). **Target ≥ 4.3** (enduring North Star 4.5).
+- **Combat / "Angry-DM"** lens → `qa/rubric_angry_dm.md` (5e combat fidelity). Drive upward; the engine core is clean, residual is DM adherence + sampling.
+- **OpenWorlds app sweep** adds: image-render ≥95% + button-coverage ≥95% + zero console errors (`qa/screen_coverage.py`, `qa/owshot.sh`).
+- Scorer: `qa/score.sh` (+ `qa/SCORING.md` for the schemas). **Log every scored run to `qa/SCORECARD.md`.**
+
+### Run a session / sweep
+- 2-agent duo (DM + constrained AI player): `qa/run_duo.sh <runid> baldurs-gate qa/play_player_openworlds.txt <beats> <budget>` (player persona = a CANON BG NPC, e.g. Dal Lightspark).
+- Companions ensemble: `qa/run_party.sh`. Combat fidelity lane: `qa/run_combat_sprint.sh`. Parallel: `qa/run_parallel.sh`.
+- All scored runs land in `qa/SCORECARD.md`.
+
+### The skills the DM/companions run
+`skills/dungeon-master/` (`SKILL.md` = beat cycle + non-negotiables; `AGENT.md` = DM identity + 3-act process; `reference/*.md` = combat, storycraft, living-world, living-arcs, quest-generation, death-and-reroll). Plus `skills/companion/`, `skills/campaign-author/`, `skills/world-author/`.
+
+### Design / architecture docs (`docs/`)
+`ARCHITECTURE.md` · `OPENWORLDS_NATIVE_APP_ROADMAP.md` · `OPENWORLDS_UI_AUDIT.md` (the page-by-page audit; GitHub epic #242) · `OPENWORLDS_FIDELITY_PLAN.md` · `OPENWORLDS_DESIGN_ASSET_POLICY.md` (official images → gitignored `_private/`, never committed) · `RELEASE_1.0_CHECKLIST.md` · `MONSTER_AUTHORING.md` · `SPARKLE_SETUP.md`.
+
+### Content + ingest
+World seeds + lore: `content/worlds/baldurs-gate/` (canon characters, areas, endings, `lore/` + `lore/wiki/`). Wiki-first ingest pipeline: `tools/ingest/` (`wiki_fetch.py` → `wiki_to_{lore,characters,areas}.py`, `wiki_images.py` → gitignored `content/worlds/_private/`). Direction: pull from the BG3/FR wikis, generate little (see memory `clawdnd-wiki-first`).
