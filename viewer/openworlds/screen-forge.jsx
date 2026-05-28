@@ -76,8 +76,36 @@ function ScreenForge({ onNavigate, state, setState }) {
   })();
   const successChance = selected ? Math.max(5, Math.min(95, (skillBonus - selected.dc + 20) * 5)) : 0;
 
+  // Phase-4 action lane: when live (DM attached), a Forge "Craft" relays a
+  // structured `check` move (skill + DC + the recipe name) so the engine rolls
+  // and the DM narrates the outcome via the real engine, not a local-only
+  // simulation. Read-only preview keeps the existing local-roll behavior so
+  // the screen still demonstrates the mechanic.
+  const canAct = Boolean(surface?.can_act);
+  const campaignId = surface?.campaign_id || "";
+
   const craft = () => {
     if (!hero || !selected) return;
+    if (canAct) {
+      const move = {
+        kind: "check",
+        name: `craft ${selected.name}`,
+        skill: selected.skill,
+        dc: selected.dc,
+        text: `${hero.name.split(" ")[0]} attempts to craft ${selected.name} (DC ${selected.dc}, ${selected.skill})`,
+        campaign: campaignId,
+      };
+      fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(move),
+      }).then(() => {
+        setLog((l) => [{ when: "just now", who: hero.name.split(" ")[0], item: selected.name, success: true, roll: `relayed (DC ${selected.dc})` }, ...l].slice(0, 8));
+        toast({ kind: "item", eyebrow: "Forge", title: `${selected.name} — at the bench`, body: `Move relayed to the DM. The engine rolls the ${selected.skill} check (DC ${selected.dc}); the DM narrates the result.` });
+      }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+      return;
+    }
+    // !canAct (read-only preview): local-roll simulation (unchanged).
     const roll = 1 + Math.floor(Math.random() * 20);
     const total = roll + skillBonus;
     const success = total >= selected.dc;
@@ -90,7 +118,9 @@ function ScreenForge({ onNavigate, state, setState }) {
     });
   };
 
-  const _badge = { label: "Preview", tone: "muted", detail: "Forge is display-only — crafting rolls are simulated and results are not persisted to the engine." };
+  const _badge = canAct
+    ? { label: "Live", tone: "emerald", detail: "Craft relays a structured skill check to the DM via /move — the engine rolls and resolves." }
+    : { label: "Preview", tone: "muted", detail: "Forge is display-only — crafting rolls are simulated and results are not persisted to the engine." };
 
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
@@ -98,7 +128,11 @@ function ScreenForge({ onNavigate, state, setState }) {
       {/* Prototype banner */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
         <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Display-only — crafting is not yet wired to the engine. Rolls are simulated; nothing is saved.</span>
+        <span className="hand muted" style={{ fontSize: 12 }}>
+          {canAct
+            ? "Live — \"Forge it\" relays a skill check to the DM via /move. The engine rolls; the DM narrates."
+            : "Display-only preview — crafting rolls are simulated locally. Start a live session to relay real checks to the DM."}
+        </span>
       </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 300px", gap: 14, minHeight: 0 }}>
