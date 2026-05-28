@@ -9,16 +9,56 @@
       "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual). Non-commercial fan use.",
       "attribution": "Image from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Unofficial, non-commercial fan content.",
       "images": [
-        {"title": "Baldur's Gate",         "scope": "map:baldur-s-gate",       "kind": "map"},
-        {"title": "Lower City",            "scope": "map:lower-city",          "kind": "map"},
-        {"title": "Upper City",            "scope": "map:upper-city",          "kind": "map"},
-        {"title": "Outer City",            "scope": "map:outer-city",          "kind": "map"},
-        {"title": "Rivington",             "scope": "map:rivington",           "kind": "map"},
-        {"title": "Wyrm's Crossing",       "scope": "map:wyrms-crossing",      "kind": "map"},
-        {"title": "Sword Coast",           "scope": "map:sword-coast",         "kind": "map"},
-        {"title": "Faerûn",                "scope": "map:faerun",              "kind": "map"},
-        {"title": "Underdark",             "scope": "map:underdark",           "kind": "map"},
-        {"title": "Shadow-Cursed Lands",   "scope": "map:shadow-cursed-lands", "kind": "map"}
+        {
+          "title": "Baldur's Gate",
+          "scope": "map:baldurs-gate",
+          "kind": "map"
+        },
+        {
+          "title": "Lower City",
+          "scope": "map:lower-city",
+          "kind": "map"
+        },
+        {
+          "title": "Upper City",
+          "scope": "map:upper-city",
+          "kind": "map"
+        },
+        {
+          "title": "Outer City",
+          "scope": "map:outer-city",
+          "kind": "map"
+        },
+        {
+          "title": "Rivington",
+          "scope": "map:rivington",
+          "kind": "map"
+        },
+        {
+          "title": "Wyrm's Crossing",
+          "scope": "map:wyrms-crossing",
+          "kind": "map"
+        },
+        {
+          "title": "Sword Coast",
+          "scope": "map:sword-coast",
+          "kind": "map"
+        },
+        {
+          "title": "Faerûn",
+          "scope": "map:faerun",
+          "kind": "map"
+        },
+        {
+          "title": "Underdark",
+          "scope": "map:underdark",
+          "kind": "map"
+        },
+        {
+          "title": "Shadow-Cursed Lands",
+          "scope": "map:shadow-cursed-lands",
+          "kind": "map"
+        }
       ]
     }
   ]
