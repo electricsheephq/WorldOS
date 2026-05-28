@@ -207,6 +207,30 @@ def _scope_key(scope: Optional[str]) -> str:
     return "-".join(toks)
 
 
+def _load_ingested_descriptor(desc_path: Path) -> Optional[dict]:
+    """Load a wiki_ingest.json + re-anchor its `path` field to live next to the
+    descriptor. The ingest pipeline writes an absolute `path` at ingest time (e.g.
+    /Volumes/LEXAR/.../class_fighter/image.png); when the repo is cloned / moved /
+    checked out on a different machine, that original absolute path no longer exists
+    and `_serve_image`'s containment check correctly rejects it — even though the
+    image bytes ARE present at the canonical location next to wiki_ingest.json
+    inside _private/. The image always lives next to its descriptor, so we
+    canonicalize on read. This makes ingested art portable across cross-disk clones
+    without re-ingesting + without changing the on-disk descriptor files."""
+    try:
+        d = json.loads(desc_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    p = d.get("path")
+    if isinstance(p, str) and p:
+        # Use only the basename, anchored at the descriptor's parent. The image is
+        # always a sibling of wiki_ingest.json inside the same scope directory.
+        d["path"] = str(desc_path.parent / Path(p).name)
+    return d
+
+
 def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
     """Look up a wiki_ingest.json descriptor for scope across ALL world _private dirs.
 
@@ -232,11 +256,8 @@ def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
                 continue
         except OSError:
             continue
-        try:
-            d = json.loads(desc_path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            continue
-        if isinstance(d, dict):
+        d = _load_ingested_descriptor(desc_path)
+        if d is not None:
             return d
     # Normalized-key fallback (W2 integration): the UI fetches engine-id scopes
     # (portrait-<character_id>, <location_id>) while ingested assets are keyed by manifest
@@ -257,10 +278,10 @@ def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
             try:
                 if root.resolve() not in desc_path.resolve().parents:
                     continue
-                d = json.loads(desc_path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
+            except OSError:
                 continue
-            if isinstance(d, dict) and _scope_key(d.get("scope")) == want:
+            d = _load_ingested_descriptor(desc_path)
+            if d is not None and _scope_key(d.get("scope")) == want:
                 return d
     return None
 
