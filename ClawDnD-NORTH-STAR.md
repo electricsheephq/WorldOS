@@ -7,7 +7,9 @@
 >
 > Read order on resume: `ClawDnD-RUNBOOK.md` → this file → `implementation-notes.html` → `qa/SCORECARD.md`.
 >
-> Voice: confident, opinionated, builder's. Last updated 2026-05-27.
+> Voice: confident, opinionated, builder's. Last updated 2026-05-28 (post-v1.0.1).
+>
+> **State as of v1.0.1:** engine 1385/1385 ✓, viewer 90/90 ✓, all 14 OpenWorlds screens render polished + data-bound + honest, Phase-4 action lanes wired (Merchant + Forge + Create), the seven BG3 origin heroes carry companion dossiers, build script prefers stable Developer ID signing. The "felt prestige-CRPG session" deliverable is the ongoing optimization target on top of this base; the deterministic engine is the foundation that lets us push story-craft toward 4.5/5 without rules drift.
 
 ---
 

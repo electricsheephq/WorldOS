@@ -12,7 +12,9 @@
 > `decision-campaign-director.md`, `decision-event-parley.md`, `insights-encounter-balance.md`.
 > The QA results ledger is `qa/SCORECARD.md`; the scoring spec is `qa/SCORING.md`.
 >
-> Last updated: 2026-05-27 (cont.3).
+> Last updated: 2026-05-28 (post-v1.0.1).
+>
+> **v1.0.1 ([Release](https://github.com/100yenadmin/ClawDnD/releases/tag/v1.0.1)):** Phase-4 action lanes complete — Merchant BUY and Forge Craft now relay structured `/move` intents during live play (Create was already wired to the bridge). The seven BG3 origin heroes carry full `companion_dossier` blocks (wound / wants / fears / values / approval / banter / camp prompts). Native-app reliability: build script prefers stable Developer ID signing when keychain ACL allows; `script/unblock_native_app.sh` is a one-shot helper for security-scanner re-evaluation hangs. `docs/SPARKLE_SETUP.md` is the 7-step path to auto-update on top of Developer ID. Engine **1385/1385 ✓**, viewer **90/90 ✓**, license-check clean. **Open gap (owner-only):** first-run Keychain "Always Allow" click on a Developer-ID-signed app to end "popup every rebuild" — or run `script/unblock_native_app.sh` once.
 
 ---
 
