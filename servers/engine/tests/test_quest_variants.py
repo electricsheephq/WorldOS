@@ -9,6 +9,7 @@ real integration; small synthetic worlds pin the engine behavior in isolation.""
 
 import content
 import server
+import store
 
 
 # A small synthetic world (no quest_variants) — the additive-default baseline.
@@ -229,3 +230,69 @@ def test_degrade_not_abort_on_malformed_quest_entry():
     assert c.quest_outcomes.get("good-quest") == "good-outcome"
     assert any(l.startswith("[Outcome] Good Quest:") for l in c.lore)
     assert any(l.startswith("[Hook] Good Quest:") for l in c.lore)
+
+
+# --- Defect 3: complete_objective marks objectives + auto-completes the quest ---
+
+import pytest  # noqa: E402  (local to the Defect-3 block, mirrors the file's lazy-import style)
+
+
+def _quest_with_objectives(tmp_path, monkeypatch, title="Objectives", objectives=None):
+    """A fresh xp-mode campaign + one PC + a quest carrying the given objectives.
+    Returns (cid, pc_id, quest_id)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign(title)["id"]
+    pc = server.create_character(cid, "Vex", kind="player", class_name="Fighter",
+                                 apply_srd_defaults=True)["id"]
+    objs = objectives if objectives is not None else [
+        "Identify the ship", "Find the warehouse", "Confront the broker"]
+    qid = server.add_quest(cid, "The Smuggler's Ledger", objectives=objs)["id"]
+    return cid, pc, qid
+
+
+def test_complete_objective_moves_to_completed(tmp_path, monkeypatch):
+    cid, pc, qid = _quest_with_objectives(tmp_path, monkeypatch)
+    out = server.complete_objective(cid, qid, "Identify the ship")  # exact text
+    assert out["completed_objectives"] == ["Identify the ship"]
+    assert out["status"] == "active"                     # still 2 open -> not auto-completed
+    assert out["remaining"] == ["Find the warehouse", "Confront the broker"]
+
+
+def test_complete_objective_by_index_and_substring(tmp_path, monkeypatch):
+    cid, pc, qid = _quest_with_objectives(tmp_path, monkeypatch)
+    by_index = server.complete_objective(cid, qid, "1")   # 0-based -> "Find the warehouse"
+    assert "Find the warehouse" in by_index["completed_objectives"]
+    by_substr = server.complete_objective(cid, qid, "broker")  # unique substring
+    assert "Confront the broker" in by_substr["completed_objectives"]
+
+
+def test_complete_objective_idempotent(tmp_path, monkeypatch):
+    cid, pc, qid = _quest_with_objectives(tmp_path, monkeypatch)
+    server.complete_objective(cid, qid, "Identify the ship")
+    out = server.complete_objective(cid, qid, "Identify the ship")  # again
+    assert out["completed_objectives"] == ["Identify the ship"]     # not duplicated
+
+
+def test_last_objective_auto_completes_quest_and_awards_xp(tmp_path, monkeypatch):
+    cid, pc, qid = _quest_with_objectives(tmp_path, monkeypatch)
+    server.complete_objective(cid, qid, "Identify the ship")
+    server.complete_objective(cid, qid, "Find the warehouse")
+    out = server.complete_objective(cid, qid, "Confront the broker")  # the LAST one
+    assert out["status"] == "completed"                  # auto-resolved
+    assert out["remaining"] == []
+    assert out["xp_awarded"] == 150 * 1                  # chained into the milestone helper
+    assert server.get_character(cid, pc)["xp"] > 0
+    c = store.load_campaign(cid)
+    assert c.quests[qid].milestone_awarded is True        # guard set so it won't re-pay
+
+
+def test_complete_objective_ambiguous_substring_raises(tmp_path, monkeypatch):
+    # Two objectives share the word "the" -> a substring matching both must raise, not guess.
+    cid, pc, qid = _quest_with_objectives(
+        tmp_path, monkeypatch,
+        objectives=["Open the gate", "Close the gate"])
+    with pytest.raises(ValueError, match="ambiguous"):
+        server.complete_objective(cid, qid, "the gate")
+    # ...and a substring matching NOTHING also raises rather than silently no-op'ing.
+    with pytest.raises(ValueError, match="no objective"):
+        server.complete_objective(cid, qid, "vanish into the night")

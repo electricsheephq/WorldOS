@@ -340,3 +340,29 @@ def test_travel_party_propagation_pure_no_party_is_noop():
     c = _camp("a")
     travel.travel_to(c, "b")
     assert c.current_location_id == "b"  # unchanged behavior for the pure helper
+
+
+def test_move_party_to_relocates_companion_not_in_party_array(party_world):
+    """Defect 1: a de-facto companion brought in via load_canon_character(add_to_party=False)
+    — kind='companion' but absent from c.party — must still travel WITH the party. This is
+    the Wyll-froze-at-the-checkpoint bug: the only relocate path used to iterate c.party."""
+    cid, pc, comp, npc, start, dest = party_world
+    # Forcibly remove the companion from the party array (simulating the loaded-as-NPC,
+    # never-recruited path) while it stays kind='companion' anchored at the start.
+    c = store.load_campaign(cid)
+    c.party = [p for p in c.party if p != comp]
+    store.save_campaign(c)
+    assert comp not in store.load_campaign(cid).party  # precondition: not in the array
+
+    out = server.travel_to(cid, dest)
+    # The companion still walks with the group even though it wasn't in c.party.
+    assert server.get_character(cid, comp)["location_id"] == dest
+    assert comp in out.get("party_relocated", [])
+
+
+def test_move_party_to_leaves_standalone_npc_put(party_world):
+    """Defect 1 guardrail: broadening the relocate sweep to all PC/companion records must
+    NOT drag a standalone kind='npc' along — background NPCs and monsters stay put."""
+    cid, _pc, _comp, npc, start, dest = party_world
+    server.travel_to(cid, dest)
+    assert server.get_character(cid, npc)["location_id"] == start  # the NPC didn't follow

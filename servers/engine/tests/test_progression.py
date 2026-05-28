@@ -3,6 +3,7 @@ import pytest
 import server
 import store
 import srd_tables
+import store
 
 
 @pytest.fixture(autouse=True)
@@ -443,3 +444,106 @@ def test_level_up_rejects_disabled_multiclass_without_mutating():
         server.level_up(cid, wid, "Fighter")
 
     assert _campaign_snapshot(cid) == before
+# --- Defect 2: milestone XP auto-awarded on quest completion (xp leveling_mode) ---
+
+
+def _xp_party_of_two(title: str):
+    """A fresh xp-mode campaign with two level-1 PCs at 0 XP. Returns (cid, a_id, b_id)."""
+    cid = server.create_campaign(title)["id"]  # leveling_mode defaults to "xp"
+    a = server.create_character(cid, "Ada", kind="player", class_name="Fighter",
+                                apply_srd_defaults=True)["id"]
+    b = server.create_character(cid, "Bek", kind="player", class_name="Rogue",
+                                apply_srd_defaults=True)["id"]
+    assert server.get_character(cid, a)["xp"] == 0
+    assert server.get_character(cid, b)["xp"] == 0
+    return cid, a, b
+
+
+def test_complete_quest_awards_milestone_xp_in_xp_mode():
+    cid, a, b = _xp_party_of_two("Milestone")
+    qid = server.add_quest(cid, "Break the Siege")["id"]
+    out = server.complete_quest(cid, qid, status="completed")
+    assert out["status"] == "completed"
+    assert out["xp_awarded"] == 150 * 1  # 150 x party level (1)
+    # Both living party members gained >0 XP; the total equals the even split (+ remainder).
+    xa = server.get_character(cid, a)["xp"]
+    xb = server.get_character(cid, b)["xp"]
+    assert xa > 0 and xb > 0
+    assert xa + xb == out["xp_awarded"]
+    assert {g["id"] for g in out["grants"]} == {a, b}
+
+
+def test_complete_quest_milestone_idempotent():
+    cid, a, b = _xp_party_of_two("Idemp")
+    qid = server.add_quest(cid, "Recover the Relic")["id"]
+    first = server.complete_quest(cid, qid, status="completed")
+    xa_after_first = server.get_character(cid, a)["xp"]
+    # Re-completing (or flipping status back to completed) must NOT award again.
+    second = server.complete_quest(cid, qid, status="completed")
+    assert "xp_awarded" not in second  # the milestone_awarded guard suppressed a re-award
+    assert server.get_character(cid, a)["xp"] == xa_after_first
+    # ...and routing the SAME completion through set_quest_status is also a no-op.
+    third = server.set_quest_status(cid, qid, "completed")
+    assert "xp_awarded" not in third
+    assert server.get_character(cid, a)["xp"] == xa_after_first
+    assert first["xp_awarded"] == 150
+
+
+def test_set_quest_status_completed_awards_milestone_xp():
+    """set_quest_status is the DM's equivalent verb for a tracked quest — it must award
+    the same milestone XP as complete_quest when the quest reaches 'completed'."""
+    cid, a, b = _xp_party_of_two("SQS")
+    qid = server.add_quest(cid, "Clear the Road")["id"]
+    out = server.set_quest_status(cid, qid, "completed")
+    assert out["status"] == "completed"
+    assert out["xp_awarded"] == 150
+    assert server.get_character(cid, a)["xp"] > 0
+
+
+def test_milestone_xp_skipped_in_milestone_mode():
+    cid, a, b = _xp_party_of_two("MilestoneMode")
+    c = store.load_campaign(cid)
+    c.leveling_mode = "milestone"
+    store.save_campaign(c)
+    qid = server.add_quest(cid, "Win the Duel")["id"]
+    out = server.complete_quest(cid, qid, status="completed")
+    assert out["status"] == "completed"
+    assert "xp_awarded" not in out                       # no auto-XP in milestone mode
+    assert server.get_character(cid, a)["xp"] == 0       # unchanged
+    # The idempotency guard is NOT consumed (no award happened), so switching to xp-mode
+    # later and completing still pays out once.
+    c = store.load_campaign(cid)
+    assert c.quests[qid].milestone_awarded is False
+
+
+def test_end_session_backstop_awards_when_advanced_and_zero_xp():
+    cid, a, b = _xp_party_of_two("Backstop")
+    server.start_session(cid)
+    # The session genuinely advanced the clock (past the opening morning phase)...
+    server.advance_time(cid, to="evening")
+    # ...but no quest was completed, so the party is still at 0 XP. end_session backstops it.
+    out = server.end_session(cid)
+    assert out["xp_awarded"] == 100 * 1                  # 100 x party level (1)
+    assert server.get_character(cid, a)["xp"] > 0
+    assert server.get_character(cid, b)["xp"] > 0
+
+
+def test_end_session_no_backstop_when_xp_already_earned():
+    cid, a, b = _xp_party_of_two("NoBackstop")
+    server.start_session(cid)
+    server.advance_time(cid, to="evening")               # session advanced...
+    server.award_xp(cid, a, 50)                          # ...and someone already earned XP
+    out = server.end_session(cid)
+    assert "xp_awarded" not in out                       # no stacking on a normal session
+    assert server.get_character(cid, a)["xp"] == 50      # unchanged by end_session
+    assert server.get_character(cid, b)["xp"] == 0
+
+
+def test_end_session_no_backstop_when_not_advanced():
+    """The backstop only fires on a session that ADVANCED — a frozen session (no clock
+    movement, ≤1 location) at 0 XP is not retroactively paid (nothing happened to reward)."""
+    cid, a, b = _xp_party_of_two("Frozen")
+    server.start_session(cid)
+    out = server.end_session(cid)                        # clock never left morning, 1 location
+    assert "xp_awarded" not in out
+    assert server.get_character(cid, a)["xp"] == 0

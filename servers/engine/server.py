@@ -215,11 +215,17 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
     Caller persists (sole-writer)."""
     c.current_location_id = location_id
     moved: list[str] = []
-    for pid in c.party:
-        member = c.characters.get(pid)
-        if member is not None and member.location_id != location_id:
+    # The travelling group = the PC(s) + every companion, whether or not the DM
+    # remembered to add them to c.party. A companion brought in via
+    # load_canon_character(add_to_party=False) and never recruited still walks with the
+    # party (QA state_integrity: Wyll's location froze at a checkpoint the party left).
+    # Standalone NPCs / monsters keep their own location_id (they stay put).
+    party_ids = set(c.party)
+    for cid, member in c.characters.items():
+        travels = cid in party_ids or member.kind in ("player", "companion")
+        if travels and member.location_id != location_id:
             member.location_id = location_id
-            moved.append(pid)
+            moved.append(cid)
     return moved
 
 
@@ -1505,6 +1511,12 @@ def recruit_companion(
         ch.met = True  # joining the party means the party has met them
         if ch.id not in c.party:
             c.party.append(ch.id)
+        # A recruit travels with the party from this instant — co-locate them with the
+        # party's current location so they don't enter carrying a stale/None location_id
+        # that _move_party_to only fixes on the NEXT travel (QA: a just-recruited
+        # companion shown a scene behind the party). Mirrors _move_party_to's contract.
+        if c.current_location_id is not None:
+            ch.location_id = c.current_location_id
         save_campaign(c)
         return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party),
                 "arc_seeded": ch.arc is not None,
@@ -3716,6 +3728,39 @@ def _award_kill_xp(c, monster) -> "dict | None":
     return {"xp_awarded": total, "grants": grants}
 
 
+def _party_levels(c: Campaign) -> list[int]:
+    """The total_level of every LIVING party member (PC + companions). Used to scale
+    deterministic milestone-XP awards. Falls back to [1] when the party is empty/dead
+    so callers can safely `max(...)` without a ValueError."""
+    levels = [c.characters[i].total_level for i in c.party
+              if i in c.characters and not c.characters[i].dead]
+    return levels or [1]
+
+
+def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
+    """Award a deterministic, modest milestone XP grant to the living party, split
+    evenly (remainder to the first recipient) — the non-combat sibling of
+    `_award_kill_xp`. Story/social/exploration progress (quest resolution, a session
+    that genuinely advanced) pays XP here so an "xp" `leveling_mode` campaign never
+    ends a real win at 0 XP. No-op outside "xp" mode, for a non-positive amount, or an
+    empty/dead party. Caller persists (sole-writer) and guards idempotency."""
+    if c.leveling_mode != "xp" or amount <= 0:
+        return None
+    recipients = [c.characters[i] for i in c.party
+                  if i in c.characters and not c.characters[i].dead]
+    if not recipients:
+        return None
+    each, rem = divmod(amount, len(recipients))
+    grants = []
+    for idx, ch in enumerate(recipients):
+        amt = each + (rem if idx == 0 else 0)
+        ch.xp = max(0, ch.xp + amt)
+        available = srd_tables.level_for_xp(ch.xp)
+        grants.append({"id": ch.id, "name": ch.name, "xp_gained": amt, "xp": ch.xp,
+                       "level_available": available, "can_level_up": available > ch.total_level})
+    return {"xp_awarded": amount, "grants": grants, "reason": reason}
+
+
 @mcp.tool()
 def end_combat(campaign_id: str) -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
@@ -5396,6 +5441,24 @@ def forget(campaign_id: str, character_id: str, fact: str) -> dict:
 # the actor's problem, not a relationship penalty. Everything else is influence.
 READ_SKILLS = {"insight", "perception", "investigation"}
 
+# Surfaced in the RETURN payload of any FAILED contested check (skill_check / social_check
+# with a DC). Storycraft's #1 scored lever: when a player check fails, the scene must not
+# resolve through an NPC's action or a narrated freebie — the protagonist becomes a
+# bystander to his own beat. The skill prose already says this and the DM still does it
+# every session; surfacing the directive in the tool result the DM is already reading is
+# the proven channel (the same move that lifted combat fidelity). Not a schema change to
+# the roll — a guidance field the DM cannot miss at the exact moment of the miss.
+_ON_FAILURE_DIRECTIVE = {
+    "directive": (
+        "A failed check must COST or COMPLICATE and then HAND THE TURN BACK to the "
+        "player — it does not end the beat. Narrate what the failure changes (a new "
+        "obstacle, a price, a closing door), then ask the player what they do. Do NOT "
+        "resolve this obstacle via an NPC's action, and do NOT narrate the PC's next "
+        "move for them."
+    ),
+    "forbid": "npc_resolves_scene",
+}
+
 
 @mcp.tool()
 def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int,
@@ -5431,11 +5494,12 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
             if not target_name.strip():
                 raise ValueError("pass either npc_id (a tracked NPC) or target_name (a scene extra)")
             r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
-            return {
+            is_read_ext = sk in READ_SKILLS
+            out_ext = {
                 "actor": actor.name,
                 "npc": target_name.strip(),
                 "skill": sk,
-                "kind": "read" if sk in READ_SKILLS else "influence",
+                "kind": "read" if is_read_ext else "influence",
                 "roll": r.total,
                 "natural": r.natural,
                 "dc": dc,
@@ -5443,6 +5507,13 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
                 "ephemeral": True,
                 "note": "Scene extra — nothing persisted; narrate the outcome.",
             }
+            # A failed INFLUENCE attempt (persuade/intimidate/deceive) must still hand the
+            # turn back to the player, not get resolved by the extra or a freebie. A failed
+            # READ already returns its own non-resolving "almost-grasped" guidance, so the
+            # agency directive only attaches to influence misses (the agency-snap domain).
+            if not out_ext["success"] and not is_read_ext:
+                out_ext["on_failure"] = _ON_FAILURE_DIRECTIVE
+            return out_ext
         if actor_id == npc_id:
             raise ValueError("actor and npc must be different characters")
         the_npc = _char(c, npc_id)
@@ -5499,6 +5570,12 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         }
         if read is not None:
             out["read"] = read
+        # A failed INFLUENCE check must not be resolved by the NPC or a narrated freebie —
+        # hand the turn back to the player (storycraft's #1 scored lever). A failed READ
+        # already carries its own non-resolving guidance (the `read` note above), so the
+        # directive attaches only to influence misses.
+        if not success and not is_read:
+            out["on_failure"] = _ON_FAILURE_DIRECTIVE
         return out
 
 
@@ -5528,6 +5605,8 @@ def skill_check(campaign_id: str, character_id: str, skill: str, dc: int = 0,
     if dc and dc > 0:
         out["dc"] = dc
         out["success"] = r.total >= dc  # RAW: no auto-success on a nat 20 for a skill check
+        if not out["success"]:
+            out["on_failure"] = _ON_FAILURE_DIRECTIVE  # keep the player's agency on a miss
     return out
 
 
@@ -6018,8 +6097,26 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
             SessionLogEntry(kind="system", text="Session ended." + (f" {summary}" if summary else "")),
         )
         c.active_session_id = None
+        # Reward backstop: a session that genuinely advanced must not close at 0 XP in
+        # xp-mode (QA: real social/exploration wins, party still at 0 — a broken reward
+        # loop the scorer docks). Only fires when (a) xp-mode, (b) every living party
+        # member is still at 0 XP, and (c) the session advanced (clock moved past the
+        # opening phase OR >1 location visited). Modest, deterministic; the session was
+        # already cleared above, so it can only fire once per session close.
+        award = None
+        if c.leveling_mode == "xp":
+            living = [c.characters[i] for i in c.party
+                      if i in c.characters and not c.characters[i].dead]
+            advanced = (c.day > 1 or c.time_of_day != "morning"
+                        or sum(1 for loc in c.locations.values() if loc.visited) > 1)
+            if living and advanced and all(ch.xp == 0 for ch in living):
+                award = _award_milestone_xp(c, 100 * max(_party_levels(c)), "session close")
         save_campaign(c)
-        return {"ended": sid, "number": len(c.session_ids)}
+        out = {"ended": sid, "number": len(c.session_ids)}
+        if award is not None:
+            out["xp_awarded"] = award["xp_awarded"]
+            out["grants"] = award["grants"]
+        return out
 
 
 @mcp.tool()
@@ -6584,6 +6681,15 @@ def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
         evolution = _maybe_schedule_quest_evolution(c, q)
+        # A completed quest is an unambiguous "real win" — auto-award milestone XP in
+        # xp-mode (deterministic, no LLM judgment) so progression isn't a manual chore the
+        # DM reliably forgets (QA: a full session, a quest won, party still at 0 XP).
+        # Guarded by milestone_awarded so a re-complete / status flip never double-awards.
+        milestone = None
+        if status == "completed" and not q.milestone_awarded:
+            milestone = _award_milestone_xp(c, 150 * max(_party_levels(c)), f"quest: {q.title}")
+            if milestone:
+                q.milestone_awarded = True
         save_campaign(c)
         out = {"id": q.id, "title": q.title, "status": q.status}
         if evolution is not None:
@@ -6592,6 +6698,83 @@ def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -
                 "trigger_day": evolution.trigger_day,
                 "evolves_to": q.evolves_to,
             }
+        if milestone is not None:
+            out["xp_awarded"] = milestone["xp_awarded"]
+            out["grants"] = milestone["grants"]
+        return out
+
+
+def _resolve_objective(q: Quest, objective: str) -> str:
+    """Resolve a DM-supplied objective reference to one of the quest's exact objective
+    strings, so the DM doesn't have to echo the text byte-for-byte. Match precedence:
+      1. exact string match against q.objectives;
+      2. a 0-based index into q.objectives (e.g. "1" -> the second objective);
+      3. a UNIQUE case-insensitive substring of exactly one objective.
+    Raises ValueError on no match or an ambiguous substring (matches >1) rather than
+    guessing — a wrong objective marked done is worse than an explicit error."""
+    text = objective.strip()
+    if not text:
+        raise ValueError("objective must be a non-empty string, index, or substring")
+    # 1) exact text
+    if text in q.objectives:
+        return text
+    # 2) 0-based index
+    if text.lstrip("-").isdigit():
+        idx = int(text)
+        if 0 <= idx < len(q.objectives):
+            return q.objectives[idx]
+        raise ValueError(
+            f"objective index {idx} out of range (quest has {len(q.objectives)} objectives)")
+    # 3) unique case-insensitive substring
+    needle = text.lower()
+    matches = [o for o in q.objectives if needle in o.lower()]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(
+            f"objective {objective!r} is ambiguous — it matches {len(matches)} objectives "
+            f"({matches!r}); pass the exact text or index")
+    raise ValueError(f"no objective matching {objective!r} on quest {q.id!r}")
+
+
+@mcp.tool()
+def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
+    """Mark one of a quest's objectives complete as the party achieves it in the
+    fiction. `objective` matches by exact text, a 0-based index, or a unique
+    case-insensitive substring of an objective (so you needn't echo the text exactly).
+    Moves it into completed_objectives (idempotent — re-marking is a no-op). When the
+    LAST open objective is completed, the quest auto-resolves to 'completed' (which, in
+    'xp' leveling_mode, awards milestone XP once). Returns the quest's status, its
+    completed_objectives, and any still-remaining objectives. Use this as the party hits
+    each objective on-screen instead of waiting to call complete_quest at the end."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        q = c.quests.get(quest_id)
+        if q is None:
+            raise ValueError(f"no quest {quest_id!r}")
+        target = _resolve_objective(q, objective)
+        if target not in q.completed_objectives:
+            q.completed_objectives.append(target)
+        auto = None
+        remaining = [o for o in q.objectives if o not in q.completed_objectives]
+        # Auto-complete only when the quest HAS objectives and every one is done — an
+        # empty-objective quest never auto-resolves (the all-done rule can't misfire on a
+        # quest with no tracked objectives, and "optional" objectives stay safe).
+        if q.objectives and not remaining and q.status != "completed":
+            q.status = "completed"
+            # Reuse the Defect-2 helper so finishing all objectives pays the milestone once.
+            if not q.milestone_awarded:
+                m = _award_milestone_xp(c, 150 * max(_party_levels(c)), f"quest: {q.title}")
+                if m:
+                    q.milestone_awarded = True
+                    auto = m
+        save_campaign(c)
+        out = {"quest_id": q.id, "title": q.title, "status": q.status,
+               "completed_objectives": list(q.completed_objectives),
+               "remaining": remaining}
+        if auto is not None:
+            out["xp_awarded"] = auto["xp_awarded"]
+            out["grants"] = auto["grants"]
         return out
 
 
@@ -7343,8 +7526,20 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
             if qs not in ("active", "completed", "failed"):
                 raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
             q.status = qs  # type: ignore[assignment]
+            # Mirror complete_quest: a tracked quest reaching "completed" auto-awards
+            # milestone XP once (xp-mode) — set_quest_status is the DM's equivalent verb,
+            # so both close-of-quest paths pay the same deterministic reward.
+            milestone = None
+            if qs == "completed" and not q.milestone_awarded:
+                milestone = _award_milestone_xp(c, 150 * max(_party_levels(c)), f"quest: {q.title}")
+                if milestone:
+                    q.milestone_awarded = True
             save_campaign(c)
-            return {"quest_id": q.id, "title": q.title, "status": q.status}
+            out = {"quest_id": q.id, "title": q.title, "status": q.status}
+            if milestone is not None:
+                out["xp_awarded"] = milestone["xp_awarded"]
+                out["grants"] = milestone["grants"]
+            return out
         raise ValueError(f"no quest hook or tracked quest with id {hook_id!r}")
 
 

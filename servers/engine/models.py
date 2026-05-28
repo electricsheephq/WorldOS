@@ -799,6 +799,10 @@ class Quest(_StrictModel):
     # auto-acts on the fiction.
     evolves_to: str = ""  # a follow-on hook/quest id or a free seed tag the DM weaves on callback
     callback_in_days: int = 0  # in-world days from resolution before the evolution surfaces (0 = immediately due)
+    # idempotency guard: milestone XP for resolving this quest is granted exactly once
+    # (xp leveling_mode), so a re-resolve / status flip / complete-via-objective never
+    # double-awards. Additive — an old snapshot lacking the key round-trips to False.
+    milestone_awarded: bool = False
 
 
 class Location(_StrictModel):

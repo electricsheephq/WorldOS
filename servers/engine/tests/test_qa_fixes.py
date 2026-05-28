@@ -373,6 +373,25 @@ def test_recruit_companion_promotes_roster_npc_in_place(tmp_path, monkeypatch):
     assert state["npc_count"] == 0                           # the stub was promoted, not duplicated
 
 
+def test_recruit_companion_colocates_to_current_location(tmp_path, monkeypatch):
+    """Defect 1 (B1): a recruit travels with the party from the instant they join, so
+    recruit_companion co-locates them to the party's CURRENT location immediately — they
+    must not enter carrying a stale/None location_id that only _move_party_to fixes on the
+    NEXT travel (QA: a just-recruited companion shown a scene behind the party)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Colocate")["id"]
+    here = server.add_location(cid, "Here")["id"]            # becomes current
+    far = server.add_location(cid, "Far Place", connections=[here])["id"]
+    # A roster NPC anchored at a DIFFERENT place than the party's current location.
+    npc = server.create_character(cid, "Wyll", kind="npc", add_to_party=False,
+                                  location_id=far)["id"]
+    assert server.get_character(cid, npc)["location_id"] == far  # precondition: stale spot
+
+    server.recruit_companion(cid, npc, class_name="Fighter")
+    # Recruited at "here" -> co-located immediately, BEFORE any travel call.
+    assert server.get_character(cid, npc)["location_id"] == here
+
+
 def test_apply_srd_defaults_grants_and_overrides_skill_proficiencies(tmp_path, monkeypatch):
     # bg-QA HIGH (both runs): live-made characters had skill_proficiencies:[] so skill
     # checks (incl. social_check) missed the proficiency bonus and the DM invented
@@ -507,6 +526,53 @@ def test_skill_check_uses_the_sheet_derived_modifier(tmp_path, monkeypatch):
     assert "success" not in server.skill_check(cid, pid, "Perception")  # dc=0 -> roll only
     with pytest.raises(ValueError, match="unknown skill"):
         server.skill_check(cid, pid, "flossing")
+
+
+def test_skill_check_failure_surfaces_agency_directive(tmp_path, monkeypatch):
+    """Story Lever 1: a FAILED skill check returns an on_failure directive in the tool
+    payload — surfacing 'a failed check must cost/complicate and hand the turn back to the
+    player, not be resolved via an NPC or a freebie' in the channel the DM is already
+    reading. The #1 scored story lever (the bridge agency-snap)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Agency")["id"]
+    pid = server.create_character(cid, "Dal", kind="player", abilities={"str": 10})["id"]
+    # An impossibly high DC guarantees the failed-check branch regardless of the d20.
+    fail = server.skill_check(cid, pid, "Athletics", dc=100)
+    assert fail["success"] is False
+    assert "on_failure" in fail
+    assert fail["on_failure"]["forbid"] == "npc_resolves_scene"
+    assert "hand the turn back" in fail["on_failure"]["directive"].lower()
+    # A PASS carries NO directive (the turn isn't snapped on a success); dc=1 + nonneg mod
+    # always meets the DC.
+    ok = server.skill_check(cid, pid, "Athletics", dc=1)
+    assert ok["success"] is True and "on_failure" not in ok
+    # And a roll-only check (dc=0) has neither success nor a directive.
+    assert "on_failure" not in server.skill_check(cid, pid, "Athletics")
+
+
+def test_social_check_influence_failure_surfaces_agency_directive(tmp_path, monkeypatch):
+    """Story Lever 1 for social beats: a FAILED INFLUENCE check (persuade/intimidate)
+    surfaces the same agency directive — the exact bridge defect (Dal's failed Persuasion
+    resolved by Wyll paying the toll). A failed READ keeps its own non-resolving guidance
+    and does NOT carry the directive (reads already hand ambiguity back)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("SocAgency")["id"]
+    pc = server.create_character(cid, "Dal", kind="player", abilities={"cha": 10})["id"]
+    npc = server.create_character(cid, "Toll Collector", kind="npc")["id"]
+    # Failed influence vs a tracked NPC -> directive present.
+    fail = server.social_check(cid, pc, npc, "persuasion", 100)
+    assert fail["success"] is False and "on_failure" in fail
+    assert fail["on_failure"]["forbid"] == "npc_resolves_scene"
+    # Failed influence vs an EPHEMERAL extra -> directive present too.
+    fail_ext = server.social_check(cid, pc, "", "intimidation", 100, target_name="a guard")
+    assert fail_ext["success"] is False and "on_failure" in fail_ext
+    # A failed READ (insight) carries its own `read` guidance, NOT the agency directive.
+    read_fail = server.social_check(cid, pc, npc, "insight", 100)
+    assert read_fail["success"] is False
+    assert "on_failure" not in read_fail and "read" in read_fail
+    # A SUCCESSFUL influence check carries no directive.
+    ok = server.social_check(cid, pc, npc, "persuasion", 1)
+    assert ok["success"] is True and "on_failure" not in ok
 
 
 def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monkeypatch):
