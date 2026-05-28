@@ -54,5 +54,9 @@
       "he reaches for a book that isn't there",
       "the orb stirs"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

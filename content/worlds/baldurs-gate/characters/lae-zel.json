@@ -53,5 +53,9 @@
       "a sharpening rite at the fire",
       "a curse spat at a distant moon"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

@@ -53,5 +53,9 @@
       "the horn aches before a storm",
       "a ballad practiced for someone alive"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

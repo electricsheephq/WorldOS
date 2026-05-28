@@ -26,5 +26,6 @@
   "voice_hint": "half-elf druid (circle of the land)",
   "source_url": "https://forgottenrealms.fandom.com/wiki/Jaheira",
   "license": "CC-BY-SA (Fandom; see https://www.fandom.com/licensing)",
-  "attribution": "Text from the Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial, non-commercial fan content; portions are property of Wizards of the Coast LLC."
+  "attribution": "Text from the Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial, non-commercial fan content; portions are property of Wizards of the Coast LLC.",
+  "faction_id": "harpers"
 }

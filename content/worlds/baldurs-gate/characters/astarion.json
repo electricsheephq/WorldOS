@@ -53,5 +53,9 @@
       "a wound that won't take the sun",
       "a memory of the kennel cellar"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

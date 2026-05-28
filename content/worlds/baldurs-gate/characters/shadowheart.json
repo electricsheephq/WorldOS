@@ -53,5 +53,9 @@
       "she touches a wound that isn't there",
       "a hymn half-remembered"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

@@ -52,5 +52,9 @@
       "a poultice prepared for someone else's hurt",
       "the bear sleeps shallow tonight"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }

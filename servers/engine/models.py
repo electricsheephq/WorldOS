@@ -715,6 +715,32 @@ class Character(_StrictModel):
     # canon JSON / ending companion_seeds; a minimal one is synthesized at recruit_companion.
     companion_dossier: Optional["CompanionDossier"] = None
 
+    # --- structured NPC tagging (the DM's "pull exactly the right canon character" surface) ----
+    # ADDITIVE: every field defaults to empty/False == today's behavior, so an existing snapshot
+    # (and the ~2,076 canon character JSONs that predate these fields) deserializes unchanged.
+    # These give `find_npcs` a STRUCTURAL filter — "the merchant in this region", "this Harper",
+    # "a traveling merchant near the party" — instead of grepping prose. Derived (high-confidence
+    # only) from canon JSON content; the rest stay empty until a DM/content author sets them.
+    #
+    # Freeform sortable tags ("merchant", "companion", "villain", "noble", "guard", "child").
+    tags: list[str] = Field(default_factory=list)
+    # Canonical faction key the NPC belongs to ("harpers", "flaming-fist", "zhentarim"). A short
+    # stable token (NOT the prose faction name), so a filter is exact. "" == unaffiliated/unknown.
+    faction_id: str = ""
+    # Quick boolean for the traveling-merchant / shop features — true == this NPC sells/trades.
+    is_merchant: bool = False
+    # Where this NPC is canonically found ("last-light-inn", "lower-city") — a location token.
+    canon_location_id: str = ""
+    # The NPC's role in the campaign's arcs: "companion" | "origin-hero" | "antagonist" | "minor"
+    # | "" (untagged). Distinct from `kind` (the engine sheet category) — this is narrative.
+    arc_role: str = ""
+    # Outcome tag for ending-tied NPCs, projected from an ending overlay's fates.<npc>.status by
+    # _apply_ending_overlay: "died" | "survived" | "ambiguous" | "" (no ending / not tied).
+    ending_role: str = ""
+    # Quest ids/slugs this NPC is tied to (giver, target, ally), so the DM can pull "who's in
+    # the X quest". Short slugs; empty == not tied to any tracked quest.
+    quest_ties: list[str] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
         # The engine is the authority; keep vitals within valid 5e ranges.

@@ -1882,6 +1882,56 @@ def list_canon_characters(campaign_id: str, playable_only: bool = False) -> dict
 
 
 @mcp.tool()
+def find_npcs(
+    campaign_id: str,
+    tag: str = "",
+    faction_id: str = "",
+    is_merchant: bool = False,
+    canon_location_id: str = "",
+    arc_role: str = "",
+    name_contains: str = "",
+    limit: int = 50,
+) -> dict:
+    """Pull EXACTLY the canon characters you need by STRUCTURE, not by guessing names — the DM's
+    "this merchant in this region", "this Harper", "a traveling merchant near the party" surface.
+    Filters the world's ingested canon roster (content/worlds/<id>/characters/*.json) on the
+    structured tagging fields and returns the matches with their key fields. READ-ONLY.
+
+    Filters (give any subset; they AND-combine — a match satisfies ALL the ones you pass):
+      * `tag`            — membership in the record's `tags` ("merchant", "companion", "noble", …)
+      * `faction_id`     — canonical faction key ("harpers", "flaming-fist", "zhentarim")
+      * `is_merchant`    — pass True to keep only traveling-merchant / shopkeeper NPCs (False, the
+                           default, is treated as "don't filter on this" — it does NOT exclude
+                           merchants; use `tag="merchant"` if you want the inverse intent)
+      * `canon_location_id` — where the NPC is canonically found ("last-light-inn", "lower-city")
+      * `arc_role`       — "companion" | "origin-hero" | "antagonist" | "minor"
+      * `name_contains`  — case-insensitive substring of the display name
+      * `limit`          — cap on returned matches (default 50)
+
+    Returns {world_id, count, matches:[{name, race, class, tags, faction_id, is_merchant,
+    canon_location_id, arc_role, role, playable, source_url}]}. Bring one in with
+    load_canon_character. An empty result means nothing matched (or the world ships no tagged
+    roster yet)."""
+    c = _require(campaign_id)
+    if not c.world_id:
+        return {"world_id": "", "count": 0, "matches": []}
+    matches = content_mod.find_canon_characters(
+        c.world_id,
+        tag=tag,
+        faction_id=faction_id,
+        # `False` is the MCP-tool default and means "unset" here (callers can't pass None over the
+        # wire); only an explicit True narrows to merchants. The underlying content helper takes a
+        # true tri-state (None == ignore) for tests that want to assert the is_merchant=False slice.
+        is_merchant=True if is_merchant else None,
+        canon_location_id=canon_location_id,
+        arc_role=arc_role,
+        name_contains=name_contains,
+        limit=limit,
+    )
+    return {"world_id": c.world_id, "count": len(matches), "matches": matches}
+
+
+@mcp.tool()
 def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_party: bool = False) -> dict:
     """Pull a CANON character (e.g. Shadowheart, Astarion, Gale) from the world's ingested
     roster into this campaign — with their real identity: race, class, and the
@@ -1929,6 +1979,18 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             backstory=rec.get("backstory", ""),
             notes=rec.get("voice_hint", ""),
             location_id=c.current_location_id,
+            # ADDITIVE: carry the canon record's STRUCTURED tags onto the live Character so a
+            # pulled NPC keeps its merchant/faction/arc identity (and `find_npcs`-derived data
+            # isn't lost the moment the DM brings the figure in). All empty-default, so a record
+            # with no tagging fields behaves exactly as before. (The owner also flagged that the
+            # canon `role`/`playable` were being dropped at load — `arc_role` now preserves the
+            # narrative role, and `playable` stays available on the returned rec.)
+            tags=[str(t) for t in (rec.get("tags") or []) if str(t).strip()],
+            faction_id=str(rec.get("faction_id", "") or ""),
+            is_merchant=bool(rec.get("is_merchant", False)),
+            canon_location_id=str(rec.get("canon_location_id", "") or ""),
+            arc_role=str(rec.get("arc_role", "") or ""),
+            quest_ties=[str(q) for q in (rec.get("quest_ties") or []) if str(q).strip()],
         )
         # ADDITIVE (#68): a canon record may carry a structured companion dossier — the
         # operational identity (wound/wants/values/banter/approval causes/relationships) the

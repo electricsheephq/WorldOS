@@ -63,6 +63,32 @@ def is_playable(rec: dict) -> bool:
     return bool(rec.get("playable", True))
 
 
+def ending_role_from_status(status: str) -> str:
+    """Normalize a free-prose ending `fates.<npc>.status` into the bounded `ending_role`
+    outcome tag the engine filters on: "died" | "survived" | "ambiguous" | "" (unclassifiable).
+
+    The ending overlays write narrative status lines ("alive — and still himself, not ascended",
+    "departed into its own designs", "as the grave is — present"), so this is deliberately
+    conservative: a clear death cue -> "died"; a clear life cue -> "survived"; an explicitly
+    uncertain/fate-unknown cue -> "ambiguous"; anything we can't read with confidence -> "" (the
+    DM/content can set it by hand). Death is checked FIRST so "alive, but only just — not dead"
+    style phrasings still resolve to survived only via the life cue, while a plain "dead" wins."""
+    low = str(status or "").strip().lower()
+    if not low:
+        return ""
+    # Explicit ambiguity wins over the cruder alive/dead keyword scan.
+    if any(w in low for w in ("unknown", "uncertain", "missing", "vanished", "ambiguous", "fate unclear", "presumed")):
+        return "ambiguous"
+    # Death cues. Guard against "undead"/"deadly"/"deadeye" false hits by checking word-ish
+    # boundaries for the bare "dead"; the other cues are unambiguous substrings.
+    import re as _re
+    if _re.search(r"\bdead\b", low) or any(w in low for w in ("died", "slain", "killed", "perished", "fell", "deceased")):
+        return "died"
+    if any(w in low for w in ("alive", "surviv", "living", "lives", "present", "free", "whole", "departed", "wandering")):
+        return "survived"
+    return ""
+
+
 def list_canon_characters(world_id: str, playable_only: bool = False) -> list[dict]:
     """The ingested canon characters available for a world — {name, race, class,
     playable, role} each — from content/worlds/<id>/characters/*.json. De-duplicated by
@@ -92,6 +118,88 @@ def list_canon_characters(world_id: str, playable_only: bool = False) -> list[di
                 "playable": playable,
                 "role": rec.get("role", ""),
             })
+    return out
+
+
+def find_canon_characters(
+    world_id: str,
+    *,
+    tag: str = "",
+    faction_id: str = "",
+    is_merchant: "bool | None" = None,
+    canon_location_id: str = "",
+    arc_role: str = "",
+    name_contains: str = "",
+    limit: int = 50,
+) -> list[dict]:
+    """Structurally filter the ingested canon roster — the DM's "pull exactly the right
+    character" surface. Reads the new tagging fields (`tags`, `faction_id`, `is_merchant`,
+    `canon_location_id`, `arc_role`) straight off each content/worlds/<id>/characters/*.json
+    record (populated by tools/derive_npc_tags). Any subset of filters may be given; they are
+    AND-combined (a record must satisfy ALL provided filters). Returns up to `limit` matches as
+    {name, race, class, tags, faction_id, is_merchant, canon_location_id, arc_role, role,
+    playable, source_url}, de-duplicated by name. READ-ONLY — never mutates content.
+
+    An empty/None filter is ignored (not "match empty"), so `find_canon_characters(world)` with
+    no filters lists everyone (bounded by `limit`). String filters match case-insensitively;
+    `tag` matches membership in the record's `tags` list; `name_contains` is a substring of the
+    display name; `is_merchant` (when not None) matches the record's boolean exactly."""
+    tagl = tag.strip().lower()
+    facl = faction_id.strip().lower()
+    locl = canon_location_id.strip().lower()
+    arcl = arc_role.strip().lower()
+    namel = name_contains.strip().lower()
+
+    def _matches(rec: dict) -> bool:
+        if tagl:
+            rec_tags = [str(t).strip().lower() for t in (rec.get("tags") or [])]
+            if tagl not in rec_tags:
+                return False
+        if facl and str(rec.get("faction_id", "")).strip().lower() != facl:
+            return False
+        if is_merchant is not None and bool(rec.get("is_merchant", False)) != is_merchant:
+            return False
+        if locl and str(rec.get("canon_location_id", "")).strip().lower() != locl:
+            return False
+        if arcl and str(rec.get("arc_role", "")).strip().lower() != arcl:
+            return False
+        if namel and namel not in str(rec.get("name", "")).strip().lower():
+            return False
+        return True
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for cdir in _characters_dirs(world_id):
+        if not cdir.is_dir():
+            continue
+        for p in sorted(cdir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            nm = (rec.get("name") or p.stem).strip()
+            if not nm or nm.lower() in seen:
+                continue
+            if not _matches(rec):
+                continue
+            seen.add(nm.lower())
+            out.append({
+                "name": nm,
+                "race": rec.get("race", ""),
+                "class": rec.get("class", ""),
+                "tags": list(rec.get("tags") or []),
+                "faction_id": rec.get("faction_id", ""),
+                "is_merchant": bool(rec.get("is_merchant", False)),
+                "canon_location_id": rec.get("canon_location_id", ""),
+                "arc_role": rec.get("arc_role", ""),
+                "role": rec.get("role", ""),
+                "playable": is_playable(rec),
+                "source_url": rec.get("source_url", ""),
+            })
+            if len(out) >= max(1, limit):
+                return out
     return out
 
 
@@ -602,6 +710,14 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
             fact = f"[{overlay.get('name', overlay.get('id', 'ending'))}] {label}: {detail}".strip(" :—")
             if ch is not None:
                 ch.memory.append(fact)
+                # ADDITIVE: project the fate's STATUS onto the Character's structured
+                # `ending_role` (died/survived/ambiguous) so `find_npcs` can filter the post-
+                # state roster by outcome, not just by the free-prose memory fact. Only set when
+                # we can classify the status with confidence — an unreadable status leaves the
+                # field "" (today's behavior). A non-roster hero gets only the lore line (above).
+                role = ending_role_from_status(str(fate.get("status") or ""))
+                if role:
+                    ch.ending_role = role
             # Always add a lore line too, so non-roster heroes are recallable as well.
             c.lore.append(fact)
 

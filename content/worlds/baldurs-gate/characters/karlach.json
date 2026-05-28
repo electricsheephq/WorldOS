@@ -54,5 +54,9 @@
       "the engine ticks louder",
       "a thing she misses from Baldur's Gate"
     ]
-  }
+  },
+  "tags": [
+    "companion"
+  ],
+  "arc_role": "origin-hero"
 }
