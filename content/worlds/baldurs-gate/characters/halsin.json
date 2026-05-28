@@ -13,5 +13,44 @@
   "voice_hint": "elf druid; gentle (voiced by Dave Jones)",
   "source_url": "https://bg3.wiki/wiki/Halsin",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "the Shadow-Cursed Lands and Thaniel's wound",
+    "wants": [
+      "the curse healed",
+      "balance kept",
+      "the grove tended after he is gone"
+    ],
+    "fears": [
+      "wider corruption",
+      "the wild quieted forever",
+      "a charge he cannot reach"
+    ],
+    "values": [
+      "balance",
+      "stewardship",
+      "patience"
+    ],
+    "approval_likes": [
+      "mending things",
+      "rest taken when offered",
+      "respect for the wild"
+    ],
+    "approval_dislikes": [
+      "needless harm to the land",
+      "panic taken for reason"
+    ],
+    "banter_tags": [
+      "thaniel",
+      "silvanus",
+      "the shadow-cursed",
+      "the bear is closer than the man"
+    ],
+    "camp_prompts": [
+      "a poultice prepared for someone else's hurt",
+      "the bear sleeps shallow tonight"
+    ]
+  }
 }

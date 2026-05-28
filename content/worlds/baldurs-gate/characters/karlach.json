@@ -13,5 +13,46 @@
   "voice_hint": "tiefling barbarian (voiced by Samantha Béart)",
   "source_url": "https://bg3.wiki/wiki/Karlach",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "Zariel's stolen years; an infernal engine in place of a heart",
+    "wants": [
+      "a real life back",
+      "the Hells answered for",
+      "to be touched without burning"
+    ],
+    "fears": [
+      "the engine giving out",
+      "becoming what they made of her",
+      "running out of time"
+    ],
+    "values": [
+      "loyalty",
+      "joy taken loudly",
+      "righteous anger",
+      "kindness to the small"
+    ],
+    "approval_likes": [
+      "standing against tyrants",
+      "honest passion",
+      "a friend defended"
+    ],
+    "approval_dislikes": [
+      "cruelty for sport",
+      "cold calculation",
+      "kicking the weak"
+    ],
+    "banter_tags": [
+      "avernus",
+      "zariel",
+      "the gondian engine",
+      "dammon"
+    ],
+    "camp_prompts": [
+      "the engine ticks louder",
+      "a thing she misses from Baldur's Gate"
+    ]
+  }
 }

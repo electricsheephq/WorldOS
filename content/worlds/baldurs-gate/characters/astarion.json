@@ -13,5 +13,45 @@
   "voice_hint": "elf rogue (voiced by Neil Newbon)",
   "source_url": "https://bg3.wiki/wiki/Astarion",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "two centuries of Cazador's torments",
+    "wants": [
+      "freedom",
+      "control of his own ending",
+      "a life of his choosing"
+    ],
+    "fears": [
+      "being owned again",
+      "Cazador's reach",
+      "the sun, on bad days"
+    ],
+    "values": [
+      "freedom",
+      "self-determination",
+      "loyalty to those who earned it"
+    ],
+    "approval_likes": [
+      "defying tyrants",
+      "ruthlessness when it counts",
+      "biting wit"
+    ],
+    "approval_dislikes": [
+      "self-righteous moralizing",
+      "trusting predators",
+      "saintly weakness"
+    ],
+    "banter_tags": [
+      "cazador",
+      "vampire spawn",
+      "tieflings of the gur",
+      "petty cruelty earned"
+    ],
+    "camp_prompts": [
+      "a wound that won't take the sun",
+      "a memory of the kennel cellar"
+    ]
+  }
 }

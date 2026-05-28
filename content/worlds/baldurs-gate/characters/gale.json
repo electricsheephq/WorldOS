@@ -13,5 +13,46 @@
   "voice_hint": "human wizard (voiced by Tim Downie)",
   "source_url": "https://bg3.wiki/wiki/Gale",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "the Weave's brand and Mystra's exile",
+    "wants": [
+      "knowledge",
+      "redemption",
+      "Mystra's regard restored"
+    ],
+    "fears": [
+      "uncontrolled detonation",
+      "becoming a footnote",
+      "Karsus's mistake repeated"
+    ],
+    "values": [
+      "knowledge",
+      "redemption",
+      "wonder",
+      "respect for the Weave"
+    ],
+    "approval_likes": [
+      "scholarship",
+      "careful use of magic",
+      "mercy"
+    ],
+    "approval_dislikes": [
+      "wanton destruction",
+      "ignorance worn proudly",
+      "cold cynicism"
+    ],
+    "banter_tags": [
+      "mystra",
+      "the orb",
+      "waterdeep",
+      "tara the tressym"
+    ],
+    "camp_prompts": [
+      "he reaches for a book that isn't there",
+      "the orb stirs"
+    ]
+  }
 }

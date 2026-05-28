@@ -13,5 +13,45 @@
   "voice_hint": "half-elf cleric; fierce (voiced by Jennifer English)",
   "source_url": "https://bg3.wiki/wiki/Shadowheart",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "a stolen childhood and Shar's chains; a name that may not be hers",
+    "wants": [
+      "the truth of her past",
+      "a god she can love",
+      "a name kept by choosing"
+    ],
+    "fears": [
+      "the mission's price",
+      "remembering what she traded",
+      "the moon's question"
+    ],
+    "values": [
+      "secrets earned, not bought",
+      "loyalty to the few",
+      "mercy (quietly)"
+    ],
+    "approval_likes": [
+      "discretion",
+      "tending to the hurt",
+      "moonlight, when no one's looking"
+    ],
+    "approval_dislikes": [
+      "careless revelation",
+      "pious bullies",
+      "the loud certainty of zealots"
+    ],
+    "banter_tags": [
+      "shar",
+      "selune",
+      "the dark justiciars",
+      "a wolf in the dream"
+    ],
+    "camp_prompts": [
+      "she touches a wound that isn't there",
+      "a hymn half-remembered"
+    ]
+  }
 }

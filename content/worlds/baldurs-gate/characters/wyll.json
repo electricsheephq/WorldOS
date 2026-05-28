@@ -13,5 +13,45 @@
   "voice_hint": "human warlock; playful (voiced by Theo Solomon)",
   "source_url": "https://bg3.wiki/wiki/Wyll",
   "license": "CC BY-SA 4.0 / CC BY-NC-SA 4.0 (dual; see https://bg3.wiki/wiki/bg3wiki:Copyrights — older revisions are CC BY-NC-SA 4.0 NonCommercial only)",
-  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content."
+  "attribution": "Text from bg3.wiki, dual-licensed CC BY-SA 4.0 / CC BY-NC-SA 4.0. Also subject to Larian Studios' and Wizards of the Coast's Fan Content Policies. Unofficial, non-commercial fan content.",
+  "playable": false,
+  "role": "hero",
+  "companion_dossier": {
+    "wound": "the pact's chain: Mizora at his ear, his father's house lost",
+    "wants": [
+      "the pact broken",
+      "a hero's name kept clean",
+      "Ravengard's pardon"
+    ],
+    "fears": [
+      "becoming the monster he hunts",
+      "his father's verdict",
+      "the next clause"
+    ],
+    "values": [
+      "honor",
+      "duty",
+      "compassion as a discipline"
+    ],
+    "approval_likes": [
+      "protecting the helpless",
+      "civic courage",
+      "honest grief"
+    ],
+    "approval_dislikes": [
+      "betraying trust",
+      "cruelty to the weak",
+      "easy lies"
+    ],
+    "banter_tags": [
+      "mizora",
+      "ravengard",
+      "the blade of frontiers",
+      "the ulder ballad"
+    ],
+    "camp_prompts": [
+      "the horn aches before a storm",
+      "a ballad practiced for someone alive"
+    ]
+  }
 }
