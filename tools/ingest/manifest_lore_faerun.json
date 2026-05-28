@@ -1,0 +1,22 @@
+{
+  "_comment": "FR-expansion lore pass (cont.38 audit gaps #1 + #2): the broader Faerûn pantheon + Sword Coast regions BEYOND Baldur's Gate city — so a post-BG3 DM can voice deities and let the party look toward Waterdeep / Neverwinter / Amn (the 'view other locations' depth). Forgotten Realms Fandom wiki, CC-BY-SA, ingested as attributed lore .md under content/worlds/<world_id>/lore/wiki/. Bounded by max_pages. Run: python3 tools/ingest/wiki_to_lore.py tools/ingest/manifest_lore_faerun.json",
+  "world_id": "baldurs-gate",
+  "wiki": "forgottenrealms.fandom.com",
+  "max_pages": 130,
+  "rate_delay_seconds": 0.5,
+  "max_chars_per_page": 9000,
+  "categories": [
+    "Cities on the Sword Coast",
+    "Regions of the Sword Coast"
+  ],
+  "titles": [
+    "Mystra", "Selûne", "Shar", "Kelemvor", "Helm", "Tyr", "Lathander",
+    "Tymora", "Beshaba", "Gond", "Ilmater", "Tempus", "Sune", "Oghma",
+    "Corellon Larethian", "Moradin", "Lolth", "Vlaakith", "Bhaal", "Bane",
+    "Myrkul", "Cyric", "Jergal", "Mystryl", "Auril", "Talos", "Umberlee",
+    "Waterdeep", "Neverwinter", "Athkatla", "Amn", "Western Heartlands",
+    "Daggerford", "Beregost", "Nashkel", "Friendly Arm Inn", "Sword Coast",
+    "Moonshae Isles", "Icewind Dale", "Luskan", "Calimshan", "Cormyr",
+    "Suldanessellar", "Trade Way", "High Hall", "Wyrmshadow"
+  ]
+}

@@ -1,0 +1,45 @@
+# Asmodeus
+
+**Asmodeus** ( ) or ** Asmodei** in Infernal, was the Faerûnian deity of indulgence and a patron of oppression and power. The greatest devil and ruler of all devilkind, the **Lord of the Ninth** was overlord of all the Nine Hells. From his throne at the bottom of Baator the **Lord of Lies** reigned over his kingdom of unyielding tyranny, ceaseless warfare and political intrigue and enacted his diabolical plans to become not only the **Supreme Master of the Nine Hells**, but of all existence.
+
+## Description
+Asmodeus's true form was that of a scaled serpent hundreds of miles long, his acid-black blood, a substance beyond foul, exuding from eons-old wounds. His form's sheer size made it impossible for him to meet and enter into conversations with others, and so he created humanoid-looking avatars. He never showed himself except through avatars or highly advanced *project image* spells, both in humanoid forms.
+
+An avatar of Asmodeus was handsome, charismatic and captivating on the surface, appearing as a slim, red-skinned humanoid over  tall with a horned head, glowing red eyes and a perfectly trimmed beard. He wore red and black clothing valuable enough to cover the annual spending of any nation, but underneath these expensive garments his body was wracked with bleeding injuries he was seemingly unconcerned by.
+
+## Personality
+Asmodeus was a primal embodiment of lawful evil and a supreme strategist of unparalleled skill. His sinister machinations could take centuries, if not millennia, to come to fruition, and his master plans extended across the multiverse. His labyrinthine, insidious intrigues could seem inexplicable to most outside observers, for Asmodeus let even his own servants stew in fear of his next move. With all the planes as his board, the Lord of Lies maneuvered the forces of evil like chess pieces in his grand designs, slowly and subtly manipulating everyone from deities to, when needed, lowly mortals.
+
+Just as Asmodeus was an unmatched schemer, he was an unrivaled orator, a legendary political master of unquestionable prowess. He was the most well-mannered of the archdevils, soft-spoken and eloquent as he lured others into serving his ends. Even when wracked by constant pain, he managed to appear blithely unbothered, and seemed almost chillingly reasonable. However, though he could seem generous, the quickly offered rewards of the archdevil were given to those willing to sign away their souls, after which they would suffer as a pawn in his dark designs. Despite his charisma, Asmodeus was nonetheless a representative of ultimate evil, revealing his true nature at his will.
+
+In truth, Asmodeus was a tyrant, an authoritarian overlord who sought complete control over as many subjects as he could obtain and nothing less than absolute dominion over all reality to satiate his need for power. Torture was his tool to break the wills of others and impose his own, and knowledge of secrets and dealings his desired instrument to claim others as his. The Prince of Evil was confident in his position as one of the multiverse's strongest beings, and genuinely believed his rule was for the best. Under his rule, and only his rule, the multiverse would be pristine and perfect, with everyone in it having a place and a purpose to fulfill.
+
+Asmodeus admired ambition, but in his mind, only he had the strength, insight, and charisma needed to guide all to an ideal utopia, or at least the infernal hierarchy that the Archfiend interpreted as such. His rivals were inferior minds lacking the skill to see his vision through. The forces of the Abyss were loathsome opposition, their very existence a threat to his mastery of evil and their armies a direct threat to his supremacy. The forces of good were foolish, sentimental beings too soft and weak to do what had to be done. This arrogance would have led to his destruction if he lacked the competence to back it up, yet Asmodeus had managed to thwart all conspiracies against him and survive Heaven with nothing but his wit.
+
+### Law or Evil
+According to legend, Asmodeus attributed his wicked deeds to necessity and the mandates of law, alluding to the rules of Hell in his defense and arguing that his contracts were never broken. He made the case that the souls he harvested served the ultimately noble end of protecting the cosmos, and noted the sanctity of law as what separated him from the demons of the Abyss. Without him and his devils to defend it, he argued, the cosmos would be overrun by demonkind and ultimately destroyed, and in this, Asmodeus might technically be correct.
+
+Although one of the ultimate powers of law, Asmodeus did not uphold the rules out of respect. Despite arguing that his actions were necessary to prevent the rise of chaos and preserve the forces of good, this was mere camouflage to disguise his true intentions. In reality, Asmodeus saw the Abyss as a useful distraction, and when prepared he planned to destroy the Upper Planes and perhaps even use demonkind to accomplish this dark goal. Ironically, in the most extreme scenario, Asmodeus's plan would ultimately be to embrace chaos, to withhold the power of law from the world and let it collapse. With the cosmos broken down and him having survived its fall, he would remake reality as he desired.
+
+To the mind of Asmodeus, the law was merely a tool by which others could be bent to his will. Civilization, as he understood it, was a means of gaining power, the structures and technology created by society instruments to crush his enemies. Chaos made for easy conquest, and to conquer was to bring others under control. Asmodeus would use tradition as his protection and wording as his weapon, appeal to the letter of the law, and frame his deeds as upholding the natural laws of the cosmos. Even his masterfully crafted plans would obey universal laws, such as the Rule of Threes, and he believed himself the cosmos's chosen protector. More than any of these however, Asmodeus was dedicated to obtaining absolute authority for himself, and if necessary, was willing to break every law in existence to do it.
+
+Despite his cunning and charisma, Asmodeus was not intellectually invincible. Though he was not above pretending otherwise, he was capable of being surprised, feigning foreknowledge and acting as if all was going according to plan either way. Despite his confidence, Asmodeus could feel threatened. Even among mortals, there were figures whose powers and influence gave him pause. And despite his manners, Asmodeus was capable of fury. If he forgot himself he could end up bursting into a rage, his mask of civility slipping to unveil the evil that lurked below.
+
+## Powers
+### Divine
+Asmodeus was technically a deity, but was exempt from many of the rules regarding divine beings, his actual status a matter of debate that had changed over time. At the very least the strongest archdevil, weaker interpretations cast him as not even a full-fledged god or possessed only of the powers of a lesser god. In others, (particularly more recently) he was believed to be a greater god, and the most dangerous portrayals cast him as a primal embodiment of evil, aspect of some sort of metaphysical serpent concept, or even an overgod similar in nature to the Lady of Pain.
+
+Asmodeus's strength neither waxed nor waned with the number of his worshipers and he had no ability to grant spells to his followers. While this limitation could be circumvented if the worshiper became a disciple of darkness, spells granted by this method were not done so through his own powers, but by acting as a conduit to channel the divine magic of Baator itself to the mortal cleric.
+
+There were no strictures on how granted power could be used for a disciple, but the mortal's soul was forfeit if his patron was not appeased with sentient sacrifices. This changed after Asmodeus consumed Azuth and thus obtained true godhood, allowing him to grant spells to his followers and remove the vile rituals previously required to access such power.
+
+Another ability Asmodeus shared with greater deities even before his ascension was that he could create up to ten avatars, although his ability to do this was stunted. He could send only one avatar at a time to the Prime Material Plane, and doing this made it impossible for him to maintain any other avatar.
+
+### Infernal
+Asmodeus had absolute control over the Nine Hells and with his mind he could change not only the landscape of any layer but the forms of his archdevils in any way he wanted whenever he wanted. For example, he changed Baalzebul's formerly (mostly) beautiful form into that of a giant slug. It was unclear if he could kill archdevils with a thought; some suspected that he could and did in the case of the Hag Countess's sudden death, and while seemingly involved, it was unclear how much of a part he played and to what degree one could say she had "died".
+
+…(truncated — see source)
+
+
+---
+*Source: https://forgottenrealms.fandom.com/wiki/Asmodeus — Forgotten Realms Wiki (Fandom), CC-BY-SA. Unofficial fan content; see LICENSE.md in this folder.*
