@@ -17,6 +17,33 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
 
+  // Phase-4 wiring: read can_act + campaign_id from /character-surface so a BUY actually
+  // lands as a structured `do` move on the live engine via POST /move (the constrained
+  // palette; the DM resolves the purchase via `buy_item`). When can_act is false, the
+  // transaction stays local + the button shows "(preview)" — same honest fallback as
+  // the rest of the prototype. The hardcoded MERCHANTS stock is still demo data (a real
+  // per-location shopkeeper read-model is a separate, bigger change); the ACTION LANE
+  // is what this commit wires, so a live session can actually buy.
+  const surfaceQuery = window.combatSurfaceFromCampaign
+    ? window.combatSurfaceFromCampaign(
+        (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
+          (Array.isArray(state?.campaigns) ? state.campaigns : [])[0] || {},
+        state,
+      )
+    : "";
+  const [surface, setSurface] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/character-surface" + surfaceQuery, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setSurface(d); })
+      .catch(() => { if (!cancelled) setSurface(null); });
+    return () => { cancelled = true; };
+  }, [surfaceQuery]);
+  const canAct = Boolean(surface?.can_act);
+  const campaignId = surface?.campaign_id || "";
+  const toast = window.useToast ? window.useToast() : (() => {});
+
   // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
   // read-model, so this stays empty — we never fall back to the bundled demo stash (PF1e
   // leak). If a live merchant surface is ever wired, prefer it here; until then [].
@@ -261,10 +288,38 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             </span>
           </div>
           <BrassButton onClick={() => {
-            setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
-            setCart([]);
-          }} style={{ width: "100%" }} disabled={cart.length === 0 || coins.gp + balanceDelta < 0} title="Display-only — transaction is not saved to the engine">
-            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"} <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+            // canAct (live play): relay the transaction as a structured `do` move so the
+            // DM resolves the purchase via the engine's buy_item tool (engine = sole
+            // writer). Otherwise (read-only preview), keep the local-only behavior +
+            // honest "(preview)" label.
+            if (canAct) {
+              const buyItems = cart.filter((i) => i.mode === "buy").map((i) => i.name);
+              const sellItems = cart.filter((i) => i.mode === "sell").map((i) => i.name);
+              const phrases = [];
+              if (buyItems.length) {
+                const list = buyItems.length === 1 ? buyItems[0] : buyItems.slice(0, -1).join(", ") + " and " + buyItems[buyItems.length - 1];
+                phrases.push(`buy ${list} from ${merchant.name} for ${adjustedBuyTotal} gp`);
+              }
+              if (sellItems.length) {
+                const list = sellItems.length === 1 ? sellItems[0] : sellItems.slice(0, -1).join(", ") + " and " + sellItems[sellItems.length - 1];
+                phrases.push(`sell ${list} to ${merchant.name} for ${sellTotal} gp`);
+              }
+              if (haggle > 0) phrases.push(`(haggled ${haggle}% off)`);
+              const text = "I " + phrases.join(", and ");
+              fetch("/move", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind: "do", text, campaign: campaignId }),
+              }).then(() => {
+                toast({ kind: "item", eyebrow: "Market", title: balanceDelta > 0 ? "Sold" : "Bought", body: `Move relayed to the DM — the engine resolves the purchase.` });
+                setCart([]);
+              }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+            } else {
+              setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
+              setCart([]);
+            }
+          }} style={{ width: "100%" }} disabled={cart.length === 0 || (!canAct && coins.gp + balanceDelta < 0)} title={canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine"}>
+            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"} <span style={{ fontSize: 9, opacity: 0.7 }}>{canAct ? "(live)" : "(preview)"}</span>
           </BrassButton>
         </div>
       </Panel>
