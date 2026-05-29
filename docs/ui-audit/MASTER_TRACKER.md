@@ -22,6 +22,33 @@ After Loop 1 closed at 70-75% confidence, Loop 2 attacked the named gaps. Materi
 
 **Loop 2 confidence: ~85%.** Remaining open gaps (would lift to 95% in Loop 3): interactive coverage (click-through Create wizard / palette switcher / a11y modes), multi-viewport capture (1366 / 1920), live-session UX (`canAct=true` state), native macOS app verification.
 
+## Loop 3 update (2026-05-29 cont.)
+
+Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
+
+- **Multi-viewport responsive verified.** Headless Chrome captures at 1366×768 (the laptop floor) + 1920×1080. Confirms #284 (.stack-on-narrow unused): at 1366 the **Table** + **Character** + **Inventory** 3-column screens crowd; Combat + Create + Map read OK. Filed as [#288](https://github.com/100yenadmin/ClawDnD/issues/288).
+- **State validation against a populated campaign.** `/atlas-surface` ships 23 known_locations + 45 edges; `/relations-surface` ships 5 BG factions + 11 canon NPCs (Jaheira / Minsc and Boo / Shadowheart / Wyll / Karlach / The Emperor / Withers / Astarion / …); `/character-surface` ships Astarion @ Rogue L5 HP 29/29 AC 14. **The engine DOES seed the canon when given a populated campaign.** Loop-1's framing of #261 + #273 ("under-populated") was actually a fresh-state observation. Re-framed as [#289](https://github.com/100yenadmin/ClawDnD/issues/289) — the ask is now "ensure fresh-save initial seed", not "build the seed projection".
+- **NEW bug** — `/character-surface` ships `feats` and `classFeatures` arrays with **identical content** (per SRD 5.2: `feats` = optional ASI-feats taken at L4/8/12/16/19; `classFeatures` = auto-by-level — disjoint sets). UI renders the same 10 entries twice with two different labels. Filed [#286](https://github.com/100yenadmin/ClawDnD/issues/286).
+- **NEW finding** — Astarion ships `abilities: []` + `raceTraits: []` but the UI renders the "Special Abilities" + "Lineage > traits" section headers without gating → empty panes next to the populated Feats panel. Filed [#287](https://github.com/100yenadmin/ClawDnD/issues/287).
+- **Generativity proof.** Current location is `Aldenmoor Estate — Study` — a generated canon-grounded location ("Councillor Riven Aldenmoor's Upper City estate" with a fire, Harper signet letter, district relief maps on the wall). Validates the `ClawDnD-NORTH-STAR.md` Part 1B generativity principle end-to-end.
+- **Asset re-calibration [#281](https://github.com/100yenadmin/ClawDnD/issues/281) confirmed again.** Astarion's portrait renders from `_private/baldurs-gate/images/portrait_astarion/`. Atlas backdrop renders the Sword Coast map. Wiki-first ingest → engine → `<Img>` pipeline works with real data.
+
+### Loop 3 honest scope notes
+
+- **Live-session UX still invisible.** All 18 saved campaigns have `can_act: false` — no live DM is attached to any save. The DM-attached state (live action bar enabled, live combat unfolding, dice rolling) would require launching a real `startProviderSession`. Out of scope for this artifact-only audit. The UI's two states (read-only vs live) are documented from JSX source-reading; in-flight observation deferred to operator-driven testing.
+- **Native macOS app verification still pending.** The title-bar fix (#260) would need a `script/build_and_run.sh` build + window-frame inspection. Out of scope.
+
+### Loop 3 sub-issues (#286–#289)
+
+| Issue | Title | Sev |
+|---|---|---|
+| [#286](https://github.com/100yenadmin/ClawDnD/issues/286) | `feats` and `classFeatures` carry duplicate content | Major |
+| [#287](https://github.com/100yenadmin/ClawDnD/issues/287) | Character: hide empty Special Abilities + Lineage section headers | Minor |
+| [#288](https://github.com/100yenadmin/ClawDnD/issues/288) | 1366×768 crowding on Table + Character + Inventory | Major |
+| [#289](https://github.com/100yenadmin/ClawDnD/issues/289) | Atlas/Relations fresh-save seed (reframes #261 + #273) | Major |
+
+**Loop 3 confidence: ~90%.** Remaining 10% lives in: live-session UX (operator-launched DM required), native-app verification (build required), exhaustive interaction coverage (palette/a11y/keyboard-shortcut walk-through).
+
 ---
 
 ## Scoreboard
