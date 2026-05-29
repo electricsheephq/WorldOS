@@ -96,7 +96,7 @@ def _authored_pack(tmp_path, monsters):
         "title": "Mythic Workshop Test Pack",
         "license": {"name": "CC-BY-4.0"},
         "source": {"title": "Unit test fixture"},
-        "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+        "provenance": {"author": "WorldOS tests", "method": "hand-authored"},
         "monsters": monsters,
     }))
     return tmp_path
@@ -132,7 +132,7 @@ def test_authored_monster_pack_adds_metadata_but_never_overrides_srd(tmp_path, m
             "abilities": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
             "license": {"name": "CC-BY-4.0"},
             "source": {"title": "Unit test fixture"},
-            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+            "provenance": {"author": "WorldOS tests", "method": "hand-authored"},
         },
         {
             "name": "Lantern Mireling",
@@ -147,7 +147,7 @@ def test_authored_monster_pack_adds_metadata_but_never_overrides_srd(tmp_path, m
             "actions": [{"name": "Glimmer Claw", "desc": "A player-safe action summary."}],
             "license": {"name": "CC-BY-4.0"},
             "source": {"title": "Unit test fixture"},
-            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+            "provenance": {"author": "WorldOS tests", "method": "hand-authored"},
         },
     ])
     monkeypatch.setattr(bestiary, "_AUTHORED_ROOT", root)
@@ -182,7 +182,7 @@ def test_player_bestiary_projection_is_safe_and_read_only(tmp_path, monkeypatch)
         "private_notes": "ambushes wounded PCs",
         "license": {"name": "CC-BY-4.0"},
         "source": {"title": "Unit test fixture"},
-        "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+        "provenance": {"author": "WorldOS tests", "method": "hand-authored"},
     }])
     monkeypatch.setattr(bestiary, "_AUTHORED_ROOT", root)
     bestiary._authored_entries.cache_clear()
@@ -197,7 +197,7 @@ def test_player_bestiary_projection_is_safe_and_read_only(tmp_path, monkeypatch)
             "content_origin": "authored",
             "source": {"title": "Unit test fixture"},
             "license": {"name": "CC-BY-4.0"},
-            "provenance": {"author": "ClawDnD tests", "method": "hand-authored"},
+            "provenance": {"author": "WorldOS tests", "method": "hand-authored"},
             "known_actions": ["Glimmer Claw"],
         }
         assert "hp" not in preview and "ac" not in preview

@@ -1,4 +1,4 @@
-"""ClawDnD game-engine MCP server.
+"""WorldOS game-engine MCP server.
 
 Authoritative D&D 5e game state — dice, character sheets, and campaign
 persistence — exposed as MCP tools. Every tool reads the campaign from disk,
@@ -357,7 +357,7 @@ def _casting_mod(ch: Character) -> int:
 
 @mcp.tool()
 def ping() -> str:
-    """Health check. Returns ok if the ClawDnD engine server is reachable."""
+    """Health check. Returns ok if the WorldOS engine server is reachable."""
     return "clawdnd-engine: ok (v0.0.1)"
 
 

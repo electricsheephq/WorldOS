@@ -1,4 +1,4 @@
-"""Companion agency for ClawDnD — a pure, testable module (Epic 9).
+"""Companion agency for WorldOS — a pure, testable module (Epic 9).
 
 The companion is a first-class party member: its own Character (kind="companion")
 with its own sheet, voice, personality, and *agency*. This module gives it two

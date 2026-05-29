@@ -1,4 +1,4 @@
-"""ClawDnD engine state models (Pydantic v2).
+"""WorldOS engine state models (Pydantic v2).
 
 Clean-room D&D 5e (SRD 5.2) campaign state. The Campaign aggregate is the single
 persisted unit; the store writes it atomically so a campaign survives context

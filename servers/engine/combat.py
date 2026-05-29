@@ -1,4 +1,4 @@
-"""Combat logic for ClawDnD — pure, testable helpers operating on Character.
+"""Combat logic for WorldOS — pure, testable helpers operating on Character.
 
 The MCP tools in server.py wrap these with the campaign lock + persistence. All
 SRD 5.2 rules (damage order, death saves, concentration, condition hooks) live

@@ -362,7 +362,7 @@ def _banded_dc(difficulty: str, house_difficulty: str = "standard") -> int:
 # the region's flavor tier (falling back to "wilderness"), banding the DC off the
 # entry's difficulty so an easy ford reads DC 10 and a hard rockfall DC 18. Skills
 # are SRD skill keys (snake_case, as in models.SKILL_ABILITIES); social skills are
-# the four parley skills. Content is original ClawDnD flavor (no SRD text).
+# the four parley skills. Content is original WorldOS flavor (no SRD text).
 
 # skill obstacles: a region-flavored barrier the party SKILL-CHECKS past.
 _SKILL_OBSTACLES: dict[str, list[tuple[str, str, str]]] = {
