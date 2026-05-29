@@ -154,13 +154,8 @@ change must respect them.
    **DO NOT pipe `gh pr create` through `tail` inside an `&&` chain** — a transient
    GraphQL blip gets masked, the branch ends up pushed-but-unmerged, and the merge is
    silently skipped. (This bit us on #185.) Check the exit / the returned PR URL.
-4. **Merge (local-gate):**
-   ```bash
-   gh pr merge --squash --admin
-   ```
-   GitHub Actions went **degraded repo-wide** (~2026-05-26), so we gate on **local
-   single-process pytest + `license_check`** per the test policy; CI reconciles
-   post-merge. `--admin` is intentional here for that reason.
+4. **Merge only after checks pass.** Use the standard PR merge flow once GitHub CI
+   and required review gates are green.
 5. **Sync + clean up:**
    ```bash
    git pull --ff-only origin main
@@ -170,7 +165,7 @@ change must respect them.
    ```
 
 **The whole shape:** worktree off main → implement additive → focused single-process test →
-push → `gh pr create` (no `tail` in an `&&` chain) → `gh pr merge --squash --admin` →
+push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass →
 `git pull --ff-only origin main` → remove worktree + delete branch + prune.
 
 ---
@@ -390,4 +385,4 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
 2. `cd` to the repo checkout or relevant worktree; `git log --oneline -10`.
 3. `gh pr list` + `gh issue list` to see open lanes (avoid the desktop-lane PRs above).
 4. Pick up the Quest-Arc L3 build / the queued waves; build → focused single-process test →
-   PR (no `tail` in `&&`) → `--squash --admin` → sync + prune. Log every QA run to SCORECARD.
+   PR (no `tail` in `&&`) → merge after checks pass → sync + prune. Log every QA run to SCORECARD.

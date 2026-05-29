@@ -53,7 +53,15 @@ for name, srv in cfg.get("mcpServers", {}).items():
     args = srv.get("args", [])
     if "--directory" in args:
         i = args.index("--directory")
-        pkg = args[i + 1].rstrip("/").split("/servers/")[-1]  # "engine" | "rules" | "voice"
+        raw = args[i + 1].rstrip("/")
+        if raw.startswith("./"):
+            raw = raw[2:]
+        if "/servers/" in raw:
+            pkg = raw.rsplit("/servers/", 1)[1]
+        elif raw.startswith("servers/"):
+            pkg = raw[len("servers/"):]
+        else:
+            pkg = raw
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "clawdnd-engine":
         srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state

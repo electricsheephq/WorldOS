@@ -32,10 +32,11 @@ warn() { printf "  ! %s\n" "$1"; }
 err()  { printf "  ✗ %s\n" "$1" 1>&2; }
 
 if [ ! -d "$REPO" ]; then
-  err "repo not found at $REPO (set CLAWDND_REPO to override)"; exit 2
+  err "repo not found at $REPO (set WORLDOS_REPO to override; CLAWDND_REPO is also supported)"; exit 2
 fi
 
-step "Reap any stale ClawDnD / viewer processes (clean host)"
+step "Reap any stale WorldOS / viewer processes (clean host)"
+pkill -f "dist/WorldOS.app" 2>/dev/null || true
 pkill -f "dist/ClawDnD.app" 2>/dev/null || true
 pkill -f "viewer/server.py" 2>/dev/null || true
 sleep 1
@@ -52,7 +53,7 @@ else
   warn "no NordVPN Shield / helper running — already clean"
 fi
 
-step "Build + launch the ClawDnD app (prefers Developer ID, falls back to ad-hoc)"
+step "Build + launch the WorldOS app (prefers Developer ID, falls back to ad-hoc)"
 cd "$REPO"
 script/build_and_run.sh run
 ok "build + open issued"
@@ -72,7 +73,7 @@ done
 
 if [ -n "$bound" ]; then
   ok "viewer is serving on port $bound — the desktop app window should be playable now"
-  printf "\n  Open the ClawDnD window and click Resume / Forge a hero / Begin.\n  Engine 1385/1385 ✓ · viewer 90/90 ✓ · all 14 screens render polished.\n\n"
+  printf "\n  Open the WorldOS window and click Resume / Forge a hero / Begin.\n  Engine 1385/1385 ✓ · viewer 90/90 ✓ · all 14 screens render polished.\n\n"
   exit 0
 fi
 
