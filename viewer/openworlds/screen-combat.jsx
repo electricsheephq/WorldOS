@@ -10,6 +10,23 @@ function combatSurfaceFromCampaign(activeCampaign, state) {
   return query ? `?${query}` : "";
 }
 
+/* Token art scope (audit B-02) — derive from the NAME slug, NOT the instance id, mirroring the
+   character/inventory portraitScope fix already on main. A combatant's `id` is an opaque engine
+   hash ("char_badefdd1fb16") that only resolves via the server's _portrait_by_name bridge; the
+   name slug is the stable key the ingested art is actually filed under. FOES draw on the
+   `creature-<slug>` plate (e.g. "Gnoll Warrior 1" → creature-gnoll-warrior-1, which the server's
+   fuzzy _scope_key folds onto creature_gnoll-warrior) so they show a real beast portrait instead
+   of a bare red blob; ALLIES draw on `portrait-<slug>` for their canon face. Empty name → fall
+   back to the id scope (still bridged) → graceful silhouette/placeholder via <Img>. */
+function tokenScope(t) {
+  if (!t) return "";
+  const name = t.name || "";
+  const s = (name && window.slug) ? window.slug(name) : "";
+  const prefix = t.team === "foe" ? "creature-" : "portrait-";
+  if (s) return prefix + s;
+  return t.id ? "portrait-" + t.id : "";
+}
+
 function ScreenCombat({ onNavigate, state }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -169,7 +186,14 @@ function ScreenCombat({ onNavigate, state }) {
               <h2 className="h1" style={{ fontSize: 22, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {encounter.name || "No active encounter"}
               </h2>
-              <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 4 }}>
+              {/* Clamp the scene blurb to two lines — the engine often hands back the whole
+                  world-premise paragraph here, which otherwise crushes the tactical board. Full
+                  text stays available on hover. */}
+              <div className="body-sm" title={encounter.summary || ""} style={{
+                color: "var(--ink-700)", marginTop: 4,
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                overflow: "hidden", textOverflow: "ellipsis",
+              }}>
                 {encounter.summary || surfaceStatus}
               </div>
             </div>
@@ -261,7 +285,7 @@ function CombatantSummary({ token, economy, commandCenter }) {
       background: "linear-gradient(180deg, var(--p-100), var(--p-200))",
       boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)",
     }}>
-      <Img scope={token.id ? "portrait-" + token.id : ""} label={token.short || token.initial || "token"} w={40} h={48} framed />
+      <Img scope={tokenScope(token)} label={token.short || token.initial || "token"} w={40} h={48} framed />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {token.name}
@@ -482,6 +506,30 @@ function healthRatio(t) {
   return 1;
 }
 
+/* B-07 — never paint a precise-looking HP fraction the engine doesn't actually know. When
+   `hpKnown` is false (foes, until the party learns their HP) the bar still shows the qualitative
+   band the player CAN observe (steady / wounded / bloodied / down), but overlaid with a diagonal
+   hatch so it reads as an *estimate*, not an exact value. A known bar stays a clean solid fill. */
+function hpBarFill(t, isFoe) {
+  const solid = isFoe
+    ? "linear-gradient(180deg, #d63a3a, #8a1a1a)"
+    : "linear-gradient(180deg, #5cd56a, #2a8c39)";
+  if (t.hpKnown) return solid;
+  const hatch = "repeating-linear-gradient(45deg, rgba(255,255,255,0.28) 0 2px, transparent 2px 5px)";
+  return `${hatch}, ${solid}`;
+}
+
+/* Initiative-row variant: the ally bar greens-then-reds on the 50% threshold; reuse the same
+   honest-hatch treatment for unknown HP. */
+function hpBarFillInit(t, isFoe, ratio) {
+  const solid = isFoe
+    ? "linear-gradient(180deg, var(--crimson), #4a1010)"
+    : (ratio > 0.5 ? "linear-gradient(180deg, #5a8a3a, #3a6020)" : "linear-gradient(180deg, var(--crimson), #4a1010)");
+  if (t.hpKnown) return solid;
+  const hatch = "repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0 2px, transparent 2px 5px)";
+  return `${hatch}, ${solid}`;
+}
+
 function CombatToken({ t, cols, rows, selected, onClick }) {
   const xPct = (((Number(t.x) || 1) - 0.5) / cols) * 100;
   const yPct = (((Number(t.y) || 1) - 0.5) / rows) * 100;
@@ -515,7 +563,7 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
         overflow: "hidden",
       }}>
         <Img
-          scope={t.id ? "portrait-" + t.id : ""}
+          scope={tokenScope(t)}
           label={t.initial}
           w="100%"
           h="100%"
@@ -532,7 +580,7 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
         <div style={{
           position: "absolute", left: 0, top: 0, bottom: 0,
           width: `${hpRatio * 100}%`,
-          background: isFoe ? "linear-gradient(180deg, #d63a3a, #8a1a1a)" : "linear-gradient(180deg, #5cd56a, #2a8c39)",
+          background: hpBarFill(t, isFoe),
         }} />
       </div>
       <div style={{
@@ -568,7 +616,7 @@ function InitiativeRow({ row, token, selected, onClick }) {
         color: isFoe ? "var(--crimson)" : "var(--ink-900)",
         fontWeight: 600,
       }}>{row.init ?? "-"}</span>
-      <Img scope={(token.id || row.id) ? "portrait-" + (token.id || row.id) : ""} label={token.short || "?"} w={36} h={36} framed />
+      <Img scope={tokenScope({ id: token.id || row.id, name: token.name || row.name, team: row.team })} label={token.short || "?"} w={36} h={36} framed />
       <div style={{ minWidth: 0 }}>
         <div style={{
           fontFamily: "var(--f-display)",
@@ -582,8 +630,7 @@ function InitiativeRow({ row, token, selected, onClick }) {
           <div style={{ flex: 1, height: 4, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.3)" }}>
             <div style={{
               position: "absolute", left: 0, top: 0, bottom: 0, width: `${hpRatio * 100}%`,
-              background: isFoe ? "linear-gradient(180deg, var(--crimson), #4a1010)" :
-                (hpRatio > 0.5 ? "linear-gradient(180deg, #5a8a3a, #3a6020)" : "linear-gradient(180deg, var(--crimson), #4a1010)"),
+              background: hpBarFillInit(token, isFoe, hpRatio),
             }} />
           </div>
         </div>
@@ -670,4 +717,7 @@ Object.assign(window, {
   ApBadge,
   BattleLogLine,
   combatSurfaceFromCampaign,
+  tokenScope,
+  hpBarFill,
+  hpBarFillInit,
 });

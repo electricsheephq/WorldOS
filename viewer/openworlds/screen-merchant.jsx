@@ -11,11 +11,16 @@ function mItemScope(item) {
 
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
-  const [merchantId, setMerchantId] = React.useState("gate-sundries");
+  // MK-02: the initial id MUST match a MERCHANTS entry. It previously read "gate-sundries"
+  // while the only merchant is id:"talli", so the find() silently fell back to MERCHANTS[0] —
+  // masking the mismatch and breaking any id-keyed lookup (e.g. the portrait scope).
+  const [merchantId, setMerchantId] = React.useState("talli");
   const [hoverItem, setHoverItem] = React.useState(null);
   const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
+  // MK-06: real type filter for the wares table — no dead "Filter…" button.
+  const [typeFilter, setTypeFilter] = React.useState("all");
 
   // Phase-4 wiring: read can_act + campaign_id from /character-surface so a BUY actually
   // lands as a structured `do` move on the live engine via POST /move (the constrained
@@ -55,7 +60,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const balanceDelta = sellTotal - adjustedBuyTotal;
   const displayedTotal = Math.abs(balanceDelta);
 
-  const inv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
+  const baseInv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
+  // MK-06: the kinds actually present on the table, so the filter only offers real options.
+  const presentTypes = Array.from(new Set((baseInv || []).map((i) => i.type).filter(Boolean)));
+  const inv = typeFilter === "all" ? baseInv : baseInv.filter((i) => i.type === typeFilter);
 
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
@@ -77,16 +85,23 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
         <Divider />
 
-        <SectionTitle>Reputation</SectionTitle>
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span className="hand" style={{ fontSize: 13 }}>{merchant.repLabel || "Cautious"}</span>
-            <span className="muted body-sm">{merchant.rep || 32}/100</span>
-          </div>
-          <div style={{ height: 8, marginTop: 6, background: "rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)", position: "relative" }}>
-            <div style={{ position: "absolute", inset: 0, right: `${100 - (merchant.rep || 32)}%`, background: "linear-gradient(180deg, var(--b-200), var(--b-500))" }} />
-          </div>
-        </div>
+        {/* MK-07: only show the reputation gauge when the merchant actually carries a rep value.
+            The old `merchant.rep || 32` fabricated a "32/100" standing for any merchant without
+            one — narrative misdirection. Hide the whole row instead of inventing a number. */}
+        {typeof merchant.rep === "number" && (
+          <>
+            <SectionTitle>Reputation</SectionTitle>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span className="hand" style={{ fontSize: 13 }}>{merchant.repLabel || "Cautious"}</span>
+                <span className="muted body-sm">{merchant.rep}/100</span>
+              </div>
+              <div style={{ height: 8, marginTop: 6, background: "rgba(0,0,0,0.15)", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)", position: "relative" }}>
+                <div style={{ position: "absolute", inset: 0, right: `${100 - merchant.rep}%`, background: "linear-gradient(180deg, var(--b-200), var(--b-500))" }} />
+              </div>
+            </div>
+          </>
+        )}
 
         <SectionTitle>Haggle</SectionTitle>
         <div className="muted body-sm" style={{ marginBottom: 6 }}>
@@ -159,6 +174,11 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 const price = it.price || (typeof it.value === "string" && it.value.match(/(\d+) gp/) ? parseInt(it.value.match(/(\d+) gp/)[1]) : 12);
                 const sellPrice = Math.round(price * 0.4);
                 const shownPrice = tab === "buy" ? price : sellPrice;
+                // MK-09: when haggling on the buy tab, show the discounted price per row with the
+                // list price struck through — the player sees the deal in-line, not only on the
+                // total. (Display only; the cart still stores the list price and the running total
+                // applies the haggle once, so there's no double-discount.)
+                const haggledPrice = tab === "buy" && haggle > 0 ? Math.round(shownPrice * (1 - haggle / 100)) : null;
                 return (
                   <tr key={it.id || i}
                     onMouseEnter={() => setHoverItem(it)}
@@ -189,8 +209,13 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                       {it.weight || "—"}
                     </td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>
-                      <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>
-                        {shownPrice}
+                      {haggledPrice !== null && haggledPrice !== shownPrice && (
+                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 5 }}>
+                          {shownPrice}
+                        </span>
+                      )}
+                      <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: haggledPrice !== null ? "var(--emerald)" : "var(--ink-900)" }}>
+                        {haggledPrice !== null ? haggledPrice : shownPrice}
                       </span>
                       <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)", marginLeft: 4 }}>gp</span>
                     </td>
@@ -220,7 +245,18 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
         <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(176,141,87,0.1)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="muted body-sm">{inv.length} on the table · {merchant.disposition || "open until dusk"}</span>
-          <BrassButton size="sm" tone="ghost">Filter…</BrassButton>
+          {/* MK-06: a working kind-filter replaces the old dead "Filter…" button. */}
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label="Filter wares by kind"
+            style={{ ...window.inkInput, fontSize: 11, padding: "4px 8px", width: "auto", cursor: "pointer" }}
+          >
+            <option value="all">All kinds</option>
+            {presentTypes.map((t) => (
+              <option key={t} value={t}>{(window.ITEM_TYPES && window.ITEM_TYPES[t]) || t}</option>
+            ))}
+          </select>
         </div>
       </Panel>
 

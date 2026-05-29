@@ -246,9 +246,14 @@ function ScreenBestiary({ onNavigate, state, setState }) {
         </div>
 
         <div className="muted body-sm" style={{ marginTop: 8, textAlign: "center" }}>
-          {filtered.length} known{(() => {
-            const rumoured = creatureEntries.filter((e) => e.unknown).length;
-            return rumoured ? ` · ${rumoured} rumoured` : "";
+          {(() => {
+            // A redacted rumour row (#263) is NOT "known" — count only the entries the party has
+            // actually identified, and report the rumoured (tier-0) tally separately. The old
+            // code counted every row (incl. "?????" rumours) as "known", so a codex of pure
+            // rumours read "20 known · 20 rumoured" — contradictory. Fixed: known excludes unknown.
+            const known = filtered.filter((e) => !e.unknown).length;
+            const rumoured = filtered.filter((e) => e.unknown).length;
+            return `${known} known${rumoured ? ` · ${rumoured} rumoured` : ""}`;
           })()}
         </div>
       </Panel>
