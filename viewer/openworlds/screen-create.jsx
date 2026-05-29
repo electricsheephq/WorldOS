@@ -1,5 +1,54 @@
 /* Screen: Character Creation — wizard flow */
 
+/* W2 art bridge for the Creation Plane (CR-02/03/04): the race + class pickers and the
+   portrait gallery render real ingested art through the shared <Img scope=…> → /image
+   render bridge, with a graceful Placeholder / silhouette fallback on a miss (never a
+   broken image, never a heraldic crest where a face belongs).
+
+   Scope keys follow the server's _scope_key normalization (viewer/server.py): the kind
+   prefix (race/class/portrait) is stripped and separators are unified, so "race-human"
+   resolves the ingested dir `_private/baldurs-gate/images/race_human/` and "class-fighter"
+   resolves `class_fighter`. Slugify the id so multi-word ids stay one path segment. */
+function ccSlug(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// Race ids in this screen are shorthand ("half" = Half-Elf); map them to the ingested
+// race slug before building the scope so "half" reaches `race_half-elf`, not `race_half`.
+const RACE_SLUG = { half: "half-elf" };
+function raceScope(id) {
+  const s = RACE_SLUG[id] || ccSlug(id);
+  return s ? "race-" + s : "";
+}
+function classScope(id) {
+  const s = ccSlug(id);
+  return s ? "class-" + s : "";
+}
+
+// Curated default portrait gallery — recognizable canon BG faces that all have ingested
+// art under `_private/baldurs-gate/images/portrait_<slug>/`. The gallery index stored on
+// hero.portrait maps into this list; an out-of-range or future index falls back to a clean
+// silhouette via <Img> (the scope matches /portrait/ so it shows a face silhouette, not a
+// crest). "Bring your own — drop a PNG" remains a future affordance.
+const PORTRAIT_GALLERY = [
+  { slug: "dal-lightspark", name: "Dal Lightspark" },
+  { slug: "shadowheart", name: "Shadowheart" },
+  { slug: "astarion", name: "Astarion" },
+  { slug: "gale", name: "Gale" },
+  { slug: "lae-zel", name: "Lae'zel" },
+  { slug: "wyll", name: "Wyll" },
+  { slug: "karlach", name: "Karlach" },
+  { slug: "jaheira", name: "Jaheira" },
+  { slug: "minsc", name: "Minsc" },
+  { slug: "halsin", name: "Halsin" },
+  { slug: "minthara", name: "Minthara" },
+  { slug: "dame-aylin", name: "Dame Aylin" },
+];
+function portraitScope(i) {
+  const p = PORTRAIT_GALLERY[i];
+  return p ? "portrait-" + p.slug : "";
+}
+
 function ScreenCreate({ onNavigate, state, setState }) {
   const [step, setStep] = React.useState(0);
   const [hero, setHero] = React.useState({
@@ -172,7 +221,7 @@ function ScreenCreate({ onNavigate, state, setState }) {
           {RACES[hero.race]?.name} · {CLASSES[hero.class]?.name}
         </div>
 
-        <Placeholder label={`portrait · ${hero.portrait}`} h={160} framed style={{ width: "100%", marginTop: 12 }} />
+        <Img scope={portraitScope(hero.portrait)} label={PORTRAIT_GALLERY[hero.portrait]?.name || "portrait"} h={160} fit="cover" framed style={{ width: "100%", marginTop: 12 }} />
 
         <Divider />
 
@@ -237,6 +286,7 @@ function StepRace({ hero, setHero }) {
             label={r.name}
             sublabel={r.size + " · " + r.life}
             portrait={r.glyph}
+            imgScope={raceScope(id)}
             body={r.body}
             tags={Object.entries(r.bonus || {}).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k.toUpperCase()}`)}
           />
@@ -265,6 +315,7 @@ function StepClass({ hero, setHero }) {
             label={c.name}
             sublabel={c.role}
             portrait={c.glyph}
+            imgScope={classScope(id)}
             body={c.body}
             tags={c.tags}
           />
@@ -414,8 +465,8 @@ function StepPortrait({ hero, setHero }) {
       <Divider />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
-        {Array.from({ length: 12 }).map((_, i) => (
-          <button key={i} onClick={() => setHero({ ...hero, portrait: i })} style={{
+        {PORTRAIT_GALLERY.map((p, i) => (
+          <button key={p.slug} onClick={() => setHero({ ...hero, portrait: i })} title={p.name} style={{
             padding: 4,
             background: hero.portrait === i ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
             boxShadow: hero.portrait === i
@@ -423,7 +474,9 @@ function StepPortrait({ hero, setHero }) {
               : "inset 0 0 0 1px rgba(140,100,60,0.3)",
             cursor: "pointer",
           }}>
-            <Placeholder label={`portrait ${i + 1}`} w="100%" h={140} framed />
+            {/* CR-04: real ingested portraits via the render bridge; a miss falls back to a
+                neutral head-and-shoulders silhouette (the scope matches /portrait/), never a crest. */}
+            <Img scope={portraitScope(i)} label={p.name} w="100%" h={140} fit="cover" framed />
           </button>
         ))}
       </div>
@@ -486,7 +539,7 @@ function StepReview({ hero }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         <div>
-          <Placeholder label={`portrait · ${hero.portrait}`} h={240} framed style={{ width: "100%" }} />
+          <Img scope={portraitScope(hero.portrait)} label={PORTRAIT_GALLERY[hero.portrait]?.name || "portrait"} h={240} fit="cover" framed style={{ width: "100%" }} />
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <StatLine k="Alignment" v={hero.alignment.replace("-", " ")} />
             <StatLine k="Level" v="1" />
@@ -537,7 +590,7 @@ function StepReview({ hero }) {
   );
 }
 
-function SelectCard({ selected, onClick, label, sublabel, portrait, body, tags }) {
+function SelectCard({ selected, onClick, label, sublabel, portrait, imgScope, body, tags }) {
   return (
     <button onClick={onClick} style={{
       display: "grid", gridTemplateColumns: "80px 1fr", gap: 12,
@@ -552,7 +605,11 @@ function SelectCard({ selected, onClick, label, sublabel, portrait, body, tags }
       cursor: "pointer",
       transition: "all 140ms",
     }}>
-      <Placeholder label={portrait} w={80} h={96} framed />
+      {/* CR-02/03: ingested race/class art via the render bridge; falls back to the styled
+          Placeholder label (the prior behaviour) when the scope misses — never a broken image. */}
+      {imgScope
+        ? <Img scope={imgScope} label={portrait} w={80} h={96} fit="cover" framed />
+        : <Placeholder label={portrait} w={80} h={96} framed />}
       <div style={{ minWidth: 0 }}>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 14, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
           {label}
@@ -737,4 +794,4 @@ const BACKGROUNDS = {
   spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
-Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost });
+Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, PORTRAIT_GALLERY });
