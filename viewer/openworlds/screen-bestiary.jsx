@@ -62,6 +62,10 @@ function ScreenBestiary({ onNavigate, state, setState }) {
   const [filter, setFilter] = React.useState("");
   // Live codex from /bestiary-surface; null until the first successful fetch.
   const [liveCreatures, setLiveCreatures] = React.useState(null);
+  // World/region label for the codex eyebrow. Data-driven when the surface carries a label
+  // (so the header tracks whatever world is loaded); defaults to the Sword Coast for this
+  // post-BG3 Baldur's Gate setting — never the old Pathfinder "Marches" demo leak (UI audit BE-02).
+  const [worldLabel, setWorldLabel] = React.useState("");
   const wired = liveCreatures !== null;
 
   // Fetch the live bestiary, driving the search box straight to ?q=<term>. The route reads
@@ -78,6 +82,10 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       if (isCancelled()) return;
       const items = Array.isArray(payload?.items) ? payload.items : [];
       setLiveCreatures(items.map(liveBestiaryEntry));
+      // Adopt a server-provided region label when present (forward-compatible with a future
+      // surface.world_label); otherwise the Sword Coast default holds.
+      const label = String(payload?.world_label || payload?.region || "").trim();
+      if (label) setWorldLabel(label);
     } catch (error) {
       if (isCancelled()) return;
       /* keep the last good surface; the empty-state shows until the first success */
@@ -124,7 +132,7 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       {/* LEFT — index */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div className="eyebrow" style={{ color: "var(--crimson)" }}>Encyclopaedia of</div>
-        <h2 className="h1" style={{ fontSize: 22 }}>The Marches</h2>
+        <h2 className="h1" style={{ fontSize: 22 }}>{worldLabel || "the Sword Coast"}</h2>
         <Divider />
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
@@ -255,16 +263,26 @@ function BestiaryEntry({ entry, tab }) {
             </div>
           )}
 
-          {tab === "creatures" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 16 }}>
-              <StatLine k="HD" v={entry.hd} />
-              <StatLine k="AC" v={entry.ac} />
-              <StatLine k="Speed" v={entry.speed} />
-              <StatLine k="Senses" v={entry.senses} />
-              <StatLine k="Save" v={entry.save} />
-              <StatLine k="Encountered" v={entry.encounteredAt} />
-            </div>
-          )}
+          {/* Hide-when-blank (UI audit BE-03/BE-05): the player-safe bestiary preview does
+              not expose HD/AC/Speed/Senses/Save/Encountered, so showing them as naked empty
+              labels reads broken. Render only the stat lines that actually carry a value, and
+              drop the grid entirely when none do — never a row of empty labels. */}
+          {tab === "creatures" && (() => {
+            const statLines = [
+              { k: "HD", v: entry.hd },
+              { k: "AC", v: entry.ac },
+              { k: "Speed", v: entry.speed },
+              { k: "Senses", v: entry.senses },
+              { k: "Save", v: entry.save },
+              { k: "Encountered", v: entry.encounteredAt },
+            ].filter((s) => s.v !== undefined && s.v !== null && String(s.v).trim() !== "");
+            if (statLines.length === 0) return null;
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 16 }}>
+                {statLines.map((s) => <StatLine key={s.k} k={s.k} v={s.v} />)}
+              </div>
+            );
+          })()}
 
           {entry.body && (
             <p className="body dropcap" style={{ marginTop: 12 }}>
