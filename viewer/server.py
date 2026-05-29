@@ -51,6 +51,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 _HERE = Path(__file__).resolve().parent
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
+# servers/engine — shelled (never imported) by POST /portrait-gen to generate a PC
+# portrait through the engine's imagegen layer, mirroring how /speak shells the voice
+# server and play.sh shells the engine. Keeps the viewer a pure reader of engine modules.
+_ENGINE_DIR = _HERE.parent / "servers" / "engine"
 _OPENWORLDS_DIR = _HERE / "openworlds"
 _OPENWORLDS_ROUTE = "/openworlds"
 _OPENWORLDS_MIME_TYPES = {
@@ -5174,6 +5178,144 @@ def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
     return {"ok": False, "reason": reason, "backend": nm}
 
 
+# --- POST /portrait-gen — opt-in "Generate a unique face" for a player-created PC (#265).
+# The Create wizard offers BOTH the shipped 12-face gallery (the default) AND this opt-in
+# generated portrait. We SHELL the engine's imagegen layer (uv run --directory servers/engine)
+# exactly as /speak shells the voice server and play.sh shells the engine — keeping THIS reader
+# a pure reader of engine *modules* (it imports nothing from the engine). imagegen.generate
+# writes ONLY the derived cache (<state>/images/<scope>/…), never snapshot.json, so the engine's
+# sole-writer invariant holds even though it's "a write".
+#
+# A player-created PC has no engine id during the wizard, so we generate to a PROVISIONAL
+# content-scope (portrait-pc-<stableHash of name|race|class|seed>) that the wizard can render
+# immediately via <Img scope=…>; play.sh re-keys it onto portrait-<char_id> at PC-mint time.
+#
+# CRITICAL — QA/tests never hit the gateway: this route does NOT set CLAWDND_IMAGE_PROVIDER.
+# It inherits the process env, so on a normal dev/QA box (provider unset → null) the call
+# returns a placeholder with NO network, and the UI keeps the gallery selection. The gateway
+# path engages ONLY when the host already has CLAWDND_IMAGE_PROVIDER=openclaw + a token wired.
+
+# Runs in the engine's environment (cwd = servers/engine; `import imagegen`/`store` resolve).
+# Reads one JSON request from stdin {race,class,name?,appearance?,seed?,scope}, builds the
+# painterly brief, generates (provider selected by inherited env), and prints ONE compact JSON
+# verdict line. NEVER raises — any failure maps to a placeholder verdict so the caller can fall
+# back to the gallery face.
+_PORTRAIT_GEN_SNIPPET = r"""
+import json, sys
+import imagegen
+def main():
+    raw = sys.stdin.read()
+    req = json.loads(raw) if raw.strip() else {}
+    race = (req.get("race") or "").strip()
+    class_ = (req.get("class") or req.get("class_") or "").strip()
+    scope = (req.get("scope") or "").strip()
+    seed = req.get("seed")
+    try:
+        seed = int(seed) if seed is not None and str(seed) != "" else None
+    except (TypeError, ValueError):
+        seed = None
+    prompt = imagegen.portrait_prompt(
+        race, class_,
+        name=req.get("name"), appearance=req.get("appearance"), alignment=req.get("alignment"),
+    )
+    desc = imagegen.generate("portrait", prompt, seed=seed, scope=scope)
+    # A real, servable portrait carries path/url/bytes_b64 and is NOT a placeholder/degraded.
+    servable = bool(desc.get("path") or desc.get("url") or desc.get("bytes_b64"))
+    generated = servable and not desc.get("placeholder") and not desc.get("degraded_from")
+    print(json.dumps({
+        "ok": True, "scope": scope, "generated": bool(generated),
+        "placeholder": bool(desc.get("placeholder")) or not servable,
+        "provider": desc.get("provider", "null"),
+        "degraded_from": desc.get("degraded_from"),
+        "prompt": prompt,
+    }))
+try:
+    main()
+except Exception as exc:  # never let an exception escape — caller maps to ok:false
+    print(json.dumps({"ok": False, "reason": "portrait-gen error: " + str(exc)[:200]}))
+"""
+
+# Interactive budget: the OpenClaw client's default 180s poll is far too long for a wizard
+# button. Bound the wait via CLAWDND_OPENCLAW_POLL_TIMEOUT (the engine client honors it) so a
+# slow/remote gateway can't hang the call, and cap the whole subprocess just above it.
+_PORTRAIT_GEN_POLL_TIMEOUT = "60"
+_PORTRAIT_GEN_TIMEOUT = 75  # seconds — above the poll budget; never unbounded.
+
+
+def _portrait_gen_scope(race: str, class_: str, name: str, seed: object) -> str:
+    """Deterministic provisional scope for a wizard-generated PC portrait (#265).
+
+    The PC has no engine id yet, so key the generated face by a stable content hash of
+    (name|race|class|seed) — the SAME inputs the wizard knows — as portrait-pc-<hash>.
+    The wizard renders it immediately via <Img scope=…>; play.sh re-keys it onto the real
+    portrait-<char_id> once the PC is minted. Length-capped + sanitized (it's a path seg)."""
+    basis = "|".join([
+        str(name or "").strip().lower(),
+        str(race or "").strip().lower(),
+        str(class_ or "").strip().lower(),
+        "" if seed is None else str(seed),
+    ])
+    digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:12]
+    return f"portrait-pc-{digest}"
+
+
+def _portrait_gen(payload: dict) -> dict:
+    """Generate (or recall) a unique PC portrait via the engine; return a UI-ready verdict.
+
+    Contract (never hangs, never errors the page) — mirrors _speak:
+    - a real face was produced/cached -> {"ok": True, "generated": True, "scope": …}
+    - null/offline (no provider)      -> {"ok": True, "generated": False, "placeholder": True, …}
+    - bad inputs / uv missing / crash -> {"ok": False, "reason": …}
+    The heavy lifting runs in a bounded engine subprocess so a wedged gateway can't tie up the
+    viewer thread (and the server is threaded, so other requests stay responsive regardless)."""
+    race = str(payload.get("race") or "").strip()
+    class_ = str(payload.get("class") or payload.get("class_") or "").strip()
+    if not race or not class_:
+        return {"ok": False, "reason": "portrait-gen needs 'race' and 'class'"}
+    if not _ENGINE_DIR.is_dir():
+        return {"ok": False, "reason": "engine not found"}
+    seed = payload.get("seed")
+    scope = _portrait_gen_scope(race, class_, str(payload.get("name") or ""), seed)
+    req = json.dumps({
+        "race": race, "class": class_,
+        "name": payload.get("name"), "appearance": payload.get("appearance"),
+        "alignment": payload.get("alignment"), "seed": seed, "scope": scope,
+    })
+    # Inherit env so the provider stays whatever the HOST configured (null on a normal box —
+    # no network, no gateway). Add ONLY the interactive poll bound; never set the provider here.
+    env = dict(os.environ)
+    env.setdefault("CLAWDND_OPENCLAW_POLL_TIMEOUT", _PORTRAIT_GEN_POLL_TIMEOUT)
+    cmd = [
+        "uv", "run", "--directory", str(_ENGINE_DIR), "--no-project",
+        "python", "-c", _PORTRAIT_GEN_SNIPPET,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, input=req, capture_output=True, text=True,
+            timeout=_PORTRAIT_GEN_TIMEOUT, env=env,
+        )
+    except FileNotFoundError:
+        return {"ok": False, "reason": "uv not installed", "scope": scope}
+    except subprocess.TimeoutExpired:
+        # The gateway was too slow — keep the gallery face; the cache write (if it lands
+        # later) is harmless and simply ignored.
+        return {"ok": False, "reason": "portrait generation timed out", "scope": scope}
+    except Exception as exc:  # noqa: BLE001 — last-resort guard; /portrait-gen must never 500
+        return {"ok": False, "reason": f"portrait-gen error: {exc}", "scope": scope}
+    line = (proc.stdout or "").strip().splitlines()
+    res: dict = {}
+    if line:
+        try:
+            res = json.loads(line[-1])  # the snippet's final line is its JSON verdict
+        except json.JSONDecodeError:
+            res = {}
+    if not res:
+        reason = (proc.stderr or "").strip().splitlines()
+        return {"ok": False, "reason": (reason[-1][:160] if reason else "portrait engine unavailable"), "scope": scope}
+    res.setdefault("scope", scope)
+    return res
+
+
 def _openworlds_config() -> dict:
     """Browser-safe metadata for the OpenWorlds shell.
 
@@ -5734,6 +5876,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/seed-param":
             self._do_seed_param()
             return
+        if route == "/portrait-gen":
+            self._do_portrait_gen()
+            return
         if route != "/move":
             self._send(404, b"not found", "text/plain")
             return
@@ -5814,6 +5959,22 @@ class _Handler(BaseHTTPRequestHandler):
         voice = payload.get("voice_id")
         voice_id = voice.strip() if isinstance(voice, str) and voice.strip() else "narrator-dm"
         self._json(_speak(text, voice_id))
+
+    def _do_portrait_gen(self) -> None:
+        """POST /portrait-gen — opt-in "Generate a unique face" for a player-created PC (#265).
+
+        Reads {race, class, name?, appearance?, alignment?, seed?} and shells the engine's
+        imagegen layer to generate a portrait into a provisional content-scope (returned as
+        ``scope``). Always 200 with a JSON verdict (face-or-placeholder); never hangs (bounded
+        subprocess on a threaded server) and never errors the page. On a normal box with no
+        image provider configured the verdict is a placeholder with NO network — the wizard
+        then keeps the player's selected gallery face. This is a DERIVED-cache write only (the
+        engine remains the sole writer of campaign state; snapshot.json is never touched)."""
+        payload = self._read_post_json()
+        if payload is ... or not isinstance(payload, dict):
+            self._json({"ok": False, "reason": "bad portrait-gen payload"})
+            return
+        self._json(_portrait_gen(payload))
 
     def _do_slot(self, action: str) -> None:
         """POST /save-slot | /load-slot — quicksave / quickload of the live campaign.

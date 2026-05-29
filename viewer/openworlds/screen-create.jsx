@@ -49,6 +49,15 @@ function portraitScope(i) {
   return p ? "portrait-" + p.slug : "";
 }
 
+// The scope the hero's CURRENT face resolves through (#265). When the player generated a
+// unique face the preview/summary/review render that provisional scope (portrait-pc-<hash>,
+// returned by POST /portrait-gen); otherwise it's the chosen gallery face. A generation that
+// fell back to a placeholder leaves portraitMode "gallery", so the gallery face stays.
+function heroPortraitScope(hero) {
+  if (hero.portraitMode === "gen" && hero.portraitGenScope) return hero.portraitGenScope;
+  return portraitScope(hero.portrait);
+}
+
 function ScreenCreate({ onNavigate, state, setState }) {
   const [step, setStep] = React.useState(0);
   const [hero, setHero] = React.useState({
@@ -57,6 +66,11 @@ function ScreenCreate({ onNavigate, state, setState }) {
     class: "fighter",
     background: "wanderer",
     portrait: 0,
+    // #265 portrait choice: "gallery" (default, the 12-face grid) or "gen" (a unique face
+    // generated via the gateway, cached at portraitGenScope). appearance = optional cues.
+    portraitMode: "gallery",
+    portraitGenScope: "",
+    appearance: "",
     alignment: "neutral-good",
     abilities: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 },
     points: 27,
@@ -100,6 +114,12 @@ function ScreenCreate({ onNavigate, state, setState }) {
       background: hero.background,
       alignment: hero.alignment,
       skills: BACKGROUNDS[hero.background]?.skills || [],
+      // #265: carry the portrait choice through the seam so the seeded PC gets the right face.
+      // mode "gen" -> play.sh re-keys the generated portraitGenScope onto portrait-<char_id>;
+      // mode "gallery" -> the canon slug resolves via the viewer's _portrait_by_name bridge.
+      portrait: hero.portraitMode === "gen" && hero.portraitGenScope
+        ? { mode: "gen", scope: hero.portraitGenScope }
+        : { mode: "gallery", gallerySlug: PORTRAIT_GALLERY[hero.portrait]?.slug || "" },
     };
     setSummonError("");
     setSummoning(true);
@@ -221,7 +241,7 @@ function ScreenCreate({ onNavigate, state, setState }) {
           {RACES[hero.race]?.name} · {CLASSES[hero.class]?.name}
         </div>
 
-        <Img scope={portraitScope(hero.portrait)} label={PORTRAIT_GALLERY[hero.portrait]?.name || "portrait"} h={160} fit="cover" framed style={{ width: "100%", marginTop: 12 }} />
+        <Img scope={heroPortraitScope(hero)} label={hero.portraitMode === "gen" ? "your unique face" : (PORTRAIT_GALLERY[hero.portrait]?.name || "portrait")} h={160} fit="cover" framed style={{ width: "100%", marginTop: 12 }} />
 
         <Divider />
 
@@ -458,6 +478,56 @@ function StepAbilities({ hero, setHero }) {
 }
 
 function StepPortrait({ hero, setHero }) {
+  // #265: BOTH paths. The 12-face gallery is the default; "Generate a unique face" is opt-in.
+  // genState: "idle" | "generating" | "done" | "failed". The generated face is previewed from
+  // its provisional scope (hero.portraitGenScope). On a box with no image provider, or any
+  // failure/timeout, we DON'T switch away from the gallery — the player's selection stands.
+  const [genState, setGenState] = React.useState(hero.portraitMode === "gen" ? "done" : "idle");
+  const toast = window.useToast ? window.useToast() : (() => {});
+  const genMode = hero.portraitMode === "gen" && !!hero.portraitGenScope;
+
+  // Picking a gallery face always returns to gallery mode (so the gallery selection wins back).
+  const pickGallery = (i) => setHero({ ...hero, portrait: i, portraitMode: "gallery" });
+
+  const generate = async () => {
+    if (genState === "generating") return;  // debounce: one in-flight gen
+    setGenState("generating");
+    try {
+      const resp = await fetch("/portrait-gen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          race: hero.race,
+          class: hero.class,
+          name: (hero.name || "").trim(),
+          appearance: (hero.appearance || "").trim(),
+          alignment: hero.alignment,
+        }),
+      });
+      const res = await resp.json().catch(() => ({}));
+      if (res && res.ok && res.generated && res.scope) {
+        // A real, unique face was produced — switch to it (bust the <Img> cache with the scope).
+        setHero({ ...hero, portraitMode: "gen", portraitGenScope: res.scope });
+        setGenState("done");
+        return;
+      }
+      // Null provider / placeholder / degraded: keep the gallery face, tell the player gently.
+      setGenState("failed");
+      toast({
+        kind: "info",
+        title: "Couldn't summon a unique face",
+        body: "Using your selected portrait instead. Unique faces need the image gateway.",
+      });
+    } catch (err) {
+      setGenState("failed");
+      toast({
+        kind: "info",
+        title: "Couldn't summon a unique face",
+        body: "Using your selected portrait instead.",
+      });
+    }
+  };
+
   return (
     <div>
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>V. Of Face</div>
@@ -466,10 +536,10 @@ function StepPortrait({ hero, setHero }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
         {PORTRAIT_GALLERY.map((p, i) => (
-          <button key={p.slug} onClick={() => setHero({ ...hero, portrait: i })} title={p.name} style={{
+          <button key={p.slug} onClick={() => pickGallery(i)} title={p.name} style={{
             padding: 4,
-            background: hero.portrait === i ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
-            boxShadow: hero.portrait === i
+            background: (!genMode && hero.portrait === i) ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
+            boxShadow: (!genMode && hero.portrait === i)
               ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 16px -2px var(--gold-glow)"
               : "inset 0 0 0 1px rgba(140,100,60,0.3)",
             cursor: "pointer",
@@ -479,6 +549,48 @@ function StepPortrait({ hero, setHero }) {
             <Img scope={portraitScope(i)} label={p.name} w="100%" h={140} fit="cover" framed />
           </button>
         ))}
+      </div>
+
+      <Divider />
+
+      {/* #265: opt-in unique-face generation. The gallery above stays the default + fallback. */}
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start" }}>
+        <div>
+          {/* Live preview of the generated face (or a silhouette until one exists). */}
+          <Img
+            scope={genMode ? hero.portraitGenScope : ""}
+            label={genMode ? "your unique face" : "a face of your own"}
+            w="100%" h={150} fit="cover" framed
+            style={genMode ? { boxShadow: "inset 0 0 0 2px var(--b-500), 0 0 16px -2px var(--gold-glow)" } : undefined}
+          />
+        </div>
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>A face of your own</div>
+          <p className="body-sm muted" style={{ marginTop: 0, lineHeight: 1.4 }}>
+            Summon a unique portrait painted for this hero alone. Optional — your gallery
+            choice is kept if none can be summoned.
+          </p>
+          <div className="eyebrow" style={{ marginTop: 12, marginBottom: 6 }}>Appearance (optional)</div>
+          <input
+            value={hero.appearance || ""}
+            onChange={(e) => setHero({ ...hero, appearance: e.target.value })}
+            placeholder="e.g. weathered scar, silver braid, amber eyes"
+            maxLength={160}
+            style={{ ...window.inkInput, fontSize: 14 }}
+          />
+          <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
+            <BrassButton onClick={generate} disabled={genState === "generating"}>
+              {genState === "generating"
+                ? "Summoning a face…"
+                : (genMode ? "Summon another" : "Generate a unique face")}
+            </BrassButton>
+            {genMode && (
+              <BrassButton tone="ghost" size="sm" onClick={() => { setHero({ ...hero, portraitMode: "gallery" }); setGenState("idle"); }}>
+                Use a gallery face
+              </BrassButton>
+            )}
+          </div>
+        </div>
       </div>
 
       <Divider />
@@ -539,7 +651,7 @@ function StepReview({ hero }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         <div>
-          <Img scope={portraitScope(hero.portrait)} label={PORTRAIT_GALLERY[hero.portrait]?.name || "portrait"} h={240} fit="cover" framed style={{ width: "100%" }} />
+          <Img scope={heroPortraitScope(hero)} label={hero.portraitMode === "gen" ? "your unique face" : (PORTRAIT_GALLERY[hero.portrait]?.name || "portrait")} h={240} fit="cover" framed style={{ width: "100%" }} />
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <StatLine k="Alignment" v={hero.alignment.replace("-", " ")} />
             <StatLine k="Level" v="1" />
@@ -794,4 +906,4 @@ const BACKGROUNDS = {
   spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
-Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, PORTRAIT_GALLERY });
+Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, PORTRAIT_GALLERY });

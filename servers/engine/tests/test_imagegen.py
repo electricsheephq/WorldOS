@@ -228,3 +228,137 @@ def test_generate_degrades_to_null_when_provider_raises(monkeypatch, tmp_path):
     assert desc.get("degraded_from") == "boom" and "error" in desc
     # degraded result is not cached (a later, gateway-up retry can still succeed)
     assert imagegen.cache_read(imagegen.content_hash("scene", "a torchlit door", provider="boom"), "t") is None
+
+
+# --------------------------------------------------------------------------- #
+# Portrait prompt builder (#265) — pure, deterministic, no PII, no newlines.
+# --------------------------------------------------------------------------- #
+
+def test_portrait_prompt_contains_race_and_class_words():
+    p = imagegen.portrait_prompt("human", "fighter")
+    assert "human" in p and "fighter" in p
+    assert p.lower().startswith("character portrait of a human fighter")
+
+
+def test_portrait_prompt_expands_race_shorthand():
+    # The wizard emits "half" for Half-Elf; the brief must read "half-elf", never "half".
+    p = imagegen.portrait_prompt("half", "wizard")
+    assert "half-elf" in p
+    assert "a half-elf wizard" in p
+
+
+def test_portrait_prompt_is_deterministic():
+    a = imagegen.portrait_prompt("elf", "rogue", appearance="scarred, silver hair", alignment="chaotic-good")
+    b = imagegen.portrait_prompt("elf", "rogue", appearance="scarred, silver hair", alignment="chaotic-good")
+    assert a == b
+
+
+def test_portrait_prompt_has_no_newlines():
+    # A multi-line brief could smuggle prompt structure — must stay one line.
+    p = imagegen.portrait_prompt("tiefling", "warlock", appearance="line one\nline two\r\nthree\tfour")
+    assert "\n" not in p and "\r" not in p and "\t" not in p
+
+
+def test_portrait_prompt_omits_name_pii():
+    # name is accepted (callers pass the wizard struct) but must NOT appear in the brief.
+    p = imagegen.portrait_prompt("human", "bard", name="Eira of the Hollow Reach")
+    assert "Eira" not in p and "Hollow Reach" not in p
+
+
+def test_portrait_prompt_sanitizes_appearance_cues():
+    # Quotes/braces/backslashes that could confuse a downstream prompt are stripped.
+    p = imagegen.portrait_prompt("dwarf", "cleric", appearance='braided {beard} "with" \\runes')
+    assert '"' not in p and "{" not in p and "}" not in p and "\\" not in p
+    assert "braided" in p and "beard" in p and "runes" in p
+
+
+def test_portrait_prompt_carries_aesthetic_and_safety_clauses():
+    p = imagegen.portrait_prompt("human", "paladin")
+    low = p.lower()
+    assert "oil-painting" in low or "oil painting" in low
+    assert "no text" in low and "no watermark" in low
+    assert "forgotten realms" in low
+
+
+def test_portrait_prompt_unknown_race_class_humanized_not_crash():
+    # An unmapped race/class is humanized verbatim rather than crashing.
+    p = imagegen.portrait_prompt("aarakocra", "artificer")
+    assert "aarakocra" in p and "artificer" in p
+
+
+def test_portrait_prompt_empty_inputs_have_safe_defaults():
+    p = imagegen.portrait_prompt("", "")
+    # Falls back to sensible words; still a usable single-line brief.
+    assert "a human adventurer" in p
+    assert "\n" not in p
+
+
+def test_portrait_prompt_drives_cache_key():
+    # The prompt feeds content_hash, so two different briefs key to different entries.
+    p1 = imagegen.portrait_prompt("human", "fighter")
+    p2 = imagegen.portrait_prompt("human", "wizard")
+    assert imagegen.content_hash("portrait", p1) != imagegen.content_hash("portrait", p2)
+
+
+# --------------------------------------------------------------------------- #
+# copy_scope (#265 re-key) — null-provider round-trip, miss/corrupt handling.
+# --------------------------------------------------------------------------- #
+
+def test_copy_scope_round_trip_with_null_provider(state):
+    # Generate to a provisional scope, then re-key onto a real char scope.
+    src = "portrait-pc-abc123"
+    dst = "portrait-char_09bfb0ec913c"
+    imagegen.generate("portrait", "a human fighter, painterly", scope=src)
+    written = imagegen.copy_scope(src, dst)
+    assert written is not None and written.is_file()
+    # The destination scope now resolves a descriptor (this is what the viewer reads).
+    got = imagegen._newest_descriptor(dst)
+    assert got is not None
+    assert got["kind"] == "portrait" and got["prompt"] == "a human fighter, painterly"
+    # It lands under <state>/images/<safe-dst>/ — a derived artifact, not campaign state.
+    assert written.parent == state / "images" / imagegen._safe_scope(dst)
+    assert "campaigns" not in str(written)
+
+
+def test_copy_scope_recomputes_hash_for_destination(state):
+    src = "portrait-pc-xyz"
+    dst = "portrait-char_deadbeef"
+    imagegen.generate("portrait", "an elf ranger", scope=src)
+    written = imagegen.copy_scope(src, dst)
+    assert written is not None
+    # The copy's filename is its OWN recomputed content hash, self-consistent on read.
+    key = imagegen.content_hash("portrait", "an elf ranger", provider="null")
+    assert written.name == f"{key}.json"
+    assert imagegen.cache_read(key, scope=dst) is not None
+
+
+def test_copy_scope_missing_source_returns_none(state):
+    # No source descriptor -> benign miss (caller falls back to the gallery face).
+    assert imagegen.copy_scope("portrait-pc-nope", "portrait-char_x") is None
+
+
+def test_copy_scope_carries_inline_bytes(state):
+    # A descriptor with inline image bytes copies the payload verbatim into the new scope.
+    desc = {
+        "provider": "null",
+        "kind": "portrait",
+        "prompt": "a dwarf cleric",
+        "seed": None,
+        "placeholder": False,
+        "bytes_b64": "QUJD",  # "ABC"
+        "mime_type": "image/png",
+    }
+    imagegen.cache_write(desc, scope="portrait-pc-bytes")
+    written = imagegen.copy_scope("portrait-pc-bytes", "portrait-char_bytes")
+    assert written is not None
+    got = imagegen._newest_descriptor("portrait-char_bytes")
+    assert got is not None and got.get("bytes_b64") == "QUJD" and got.get("mime_type") == "image/png"
+
+
+def test_copy_scope_corrupt_source_is_a_miss(state):
+    # A corrupt source descriptor is treated as a miss, never a crash.
+    src = "portrait-pc-corrupt"
+    cdir = state / "images" / imagegen._safe_scope(src)
+    cdir.mkdir(parents=True, exist_ok=True)
+    (cdir / "bad.json").write_text("{ not json", encoding="utf-8")
+    assert imagegen.copy_scope(src, "portrait-char_c") is None

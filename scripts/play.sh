@@ -103,6 +103,7 @@ if [ -n "${CLAWDND_PLAY_HERO:-}" ]; then
 import json, sys
 world, spec_raw = sys.argv[1], sys.argv[2]
 import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
+import imagegen  # for the 265 portrait re-key; derived cache only, never touches snapshot.json
 
 spec = json.loads(spec_raw)
 # A new campaign in this world with an active session — the authored PC is then minted
@@ -125,6 +126,19 @@ pc = server.create_character(
     skills=spec.get("skills") or None,
     apply_srd_defaults=True,
 )
+# 265 portrait re-key: the wizard generated a unique face to a PROVISIONAL content-scope
+# portrait-pc-<hash> because the PC had no engine id yet. Now that create_character minted
+# the real opaque id, copy that generated face onto portrait-<char_id> so it resolves on every
+# render surface camp/character/inventory/combat/table all key the face by the engine id. A
+# gallery selection, or a generation that fell back to a placeholder, leaves no provisional
+# descriptor, so copy_scope is a benign no-op and the canon gallery slug resolves via the
+# viewer _portrait_by_name bridge. Derived-cache write only, engine stays the sole writer.
+portrait = spec.get("portrait") if isinstance(spec.get("portrait"), dict) else {}
+if portrait.get("mode") == "gen" and portrait.get("scope"):
+    try:
+        imagegen.copy_scope(str(portrait["scope"]), "portrait-" + pc["id"])
+    except Exception:
+        pass  # a failed re-key just falls back to the silhouette; never block the PC mint
 print(json.dumps({
     "campaign_id": camp,
     "pc": {"id": pc["id"], "name": pc["name"],

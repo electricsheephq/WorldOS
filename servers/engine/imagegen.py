@@ -76,6 +76,113 @@ def _normalize_kind(kind: str) -> str:
     return k if k in KINDS else "scene"
 
 
+# --------------------------------------------------------------------------- #
+# Portrait prompt builder (pure — the primary unit-test target for #265).
+# --------------------------------------------------------------------------- #
+
+# Race/class shorthand the Create wizard emits (screen-create.jsx) → readable words.
+# The wizard ids are SRD-ish shorthand ("half" = half-elf); a generated portrait brief
+# should read naturally, so expand them here. Anything unmapped is humanized verbatim.
+_RACE_WORDS = {
+    "half": "half-elf",
+    "half-elf": "half-elf",
+    "half-orc": "half-orc",
+    "halfelf": "half-elf",
+    "halforc": "half-orc",
+    "tiefling": "tiefling",
+    "dragonborn": "dragonborn",
+    "gnome": "gnome",
+    "human": "human",
+    "elf": "elf",
+    "dwarf": "dwarf",
+    "halfling": "halfling",
+}
+_CLASS_WORDS = {
+    "fighter": "fighter",
+    "wizard": "wizard",
+    "rogue": "rogue",
+    "cleric": "cleric",
+    "bard": "bard",
+    "paladin": "paladin",
+    "ranger": "ranger",
+    "barbarian": "barbarian",
+    "sorcerer": "sorcerer",
+    "warlock": "warlock",
+    "monk": "monk",
+    "druid": "druid",
+}
+
+
+def _humanize(token: str) -> str:
+    """Turn a slug-ish id into readable words: 'half-orc'→'half-orc', 'true_neutral'→
+    'true neutral'. Collapses separators to spaces, strips, lowercases. No PII source."""
+    return " ".join(str(token or "").replace("_", " ").replace("-", " ").split()).strip().lower()
+
+
+def _sanitize_cues(text: Optional[str], limit: int = 160) -> str:
+    """Reduce free-text appearance cues to a single safe clause: strip newlines/control
+    chars (so the prompt stays one line, never injecting structure), collapse whitespace,
+    drop quotes/braces that could confuse a downstream prompt, and length-cap. Returns ''
+    when there's nothing usable. This is the ONLY free-text that reaches the brief, so it
+    is deliberately conservative — no names/PII are pulled from here by construction."""
+    if not text:
+        return ""
+    cleaned = []
+    for ch in str(text):
+        if ch in "\r\n\t":
+            cleaned.append(" ")
+        elif ord(ch) < 32:
+            continue  # drop other control chars
+        elif ch in '"{}\\':
+            continue  # strip prompt-structure punctuation
+        else:
+            cleaned.append(ch)
+    out = " ".join("".join(cleaned).split()).strip()
+    return out[:limit].rstrip(" ,;.")
+
+
+def portrait_prompt(
+    race: str,
+    class_: str,
+    *,
+    name: Optional[str] = None,
+    appearance: Optional[str] = None,
+    alignment: Optional[str] = None,
+) -> str:
+    """Compose a tasteful, deterministic painterly portrait brief for a PC (#265).
+
+    Pure function: the same inputs always yield the same single-line string, so it
+    drives the cache hash AND is trivially unit-testable. It maps the wizard's race/
+    class shorthand to readable words (``half`` → ``half-elf``; class id → readable
+    name), folds in optional appearance cues + alignment as descriptive colour, and
+    composes a Baldur's-Gate / Forgotten-Realms oil-painting brief.
+
+    Deliberately carries NO PII and NO secrets: ``name`` is accepted (so callers can
+    pass the wizard's full struct) but is intentionally NOT embedded in the brief — a
+    portrait shouldn't bake a player's chosen name into the image, and it keeps the
+    brief free of free-text identity. ``appearance`` is sanitized to one safe clause.
+    Never emits a newline (a multi-line brief could smuggle prompt structure)."""
+    race_w = _RACE_WORDS.get(_humanize(race).replace(" ", "-")) or _humanize(race) or "human"
+    class_w = _CLASS_WORDS.get(_humanize(class_).replace(" ", "-")) or _humanize(class_) or "adventurer"
+    cues = _sanitize_cues(appearance)
+    align_w = _humanize(alignment)
+
+    subject = f"a {race_w} {class_w}".strip()
+    parts = [f"Character portrait of {subject}"]
+    if cues:
+        parts.append(cues)
+    if align_w and align_w not in ("neutral", "true neutral"):
+        parts.append(f"{align_w} bearing")
+    brief = ", ".join(parts)
+    brief += (
+        ", head and shoulders, painterly fantasy oil-painting style, dramatic "
+        "chiaroscuro lighting, Baldur's Gate / Forgotten Realms aesthetic, neutral "
+        "dark background, single figure, no text, no watermark, no border"
+    )
+    # Guarantee single-line (the cue sanitizer already strips newlines, but be defensive).
+    return " ".join(brief.split())
+
+
 class NullImageProvider:
     """Placeholder image provider — used in CI, headless runs, and tests.
 
@@ -344,6 +451,65 @@ def cache_write(descriptor: dict, scope: Optional[str] = None) -> Path:
     path = cache_path(hash_, scope)
     _atomic_write(path, json.dumps(record, ensure_ascii=False, indent=2))
     return path
+
+
+def _newest_descriptor(scope: Optional[str]) -> Optional[dict]:
+    """Most-recently-written descriptor under a scope dir, parsed. None on miss/corrupt.
+
+    Mirrors the viewer's _newest_json_descriptor resolution (the cache is rebuildable,
+    so a corrupt entry is just skipped, never fatal)."""
+    cdir = _images_dir(scope)
+    if not cdir.is_dir():
+        return None
+    newest: Optional[Path] = None
+    newest_mtime = -1.0
+    for p in cdir.glob("*.json"):
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest_mtime:
+            newest, newest_mtime = p, m
+    if newest is None:
+        return None
+    try:
+        d = json.loads(newest.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def copy_scope(src_scope: str, dst_scope: str) -> Optional[Path]:
+    """Re-key the newest generated portrait from one scope to another (#265).
+
+    The Create wizard generates a PC portrait to a PROVISIONAL content-scope
+    (``portrait-pc-<hash>``) because the player's character has no engine id yet; the
+    real opaque ``char_…`` id is only minted later at session start. Once it exists,
+    every render surface keys that PC's face as ``portrait-<char_id>``. This helper
+    bridges that gap: it copies the newest descriptor from ``src_scope`` into
+    ``dst_scope`` (re-keyed via cache_write), so the unique face attaches to the real
+    PC on every screen.
+
+    The descriptor's image payload travels with it: ``bytes_b64`` / ``url`` are inline
+    and copy verbatim; a ``path`` points at the gateway media file (outside both scope
+    dirs) and stays valid — the viewer serves it through its containment allowlist
+    regardless of which scope dir the descriptor lives in. The freshly-written copy
+    gets a recomputed ``hash`` + ``cached_at`` so it's a self-consistent entry.
+
+    Returns the written path, or None when the source has no (readable) descriptor —
+    a miss is benign (the caller falls back to the gallery face). Never raises on a
+    missing/corrupt source; like the rest of this module it treats the cache as
+    rebuildable, never load-bearing. Writes ONLY the derived cache (honors the engine's
+    sole-writer invariant — it never touches snapshot.json)."""
+    src = _newest_descriptor(src_scope)
+    if src is None:
+        return None
+    record = dict(src)
+    # Drop the self-describing fields so cache_write recomputes them fresh for the
+    # destination entry (otherwise the copy would carry the source's stale hash).
+    record.pop("hash", None)
+    record.pop("cached_at", None)
+    return cache_write(record, scope=dst_scope)
 
 
 def generate(
