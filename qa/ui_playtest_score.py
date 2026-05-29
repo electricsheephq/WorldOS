@@ -83,7 +83,20 @@ def main() -> int:
     action_kinds = Counter(a.get("action", "?") for a in actions)
     clicks = [a for a in actions if a.get("action") == "click"]
     dead_clicks = sum(1 for a in clicks if a.get("dead") is True)
-    type_submits = sum(1 for a in actions if a.get("action") == "type" and a.get("submit"))
+
+    # An in-story TURN is submitted either by type(submit=true) OR by clicking the table's
+    # submit control after typing — the UI exposes a "Declare" button + Do/Say/Continue
+    # chips, so a click on one of those (on the play screen) posts a /move just the same.
+    SUBMIT_CLICK = re.compile(r"\b(declare|send|submit|continue|^do\b|^say\b)\b", re.I)
+
+    def is_submit_action(a: dict) -> bool:
+        if a.get("action") == "type" and a.get("submit"):
+            return True
+        if a.get("action") == "click" and a.get("ok") and a.get("screen") == "table":
+            return bool(SUBMIT_CLICK.search(str(a.get("target") or "")))
+        return False
+
+    type_submits = sum(1 for a in actions if is_submit_action(a))
 
     # --- screens visited (from action stream) --------------------------------
     screens = []
@@ -99,8 +112,22 @@ def main() -> int:
     player_bugs = [b for b in bugs if b.get("source") == "player"]
     auto_bugs = [b for b in bugs if b.get("source") == "auto"]
 
-    console_errors = sum(1 for c in console if c.get("type") in ("error", "pageerror"))
-    network_failures = len(network)
+    # "Failed to load resource" console lines are just the browser echoing a failed fetch
+    # (already counted under network); a missing /image is graceful degradation, not a JS
+    # error. Exclude both from the console-error HEALTH metric so the gate isn't tripped by
+    # expected missing-art noise. (The raw lines stay in console.ndjson / network.ndjson.)
+    def is_resource_load(c: dict) -> bool:
+        return "Failed to load resource" in (c.get("text") or "")
+
+    console_errors = sum(
+        1 for c in console if c.get("type") in ("error", "pageerror") and not is_resource_load(c)
+    )
+
+    def is_image_404(n: dict) -> bool:
+        return n.get("status") == 404 and "/image?scope=" in (n.get("url") or "")
+
+    image_404s = sum(1 for n in network if is_image_404(n))
+    network_failures = sum(1 for n in network if not is_image_404(n))
 
     # --- completed intro flow? -----------------------------------------------
     # Heuristic (no engine peek): the player reached the play screen ("table") AND
@@ -110,10 +137,10 @@ def main() -> int:
     reached_table = "table" in screens
     completed_intro_flow = bool(reached_table and type_submits >= 1)
 
-    # actions to first in-story turn (first type+submit), informational.
+    # actions to first in-story turn (first submitted move), informational.
     actions_to_first_beat = None
     for a in actions:
-        if a.get("action") == "type" and a.get("submit"):
+        if is_submit_action(a):
             actions_to_first_beat = a.get("seq")
             break
 
@@ -154,6 +181,7 @@ def main() -> int:
         "dead_clicks": dead_clicks,
         "console_errors": console_errors,
         "network_failures": network_failures,
+        "image_404s": image_404s,
         "bug_reports_total": len(bugs),
         "bug_reports_player": len(player_bugs),
         "bug_reports_auto": len(auto_bugs),
@@ -214,6 +242,9 @@ def build_summary(score: dict, bugs: list[dict], verdict: str, meta: dict) -> st
     L.append(f"- Dead clicks (landed but screen didn't change): **{score['dead_clicks']}** (target 0)")
     L.append(f"- Console errors: **{score['console_errors']}** (target 0)")
     L.append(f"- Failed/4xx-5xx network requests: **{score['network_failures']}** (target 0)")
+    if score.get("image_404s"):
+        L.append(f"- Missing-image 404s (expected graceful degradation, not counted above): "
+                 f"**{score['image_404s']}**")
     L.append("")
     L.append("## Bugs found")
     L.append("")

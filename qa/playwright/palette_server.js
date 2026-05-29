@@ -48,20 +48,24 @@ const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio
 const { z } = require("zod");
 
 const TARGET_URL = process.env.CLAWDND_UIPT_URL || "http://127.0.0.1:8799/openworlds/";
+// CLAWDND_UIPT_RUNDIR is the RUN ROOT. bugs.ndjson + status.json land here (top-level
+// deliverables); the player-side artifacts (screenshots, a11y, action/console/network
+// logs) go under player/ — matching qa/ui_playtest_score.py's reader.
 const RUNDIR = process.env.CLAWDND_UIPT_RUNDIR || path.join(process.cwd(), "uipt-run");
+const PLAYERDIR = path.join(RUNDIR, "player");
 const CHANNEL = (process.env.CLAWDND_UIPT_CHANNEL || "").trim();
 const PERSONA = (process.env.CLAWDND_UIPT_PERSONA || "newbie").trim();
 const MAX_WAIT_MS = 8000; // hard cap on a single wait, so the player can't stall the run
 
-const SHOTS = path.join(RUNDIR, "screenshots");
-const A11Y = path.join(RUNDIR, "a11y");
-for (const d of [RUNDIR, SHOTS, A11Y]) fs.mkdirSync(d, { recursive: true });
+const SHOTS = path.join(PLAYERDIR, "screenshots");
+const A11Y = path.join(PLAYERDIR, "a11y");
+for (const d of [RUNDIR, PLAYERDIR, SHOTS, A11Y]) fs.mkdirSync(d, { recursive: true });
 
-const BUGS = path.join(RUNDIR, "bugs.ndjson");
-const ACTIONS = path.join(RUNDIR, "actions.ndjson");
-const CONSOLE = path.join(RUNDIR, "console.ndjson");
-const NETWORK = path.join(RUNDIR, "network.ndjson");
-const STATUS = path.join(RUNDIR, "status.json"); // give_up / end signalling for the orchestrator
+const BUGS = path.join(RUNDIR, "bugs.ndjson"); // top-level deliverable
+const ACTIONS = path.join(PLAYERDIR, "actions.ndjson");
+const CONSOLE = path.join(PLAYERDIR, "console.ndjson");
+const NETWORK = path.join(PLAYERDIR, "network.ndjson");
+const STATUS = path.join(PLAYERDIR, "status.json"); // give_up / end signal for the orchestrator
 
 let seq = 0;
 let lastScreen = "launcher"; // best-effort current-screen label, from the URL hash
@@ -96,6 +100,27 @@ function shortUrl(u) {
   }
 }
 
+// The OpenWorlds SPA navigates by React state, NOT the URL hash (app.jsx's navigate()
+// only setScreen() — it never writes location.hash), so we can't read the screen from
+// the URL. Instead infer it from screen-specific markers in the aria snapshot. Ordered
+// most-specific first. Falls back to the previous label when nothing matches.
+function screenFromAria(aria) {
+  const a = String(aria || "");
+  const has = (re) => re.test(a);
+  if (has(/describe what your hero does/i) || (has(/\bDeclare\b/) && has(/Active Quests|Encounter|Quick Stash/i))) return "table";
+  if (has(/Forge a new hero|Begin a new chronicle|A Tabletop, Reawakened|No chronicles|Resume Chronicle|View Chronicle/i)) return "launcher";
+  if (has(/Initiative|End Turn|Bonus Action|Reaction\b/i) && has(/\bAttack\b|\bCast\b/)) return "combat";
+  if (has(/Choose a hero|Roster|Bind|Seat .*hero|fallen|Slain|Deceased/i) && has(/\bHero(es)?\b/)) return "roster";
+  if (has(/Ability Scores|Proficienc|Spellbook|Armor Class|\bAC\b.*\bHP\b|Saving Throws/i)) return "character";
+  if (has(/Encumbrance|Equipped|Backpack|Stash|Carrying/i) && has(/\bItem/)) return "inventory";
+  if (has(/Region|Fast Travel|Travel to|Map of/i)) return "map";
+  if (has(/Quest Log|Chronicle Entries|Journal/i)) return "journal";
+  if (has(/Merchant|Buy|Sell|Wares|Gold\b.*\bPrice/i)) return "merchant";
+  if (has(/Forge|Creation Plane|Generate (a )?world|Seed/i)) return "forge";
+  if (has(/Settings|Voice Backend|Provider|API Key/i)) return "settings";
+  return lastScreen;
+}
+
 // ---- Playwright lifecycle ---------------------------------------------------
 let browser = null;
 let page = null;
@@ -115,6 +140,10 @@ async function ensurePage() {
     const text = msg.text();
     if (/Download the React DevTools|Each child in a list should have a unique/.test(text)) return;
     appendLine(CONSOLE, { ts: nowIso(), type, text: text.slice(0, 600) });
+    // "Failed to load resource: ... 404/403" is the browser's generic echo of a failed
+    // network fetch — already captured (and collapsed) by the response handler as a network
+    // bug. Don't double-count it as a separate console error (it's the image-404 noise).
+    if (/Failed to load resource/i.test(text)) return;
     if (type === "error") {
       autoBug({
         category: "console",
@@ -164,15 +193,29 @@ async function ensurePage() {
   page.on("response", (resp) => {
     const status = resp.status();
     if (status < 400) return;
-    const rec = { ts: nowIso(), url: resp.url(), status, method: resp.request().method() };
+    const url = resp.url();
+    const method = resp.request().method();
+    const rec = { ts: nowIso(), url, status, method };
     appendLine(NETWORK, rec);
+    // The viewer 404s a missing /image?scope=... ON PURPOSE — it's graceful degradation
+    // (the UI shows a silhouette/placeholder). On a fresh run with no cached art that fires
+    // for every roster face. Collapse the whole class into ONE low-severity informational
+    // bug ("art not generated for this run") instead of 60 near-identical majors. The raw
+    // 404s are still in network.ndjson for anyone who wants them.
+    const isImage404 = status === 404 && /\/image\?scope=/.test(url);
     autoBug({
       category: "network",
-      severity: status >= 500 ? "major" : "minor",
+      severity: isImage404 ? "trivial" : status >= 500 ? "major" : "minor",
       screen: screenFromUrl(page.url()),
-      title: "HTTP " + status + " on " + resp.request().method() + " " + shortUrl(resp.url()),
-      expected: "Requests the UI makes return 2xx/3xx.",
-      actual: "HTTP " + status + " for " + resp.url(),
+      title: isImage404
+        ? "Missing images (404 /image) — portraits/scene art not generated for this run"
+        : "HTTP " + status + " on " + method + " " + shortUrl(url),
+      expected: isImage404
+        ? "Faces/art either render or degrade silently to a placeholder."
+        : "Requests the UI makes return 2xx/3xx.",
+      actual: isImage404
+        ? "Multiple /image 404s (expected with no cached art; first: " + url + ")"
+        : "HTTP " + status + " for " + url,
       evidence: { http_status: rec },
       blocks_progress: false,
       source: "auto",
@@ -191,11 +234,23 @@ async function ensurePage() {
 // huge screen can't blow the Player's context.
 async function ariaText(pg) {
   try {
-    const snap = await pg.locator("body").ariaSnapshot({ timeout: 4000 });
-    return String(snap).slice(0, 9000);
+    const snap = String(await pg.locator("body").ariaSnapshot({ timeout: 4000 }));
+    lastScreen = screenFromAria(snap); // SPA nav is React-state, not URL — infer from content
+    return snap.slice(0, 9000);
   } catch (_e) {
     return "(accessibility snapshot unavailable for this screen)";
   }
+}
+
+// Cheap "where am I now" refresh after an action, from the rendered aria (not the URL,
+// which the SPA never updates). Updates lastScreen as a side effect; best-effort.
+async function refreshScreen(pg) {
+  try {
+    lastScreen = screenFromAria(String(await pg.locator("body").ariaSnapshot({ timeout: 2500 })));
+  } catch (_e) {
+    /* keep prior label */
+  }
+  return lastScreen;
 }
 
 // ---- bug + action logging ---------------------------------------------------
@@ -235,7 +290,8 @@ function logAction(action, detail) {
   return seq;
 }
 
-// Save a screenshot for the current step; returns the relative filename.
+// Save a screenshot for the current step; returns the path RELATIVE TO THE RUN ROOT
+// (so summary.md + bug records, which live at the run root, resolve it).
 async function snap(pg, label) {
   const name = "step-" + String(seq).padStart(3, "0") + (label ? "-" + label : "") + ".png";
   const file = path.join(SHOTS, name);
@@ -244,7 +300,7 @@ async function snap(pg, label) {
   } catch (_e) {
     return "";
   }
-  return path.join("screenshots", name);
+  return path.join("player", "screenshots", name);
 }
 
 // ---- locator resolution -----------------------------------------------------
@@ -321,7 +377,7 @@ server.registerTool(
   },
   async () => {
     const pg = await ensurePage();
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     const sc = await snap(pg, "look");
     logAction("screenshot", { screenshot: sc });
     const aria = await ariaText(pg);
@@ -344,7 +400,7 @@ server.registerTool(
   },
   async () => {
     const pg = await ensurePage();
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     logAction("a11y_tree", {});
     const aria = await ariaText(pg);
     try {
@@ -386,7 +442,7 @@ server.registerTool(
       reason = String(e && e.message ? e.message : e).slice(0, 200);
     }
     await pg.waitForTimeout(700);
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     const after = await ariaText(pg);
     const changed = before !== after;
     const s = logAction("click", { target, ok, changed, dead: ok && !changed, reason });
@@ -440,7 +496,7 @@ server.registerTool(
       ok = false;
       reason = String(e && e.message ? e.message : e).slice(0, 200);
     }
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     const s = logAction("type", {
       target: target || "(main action box)",
       text: String(text).slice(0, 200),
@@ -472,7 +528,7 @@ server.registerTool(
       ok = false;
       reason = String(e && e.message ? e.message : e).slice(0, 200);
     }
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     const s = logAction("key", { name, ok, reason });
     const sc = await snap(pg, "key");
     return textResult({ ok, seq: s, screen: lastScreen, screenshot: sc, reason });
@@ -506,7 +562,7 @@ server.registerTool(
       const dur = Math.max(0, Math.min(Number(ms || 1000), MAX_WAIT_MS));
       await pg.waitForTimeout(dur);
     }
-    lastScreen = screenFromUrl(pg.url());
+    await refreshScreen(pg);
     const s = logAction("wait", { ms: ms || null, selector: selector || null, ok });
     return textResult({ ok, seq: s, screen: lastScreen, reason });
   }
