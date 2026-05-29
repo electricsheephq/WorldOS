@@ -1,8 +1,8 @@
-# ClawDnD STORY-FIRST playtest rubric
+# WorldOS STORY-FIRST playtest rubric
 
 You are grading a deliberately **story-first** playtest (exploration / NPCs /
 party deliberation, minimal combat). The question this run answers: **does
-ClawDnD feel like a guided adventure with a real co-adventurer, or like a combat
+WorldOS feel like a guided adventure with a real co-adventurer, or like a combat
 sim?** Score the same 7 criteria (1–5) and JSON schema as always, but weight and
 interpret them for storytelling:
 

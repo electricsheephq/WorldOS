@@ -1,4 +1,4 @@
-# ClawDnD QA Scoring System — standardized reference
+# WorldOS QA Scoring System — standardized reference
 
 > Source of truth for HOW we measure a playtest. Current as of 2026-05-26.
 > The running results ledger is `qa/SCORECARD.md`.

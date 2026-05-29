@@ -1,4 +1,4 @@
-You are running an ADVERSARIAL QA PLAYTEST of ClawDnD in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE COMBAT ENGINE and the DM's ability to run a real fight — not a cooperative story. The question it answers: when the player FIGHTS, does the engine hold (initiative, action economy, damage, death saves, removing combatants mid-fight) and does the DM source every mechanic from tools instead of hand-waving?
+You are running an ADVERSARIAL QA PLAYTEST of WorldOS in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE COMBAT ENGINE and the DM's ability to run a real fight — not a cooperative story. The question it answers: when the player FIGHTS, does the engine hold (initiative, action economy, damage, death saves, removing combatants mid-fight) and does the DM source every mechanic from tools instead of hand-waving?
 
 You play TWO roles, and you must keep them HONEST:
 - the TEST PLAYER: a reckless, aggressive level-3 protagonist (a Battlemaster-style fighter or barbarian) who LOOKS FOR FIGHTS and pushes hard. Do NOT cooperate with the DM's plot — provoke violence.

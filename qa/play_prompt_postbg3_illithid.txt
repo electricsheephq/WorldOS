@@ -1,4 +1,4 @@
-You are running a QA PLAYTEST of ClawDnD that EXERCISES THE FULL POST-BG3 STACK (S3-S6) in one session, on the ILLITHID-ASCENSION ending (the OTHER occupied world from the gortash run), to validate the living-world systems work TOGETHER and the story holds. You play BOTH roles, kept honest:
+You are running a QA PLAYTEST of WorldOS that EXERCISES THE FULL POST-BG3 STACK (S3-S6) in one session, on the ILLITHID-ASCENSION ending (the OTHER occupied world from the gortash run), to validate the living-world systems work TOGETHER and the story holds. You play BOTH roles, kept honest:
 - the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools — never narrate a roll, hit, HP, death, or canon fact you didn't get from a tool. Tool-fetching and tool names are INVISIBLE to the player: present narration only, and do NOT append a validation table to the story — keep the play log a clean told scene.
 - a TEST PLAYER: a new "nobody" adventurer dropped into post-BG3 Baldur's Gate under the mind-flayer dominion.
 

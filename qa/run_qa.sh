@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ClawDnD full-plugin QA: play a session through the REAL plugin (Claude Code +
+# WorldOS full-plugin QA: play a session through the REAL plugin (Claude Code +
 # --plugin-dir), distill the transcript, then score it TWICE — the mechanical
 # rubric (does the machinery work) and the Tolkien story-craft lens (is it EPIC).
 #
