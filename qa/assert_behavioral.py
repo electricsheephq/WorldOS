@@ -417,6 +417,31 @@ def main() -> int:
     players = [chars[i] for i in party if i in chars and chars[i].get("kind") == "player"]
     chk("player_in_party", len(players) > 0, f"party={len(party)} players={len(players)}")
 
+    # caster_has_spellbook (WARN; graduate to FATAL after clean sweeps) — a player/companion
+    # whose sheet says it casts (truthy `spellcasting`) but carries NO spells anywhere is the
+    # ow-fix-011115 empty-spellbook regression (nothing to cast → mech/combat capped). Check
+    # several spell fields so a caster with only cantrips isn't falsely flagged.
+    def _has_spells(c: dict) -> bool:
+        return bool(c.get("spells_known") or c.get("cantrips_known")
+                    or c.get("prepared_spells") or c.get("cantrips"))
+    empty_casters = [c.get("name", "?") for c in chars.values()
+                     if isinstance(c, dict) and c.get("kind") in ("player", "companion")
+                     and c.get("spellcasting") and not _has_spells(c)]
+    chk("caster_has_spellbook", not empty_casters,
+        f"caster(s) with truthy spellcasting but no spells: {empty_casters}", fatal=False)
+
+    # quest_objectives_progress (WARN) — a quest marked status=completed with a non-empty
+    # `objectives` list but an EMPTY `completed_objectives` means the complete_objective
+    # write-site was bypassed (the DM narrated the goal done without recording it). Locks the
+    # d2f65f1 objective path. Quests may be a dict (id->quest) or a list.
+    quests = state.get("quests", {}) or {}
+    quest_iter = list(quests.values()) if isinstance(quests, dict) else (quests if isinstance(quests, list) else [])
+    stuck_quests = [(q.get("title") or q.get("id") or "?") for q in quest_iter
+                    if isinstance(q, dict) and q.get("status") == "completed"
+                    and (q.get("objectives") or []) and not (q.get("completed_objectives") or [])]
+    chk("quest_objectives_progress", not stuck_quests,
+        f"completed quest(s) with objectives but empty completed_objectives: {stuck_quests}", fatal=False)
+
     # 7) no duplicate-named companion (the engine guards this; assert it held)
     comp = [(c.get("name", "") or "").strip().lower() for c in chars.values() if c.get("kind") == "companion"]
     chk("no_duplicate_companion", len(comp) == len(set(comp)), f"companions={comp}")

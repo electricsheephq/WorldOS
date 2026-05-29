@@ -319,3 +319,44 @@ def test_clean_minimal_run_is_green(tmp_path):
     rc, out = _run_gate(tmp_path, events, state)
     assert rc == 0, out
     assert "GREEN" in out
+
+
+# ── caster_has_spellbook (WARN) + quest_objectives_progress (WARN) — release-signal gates ──
+
+def test_caster_has_spellbook_warns_on_empty_spellbook(tmp_path):
+    # A caster (truthy spellcasting) with NO spells anywhere → flagged (ow-fix-011115 regression).
+    state = {"characters": {"caster1": {"name": "Gale", "kind": "companion",
+             "spellcasting": {"ability": "int"}, "spells_known": []}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert "caster_has_spellbook" in out and "Gale" in out  # WARN, so rc stays 0
+    assert rc == 0, out
+
+
+def test_caster_has_spellbook_passes_with_spells(tmp_path):
+    state = {"characters": {"caster1": {"name": "Gale", "kind": "companion",
+             "spellcasting": {"ability": "int"}, "spells_known": ["Magic Missile"]}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert "[PASS] caster_has_spellbook" in out
+
+
+def test_caster_has_spellbook_ignores_non_caster(tmp_path):
+    # A martial (no spellcasting) with empty spells must NOT be flagged.
+    state = {"characters": {"f1": {"name": "Aldric", "kind": "player", "spells_known": []}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert "[PASS] caster_has_spellbook" in out
+
+
+def test_quest_objectives_progress_warns_on_stuck_quest(tmp_path):
+    # A completed quest with objectives but empty completed_objectives → write-site bypassed.
+    state = {"quests": {"q1": {"title": "Find the Relic", "status": "completed",
+             "objectives": ["reach the crypt"], "completed_objectives": []}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert "quest_objectives_progress" in out and "Find the Relic" in out
+    assert rc == 0, out
+
+
+def test_quest_objectives_progress_passes_when_recorded(tmp_path):
+    state = {"quests": {"q1": {"title": "Find the Relic", "status": "completed",
+             "objectives": ["reach the crypt"], "completed_objectives": ["reach the crypt"]}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert "[PASS] quest_objectives_progress" in out
