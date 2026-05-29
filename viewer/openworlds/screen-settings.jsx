@@ -2,6 +2,7 @@
 
 function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNative }) {
   const [section, setSection] = React.useState("native");
+  const toast = window.useToast ? window.useToast() : (() => {});
 
   // Genuinely functional accessibility/display controls are driven through the shared
   // window.OpenWorldsA11y bridge (defined in app.jsx): it writes data-reduced-motion /
@@ -29,6 +30,98 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
   const [accessibility, setAccessibility] = React.useState({ dyslexic: false, captions: true, underlineChoices: false });
 
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+
+  // The campaign the save/load/export actions target: the active one app.jsx tracks, else the
+  // catalog's `current` (the attached live run), else the newest in the list. Empty when there
+  // is no chronicle on disk yet (the actions then toast a graceful "no chronicle" notice). The
+  // engine save/load tools still path-validate this id, so a stale value can't escape the store.
+  const activeCampaignId =
+    state?.activeCampaign ||
+    (campaigns.find((c) => c.current) || campaigns[0] || {}).id ||
+    "";
+  const [savesBusy, setSavesBusy] = React.useState("");
+
+  // Export (ST-03): pure read — GET /export streams the campaign's snapshot.json verbatim, which
+  // we wrap in a Blob and hand to the browser as <campaign>-chronicle.json. Non-destructive.
+  const exportChronicle = async () => {
+    if (!activeCampaignId) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "No chronicle to export", body: "Begin a chronicle from the Worlds shelf first." });
+      return;
+    }
+    setSavesBusy("export");
+    try {
+      const resp = await fetch(`/export?campaign=${encodeURIComponent(activeCampaignId)}`, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`export ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${activeCampaignId}-chronicle.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ kind: "ok", eyebrow: "Saves", title: "Chronicle exported", body: `${activeCampaignId}-chronicle.json` });
+    } catch (error) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "Export failed", body: error?.message || "The viewer could not reach /export." });
+    } finally {
+      setSavesBusy("");
+    }
+  };
+
+  // Quicksave / Quickload (ST-02): the engine is the sole writer, so these POST a save/load INTENT
+  // to /save-slot|/load-slot, which bridge in-process to the engine's save_slot/load_slot tools
+  // (the engine performs the snapshot copy/restore under its own campaign_lock + save_campaign).
+  const saveSlot = async () => {
+    if (!activeCampaignId) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "No chronicle to save", body: "Begin a chronicle from the Worlds shelf first." });
+      return;
+    }
+    setSavesBusy("save");
+    try {
+      const resp = await fetch("/save-slot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign: activeCampaignId, slot: "quicksave" }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload.ok === false) throw new Error(payload.reason || `save ${resp.status}`);
+      toast({ kind: "ok", eyebrow: "Saves", title: "Quicksave written", body: "Restore it any time with Quickload." });
+    } catch (error) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "Quicksave failed", body: error?.message || "The viewer could not reach the engine save lane." });
+    } finally {
+      setSavesBusy("");
+    }
+  };
+
+  const loadSlot = async () => {
+    if (!activeCampaignId) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "No chronicle to restore", body: "Begin a chronicle from the Worlds shelf first." });
+      return;
+    }
+    // Quickload OVERWRITES the live chronicle with the quicksave — gate behind an explicit
+    // confirm so a fat-fingered click can't silently rewind an in-progress session.
+    const ok = window.confirm(
+      "Restore the quicksave?\n\nThis OVERWRITES the current live chronicle with the last quicksave. " +
+      "Any progress since that quicksave will be lost. This cannot be undone."
+    );
+    if (!ok) return;
+    setSavesBusy("load");
+    try {
+      const resp = await fetch("/load-slot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign: activeCampaignId, slot: "quicksave" }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload.ok === false) throw new Error(payload.reason || `load ${resp.status}`);
+      toast({ kind: "ok", eyebrow: "Saves", title: "Quicksave restored", body: "The chronicle has been rolled back to the quicksave." });
+    } catch (error) {
+      toast({ kind: "danger", eyebrow: "Saves", title: "Quickload failed", body: error?.message || "The viewer could not reach the engine load lane." });
+    } finally {
+      setSavesBusy("");
+    }
+  };
 
   const SECTIONS = [
     { id: "native", label: "ClawDnD" },
@@ -204,12 +297,13 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
         {section === "saves" && (
           <SettingsSection title="Anchors in Time" eyebrow="Save & restore" ordinal="VI.">
             {/* Read-only list bound to the real campaign catalog (state.campaigns, fetched from
-                /openworlds/campaigns.json by app.jsx). The save/load/erase actions themselves are
-                not wired to the engine, so they are labelled preview / disabled. */}
+                /openworlds/campaigns.json by app.jsx). Quicksave/Quickload are wired to the engine
+                save lane (the engine is the sole writer); Export streams the snapshot as a download.
+                Erase-all stays disabled — destructive deletion is intentionally out of scope. */}
             <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
-              <BrassButton size="sm" disabled title="Display-only — not yet wired to the engine save lane">Quicksave <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
-              <BrassButton size="sm" tone="ghost" disabled title="Display-only — not yet wired to the engine save lane">Quickload <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
-              <BrassButton size="sm" tone="ghost" disabled title="Display-only — not yet wired to the engine save lane">Export chronicle… <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
+              <BrassButton size="sm" disabled={!activeCampaignId || !!savesBusy} onClick={saveSlot}>{savesBusy === "save" ? "Saving…" : "Quicksave"}</BrassButton>
+              <BrassButton size="sm" tone="ghost" disabled={!activeCampaignId || !!savesBusy} onClick={loadSlot}>{savesBusy === "load" ? "Restoring…" : "Quickload"}</BrassButton>
+              <BrassButton size="sm" tone="ghost" disabled={!activeCampaignId || !!savesBusy} onClick={exportChronicle}>{savesBusy === "export" ? "Exporting…" : "Export chronicle…"}</BrassButton>
               <div style={{ flex: 1 }} />
               <BrassButton size="sm" tone="crimson" disabled title="Display-only — erase is not wired; nothing is deleted">Erase all <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
             </div>

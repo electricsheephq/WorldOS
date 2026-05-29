@@ -93,7 +93,10 @@ _AB3_TO_FULL = {
 _FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
 from store import append_log, campaign_lock, campaigns_for_world
 from store import list_campaigns as _list_campaigns
+from store import list_slots as _list_slots
 from store import load_campaign, save_campaign
+from store import load_slot as _load_slot_store
+from store import save_slot as _save_slot_store
 
 mcp = FastMCP("clawdnd-engine")
 
@@ -6386,6 +6389,54 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
             out["xp_awarded"] = award["xp_awarded"]
             out["grants"] = award["grants"]
         return out
+
+
+@mcp.tool()
+def save_slot(campaign_id: str, slot: str = "quicksave") -> dict:
+    """Copy the campaign's CURRENT state into a named save slot (default 'quicksave').
+
+    A slot is a point-in-time anchor the player can return to (e.g. before a risky fight or a
+    fork). It copies the live snapshot verbatim — non-destructive, the live game is untouched —
+    so a later load_slot can roll the chronicle back to exactly this moment. Pairs with load_slot.
+    Raises if the campaign has no saved state yet. The engine is the sole writer; runs under the
+    campaign lock so it can't race a concurrent tool call."""
+    with campaign_lock(campaign_id):
+        _require(campaign_id)  # 404 cleanly on an unknown campaign
+        path = _save_slot_store(campaign_id, slot)
+        return {"ok": True, "campaign_id": campaign_id, "slot": slot, "path": str(path)}
+
+
+@mcp.tool()
+def load_slot(campaign_id: str, slot: str = "quicksave") -> dict:
+    """Restore a named save slot, OVERWRITING the campaign's current live state with it.
+
+    This rolls the whole chronicle back to the moment the slot was written (default 'quicksave').
+    DESTRUCTIVE to unsaved progress: anything that happened since that slot is discarded. The slot
+    is validated as belonging to this campaign before it is restored, so a corrupt/foreign snapshot
+    can never clobber the live game. The engine is the sole writer; runs under the campaign lock,
+    and the very next tool call re-loads the restored state. Pair with save_slot. Raises if the
+    slot is absent, corrupt, or for a different campaign."""
+    with campaign_lock(campaign_id):
+        _require(campaign_id)  # the campaign must exist to be restored over
+        c = _load_slot_store(campaign_id, slot)
+        loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+        return {
+            "ok": True,
+            "campaign_id": campaign_id,
+            "slot": slot,
+            "title": c.title,
+            "day": c.day,
+            "time_of_day": c.time_of_day,
+            "current_location": loc.name if loc else None,
+            "note": "Live state was rolled back to this slot. Call get_state / session_recap to re-ground before narrating.",
+        }
+
+
+@mcp.tool()
+def list_slots(campaign_id: str) -> dict:
+    """List a campaign's named save slots (slot name + last-saved time), newest first.
+    Read-only — shows what restore points exist (e.g. the 'quicksave') without touching state."""
+    return {"campaign_id": campaign_id, "slots": _list_slots(campaign_id)}
 
 
 @mcp.tool()

@@ -160,6 +160,76 @@ def load_campaign(campaign_id: str) -> Optional[Campaign]:
         ) from exc
 
 
+def _slots_dir(campaign_id: str) -> Path:
+    return _campaign_dir(campaign_id) / "slots"
+
+
+def _slot_path(campaign_id: str, slot: str) -> Path:
+    """Path to a named save slot under a campaign, with the slot name validated as a flat
+    segment (so 'quicksave' is fine but '../foo' / 'a/b' is rejected before any I/O)."""
+    return _slots_dir(campaign_id) / f"{safe_path_segment(slot, 'slot')}.json"
+
+
+def save_slot(campaign_id: str, slot: str = "quicksave") -> Path:
+    """Copy a campaign's CURRENT live snapshot into a named save slot.
+
+    A slot is a point-in-time copy of the whole campaign aggregate, written atomically beside
+    the live snapshot (campaigns/<id>/slots/<slot>.json). The live snapshot.json is the unit of
+    persistence the engine already maintains, so we copy IT verbatim (not a re-serialized model)
+    — the slot is byte-for-byte the campaign as last saved. Raises ValueError if the campaign has
+    no live snapshot yet. Caller holds campaign_lock (sole-writer)."""
+    live = _campaign_dir(campaign_id) / "snapshot.json"
+    if not live.exists():
+        raise ValueError(f"no live snapshot for campaign {campaign_id!r} to save")
+    data = live.read_text(encoding="utf-8")
+    dest = _slot_path(campaign_id, slot)
+    _atomic_write(dest, data)
+    return dest
+
+
+def load_slot(campaign_id: str, slot: str = "quicksave") -> Campaign:
+    """Restore a named save slot back over the live campaign snapshot.
+
+    Reads the slot, validates it parses as a Campaign for THIS campaign id (a slot belongs to the
+    campaign it was saved from — we refuse to clobber the live state with a foreign/corrupt
+    snapshot), then writes it to live via save_campaign (atomic + version-stamped). Raises
+    FileNotFoundError if the slot is absent and ValueError if it is corrupt or mismatched.
+    OVERWRITES the live snapshot — caller holds campaign_lock and has confirmed intent."""
+    src = _slot_path(campaign_id, slot)
+    if not src.exists():
+        raise FileNotFoundError(f"no save slot {slot!r} for campaign {campaign_id!r}")
+    raw = src.read_text(encoding="utf-8")
+    try:
+        c = Campaign.model_validate_json(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"save slot {slot!r} for campaign {campaign_id!r} is corrupt and cannot be restored: {exc}"
+        ) from exc
+    if c.id != campaign_id:
+        raise ValueError(
+            f"save slot {slot!r} belongs to campaign {c.id!r}, not {campaign_id!r}; refusing to restore"
+        )
+    save_campaign(c)  # atomic replace of the live snapshot.json + fresh version stamp
+    return c
+
+
+def list_slots(campaign_id: str) -> list[dict]:
+    """Named save slots for a campaign (slot name + last-modified time), newest first.
+    Read-only; skips any unreadable file so a half-written slot can't break the listing."""
+    d = _slots_dir(campaign_id)
+    out: list[dict] = []
+    if not d.is_dir():
+        return out
+    for p in d.glob("*.json"):
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        out.append({"slot": p.stem, "updated_at": mtime})
+    out.sort(key=lambda x: x["updated_at"], reverse=True)
+    return out
+
+
 def list_campaigns() -> list[dict]:
     root = state_dir() / "campaigns"
     out: list[dict] = []

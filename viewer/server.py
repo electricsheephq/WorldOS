@@ -686,6 +686,46 @@ def build_bestiary_response(query: str = "", limit: int = 20) -> dict:
     return engine.bestiary.player_bestiary(query, limit)
 
 
+def _clean_slot(slot: Optional[str]) -> str:
+    """Normalize a caller-supplied save-slot name to a flat, safe-ish slug (the engine's
+    store.safe_path_segment is the authoritative guard; this just trims/defaults). Empty ⇒
+    'quicksave', the only slot the Settings UI uses today."""
+    s = (slot or "").strip() if isinstance(slot, str) else ""
+    return s or "quicksave"
+
+
+def _save_load_slot_response(action: str, campaign_id: Optional[str], slot: Optional[str]) -> dict:
+    """POST /save-slot | /load-slot bridge — the ONLY viewer write path besides /move.
+
+    The viewer never writes campaign state itself: it path-validates the campaign id, then calls
+    the engine-owned save_slot / load_slot MCP tool in-process (same in-process engine bridge the
+    read-only /build-options surface uses). The engine performs the snapshot copy/restore under
+    its own campaign_lock + save_campaign, so the sole-writer invariant holds. `action` is
+    'save' or 'load'. Returns the engine tool's verdict, or a structured {ok:false, reason} on a
+    bad id / missing slot / engine-unavailable / engine error so the UI can toast a clear message."""
+    safe_campaign = _safe_campaign_id(campaign_id)
+    if not safe_campaign:
+        return {"ok": False, "reason": "missing or unsafe campaign id"}
+    safe_slot = _clean_slot(slot)
+
+    engine = _load_engine_server()
+    tool_name = "save_slot" if action == "save" else "load_slot"
+    if engine is None or not hasattr(engine, tool_name):
+        detail = _ENGINE_IMPORT_ERROR or f"engine {tool_name} is unavailable"
+        return {"ok": False, "reason": f"engine save lane unavailable: {detail}"}
+
+    try:
+        result = getattr(engine, tool_name)(safe_campaign, safe_slot)
+    except FileNotFoundError:
+        # load of a slot that was never written — a clean, expected "nothing to restore".
+        return {"ok": False, "reason": f"no '{safe_slot}' save to restore — make a quicksave first"}
+    except Exception as exc:  # unknown campaign / corrupt slot / id mismatch / engine error
+        return {"ok": False, "reason": str(exc)}
+    if isinstance(result, dict):
+        return result
+    return {"ok": True, "campaign_id": safe_campaign, "slot": safe_slot}
+
+
 def _display_location(snapshot: dict) -> str:
     loc_id = snapshot.get("current_location_id")
     locs = snapshot.get("locations")
@@ -5156,6 +5196,33 @@ class _Handler(BaseHTTPRequestHandler):
         # descriptor exists but carries no servable image (e.g. null placeholder)
         self._send(404, b"no image", "text/plain")
 
+    def _serve_export(self, campaign_id: str) -> None:
+        """GET /export?campaign=<id> — stream a campaign's snapshot.json as a download.
+
+        The export IS the engine-owned campaign aggregate, served verbatim from disk so the
+        downloaded chronicle byte-for-byte matches what the engine wrote (we deliberately do
+        NOT re-serialize a parsed dict, which would lose the engine's exact formatting). Pure
+        reader: never writes, never imports the engine. 404s cleanly when the campaign id is
+        empty/unsafe/unknown or the snapshot is missing, so the UI can surface a clear message.
+        Content-Disposition names the file <campaign_id>-chronicle.json for a friendly save."""
+        safe = _safe_campaign_id(campaign_id)
+        if not safe:
+            self._send(404, b"no such campaign", "text/plain; charset=utf-8")
+            return
+        snap = _campaign_dir(safe) / "snapshot.json"
+        try:
+            data = snap.read_bytes()
+        except OSError:
+            self._send(404, b"no snapshot for campaign", "text/plain; charset=utf-8")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{safe}-chronicle.json"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:  # noqa: N802
         self._resolve_campaign()  # lazily attach if we launched before a game existed
         parsed = urlparse(self.path)
@@ -5303,6 +5370,17 @@ class _Handler(BaseHTTPRequestHandler):
             # newest-active first, with the attached one marked `current`. Lets the
             # dashboard offer a picker instead of silently auto-following recency.
             self._json({"campaigns": _list_campaigns()})
+        elif route == "/export":
+            # ST-03 export-chronicle: serve a campaign's snapshot.json verbatim as a
+            # download. Pure reader — the snapshot is the engine-owned campaign aggregate;
+            # we stream its on-disk bytes (preserving the engine's exact serialization) and
+            # never parse/rewrite it. A PRESENT-but-invalid ?campaign 404s (so a bad id is an
+            # honest miss, not a silent fall-through to a different chronicle); an ABSENT
+            # ?campaign falls back to the per-request view override / attached campaign.
+            qs = parse_qs(parsed.query)
+            requested = (qs.get("campaign") or [""])[0]
+            cid = _safe_campaign_id(requested) if requested else self._view_campaign(qs)
+            self._serve_export(cid or "")
         elif route == "/build-options":
             # Read-only progression planner bridge: path-safe campaign scope +
             # character id, then engine.build_options. It returns disabled/error
@@ -5429,6 +5507,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/speak":
             self._do_speak()
             return
+        if route in ("/save-slot", "/load-slot"):
+            self._do_slot("save" if route == "/save-slot" else "load")
+            return
         if route != "/move":
             self._send(404, b"not found", "text/plain")
             return
@@ -5476,6 +5557,25 @@ class _Handler(BaseHTTPRequestHandler):
         voice = payload.get("voice_id")
         voice_id = voice.strip() if isinstance(voice, str) and voice.strip() else "narrator-dm"
         self._json(_speak(text, voice_id))
+
+    def _do_slot(self, action: str) -> None:
+        """POST /save-slot | /load-slot — quicksave / quickload of the live campaign.
+
+        Reads {"campaign", "slot"?} and delegates to the engine-owned save_slot/load_slot tool
+        via the in-process bridge (the engine is the sole writer). Always 200 with a JSON verdict
+        ({"ok": ...}); never writes campaign state in the viewer. A load OVERWRITES live state, so
+        the UI gates it behind a confirm before reaching here. The id is path-validated downstream."""
+        payload = self._read_post_json()
+        if payload is ... or not isinstance(payload, dict):
+            self._json({"ok": False, "reason": "bad save/load payload"})
+            return
+        campaign_id = payload.get("campaign")
+        # Bind the write to the LIVE campaign exactly as /move does: a save/load tagged for a
+        # campaign other than the attached live run is refused, never misrouted (#49).
+        if campaign_id and self.campaign_id and campaign_id != self.campaign_id:
+            self._json({"ok": False, "reason": "viewing a non-live campaign — switch to the live run to save/load"})
+            return
+        self._json(_save_load_slot_response(action, campaign_id, payload.get("slot")))
 
     def log_message(self, *_args) -> None:  # quiet
         pass
