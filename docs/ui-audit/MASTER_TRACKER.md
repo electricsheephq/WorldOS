@@ -168,6 +168,37 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 **Loop 6 confidence: still ~95% on the audit** (the audit findings remain accurate; this loop just verified the implementation status). The Code Health is partially improved but not "release-ready" yet — #260 alone is a release blocker per the user observation.
 
+## Loop 8 update (2026-05-30) — owner playtest
+
+The owner ran a hands-on playtest at 2026-05-30 and scored the GUI **2/10 for usability** (chrome is nice; play loop is broken). 16 specific observations across 11+ screens were filed as discrete agent-actionable issues (**#305–#320**), including 4 Critical:
+
+| Issue | Title | Sev |
+|---|---|---|
+| [#305](https://github.com/electricsheephq/WorldOS/issues/305) | **Dead canon NPCs slip through Roster** (Dal Lightspark playable but lore says dead) | **Critical** |
+| [#306](https://github.com/electricsheephq/WorldOS/issues/306) | Title-bar STILL broken visually + day pill alignment (Loop-7 fix incomplete) | **Critical** |
+| [#309](https://github.com/electricsheephq/WorldOS/issues/309) | **Tabs/buttons fire only when text is clicked directly** — entire hit area must be clickable | **Critical** |
+| [#317](https://github.com/electricsheephq/WorldOS/issues/317) | (downgraded — see #312/#314 decisions) | — |
+| #307, #308, #310, #311, #312, #313, #314, #315, #316, #318, #319, #320 | Map · Heroes · Stash · Relations · Forge · Journal · Acts · Create · Roster · Combat · Parley · Table | Major / Minor |
+
+**Strategic memo authored: [`docs/ui-audit/STRATEGY.md`](STRATEGY.md).** Answers the owner question "how to make the GUI actually work" with three options:
+
+- **Option A (1 day):** surface-area collapse — hide 11 of 17 screens, ship 6-screen play loop. Felt quality 2/10 → 5-6/10 immediately.
+- **Option B (2 weeks):** AI-driven UI validation — reuse `qa/run_duo.sh` to drive the UI through `/move`. Catches "this screen is broken" empirically.
+- **Option C (4-6 weeks):** Vite + TypeScript + shadcn/Radix migration. Replaces in-browser Babel + ad-hoc components with a real framework. Closes the tab-click bug at the primitive level.
+
+**Recommended:** A → B → C in sequence. A is the highest-leverage 1-day action. The dead-character bug (#305) needs an engine fix regardless.
+
+**Wave-0 owner decisions queued (5):**
+1. Approve Option A surface-area collapse?
+2. Forge: defer or ship by 1.0? (#312)
+3. Acts: emergent / seed-defined / drop? (#314)
+4. Combat tactical grid: hex or square? (#318)
+5. PC creation primary path: Create wizard or Roster picker? (#257 / #302)
+
+These five unblock ~80% of still-open audit issues.
+
+**Loop 8 confidence: ~98% on the audit** (now grounded in real owner playtest evidence). The audit and its issue queue are operative; the gap is implementation strategy, not audit accuracy.
+
 ---
 
 ## Scoreboard
