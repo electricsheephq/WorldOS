@@ -12,6 +12,34 @@ Nothing queued yet.
 
 ---
 
+## [1.0.2] — 2026-05-29
+
+**OpenWorlds UI graphics-release burndown — every screen cleaner, every image present,
+zero accessibility violations.** Drives the page-by-page UI audit (epic #242, Phase 5) into
+the product:
+
+- **Accessibility: axe-core 11 → 0** across all 16 screens. Scrollable framed panels + inner
+  scroll regions (session log, combat log, relations detail panes) are now keyboard-focusable
+  (#291); the World Seed notes textarea gets a label (#292). Health-check `--axe` baseline locked at 0.
+- **Item art that was silently broken now renders.** Character / Forge / Merchant built their
+  `item-<slug>` image scopes via an undefined `window.slug` → every item 404'd to a placeholder
+  despite the art existing. Defined it once + wired the Character equipped block (#270).
+- **Title-bar no longer overlaps the nav rail on any screen** (#260) — platform-aware (keeps the
+  76px inset for the macOS native traffic lights; harmless in browser).
+- **Demo-world leaks removed:** Bestiary "THE MARCHES" → "the Sword Coast" + empty stat fields
+  hidden (#262/#263); Forge Workshop-Ledger seed entries dropped for an honest empty-state
+  (#264). Creation Plane race/class/portrait-gallery art wired (#265).
+- **Engine play-loop fixes:** a `kind="player"` character is now always in the party (invariant
+  — fixes the player-in-party gate); `update_character` accepts the intuitive `skills`/`expertise`
+  aliases; auto-hit spells documented to resolve via `cast_spell` not `attack`.
+- **Proactive QA gates:** `no_rejected_tool_calls` + `xp_awarded_on_progression` (FATAL — lock the
+  version-skew + milestone-XP classes) and `caster_has_spellbook` + `quest_objectives_progress`
+  (WARN). Combat-fidelity cues validated (sprint 3.0 → 3.7).
+
+Engine 1435 + viewer 86 + axe 0 + license-check green. Native app builds clean + codesign valid.
+
+---
+
 ## [1.0.1] — 2026-05-28
 
 **Phase-4 action lanes + native-app reliability + the seven canon dossiers.** Wires the
