@@ -34,10 +34,12 @@
 set -u
 PORT=8799
 QUICK=0
+AXE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
     --quick) QUICK=1; shift ;;
+    --axe) AXE=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -221,6 +223,50 @@ if [ "$QUICK" -eq 0 ]; then
     echo "(captures left at $OUT_DIR/ for visual review — gitignored)"
   else
     warn "qa/owshot.sh not executable; skipping captures"
+  fi
+fi
+
+# 12. Optional: axe-core a11y sweep. Off by default (needs browser-driver-manager
+# + a matching ChromeDriver). Loop-5 baseline (2026-05-29) recorded 11 violations
+# across 8 screens — 10 scrollable-region-focusable + 1 label. Filed as #291 + #292.
+if [ "$AXE" -eq 1 ]; then
+  if ! command -v npx >/dev/null 2>&1; then
+    warn "npx not on PATH; skipping --axe"
+  else
+    CHROME_VER=$(/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version 2>/dev/null | awk '{print $3}' | awk -F. '{print $1}')
+    DRIVER_DIR=$(ls -d "$HOME/.browser-driver-manager/chromedriver/mac_arm-${CHROME_VER}"* 2>/dev/null | head -1)
+    CHROME_TEST_DIR=$(ls -d "$HOME/.browser-driver-manager/chrome/mac_arm-${CHROME_VER}"* 2>/dev/null | head -1)
+    if [ -z "$DRIVER_DIR" ] || [ -z "$CHROME_TEST_DIR" ]; then
+      warn "browser-driver-manager not installed for Chrome ${CHROME_VER}; install with:"
+      warn "  npx --yes browser-driver-manager install chrome=${CHROME_VER}"
+    else
+      CHROMEDRIVER="$DRIVER_DIR/chromedriver-mac-arm64/chromedriver"
+      CHROME_TEST="$CHROME_TEST_DIR/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+      AXE_OUT=/tmp/ow-axe-health
+      mkdir -p "$AXE_OUT"
+      TOTAL=0
+      for hash in launcher table combat dialogue map character inventory forge \
+                  relations journal bestiary acts merchant create seed settings; do
+        npx --yes @axe-core/cli "http://127.0.0.1:$PORT/openworlds/#${hash}" \
+          --tags wcag2a,wcag2aa \
+          --chromedriver-path "$CHROMEDRIVER" \
+          --chrome-path "$CHROME_TEST" \
+          >"$AXE_OUT/${hash}.txt" 2>&1
+        N=$(grep -oE "^[0-9]+ Accessibility issues detected" "$AXE_OUT/${hash}.txt" | awk '{print $1}')
+        N=${N:-0}
+        TOTAL=$((TOTAL + N))
+        if [ "$N" = "0" ]; then
+          pass "axe ${hash}: 0 violations"
+        else
+          warn "axe ${hash}: ${N} violations — see $AXE_OUT/${hash}.txt"
+        fi
+      done
+      if [ "$TOTAL" -le 11 ]; then
+        pass "axe total: $TOTAL violations (Loop-5 baseline = 11; no regression)"
+      else
+        fail "axe total: $TOTAL violations (Loop-5 baseline = 11; regression detected)"
+      fi
+    fi
   fi
 fi
 

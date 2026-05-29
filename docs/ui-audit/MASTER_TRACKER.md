@@ -69,6 +69,64 @@ Pushed against the asymptote. Confidence rises **to ~95%.** See [`docs/ui-audit/
 | `docs/ui-audit/MAINTAIN.md` | How to keep the audit current; what 100% really means |
 | Comment on [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Platform-aware title-bar fix (keep 76px for macOS traffic lights, drop in browser) |
 
+## Loop 5 update (2026-05-29 cont.)
+
+Operator-cleared two of the three Loop-4 asymptote items. Confidence rises **to ~97–98%.**
+
+### L5-B ✅ Native build verified (compile-clean)
+- `swift build --package-path macos/ClawDnDApp` → **Build complete (1.74s)** — Swift code compiles cleanly against the macOS 13+ target.
+- `codesign --verify --deep --strict dist/ClawDnD.app` → **valid on disk · satisfies its Designated Requirement**.
+- `Info.plist` clean (BundleID `dev.clawdnd.app`, MinSystemVersion 13.0, LocalNetworking allowed).
+- **Still pending:** the visual title-bar inspection against the real macOS traffic lights ([#260](https://github.com/100yenadmin/ClawDnD/issues/260)) — needs a human eye on the rendered window. Build itself is sound.
+
+### L5-C ✅ axe-core scan complete (16 screens)
+Installed Chrome 148 + ChromeDriver 148 via `npx browser-driver-manager install chrome=148` (matching local Chrome). Scanned all 16 screens via `@axe-core/cli` 4.11.4 with `wcag2a,wcag2aa` tags.
+
+**Total: 11 violations across 8 screens. 8 screens 0 violations.**
+
+| Screen | violations | rules |
+|---|---|---|
+| character | **3** | scrollable-region-focusable |
+| table | 2 | scrollable-region-focusable |
+| combat | 1 | scrollable-region-focusable |
+| inventory | 1 | scrollable-region-focusable |
+| forge | 1 | scrollable-region-focusable |
+| relations | 1 | scrollable-region-focusable |
+| create | 1 | scrollable-region-focusable |
+| seed | 1 | **label** |
+| launcher · dialogue · map · journal · bestiary · acts · merchant · settings | 0 | — |
+
+The dominant violation is **`scrollable-region-focusable`** (10/11 instances) — scrollable `.panel.framed` divs lack `tabIndex={0}` + `role="region"` + `aria-label`. A single fix in `chrome.jsx:292` (the shared `Panel` component) closes 10 instances at once. Filed as [#291](https://github.com/100yenadmin/ClawDnD/issues/291).
+
+The 11th violation is the **Seed chronicler's notes textarea missing label** at `screen-seed.jsx:178-191` (1-line `aria-label="Chronicler's notes"` fix). Filed as [#292](https://github.com/100yenadmin/ClawDnD/issues/292).
+
+### L5-A ⏳ Live-DM walk — still operator-driven
+Requires `claude -p` budget for one duo session. Not done in Loop 5. Remains the **only** structural-coverage gap.
+
+### Updated confidence trajectory
+
+| Loop | Confidence | What lifted it |
+|---|---|---|
+| 1 | ~75% | Initial sweep, scoring rubric, 16 epics + 20 sub-issues filed |
+| 2 | ~85% | Skipped sources read, asset catalog (2,359 dirs), camp-sidebar standalone, responsive #284 |
+| 3 | ~90% | Multi-viewport, state validation against populated save, Character bugs |
+| 4 | ~95% | Live-combat snapshot evidence, native chrome inspection, maintain-loop landed |
+| **5** | **~97–98%** | **Native build verified clean, axe-core scan reconciled — 11 violations filed as #291 + #292** |
+
+The remaining ~2–3% lives in:
+1. **L5-A** — operator-driven live-DM walk (`qa/run_duo.sh` → observe `can_act=true` UI).
+2. **Visual title-bar verification** — eye on rendered native window for #260.
+3. **The software-is-mutable constant (~1%)** — handled by `qa/ui_audit_health.sh` on every PR.
+
+### Loop 5 deliverables
+
+| Artifact | Purpose |
+|---|---|
+| [#291](https://github.com/100yenadmin/ClawDnD/issues/291) | scrollable-region-focusable cross-cutting (Major; 7 screens, 10 instances) |
+| [#292](https://github.com/100yenadmin/ClawDnD/issues/292) | World Seed textarea label (Minor; 1-line fix) |
+| Comment on [#290](https://github.com/100yenadmin/ClawDnD/issues/290) | L5-B + L5-C closure summary |
+| `qa/ui_audit_health.sh` — `--axe` flag (new) | Optional axe-core sweep, gated on browser-driver presence |
+
 ---
 
 ## Scoreboard

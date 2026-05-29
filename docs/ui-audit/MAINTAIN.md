@@ -61,10 +61,21 @@ in flight or an audit miss to file.
 qa/ui_audit_health.sh              # full sweep including captures (~3 min)
 qa/ui_audit_health.sh --quick      # skip captures (~5 s)
 qa/ui_audit_health.sh --port 8895  # custom viewer port
+qa/ui_audit_health.sh --axe        # also run axe-core on all 16 screens
+                                   #   (needs `npx browser-driver-manager
+                                   #    install chrome=<Chrome major>` once;
+                                   #    Loop-5 baseline = 11 violations)
 ```
 
 Exit code 0 = PASS (audit findings still valid as filed). Exit code 1 = drift
 that needs handling.
+
+**Loop-5 axe baseline (2026-05-29):** 11 violations across 8 screens (10
+`scrollable-region-focusable` + 1 `label`). Filed as
+[#291](https://github.com/100yenadmin/ClawDnD/issues/291) +
+[#292](https://github.com/100yenadmin/ClawDnD/issues/292). `--axe` mode passes
+as long as the total stays ≤ 11. After #291 + #292 land, **lower the baseline
+in the script to 0** so any new violation FAILs the check.
 
 ## When to run
 
@@ -112,20 +123,13 @@ substantial portion of the audit.
 | Loop 1 closeout | ~75% | Initial sweep of 16 screens, scoring rubric, reference patterns, master tracker, 16 epics + 20 sub-issues filed |
 | Loop 2 closeout | ~85% | Read skipped shared sources (data.js / icon-registry / tooltip / toast / server.py); cataloged 2,359 art dirs in `_private`; standalone camp-sidebar audit; #281 asset re-calibration; #284 responsive |
 | Loop 3 closeout | ~90% | Multi-viewport captures at 1366 / 1920; state validation against populated save; #286 + #287 + #288 + #289 sub-issues; generativity proof |
-| Loop 4 closeout | **~95%** | Snapshot-at-rest inspection of `camp_54fd704d985b` confirms live combat state shape; native Swift chrome inspection clarifies #260 platform-awareness; this maintain-loop script + doc |
+| Loop 4 closeout | ~95% | Snapshot-at-rest inspection of `camp_54fd704d985b` confirms live combat state shape; native Swift chrome inspection clarifies #260 platform-awareness; this maintain-loop script + doc |
+| Loop 5 closeout | **~97–98%** | L5-B Swift build verifies clean (1.74s) + dist/ClawDnD.app codesign valid; L5-C axe-core scan across all 16 screens (11 violations, 8 screens clean) filed as #291 + #292; `--axe` flag added to health script with Loop-5 baseline = 11 |
 
-**The remaining ~5% asymptote.** Three things would close it briefly but the
-gap re-opens as the code moves:
+**The remaining ~2-3% asymptote (post-Loop-5).** Two items remain:
 
-1. **Live-DM session observation** — operator-launched (\`claude -p\`) walk-through of one full session: parley → encounter → combat → rest → next location. Captures the `can_act=true` UI state and validates the action bar / chat / declare flow.
-2. **Native-app build + walk** — `script/build_and_run.sh --verify`; observe traffic-light interaction with #260 fix candidate; capture window-chrome screenshots; confirm in-app deep-link aliases work.
-3. **A11y scan** — run axe-core or similar against the live page; reconcile its automated findings with C6 scores per screen.
+1. **Live-DM session observation (L5-A)** — operator-launched (`claude -p`) walk-through of one full session: parley → encounter → combat → rest → next location. Captures the `can_act=true` UI state and validates the action bar / chat / declare flow. Run via `qa/run_duo.sh ow-loop5 baldurs-gate qa/play_player_openworlds.txt 8 $BUDGET`.
+2. **Visual title-bar verification (#260)** — eye on the rendered macOS app window to verify the title-bar fix candidate doesn't collide with the real native traffic lights at `RootView.swift:387-391`. The Swift build itself is verified clean (Loop-5 L5-B). The visual side is the only remaining check.
 
-The user-driven QA harness `qa/run_duo.sh` does (1) deterministically. (2) is a
-one-time Swift build + 5-minute walk. (3) is a one-time `npx @axe-core/cli`. None
-of the three is artifact-only work — they each need an operator or a build to
-run. They're documented here as the ongoing closure path.
-
-**After (1) (2) (3) land, confidence asymptotes to ~99%. The remaining 1% is the
-software-is-mutable constant.** Re-run the health check after each PR to keep it
-near 99%.
+**After (1) and (2) land, confidence asymptotes to ~99–100%. The remaining ≤1%
+is the software-is-mutable constant.** Re-run the health check (`qa/ui_audit_health.sh --quick --axe`) after each PR touching `viewer/openworlds/` to keep it near that ceiling.
