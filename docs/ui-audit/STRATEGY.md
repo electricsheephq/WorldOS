@@ -33,7 +33,52 @@ experience. 5 great screens alone = a 7/10 felt experience.
 
 ---
 
-## Three strategic options (pick one)
+## OWNER DECISION 2026-05-30 — Option B, skip A
+
+Owner rejected Option A ("not big on hiding"). Owner wants AI playtester:
+*"Just go test it blindly, and then you see how much is actually broken."*
+
+**Path forward: Option B as primary investment, Option C follows. Option A shelved.**
+
+Architecture issue: **[#324](https://github.com/electricsheephq/WorldOS/issues/324)** —
+AI playtester harness (Playwright + claude-p, 5 personas, structured bug
+reports, scoring rubric). Self-contained spec the implementation agent can pick
+up cold.
+
+**5 persona briefs at `qa/play_player_browser_*.txt`:**
+
+1. **The First-Timer** — never played D&D, never used WorldOS
+2. **The BG3 Veteran** — knows the canon, expects BG3-style affordances
+3. **The Adversarial QA** — tries to break things
+4. **The Narrative Player** — only cares about story, hates menus
+5. **The Build Optimizer** — wants every stat browsable
+
+**The harness runs each persona blind:**
+
+- Playwright drives the browser (repeatable + scriptable + captures DOM-a11y)
+- Player agent (`claude -p`) sees ONLY: screenshots + DOM-a11y-tree + console + network failures
+- DM agent (the existing `qa/run_duo.sh` pattern) handles narration via the engine
+- Bug reports emitted as structured JSON per action
+- Scoring: completed-intro-flow + dead-clicks + console-errors + persona-satisfaction (1-10)
+
+**Why this beats Option A empirically:**
+
+- 5 personas × 1 run = ~50-200 findings. The 8-loop audit found ~80. The harness is **5× faster at finding bugs than the audit.**
+- The harness validates EMPIRICALLY (the Player completed a session) vs the audit (the code looks right). Empirical > deductive for UI.
+- Bugs found by ALL personas are P0. Bugs found by 1 persona are P3. Natural prioritization.
+
+**Revised recommended path: B → C, skip A.**
+
+1. **Now (1-2 weeks): Option B v1.** Newbie persona only, single run, end-to-end. Confirm one full run produces screenshots + bugs.ndjson + summary.md. Then v2 = all 5 personas + parallel + scoring aggregator.
+2. **Next 1 week: Option B v3.** Adversarial sweep. Angry-DM persona runs nightly. Bugs auto-file as GH issues with `ui-playtest` label.
+3. **After v3: Option C.** Phased Vite + TypeScript + shadcn/Radix migration. One screen per week. AI playtester catches regressions.
+
+The original 3-option framing is preserved below for reference, but only
+Option B is active.
+
+---
+
+## Three strategic options (pick one) — historical, see decision above
 
 ### Option A — Surface-area collapse (FASTEST to "feels good")
 
