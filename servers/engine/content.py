@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -89,11 +90,83 @@ def ending_role_from_status(status: str) -> str:
     return ""
 
 
-def list_canon_characters(world_id: str, playable_only: bool = False) -> list[dict]:
+# A canon record's death is most often declared in the FIRST sentence of its `backstory`
+# prose ("X is a dead …", "X's corpse is in …", "X, named in-game as Dead Fisher, was a …
+# who died …") — Dal Lightspark has NO structured status field, only that lineage opener.
+# Scanning arbitrary bio prose for "dead" would FALSE-POSITIVE on a living figure whose
+# backstory merely mentions a dead relative/enemy, so this matcher is deliberately narrow:
+# it fires only on a self-DECLARATION about the subject in the OPENER (a copula "is/was …
+# dead/deceased/murdered/slain", a possessive/relative corpse, "found dead/slain", "lies
+# dead", an intransitive "died/perished", or a passive "killed/slain/murdered BY …"). It is
+# NOT a bare "dead" substring scan. Guards:
+#   • word-boundary "dead" (never matches undead/deadly/deadeye);
+#   • a `(?!\s+eyes)` lookahead so the "Dead Eyes" BANDIT GANG ("X is a member of the Dead
+#     Eyes") is NOT read as a death — its members are alive;
+#   • only the passive "killed BY" / copula "was killed" counts, so a LIVING figure who
+#     ACTIVELY "killed" someone (e.g. "displaced after duergar killed its people") is NOT
+#     flagged; the subject must be the victim, not the killer.
+_SELF_DEAD_CUE = re.compile(
+    # subject "is/was (a/the …) dead|deceased|murdered|slain" — but not the "Dead Eyes" gang.
+    r"\b(?:is|was)\b\s+(?:an?\s+|the\s+)?(?:[a-z'-]+\s+){0,4}(?:dead|deceased|murdered|slain)\b(?!\s+eyes\b)"
+    r"|\bwhose\s+corpse\b"            # "X whose corpse is in …" (Dal)
+    r"|\b[a-z'’]+'s\s+corpse\b"  # "X's corpse is in …"
+    r"|\bis\s+a\s+corpse\b"           # "X is a corpse in …"
+    r"|\bfound\s+(?:dead|slain)\b"    # "can be found dead/slain"
+    r"|\blies\s+dead\b"
+    r"|\b(?:died|perished)\b"         # intransitive: "who died on the beach"
+    r"|\b(?:killed|slain|murdered)\s+by\b",  # passive victim: "killed by a githyanki patrol"
+)
+# Leading wiki magic-word directives (e.g. __notoc__, __NOTOC__) to strip off an opener.
+_WIKI_DIRECTIVE_PREFIX = re.compile(r"^(?:__[a-z]+__\s*)+", re.IGNORECASE)
+
+
+def _death_opener(backstory: str) -> str:
+    """The FIRST sentence of a canon record's backstory, lowercased, with leading wiki
+    `__notoc__`-style directives stripped. The death self-declaration (if any) lives here;
+    scanning only the opener keeps a later "avenged his dead brother" mention from
+    false-positively excluding a LIVING figure."""
+    s = " ".join(str(backstory or "").split())
+    s = _WIKI_DIRECTIVE_PREFIX.sub("", s)
+    parts = re.split(r"(?<=[.!?])\s", s, maxsplit=1)
+    return (parts[0] if parts else s).lower()
+
+
+def is_dead_record(rec: dict) -> bool:
+    """Whether a canon record is DEAD in canon (and so must never be selectable/seatable as
+    the player). Checks, in order of authority:
+      1. a structured `alive: false` or `dead: true` flag (if a record ever carries one);
+      2. a bounded `status`/`fate`/`life_status` string that `ending_role_from_status`
+         classifies as "died";
+      3. a death SELF-DECLARATION in the backstory opener (see `_SELF_DEAD_CUE`).
+    Conservative by design: an absent/ambiguous signal => NOT dead (a living figure is never
+    wrongly excluded). See `_SELF_DEAD_CUE` for the false-positive guards (word-boundary
+    "dead", the "Dead Eyes" gang lookahead, victim-not-killer passive voice)."""
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("alive") is False or rec.get("dead") is True:
+        return True
+    for field in ("status", "fate", "life_status"):
+        if ending_role_from_status(str(rec.get(field, "") or "")) == "died":
+            return True
+    opener = _death_opener(rec.get("backstory", ""))
+    return bool(opener) and bool(_SELF_DEAD_CUE.search(opener))
+
+
+def list_canon_characters(
+    world_id: str, playable_only: bool = False, alive_only: "bool | None" = None
+) -> list[dict]:
     """The ingested canon characters available for a world — {name, race, class,
     playable, role} each — from content/worlds/<id>/characters/*.json. De-duplicated by
     name (a figure on two wikis collapses to one). `playable_only` keeps just the minor
-    figures the player may pick up as their PC (top heroes are filtered out)."""
+    figures the player may pick up as their PC (top heroes are filtered out).
+
+    `alive_only` ALSO drops canon-DEAD figures (a corpse like Dal Lightspark must never be
+    picked up as the PC — #305). It defaults to follow `playable_only`: the player-facing
+    "who can I play?" surface (`playable_only=True`) is alive-only, while a raw inventory
+    (`playable_only=False`) lists the dead too unless the caller asks otherwise. Pass it
+    explicitly to override."""
+    if alive_only is None:
+        alive_only = playable_only
     out: list[dict] = []
     seen: set[str] = set()
     for cdir in _characters_dirs(world_id):
@@ -109,6 +182,8 @@ def list_canon_characters(world_id: str, playable_only: bool = False) -> list[di
                 continue
             playable = is_playable(rec)
             if playable_only and not playable:
+                continue
+            if alive_only and is_dead_record(rec):
                 continue
             seen.add(nm.lower())
             out.append({
@@ -223,6 +298,7 @@ def roster_surface(
     char_class: str = "",
     level: str = "",
     playable_only: bool = True,
+    alive_only: "bool | None" = None,
     limit: int = 120,
 ) -> dict:
     """Read-only roster projection for the canon-NPC PICKER (the "reverse character creator").
@@ -238,7 +314,11 @@ def roster_surface(
     carried through verbatim as the record stores it (a string, e.g. "5").
 
     `playable_only` defaults True so origins/legends (the 7 BG3 origin companions, marked
-    `playable:false`) are EXCLUDED — the player picks a minor figure, never an origin hero. Any
+    `playable:false`) are EXCLUDED — the player picks a minor figure, never an origin hero.
+    `alive_only` ALSO drops canon-DEAD figures so a corpse (e.g. Dal Lightspark, "a dead gold
+    dwarven Harper whose corpse is in the Shadow-Cursed Lands") can never be picked as the PC
+    (#305); it defaults to follow `playable_only`, so the player-facing picker is alive-only.
+    Dead figures don't contribute facet chips either (the filter runs before the tallies). Any
     of race / char_class / level narrows the result (case-insensitive exact match on the record's
     field; an empty filter is ignored). De-duplicated by name (a figure on two wikis collapses).
 
@@ -249,6 +329,8 @@ def roster_surface(
     `limit <= 0` disables the cap); `total` is the FULL matched count and `returned` is how many
     cards rode along — the picker shows "N of total" and narrows via the chips. READ-ONLY: never
     mutates content, never touches a snapshot. Mirrors `find_canon_characters` structurally."""
+    if alive_only is None:
+        alive_only = playable_only
     racel = race.strip().lower()
     classl = char_class.strip().lower()
     levell = level.strip().lower()
@@ -282,6 +364,8 @@ def roster_surface(
             if not nm or nm.lower() in seen:
                 continue
             if playable_only and not is_playable(rec):
+                continue
+            if alive_only and is_dead_record(rec):
                 continue
             seen.add(nm.lower())
 

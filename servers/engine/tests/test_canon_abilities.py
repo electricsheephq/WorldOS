@@ -77,10 +77,12 @@ def test_derive_normalizes_messy_canon_class_strings():
 # --- through the load_canon_character tool ----------------------------------
 
 def test_canon_wizard_loads_with_derived_int_not_flat_ten(tmp_path, monkeypatch):
-    # Dal Lightspark is a canon L5 Wizard (Harper evoker) shipping NO abilities block — the
-    # exact ow-v103-reval defect. He must now seat with INT as the highest score, well above 10.
+    # Charming Latham (Guild) is a LIVING canon L5 Wizard shipping NO abilities block — the
+    # exact ow-v103-reval defect. He must seat with INT as the highest score, well above 10.
+    # (Was Dal Lightspark, but #305 made a dead canon figure un-seatable as the PC; a living
+    # wizard exercises the SAME no-abilities derivation path without tripping the seat guard.)
     c = _seed(tmp_path, monkeypatch)
-    res = server.load_canon_character(c.id, "Dal Lightspark", kind="player", add_to_party=True)
+    res = server.load_canon_character(c.id, "Charming Latham", kind="player", add_to_party=True)
     assert "error" not in res
     assert res["ability_source"] == "derived"
     ch = server._require(c.id).characters[res["id"]]

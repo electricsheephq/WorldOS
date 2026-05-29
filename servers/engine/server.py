@@ -2117,6 +2117,21 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             avail = [x["name"] for x in (content_mod.list_canon_characters(c.world_id) if c.world_id else [])]
             return {"error": f"no canon character {name!r} for world {c.world_id!r}", "available": avail}
         canonical = rec.get("name", name)
+        # HARD GATE (#305): a canon-DEAD figure (a corpse like Dal Lightspark, whose lineage
+        # opens "a dead gold dwarven Harper whose corpse is in the Shadow-Cursed Lands") may
+        # still be pulled in as a LORE npc, but must NEVER be seated as the PLAYER CHARACTER —
+        # the prestige-CRPG framing breaks if the PC's canon-truth is "dead and rotting". This
+        # backstops the picker (roster_surface alive_only) AND the play.sh / run_duo seat path,
+        # so neither the UI nor a scripted run can ever bind a dead PC. Returns the standard
+        # {"error": …} dict (play.sh checks rec.get("error") and falls back to a living pick).
+        if kind == "player" and content_mod.is_dead_record(rec):
+            return {
+                "error": (f"{canonical} is dead in canon and cannot be the player character — "
+                          f"pick a living canon NPC (list_canon_characters(playable_only=True) "
+                          f"lists only living, playable figures)."),
+                "dead_in_canon": True,
+                "name": canonical,
+            }
         dup = next((ch for ch in c.characters.values()
                     if ch.name.strip().lower() == canonical.strip().lower()), None)
         if dup is not None:

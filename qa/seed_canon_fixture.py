@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Seed a RICH canon-NPC fixture — the CORRECT GUI/QA verification surface.
 
-Seats a real mid-tier canon Baldur's Gate NPC (default Dal Lightspark, who has an ingested
-portrait) as the kind="player" PC. NEVER an invented custom PC (no portrait-less "Caelar")
-and NEVER one of the 7 BG3 origin heroes. Then travels to a real location (so scene art
-renders), recruits a canon companion, adds inventory + a quest — so every OpenWorlds screen
-has real content to render and audit.
+Seats a real mid-tier canon Baldur's Gate NPC (default Aubree — a LIVING half-elf ranger of
+the Flaming Fist who has an ingested portrait) as the kind="player" PC. NEVER an invented
+custom PC (no portrait-less "Caelar"), NEVER one of the 7 BG3 origin heroes, and NEVER a
+canon-DEAD figure — the prior default, Dal Lightspark, is a CORPSE in canon ("a dead gold
+dwarven Harper whose corpse is in the Shadow-Cursed Lands") and is now rejected as a PC by
+the engine's seat guard (#305). Then travels to a real location (so scene art renders),
+recruits a canon companion, adds inventory + a quest — so every OpenWorlds screen has real
+content to render and audit.
 
 Usage (WORLDOS_STATE_DIR preferred; legacy CLAWDND_STATE_DIR still works for v1.x):
   WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_canon_fixture.py \
-      ["Dal Lightspark"] ["Arthus"] ["loc-lower-city"]
+      ["Aubree"] ["Arthus"] ["loc-lower-city"]
 Prints the campaign_id on the last line.
 """
 import os
@@ -17,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servers", "engine"))
 import server
 
-PLAYER = sys.argv[1] if len(sys.argv) > 1 else "Dal Lightspark"
+PLAYER = sys.argv[1] if len(sys.argv) > 1 else "Aubree"
 COMPANION = sys.argv[2] if len(sys.argv) > 2 else "Arthus"
 LOC = sys.argv[3] if len(sys.argv) > 3 else "loc-lower-city"
 
@@ -29,10 +32,12 @@ def cid_of(r):
 
 
 def player_id(cid):
-    st = server.get_state(cid)
-    chars = (st or {}).get("characters") if isinstance(st, dict) else None
-    chars = list(chars.values()) if isinstance(chars, dict) else (chars or [])
-    for c in chars:
+    # get_state() exposes party members under `party` (a list of member dicts), not
+    # `characters` — read both shapes so the PC's id resolves regardless of projection.
+    st = server.get_state(cid) or {}
+    members = st.get("party") or st.get("characters") or []
+    members = list(members.values()) if isinstance(members, dict) else members
+    for c in members:
         if isinstance(c, dict) and c.get("kind") == "player":
             return c.get("id")
     return None
