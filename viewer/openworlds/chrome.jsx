@@ -1,5 +1,14 @@
 /* Shared chrome: window frame, nav rail, title bar */
 
+// Shared name→slug for /image scope keys (item-<slug>, etc.). screen-character / forge /
+// merchant build their item-art scopes via `window.slug` but it was NEVER defined — so the
+// scope collapsed to "item-" and every item silently 404'd to a Placeholder despite the art
+// existing (item-chain-mail etc. resolve). Define it once here (chrome.jsx loads before the
+// screens). Same logic as screen-inventory's local slug().
+window.slug = function slug(name) {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+};
+
 const NAV_GROUPS = [
   {
     id: "g_table", label: "Table", glyph: "dice",
