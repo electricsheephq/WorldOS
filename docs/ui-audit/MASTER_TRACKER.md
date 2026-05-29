@@ -9,6 +9,66 @@
 > `RPG_REFERENCE_PATTERNS.md` (Pathfinder/Kingmaker/BG3/DNDBeyond).
 > **Read order on resume:** this file → `SCORING_RUBRIC.md` → the per-screen doc you're working on.
 
+## Loop 2 update (2026-05-29 cont.)
+
+After Loop 1 closed at 70-75% confidence, Loop 2 attacked the named gaps. Material findings:
+
+- **Asset catalog re-calibration — [#281](https://github.com/100yenadmin/ClawDnD/issues/281).** `content/worlds/_private/baldurs-gate/images/` holds 2,359 art dirs: 2,077 portraits (incl. all 7 BG3 origins), 140 items, 77 creatures, 26 scenes, 12 classes (full PHB), 11 races, 10 maps, 6 factions. **Most Loop-1 "asset-gap" findings are UI wire-up, not ingest.** #265 / #267 / #270 / #273 / Map M-01 / Bestiary creature-slug all re-frame as "you have the art; wire `<Img scope=…>` to it".
+- **Shared infrastructure verified clean.** `data.js` is the empty `INITIAL_STATE` (line 14-22 explicitly forbids demo content); `tooltip.jsx` + `toast.jsx` solid; `icon-registry.jsx` has 12 icons + 21 aliases, room to grow (#279 still on-point); `index.html` uses local-vendored React/ReactDOM/Babel + local-vendored fonts via `vendor/google-fonts.css` (asset policy satisfied — no CDN).
+- **Server-route names validated against `viewer/server.py:5180-5407`.** All `/<screen>-surface` references in the audit docs match real handlers. No `/merchant-surface`, `/seed-surface`, `/persons-surface`, or `/lore-surface` routes exist — confirms MK-03, S-02, BE-04 as correctly scoped "needs engine route".
+- **Camp Sidebar promoted to standalone audit — `screens/camp-sidebar.md` (60/100, Polish-Pass).** 12 findings; CS-01 (Begin Resting wire) [#282](https://github.com/100yenadmin/ClawDnD/issues/282) + CS-02 (per-companion fireside) [#283](https://github.com/100yenadmin/ClawDnD/issues/283) filed.
+- **Responsive system — [#284](https://github.com/100yenadmin/ClawDnD/issues/284).** `.stack-on-narrow` class defined in `styles.css:906` but **never applied** in any screen JSX. 3-column screens crowd below 1200px instead of collapsing.
+- **GitHub routing audit.** Verified milestones + labels for #244–#279; cleaned up the `epic` label leak on sub-issues (#260, #261, #265, #273, #277) and the misleading `screen:launcher` on cross-cutting #260.
+
+**Loop 2 confidence: ~85%.** Remaining open gaps (would lift to 95% in Loop 3): interactive coverage (click-through Create wizard / palette switcher / a11y modes), multi-viewport capture (1366 / 1920), live-session UX (`canAct=true` state), native macOS app verification.
+
+## Loop 3 update (2026-05-29 cont.)
+
+Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
+
+- **Multi-viewport responsive verified.** Headless Chrome captures at 1366×768 (the laptop floor) + 1920×1080. Confirms #284 (.stack-on-narrow unused): at 1366 the **Table** + **Character** + **Inventory** 3-column screens crowd; Combat + Create + Map read OK. Filed as [#288](https://github.com/100yenadmin/ClawDnD/issues/288).
+- **State validation against a populated campaign.** `/atlas-surface` ships 23 known_locations + 45 edges; `/relations-surface` ships 5 BG factions + 11 canon NPCs (Jaheira / Minsc and Boo / Shadowheart / Wyll / Karlach / The Emperor / Withers / Astarion / …); `/character-surface` ships Astarion @ Rogue L5 HP 29/29 AC 14. **The engine DOES seed the canon when given a populated campaign.** Loop-1's framing of #261 + #273 ("under-populated") was actually a fresh-state observation. Re-framed as [#289](https://github.com/100yenadmin/ClawDnD/issues/289) — the ask is now "ensure fresh-save initial seed", not "build the seed projection".
+- **NEW bug** — `/character-surface` ships `feats` and `classFeatures` arrays with **identical content** (per SRD 5.2: `feats` = optional ASI-feats taken at L4/8/12/16/19; `classFeatures` = auto-by-level — disjoint sets). UI renders the same 10 entries twice with two different labels. Filed [#286](https://github.com/100yenadmin/ClawDnD/issues/286).
+- **NEW finding** — Astarion ships `abilities: []` + `raceTraits: []` but the UI renders the "Special Abilities" + "Lineage > traits" section headers without gating → empty panes next to the populated Feats panel. Filed [#287](https://github.com/100yenadmin/ClawDnD/issues/287).
+- **Generativity proof.** Current location is `Aldenmoor Estate — Study` — a generated canon-grounded location ("Councillor Riven Aldenmoor's Upper City estate" with a fire, Harper signet letter, district relief maps on the wall). Validates the `ClawDnD-NORTH-STAR.md` Part 1B generativity principle end-to-end.
+- **Asset re-calibration [#281](https://github.com/100yenadmin/ClawDnD/issues/281) confirmed again.** Astarion's portrait renders from `_private/baldurs-gate/images/portrait_astarion/`. Atlas backdrop renders the Sword Coast map. Wiki-first ingest → engine → `<Img>` pipeline works with real data.
+
+### Loop 3 honest scope notes
+
+- **Live-session UX still invisible.** All 18 saved campaigns have `can_act: false` — no live DM is attached to any save. The DM-attached state (live action bar enabled, live combat unfolding, dice rolling) would require launching a real `startProviderSession`. Out of scope for this artifact-only audit. The UI's two states (read-only vs live) are documented from JSX source-reading; in-flight observation deferred to operator-driven testing.
+- **Native macOS app verification still pending.** The title-bar fix (#260) would need a `script/build_and_run.sh` build + window-frame inspection. Out of scope.
+
+### Loop 3 sub-issues (#286–#289)
+
+| Issue | Title | Sev |
+|---|---|---|
+| [#286](https://github.com/100yenadmin/ClawDnD/issues/286) | `feats` and `classFeatures` carry duplicate content | Major |
+| [#287](https://github.com/100yenadmin/ClawDnD/issues/287) | Character: hide empty Special Abilities + Lineage section headers | Minor |
+| [#288](https://github.com/100yenadmin/ClawDnD/issues/288) | 1366×768 crowding on Table + Character + Inventory | Major |
+| [#289](https://github.com/100yenadmin/ClawDnD/issues/289) | Atlas/Relations fresh-save seed (reframes #261 + #273) | Major |
+
+**Loop 3 confidence: ~90%.** Remaining 10% lives in: live-session UX (operator-launched DM required), native-app verification (build required), exhaustive interaction coverage (palette/a11y/keyboard-shortcut walk-through).
+
+## Loop 4 update (2026-05-29 cont.)
+
+Pushed against the asymptote. Confidence rises **to ~95%.** See [`docs/ui-audit/MAINTAIN.md`](MAINTAIN.md) for the honest "100% on a moving target" framing.
+
+- **Live-session UX (evidence-at-rest).** Inspected `/Volumes/LEXAR/Codex/clawdnd-artproof-state/campaigns/camp_54fd704d985b/snapshot.json` — the saved engine state for the canonical BG campaign. **`combat.active = true`** at rest with full schema: `round=1`, `turn_index=2`, `order=[char_149e22788290 init 13 reaction_used=true, char_3d2a73f8f833 init 7, char_d710006ae7e0 init 6]`, `action_used=true`, `action_attacks_made=1`, `bonus_action_used=false`, `surge_actions=0`, `zones=[]`. **The live-combat state shape is documented.** When a DM provider attaches and the action bar / initiative tracker / battle log render against this state, the UI's `screen-combat.jsx:75-93` consumers (`tokens / initiative / actionBar / zones / battleLog / encounter / commandCenter / economy`) all have observable shapes to validate against. Live-session UX is no longer structurally invisible — only the operator-driven walk-through remains.
+- **Native macOS app — title-bar interaction clarified.** Inspected `macos/ClawDnDApp/Sources/ClawDnDApp/Views/RootView.swift:348-398`. The Swift `OpenWorldsChromeHostView` enables `titlebarAppearsTransparent + fullSizeContentView` AND `unhides` all three standard window buttons (close/min/zoom). The `paddingLeft: 76` in `chrome.jsx:422` exists **specifically to clear the macOS native traffic lights**. #260's acceptance criteria need to be **platform-aware**: keep 76px in native, drop/shrink in browser. Filed as a clarification comment on #260.
+- **Interactive coverage code-verified.** Keyboard map (`app.jsx:197-220`): 17 shortcuts (t/x/p/m/c/i/f/r/j/b/a/$/w/n/s/,/?). Palette (`styles.css`): 2 alt-palette blocks (`cool`, `dark`) + default warm. A11y (`styles.css:849-892`): `[data-reduced-motion=on]` universal animation-duration zeroing + `[data-contrast=high]` panel/btn/window/parchment chrome overrides + `--ui-scale` via `zoom` on `.window`. Create wizard (`screen-create.jsx:19-27, 133-139, 572-576`): 7 steps + 5e-canonical point-buy `abilityCost = {8:0, 9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}`. All wiring matches the audit's framework reading.
+- **`dist/ClawDnD.app` exists locally.** The native app has been built. Operator can run it for the visual walk that Loop 4 can't do artifact-only.
+- **Maintain loop landed.** `qa/ui_audit_health.sh` runs 30 structural checks (viewer reachable, data.js empty, icon-registry baseline, demo-leak grep with JSX-comment-aware regex, surface-route 200s, server.py route literals, responsive + a11y CSS, asset-catalog size ≥ 2000, headless capture pipeline). **All 30 PASS at Loop 4 baseline.** Re-run on every PR touching `viewer/openworlds/`, `viewer/server.py`, `content/worlds/`, or `styles.css`. Doc: [`MAINTAIN.md`](MAINTAIN.md).
+
+**Loop 4 confidence: ~95%.** The remaining ~5% is the asymptote: operator-driven live-DM walk, native-app run, axe-core scan. After those (one operator session, one Swift build, one CLI invocation), confidence → ~99%. The final 1% is the software-is-mutable constant — handled by re-running `qa/ui_audit_health.sh` on every PR.
+
+### Loop 4 deliverables
+
+| Artifact | Purpose |
+|---|---|
+| `qa/ui_audit_health.sh` | 30-check structural sweep; PASS = audit findings still valid |
+| `docs/ui-audit/MAINTAIN.md` | How to keep the audit current; what 100% really means |
+| Comment on [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Platform-aware title-bar fix (keep 76px for macOS traffic lights, drop in browser) |
+
 ---
 
 ## Scoreboard
@@ -31,8 +91,9 @@
 | 14 | Creation Plane (Create) | **60** | Polish-Pass | [#257](https://github.com/100yenadmin/ClawDnD/issues/257) | [create.md](screens/create.md) | [png](screenshots/create-1512.png) |
 | 15 | Codex (Bestiary) | **56** | Finish-Wave | [#254](https://github.com/100yenadmin/ClawDnD/issues/254) | [bestiary.md](screens/bestiary.md) | [png](screenshots/bestiary-1512.png) |
 | 16 | World Seed | **50** | Finish-Wave | [#258](https://github.com/100yenadmin/ClawDnD/issues/258) | [seed.md](screens/seed.md) | [png](screenshots/seed-1512.png) |
+| 17* | Camp Sidebar (Loop 2) | **60** | Polish-Pass | (rolls up under #249) | [camp-sidebar.md](screens/camp-sidebar.md) | _capture in Map campMode_ |
 
-**Average: 66.6/100.** Bottom-up: 8 screens lift through Polish; 2 through Finish; 1 already Release-Ready.
+**Average: 66.2/100** (across 17 audited surfaces). Bottom-up: 9 screens lift through Polish; 2 through Finish; 1 Release-Ready. \*Camp Sidebar is mounted inside Atlas (campMode) and rolls under #249; standalone audit added in Loop 2.
 
 ---
 
@@ -62,6 +123,10 @@
 | [#277](https://github.com/100yenadmin/ClawDnD/issues/277) | Create Family + Biography wiring | Major | wire-prototypes | Polish Wave |
 | [#278](https://github.com/100yenadmin/ClawDnD/issues/278) | Settings Export chronicle wire | Major | wire-prototypes | Polish Wave |
 | [#279](https://github.com/100yenadmin/ClawDnD/issues/279) | Iconography: OpenWorldsIcon registry usage across screens | Major | per-page-polish + iconography | Polish Wave |
+| [#281](https://github.com/100yenadmin/ClawDnD/issues/281) | **Asset catalog re-calibration: art exists for nearly every gap** | Major | portraits + per-scene-art | Polish Wave |
+| [#282](https://github.com/100yenadmin/ClawDnD/issues/282) | Camp Sidebar: 'Begin Resting' CTA needs engine write-lane | Critical | wire-prototypes | Polish Wave |
+| [#283](https://github.com/100yenadmin/ClawDnD/issues/283) | Camp Sidebar: per-companion fireside TALK_PROMPTS | Critical | per-page-polish + wire-prototypes | Polish Wave |
+| [#284](https://github.com/100yenadmin/ClawDnD/issues/284) | Responsive: .stack-on-narrow defined but unused; screens crowd <1200px | Major | per-page-polish | Polish Wave |
 
 ---
 
@@ -79,9 +144,10 @@
 ### Wave 1 — cross-cutting sweeps (highest leverage)
 
 5. **#260 (title-bar overlap)** — single change lifts every screen.
-6. **#270 (Img-not-Placeholder sweep)** — 8 screens lift at once once items + portraits + scene art exists in `_private/`.
+6. **#270 (Img-not-Placeholder sweep)** — 8 screens lift at once. **Per Loop-2 #281: art ALREADY EXISTS** for every spot in the table — pure UI work, no ingest blocking.
 7. **#261 (BG nav graph seed)** — Atlas elevates from 72 → 80+.
-8. **#273 (BG factions seed)** — Relations stays at 80+ with full content.
+8. **#273 (BG factions seed)** — Relations stays at 80+ with full content. **Per #281: all 6 BG faction sigils already ingested.**
+9. **#284 (apply .stack-on-narrow or refactor responsive)** — lifts C9 scores on 8+ screens at the < 1200px breakpoint.
 
 ### Wave 2 — per-screen criticals
 
@@ -101,6 +167,12 @@
 ### Wave 4 — per-screen minors + trivials
 
 18. Implementation agent files individual tickets per per-screen audit doc Minor/Trivial rows as work is picked up. The audit docs hold the source of truth — don't pre-file 60+ Minor tickets.
+
+### Wave 5 — Camp (Loop 2 lane)
+
+19. **#282 (Begin Resting wire)** — the single most felt missing wire on Atlas; unlocks the whole camp sidebar.
+20. **#283 (per-companion fireside)** — content-first; pairs with #58 Owlcat-style companion campaigns.
+21. Remaining CS-* findings in `screens/camp-sidebar.md` filed as Wave-3-style polish.
 
 ---
 
