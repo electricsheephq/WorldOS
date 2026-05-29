@@ -9,6 +9,19 @@
 > `RPG_REFERENCE_PATTERNS.md` (Pathfinder/Kingmaker/BG3/DNDBeyond).
 > **Read order on resume:** this file → `SCORING_RUBRIC.md` → the per-screen doc you're working on.
 
+## Loop 2 update (2026-05-29 cont.)
+
+After Loop 1 closed at 70-75% confidence, Loop 2 attacked the named gaps. Material findings:
+
+- **Asset catalog re-calibration — [#281](https://github.com/100yenadmin/ClawDnD/issues/281).** `content/worlds/_private/baldurs-gate/images/` holds 2,359 art dirs: 2,077 portraits (incl. all 7 BG3 origins), 140 items, 77 creatures, 26 scenes, 12 classes (full PHB), 11 races, 10 maps, 6 factions. **Most Loop-1 "asset-gap" findings are UI wire-up, not ingest.** #265 / #267 / #270 / #273 / Map M-01 / Bestiary creature-slug all re-frame as "you have the art; wire `<Img scope=…>` to it".
+- **Shared infrastructure verified clean.** `data.js` is the empty `INITIAL_STATE` (line 14-22 explicitly forbids demo content); `tooltip.jsx` + `toast.jsx` solid; `icon-registry.jsx` has 12 icons + 21 aliases, room to grow (#279 still on-point); `index.html` uses local-vendored React/ReactDOM/Babel + local-vendored fonts via `vendor/google-fonts.css` (asset policy satisfied — no CDN).
+- **Server-route names validated against `viewer/server.py:5180-5407`.** All `/<screen>-surface` references in the audit docs match real handlers. No `/merchant-surface`, `/seed-surface`, `/persons-surface`, or `/lore-surface` routes exist — confirms MK-03, S-02, BE-04 as correctly scoped "needs engine route".
+- **Camp Sidebar promoted to standalone audit — `screens/camp-sidebar.md` (60/100, Polish-Pass).** 12 findings; CS-01 (Begin Resting wire) [#282](https://github.com/100yenadmin/ClawDnD/issues/282) + CS-02 (per-companion fireside) [#283](https://github.com/100yenadmin/ClawDnD/issues/283) filed.
+- **Responsive system — [#284](https://github.com/100yenadmin/ClawDnD/issues/284).** `.stack-on-narrow` class defined in `styles.css:906` but **never applied** in any screen JSX. 3-column screens crowd below 1200px instead of collapsing.
+- **GitHub routing audit.** Verified milestones + labels for #244–#279; cleaned up the `epic` label leak on sub-issues (#260, #261, #265, #273, #277) and the misleading `screen:launcher` on cross-cutting #260.
+
+**Loop 2 confidence: ~85%.** Remaining open gaps (would lift to 95% in Loop 3): interactive coverage (click-through Create wizard / palette switcher / a11y modes), multi-viewport capture (1366 / 1920), live-session UX (`canAct=true` state), native macOS app verification.
+
 ---
 
 ## Scoreboard
@@ -31,8 +44,9 @@
 | 14 | Creation Plane (Create) | **60** | Polish-Pass | [#257](https://github.com/100yenadmin/ClawDnD/issues/257) | [create.md](screens/create.md) | [png](screenshots/create-1512.png) |
 | 15 | Codex (Bestiary) | **56** | Finish-Wave | [#254](https://github.com/100yenadmin/ClawDnD/issues/254) | [bestiary.md](screens/bestiary.md) | [png](screenshots/bestiary-1512.png) |
 | 16 | World Seed | **50** | Finish-Wave | [#258](https://github.com/100yenadmin/ClawDnD/issues/258) | [seed.md](screens/seed.md) | [png](screenshots/seed-1512.png) |
+| 17* | Camp Sidebar (Loop 2) | **60** | Polish-Pass | (rolls up under #249) | [camp-sidebar.md](screens/camp-sidebar.md) | _capture in Map campMode_ |
 
-**Average: 66.6/100.** Bottom-up: 8 screens lift through Polish; 2 through Finish; 1 already Release-Ready.
+**Average: 66.2/100** (across 17 audited surfaces). Bottom-up: 9 screens lift through Polish; 2 through Finish; 1 Release-Ready. \*Camp Sidebar is mounted inside Atlas (campMode) and rolls under #249; standalone audit added in Loop 2.
 
 ---
 
@@ -62,6 +76,10 @@
 | [#277](https://github.com/100yenadmin/ClawDnD/issues/277) | Create Family + Biography wiring | Major | wire-prototypes | Polish Wave |
 | [#278](https://github.com/100yenadmin/ClawDnD/issues/278) | Settings Export chronicle wire | Major | wire-prototypes | Polish Wave |
 | [#279](https://github.com/100yenadmin/ClawDnD/issues/279) | Iconography: OpenWorldsIcon registry usage across screens | Major | per-page-polish + iconography | Polish Wave |
+| [#281](https://github.com/100yenadmin/ClawDnD/issues/281) | **Asset catalog re-calibration: art exists for nearly every gap** | Major | portraits + per-scene-art | Polish Wave |
+| [#282](https://github.com/100yenadmin/ClawDnD/issues/282) | Camp Sidebar: 'Begin Resting' CTA needs engine write-lane | Critical | wire-prototypes | Polish Wave |
+| [#283](https://github.com/100yenadmin/ClawDnD/issues/283) | Camp Sidebar: per-companion fireside TALK_PROMPTS | Critical | per-page-polish + wire-prototypes | Polish Wave |
+| [#284](https://github.com/100yenadmin/ClawDnD/issues/284) | Responsive: .stack-on-narrow defined but unused; screens crowd <1200px | Major | per-page-polish | Polish Wave |
 
 ---
 
@@ -79,9 +97,10 @@
 ### Wave 1 — cross-cutting sweeps (highest leverage)
 
 5. **#260 (title-bar overlap)** — single change lifts every screen.
-6. **#270 (Img-not-Placeholder sweep)** — 8 screens lift at once once items + portraits + scene art exists in `_private/`.
+6. **#270 (Img-not-Placeholder sweep)** — 8 screens lift at once. **Per Loop-2 #281: art ALREADY EXISTS** for every spot in the table — pure UI work, no ingest blocking.
 7. **#261 (BG nav graph seed)** — Atlas elevates from 72 → 80+.
-8. **#273 (BG factions seed)** — Relations stays at 80+ with full content.
+8. **#273 (BG factions seed)** — Relations stays at 80+ with full content. **Per #281: all 6 BG faction sigils already ingested.**
+9. **#284 (apply .stack-on-narrow or refactor responsive)** — lifts C9 scores on 8+ screens at the < 1200px breakpoint.
 
 ### Wave 2 — per-screen criticals
 
@@ -101,6 +120,12 @@
 ### Wave 4 — per-screen minors + trivials
 
 18. Implementation agent files individual tickets per per-screen audit doc Minor/Trivial rows as work is picked up. The audit docs hold the source of truth — don't pre-file 60+ Minor tickets.
+
+### Wave 5 — Camp (Loop 2 lane)
+
+19. **#282 (Begin Resting wire)** — the single most felt missing wire on Atlas; unlocks the whole camp sidebar.
+20. **#283 (per-companion fireside)** — content-first; pairs with #58 Owlcat-style companion campaigns.
+21. Remaining CS-* findings in `screens/camp-sidebar.md` filed as Wave-3-style polish.
 
 ---
 
