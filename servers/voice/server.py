@@ -1,4 +1,4 @@
-"""ClawDnD voice MCP server.
+"""WorldOS voice MCP server.
 
 A swappable voice layer with two directions:
 
