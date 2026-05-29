@@ -1,13 +1,13 @@
 ---
-name: clawdnd-dev
-description: Develop, test, and QA the ClawDnD plugin (the living-world D&D 5e engine). Use when implementing an engine/content/QA change, running or scoring a playtest, delegating a build to a subagent, or resuming the project after a compaction. Encodes the exact dev loop (worktree → additive change → single-process LEXAR pytest → PR → squash-admin merge → prune), the QA loop (duo / combat-sprint runners + the 3 lenses + behavioral gate), and the load-bearing engine invariants. Read ClawDnD-RUNBOOK.md first for full context.
+name: worldos-dev
+description: Develop, test, and QA the WorldOS plugin (the living-world D&D 5e engine). Use when implementing an engine/content/QA change, running or scoring a playtest, delegating a build to a subagent, or resuming the project after a compaction. Encodes the exact dev loop (worktree → additive change → single-process LEXAR pytest → PR → squash-admin merge → prune), the QA loop (duo / combat-sprint runners + the 3 lenses + behavioral gate), and the load-bearing engine invariants. Read WorldOS-RUNBOOK.md first for full context.
 ---
 
-# ClawDnD Dev
+# WorldOS Dev
 
-You build and harden **ClawDnD** — a post-BG3 living-world D&D 5e Claude Code plugin. North
+You build and harden **WorldOS** — a post-BG3 living-world D&D 5e Claude Code plugin. North
 star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; goal: a
-universe-system that generates worlds. FREE product, BG-only. **Read `ClawDnD-RUNBOOK.md`
+universe-system that generates worlds. FREE product, BG-only. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
 ## Load-bearing INVARIANTS (never violate)
