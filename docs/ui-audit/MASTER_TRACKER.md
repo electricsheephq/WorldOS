@@ -127,6 +127,47 @@ The remaining ~2–3% lives in:
 | Comment on [#290](https://github.com/100yenadmin/ClawDnD/issues/290) | L5-B + L5-C closure summary |
 | `qa/ui_audit_health.sh` — `--axe` flag (new) | Optional axe-core sweep, gated on browser-driver presence |
 
+## Loop 6 update (2026-05-29 cont.) — verification of implementation agent's claim
+
+The implementation agent (paused, then unpaused) claimed "implemented all fixes and solved all issues." Loop 6 verified independently against current `main` (HEAD `c6ebdb0`). **Claim is overstated.** ~10 issues materially fixed in code; the rest still pending. The user's specific complaint about [#260](https://github.com/100yenadmin/ClawDnD/issues/260) (title-bar overlap) is CORRECT — chrome.jsx:435 still hardcodes `paddingLeft: 76` without platform-aware fork.
+
+### Issues VERIFIED FIXED + closed in Loop 6 (7 newly closed)
+
+| Issue | Status | Evidence |
+|---|---|---|
+| [#262](https://github.com/100yenadmin/ClawDnD/issues/262) | ✅ closed | screen-bestiary.jsx:195-196 reads `worldLabel \|\| "the Sword Coast"` — data-driven |
+| [#264](https://github.com/100yenadmin/ClawDnD/issues/264) | ✅ closed | screen-forge.jsx:43 `useState([])` — empty log |
+| [#267](https://github.com/100yenadmin/ClawDnD/issues/267) | ✅ closed | screen-combat.jsx:25 `prefix = t.team === 'foe' ? 'creature-' : 'portrait-'` |
+| [#269](https://github.com/100yenadmin/ClawDnD/issues/269) | ✅ closed | screen-merchant.jsx:17 `useState("talli")` |
+| [#270](https://github.com/100yenadmin/ClawDnD/issues/270) | ✅ closed | health-check Placeholder/portrait count 2 (was baseline 8) |
+| [#291](https://github.com/100yenadmin/ClawDnD/issues/291) | ✅ closed | axe-core 16 screens × 0 violations (was 10) |
+| [#292](https://github.com/100yenadmin/ClawDnD/issues/292) | ✅ closed | seed=0 violations |
+
+Combined with the 3 the implementation agent closed (#263, #265, #266) → **10 audit-cycle issues closed.**
+
+### Issues VERIFIED NOT FIXED despite implied agent claim (5 commented)
+
+| Issue | Sev | Why still open |
+|---|---|---|
+| [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Critical | chrome.jsx:435 still `paddingLeft: 76` hardcoded; Loop-4 platform-aware fork ignored. **This is the user's direct complaint.** |
+| [#268](https://github.com/100yenadmin/ClawDnD/issues/268) | Critical | screen-character.jsx:860 still shows "No spells prepared yet" with no "Browse spellbook" CTA |
+| [#271](https://github.com/100yenadmin/ClawDnD/issues/271) | Major | screen-inventory.jsx:308 EQUIP_SLOTS still 6 flat slots; no paper-doll, no 12-slot canonical |
+| [#282](https://github.com/100yenadmin/ClawDnD/issues/282) | Critical | camp-sidebar.jsx:293 "Begin Resting" still `disabled` with display-only title |
+| [#286](https://github.com/100yenadmin/ClawDnD/issues/286) | Major | server.py:3404 + 3407 still both iterate `for f in features` — feats & classFeatures still identical content |
+
+### Maintain-loop confirms what landed works
+
+- `qa/ui_audit_health.sh --port 8765 --quick` → **all 30 checks PASS**
+- `qa/ui_audit_health.sh --port 8765 --quick --axe` → **all 16 screens × 0 axe violations**
+- Engine projects 21 known_locations + 41 edges + 5 BG factions + canon NPCs (re-validates #289)
+- Asset catalog intact at 2,359 art dirs
+
+### Outstanding work (40 open issues across #244–#292)
+
+The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals and majors remain. The implementation agent's commits touched 47 files (+5,200 lines) including the engine-side write lanes (#266 seed surface + #263 intel-tier bestiary + portrait-gen + roster surface), but **left 5 named criticals untouched** and **did not close ~30 issues whose code did land**. The pattern: code landed, GitHub state lagged.
+
+**Loop 6 confidence: still ~95% on the audit** (the audit findings remain accurate; this loop just verified the implementation status). The Code Health is partially improved but not "release-ready" yet — #260 alone is a release blocker per the user observation.
+
 ---
 
 ## Scoreboard
