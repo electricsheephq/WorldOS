@@ -2153,6 +2153,17 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
                 head["subclass"] = flat_subclass
             head.setdefault("name", ch.classes[0].name if ch.classes else "")
             data["classes"] = [head] + list(existing[1:])
+        # DM affordance: 'skills'/'expertise' are the intuitive names for the model's
+        # skill_proficiencies/skill_expertise (QA ow-swB: a DM set proficiencies via
+        # patch={"skills":["Arcana",...]} and tripped extra="forbid", flipping the
+        # no_rejected_tool_calls gate RED). Translate the two known aliases here, same as
+        # the class aliases above — a genuine typo ("skilz") still trips forbid.
+        flat_skills = data.pop("skills", None)
+        flat_expertise = data.pop("expertise", None)
+        if flat_skills is not None:
+            data["skill_proficiencies"] = flat_skills
+        if flat_expertise is not None:
+            data["skill_expertise"] = flat_expertise
         new_ch = Character.model_validate(data)
         # Recompute derived class math when level/class changed via the aliases (today even a
         # correct `classes` patch leaves prof_bonus/saves/features stale — this finishes the

@@ -147,6 +147,23 @@ def test_award_party_xp_splits_evenly(tmp_path, monkeypatch):
     assert sum(g["granted"] for g in out["grants"]) == 150
 
 
+def test_update_character_skills_alias_maps_to_proficiencies(tmp_path, monkeypatch):
+    # QA ow-swB: a DM set proficiencies via patch={"skills":[...]} and tripped
+    # extra="forbid" (the model field is skill_proficiencies), flipping the
+    # no_rejected_tool_calls gate RED. The tool now translates the intuitive 'skills' /
+    # 'expertise' aliases the way it already folds level/class_name — a genuine typo
+    # ("skilz") still raises so the strict-rejection guard stays load-bearing.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
+    out = server.update_character(
+        cid, pc, {"skills": ["Arcana", "History"], "expertise": ["Arcana"]})
+    assert out["skill_proficiencies"] == ["Arcana", "History"]
+    assert out["skill_expertise"] == ["Arcana"]
+    with pytest.raises(Exception):
+        server.update_character(cid, pc, {"skilz": ["Stealth"]})
+
+
 # --- iteration 3: off-turn attack is a reaction (turn-order enforcement) -----
 
 
