@@ -49,6 +49,26 @@ Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
 
 **Loop 3 confidence: ~90%.** Remaining 10% lives in: live-session UX (operator-launched DM required), native-app verification (build required), exhaustive interaction coverage (palette/a11y/keyboard-shortcut walk-through).
 
+## Loop 4 update (2026-05-29 cont.)
+
+Pushed against the asymptote. Confidence rises **to ~95%.** See [`docs/ui-audit/MAINTAIN.md`](MAINTAIN.md) for the honest "100% on a moving target" framing.
+
+- **Live-session UX (evidence-at-rest).** Inspected `/Volumes/LEXAR/Codex/clawdnd-artproof-state/campaigns/camp_54fd704d985b/snapshot.json` — the saved engine state for the canonical BG campaign. **`combat.active = true`** at rest with full schema: `round=1`, `turn_index=2`, `order=[char_149e22788290 init 13 reaction_used=true, char_3d2a73f8f833 init 7, char_d710006ae7e0 init 6]`, `action_used=true`, `action_attacks_made=1`, `bonus_action_used=false`, `surge_actions=0`, `zones=[]`. **The live-combat state shape is documented.** When a DM provider attaches and the action bar / initiative tracker / battle log render against this state, the UI's `screen-combat.jsx:75-93` consumers (`tokens / initiative / actionBar / zones / battleLog / encounter / commandCenter / economy`) all have observable shapes to validate against. Live-session UX is no longer structurally invisible — only the operator-driven walk-through remains.
+- **Native macOS app — title-bar interaction clarified.** Inspected `macos/ClawDnDApp/Sources/ClawDnDApp/Views/RootView.swift:348-398`. The Swift `OpenWorldsChromeHostView` enables `titlebarAppearsTransparent + fullSizeContentView` AND `unhides` all three standard window buttons (close/min/zoom). The `paddingLeft: 76` in `chrome.jsx:422` exists **specifically to clear the macOS native traffic lights**. #260's acceptance criteria need to be **platform-aware**: keep 76px in native, drop/shrink in browser. Filed as a clarification comment on #260.
+- **Interactive coverage code-verified.** Keyboard map (`app.jsx:197-220`): 17 shortcuts (t/x/p/m/c/i/f/r/j/b/a/$/w/n/s/,/?). Palette (`styles.css`): 2 alt-palette blocks (`cool`, `dark`) + default warm. A11y (`styles.css:849-892`): `[data-reduced-motion=on]` universal animation-duration zeroing + `[data-contrast=high]` panel/btn/window/parchment chrome overrides + `--ui-scale` via `zoom` on `.window`. Create wizard (`screen-create.jsx:19-27, 133-139, 572-576`): 7 steps + 5e-canonical point-buy `abilityCost = {8:0, 9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}`. All wiring matches the audit's framework reading.
+- **`dist/ClawDnD.app` exists locally.** The native app has been built. Operator can run it for the visual walk that Loop 4 can't do artifact-only.
+- **Maintain loop landed.** `qa/ui_audit_health.sh` runs 30 structural checks (viewer reachable, data.js empty, icon-registry baseline, demo-leak grep with JSX-comment-aware regex, surface-route 200s, server.py route literals, responsive + a11y CSS, asset-catalog size ≥ 2000, headless capture pipeline). **All 30 PASS at Loop 4 baseline.** Re-run on every PR touching `viewer/openworlds/`, `viewer/server.py`, `content/worlds/`, or `styles.css`. Doc: [`MAINTAIN.md`](MAINTAIN.md).
+
+**Loop 4 confidence: ~95%.** The remaining ~5% is the asymptote: operator-driven live-DM walk, native-app run, axe-core scan. After those (one operator session, one Swift build, one CLI invocation), confidence → ~99%. The final 1% is the software-is-mutable constant — handled by re-running `qa/ui_audit_health.sh` on every PR.
+
+### Loop 4 deliverables
+
+| Artifact | Purpose |
+|---|---|
+| `qa/ui_audit_health.sh` | 30-check structural sweep; PASS = audit findings still valid |
+| `docs/ui-audit/MAINTAIN.md` | How to keep the audit current; what 100% really means |
+| Comment on [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Platform-aware title-bar fix (keep 76px for macOS traffic lights, drop in browser) |
+
 ---
 
 ## Scoreboard
