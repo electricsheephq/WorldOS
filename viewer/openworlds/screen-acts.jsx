@@ -1,5 +1,24 @@
 /* Screen: Acts — chronicle progression, current act, memorable moments */
 
+/* Party portrait scope — mirrors screen-character/relations: derive from slug(name)
+   ("portrait-jaheira") so a canon face resolves; fall back to the instance id, then to
+   <Img>'s neutral PortraitSilhouette for a portrait-less name. */
+function aPortraitScope(p) {
+  const s = (p && p.name && window.slug) ? window.slug(p.name) : "";
+  if (s) return "portrait-" + s;
+  return (p && p.id) ? "portrait-" + p.id : "";
+}
+
+/* The shape every campaign takes — the DM runs a 3-act arc (skills/dungeon-master/AGENT.md).
+   Shown ONLY as a faded preview while a save has no compiled acts yet, so a new player sees
+   what the chronicle will hold. This is a TEMPLATE of the dramatic form, never fabricated
+   progress: no dates, no "you are here", no choices — the engine fills the real acts in. */
+const ARC_PREVIEW = [
+  { numeral: "I", name: "The Inciting Incident", note: "A grounded hook that matters to a person — where the road begins." },
+  { numeral: "II", name: "The Turn", note: "Rising trouble and a midpoint reversal that costs the hero something real." },
+  { numeral: "III", name: "The Reckoning", note: "The threads converge — a climax, and the price paid finally matters." },
+];
+
 function ScreenActs({ onNavigate, state, setState }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -88,7 +107,32 @@ function ScreenActs({ onNavigate, state, setState }) {
               onSelect={() => setSelectedActId(a.id)}
             />
           ))}
-          {!acts.length && <div className="body-sm muted">No compiled acts are available for this save yet.</div>}
+          {/* No compiled acts yet → show the faded SHAPE the chronicle will take (the 3-act
+              arc), so the spine reads as "waiting to be written" rather than broken. Purely
+              illustrative: dimmed, no "you are here", no dates. */}
+          {!acts.length && ARC_PREVIEW.map((a, i) => (
+            <div key={a.numeral} style={{ position: "relative", paddingBottom: i === ARC_PREVIEW.length - 1 ? 0 : 24, opacity: 0.5 }}>
+              <div aria-hidden="true" style={{
+                position: "absolute", left: -22, top: 0,
+                width: 24, height: 24, borderRadius: "50%",
+                background: "radial-gradient(circle at 30% 30%, var(--b-400), color-mix(in oklab, var(--b-400), black 35%))",
+                boxShadow: "inset 0 0 0 1px var(--w-500), 0 2px 4px rgba(0,0,0,0.25)",
+                display: "grid", placeItems: "center",
+                fontFamily: "var(--f-display)", fontSize: 10, color: "var(--w-300)",
+                fontStyle: "italic",
+              }}>{a.numeral}</div>
+              <div style={{
+                marginLeft: 12, padding: "8px 14px",
+                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+                borderLeft: "2px dashed rgba(140,100,60,0.4)",
+              }}>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-600)", fontStyle: "italic" }}>
+                  Act {a.numeral} · {a.name}
+                </div>
+                <div className="hand muted" style={{ fontSize: 12, marginTop: 2 }}>{a.note}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </Panel>
 
@@ -162,13 +206,53 @@ function ActSpineRow({ act, isLast, selected, onSelect }) {
 
 function ActDetail({ act, surface }) {
   if (!act) {
+    // Honest + inviting empty-state: no acts are compiled yet, so instead of a barren pane
+    // we explain WHY (the chronicle is written as you play) and show the SHAPE a campaign
+    // takes — the 3-act arc — clearly as a preview, never as fabricated progress.
     return (
-      <div style={{ display: "grid", placeItems: "center", height: "100%", textAlign: "center" }}>
-        <div>
-          <h2 className="h1" style={{ fontSize: 22 }}>{surface?.emptyState?.title || "No act selected"}</h2>
-          <p className="hand muted" style={{ marginTop: 6, maxWidth: 420 }}>
-            {surface?.emptyState?.body || "The chronicle is waiting for compiled campaign-director state."}
-          </p>
+      <div>
+        <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Chronicle</div>
+        <h1 className="h1" style={{ fontSize: 26 }}>{surface?.emptyState?.title || "Acts not tracked yet"}</h1>
+        <p className="body" style={{ marginTop: 6 }}>
+          {surface?.emptyState?.body || "The campaign director has not compiled act progress for this save yet."}
+        </p>
+        <p className="hand muted" style={{ marginTop: 8, maxWidth: 520 }}>
+          Your chronicle is written as you play. Once the campaign director has compiled the
+          first act — after a few beats on the road — the acts you've lived will appear here,
+          with their key choices, the beats worth remembering, and who walked them with you.
+        </p>
+
+        <Divider />
+
+        <SectionTitle ordinal="·">The shape a campaign takes</SectionTitle>
+        <p className="body-sm muted" style={{ marginTop: 2, marginBottom: 12 }}>
+          Every story here is told in three acts. This is the form your chronicle will fill —
+          not what has happened yet.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {ARC_PREVIEW.map((a) => (
+            <div key={a.numeral} style={{
+              display: "grid", gridTemplateColumns: "44px 1fr", gap: 12, alignItems: "center",
+              padding: 12, opacity: 0.7,
+              background: "rgba(176,141,87,0.06)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+              borderLeft: "2px dashed rgba(140,100,60,0.45)",
+            }}>
+              <div aria-hidden="true" style={{
+                width: 40, height: 40, borderRadius: "50%", justifySelf: "center",
+                background: "radial-gradient(circle at 30% 30%, var(--b-400), color-mix(in oklab, var(--b-400), black 35%))",
+                boxShadow: "inset 0 0 0 1px var(--w-500), 0 2px 4px rgba(0,0,0,0.25)",
+                display: "grid", placeItems: "center",
+                fontFamily: "var(--f-display)", fontSize: 15, color: "var(--w-300)", fontStyle: "italic",
+              }}>{a.numeral}</div>
+              <div>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, letterSpacing: "0.06em", color: "var(--ink-800)" }}>
+                  Act {a.numeral} · {a.name}
+                </div>
+                <div className="hand muted" style={{ fontSize: 13, marginTop: 2 }}>{a.note}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -196,7 +280,7 @@ function ActDetail({ act, surface }) {
       <Divider />
 
       {act.illustration && (
-        <Placeholder label={`illustration · ${act.illustration}`} h={140} framed style={{ width: "100%", marginBottom: 16 }} />
+        <Img scope={act.imageScope || ("act-" + act.id)} label={`illustration · ${act.illustration}`} h={140} fit="cover" framed style={{ width: "100%", marginBottom: 16 }} />
       )}
 
       <p className="body dropcap">{act.synopsis || act.summary || "This act has no player-facing synopsis yet."}</p>
@@ -248,7 +332,7 @@ function ActDetail({ act, surface }) {
             background: "rgba(95, 75, 45, 0.06)",
             boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
           }}>
-            <Placeholder label={`chronicle · ${m.sketch || m.status || m.label || "beat"}`} h={70} framed />
+            <Img scope={m.imageScope || ("beat-" + (m.id != null ? m.id : i))} label={`chronicle · ${m.sketch || m.status || m.label || "beat"}`} h={70} fit="cover" framed />
             <div className="hand" style={{ fontSize: 13, marginTop: 6, color: "var(--ink-700)", fontStyle: "italic" }}>
               "{m.text || m.title || m.questTitle || m.note}"
             </div>
@@ -267,7 +351,7 @@ function ActDetail({ act, surface }) {
           <div style={{ display: "flex", gap: 8 }}>
             {act.partyAtStart.map((p, i) => (
               <div key={i} style={{ textAlign: "center", flex: 1 }}>
-                <Placeholder label={p.short} w="100%" h={60} framed />
+                <Img scope={aPortraitScope(p)} label={p.name || p.short} w="100%" h={60} fit="cover" framed />
                 <div className="hand" style={{ fontSize: 11, marginTop: 4, color: "var(--ink-700)" }}>{p.name}</div>
               </div>
             ))}
@@ -278,4 +362,4 @@ function ActDetail({ act, surface }) {
   );
 }
 
-Object.assign(window, { ScreenActs, ActSpineRow, ActDetail });
+Object.assign(window, { ScreenActs, ActSpineRow, ActDetail, aPortraitScope, ARC_PREVIEW });

@@ -9,6 +9,16 @@ function fItemScope(name) {
   return s ? "item-" + s : "";
 }
 
+/* Crafter portrait scope — mirrors screen-character's portraitScope(): a party member's
+   instance id ("char_…") matches no ingested art, so derive the scope from slug(name)
+   ("portrait-dal-lightspark") which resolves a canon hero's real face; falls back to the
+   instance id, then to <Img>'s neutral PortraitSilhouette for a portrait-less crafter. */
+function fPortraitScope(p) {
+  const s = (p && p.name && window.slug) ? window.slug(p.name) : "";
+  if (s) return "portrait-" + s;
+  return (p && p.id) ? "portrait-" + p.id : "";
+}
+
 function ScreenForge({ onNavigate, state, setState }) {
   // Crafting-roll prototype: the recipe mechanics + roll simulation are display-only (not
   // persisted to the engine). The crafters at the bench, however, are bound to the LIVE
@@ -65,15 +75,22 @@ function ScreenForge({ onNavigate, state, setState }) {
   const recipes = RECIPES_LIST.filter((r) => r.category === category);
   const hero = party.find((p) => p.id === crafter) || party[0];
   // Derive the crafting bonus from the live hero's projected skills (the /character-surface
-  // `skills` array of { name, mod }); fall back to a neutral default when the surface does
-  // not carry a matching skill — never a hardcoded per-crafter table.
+  // `skills`/`toolProficiencies` array of { name, mod }). The recipe's `skill` may be a tool
+  // proficiency (Smith's Tools / Alchemist's Supplies) the surface does not carry — in that
+  // case the bonus is UNKNOWN (null), and we say so rather than fabricating a +4. Never a
+  // hardcoded per-crafter table.
   const skillBonus = (() => {
-    if (!selected || !hero) return 0;
-    const skills = Array.isArray(hero.skills) ? hero.skills : [];
-    const match = skills.find((s) => String(s?.name || "").toLowerCase() === String(selected.skill || "").toLowerCase());
-    return (match && typeof match.mod === "number") ? match.mod : 4;
+    if (!selected || !hero) return null;
+    const pools = [hero.skills, hero.toolProficiencies, hero.tools].filter(Array.isArray);
+    const want = String(selected.skill || "").toLowerCase();
+    for (const pool of pools) {
+      const match = pool.find((s) => String(s?.name || "").toLowerCase() === want);
+      if (match && typeof match.mod === "number") return match.mod;
+    }
+    return null;
   })();
-  const successChance = selected ? Math.max(5, Math.min(95, (skillBonus - selected.dc + 20) * 5)) : 0;
+  const hasForecast = typeof skillBonus === "number";
+  const successChance = (selected && hasForecast) ? Math.max(5, Math.min(95, (skillBonus - selected.dc + 20) * 5)) : 0;
 
   // Phase-4 action lane: when live (DM attached), a Forge "Craft" relays a
   // structured `check` move (skill + DC + the recipe name) so the engine rolls
@@ -104,16 +121,19 @@ function ScreenForge({ onNavigate, state, setState }) {
       }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
       return;
     }
-    // !canAct (read-only preview): local-roll simulation (unchanged).
+    // !canAct (read-only preview): local-roll simulation. When the crafting bonus is unknown
+    // (the surface carries no matching proficiency), roll the raw d20 vs DC rather than
+    // inventing a modifier — the roll line shows just the d20 so nothing is fabricated.
     const roll = 1 + Math.floor(Math.random() * 20);
-    const total = roll + skillBonus;
+    const total = roll + (hasForecast ? skillBonus : 0);
     const success = total >= selected.dc;
-    setLog((l) => [{ when: "just now", who: hero.name.split(" ")[0], item: selected.name, success, roll: total + " vs DC " + selected.dc }, ...l].slice(0, 8));
+    const rollText = hasForecast ? (total + " vs DC " + selected.dc) : ("d20 " + roll + " vs DC " + selected.dc);
+    setLog((l) => [{ when: "just now", who: hero.name.split(" ")[0], item: selected.name, success, roll: rollText }, ...l].slice(0, 8));
     toast({
       kind: success ? "item" : "danger",
       eyebrow: success ? "Forge" : "Failed",
       title: success ? selected.name + " is made" : "The forge will not have it today",
-      body: success ? hero.name + " stows it in their pack." : "Roll " + total + " vs DC " + selected.dc + ". The materials are not lost — try again at next rest.",
+      body: success ? hero.name + " stows it in their pack." : "Roll " + rollText + ". The materials are not lost — try again at next rest.",
     });
   };
 
@@ -200,21 +220,27 @@ function ScreenForge({ onNavigate, state, setState }) {
             <Divider />
 
             <SectionTitle ordinal="·">Components</SectionTitle>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            {/* auto-fit so a 3-reagent recipe fills the row instead of leaving a decorative
+                empty 4th slot; minmax keeps cards a readable width and caps at ~4 across. */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
               {selected.components.map((c, i) => (
                 <ComponentSlot key={i} component={c} have={c.have} />
               ))}
             </div>
 
-            <Divider />
+            {selected.note && (
+              <>
+                <Divider />
 
-            <SectionTitle>Notes from the chronicle</SectionTitle>
-            <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>
-              "{selected.note}"
-              <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
-                — {selected.noteBy || "the chronicle"}
-              </div>
-            </div>
+                <SectionTitle>Notes from the chronicle</SectionTitle>
+                <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)" }}>
+                  "{selected.note}"
+                  <div className="muted" style={{ fontFamily: "var(--f-body)", fontStyle: "normal", fontSize: 12, marginTop: 4 }}>
+                    — {selected.noteBy || "the chronicle"}
+                  </div>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <div style={{ display: "grid", placeItems: "center", height: "100%", textAlign: "center" }}>
@@ -243,7 +269,7 @@ function ScreenForge({ onNavigate, state, setState }) {
                 boxShadow: crafter === p.id ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)" : "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 cursor: "pointer",
               }}>
-                <Placeholder label={p.short || "portrait"} w="100%" h={56} framed />
+                <Img scope={fPortraitScope(p)} label={p.name || p.short || "portrait"} w="100%" h={56} fit="cover" framed />
                 <div className="hand" style={{ fontSize: 11, marginTop: 4, color: "var(--ink-700)" }}>{p.name.split(" ")[0]}</div>
               </button>
             ))}
@@ -259,29 +285,45 @@ function ScreenForge({ onNavigate, state, setState }) {
             <Divider />
 
             <SectionTitle>Forecast</SectionTitle>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-              <StatLine k={hero.name.split(" ")[0]} v={"+" + skillBonus} />
-              <StatLine k="Target" v={"DC " + selected.dc} />
-            </div>
+            {hasForecast ? (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <StatLine k={hero.name.split(" ")[0]} v={(skillBonus >= 0 ? "+" : "") + skillBonus} />
+                  <StatLine k="Target" v={"DC " + selected.dc} />
+                </div>
 
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span className="eyebrow">Likely success</span>
-                <span style={{ fontFamily: "var(--f-display)", fontSize: 16, color: successChance > 65 ? "var(--emerald)" : successChance > 35 ? "var(--ink-900)" : "var(--crimson)" }}>
-                  {successChance}%
-                </span>
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span className="eyebrow">Likely success</span>
+                    <span style={{ fontFamily: "var(--f-display)", fontSize: 16, color: successChance > 65 ? "var(--emerald)" : successChance > 35 ? "var(--ink-900)" : "var(--crimson)" }}>
+                      {successChance}%
+                    </span>
+                  </div>
+                  <div style={{ height: 8, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)" }}>
+                    <div style={{
+                      position: "absolute", inset: 0, right: `${100 - successChance}%`,
+                      background: successChance > 65
+                        ? "linear-gradient(180deg, #5a8a3a, #3a6020)"
+                        : successChance > 35
+                        ? "linear-gradient(180deg, var(--b-200), var(--b-500))"
+                        : "linear-gradient(180deg, var(--crimson), #4a1010)",
+                    }} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              // Honest: the surface carries no proficiency matching this recipe's tool, so we
+              // do NOT fabricate a +N forecast. The roll is still possible (raw d20 vs DC).
+              <div style={{ marginTop: 4 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <StatLine k={hero.name.split(" ")[0]} v="—" />
+                  <StatLine k="Target" v={"DC " + selected.dc} />
+                </div>
+                <div className="hand muted" style={{ fontSize: 11, marginTop: 8 }}>
+                  No {selected.skill} proficiency recorded for {hero.name.split(" ")[0]} — the forecast is unknown until the engine resolves the roll.
+                </div>
               </div>
-              <div style={{ height: 8, background: "rgba(0,0,0,0.15)", position: "relative", boxShadow: "inset 0 0 0 1px rgba(80,50,20,0.4)" }}>
-                <div style={{
-                  position: "absolute", inset: 0, right: `${100 - successChance}%`,
-                  background: successChance > 65
-                    ? "linear-gradient(180deg, #5a8a3a, #3a6020)"
-                    : successChance > 35
-                    ? "linear-gradient(180deg, var(--b-200), var(--b-500))"
-                    : "linear-gradient(180deg, var(--crimson), #4a1010)",
-                }} />
-              </div>
-            </div>
+            )}
 
             <BrassButton tone="crimson" onClick={craft} style={{ width: "100%", marginTop: 14 }} title={canAct ? "Relays a skill check to the DM via /move — the engine rolls and resolves" : "No live session attached — the roll is simulated locally and not saved"}>
               ⚒ To the forge
@@ -488,4 +530,4 @@ const RECIPES_LIST = [
   { id: "e3", category: "enchant", tier: "IV", locked: true, name: "?????", glyph: "?" },
 ];
 
-Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL, fItemScope });
+Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL, fItemScope, fPortraitScope });

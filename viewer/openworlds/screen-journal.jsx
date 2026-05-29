@@ -12,6 +12,16 @@ function figNumber(key) {
   return (Math.abs(h) % 9) + 1;
 }
 
+/* NPC portrait scope — mirrors screen-relations/screen-character: a met NPC's instance id
+   ("char_…") matches no ingested art, so derive the scope from slug(name)
+   ("portrait-jaheira") which resolves a canon face; falls back to the id, then to <Img>'s
+   neutral PortraitSilhouette for a portrait-less name. */
+function jNpcScope(n) {
+  const s = (n && n.name && window.slug) ? window.slug(n.name) : "";
+  if (s) return "portrait-" + s;
+  return (n && n.id) ? "portrait-" + n.id : "";
+}
+
 function ScreenJournal({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -28,6 +38,27 @@ function ScreenJournal({ onNavigate, state, setState }) {
   const threads = Array.isArray(surface?.threads) ? surface.threads : [];
   const [activeQuest, setActiveQuest] = React.useState("");
   const [tab, setTab] = React.useState("active");
+
+  // Bookmarks (J-03): a player can pin quests; the set persists in localStorage so a
+  // bookmark survives reload. Pinned quests show a marker in the chronicle list. No engine
+  // write — this is a local reading aid, not play-state.
+  const BOOKMARK_KEY = "ow.journal.bookmarks";
+  const [bookmarks, setBookmarks] = React.useState(() => {
+    try {
+      const raw = window.localStorage ? window.localStorage.getItem(BOOKMARK_KEY) : null;
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch (e) { return new Set(); }
+  });
+  const toggleBookmark = React.useCallback((id) => {
+    if (!id) return;
+    setBookmarks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { if (window.localStorage) window.localStorage.setItem(BOOKMARK_KEY, JSON.stringify([...next])); } catch (e) { /* private mode — keep in-memory */ }
+      return next;
+    });
+  }, []);
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     try {
@@ -109,6 +140,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                  {bookmarks.has(q.id) && <span style={{ color: "var(--crimson)", marginRight: 4 }} title="Bookmarked">★</span>}
                   {q.title}
                 </span>
                 <Pill tone={q.tone}>{q.label}</Pill>
@@ -244,7 +276,12 @@ function ScreenJournal({ onNavigate, state, setState }) {
             <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>What must be done</h2>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-              {quest.objectives.map((o, i) => (
+              {!(quest.objectives && quest.objectives.length) && (
+                <div className="body-sm muted">
+                  No objectives recorded yet — the next development will write the first.
+                </div>
+              )}
+              {(quest.objectives || []).map((o, i) => (
                 <div key={i} style={{
                   display: "flex", gap: 10, alignItems: "flex-start",
                   padding: "8px 12px",
@@ -280,7 +317,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
                   {quest.npcs.map((n) => (
                     <div key={n.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <Placeholder label={n.short} w={36} h={44} framed />
+                      <Img scope={jNpcScope(n)} label={n.name || n.short} w={36} h={44} fit="cover" framed />
                       <div>
                         <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{n.name}</div>
                         <div className="hand muted" style={{ fontSize: 12 }}>{n.role}</div>
@@ -352,7 +389,14 @@ function ScreenJournal({ onNavigate, state, setState }) {
 
             <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>
               <BrassButton onClick={() => onNavigate("map")} size="sm">Show on map</BrassButton>
-              <BrassButton tone="ghost" size="sm">Bookmark</BrassButton>
+              <BrassButton
+                tone={quest.id && bookmarks.has(quest.id) ? "crimson" : "ghost"}
+                size="sm"
+                onClick={() => toggleBookmark(quest.id)}
+                disabled={!quest.id}
+              >
+                {quest.id && bookmarks.has(quest.id) ? "★ Bookmarked" : "☆ Bookmark"}
+              </BrassButton>
             </div>
           </div>
         </div>
