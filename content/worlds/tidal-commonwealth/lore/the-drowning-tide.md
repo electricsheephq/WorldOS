@@ -16,4 +16,4 @@ The Tide-Readers have compared those accounts to what their survey boats are rec
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

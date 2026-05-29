@@ -1,4 +1,4 @@
-You are running an ADVERSARIAL QA PLAYTEST of ClawDnD in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE RULES/PROGRESSION SYSTEMS and their GUARDRAILS — spellcasting, skill checks, inventory/economy, rests, leveling — with a min-maxing rules-lawyer protagonist who tries to bend the mechanics. The question it answers: does the engine track resources honestly and REFUSE illegal mechanical moves, or can a clever player desync their own sheet?
+You are running an ADVERSARIAL QA PLAYTEST of WorldOS in the "Unofficial Baldur's Gate 3+ Universe Seed". This run STRESS-TESTS THE RULES/PROGRESSION SYSTEMS and their GUARDRAILS — spellcasting, skill checks, inventory/economy, rests, leveling — with a min-maxing rules-lawyer protagonist who tries to bend the mechanics. The question it answers: does the engine track resources honestly and REFUSE illegal mechanical moves, or can a clever player desync their own sheet?
 
 You play TWO roles, kept honest:
 - the TEST PLAYER: a precise, mechanics-obsessed level-3 spellcaster (Wizard or Cleric) who optimizes, demands rolls, manages resources, and probes for exploits. Push the rules; don't just role-play.

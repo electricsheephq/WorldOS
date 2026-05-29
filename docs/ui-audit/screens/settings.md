@@ -4,7 +4,7 @@
 **Source:** `viewer/openworlds/screen-settings.jsx` (646 LOC)
 **Screenshot:** `docs/ui-audit/screenshots/settings-1512.png`
 **Compared to:** BG3 settings, Skyrim/Pathfinder gameplay settings (P15 in `RPG_REFERENCE_PATTERNS.md`).
-**First impression (5-second read):** "Section list on left (ClawDnD/Sound/Display/Gameplay/Controls/Accessibility/Saves/About) + supervisor-bridge native panel default. **Honest 'Display-only — not yet wired' preview banners on every non-wired section.** Only Reduce Motion / High Contrast / UI Scale are genuinely functional. Native bridge shows 'Unavailable' as expected outside the macOS app."
+**First impression (5-second read):** "Section list on left (WorldOS/Sound/Display/Gameplay/Controls/Accessibility/Saves/About) + supervisor-bridge native panel default. **Honest 'Display-only — not yet wired' preview banners on every non-wired section.** Only Reduce Motion / High Contrast / UI Scale are genuinely functional. Native bridge shows 'Unavailable' as expected outside the macOS app."
 
 ## Score
 

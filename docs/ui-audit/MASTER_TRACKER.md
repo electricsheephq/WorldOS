@@ -13,11 +13,11 @@
 
 After Loop 1 closed at 70-75% confidence, Loop 2 attacked the named gaps. Material findings:
 
-- **Asset catalog re-calibration — [#281](https://github.com/100yenadmin/ClawDnD/issues/281).** `content/worlds/_private/baldurs-gate/images/` holds 2,359 art dirs: 2,077 portraits (incl. all 7 BG3 origins), 140 items, 77 creatures, 26 scenes, 12 classes (full PHB), 11 races, 10 maps, 6 factions. **Most Loop-1 "asset-gap" findings are UI wire-up, not ingest.** #265 / #267 / #270 / #273 / Map M-01 / Bestiary creature-slug all re-frame as "you have the art; wire `<Img scope=…>` to it".
+- **Asset catalog re-calibration — [#281](https://github.com/electricsheephq/WorldOS/issues/281).** `content/worlds/_private/baldurs-gate/images/` holds 2,359 art dirs: 2,077 portraits (incl. all 7 BG3 origins), 140 items, 77 creatures, 26 scenes, 12 classes (full PHB), 11 races, 10 maps, 6 factions. **Most Loop-1 "asset-gap" findings are UI wire-up, not ingest.** #265 / #267 / #270 / #273 / Map M-01 / Bestiary creature-slug all re-frame as "you have the art; wire `<Img scope=…>` to it".
 - **Shared infrastructure verified clean.** `data.js` is the empty `INITIAL_STATE` (line 14-22 explicitly forbids demo content); `tooltip.jsx` + `toast.jsx` solid; `icon-registry.jsx` has 12 icons + 21 aliases, room to grow (#279 still on-point); `index.html` uses local-vendored React/ReactDOM/Babel + local-vendored fonts via `vendor/google-fonts.css` (asset policy satisfied — no CDN).
 - **Server-route names validated against `viewer/server.py:5180-5407`.** All `/<screen>-surface` references in the audit docs match real handlers. No `/merchant-surface`, `/seed-surface`, `/persons-surface`, or `/lore-surface` routes exist — confirms MK-03, S-02, BE-04 as correctly scoped "needs engine route".
-- **Camp Sidebar promoted to standalone audit — `screens/camp-sidebar.md` (60/100, Polish-Pass).** 12 findings; CS-01 (Begin Resting wire) [#282](https://github.com/100yenadmin/ClawDnD/issues/282) + CS-02 (per-companion fireside) [#283](https://github.com/100yenadmin/ClawDnD/issues/283) filed.
-- **Responsive system — [#284](https://github.com/100yenadmin/ClawDnD/issues/284).** `.stack-on-narrow` class defined in `styles.css:906` but **never applied** in any screen JSX. 3-column screens crowd below 1200px instead of collapsing.
+- **Camp Sidebar promoted to standalone audit — `screens/camp-sidebar.md` (60/100, Polish-Pass).** 12 findings; CS-01 (Begin Resting wire) [#282](https://github.com/electricsheephq/WorldOS/issues/282) + CS-02 (per-companion fireside) [#283](https://github.com/electricsheephq/WorldOS/issues/283) filed.
+- **Responsive system — [#284](https://github.com/electricsheephq/WorldOS/issues/284).** `.stack-on-narrow` class defined in `styles.css:906` but **never applied** in any screen JSX. 3-column screens crowd below 1200px instead of collapsing.
 - **GitHub routing audit.** Verified milestones + labels for #244–#279; cleaned up the `epic` label leak on sub-issues (#260, #261, #265, #273, #277) and the misleading `screen:launcher` on cross-cutting #260.
 
 **Loop 2 confidence: ~85%.** Remaining open gaps (would lift to 95% in Loop 3): interactive coverage (click-through Create wizard / palette switcher / a11y modes), multi-viewport capture (1366 / 1920), live-session UX (`canAct=true` state), native macOS app verification.
@@ -26,12 +26,12 @@ After Loop 1 closed at 70-75% confidence, Loop 2 attacked the named gaps. Materi
 
 Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
 
-- **Multi-viewport responsive verified.** Headless Chrome captures at 1366×768 (the laptop floor) + 1920×1080. Confirms #284 (.stack-on-narrow unused): at 1366 the **Table** + **Character** + **Inventory** 3-column screens crowd; Combat + Create + Map read OK. Filed as [#288](https://github.com/100yenadmin/ClawDnD/issues/288).
-- **State validation against a populated campaign.** `/atlas-surface` ships 23 known_locations + 45 edges; `/relations-surface` ships 5 BG factions + 11 canon NPCs (Jaheira / Minsc and Boo / Shadowheart / Wyll / Karlach / The Emperor / Withers / Astarion / …); `/character-surface` ships Astarion @ Rogue L5 HP 29/29 AC 14. **The engine DOES seed the canon when given a populated campaign.** Loop-1's framing of #261 + #273 ("under-populated") was actually a fresh-state observation. Re-framed as [#289](https://github.com/100yenadmin/ClawDnD/issues/289) — the ask is now "ensure fresh-save initial seed", not "build the seed projection".
-- **NEW bug** — `/character-surface` ships `feats` and `classFeatures` arrays with **identical content** (per SRD 5.2: `feats` = optional ASI-feats taken at L4/8/12/16/19; `classFeatures` = auto-by-level — disjoint sets). UI renders the same 10 entries twice with two different labels. Filed [#286](https://github.com/100yenadmin/ClawDnD/issues/286).
-- **NEW finding** — Astarion ships `abilities: []` + `raceTraits: []` but the UI renders the "Special Abilities" + "Lineage > traits" section headers without gating → empty panes next to the populated Feats panel. Filed [#287](https://github.com/100yenadmin/ClawDnD/issues/287).
-- **Generativity proof.** Current location is `Aldenmoor Estate — Study` — a generated canon-grounded location ("Councillor Riven Aldenmoor's Upper City estate" with a fire, Harper signet letter, district relief maps on the wall). Validates the `ClawDnD-NORTH-STAR.md` Part 1B generativity principle end-to-end.
-- **Asset re-calibration [#281](https://github.com/100yenadmin/ClawDnD/issues/281) confirmed again.** Astarion's portrait renders from `_private/baldurs-gate/images/portrait_astarion/`. Atlas backdrop renders the Sword Coast map. Wiki-first ingest → engine → `<Img>` pipeline works with real data.
+- **Multi-viewport responsive verified.** Headless Chrome captures at 1366×768 (the laptop floor) + 1920×1080. Confirms #284 (.stack-on-narrow unused): at 1366 the **Table** + **Character** + **Inventory** 3-column screens crowd; Combat + Create + Map read OK. Filed as [#288](https://github.com/electricsheephq/WorldOS/issues/288).
+- **State validation against a populated campaign.** `/atlas-surface` ships 23 known_locations + 45 edges; `/relations-surface` ships 5 BG factions + 11 canon NPCs (Jaheira / Minsc and Boo / Shadowheart / Wyll / Karlach / The Emperor / Withers / Astarion / …); `/character-surface` ships Astarion @ Rogue L5 HP 29/29 AC 14. **The engine DOES seed the canon when given a populated campaign.** Loop-1's framing of #261 + #273 ("under-populated") was actually a fresh-state observation. Re-framed as [#289](https://github.com/electricsheephq/WorldOS/issues/289) — the ask is now "ensure fresh-save initial seed", not "build the seed projection".
+- **NEW bug** — `/character-surface` ships `feats` and `classFeatures` arrays with **identical content** (per SRD 5.2: `feats` = optional ASI-feats taken at L4/8/12/16/19; `classFeatures` = auto-by-level — disjoint sets). UI renders the same 10 entries twice with two different labels. Filed [#286](https://github.com/electricsheephq/WorldOS/issues/286).
+- **NEW finding** — Astarion ships `abilities: []` + `raceTraits: []` but the UI renders the "Special Abilities" + "Lineage > traits" section headers without gating → empty panes next to the populated Feats panel. Filed [#287](https://github.com/electricsheephq/WorldOS/issues/287).
+- **Generativity proof.** Current location is `Aldenmoor Estate — Study` — a generated canon-grounded location ("Councillor Riven Aldenmoor's Upper City estate" with a fire, Harper signet letter, district relief maps on the wall). Validates the `WorldOS-NORTH-STAR.md` Part 1B generativity principle end-to-end.
+- **Asset re-calibration [#281](https://github.com/electricsheephq/WorldOS/issues/281) confirmed again.** Astarion's portrait renders from `_private/baldurs-gate/images/portrait_astarion/`. Atlas backdrop renders the Sword Coast map. Wiki-first ingest → engine → `<Img>` pipeline works with real data.
 
 ### Loop 3 honest scope notes
 
@@ -42,10 +42,10 @@ Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
 
 | Issue | Title | Sev |
 |---|---|---|
-| [#286](https://github.com/100yenadmin/ClawDnD/issues/286) | `feats` and `classFeatures` carry duplicate content | Major |
-| [#287](https://github.com/100yenadmin/ClawDnD/issues/287) | Character: hide empty Special Abilities + Lineage section headers | Minor |
-| [#288](https://github.com/100yenadmin/ClawDnD/issues/288) | 1366×768 crowding on Table + Character + Inventory | Major |
-| [#289](https://github.com/100yenadmin/ClawDnD/issues/289) | Atlas/Relations fresh-save seed (reframes #261 + #273) | Major |
+| [#286](https://github.com/electricsheephq/WorldOS/issues/286) | `feats` and `classFeatures` carry duplicate content | Major |
+| [#287](https://github.com/electricsheephq/WorldOS/issues/287) | Character: hide empty Special Abilities + Lineage section headers | Minor |
+| [#288](https://github.com/electricsheephq/WorldOS/issues/288) | 1366×768 crowding on Table + Character + Inventory | Major |
+| [#289](https://github.com/electricsheephq/WorldOS/issues/289) | Atlas/Relations fresh-save seed (reframes #261 + #273) | Major |
 
 **Loop 3 confidence: ~90%.** Remaining 10% lives in: live-session UX (operator-launched DM required), native-app verification (build required), exhaustive interaction coverage (palette/a11y/keyboard-shortcut walk-through).
 
@@ -54,9 +54,9 @@ Attacked Loop-2 closeout gaps. Confidence rises **to ~90%.**
 Pushed against the asymptote. Confidence rises **to ~95%.** See [`docs/ui-audit/MAINTAIN.md`](MAINTAIN.md) for the honest "100% on a moving target" framing.
 
 - **Live-session UX (evidence-at-rest).** Inspected `/Volumes/LEXAR/Codex/clawdnd-artproof-state/campaigns/camp_54fd704d985b/snapshot.json` — the saved engine state for the canonical BG campaign. **`combat.active = true`** at rest with full schema: `round=1`, `turn_index=2`, `order=[char_149e22788290 init 13 reaction_used=true, char_3d2a73f8f833 init 7, char_d710006ae7e0 init 6]`, `action_used=true`, `action_attacks_made=1`, `bonus_action_used=false`, `surge_actions=0`, `zones=[]`. **The live-combat state shape is documented.** When a DM provider attaches and the action bar / initiative tracker / battle log render against this state, the UI's `screen-combat.jsx:75-93` consumers (`tokens / initiative / actionBar / zones / battleLog / encounter / commandCenter / economy`) all have observable shapes to validate against. Live-session UX is no longer structurally invisible — only the operator-driven walk-through remains.
-- **Native macOS app — title-bar interaction clarified.** Inspected `macos/ClawDnDApp/Sources/ClawDnDApp/Views/RootView.swift:348-398`. The Swift `OpenWorldsChromeHostView` enables `titlebarAppearsTransparent + fullSizeContentView` AND `unhides` all three standard window buttons (close/min/zoom). The `paddingLeft: 76` in `chrome.jsx:422` exists **specifically to clear the macOS native traffic lights**. #260's acceptance criteria need to be **platform-aware**: keep 76px in native, drop/shrink in browser. Filed as a clarification comment on #260.
+- **Native macOS app — title-bar interaction clarified.** Inspected `macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift:348-398`. The Swift `OpenWorldsChromeHostView` enables `titlebarAppearsTransparent + fullSizeContentView` AND `unhides` all three standard window buttons (close/min/zoom). The `paddingLeft: 76` in `chrome.jsx:422` exists **specifically to clear the macOS native traffic lights**. #260's acceptance criteria need to be **platform-aware**: keep 76px in native, drop/shrink in browser. Filed as a clarification comment on #260.
 - **Interactive coverage code-verified.** Keyboard map (`app.jsx:197-220`): 17 shortcuts (t/x/p/m/c/i/f/r/j/b/a/$/w/n/s/,/?). Palette (`styles.css`): 2 alt-palette blocks (`cool`, `dark`) + default warm. A11y (`styles.css:849-892`): `[data-reduced-motion=on]` universal animation-duration zeroing + `[data-contrast=high]` panel/btn/window/parchment chrome overrides + `--ui-scale` via `zoom` on `.window`. Create wizard (`screen-create.jsx:19-27, 133-139, 572-576`): 7 steps + 5e-canonical point-buy `abilityCost = {8:0, 9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}`. All wiring matches the audit's framework reading.
-- **`dist/ClawDnD.app` exists locally.** The native app has been built. Operator can run it for the visual walk that Loop 4 can't do artifact-only.
+- **`dist/WorldOS.app` exists locally.** The native app has been built. Operator can run it for the visual walk that Loop 4 can't do artifact-only.
 - **Maintain loop landed.** `qa/ui_audit_health.sh` runs 30 structural checks (viewer reachable, data.js empty, icon-registry baseline, demo-leak grep with JSX-comment-aware regex, surface-route 200s, server.py route literals, responsive + a11y CSS, asset-catalog size ≥ 2000, headless capture pipeline). **All 30 PASS at Loop 4 baseline.** Re-run on every PR touching `viewer/openworlds/`, `viewer/server.py`, `content/worlds/`, or `styles.css`. Doc: [`MAINTAIN.md`](MAINTAIN.md).
 
 **Loop 4 confidence: ~95%.** The remaining ~5% is the asymptote: operator-driven live-DM walk, native-app run, axe-core scan. After those (one operator session, one Swift build, one CLI invocation), confidence → ~99%. The final 1% is the software-is-mutable constant — handled by re-running `qa/ui_audit_health.sh` on every PR.
@@ -67,17 +67,17 @@ Pushed against the asymptote. Confidence rises **to ~95%.** See [`docs/ui-audit/
 |---|---|
 | `qa/ui_audit_health.sh` | 30-check structural sweep; PASS = audit findings still valid |
 | `docs/ui-audit/MAINTAIN.md` | How to keep the audit current; what 100% really means |
-| Comment on [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Platform-aware title-bar fix (keep 76px for macOS traffic lights, drop in browser) |
+| Comment on [#260](https://github.com/electricsheephq/WorldOS/issues/260) | Platform-aware title-bar fix (keep 76px for macOS traffic lights, drop in browser) |
 
 ## Loop 5 update (2026-05-29 cont.)
 
 Operator-cleared two of the three Loop-4 asymptote items. Confidence rises **to ~97–98%.**
 
 ### L5-B ✅ Native build verified (compile-clean)
-- `swift build --package-path macos/ClawDnDApp` → **Build complete (1.74s)** — Swift code compiles cleanly against the macOS 13+ target.
-- `codesign --verify --deep --strict dist/ClawDnD.app` → **valid on disk · satisfies its Designated Requirement**.
+- `swift build --package-path macos/WorldOSApp` → **Build complete (1.74s)** — Swift code compiles cleanly against the macOS 13+ target.
+- `codesign --verify --deep --strict dist/WorldOS.app` → **valid on disk · satisfies its Designated Requirement**.
 - `Info.plist` clean (BundleID `dev.clawdnd.app`, MinSystemVersion 13.0, LocalNetworking allowed).
-- **Still pending:** the visual title-bar inspection against the real macOS traffic lights ([#260](https://github.com/100yenadmin/ClawDnD/issues/260)) — needs a human eye on the rendered window. Build itself is sound.
+- **Still pending:** the visual title-bar inspection against the real macOS traffic lights ([#260](https://github.com/electricsheephq/WorldOS/issues/260)) — needs a human eye on the rendered window. Build itself is sound.
 
 ### L5-C ✅ axe-core scan complete (16 screens)
 Installed Chrome 148 + ChromeDriver 148 via `npx browser-driver-manager install chrome=148` (matching local Chrome). Scanned all 16 screens via `@axe-core/cli` 4.11.4 with `wcag2a,wcag2aa` tags.
@@ -96,9 +96,9 @@ Installed Chrome 148 + ChromeDriver 148 via `npx browser-driver-manager install 
 | seed | 1 | **label** |
 | launcher · dialogue · map · journal · bestiary · acts · merchant · settings | 0 | — |
 
-The dominant violation is **`scrollable-region-focusable`** (10/11 instances) — scrollable `.panel.framed` divs lack `tabIndex={0}` + `role="region"` + `aria-label`. A single fix in `chrome.jsx:292` (the shared `Panel` component) closes 10 instances at once. Filed as [#291](https://github.com/100yenadmin/ClawDnD/issues/291).
+The dominant violation is **`scrollable-region-focusable`** (10/11 instances) — scrollable `.panel.framed` divs lack `tabIndex={0}` + `role="region"` + `aria-label`. A single fix in `chrome.jsx:292` (the shared `Panel` component) closes 10 instances at once. Filed as [#291](https://github.com/electricsheephq/WorldOS/issues/291).
 
-The 11th violation is the **Seed chronicler's notes textarea missing label** at `screen-seed.jsx:178-191` (1-line `aria-label="Chronicler's notes"` fix). Filed as [#292](https://github.com/100yenadmin/ClawDnD/issues/292).
+The 11th violation is the **Seed chronicler's notes textarea missing label** at `screen-seed.jsx:178-191` (1-line `aria-label="Chronicler's notes"` fix). Filed as [#292](https://github.com/electricsheephq/WorldOS/issues/292).
 
 ### L5-A ⏳ Live-DM walk — still operator-driven
 Requires `claude -p` budget for one duo session. Not done in Loop 5. Remains the **only** structural-coverage gap.
@@ -122,26 +122,26 @@ The remaining ~2–3% lives in:
 
 | Artifact | Purpose |
 |---|---|
-| [#291](https://github.com/100yenadmin/ClawDnD/issues/291) | scrollable-region-focusable cross-cutting (Major; 7 screens, 10 instances) |
-| [#292](https://github.com/100yenadmin/ClawDnD/issues/292) | World Seed textarea label (Minor; 1-line fix) |
-| Comment on [#290](https://github.com/100yenadmin/ClawDnD/issues/290) | L5-B + L5-C closure summary |
+| [#291](https://github.com/electricsheephq/WorldOS/issues/291) | scrollable-region-focusable cross-cutting (Major; 7 screens, 10 instances) |
+| [#292](https://github.com/electricsheephq/WorldOS/issues/292) | World Seed textarea label (Minor; 1-line fix) |
+| Comment on [#290](https://github.com/electricsheephq/WorldOS/issues/290) | L5-B + L5-C closure summary |
 | `qa/ui_audit_health.sh` — `--axe` flag (new) | Optional axe-core sweep, gated on browser-driver presence |
 
 ## Loop 6 update (2026-05-29 cont.) — verification of implementation agent's claim
 
-The implementation agent (paused, then unpaused) claimed "implemented all fixes and solved all issues." Loop 6 verified independently against current `main` (HEAD `c6ebdb0`). **Claim is overstated.** ~10 issues materially fixed in code; the rest still pending. The user's specific complaint about [#260](https://github.com/100yenadmin/ClawDnD/issues/260) (title-bar overlap) is CORRECT — chrome.jsx:435 still hardcodes `paddingLeft: 76` without platform-aware fork.
+The implementation agent (paused, then unpaused) claimed "implemented all fixes and solved all issues." Loop 6 verified independently against current `main` (HEAD `c6ebdb0`). **Claim is overstated.** ~10 issues materially fixed in code; the rest still pending. The user's specific complaint about [#260](https://github.com/electricsheephq/WorldOS/issues/260) (title-bar overlap) is CORRECT — chrome.jsx:435 still hardcodes `paddingLeft: 76` without platform-aware fork.
 
 ### Issues VERIFIED FIXED + closed in Loop 6 (7 newly closed)
 
 | Issue | Status | Evidence |
 |---|---|---|
-| [#262](https://github.com/100yenadmin/ClawDnD/issues/262) | ✅ closed | screen-bestiary.jsx:195-196 reads `worldLabel \|\| "the Sword Coast"` — data-driven |
-| [#264](https://github.com/100yenadmin/ClawDnD/issues/264) | ✅ closed | screen-forge.jsx:43 `useState([])` — empty log |
-| [#267](https://github.com/100yenadmin/ClawDnD/issues/267) | ✅ closed | screen-combat.jsx:25 `prefix = t.team === 'foe' ? 'creature-' : 'portrait-'` |
-| [#269](https://github.com/100yenadmin/ClawDnD/issues/269) | ✅ closed | screen-merchant.jsx:17 `useState("talli")` |
-| [#270](https://github.com/100yenadmin/ClawDnD/issues/270) | ✅ closed | health-check Placeholder/portrait count 2 (was baseline 8) |
-| [#291](https://github.com/100yenadmin/ClawDnD/issues/291) | ✅ closed | axe-core 16 screens × 0 violations (was 10) |
-| [#292](https://github.com/100yenadmin/ClawDnD/issues/292) | ✅ closed | seed=0 violations |
+| [#262](https://github.com/electricsheephq/WorldOS/issues/262) | ✅ closed | screen-bestiary.jsx:195-196 reads `worldLabel \|\| "the Sword Coast"` — data-driven |
+| [#264](https://github.com/electricsheephq/WorldOS/issues/264) | ✅ closed | screen-forge.jsx:43 `useState([])` — empty log |
+| [#267](https://github.com/electricsheephq/WorldOS/issues/267) | ✅ closed | screen-combat.jsx:25 `prefix = t.team === 'foe' ? 'creature-' : 'portrait-'` |
+| [#269](https://github.com/electricsheephq/WorldOS/issues/269) | ✅ closed | screen-merchant.jsx:17 `useState("talli")` |
+| [#270](https://github.com/electricsheephq/WorldOS/issues/270) | ✅ closed | health-check Placeholder/portrait count 2 (was baseline 8) |
+| [#291](https://github.com/electricsheephq/WorldOS/issues/291) | ✅ closed | axe-core 16 screens × 0 violations (was 10) |
+| [#292](https://github.com/electricsheephq/WorldOS/issues/292) | ✅ closed | seed=0 violations |
 
 Combined with the 3 the implementation agent closed (#263, #265, #266) → **10 audit-cycle issues closed.**
 
@@ -149,11 +149,11 @@ Combined with the 3 the implementation agent closed (#263, #265, #266) → **10 
 
 | Issue | Sev | Why still open |
 |---|---|---|
-| [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Critical | chrome.jsx:435 still `paddingLeft: 76` hardcoded; Loop-4 platform-aware fork ignored. **This is the user's direct complaint.** |
-| [#268](https://github.com/100yenadmin/ClawDnD/issues/268) | Critical | screen-character.jsx:860 still shows "No spells prepared yet" with no "Browse spellbook" CTA |
-| [#271](https://github.com/100yenadmin/ClawDnD/issues/271) | Major | screen-inventory.jsx:308 EQUIP_SLOTS still 6 flat slots; no paper-doll, no 12-slot canonical |
-| [#282](https://github.com/100yenadmin/ClawDnD/issues/282) | Critical | camp-sidebar.jsx:293 "Begin Resting" still `disabled` with display-only title |
-| [#286](https://github.com/100yenadmin/ClawDnD/issues/286) | Major | server.py:3404 + 3407 still both iterate `for f in features` — feats & classFeatures still identical content |
+| [#260](https://github.com/electricsheephq/WorldOS/issues/260) | Critical | chrome.jsx:435 still `paddingLeft: 76` hardcoded; Loop-4 platform-aware fork ignored. **This is the user's direct complaint.** |
+| [#268](https://github.com/electricsheephq/WorldOS/issues/268) | Critical | screen-character.jsx:860 still shows "No spells prepared yet" with no "Browse spellbook" CTA |
+| [#271](https://github.com/electricsheephq/WorldOS/issues/271) | Major | screen-inventory.jsx:308 EQUIP_SLOTS still 6 flat slots; no paper-doll, no 12-slot canonical |
+| [#282](https://github.com/electricsheephq/WorldOS/issues/282) | Critical | camp-sidebar.jsx:293 "Begin Resting" still `disabled` with display-only title |
+| [#286](https://github.com/electricsheephq/WorldOS/issues/286) | Major | server.py:3404 + 3407 still both iterate `for f in features` — feats & classFeatures still identical content |
 
 ### Maintain-loop confirms what landed works
 
@@ -174,22 +174,22 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 | # | Screen | Score | Disposition | Epic | Audit doc | Screenshot |
 |---|---|---|---|---|---|---|
-| 1 | Relations | **80** | Release-Ready | [#244](https://github.com/100yenadmin/ClawDnD/issues/244) | [relations.md](screens/relations.md) | [png](screenshots/relations-1512.png) |
-| 2 | Parley (Dialogue) | **78** | Polish-Pass | [#248](https://github.com/100yenadmin/ClawDnD/issues/248) | [dialogue.md](screens/dialogue.md) | [png](screenshots/dialogue-1512.png) |
-| 3 | Atlas (Map) | **72** | Polish-Pass | [#249](https://github.com/100yenadmin/ClawDnD/issues/249) | [map.md](screens/map.md) | [png](screenshots/map-1512.png) |
-| 4 | Quest Journal | **72** | Polish-Pass | [#253](https://github.com/100yenadmin/ClawDnD/issues/253) | [journal.md](screens/journal.md) | [png](screenshots/journal-1512.png) |
-| 5 | Session (Table) | **70** | Polish-Pass | [#246](https://github.com/100yenadmin/ClawDnD/issues/246) | [table.md](screens/table.md) | [png](screenshots/table-1512.png) |
-| 6 | Market (Merchant) | **70** | Polish-Pass | [#256](https://github.com/100yenadmin/ClawDnD/issues/256) | [merchant.md](screens/merchant.md) | [png](screenshots/merchant-1512.png) |
-| 7 | Heroes (Character) | **68** | Polish-Pass | [#250](https://github.com/100yenadmin/ClawDnD/issues/250) | [character.md](screens/character.md) | [png](screenshots/character-1512.png) |
-| 8 | Setting (Settings) | **68** | Polish-Pass | [#259](https://github.com/100yenadmin/ClawDnD/issues/259) | [settings.md](screens/settings.md) | [png](screenshots/settings-1512.png) |
-| 9 | Battle (Combat) | **66** | Polish-Pass | [#247](https://github.com/100yenadmin/ClawDnD/issues/247) | [combat.md](screens/combat.md) | [png](screenshots/combat-1512.png) |
-| 10 | Stash (Inventory) | **66** | Polish-Pass | [#251](https://github.com/100yenadmin/ClawDnD/issues/251) | [inventory.md](screens/inventory.md) | [png](screenshots/inventory-1512.png) |
-| 11 | Chronicles (Launcher) | **64** | Polish-Pass | [#245](https://github.com/100yenadmin/ClawDnD/issues/245) | [launcher.md](screens/launcher.md) | [png](screenshots/launcher-1512.png) |
-| 12 | Acts | **64** | Polish-Pass | [#255](https://github.com/100yenadmin/ClawDnD/issues/255) | [acts.md](screens/acts.md) | [png](screenshots/acts-1512.png) |
-| 13 | Forge | **62** | Polish-Pass | [#252](https://github.com/100yenadmin/ClawDnD/issues/252) | [forge.md](screens/forge.md) | [png](screenshots/forge-1512.png) |
-| 14 | Creation Plane (Create) | **60** | Polish-Pass | [#257](https://github.com/100yenadmin/ClawDnD/issues/257) | [create.md](screens/create.md) | [png](screenshots/create-1512.png) |
-| 15 | Codex (Bestiary) | **56** | Finish-Wave | [#254](https://github.com/100yenadmin/ClawDnD/issues/254) | [bestiary.md](screens/bestiary.md) | [png](screenshots/bestiary-1512.png) |
-| 16 | World Seed | **50** | Finish-Wave | [#258](https://github.com/100yenadmin/ClawDnD/issues/258) | [seed.md](screens/seed.md) | [png](screenshots/seed-1512.png) |
+| 1 | Relations | **80** | Release-Ready | [#244](https://github.com/electricsheephq/WorldOS/issues/244) | [relations.md](screens/relations.md) | [png](screenshots/relations-1512.png) |
+| 2 | Parley (Dialogue) | **78** | Polish-Pass | [#248](https://github.com/electricsheephq/WorldOS/issues/248) | [dialogue.md](screens/dialogue.md) | [png](screenshots/dialogue-1512.png) |
+| 3 | Atlas (Map) | **72** | Polish-Pass | [#249](https://github.com/electricsheephq/WorldOS/issues/249) | [map.md](screens/map.md) | [png](screenshots/map-1512.png) |
+| 4 | Quest Journal | **72** | Polish-Pass | [#253](https://github.com/electricsheephq/WorldOS/issues/253) | [journal.md](screens/journal.md) | [png](screenshots/journal-1512.png) |
+| 5 | Session (Table) | **70** | Polish-Pass | [#246](https://github.com/electricsheephq/WorldOS/issues/246) | [table.md](screens/table.md) | [png](screenshots/table-1512.png) |
+| 6 | Market (Merchant) | **70** | Polish-Pass | [#256](https://github.com/electricsheephq/WorldOS/issues/256) | [merchant.md](screens/merchant.md) | [png](screenshots/merchant-1512.png) |
+| 7 | Heroes (Character) | **68** | Polish-Pass | [#250](https://github.com/electricsheephq/WorldOS/issues/250) | [character.md](screens/character.md) | [png](screenshots/character-1512.png) |
+| 8 | Setting (Settings) | **68** | Polish-Pass | [#259](https://github.com/electricsheephq/WorldOS/issues/259) | [settings.md](screens/settings.md) | [png](screenshots/settings-1512.png) |
+| 9 | Battle (Combat) | **66** | Polish-Pass | [#247](https://github.com/electricsheephq/WorldOS/issues/247) | [combat.md](screens/combat.md) | [png](screenshots/combat-1512.png) |
+| 10 | Stash (Inventory) | **66** | Polish-Pass | [#251](https://github.com/electricsheephq/WorldOS/issues/251) | [inventory.md](screens/inventory.md) | [png](screenshots/inventory-1512.png) |
+| 11 | Chronicles (Launcher) | **64** | Polish-Pass | [#245](https://github.com/electricsheephq/WorldOS/issues/245) | [launcher.md](screens/launcher.md) | [png](screenshots/launcher-1512.png) |
+| 12 | Acts | **64** | Polish-Pass | [#255](https://github.com/electricsheephq/WorldOS/issues/255) | [acts.md](screens/acts.md) | [png](screenshots/acts-1512.png) |
+| 13 | Forge | **62** | Polish-Pass | [#252](https://github.com/electricsheephq/WorldOS/issues/252) | [forge.md](screens/forge.md) | [png](screenshots/forge-1512.png) |
+| 14 | Creation Plane (Create) | **60** | Polish-Pass | [#257](https://github.com/electricsheephq/WorldOS/issues/257) | [create.md](screens/create.md) | [png](screenshots/create-1512.png) |
+| 15 | Codex (Bestiary) | **56** | Finish-Wave | [#254](https://github.com/electricsheephq/WorldOS/issues/254) | [bestiary.md](screens/bestiary.md) | [png](screenshots/bestiary-1512.png) |
+| 16 | World Seed | **50** | Finish-Wave | [#258](https://github.com/electricsheephq/WorldOS/issues/258) | [seed.md](screens/seed.md) | [png](screenshots/seed-1512.png) |
 | 17* | Camp Sidebar (Loop 2) | **60** | Polish-Pass | (rolls up under #249) | [camp-sidebar.md](screens/camp-sidebar.md) | _capture in Map campMode_ |
 
 **Average: 66.2/100** (across 17 audited surfaces). Bottom-up: 9 screens lift through Polish; 2 through Finish; 1 Release-Ready. \*Camp Sidebar is mounted inside Atlas (campMode) and rolls under #249; standalone audit added in Loop 2.
@@ -202,30 +202,30 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 | Issue | Title | Sev | Epics | Milestone |
 |---|---|---|---|---|
-| [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Title-bar text overlaps nav-rail on every screen | Critical | per-page-polish | Polish Wave |
-| [#261](https://github.com/100yenadmin/ClawDnD/issues/261) | Atlas — seed the BG nav graph (Lower City / Upper City / …) | Critical | atlas | Polish Wave |
-| ~~[#262](https://github.com/100yenadmin/ClawDnD/issues/262)~~ | ✅ Bestiary 'THE MARCHES' → Sword Coast (demo-leak) | Critical | demo-leak | **DONE v1.0.2 bfc8ad9** |
-| ~~[#263](https://github.com/100yenadmin/ClawDnD/issues/263)~~ | ✅ Bestiary intel-tier stat block (sighted→engaged→slain) | Critical | per-page-polish + wire-prototypes | **DONE 137e482** |
-| [#264](https://github.com/100yenadmin/ClawDnD/issues/264) | Forge Workshop Ledger demo leak (the scribe / the smith / a companion) | Critical | demo-leak | Polish Wave |
-| [#265](https://github.com/100yenadmin/ClawDnD/issues/265) | Creation Plane race + class + portrait gallery art | Critical | portraits + per-scene-art | Polish Wave |
-| [#266](https://github.com/100yenadmin/ClawDnD/issues/266) | World Seed write-lane decision + de-fake hardcoded values | Critical | wire-prototypes + demo-leak | Finish Wave |
-| [#267](https://github.com/100yenadmin/ClawDnD/issues/267) | Combat foe portraits + battle scene backdrop | Critical | portraits + per-scene-art | Polish Wave |
-| [#268](https://github.com/100yenadmin/ClawDnD/issues/268) | Character Spellbook browse path | Critical | per-page-polish | Polish Wave |
-| [#269](https://github.com/100yenadmin/ClawDnD/issues/269) | Merchant id mismatch (`gate-sundries` vs `talli`) | Critical | per-page-polish | Polish Wave |
-| [#270](https://github.com/100yenadmin/ClawDnD/issues/270) | Img-not-Placeholder sweep across 8 screens | Major | portraits + per-scene-art | Polish Wave |
-| [#271](https://github.com/100yenadmin/ClawDnD/issues/271) | Inventory paper-doll + full slot set | Major | per-page-polish | Polish Wave |
-| [#272](https://github.com/100yenadmin/ClawDnD/issues/272) | Inventory compare-on-hover | Major | per-page-polish | Polish Wave |
-| [#273](https://github.com/100yenadmin/ClawDnD/issues/273) | Relations canon BG factions seed | Major | per-page-polish | Polish Wave |
-| [#274](https://github.com/100yenadmin/ClawDnD/issues/274) | Session log time-merge sort | Major | per-page-polish | Polish Wave |
-| [#275](https://github.com/100yenadmin/ClawDnD/issues/275) | Atlas watermark dim | Major | per-page-polish | Polish Wave |
-| [#276](https://github.com/100yenadmin/ClawDnD/issues/276) | Parley free-form text input | Major | per-page-polish + wire-prototypes | Polish Wave |
-| [#277](https://github.com/100yenadmin/ClawDnD/issues/277) | Create Family + Biography wiring | Major | wire-prototypes | Polish Wave |
-| [#278](https://github.com/100yenadmin/ClawDnD/issues/278) | Settings Export chronicle wire | Major | wire-prototypes | Polish Wave |
-| [#279](https://github.com/100yenadmin/ClawDnD/issues/279) | Iconography: OpenWorldsIcon registry usage across screens | Major | per-page-polish + iconography | Polish Wave |
-| [#281](https://github.com/100yenadmin/ClawDnD/issues/281) | **Asset catalog re-calibration: art exists for nearly every gap** | Major | portraits + per-scene-art | Polish Wave |
-| [#282](https://github.com/100yenadmin/ClawDnD/issues/282) | Camp Sidebar: 'Begin Resting' CTA needs engine write-lane | Critical | wire-prototypes | Polish Wave |
-| [#283](https://github.com/100yenadmin/ClawDnD/issues/283) | Camp Sidebar: per-companion fireside TALK_PROMPTS | Critical | per-page-polish + wire-prototypes | Polish Wave |
-| [#284](https://github.com/100yenadmin/ClawDnD/issues/284) | Responsive: .stack-on-narrow defined but unused; screens crowd <1200px | Major | per-page-polish | Polish Wave |
+| [#260](https://github.com/electricsheephq/WorldOS/issues/260) | Title-bar text overlaps nav-rail on every screen | Critical | per-page-polish | Polish Wave |
+| [#261](https://github.com/electricsheephq/WorldOS/issues/261) | Atlas — seed the BG nav graph (Lower City / Upper City / …) | Critical | atlas | Polish Wave |
+| ~~[#262](https://github.com/electricsheephq/WorldOS/issues/262)~~ | ✅ Bestiary 'THE MARCHES' → Sword Coast (demo-leak) | Critical | demo-leak | **DONE v1.0.2 bfc8ad9** |
+| ~~[#263](https://github.com/electricsheephq/WorldOS/issues/263)~~ | ✅ Bestiary intel-tier stat block (sighted→engaged→slain) | Critical | per-page-polish + wire-prototypes | **DONE 137e482** |
+| [#264](https://github.com/electricsheephq/WorldOS/issues/264) | Forge Workshop Ledger demo leak (the scribe / the smith / a companion) | Critical | demo-leak | Polish Wave |
+| [#265](https://github.com/electricsheephq/WorldOS/issues/265) | Creation Plane race + class + portrait gallery art | Critical | portraits + per-scene-art | Polish Wave |
+| [#266](https://github.com/electricsheephq/WorldOS/issues/266) | World Seed write-lane decision + de-fake hardcoded values | Critical | wire-prototypes + demo-leak | Finish Wave |
+| [#267](https://github.com/electricsheephq/WorldOS/issues/267) | Combat foe portraits + battle scene backdrop | Critical | portraits + per-scene-art | Polish Wave |
+| [#268](https://github.com/electricsheephq/WorldOS/issues/268) | Character Spellbook browse path | Critical | per-page-polish | Polish Wave |
+| [#269](https://github.com/electricsheephq/WorldOS/issues/269) | Merchant id mismatch (`gate-sundries` vs `talli`) | Critical | per-page-polish | Polish Wave |
+| [#270](https://github.com/electricsheephq/WorldOS/issues/270) | Img-not-Placeholder sweep across 8 screens | Major | portraits + per-scene-art | Polish Wave |
+| [#271](https://github.com/electricsheephq/WorldOS/issues/271) | Inventory paper-doll + full slot set | Major | per-page-polish | Polish Wave |
+| [#272](https://github.com/electricsheephq/WorldOS/issues/272) | Inventory compare-on-hover | Major | per-page-polish | Polish Wave |
+| [#273](https://github.com/electricsheephq/WorldOS/issues/273) | Relations canon BG factions seed | Major | per-page-polish | Polish Wave |
+| [#274](https://github.com/electricsheephq/WorldOS/issues/274) | Session log time-merge sort | Major | per-page-polish | Polish Wave |
+| [#275](https://github.com/electricsheephq/WorldOS/issues/275) | Atlas watermark dim | Major | per-page-polish | Polish Wave |
+| [#276](https://github.com/electricsheephq/WorldOS/issues/276) | Parley free-form text input | Major | per-page-polish + wire-prototypes | Polish Wave |
+| [#277](https://github.com/electricsheephq/WorldOS/issues/277) | Create Family + Biography wiring | Major | wire-prototypes | Polish Wave |
+| [#278](https://github.com/electricsheephq/WorldOS/issues/278) | Settings Export chronicle wire | Major | wire-prototypes | Polish Wave |
+| [#279](https://github.com/electricsheephq/WorldOS/issues/279) | Iconography: OpenWorldsIcon registry usage across screens | Major | per-page-polish + iconography | Polish Wave |
+| [#281](https://github.com/electricsheephq/WorldOS/issues/281) | **Asset catalog re-calibration: art exists for nearly every gap** | Major | portraits + per-scene-art | Polish Wave |
+| [#282](https://github.com/electricsheephq/WorldOS/issues/282) | Camp Sidebar: 'Begin Resting' CTA needs engine write-lane | Critical | wire-prototypes | Polish Wave |
+| [#283](https://github.com/electricsheephq/WorldOS/issues/283) | Camp Sidebar: per-companion fireside TALK_PROMPTS | Critical | per-page-polish + wire-prototypes | Polish Wave |
+| [#284](https://github.com/electricsheephq/WorldOS/issues/284) | Responsive: .stack-on-narrow defined but unused; screens crowd <1200px | Major | per-page-polish | Polish Wave |
 
 ---
 
@@ -279,10 +279,10 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 | Milestone | # | Status | Issues |
 |---|---|---|---|
-| Graphics Release 1.0 — Blocker Wave | [#8](https://github.com/100yenadmin/ClawDnD/milestone/8) | Reserved (empty today) | — |
-| Graphics Release 1.0 — Finish Wave | [#9](https://github.com/100yenadmin/ClawDnD/milestone/9) | Open | Bestiary (#254 #262 #263), Seed (#258 #266) |
-| Graphics Release 1.0 — Polish Wave | [#10](https://github.com/100yenadmin/ClawDnD/milestone/10) | Open | 14 epics + 16 cross-cutting subs |
-| Graphics Release 1.0 — Backlog / Post-1.0 | [#11](https://github.com/100yenadmin/ClawDnD/milestone/11) | Open | Trivials + missing features |
+| Graphics Release 1.0 — Blocker Wave | [#8](https://github.com/electricsheephq/WorldOS/milestone/8) | Reserved (empty today) | — |
+| Graphics Release 1.0 — Finish Wave | [#9](https://github.com/electricsheephq/WorldOS/milestone/9) | Open | Bestiary (#254 #262 #263), Seed (#258 #266) |
+| Graphics Release 1.0 — Polish Wave | [#10](https://github.com/electricsheephq/WorldOS/milestone/10) | Open | 14 epics + 16 cross-cutting subs |
+| Graphics Release 1.0 — Backlog / Post-1.0 | [#11](https://github.com/electricsheephq/WorldOS/milestone/11) | Open | Trivials + missing features |
 
 ---
 
@@ -339,7 +339,7 @@ docs/ui-audit/
 
 ## Session reference
 
-This audit was produced 2026-05-29 in one session as part of issue [#242](https://github.com/100yenadmin/ClawDnD/issues/242) Phase 5. Session notes live at `/Volumes/LEXAR/Codex/session-notes/2026-05-29/openworlds-ui-ux-review/implementation-notes.html` (per the user-level guidance to keep a per-session scratchpad for substantial / state-changing sessions).
+This audit was produced 2026-05-29 in one session as part of issue [#242](https://github.com/electricsheephq/WorldOS/issues/242) Phase 5. Session notes live at `/Volumes/LEXAR/Codex/session-notes/2026-05-29/openworlds-ui-ux-review/implementation-notes.html` (per the user-level guidance to keep a per-session scratchpad for substantial / state-changing sessions).
 
 The audit was authored against the canonical checkout `/Users/lume/ClawDnD-val` (per `clawdnd-canonical-setup` memory), git rev `227ff3227010820b2df2e5692dc77505ef7f980e`. The viewer was served via both `/Volumes/LEXAR/repos/ClawDnD-val` (port 8799, content-identical mirror) and `/Users/lume/ClawDnD-val` (port 8795); both were verified at the same revision.
 

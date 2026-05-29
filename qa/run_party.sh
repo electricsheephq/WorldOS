@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MULTI-AGENT ClawDnD QA (Sprint S3): a DM agent, a PLAYER agent, and N COMPANION
+# MULTI-AGENT WorldOS QA (Sprint S3): a DM agent, a PLAYER agent, and N COMPANION
 # agents — EACH its own `claude -p` session — play one scene together. This extends
 # run_duo.sh from 2 agents to a full PARTY. The crucial design choice (the owner's
 # vision): every companion is its OWN agent acting through the SAME constrained move

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ClawDnD read-only play-view — a local web projection of campaign state (P3.6).
+"""WorldOS read-only play-view — a local web projection of campaign state (P3.6).
 
 Run it for the PLAYER to *see* the adventure while they play through Claude Code:
 the current location/map, party vitals, who's in the scene (with voices), the
@@ -6114,9 +6114,9 @@ def main() -> int:
     _Handler.chat_path = os.environ.get("CLAWDND_VIEWER_CHAT") or ""
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     if campaign_id:
-        print(f"ClawDnD play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
+        print(f"WorldOS play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
     else:
-        print(f"ClawDnD play-view: http://127.0.0.1:{port}  (no game yet — the view attaches automatically once one starts)")
+        print(f"WorldOS play-view: http://127.0.0.1:{port}  (no game yet — the view attaches automatically once one starts)")
     if _Handler.transcript_path:
         print(f"Watching agent transcript: {_Handler.transcript_path}")
     moves = _moves_path()

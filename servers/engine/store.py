@@ -1,4 +1,4 @@
-"""Single-writer, atomic persistence for ClawDnD campaigns.
+"""Single-writer, atomic persistence for WorldOS campaigns.
 
 The whole Campaign aggregate is the unit of persistence: it's written to
 snapshot.json with an atomic temp-file + os.replace, so a crash or compaction

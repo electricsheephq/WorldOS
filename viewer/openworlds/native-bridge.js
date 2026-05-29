@@ -7,7 +7,7 @@
     hasBridge,
     request(type, payload) {
       if (!hasBridge()) {
-        return Promise.reject(new Error("OpenWorlds is running without the native ClawDnD bridge."));
+        return Promise.reject(new Error("OpenWorlds is running without the native WorldOS bridge."));
       }
       return window.ClawDnDNative.request(type, payload || {});
     },

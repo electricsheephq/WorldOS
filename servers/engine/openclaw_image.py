@@ -1,7 +1,7 @@
 """Minimal client for generating images via the LOCAL OpenClaw gateway.
 
 This rides the gateway's built-in `image_generate` tool (model `openai/gpt-image-2`)
-and its existing ChatGPT/Codex OAuth profile (`openai-codex`) — so ClawDnD never
+and its existing ChatGPT/Codex OAuth profile (`openai-codex`) — so WorldOS never
 needs a raw OpenAI API key of its own. The gateway holds the credential; we just
 ask it to draw.
 
@@ -48,7 +48,7 @@ Given that, this client's retrieval strategy over the always-on surface is:
      request started, up to a poll budget. Return its path (and, if small
      enough, its bytes).
 
-If the install runs the gateway on a different host than ClawDnD, the media dir
+If the install runs the gateway on a different host than WorldOS, the media dir
 is not local and step (2) cannot see the file; in that case the caller gets the
 `taskId` back and `image_path=None`. The provider layer treats "no retrievable
 image" as a clean failure so it can fall back to null rather than hang.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ClawDnD — Play View</title>
+<title>WorldOS — Play View</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -60,7 +60,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">ClawDnD</h1>
+  <h1 id="title">WorldOS</h1>
   <span class="meta" id="when"></span>
   <span class="meta" id="where"></span>
 </header>
@@ -84,7 +84,7 @@ function hpClass(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return 
 function hpPct(hp) { const [a,b] = (hp||"0/1").split("/").map(Number); return b ? Math.max(0, 100*a/b) : 0; }
 
 function renderState(s) {
-  $("title").textContent = s.title || "ClawDnD";
+  $("title").textContent = s.title || "WorldOS";
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
   const curId = s.current_location_id;
   const locs = s.locations || {};

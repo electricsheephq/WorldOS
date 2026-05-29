@@ -3,7 +3,7 @@
 
 Reads the cache written by `wiki_fetch.py` (the `areas/` subdir) and turns each cached
 area/location page's wikitext into a clean JSON record under
-`content/worlds/<world_id>/areas/<slug>.json`, which ClawDnD's `seed_world` loads as a
+`content/worlds/<world_id>/areas/<slug>.json`, which WorldOS's `seed_world` loads as a
 navigable `Location` of the "baldurs-gate" world. Today the ~248 ingested location pages
 land only in `lookup_lore` (lore markdown); this stage makes them PLACES the party can
 travel to.

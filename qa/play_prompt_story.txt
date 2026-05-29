@@ -1,4 +1,4 @@
-You are running a STORY-FIRST QA PLAYTEST of the ClawDnD plugin on the campaign "The Embergloom Pact" (`embergloom-pact`). The point of THIS run is the storytelling + party experience — exploration, NPCs, and deliberating with your companion — NOT combat. Keep combat to at most one short optional skirmish (or none).
+You are running a STORY-FIRST QA PLAYTEST of the WorldOS plugin on the campaign "The Embergloom Pact" (`embergloom-pact`). The point of THIS run is the storytelling + party experience — exploration, NPCs, and deliberating with your companion — NOT combat. Keep combat to at most one short optional skirmish (or none).
 
 Play as BOTH:
 - the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; all mechanics tool-sourced), and

@@ -14,4 +14,4 @@ The League's intelligence advantage over every Commonwealth city is not technolo
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

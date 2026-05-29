@@ -1,4 +1,4 @@
-"""Swappable speech-to-text (STT) layer for ClawDnD — Epic 10.
+"""Swappable speech-to-text (STT) layer for WorldOS — Epic 10.
 
 Mirrors the TTS design (see interface.py / adapters/): the server calls one tool,
 transcribe(audio_path), and a backend selected by CLAWDND_STT_BACKEND turns a

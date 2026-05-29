@@ -124,7 +124,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
   };
 
   const SECTIONS = [
-    { id: "native", label: "ClawDnD" },
+    { id: "native", label: "WorldOS" },
     { id: "audio", label: "Sound" },
     { id: "display", label: "Display" },
     { id: "gameplay", label: "Gameplay" },
@@ -372,7 +372,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
 
   const nativeAction = async (type, payload = {}) => {
     if (!window.OpenWorldsNative?.hasBridge?.()) {
-      toast({ kind: "danger", title: "Native bridge unavailable", body: "OpenWorlds is running outside the ClawDnD macOS app." });
+      toast({ kind: "danger", title: "Native bridge unavailable", body: "OpenWorlds is running outside the WorldOS macOS app." });
       return;
     }
     try {
@@ -397,7 +397,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
   };
 
   return (
-    <SettingsSection title="ClawDnD Native App" eyebrow="Supervisor bridge" ordinal="I.">
+    <SettingsSection title="WorldOS Native App" eyebrow="Supervisor bridge" ordinal="I.">
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <Pill tone={bridgeReady ? "emerald" : "crimson"}>{bridgeReady ? "Wired" : "Unavailable"}</Pill>
         <Pill tone={viewer.status === "running" ? "emerald" : "royal"}>Viewer {viewer.status || "stopped"}</Pill>

@@ -40,7 +40,7 @@
 
 ## Missing features (deferred to backlog)
 
-- **Save/export seed manifest** — let user share a seed YAML/JSON file (matches the generativity north-star in `ClawDnD-NORTH-STAR.md` Part 1 deliverable B).
+- **Save/export seed manifest** — let user share a seed YAML/JSON file (matches the generativity north-star in `WorldOS-NORTH-STAR.md` Part 1 deliverable B).
 - **Compare seeds** — diff between two seeds.
 - **Seed templates** — one-click "Curse of Strahd vibes" / "Eberron noir".
 - **Preview chronicler voice** — sample 2-3 lines of narration in each voice (Florid / Almost-poetic / Terse).

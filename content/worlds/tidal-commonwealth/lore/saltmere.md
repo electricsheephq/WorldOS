@@ -14,4 +14,4 @@ What a newcomer notices first: the smell of brine and tar and the wet-stone cold
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

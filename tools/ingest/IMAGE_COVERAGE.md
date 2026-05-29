@@ -40,7 +40,7 @@ wyrms-rock) are intentional landmark backdrops, not map locations — kept as-is
 
 - **Cast NPCs (world.json):** jaheira, minsc, astarion, shadowheart, wyll, karlach,
   the-emperor, withers, raphael — all covered. **claudan = GENERATION GAP** (original
-  ClawDnD character, no wiki page).
+  WorldOS character, no wiki page).
 - **Character-file heroes (`characters/*.json`, player-pickable / lore):** astarion, gale,
   halsin, isobel, jaheira, karlach, minsc, shadowheart, withers, wyll covered.
   **lae-zel FIXED** (was `portrait:lazel` → key `lazel`, never matched engine id
@@ -62,7 +62,7 @@ Unchanged this pass; scaling to the full catalog tracked in `ITEM_ICONS_PLAN.md`
    A Forgotten Realms Wiki (Fandom) page has a real fortress-library image, but Fandom
    returns HTTP 403 to our fetcher, so it can't be ingested here. Generate a Sword-Coast
    cliffside fortress-library still, OR add a Fandom source if a fetch path is opened.
-2. **portrait:claudan** — Claudan the Chronicler is an original, non-canon ClawDnD easter-egg
+2. **portrait:claudan** — Claudan the Chronicler is an original, non-canon WorldOS easter-egg
    character. No wiki anywhere; generation is the only path.
 3. *(low)* **portrait:jergal** — only if a god-portrait is ever wanted distinct from Withers.
 

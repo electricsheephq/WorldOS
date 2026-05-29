@@ -1,7 +1,7 @@
 """Guards the private compendium sidecar manifest validator.
 
 The sidecar is stdlib-only ingest tooling that deliberately plans local/private
-outputs instead of importing owned content into tracked ClawDnD content.
+outputs instead of importing owned content into tracked WorldOS content.
 """
 
 import json

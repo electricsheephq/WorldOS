@@ -294,7 +294,7 @@ def _print_dry_run(rows: list[dict[str, Any]], artifacts: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="List or dry-run the ClawDnD Owlcat release matrix.")
+    parser = argparse.ArgumentParser(description="List or dry-run the WorldOS Owlcat release matrix.")
     parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX, help="Release matrix JSON path.")
     parser.add_argument("--artifacts", type=Path, help="Directory containing <run-id> sidecars. Defaults to matrix defaults.artifact_root.")
     parser.add_argument("--filter", help="Filter by cell id substring or exact tag.")

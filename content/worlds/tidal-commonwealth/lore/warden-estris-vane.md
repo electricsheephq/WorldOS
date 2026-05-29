@@ -14,4 +14,4 @@ She is looking, carefully and without obvious urgency, for people with no obviou
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

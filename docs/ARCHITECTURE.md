@@ -1,6 +1,6 @@
-# ClawDnD — Architecture
+# WorldOS — Architecture
 
-ClawDnD is a Claude Code plugin: an **AI Dungeon Master + voiced AI companion** that
+WorldOS is a Claude Code plugin: an **AI Dungeon Master + voiced AI companion** that
 plays D&D 5e. Its center of gravity is a **living-world engine** — the DM *generates*
 an epic, mature story live inside a persistent, canon-anchored world, with deterministic
 rules and a memory that keeps it consistent. Story quality is the north star (scored on

@@ -1,4 +1,4 @@
-"""Swappable text-to-speech interface for ClawDnD.
+"""Swappable text-to-speech interface for WorldOS.
 
 The DM and companion only ever call speak(text, voice_id). A TtsBackend turns a
 backend-native voice into spoken audio. Backends are interchangeable — Kokoro

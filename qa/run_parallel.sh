@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch several ClawDnD QA playtests CONCURRENTLY (each isolated under qa/state/<run>
+# Launch several WorldOS QA playtests CONCURRENTLY (each isolated under qa/state/<run>
 # with its own MCP config), then wait and print every scorecard. Each run is scored on
 # BOTH lenses (mechanical + Tolkien story-craft). This is the velocity lever: 2-3 signals
 # per cycle instead of one. The `claude -p` runs are API-bound, not the memory-heavy

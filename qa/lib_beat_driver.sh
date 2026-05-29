@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared beat-driver helpers for the ClawDnD play loops (qa/run_duo.sh + scripts/play.sh).
+# Shared beat-driver helpers for the WorldOS play loops (qa/run_duo.sh + scripts/play.sh).
 #
 # This is the STRUCTURE behind the "living, progressing world" fix (decision-dm-driver.md):
 # prose nudges alone never moved the clock past day 1, never visited >1 location, and NEVER

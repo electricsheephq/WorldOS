@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenClaw / GPT-5.4 variant of the TWO-AGENT ClawDnD QA duo (qa/run_duo.sh).
+# OpenClaw / GPT-5.4 variant of the TWO-AGENT WorldOS QA duo (qa/run_duo.sh).
 # Same beat loop, runbook driver, soft clock-tick, move relay, distill, and behavioral
 # gate as run_duo.sh — ONLY the agent-invocation layer differs: instead of two
 # gateway-free `claude -p` sessions, this drives the two ISOLATED OpenClaw agents

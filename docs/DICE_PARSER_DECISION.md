@@ -4,7 +4,7 @@ Date: 2026-05-26
 
 ## Decision
 
-Keep the ClawDnD engine on its native internal dice roller for now. Treat Avrae/d20
+Keep the WorldOS engine on its native internal dice roller for now. Treat Avrae/d20
 as reference material only, not as a runtime dependency.
 
 The current engine dice contract is small but load-bearing:

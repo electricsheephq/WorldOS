@@ -14,4 +14,4 @@ The Compact can survive cities that want more than it allows. It cannot survive 
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

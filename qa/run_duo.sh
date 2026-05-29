@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TWO-AGENT ClawDnD QA: a DM agent and a SEPARATE player agent play against each
+# TWO-AGENT WorldOS QA: a DM agent and a SEPARATE player agent play against each
 # other, mediated only by the shared engine state + the narration they exchange.
 # This replaces the single-agent "play both roles" harness — the player is now an
 # independent agent with its own context and agenda, so it can't "play along" with

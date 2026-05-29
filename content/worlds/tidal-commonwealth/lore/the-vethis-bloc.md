@@ -14,4 +14,4 @@ Vor has chosen to hold the Deep Rim intelligence rather than share it, which mea
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

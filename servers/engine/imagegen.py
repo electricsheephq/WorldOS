@@ -1,4 +1,4 @@
-"""Swappable image-generation layer for ClawDnD.
+"""Swappable image-generation layer for WorldOS.
 
 Mirrors the voice TTS/STT design (see ../voice/interface.py, ../voice/stt.py): the
 caller asks for one thing, generate(kind, prompt), and a provider selected by

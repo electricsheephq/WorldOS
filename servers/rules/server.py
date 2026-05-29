@@ -1,4 +1,4 @@
-"""ClawDnD rules MCP server.
+"""WorldOS rules MCP server.
 
 Read-only D&D 5e rules reference. Serves a bundled SRD 5.2 dataset from
 data/srd/ first (offline, canonical, CC-BY-4.0) and falls back to the public

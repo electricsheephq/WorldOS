@@ -18,4 +18,4 @@ They believe it is eighty-seven years through a ninety-year cycle.
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

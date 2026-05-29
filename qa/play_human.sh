@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Play ClawDnD yourself (It.2): YOU are the player — you act through the dashboard's
+# Play WorldOS yourself (It.2): YOU are the player — you act through the dashboard's
 # action palette / input, and a DM AGENT (claude -p, full plugin) responds, turn by
 # turn, live in the same window. This is the human-in-the-loop version of the duo
 # harness: the dashboard's /move endpoint appends your moves to $MOVES (exactly the

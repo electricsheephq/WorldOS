@@ -135,7 +135,7 @@ Run from a Lexar-backed checkout:
 ```bash
 python3 -m unittest viewer.tests.test_openworlds_static -q
 python3 -m py_compile viewer/server.py
-swift build --package-path macos/ClawDnDApp
+swift build --package-path macos/WorldOSApp
 ./script/build_and_run.sh --verify
 python3 scripts/license_check.py
 git diff --check

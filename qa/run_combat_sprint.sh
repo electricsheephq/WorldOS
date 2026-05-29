@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ClawDnD COMBAT-SPRINT QA — ~1.5-2 min, one claude -p DM call.
+# WorldOS COMBAT-SPRINT QA — ~1.5-2 min, one claude -p DM call.
 #
 # Pre-seeds a campaign (zero LLM) then runs ONE DM call for a 3-round fight,
 # distills, behavioral-gates, and Angry-DM-scores the result.

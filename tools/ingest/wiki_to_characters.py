@@ -3,7 +3,7 @@
 
 Reads the cache written by `wiki_fetch.py` (the `characters/` subdir) and turns each
 cached character page's wikitext into a clean JSON record under
-`content/worlds/<world_id>/characters/<slug>.json`, which ClawDnD can later load as an
+`content/worlds/<world_id>/characters/<slug>.json`, which WorldOS can later load as an
 NPC of the "baldurs-gate" world.
 
 Each record has: name, race, class, level, alignment, appearance, personality,

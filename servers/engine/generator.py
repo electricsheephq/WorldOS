@@ -34,7 +34,7 @@ def _is_nonempty_str(value: Any) -> bool:
 
 
 def validate_adventure(adv: dict) -> list[str]:
-    """Check an adventure dict against the ClawDnD schema.
+    """Check an adventure dict against the WorldOS schema.
 
     Returns a list of human-readable problem strings; an empty list means the
     adventure is valid. Tolerant of optional fields (descriptions, hooks,

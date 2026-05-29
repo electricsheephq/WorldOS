@@ -1,4 +1,4 @@
-# ClawDnD QA Scorecard — running ledger
+# WorldOS QA Scorecard — running ledger
 
 > The "what did each run score, and what change was under test" log. Updated per QA run.
 > System reference: `qa/SCORING.md`. Targets: **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0 critical/high.**
