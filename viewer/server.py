@@ -3720,8 +3720,13 @@ def _relations_npcs(snapshot: dict) -> list[dict]:
         is_companion = kind == "companion" or cid in party and kind != "player"
         if kind == "player":
             continue
-        if kind == "npc" and not bool(ch.get("met")) and not _text(ch.get("attitude")) and _num(ch.get("attitude_value")) in (None, 0):
-            continue  # a roster stranger the party hasn't met — don't list (mirror scene_debt scoping)
+        if kind == "npc" and not bool(ch.get("met")) and _num(ch.get("attitude_value")) in (None, 0):
+            # A roster stranger the party hasn't met — don't list. Gate ONLY on met / a real
+            # attitude_value: the seeded post-BG3 canon roster (Jaheira, Astarion, the Emperor, …)
+            # carries a DESCRIPTIVE attitude blurb (a role/bio, e.g. "High Harper, veteran of a
+            # hundred years") in `attitude`, NOT a relationship stance — keying the filter off that
+            # text made every un-met legend show as "known" on a fresh game (the met-everyone bug).
+            continue
         if kind == "monster" and not is_companion:
             continue
         loc_id = _text(ch.get("location_id"))
