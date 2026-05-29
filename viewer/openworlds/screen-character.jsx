@@ -826,10 +826,26 @@ function SpellsTab({ hero }) {
   const groups = (Array.isArray(hero.spells) ? hero.spells : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
   const slots = Array.isArray(hero.spellSlots) ? hero.spellSlots : [];
   const isCaster = slots.length > 0 || groups.length > 0;
+  // #268: every caster gets a working "Browse spellbook" path — a read-only inspector over
+  // the hero's known + prepared spells (the surface's hero.spells groups). The empty state
+  // INVITES the browse instead of dead-ending; preparation stays in the Rest & Prepare modal.
+  const [browsing, setBrowsing] = React.useState(false);
+  const spellCount = groups.reduce((n, g) => n + g.list.length, 0);
+
+  const browseCta = isCaster ? (
+    <BrassButton
+      tone="dark"
+      size="sm"
+      onClick={() => setBrowsing(true)}
+      title="Inspect this hero's known & prepared spells (read-only)"
+    >
+      Browse spellbook{spellCount ? ` (${spellCount})` : ""}
+    </BrassButton>
+  ) : null;
 
   return (
     <div>
-      <SectionTitle ordinal="·">Spellbook</SectionTitle>
+      <SectionTitle ordinal="·" right={browseCta}>Spellbook</SectionTitle>
       <SpellSlotTrack slots={slots} />
       {groups.length ? (
         groups.map((group) => (
@@ -854,13 +870,100 @@ function SpellsTab({ hero }) {
             </div>
           </div>
         ))
+      ) : isCaster ? (
+        // Caster with open slots but no spell NAMES bound yet — invite the browse path
+        // (and the Rest & Prepare flow) instead of dead-ending on a flat message (#268).
+        <div style={{
+          marginTop: slots.length ? 16 : 8,
+          padding: "16px 18px", textAlign: "center",
+          background: "rgba(176,141,87,0.06)",
+          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+        }}>
+          <div className="hand muted" style={{ fontSize: 13 }}>
+            This hero holds open spell slots but has bound no spells to the page.
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <BrassButton
+              tone="dark"
+              size="sm"
+              onClick={() => setBrowsing(true)}
+              title="Open this hero's spellbook (read-only)"
+            >
+              Browse spellbook
+            </BrassButton>
+          </div>
+        </div>
       ) : (
         <div className="muted body-sm" style={{ marginTop: slots.length ? 16 : 8 }}>
-          {isCaster
-            ? "No spells prepared yet — this hero holds open slots but has bound no spells to the page."
-            : "This hero prepares no spells."}
+          This hero prepares no spells.
         </div>
       )}
+
+      {browsing && <SpellbookBrowser hero={hero} groups={groups} onClose={() => setBrowsing(false)} />}
+    </div>
+  );
+}
+
+function SpellbookBrowser({ hero, groups, onClose }) {
+  // Read-only spellbook inspector (#268). Surfaces the hero's known + prepared spells from
+  // the /character-surface read-model — no preparation here (the Rest & Prepare modal owns
+  // that write-flow). When the engine carries no spell NAMES, we say so honestly rather than
+  // fabricate an SRD list, and point the player at Rest & Prepare.
+  const list = (Array.isArray(groups) ? groups : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(15, 8, 2, 0.7)",
+      display: "grid", placeItems: "center",
+      backdropFilter: "blur(2px)",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>
+        <Panel framed>
+          <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Spellbook</div>
+          <h2 className="h1" style={{ fontSize: 24 }}>{hero.name}'s Spells</h2>
+          <p className="hand muted" style={{ fontSize: 13, marginTop: 2 }}>
+            Read-only. Prepare or change today's spells from <em>Rest &amp; Prepare</em>.
+          </p>
+          <Divider />
+
+          {list.length ? (
+            list.map((group) => (
+              <div key={group.level} style={{ marginTop: 16 }}>
+                <SectionTitle right={<span className="muted body-sm">{group.list.length}</span>}>
+                  {spellGroupLabel(group.level)}
+                </SectionTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {group.list.map((sp) => (
+                    <div key={sp.name} style={{
+                      display: "flex", gap: 10, alignItems: "center", padding: 10,
+                      background: "rgba(176,141,87,0.08)",
+                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+                    }}>
+                      <Placeholder label={sp.glyph} w={36} h={36} framed />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                          {sp.name}
+                        </div>
+                        <div className="body-sm muted">{spellMeta(sp)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="body muted" style={{ marginTop: 0 }}>
+              No spells are inscribed in this hero's book yet. Open <em>Rest &amp; Prepare</em>
+              {" "}to bind spells to the day.
+            </p>
+          )}
+
+          <Divider />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <BrassButton tone="ghost" onClick={onClose}>Close book</BrassButton>
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }
@@ -886,4 +989,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, portraitScope, spellMeta });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, portraitScope, spellMeta });
