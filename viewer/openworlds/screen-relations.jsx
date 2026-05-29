@@ -19,6 +19,11 @@ function ScreenRelations({ onNavigate, state, setState }) {
   const factions = Array.isArray(surface?.factions) ? surface.factions : [];
   const npcs = Array.isArray(surface?.npcs) ? surface.npcs : [];
   const campBeats = surface?.campBeats || null;
+  // Live action lane (mirrors merchant/map): /relations-surface exposes can_act + campaign_id,
+  // so "Send word" can relay a structured `do` move to the DM when a live session is attached.
+  const canAct = Boolean(surface?.can_act);
+  const campaignId = surface?.campaign_id || "";
+  const toast = window.useToast ? window.useToast() : (() => {});
   // Companion personal-quest arcs (from /relations-surface `companionArcs`): each is
   // { id, companion_id, companion, title, status, note, stages:[{title,status,note}] }.
   const companionArcs = Array.isArray(surface?.companionArcs) ? surface.companionArcs : [];
@@ -136,7 +141,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
           </div>
 
           <div style={{ overflow: "auto" }}>
-            {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} campBeats={campBeats} /> : <div className="body-sm muted">No acquaintance selected.</div>}
+            {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} campBeats={campBeats} canAct={canAct} campaignId={campaignId} toast={toast} /> : <div className="body-sm muted">No acquaintance selected.</div>}
           </div>
         </div>
       </Panel>
@@ -358,7 +363,20 @@ function BetrayalWarning({ w }) {
   );
 }
 
-function NPCDetail({ n, onNavigate, campBeats }) {
+function NPCDetail({ n, onNavigate, campBeats, canAct, campaignId, toast }) {
+  // "Send word" — relay a structured `do` move to the DM (the engine resolves it, e.g. a
+  // courier / sending). Mirrors the merchant/inventory live-action pattern: only acts when a
+  // live session is attached (can_act); otherwise the button is disabled with an honest reason.
+  const sendWord = () => {
+    if (!canAct || !n?.name) return;
+    fetch("/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "do", text: `I send word to ${n.name}`, campaign: campaignId }),
+    }).then(() => {
+      (toast || (() => {}))({ kind: "info", eyebrow: "Relations", title: "Word sent", body: `Move relayed to the DM — the engine resolves reaching ${n.name}.` });
+    }).catch((e) => (toast || (() => {}))({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+  };
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
@@ -459,7 +477,10 @@ function NPCDetail({ n, onNavigate, campBeats }) {
 
       <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
         <BrassButton size="sm" onClick={() => onNavigate("dialogue")}>Find them</BrassButton>
-        <BrassButton size="sm" tone="ghost">Send word</BrassButton>
+        <BrassButton size="sm" tone="ghost" onClick={sendWord} disabled={!canAct}
+          title={canAct ? `Relays "send word to ${n.name}" to the DM via /move` : "No live session attached — start a session to send word"}>
+          Send word
+        </BrassButton>
       </div>
     </div>
   );

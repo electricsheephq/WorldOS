@@ -5,6 +5,15 @@
 // "creature:<slug>"; the viewer's _scope_key normalises that and "creature-<slug>" to the
 // same key ("creature" is NOT a stripped prefix), so the art resolves regardless of
 // separator. Mirrors the id derivation below so the scope tracks the entry.
+//
+// CONTRACT WITH THE ENGINE SLUG-ALIAS (UI audit P1, screen-bestiary):* the viewer emits the
+// CANONICAL slug of the creature's display name — e.g. "gnoll", "bugbear", "mind-flayer",
+// "aboleth". Several ingested dirs use a VARIANT suffix the marquee name doesn't carry
+// ("gnoll-warrior", "bugbear-warrior"), so those 404 on the clean slug. Resolving that drift
+// is the ENGINE's job (server.py _scope_key / _portrait_by_name fuzzy-match or an alias map):
+// it should fold "gnoll" -> "gnoll-warrior", "bugbear" -> "bugbear-warrior", etc. The viewer
+// deliberately keeps emitting the clean canonical slug (not a variant guess) so the alias has
+// a single, stable key to map from. Do NOT special-case variant names here.
 function creatureSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }

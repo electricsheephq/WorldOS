@@ -310,7 +310,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
               setCart([]);
             }
           }} style={{ width: "100%" }} disabled={cart.length === 0 || (!canAct && coins.gp + balanceDelta < 0)} title={canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine"}>
-            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"} <span style={{ fontSize: 9, opacity: 0.7 }}>{canAct ? "(live)" : "(preview)"}</span>
+            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"}
           </BrassButton>
         </div>
       </Panel>

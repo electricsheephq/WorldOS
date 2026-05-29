@@ -77,16 +77,8 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
 
   const clearSlot = (slot) => setRoles((r) => ({ ...r, [slot]: null }));
 
-  const _badge = { label: "Preview", tone: "muted", detail: "Camp is display-only — role assignments, recipes, and resting are not persisted to the engine." };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, overflow: "auto" }}>
-
-      {/* Prototype banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
-        <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>Preview — camp actions are not saved to the engine.</span>
-      </div>
 
       {/* Time progression bar */}
       <Panel framed style={{ padding: 12 }}>
@@ -108,7 +100,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       <Panel framed style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <SectionTitle>Rations</SectionTitle>
-          <BrassButton tone="ghost" size="sm" disabled title="Display-only — ration changes are not saved to the engine">Manage (preview)</BrassButton>
+          <BrassButton tone="ghost" size="sm" disabled title="Display-only — ration changes are not saved to the engine">Manage</BrassButton>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <RationStat label="Needed" value={ration} />
@@ -299,7 +291,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
         <BrassButton tone="ghost" size="sm" onClick={onExit}>Leave camp</BrassButton>
         <BrassButton tone="dark" disabled style={{ flex: 1 }} title="Display-only — resting is not yet wired to the engine; nothing is saved">
-          ✺ Begin Resting <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+          ✺ Begin Resting
         </BrassButton>
       </div>
     </div>

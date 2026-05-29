@@ -58,6 +58,47 @@ def _tally(events: list[dict]) -> tuple[Counter, int]:
     return tools, dm_text_turns
 
 
+def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]]:
+    """Ordered (short_name, input, result_obj_or_None, is_error, raw_text).
+
+    Pairs each ``tool_use`` with its following ``tool_result`` by tool_use_id. Both blocks
+    live under ``message.content`` — the ``tool_use`` on an ``assistant`` event, the
+    ``tool_result`` on a later ``user`` event — so iterating ALL events in order preserves
+    pairing. ``result_obj`` is the parsed JSON of the result text when it is a JSON value,
+    else ``None``; ``raw_text`` is always the textual payload (for error-message matching).
+
+    This reads the RESULT side of the stream that ``_tally`` (tool_use only) never sees — the
+    rich ``attack`` payload, ``is_error`` rejections, and validation walls the gates need.
+    """
+    pending: dict[str, tuple[str, dict]] = {}  # tool_use_id -> (short, input)
+    out: list[tuple[str, dict, object, bool, str]] = []
+    for ev in events:
+        msg = ev.get("message", {}) or {}
+        for b in (msg.get("content") or []):
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                short = (b.get("name") or "").split("__")[-1]
+                pending[b.get("id")] = (short, b.get("input") or {})
+            elif b.get("type") == "tool_result":
+                short, inp = pending.pop(b.get("tool_use_id"), ("", {}))
+                c = b.get("content")
+                if isinstance(c, str):
+                    text = c
+                elif isinstance(c, list) and c and isinstance(c[0], dict):
+                    text = c[0].get("text") or ""
+                else:
+                    text = json.dumps(c)
+                obj: object = None
+                if isinstance(text, str):
+                    try:
+                        obj = json.loads(text)
+                    except Exception:
+                        obj = None
+                out.append((short, inp, obj, bool(b.get("is_error")), text if isinstance(text, str) else ""))
+    return out
+
+
 # A player turn that reads like DM narration or asserts an outcome (the dice's/DM's
 # call). Heuristic only -> a WARNING, not a hard fail (It.1's constrained tool surface
 # is the real, structural fix; this just surfaces drift until then).
@@ -415,6 +456,185 @@ def main() -> int:
         chk("world_peopled", npcs_met >= 2,
             f"only {npcs_met} NPC(s) engaged (met) across {session_beats} beats — a living world "
             f"should introduce new faces, not just sit in the seeded roster", fatal=False)
+
+    # ── SECTION A: RESULT-SIDE + per-record state gates (audit-tests.md §A) ───────────────
+    # These read artifacts the existing gates ignore: the tool_RESULT payloads (A1/A2/A8) and
+    # per-record final state that's present-but-unchecked (A3 living monster, A5 PC XP, A6
+    # non-party companions, A7 skill profs). Each is null/scope-guarded so it never false-REDs
+    # a run that simply didn't exercise the path — the same discipline as the gates above.
+    evs = _tool_events(events)
+    chars_all = state.get("characters", {}) or {}
+    party_ids = state.get("party", []) or []
+
+    # A8 (FATAL) — any tool call REJECTED with a schema/validation error (extra_forbidden ⇒
+    # version-skew or a wrong field). The DM's intent silently did not take effect; this is the
+    # class of failure that has produced 2 RED-capped runs historically. Benign engine guards
+    # the DM is EXPECTED to hit and recover from (travel-graph rejections etc.) are split off to
+    # a WARN so healthy recovery never false-REDs.
+    errors = [(n, text) for (n, inp, r, err, text) in evs if err]
+    if errors:
+        fatal_errs = [(n, t) for (n, t) in errors
+                      if "extra_forbidden" in t or "validation error" in t.lower()]
+        benign = [(n, t) for (n, t) in errors if (n, t) not in fatal_errs]
+        chk("no_rejected_tool_calls", not fatal_errs,
+            f"{len(fatal_errs)} tool call(s) rejected with a schema/validation error "
+            f"(extra_forbidden ⇒ version skew or wrong field): {[n for n, _ in fatal_errs]}; "
+            f"first: {fatal_errs[0][1][:160] if fatal_errs else ''}", fatal=True)
+        if benign:
+            chk("engine_guards_hit", False,
+                f"{len(benign)} engine guard rejection(s) (recoverable, DM expected to retry): "
+                f"{[n for n, _ in benign]}", fatal=False)
+
+    # A3 (FATAL; WARN under CLAWDND_GATE_COMBAT_SPRINT) — end_combat called but a hostile is
+    # still alive (kind=monster, current_hp>0, dead=false) with NO flee/surrender/retreat event
+    # logged. The clearest pure-state defect: it corrupts the save for the next session load and
+    # was GREEN in the cited run (xp_not_orphaned only fires on dead==true).
+    if tools.get("end_combat", 0) > 0 and not (state.get("combat") or {}).get("active"):
+        alive_hostiles = [c.get("name", "?") for c in chars_all.values()
+                          if isinstance(c, dict) and c.get("kind") == "monster" and not c.get("dead")
+                          and (c.get("current_hp") or 0) > 0]
+        state_events = state.get("events", []) or []
+        resolved = any(re.search(r"flee|retreat|surrender|captured|driven off|routed|escap",
+                                 json.dumps(e), re.I) for e in state_events)
+        sprint = bool(os.environ.get("CLAWDND_GATE_COMBAT_SPRINT"))
+        if alive_hostiles:
+            chk("end_combat_no_living_hostiles",
+                resolved or sprint,
+                f"end_combat called but living hostile(s) remain: {alive_hostiles} "
+                f"(no flee/surrender/retreat event logged) — continuity break for the next load",
+                fatal=not sprint)
+
+    # A5 (FATAL) — xp-leveling-mode session that ADVANCED the world (clock moved and/or >1
+    # location visited) but ended with every living party member at 0 XP. Regression lock for
+    # the d2f65f1 milestone-XP backstop. Scoped to "world advanced" (so a static smoke test
+    # isn't punished) and "a living PC exists" (so a TPK isn't) — mirrors xp_not_orphaned.
+    if state.get("leveling_mode", "xp") == "xp" and session_beats >= MIN_BEATS:
+        day = state.get("day") or 1
+        locs = state.get("locations", {}) or {}
+        visited = sum(1 for l in locs.values() if isinstance(l, dict) and l.get("visited"))
+        advanced = day > 1 or visited >= 2  # same signal the world-progression floor uses
+        living_pcs = [chars_all[i] for i in party_ids
+                      if i in chars_all and chars_all[i].get("kind") in ("player", "companion")
+                      and not chars_all[i].get("dead")]
+        if advanced and living_pcs:
+            any_xp = any((p.get("xp") or 0) > 0 for p in living_pcs)
+            chk("xp_awarded_on_progression", any_xp,
+                f"xp-mode session advanced (day={day}, visited={visited}) but all living party "
+                f"members are at 0 XP — milestone-XP regression (d2f65f1 should prevent this)",
+                fatal=True)
+
+    # A6 (WARN) — widen the existing party_location_coherence net to companions NOT in
+    # state.party[] (the Wyll/Karlach de-facto-companion bug the current loop never sees). Locks
+    # the d2f65f1 _move_party_to co-location. Null-guarded; only meaningful with a current loc.
+    cur = state.get("current_location_id")
+    if cur:
+        stray = []
+        for cid, ch in chars_all.items():
+            if not isinstance(ch, dict) or ch.get("kind") not in ("player", "companion"):
+                continue
+            loc = ch.get("location_id")
+            if loc and loc != cur:
+                tag = "" if cid in set(party_ids) else " (de-facto companion, NOT in party[])"
+                stray.append(f"{ch.get('name', cid)}@{loc}{tag}")
+        chk("companion_location_synced", not stray,
+            f"party/companion not at current_location_id={cur!r}: {stray}", fatal=False)
+
+    # A7 (WARN) — a leveled caster/martial with a signature skill but a COMPLETELY EMPTY
+    # skill_proficiencies list (the load_canon_character gap: it skips _apply_srd_class_defaults).
+    # Empty-list is the real defect; a custom build that swaps the signature skill keeps SOME
+    # profs, so the empty-list scope avoids false-positives on variants.
+    SIG = {"wizard": "arcana", "cleric": "religion", "rogue": "stealth", "druid": "nature",
+           "ranger": "survival", "bard": "performance", "paladin": "religion"}
+    sig_missing = []
+    for c in chars_all.values():
+        if not isinstance(c, dict) or c.get("kind") not in ("player", "companion"):
+            continue
+        profs = {p.lower() for p in (c.get("skill_proficiencies") or [])}
+        if profs:
+            continue  # has SOME profs → a variant swap is legitimate; only empty is the bug
+        for cl in (c.get("classes") or []):
+            want = SIG.get((cl.get("name") or "").lower())
+            if want and (cl.get("level") or 1) >= 1:
+                sig_missing.append(f"{c.get('name')} ({cl.get('name')}) has NO skill "
+                                   f"proficiencies (expected at least {want})")
+                break
+    chk("caster_has_signature_proficiency", not sig_missing, "; ".join(sig_missing), fatal=False)
+
+    # A4 (WARN) — a Fighter that took >25% HP but ended with Second Wind unused. Tactical-
+    # adherence smell (not a broken state). Final-snapshot read of class_resources only.
+    sw_unused = []
+    for c in chars_all.values():
+        if not isinstance(c, dict) or c.get("kind") not in ("player", "companion"):
+            continue
+        cls = " ".join((cl.get("name") or "") for cl in (c.get("classes") or [])).lower()
+        if "fighter" not in cls:
+            continue
+        sw = (c.get("class_resources") or {}).get("second_wind") or {}
+        if not sw:
+            continue  # no resource on sheet → skip
+        mx = c.get("max_hp")
+        took = bool(mx) and (mx - (c.get("current_hp") or 0)) / mx > 0.25
+        if took and (sw.get("used", 0) or 0) == 0:
+            sw_unused.append(f"{c.get('name')} took >25% HP (now {c.get('current_hp')}/{mx}) "
+                             f"and ended with Second Wind unused")
+    chk("fighter_second_wind_considered", not sw_unused, "; ".join(sw_unused), fatal=False)
+
+    # A2 (WARN) — a melee attack HIT a parry-capable monster (state parry>0) but the attack
+    # RESULT recorded no parry (parry in {None,0,False}) AND no reaction call fired all fight.
+    # The cleanest new result-field read: the attack payload's own `parry` field.
+    parry_monsters = {c.get("name"): c for c in chars_all.values()
+                      if isinstance(c, dict) and c.get("kind") == "monster" and (c.get("parry") or 0) > 0}
+    if parry_monsters:
+        reaction_calls = sum(
+            1 for (n, inp, r, err, _) in evs
+            if (n == "use_action" and (inp.get("kind") == "reaction"))
+            or (n == "use_resource" and "parry" in json.dumps(inp).lower())
+        )
+        hit_on_parrier = [r for (n, inp, r, err, _) in evs
+                          if n == "attack" and isinstance(r, dict) and r.get("hit")
+                          and r.get("target") in parry_monsters
+                          and r.get("parry") in (None, 0, False)]
+        if hit_on_parrier and reaction_calls == 0:
+            chk("parry_reaction_considered", False,
+                f"{len(hit_on_parrier)} melee hit(s) landed on a parry-capable monster "
+                f"({list(parry_monsters)}) but 0 reaction calls fired", fatal=False)
+
+    # A1 (WARN) — a ranged shot in melee without disadvantage. Theater-of-mind has no positions,
+    # so the structural proxy is a MUTUAL melee exchange: if `victim` also meleed `shooter`
+    # (a clearly-melee attack: slashing/bludgeoning damage), they were adjacent, so the shooter's
+    # ranged shot needed disadvantage. WARN — the proxy can mis-fire on a genuine 10-ft gap.
+    attacks = [(i, inp, r) for i, (n, inp, r, err, _) in enumerate(evs)
+               if n == "attack" and isinstance(r, dict)]
+
+    def _melee_damage(inp_dict: dict, res: dict) -> bool:
+        """A clearly-MELEE attack: its damage type is slashing/bludgeoning (a sword/club), not
+        the piercing that a bow/crossbow/pistol also shares. Best-effort on the available
+        fields (no weapon/ranged field exists in the stream)."""
+        blob = (json.dumps(inp_dict) + json.dumps(res.get("damage") or {})).lower()
+        return ("slashing" in blob or "bludgeoning" in blob) and "piercing" not in blob
+
+    ranged_flags = []
+    for ai, (idx_a, inp_a, ra) in enumerate(attacks):
+        if ra.get("disadvantage"):
+            continue  # already applied → clean
+        shooter, victim = ra.get("attacker"), ra.get("target")
+        if not shooter or not victim:
+            continue
+        # victim landed a clearly-melee blow back on shooter → mutual exchange ⇒ adjacency
+        mutual_melee = any(
+            rb.get("attacker") == victim and rb.get("target") == shooter and _melee_damage(inp_b, rb)
+            for (idx_b, inp_b, rb) in attacks if idx_b != idx_a
+        )
+        # AND this same shooter ALSO meleed this same victim in the run (so the un-disadvantaged
+        # shot is the ranged half of a both-meleed-and-ranged pattern — the cited Scimitar+Pistol)
+        shooter_also_meleed = any(
+            rc.get("attacker") == shooter and rc.get("target") == victim and _melee_damage(inp_c, rc)
+            for (idx_c, inp_c, rc) in attacks if idx_c != idx_a
+        )
+        if mutual_melee and shooter_also_meleed and not _melee_damage(inp_a, ra):
+            ranged_flags.append(f"{shooter}->{victim} ranged w/o disadvantage (mutual melee exchange ⇒ adjacent)")
+    if attacks:
+        chk("ranged_disadvantage_in_melee", not ranged_flags, "; ".join(ranged_flags), fatal=False)
 
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]

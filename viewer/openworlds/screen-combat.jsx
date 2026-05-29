@@ -174,7 +174,6 @@ function ScreenCombat({ onNavigate, state }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <Pill tone={canAct ? "emerald" : "crimson"} dot>{canAct ? "Live" : "Read-only"}</Pill>
               <Pill dot>{surface?.grid?.mode === "grid" ? "Grid" : "Zones"}</Pill>
               <BrassButton size="sm" tone="ghost" onClick={() => loadSurface()}>Refresh</BrassButton>
               <BrassButton size="sm" onClick={() => onNavigate("table")}>Back to table</BrassButton>

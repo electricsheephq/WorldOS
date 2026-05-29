@@ -75,9 +75,6 @@ class CapabilityBadgeTests(unittest.TestCase):
             f"{screen_path} must render a <CapabilityBadge> so players know it is display-only",
         )
 
-    def test_forge_screen_has_capability_badge(self):
-        self._assert_has_capability_badge("/openworlds/screen-forge.jsx")
-
     # v1.0.2: the Merchant screen's "Preview" CapabilityBadge banner was removed
     # as part of the UI honesty cleanup (Phase-4 wiring already lifted BUY →
     # POST /move on can_act, so the surface is no longer prototype-only; the
@@ -88,8 +85,41 @@ class CapabilityBadgeTests(unittest.TestCase):
     # create binds the hero through the engine, so neither is prototype-only;
     # the seed screen keeps its disabled "Sow the change" button (with a quiet
     # tooltip) to stay honest about re-seeding not being wired, but no longer
-    # carries the loud banner. Forge remains the sole banner-bearing surface
-    # until its wiring lands.
+    # carries the loud banner.
+    #
+    # UI audit (2026-05-29): the FORGE banner was the last surface-level
+    # CapabilityBadge and is now retired too — the "Forge it" action relays a real
+    # `check` move to the DM via POST /move when can_act (the wiring has landed;
+    # see screen-forge.jsx `craft`), so the surface is no longer prototype-only.
+    # The craft button itself stays honest with a can_act-aware label + tooltip
+    # (live → "relays to the DM"; not-live → "simulated locally, not saved"),
+    # which is the endorsed per-button gating, not a loud surface badge. With this,
+    # NO OpenWorlds screen carries a surface CapabilityBadge banner; the component
+    # survives only for the genuine native-bridge capability notice on the Settings
+    # screen (screen-settings.jsx), which is intentionally NOT a prototype badge.
+    # Hence there is no longer a per-screen banner test to assert here.
+
+    def test_no_surface_capability_badge_on_play_screens(self):
+        # Regression lock for the honesty cleanup: the play surfaces must NOT
+        # reintroduce a surface-level CapabilityBadge banner. (Settings keeps a
+        # genuine native-bridge badge and is intentionally excluded.)
+        for screen in (
+            "/openworlds/screen-forge.jsx",
+            "/openworlds/screen-merchant.jsx",
+            "/openworlds/screen-bestiary.jsx",
+            "/openworlds/screen-map.jsx",
+            "/openworlds/screen-combat.jsx",
+            "/openworlds/screen-dialogue.jsx",
+            "/openworlds/camp-sidebar.jsx",
+        ):
+            status, ctype, body = self._get(screen)
+            self.assertEqual(status, 200, f"{screen} should return HTTP 200")
+            self.assertNotIn(
+                "CapabilityBadge",
+                body.decode("utf-8"),
+                f"{screen} must NOT carry a surface CapabilityBadge banner "
+                f"(honesty cleanup — use per-button can_act gating instead)",
+            )
 
 
 if __name__ == "__main__":

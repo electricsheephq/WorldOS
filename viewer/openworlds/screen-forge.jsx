@@ -118,22 +118,8 @@ function ScreenForge({ onNavigate, state, setState }) {
     });
   };
 
-  const _badge = canAct
-    ? { label: "Live", tone: "emerald", detail: "Craft relays a structured skill check to the DM via /move — the engine rolls and resolves." }
-    : { label: "Preview", tone: "muted", detail: "Forge is display-only — crafting rolls are simulated and results are not persisted to the engine." };
-
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
-
-      {/* Prototype banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
-        <CapabilityBadge capability={_badge} nativeStatus={null} />
-        <span className="hand muted" style={{ fontSize: 12 }}>
-          {canAct
-            ? "Live — \"Forge it\" relays a skill check to the DM via /move. The engine rolls; the DM narrates."
-            : "Display-only preview — crafting rolls are simulated locally. Start a live session to relay real checks to the DM."}
-        </span>
-      </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 300px", gap: 14, minHeight: 0 }}>
 
@@ -298,11 +284,11 @@ function ScreenForge({ onNavigate, state, setState }) {
               </div>
             </div>
 
-            <BrassButton tone="crimson" onClick={craft} style={{ width: "100%", marginTop: 14 }} title="Simulated only — result is not persisted to the engine">
-              ⚒ To the forge <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+            <BrassButton tone="crimson" onClick={craft} style={{ width: "100%", marginTop: 14 }} title={canAct ? "Relays a skill check to the DM via /move — the engine rolls and resolves" : "No live session attached — the roll is simulated locally and not saved"}>
+              ⚒ To the forge
             </BrassButton>
             <div className="hand muted" style={{ fontSize: 11, marginTop: 4, textAlign: "center" }}>
-              Crafting happens at next rest. (display-only — not saved)
+              {canAct ? "Relays a skill check to the DM — the engine rolls; the DM narrates." : "Crafting happens at next rest."}
             </div>
           </>
         )}

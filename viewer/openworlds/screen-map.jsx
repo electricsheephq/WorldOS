@@ -237,7 +237,6 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
           flex: "0 0 auto",
           alignItems: "center",
         }}>
-          <Pill tone={surface?.is_live_view ? "emerald" : "crimson"} dot>{surface?.is_live_view ? "Live" : "Read-only"}</Pill>
           <Pill dot>{locations.length} known</Pill>
           <Pill dot>{clocks.filter((c) => c.urgent).length + projects.filter((p) => p.urgent).length} urgent</Pill>
           <div style={{ flex: 1 }} />
@@ -260,6 +259,7 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
         allLocations={locations}
         onSelect={setSelectedId}
         onTravel={postTravel}
+        onNavigate={onNavigate}
       />
     </div>
   );
@@ -370,6 +370,14 @@ function edgeStyle(edge) {
   return { stroke: "rgba(60,30,10,0.46)", width: 0.5, dash: "1.6 1.2" };
 }
 
+// Brass square for the atlas zoom controls (+ / − / FIT) — matches the parchment chrome.
+const atlasZoomBtn = {
+  width: 26, height: 26, display: "grid", placeItems: "center", cursor: "pointer",
+  fontFamily: "var(--f-display)", fontSize: 16, lineHeight: 1, color: "var(--ink-900)",
+  background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
+  boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 0 2px var(--b-500)",
+};
+
 function AtlasMap({ locations, edges, selected, currentId, region, time, onSelect }) {
   // Recompute only when the set of nodes/edges changes — NOT on every 7s poll tick,
   // so pins don't jiggle while the live clock and selection update around them.
@@ -392,9 +400,62 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
   const regionSlug = region ? String(region).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
   const regionScope = REGION_BACKDROP[regionSlug] || (regionSlug ? "map-" + regionSlug : "");
 
+  // ── Zoom / pan (atlas navigation) ─────────────────────────────────────────────
+  // The backdrop image, the SVG (viewBox 0..100, preserveAspectRatio="none") and the
+  // percent-positioned pins all live in ONE coordinate box, so transforming a single wrapper
+  // by scale+translate moves them together and keeps pins/edges aligned. Wheel zooms toward
+  // the cursor; pointer-drag pans; "Fit" resets. Clamped to [1, MAX] so you can't zoom out
+  // past the framed map (no empty margins) or lose the nodes off-canvas.
+  const ZOOM_MIN = 1, ZOOM_MAX = 4;
+  const [view, setView] = React.useState({ scale: 1, tx: 0, ty: 0 });
+  const frameRef = React.useRef(null);
+  const drag = React.useRef(null);
+  const clampPan = (tx, ty, scale) => {
+    // At scale s the content overflows the frame by (s-1)/2 of its size on each side (origin
+    // center); keep the translate within that so an edge can't pull past the frame border.
+    const max = (rect) => ({ x: rect ? (rect.width * (scale - 1)) / 2 : 9999,
+                             y: rect ? (rect.height * (scale - 1)) / 2 : 9999 });
+    const m = max(frameRef.current && frameRef.current.getBoundingClientRect());
+    return { tx: Math.max(-m.x, Math.min(m.x, tx)), ty: Math.max(-m.y, Math.min(m.y, ty)) };
+  };
+  const onWheel = (e) => {
+    e.preventDefault();
+    const rect = frameRef.current && frameRef.current.getBoundingClientRect();
+    const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    setView((v) => {
+      if (next === 1) return { scale: 1, tx: 0, ty: 0 };
+      // Keep the point under the cursor stable: scale the existing translate about the cursor.
+      const cx = rect ? e.clientX - rect.left - rect.width / 2 : 0;
+      const cy = rect ? e.clientY - rect.top - rect.height / 2 : 0;
+      const k = next / v.scale;
+      const p = clampPan(cx + (v.tx - cx) * k, cy + (v.ty - cy) * k, next);
+      return { scale: next, ...p };
+    });
+  };
+  const onPointerDown = (e) => {
+    if (view.scale <= 1) return; // nothing to pan when fit
+    drag.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
+    e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!drag.current) return;
+    const p = clampPan(drag.current.tx + (e.clientX - drag.current.x),
+                       drag.current.ty + (e.clientY - drag.current.y), view.scale);
+    setView((v) => ({ ...v, ...p }));
+  };
+  const endDrag = () => { drag.current = null; };
+  const zoomed = view.scale > 1;
+
   return (
     <div style={{ position: "relative", height: "100%" }}>
-      <div style={{
+      <div
+        ref={frameRef}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        style={{
         position: "absolute", inset: 0,
         background:
           `radial-gradient(ellipse at 30% 25%, rgba(120, 80, 30, 0.25), transparent 50%),
@@ -403,7 +464,17 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
            linear-gradient(135deg, #c8a878 0%, #b89868 40%, #a08055 100%)`,
         boxShadow: "inset 0 0 80px rgba(60, 30, 10, 0.6)",
         overflow: "hidden",
+        cursor: zoomed ? (drag.current ? "grabbing" : "grab") : "default",
+        touchAction: "none",
       }}>
+        {/* Zoom / pan transform layer — backdrop + SVG + pins move together so they stay
+            aligned. Full-frame overlays (dusk wash, no-data state) live OUTSIDE this group. */}
+        <div style={{
+          position: "absolute", inset: 0,
+          transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
+          transformOrigin: "center center",
+          transition: drag.current ? "none" : "transform 160ms ease-out",
+        }}>
         {/* Optional region-map backdrop (scope `map-<region>`); 404 → the parchment
             styling below shows through (the Img placeholder is transparent here). */}
         {regionScope && (
@@ -483,6 +554,22 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
             </button>
           );
         })}
+        </div>{/* end zoom/pan transform layer */}
+
+        {/* Zoom controls — outside the transform so they stay pinned to the frame. Wheel to
+            zoom, drag to pan; "Fit" resets. Hidden when there's no atlas to navigate. */}
+        {locations.length > 0 && (
+          <div style={{ position: "absolute", right: 8, top: 8, display: "flex", flexDirection: "column", gap: 4, zIndex: 4 }}>
+            <button onClick={() => setView((v) => { const s = Math.min(ZOOM_MAX, v.scale * 1.3); return s === 1 ? { scale: 1, tx: 0, ty: 0 } : { ...v, scale: s }; })}
+              title="Zoom in" style={atlasZoomBtn}>+</button>
+            <button onClick={() => setView((v) => { const s = Math.max(ZOOM_MIN, v.scale / 1.3); return s === 1 ? { scale: 1, tx: 0, ty: 0 } : { ...clampPan(v.tx, v.ty, s), scale: s }; })}
+              title="Zoom out" style={atlasZoomBtn}>−</button>
+            {zoomed && (
+              <button onClick={() => setView({ scale: 1, tx: 0, ty: 0 })} title="Fit the whole map"
+                style={{ ...atlasZoomBtn, fontSize: 8, letterSpacing: "0.08em" }}>FIT</button>
+            )}
+          </div>
+        )}
 
         {!locations.length && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
@@ -498,7 +585,7 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
   );
 }
 
-function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests, clocks, projects, control, allLocations, onSelect, onTravel }) {
+function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests, clocks, projects, control, allLocations, onSelect, onTravel, onNavigate }) {
   const travelDisabled = !travel?.available || !canAct || Boolean(busyTravel) || selected?.id === currentId;
   const travelReason = selected?.id === currentId ? "current location" : (travel?.disabled_reason || "no engine-backed route");
   return (
@@ -548,8 +635,17 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
       <Panel framed style={{ padding: 18, flex: 1, overflow: "auto" }}>
         <SectionTitle>Strategic Context</SectionTitle>
         {quests.length === 0 && clocks.length === 0 && projects.length === 0 ? (
-          <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 8 }}>
-            No active threads in this region yet — quests, clocks, and downtime projects appear here as they develop.
+          <div style={{ marginTop: 8 }}>
+            <div className="body-sm" style={{ color: "var(--ink-600)" }}>
+              No active threads in this region yet — quests, clocks, and downtime projects appear here as they develop. Pick up a thread to set one in motion:
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+              {onNavigate && <BrassButton size="sm" onClick={() => onNavigate("dialogue")}>Talk to locals</BrassButton>}
+              {onNavigate && <BrassButton size="sm" tone="ghost" onClick={() => onNavigate("journal")}>Open the chronicle</BrassButton>}
+            </div>
+            <div className="hand muted" style={{ fontSize: 11, marginTop: 8 }}>
+              Or choose a place on the atlas to scout where to go next.
+            </div>
           </div>
         ) : (
           <>
