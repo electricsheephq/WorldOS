@@ -252,8 +252,10 @@ while true; do
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then
     new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"; MCURSOR="$total"
-    # The dashboard palette sends {kind,name}; Say/Do send {kind,text}.
-    PMSG="$(printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text // .name // "")") | join("  ")' 2>/dev/null)"
+    # The dashboard palette sends {kind,name}; Say/Do send {kind,text}. The Seed screen sends
+    # {kind:"set_seed_param",param,value[,force]} (#266) — render it as a config directive
+    # the DM applies via the engine's set_seed_param tool (it has no text/name body).
+    PMSG="$(printf '%s' "$new" | jq -rs 'map(if .kind == "set_seed_param" then "[set_seed_param] \(.param)=\(.value)\(if .force then " (force)" else "" end)" else "[\(.kind)] \(.text // .name // "")" end) | join("  ")' 2>/dev/null)"
     [ -z "$PMSG" ] && continue
     echo "[play] you: ${PMSG:0:100}"
     chatlog player "$PMSG"
@@ -272,7 +274,7 @@ while true; do
 
 $PMSG
 
-Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player.
+Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. If a move is tagged [set_seed_param] param=value, that is a World-Seed dial the player changed from the Seed screen — apply it with the engine's set_seed_param(campaign_id, param, value[, force=True]) tool (it returns applied/warning), then briefly acknowledge it in-world rather than treating it as an in-scene action.
 
 $RUNBOOK")"
     chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))

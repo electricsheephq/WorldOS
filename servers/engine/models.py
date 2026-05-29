@@ -1122,6 +1122,41 @@ class HouseRules(_StrictModel):
     wandering_encounters: bool = True
 
 
+class SeedParams(_StrictModel):
+    """The mutable World-Seed parameters the OpenWorlds Seed screen surfaces and edits
+    (#266). These are DM-GUIDANCE dials the DM honors when narrating (read via get_state),
+    plus a few rules-affecting toggles. The engine is the SOLE writer (set_seed_param under
+    campaign_lock + save_campaign); the viewer only relays an intent.
+
+    ADDITIVE: every field defaults to today's behavior, so a snapshot lacking `seed_params`
+    round-trips to this default and nothing changes. Difficulty is NOT mirrored here — it
+    stays canonical on `house_rules.difficulty` (set_seed_param routes "difficulty" there);
+    the ruleset/system stays `Campaign.ruleset` (locked post-seed). The mutability CLASS of
+    each field (free / gated / locked) lives in the engine tool + the viewer read model, not
+    on the model itself, so the policy has one home.
+
+    FREELY MUTABLE mid-campaign (cosmetic / narration-only): tone, narration, gm_strictness,
+    chronicle_voice, anachronism, chronicler_notes.
+    GATED (retroactive / rules-affecting, gated by session-start in set_seed_param):
+    permadeath, fate_dice, item_destruction."""
+
+    # — free (DM-guidance / cosmetic) —
+    tone: Literal["Heroic", "Grim", "Picaresque", "Mythic"] = "Heroic"
+    narration: Literal["terse", "balanced", "florid", "almost_poetic"] = "florid"
+    gm_strictness: Literal["permissive", "standard", "strict", "pedantic"] = "standard"
+    chronicle_voice: Literal[
+        "first_person_singular", "first_person_plural", "second_person",
+        "third_person_omniscient", "third_person_close",
+    ] = "first_person_plural"
+    anachronism: bool = True  # permit a few out-of-period words for clarity (cosmetic)
+    chronicler_notes: str = ""  # free text the DM honors; no mechanical effect
+
+    # — gated (retroactive / rules-affecting; the engine gates a mid-session change) —
+    permadeath: bool = False        # future death handling only; never resurrects an existing dead PC
+    fate_dice: bool = True          # a per-act meta-currency the DM grants/honors
+    item_destruction: bool = False  # weapons/armour wear with use
+
+
 class WorldState(_StrictModel):
     """The campaign's canonical, structured world-state — the load-bearing FACTS the
     DM must never narrate against (set by the chosen ending; default == today's base
@@ -1548,6 +1583,12 @@ class Campaign(_StrictModel):
     factions: dict[str, Faction] = Field(default_factory=dict)
     combat: Combat = Field(default_factory=Combat)
     house_rules: HouseRules = Field(default_factory=HouseRules)
+    # Mutable World-Seed parameters surfaced + edited by the OpenWorlds Seed screen (#266).
+    # DM-guidance dials (tone/narration/voice/…) plus a few rules toggles; the DM reads them
+    # via get_state and honors them, exactly like pacing_mode/house_rules. Engine sole-writer
+    # (set_seed_param). ADDITIVE: a snapshot lacking this key round-trips to the default and
+    # nothing changes — today's behavior byte-for-byte.
+    seed_params: SeedParams = Field(default_factory=SeedParams)
 
     active_session_id: Optional[str] = None
     session_ids: list[str] = Field(default_factory=list)  # play sessions in order

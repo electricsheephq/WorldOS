@@ -75,6 +75,7 @@ from models import (
     Quest,
     RepeatSave,
     SceneDebt,
+    SeedParams,
     SessionLogEntry,
     SpellSlotLevel,
     Zone,
@@ -670,6 +671,11 @@ def get_state(campaign_id: str) -> dict:
         "npc_count": sum(1 for x in c.characters.values() if x.kind == "npc"),
         "pacing_mode": c.pacing_mode,
         "leveling_mode": c.leveling_mode,
+        # World-Seed dials the DM honors when narrating (#266) — tone/narration register/
+        # GM strictness/chronicle voice/anachronism/chronicler_notes + the permadeath/
+        # fate_dice/item_destruction toggles. Advisory, exactly like pacing_mode above.
+        # difficulty stays under house_rules (set via set_seed_param/set_house_rules).
+        "seed_params": c.seed_params.model_dump(),
     }
 
 
@@ -8017,6 +8023,129 @@ def resolve_scene_debt(campaign_id: str, debt_id: str, evidence: str) -> dict:
         save_campaign(c)
 
         return {"message": "resolved", "debt": debt.model_dump()}
+
+
+# --- World-Seed write-lane (#266) -------------------------------------------
+# The mutability matrix for set_seed_param, in ONE place so the policy has a single
+# home (the viewer read model mirrors these classes so the UI hardcodes no policy).
+#   free   — cosmetic / DM-guidance; always settable, no warning.
+#   gated  — rules-affecting / retroactive; settable freely BEFORE the first session
+#            (Campaign.session_ids == []), else refused unless force=True (then a warning).
+#   locked — out of scope to change post-seed; always raises.
+# A free/gated param either lives on SeedParams or (difficulty) routes to house_rules.
+SEED_PARAMS_FREE = (
+    "tone", "narration", "gm_strictness", "chronicle_voice", "anachronism", "chronicler_notes",
+)
+SEED_PARAMS_GATED = ("difficulty", "permadeath", "fate_dice", "item_destruction")
+SEED_PARAMS_LOCKED = ("system",)
+# "difficulty" is the lone gated param that is NOT a SeedParams field — it stays canonical
+# on house_rules.difficulty (so the DM/engine reads one source). Everything else is a field.
+SEED_PARAM_HOUSE_RULE = {"difficulty": "difficulty"}
+
+
+def _seed_param_class(param: str) -> str:
+    """free | gated | locked for a known param, else '' (unknown)."""
+    if param in SEED_PARAMS_FREE:
+        return "free"
+    if param in SEED_PARAMS_GATED:
+        return "gated"
+    if param in SEED_PARAMS_LOCKED:
+        return "locked"
+    return ""
+
+
+@mcp.tool()
+def set_seed_param(campaign_id: str, param: str, value, force: bool = False) -> dict:
+    """Set ONE World-Seed parameter on a campaign — the OpenWorlds Seed screen's mutable
+    write-lane (#266). The engine is the SOLE WRITER: this mutates under campaign_lock then
+    save_campaign. ADDITIVE — every seed field defaults to today's behavior, so old snapshots
+    round-trip and an unset param reads as its default.
+
+    Mutability (the matrix is fixed; ``get_seed_surface`` in the viewer mirrors it):
+
+    - FREE (cosmetic / DM-guidance, always settable): tone, narration, gm_strictness,
+      chronicle_voice, anachronism, chronicler_notes.
+    - GATED (rules-affecting / retroactive): difficulty, permadeath, fate_dice,
+      item_destruction. Settable freely BEFORE a session has started (Campaign.session_ids
+      is empty). ONCE a session has started the change is REFUSED (applied=False, a
+      ``warning`` explains why) unless ``force=True``, in which case it applies AND the
+      return carries a ``warning`` describing the retroactive risk so the UI can confirm.
+      (``difficulty`` routes to house_rules.difficulty; it is not stored on seed_params.
+      Note permadeath only governs FUTURE death handling — it never resurrects an
+      already-dead PC; the warning says so.)
+    - LOCKED: system (the ruleset). A whole-ruleset swap post-seed is a re-seed, not a param
+      edit — this raises.
+
+    ``value`` is validated against the field's type (a bad Literal/bool raises). Returns::
+
+        {"id", "param", "value", "applied": bool, "warning": str, "mutability": "free|gated|locked"}
+    """
+    param = str(param).strip()
+    cls = _seed_param_class(param)
+    if not cls:
+        known = sorted([*SEED_PARAMS_FREE, *SEED_PARAMS_GATED, *SEED_PARAMS_LOCKED])
+        raise ValueError(f"unknown seed param {param!r}; known: {known}")
+    if cls == "locked":
+        raise ValueError(
+            f"seed param {param!r} is LOCKED post-seed — a ruleset/system swap is a re-seed, "
+            "not a param edit."
+        )
+
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        session_started = bool(c.session_ids)
+
+        # Gate: a rules-affecting change after a session has started is refused unless forced.
+        warning = ""
+        if cls == "gated" and session_started and not force:
+            return {
+                "id": c.id,
+                "param": param,
+                "value": value,
+                "applied": False,
+                "mutability": "gated",
+                "warning": (
+                    f"{param!r} is a retroactive, rules-affecting change and this chronicle "
+                    f"has already begun ({len(c.session_ids)} session(s) on record). "
+                    "It can shift the felt difficulty/economy of a run already in progress; "
+                    "re-submit with force=True to apply it anyway."
+                ),
+            }
+        if cls == "gated" and session_started and force:
+            if param == "permadeath":
+                warning = (
+                    "Applied mid-chronicle. Permadeath governs only FUTURE death handling — "
+                    "it does NOT resurrect or strand a hero who has already died."
+                )
+            else:
+                warning = (
+                    f"Applied mid-chronicle: {param!r} changes a rule of a run already in "
+                    "progress, so the felt balance may shift unevenly from here on."
+                )
+
+        # Apply. difficulty routes to house_rules (its canonical home); validate via the
+        # model so a bad value raises exactly like set_house_rules / set_pacing.
+        if param in SEED_PARAM_HOUSE_RULE:
+            hr_key = SEED_PARAM_HOUSE_RULE[param]
+            data = c.house_rules.model_dump()
+            data[hr_key] = value
+            c.house_rules = HouseRules.model_validate(data)
+            applied_value = getattr(c.house_rules, hr_key)
+        else:
+            data = c.seed_params.model_dump()
+            data[param] = value
+            c.seed_params = SeedParams.model_validate(data)
+            applied_value = getattr(c.seed_params, param)
+
+        save_campaign(c)
+        return {
+            "id": c.id,
+            "param": param,
+            "value": applied_value,
+            "applied": True,
+            "mutability": cls,
+            "warning": warning,
+        }
 
 
 if __name__ == "__main__":

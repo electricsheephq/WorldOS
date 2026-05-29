@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import importlib.util
 import json
 import mimetypes
@@ -2797,6 +2798,198 @@ def _journal_evolutions(snapshot: dict) -> list[dict]:
     return out
 
 
+# --- World-Seed read model (#266) -------------------------------------------
+# The mutable World-Seed parameters surfaced + edited by the OpenWorlds Seed screen.
+# These MIRROR the engine's set_seed_param classification (servers/engine/server.py:
+# SEED_PARAMS_FREE/GATED/LOCKED) so the policy stays one shape on both sides; the viewer
+# stays a pure stdlib reader (no engine import) and the engine remains the enforcement
+# point — this matrix is for honest UI rendering + the /seed-param sanitizer.
+_SEED_MUTABILITY = {
+    "tone": "free",
+    "narration": "free",
+    "gm_strictness": "free",
+    "chronicle_voice": "free",
+    "anachronism": "free",
+    "chronicler_notes": "free",
+    "difficulty": "gated",
+    "permadeath": "gated",
+    "fate_dice": "gated",
+    "item_destruction": "gated",
+    "system": "locked",
+}
+# Defaults == the engine SeedParams defaults (today's behavior) so a snapshot lacking a
+# seed_params block projects honest defaults rather than blanks. difficulty defaults to the
+# HouseRules default; system reflects the ruleset (read off the snapshot below).
+_SEED_PARAM_DEFAULTS = {
+    "tone": "Heroic",
+    "narration": "florid",
+    "gm_strictness": "standard",
+    "chronicle_voice": "first_person_plural",
+    "anachronism": True,
+    "chronicler_notes": "",
+    "permadeath": False,
+    "fate_dice": True,
+    "item_destruction": False,
+    "difficulty": "standard",  # lives on house_rules.difficulty
+}
+# Free params whose value is a closed string set + bool params, for sanitize_seed_param.
+_SEED_PARAM_STR_VALUES = {
+    "tone": {"Heroic", "Grim", "Picaresque", "Mythic"},
+    "narration": {"terse", "balanced", "florid", "almost_poetic"},
+    "gm_strictness": {"permissive", "standard", "strict", "pedantic"},
+    "chronicle_voice": {
+        "first_person_singular", "first_person_plural", "second_person",
+        "third_person_omniscient", "third_person_close",
+    },
+    "difficulty": {"easy", "standard", "hard"},
+}
+_SEED_PARAM_BOOLS = {"anachronism", "permadeath", "fate_dice", "item_destruction"}
+_SEED_PARAM_FREETEXT = {"chronicler_notes"}
+_SEED_NOTES_MAXLEN = 2000
+
+
+def _seed_pattern(campaign_id: str) -> str:
+    """A STABLE, decorative 'Pattern' fingerprint derived from the campaign id (S-10:
+    'derive Pattern from the seed' instead of a hardcoded literal). Deterministic so it
+    never re-rolls on a poll; cosmetic only (a sha1 slice formatted aaaa-bbbb-cccc)."""
+    if not campaign_id:
+        return ""
+    h = hashlib.sha1(campaign_id.encode("utf-8")).hexdigest()
+    return f"{h[0:4]}-{h[4:8]}-{h[8:12]}"
+
+
+def _seed_identity(snapshot: dict, campaign_id: str) -> dict:
+    """De-fake the screen-seed StatLine block (S-03) from REAL campaign fields. Every value
+    is sourced from the snapshot — nothing hardcoded. `seeded` is the real-world sowing date
+    (created_at); `era` is the in-world chronology; `engine` pairs ruleset + the engine SHA;
+    `pattern` is the stable id fingerprint; `by` is the world the chronicle was sown from."""
+    created = snapshot.get("created_at")
+    seeded_epoch = float(created) if isinstance(created, (int, float)) and not isinstance(created, bool) else None
+    seeded = ""
+    if seeded_epoch is not None:
+        try:
+            seeded = time.strftime("%d %b %Y", time.localtime(seeded_epoch))
+        except (OSError, ValueError, OverflowError):
+            seeded = ""
+    ruleset = _text(snapshot.get("ruleset"), "SRD 5.2")
+    engine_sha = _text(snapshot.get("engine_sha"))
+    engine = f"{ruleset} · {engine_sha[:7]}" if engine_sha else ruleset
+    return {
+        "seeded": seeded,                                   # real-world sow date (created_at)
+        "seeded_epoch": seeded_epoch,                       # raw, for the UI to reformat
+        "by": _text(snapshot.get("world_id"), "the chronicle"),  # provenance (world bible)
+        "era": _text(snapshot.get("era")),                  # in-world chronology
+        "pattern": _seed_pattern(campaign_id),              # stable id fingerprint (S-10)
+        "engine": engine,                                   # ruleset + real engine SHA
+        "ending": _text(snapshot.get("ending_id")),         # optional post-state overlay label
+    }
+
+
+def build_seed_surface(
+    snapshot: dict,
+    *,
+    campaign_id: str,
+    live: bool,
+    is_live_view: bool,
+) -> dict:
+    """Project the OpenWorlds World-Seed read model (#266): the live seed IDENTITY (de-faking
+    the hardcoded StatLine — S-03), the live `params` each control binds to, the `mutability`
+    matrix (so the UI renders gates/warnings without hardcoding policy), and `session_started`
+    (which escalates gated→needs-force). Pure projection from the snapshot — no engine import,
+    no writes. ``present:false`` → the UI shows an honest empty-state (S-07)."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    present = bool(campaign_id and snapshot)
+    if not present:
+        return {
+            "campaign_id": campaign_id or "",
+            "present": False,
+            "title": "",
+            "identity": {},
+            "params": {},
+            "mutability": _SEED_MUTABILITY,
+            "session_started": False,
+            "live": bool(live),
+            "is_live_view": bool(is_live_view),
+            "can_act": False,
+            "state_authority": "engine",
+            "write_lane": {"endpoint": "/seed-param", "method": "POST", "authority": "engine"},
+        }
+
+    seed_raw = snapshot.get("seed_params")
+    seed_raw = seed_raw if isinstance(seed_raw, dict) else {}
+    house_rules = snapshot.get("house_rules")
+    house_rules = house_rules if isinstance(house_rules, dict) else {}
+
+    # Build params from real state, defaulting to today's behavior where a key is absent
+    # (an old snapshot with no seed_params block projects honest defaults, not blanks).
+    params: dict = {}
+    for key, default in _SEED_PARAM_DEFAULTS.items():
+        if key == "difficulty":
+            params[key] = _text(house_rules.get("difficulty"), default)
+        elif key in _SEED_PARAM_BOOLS:
+            val = seed_raw.get(key)
+            params[key] = bool(val) if isinstance(val, bool) else default
+        elif key in _SEED_PARAM_FREETEXT:
+            params[key] = _text(seed_raw.get(key), default)
+        else:  # closed-string params
+            params[key] = _text(seed_raw.get(key), default)
+    # system is the ruleset (locked); surface it so the UI shows it read-only.
+    params["system"] = _text(snapshot.get("ruleset"), "SRD 5.2")
+
+    session_ids = snapshot.get("session_ids")
+    session_started = bool(isinstance(session_ids, list) and session_ids)
+
+    return {
+        "campaign_id": campaign_id,
+        "present": True,
+        "title": _text(snapshot.get("title"), campaign_id),
+        "identity": _seed_identity(snapshot, campaign_id),
+        "params": params,
+        "mutability": _SEED_MUTABILITY,
+        "session_started": session_started,
+        "live": bool(live),
+        "is_live_view": bool(is_live_view),
+        "can_act": bool(live and is_live_view),
+        "state_authority": "engine",
+        "write_lane": {"endpoint": "/seed-param", "method": "POST", "authority": "engine"},
+    }
+
+
+def sanitize_seed_param(raw: object) -> tuple[Optional[dict], str]:
+    """Validate + normalize a /seed-param payload into a `set_seed_param` INTENT line.
+    Returns ``(intent, "")`` on success or ``(None, reason)`` on rejection. role is forced
+    to 'player' (the DM agent is the trusted applier and re-validates server-side); the
+    param must be a known seed param; the value is type-checked against its class (closed
+    string set / bool / capped free text); a LOCKED param (system) is refused at the lane
+    (the engine also raises). This is the SAME defense-in-depth shape as sanitize_move —
+    the engine remains the SOLE writer; this only relays a validated request."""
+    if not isinstance(raw, dict):
+        return None, "seed-param must be a JSON object"
+    param = str(raw.get("param", "")).strip()
+    cls = _SEED_MUTABILITY.get(param)
+    if cls is None:
+        return None, f"unknown seed param {param!r}"
+    if cls == "locked":
+        return None, f"seed param {param!r} is locked post-seed"
+    value = raw.get("value")
+    if param in _SEED_PARAM_BOOLS:
+        if not isinstance(value, bool):
+            return None, f"{param!r} expects a boolean"
+    elif param in _SEED_PARAM_FREETEXT:
+        if not isinstance(value, str):
+            return None, f"{param!r} expects a string"
+        value = value[:_SEED_NOTES_MAXLEN]
+    elif param in _SEED_PARAM_STR_VALUES:
+        if not isinstance(value, str) or value not in _SEED_PARAM_STR_VALUES[param]:
+            return None, f"{param!r} expects one of {sorted(_SEED_PARAM_STR_VALUES[param])}"
+    else:  # should be unreachable given the matrix, but fail closed
+        return None, f"{param!r} is not settable via this lane"
+    intent: dict = {"role": "player", "kind": "set_seed_param", "param": param, "value": value}
+    if bool(raw.get("force")):
+        intent["force"] = True
+    return intent, ""
+
+
 def build_journal_surface(
     snapshot: dict,
     *,
@@ -5349,6 +5542,11 @@ class _Handler(BaseHTTPRequestHandler):
             # The quest journal read model: tracked quests + unresolved hooks (as rumors)
             # + the Campaign Director's top structural debts (#72) as a GM advisory.
             self._serve_simple_surface(parse_qs(parsed.query), build_journal_surface)
+        elif route == "/seed-surface":
+            # The World-Seed read model (#266): live seed identity (de-faking the hardcoded
+            # StatLine), the params each control binds to, the free/gated/locked mutability
+            # matrix, and session_started. Empty snapshot → honest empty-state (present:false).
+            self._serve_simple_surface(parse_qs(parsed.query), build_seed_surface)
         elif route == "/acts-surface":
             # Read-only act/chronicle payoff surface. It shows compiled path state when the
             # engine has one and otherwise says the act tracker is not wired for this save yet.
@@ -5533,6 +5731,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route in ("/save-slot", "/load-slot"):
             self._do_slot("save" if route == "/save-slot" else "load")
             return
+        if route == "/seed-param":
+            self._do_seed_param()
+            return
         if route != "/move":
             self._send(404, b"not found", "text/plain")
             return
@@ -5560,6 +5761,39 @@ class _Handler(BaseHTTPRequestHandler):
             dest.parent.mkdir(parents=True, exist_ok=True)
             with dest.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(move, separators=(",", ":")) + "\n")
+        except OSError as exc:
+            self._json({"ok": False, "reason": f"write failed: {exc}"})
+            return
+        self._json({"ok": True})
+
+    def _do_seed_param(self) -> None:
+        """POST /seed-param — the World-Seed write lane (#266). Mirrors /move's intent bridge
+        EXACTLY: the viewer NEVER writes campaign state; it appends a single validated
+        ``{kind:"set_seed_param", param, value[, force]}`` intent line to $CLAWDND_PLAYER_MOVES,
+        which the live DM/engine session drains and applies via the engine's set_seed_param
+        tool (the engine stays the SOLE WRITER). Read-only (refuses) when there is no live
+        game; refuses a write tagged for a non-live (merely viewed) campaign (#49)."""
+        dest = _moves_path()
+        if dest is None:
+            self._json({"ok": False, "reason": "read-only (no live game)"})
+            return
+        payload = self._read_post_json()
+        if payload is ...:
+            self._json({"ok": False, "reason": "bad seed-param payload"})
+            return
+        if isinstance(payload, dict):
+            viewed = payload.get("campaign")
+            if viewed and self.campaign_id and viewed != self.campaign_id:
+                self._json({"ok": False, "reason": "viewing a non-live campaign — switch to the live run to change the seed"})
+                return
+        intent, why = sanitize_seed_param(payload)
+        if intent is None:
+            self._json({"ok": False, "reason": why})
+            return
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(intent, separators=(",", ":")) + "\n")
         except OSError as exc:
             self._json({"ok": False, "reason": f"write failed: {exc}"})
             return
