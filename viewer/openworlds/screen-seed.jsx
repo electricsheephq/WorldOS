@@ -176,6 +176,7 @@ function ScreenSeed({ onNavigate, state, setState }) {
 
         <SectionTitle ordinal="VI.">Chronicler's notes</SectionTitle>
         <textarea
+          aria-label="Chronicler's notes"
           defaultValue="The chronicle keeps the book. Do not edit its entries even when they are wrong. Especially when they are wrong."
           style={{
             width: "100%", minHeight: 90, padding: 12,

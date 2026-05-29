@@ -291,8 +291,12 @@ function BrassButton({ children, onClick, tone, size, disabled, style, type = "b
 
 function Panel({ children, framed, dark, className, style, ornaments = true }) {
   const cls = ["panel", framed ? "framed" : "", dark ? "dark" : "", className || ""].filter(Boolean).join(" ");
+  // a11y (#291): framed panels are the scrollable content containers. axe
+  // `scrollable-region-focusable` requires a scrollable region be keyboard-reachable —
+  // tabIndex={0} makes it focusable so keyboard users can scroll it. (No role=region without
+  // an accessible name, which would trade one violation for another.)
   return (
-    <div className={cls} style={style}>
+    <div className={cls} style={style} tabIndex={framed ? 0 : undefined}>
       {ornaments && framed && (
         <React.Fragment>
           <CornerOrnament corner="tl" />
