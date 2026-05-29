@@ -2061,6 +2061,17 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             rec.get("companion_dossier", rec.get("dossier")),
             where=f"canon character {canonical!r}",
         )
+        # A canon record carries class + level but NOT a combat sheet, and the DM often pulls a
+        # canon figure straight in as the PC/companion without a follow-up apply_srd_defaults — so
+        # apply the SRD class defaults here so a canon-loaded character has real proficiencies, prof
+        # bonus, HP, saves, features, and (for casters) a castable spellbook instead of a bare stub
+        # (QA: a canon-loaded level-5 Wizard's Arcana came out at raw INT +3, missing the class
+        # proficiency). _apply_srd_class_defaults is idempotent and only fills EMPTY values (skills,
+        # HP at the max_hp<=1 stub, spells), so explicit canon stats and a later recruit_companion
+        # are both respected. Classless canon figures fall through to the HP floor below.
+        if classes:
+            _apply_srd_class_defaults(ch, classes[0].name, classes[0].level,
+                                      set_base_ac=(ch.armor_class == 10))
         # The Character default HP is a placeholder max_hp=1 (the model's bare default). An identity
         # stub left at 1 HP is an INSTANT-KILL combatant: the first hit trips combat's SRD massive-
         # damage rule (damage >= max_hp at 0 HP) and flags it dead before it's ever fleshed out
@@ -3726,15 +3737,6 @@ def _award_kill_xp(c, monster) -> "dict | None":
                        "level_available": available, "can_level_up": available > ch.total_level})
     monster.xp_value = 0  # consumed — idempotent guard against double-award
     return {"xp_awarded": total, "grants": grants}
-
-
-def _party_levels(c: Campaign) -> list[int]:
-    """The total_level of every LIVING party member (PC + companions). Used to scale
-    deterministic milestone-XP awards. Falls back to [1] when the party is empty/dead
-    so callers can safely `max(...)` without a ValueError."""
-    levels = [c.characters[i].total_level for i in c.party
-              if i in c.characters and not c.characters[i].dead]
-    return levels or [1]
 
 
 def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
