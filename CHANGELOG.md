@@ -26,7 +26,7 @@ CI-green PRs so nothing broke mid-flight:
 
 - **Identity (#296):** plugin id `clawdnd` → **`worldos`**; the macOS app is now
   `WorldOSApp` / `WorldOS.app`; author `electricsheephq`; repo moved to
-  `github.com/electricsheephq/WorldOS` (the old `100yenadmin/ClawDnD` URL redirects).
+  `github.com/electricsheephq/WorldOS` (prior owner paths may redirect).
   README, CLAUDE.md, docs, and the dev skill (`worldos-dev`) rebranded.
 - **Code + docs (#299):** ClawDnD → WorldOS across source and documentation; **zero
   ClawDnD references remain in `servers/engine`**.
