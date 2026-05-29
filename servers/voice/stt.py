@@ -17,9 +17,10 @@ Selector: `select_backend()` reads CLAWDND_STT_BACKEND (default "null").
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+from _env import env_var
 
 # Returned by real backends when their optional deps or the audio input are
 # missing — keeps `transcribe()` graceful (the MCP tool surfaces this as `text`).
@@ -109,16 +110,16 @@ class WhisperSttBackend:
                 f"(needs faster-whisper; {type(exc).__name__})"
             )
         # Real transcription would go here, e.g.:
-        #   model = WhisperModel(os.environ.get("CLAWDND_WHISPER_MODEL", "base"))
+        #   model = WhisperModel(env_var("WHISPER_MODEL", "base"))
         #   segments, _ = model.transcribe(audio_path)
         #   return " ".join(s.text for s in segments).strip()
-        _model = os.environ.get("CLAWDND_WHISPER_MODEL", "base")
+        _model = env_var("WHISPER_MODEL", "base")
         return f"{NOT_CONFIGURED}: whisper transcription not implemented yet (model={_model})"
 
 
 def backend_name() -> str:
-    """The selected STT backend name (env CLAWDND_STT_BACKEND, default 'null')."""
-    return os.environ.get("CLAWDND_STT_BACKEND", "null").lower()
+    """The selected STT backend name (env WORLDOS_STT_BACKEND, default 'null')."""
+    return (env_var("STT_BACKEND", "null") or "null").lower()
 
 
 def select_backend() -> SttBackend:

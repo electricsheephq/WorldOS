@@ -49,7 +49,7 @@ SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for 
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
 # The DM model is an env var (default sonnet) so Opus-vs-sonnet structural-adherence testing
 # is a one-flag flip — mirrors qa/run_duo.sh (decision-dm-driver.md §3).
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 DM_TURNS=0
 
 # Product play state lives under the repo's play-state/ (git-ignored), one dir per game,
@@ -208,7 +208,9 @@ dm_turn() {
 VPID_FILE="$STATE_DIR/.viewer.pid"
 viewer_supervisor() {
   while :; do
-    CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
+    WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
+    WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
+    WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!; echo "$vp" > "$VPID_FILE"
     wait "$vp" 2>/dev/null   # blocks until the viewer exits (and reaps it)

@@ -27,7 +27,7 @@ BUDGET="${2:-3.00}"
 PROMPT_FILE="${3:-qa/play_prompt.txt}"
 RUBRIC_FILE="${4:-qa/rubric.md}"
 # DM model knob (default sonnet → unchanged); a one-flag flip for Opus structural-adherence tests.
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 T="qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"          # per-run isolation -> parallel-safe
 MCP_CONFIG="$STATE_DIR/qa.mcp.json"

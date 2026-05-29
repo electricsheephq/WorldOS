@@ -24,7 +24,8 @@ STATE_DIR="$(dirname "$(dirname "$(dirname "$SNAP")")")"   # .../qa/state/<run>/
 for p in $(lsof -ti tcp:"$PORT" 2>/dev/null || true); do kill -TERM "$p" 2>/dev/null || true; done
 sleep 1
 
-CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_REPO_ROOT="$ROOT" \
+WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
+WORLDOS_REPO_ROOT="$ROOT" CLAWDND_REPO_ROOT="$ROOT" \
   nohup python3 "$ROOT/viewer/server.py" "$CAMP" "$PORT" > "/tmp/preview_live_$PORT.log" 2>&1 &
 echo "preview :$PORT -> LIVE campaign $CAMP"
 echo "  state: $STATE_DIR"

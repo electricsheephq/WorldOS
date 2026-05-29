@@ -65,13 +65,14 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from _env import env_var_legacy
 
 # --------------------------------------------------------------------------- #
 # Defaults / env knobs. All overridable so the selftest and tests can redirect
@@ -368,12 +369,14 @@ class OpenClawImageClient:
 # --------------------------------------------------------------------------- #
 
 def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
+    # CLAWDND_OPENCLAW_* names resolve via the WORLDOS_* alias (warn-only legacy
+    # fallback); OPENCLAW_* names pass through unchanged. See issue #295 (W0-E).
+    return env_var_legacy(name, default) or default
 
 
 def _env_float(name: str, default: float) -> float:
     try:
-        v = os.environ.get(name)
+        v = env_var_legacy(name)
         return float(v) if v else default
     except (TypeError, ValueError):
         return default
@@ -387,10 +390,10 @@ def _resolve_media_dir() -> Path:
     `resolveMediaDir()` (config dir + "media") plus the tool's "tool-image-generation"
     subdir.
     """
-    override = os.environ.get(ENV_MEDIA_DIR)
+    override = env_var_legacy(ENV_MEDIA_DIR)
     if override:
         return Path(override)
-    home = os.environ.get(ENV_OPENCLAW_HOME)
+    home = env_var_legacy(ENV_OPENCLAW_HOME)
     config_dir = Path(home) if home else (Path.home() / ".openclaw")
     return config_dir.joinpath(*MEDIA_SUBDIR)
 

@@ -2,7 +2,10 @@ import Foundation
 
 enum RepositoryLocator {
     static func defaultRepoPath() -> String? {
-        if let env = ProcessInfo.processInfo.environment["CLAWDND_REPO_ROOT"] {
+        // Prefer WORLDOS_REPO_ROOT; fall back to the legacy CLAWDND_REPO_ROOT for
+        // v1.x (issue #295, W0-E). Both resolve so existing launchers keep working.
+        let environment = ProcessInfo.processInfo.environment
+        if let env = environment["WORLDOS_REPO_ROOT"] ?? environment["CLAWDND_REPO_ROOT"] {
             let expanded = (env as NSString).expandingTildeInPath
             if looksLikeRepo(URL(fileURLWithPath: expanded)) {
                 return expanded

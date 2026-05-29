@@ -7,8 +7,8 @@ and NEVER one of the 7 BG3 origin heroes. Then travels to a real location (so sc
 renders), recruits a canon companion, adds inventory + a quest — so every OpenWorlds screen
 has real content to render and audit.
 
-Usage:
-  CLAWDND_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_canon_fixture.py \
+Usage (WORLDOS_STATE_DIR preferred; legacy CLAWDND_STATE_DIR still works for v1.x):
+  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_canon_fixture.py \
       ["Dal Lightspark"] ["Arthus"] ["loc-lower-city"]
 Prints the campaign_id on the last line.
 """
