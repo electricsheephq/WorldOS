@@ -43,7 +43,7 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 - **BG-ONLY focus.** Baldur's Gate is THE world. Sundered Reach is a deprioritized
   side-option (left in place, no investment). All content + QA target BG. Perfect the
   whole system on BG.
-- Code uses the root **WorldOS Source-Available Commercial License**; rules data is **CC-BY-4.0 SRD 5.2.1**; universe seeds are unofficial
+- Code uses the root **WorldOS Source-Available Commercial EULA**; rules data is **CC-BY-4.0 SRD 5.2.1**; universe seeds are unofficial
   free Fan Content with their own `LICENSE.md`.
 
 ---

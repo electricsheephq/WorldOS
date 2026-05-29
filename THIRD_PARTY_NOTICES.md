@@ -1,9 +1,8 @@
 # Third-Party Notices
 
 WorldOS is source-available commercial software under the root `LICENSE` and
-`ROYALTY-ADDENDUM.md`. This file
-records third-party material that WorldOS bundles, adapts, or depends on, and
-the licensing decisions behind them.
+`ROYALTY-ADDENDUM.md`. This file records third-party material that WorldOS
+bundles, adapts, or depends on, and the licensing decisions behind them.
 
 ## Bundled data
 

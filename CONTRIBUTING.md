@@ -2,14 +2,14 @@
 
 Thanks for helping improve WorldOS.
 
-WorldOS is source-available commercial software, not open source. Contributions
-are accepted only under the WorldOS Contributor License Agreement in `CLA.md`
-unless ElectricSheep agrees otherwise in writing.
+WorldOS uses a custom source-available commercial EULA, not an OSI open-source
+license. Contributions are accepted only under the WorldOS Contributor License
+Agreement in `CLA.md` unless ElectricSheep agrees otherwise in writing.
 
 ## Contribution Rules
 
-- Read `LICENSE`, `COMMERCIAL-LICENSE.md`, `CLA.md`, and
-  `THIRD_PARTY_NOTICES.md` before submitting a pull request.
+- Read `LICENSE`, `ROYALTY-ADDENDUM.md`, `COMMERCIAL-LICENSE.md`, `CLA.md`,
+  and `THIRD_PARTY_NOTICES.md` before submitting a pull request.
 - Do not submit confidential information, customer data, private imported
   content, copyrighted adventure text, proprietary setting material, or assets
   You are not authorized to contribute.
