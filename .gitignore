@@ -32,6 +32,11 @@
 # Raw wiki-ingest cache (tools/ingest) — fetched source, regenerable; not committed.
 /tools/ingest/.cache/
 
+# UI-audit screenshots — reproduce rendered output from _private (BG3 portraits, FR maps,
+# city scene art). These are © under the same Fan Content / wiki-image policy as the
+# _private dirs above. Regenerable via `qa/owshot.sh <screen> <out>.png 8799`.
+/docs/ui-audit/screenshots/*.png
+
 # Python
 __pycache__/
 *.py[cod]
