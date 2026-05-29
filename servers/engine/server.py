@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import random
 import re
+import sys
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -940,6 +941,83 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
                     result["wandering_encounter"] = staged
         save_campaign(c)
         return result
+
+
+# Class -> the 5e ability PRIORITY order (highest stat first) for the standard array.
+# The standard array is [15, 14, 13, 12, 10, 8]; we assign its values down this list, so
+# index 0 gets the 15, index 1 the 14, and so on. This is the canonical "what does a level-1
+# <class> put their best scores in" mapping and exists ONLY to give a class-typed canon record
+# that ships NO `abilities` block a sane, class-appropriate sheet instead of a flat 10/10/10
+# placeholder (a caster left at INT/WIS/CHA 10 casts at +0 — the worst seam in the corpus).
+# Primary = the class's key ability (matches srd_tables.casting_ability for the casters);
+# CON is the universal second priority (everyone wants hit points); the rest fall in a
+# sensible order. Deterministic and self-contained — no SRD list copied, no randomness.
+_CLASS_ABILITY_PRIORITY: dict[str, list[str]] = {
+    "barbarian": ["str", "con", "dex", "wis", "cha", "int"],
+    "bard":      ["cha", "dex", "con", "wis", "int", "str"],
+    "cleric":    ["wis", "con", "str", "cha", "dex", "int"],
+    "druid":     ["wis", "con", "dex", "int", "cha", "str"],
+    "fighter":   ["str", "con", "dex", "wis", "cha", "int"],
+    "monk":      ["dex", "wis", "con", "str", "int", "cha"],
+    "paladin":   ["str", "cha", "con", "wis", "dex", "int"],
+    "ranger":    ["dex", "wis", "con", "str", "int", "cha"],
+    "rogue":     ["dex", "con", "int", "wis", "cha", "str"],
+    "sorcerer":  ["cha", "con", "dex", "wis", "int", "str"],
+    "warlock":   ["cha", "con", "dex", "wis", "int", "str"],
+    "wizard":    ["int", "con", "dex", "wis", "cha", "str"],
+}
+
+
+def _normalize_class_token(raw: str) -> str:
+    """Reduce a free-text canon `class` string to a single known 5e class key, or "".
+
+    Canon records carry messy class strings — "Cleric, Light domain", "druid (circle of
+    the land)", "ranger, rogue", "Eldritch Knight", "any / sorcerer (default)". srd_tables
+    raises on those, so the leading recognized class WORD is extracted instead (first match
+    wins: "ranger, rogue" -> ranger). A subclass-only label that names its base class
+    ("Eldritch Knight" -> fighter) is mapped too. Returns "" when nothing is recognized."""
+    s = (raw or "").lower()
+    toks = re.findall(r"[a-z]+", s)
+    for t in toks:
+        if t in _CLASS_ABILITY_PRIORITY:
+            return t
+    # A few common subclass labels whose base class isn't in the string verbatim.
+    subclass_base = {"eldritch": "fighter", "arcane": "fighter"}  # Eldritch/Arcane Knight -> fighter
+    for t in toks:
+        if t in subclass_base:
+            return subclass_base[t]
+    return ""
+
+
+def _derive_canon_abilities(class_name: str, level: int) -> "AbilityScores | None":
+    """Derive a class- and level-appropriate AbilityScores from the 5e standard array for a
+    canon record that ships NO ability block — so a canon-loaded character (a Wizard PC, a
+    Rogue companion) gets a real sheet instead of flat 10/10/10. Returns None for an unknown
+    or class-less record (the caller keeps today's flat-10 default and emits a warning).
+
+    Standard array [15,14,13,12,10,8] assigned down _CLASS_ABILITY_PRIORITY (primary stat
+    gets 15). Level-based ASIs are applied as +2 to the PRIMARY ability at each of the
+    class's ASI levels reached (4/8/12/16/19 for most classes), capped at 20 — so a L1
+    Wizard is INT 15, a L5 INT 17 (one ASI), a L8 INT 19 (two). Kept simple and
+    deterministic; the secondary stats stay at their array values. The result is overwritten
+    by any explicit canon abilities and by a later recruit_companion, so this only ever
+    REPLACES the placeholder."""
+    key = _normalize_class_token(class_name)
+    if not key:
+        return None
+    priority = _CLASS_ABILITY_PRIORITY[key]
+    array = srd_tables.standard_array()  # [15, 14, 13, 12, 10, 8]
+    assigned = {ab: array[i] for i, ab in enumerate(priority)}
+    # ASIs: +2 to the primary ability for each ASI level reached, capped at 20. (A class-
+    # appropriate base array alone fixes the defect; this is the trivial level bump.)
+    primary = priority[0]
+    try:
+        lvl = max(1, int(level))
+    except (TypeError, ValueError):
+        lvl = 1
+    asi_count = sum(1 for lv in range(1, lvl + 1) if srd_tables.is_asi_level(key, lv))
+    assigned[primary] = min(20, assigned[primary] + 2 * asi_count)
+    return AbilityScores(**{_AB3_TO_FULL[ab]: val for ab, val in assigned.items()})
 
 
 def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
@@ -2109,6 +2187,30 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
         # proficiency). _apply_srd_class_defaults is idempotent and only fills EMPTY values (skills,
         # HP at the max_hp<=1 stub, spells), so explicit canon stats and a later recruit_companion
         # are both respected. Classless canon figures fall through to the HP floor below.
+        # ABILITY SCORES (#fix canon flat-10): a canon record ships class + level but almost never
+        # an `abilities` block, and the Character default is a flat 10/10/10/10/10/10 — so a
+        # canon-loaded character (incl. a Wizard PC or a Rogue companion) was casting/acting at +0
+        # across the board (QA ow-v103-reval: Dal Lightspark, a L5 evoker, loaded at INT 10 → all
+        # spell DCs/attacks at +0; 11 NPCs flat-10 too). Derive a class- and level-appropriate 5e
+        # standard array (15,14,13,12,10,8 down the class's priority, +2 to primary per ASI level)
+        # BEFORE the SRD defaults run, so HP/AC/initiative compute off real CON/DEX. Honor an
+        # explicit canon `abilities` block unchanged where one exists (forward-compatible — none in
+        # the current corpus, but a hand-authored sheet must win). A class-less / unknown-class
+        # record can't be sized, so it KEEPS the flat-10 default (today's behavior) and we warn.
+        ability_source = "placeholder"
+        canon_abilities = rec.get("abilities")
+        if isinstance(canon_abilities, dict) and canon_abilities:
+            try:
+                ch.abilities = AbilityScores(**canon_abilities)
+                ability_source = "canon"
+            except (TypeError, ValueError):
+                pass  # malformed canon abilities -> fall through to derivation/placeholder
+        if ability_source == "placeholder":
+            derived = _derive_canon_abilities(classes[0].name, classes[0].level) if classes else None
+            if derived is not None:
+                ch.abilities = derived
+                ch.initiative_bonus = ch.abilities.modifier(Ability.DEX)
+                ability_source = "derived"
         if classes:
             _apply_srd_class_defaults(ch, classes[0].name, classes[0].level,
                                       set_base_ac=(ch.armor_class == 10))
@@ -2136,10 +2238,33 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
                 c.party.append(ch.id)
         c.characters[ch.id] = ch
         save_campaign(c)
+        # ADDITIVE WARNING (non-fatal): a PLAYER or a SPELLCASTER that still ended at the flat-10
+        # placeholder array is a real gameplay defect (a caster's DCs/attacks are all +0). It's not
+        # a hard fail — a class-less canon NPC legitimately has no derived sheet — but the behavioral
+        # gate / QA should SEE it. Surface it both in the tool return (`ability_source` + `warnings`)
+        # and on stderr (which the QA harness captures). A character WITH explicit/derived abilities,
+        # or a non-caster NPC, produces no warning.
+        warnings: list[str] = []
+        ABK = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+        is_flat_ten = all(getattr(ch.abilities, f) == 10 for f in ABK)
+        is_caster = bool(ch.spell_slots or ch.spells_known or ch.spells_prepared)
+        if is_flat_ten and (ch.kind == "player" or is_caster):
+            who = "player" if ch.kind == "player" else "spellcaster"
+            warn = (f"canon character {ch.name!r} ({rec.get('class') or 'class-less'}) loaded as a "
+                    f"{who} with a PLACEHOLDER 10/10/10/10/10/10 ability array — its checks, saves, "
+                    f"and spell DCs are all +0. The canon record carries no `abilities` block and "
+                    f"its class could not be sized; flesh it out via update_character / recruit_companion.")
+            warnings.append(warn)
+            print(f"[worldos:load_canon_character] WARNING: {warn}", file=sys.stderr)
         return {
             "id": ch.id, "name": ch.name, "race": ch.race, "kind": ch.kind,
             "class": rec.get("class", ""), "source": rec.get("source_url", ""),
             "in_party": ch.id in c.party,
+            # Where the seated ability scores came from: "canon" (the record carried an explicit
+            # block), "derived" (a class+level-appropriate standard array we generated), or
+            # "placeholder" (flat 10s — class-less/unknown record we couldn't size).
+            "ability_source": ability_source,
+            "warnings": warnings,
             "note": "Identity loaded. For a full combat sheet, call apply_srd_defaults or recruit_companion.",
         }
 
