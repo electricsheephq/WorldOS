@@ -125,6 +125,37 @@ class BestiarySurfaceTests(unittest.TestCase):
             self.assertTrue(item.get("unknown"))
             self.assertNotIn("ac", item)
             self.assertNotIn("cr", item)
+            self.assertNotIn("name", item)   # the real name is withheld (#263)
+            self.assertIn("id_hint", item)   # only an opaque render key rides along
+
+    def test_tier0_rumour_rows_carry_no_creature_name(self):
+        # #263 redaction hygiene: the whole point of a rumour row is progressive reveal, so the
+        # real creature name must never ship on a tier-0 row — a player reading the network tab
+        # would otherwise see the names of as-yet-unencountered creatures matching their query.
+        # The row carries only an opaque render key (``id_hint``); the name itself is withheld.
+        self._write("camp_redact", {"id": "camp_redact", "bestiary_intel": {"wolf": 1}})
+        status, surface = self._get_json("/bestiary-surface?campaign=camp_redact&q=goblin")
+        self.assertEqual(status, 200)
+        items = surface.get("items", [])
+        self.assertTrue(items)
+        for item in items:
+            self.assertEqual(item.get("tier"), 0)
+            self.assertTrue(item.get("unknown"))
+            self.assertNotIn("name", item)     # the leak being closed
+            self.assertIn("id_hint", item)     # a stable, name-free render key remains
+
+        # The names the *global* browse reveals for this query are exactly what a rumour row must
+        # withhold. Fetch them via a campaign id with no snapshot on disk — that falls back to the
+        # honest global SRD preview (intel=None), the same path as test_empty_or_missing_snapshot_*.
+        # (A bare no-campaign request would instead resolve to the newest campaign on disk — here
+        # camp_redact — and redact, so we force the global path with a non-existent campaign.)
+        # Pulled dynamically so this never hard-codes SRD content.
+        _, glob = self._get_json("/bestiary-surface?campaign=camp_no_such_global_probe&q=goblin")
+        withheld = [str(i.get("name", "")) for i in glob.get("items", []) if i.get("name")]
+        self.assertTrue(withheld, "global browse should reveal goblin names that must be withheld")
+        blob = json.dumps(items).lower()
+        for name in withheld:
+            self.assertNotIn(name.lower(), blob)
 
     def test_empty_or_missing_snapshot_falls_back_to_preview(self):
         # campaign id with no snapshot on disk → honest global preview (intel=None path)

@@ -56,7 +56,9 @@ function fmtSaves(saves) {
 // The surface is intel-tiered (#263): an item carries a `tier` (1=sighted, 2=engaged, 3=slain)
 // and only the fields earned at that tier — tier 1: identity + CR; tier 2: + ac/speed/senses;
 // tier 3: + hp/hit_dice/abilities/saves/known_actions/tactics. A tier-0 (unencountered) item
-// is `{name, tier:0, unknown:true}` → rendered as a blurred "?????" rumour row. Because the
+// is REDACTED to `{id_hint, tier:0, unknown:true}` — the real name is withheld from the wire
+// (#263), so we key the row off the opaque `id_hint` and render a blurred "?????" rumour row
+// (no creature name is ever sent for an unencountered match). Because the
 // server omits fields below the earned tier, the hide-when-blank slots in BestiaryEntry do the
 // gating for free — each stat line only appears once its value is truly present. The old
 // preview shape (no `tier`) still maps cleanly: absent stats stay hidden.
@@ -71,7 +73,13 @@ function liveBestiaryEntry(item) {
   // Intel eyebrow so the player sees how much they've learned (only when tiered).
   const tierLabel = tier === 1 ? "Sighted" : tier === 2 ? "Engaged" : tier === 3 ? "Slain" : "";
   return {
-    id: "live:" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || Math.random().toString(36).slice(2)),
+    // Render key: a known creature keys off its name-slug. A redacted rumour row (#263) carries
+    // no name — only the server's opaque `id_hint` — so key off that instead, giving React a
+    // stable key across refetches without the name (and without Math.random() thrash). `id_hint`
+    // can be 0, so test for presence, not truthiness.
+    id: "live:" + ((item?.id_hint !== undefined && item?.id_hint !== null)
+      ? "rumour-" + item.id_hint
+      : (name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || Math.random().toString(36).slice(2))),
     name: name || "Unknown",
     short: name.slice(0, 6).toLowerCase() || "?",
     // /image scope for the creature plate; "" → graceful placeholder (no fetch / 404).

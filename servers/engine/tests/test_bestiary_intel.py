@@ -11,6 +11,8 @@ These tests pin: each bump fires at its site; the tier is monotonic (never regre
 non-bestiary monster (no creature_slug) is a no-op; tier 3 is recorded regardless of leveling
 mode and through every death path; and old snapshots (no bestiary_intel key) round-trip.
 """
+import json
+
 import pytest
 
 import bestiary
@@ -175,3 +177,23 @@ def test_player_bestiary_projection_reveals_earned_tier():
     wolf = next(i for i in out["items"] if i.get("name") == "Wolf")
     assert wolf["tier"] == 2 and "ac" in wolf and "speed" in wolf
     assert "hp" not in wolf and "saves" not in wolf  # kill-tier still gated
+
+
+def test_unencountered_creature_is_redacted_rumour_row():
+    """#263 redaction hygiene: an unencountered (tier-0) match is a rumour row that carries NO
+    real creature name on the wire — only an opaque, stable render key (``id_hint``). The name
+    is the very thing progressive reveal withholds, so it must not ship even though the viewer
+    only renders "?????". (Contrast the tier>=1 path above, which DOES carry the earned name.)"""
+    # intel records only the wolf, so a "goblin" browse returns nothing but blurred tier-0 rows.
+    out = bestiary.player_bestiary("goblin", 20, intel={"wolf": 1})
+    items = out["items"]
+    assert items, "expected goblin matches in the SRD"
+    for item in items:
+        assert item.get("tier") == 0 and item.get("unknown") is True
+        assert "name" not in item          # the leak being closed (#263)
+        assert "id_hint" in item           # a stable, name-free render key remains
+        # nothing identifying rides along on a rumour row — not the name, not stats
+        for leaked in ("name", "ac", "hp", "cr", "size", "type", "abilities", "saves"):
+            assert leaked not in item
+    # belt-and-suspenders: no goblin creature name appears anywhere in the rumour payload
+    assert "goblin" not in json.dumps(items).lower()

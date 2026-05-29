@@ -536,8 +536,9 @@ def player_bestiary(query: str = "", limit: int = 20, intel: Optional[dict] = No
     * ``intel`` set (a ``{creature_slug: max_tier}`` dict, the campaign's earned intel): the
       intel-tier codex (#263). Each match's tier is looked up by ``creature_slug(name)``;
       creatures at tier >= 1 get ``intel_projection`` (progressively more stats per tier),
-      and unencountered matches (tier 0) become an ``{name, tier:0, unknown:true}`` rumour row
-      so the index can show "N known · M rumoured" — the party sees how much is left to learn.
+      and unencountered matches (tier 0) become a REDACTED ``{id_hint, tier:0, unknown:true}``
+      rumour row — the real name is withheld from the wire (only an opaque render key is sent),
+      so the index can show "N known · M rumoured" without leaking unencountered creature names.
     """
     n = max(1, min(int(limit), 50))
     names = find(query, n)
@@ -547,16 +548,24 @@ def player_bestiary(query: str = "", limit: int = 20, intel: Optional[dict] = No
             "validation_errors": authored_validation_errors(),
         }
     items: list[dict] = []
-    for name in names:
+    for idx, name in enumerate(names):
         tier = int(intel.get(creature_slug(name), 0) or 0)
         if tier >= 1:
             proj = intel_projection(name, tier)
             if proj is not None:
                 items.append(proj)
         else:
-            # Unencountered: a blurred rumour row (name withheld by the UI), so the codex
-            # shows the party there is more to discover without spoiling the stat block.
-            items.append({"name": name, "tier": 0, "unknown": True})
+            # Unencountered: a blurred rumour row. We deliberately do NOT put the real creature
+            # name on the wire. The name is the very thing progressive reveal withholds, so
+            # emitting it — even though the viewer only renders "?????" — would leak the names
+            # of as-yet-unencountered creatures matching the query to anyone reading the network
+            # response (#263 redaction hygiene). Instead we send a stable, opaque render key (the
+            # match index) so the client can key the row in React without learning the name. The
+            # index carries no creature identity and is stable for a given query (``find`` returns
+            # a deterministic sorted order); it is intentionally NOT a hash of the name — a hash
+            # over the small, public, query-narrowed SRD candidate set would be trivially
+            # reversible, so an index is both simpler and more honestly opaque.
+            items.append({"id_hint": idx, "tier": 0, "unknown": True})
     return {"items": items, "validation_errors": authored_validation_errors()}
 
 
