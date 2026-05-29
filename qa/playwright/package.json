@@ -1,0 +1,13 @@
+{
+  "name": "worldos-ui-playtest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright-backed player palette (MCP server) for the WorldOS AI playtester harness — issue #324. The Player agent's entire tool surface (screenshot/a11y_tree/click/type/key/wait/report_bug/give_up). Driven by qa/ui_playtest.sh.",
+  "type": "commonjs",
+  "main": "palette_server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright": "1.60.0",
+    "zod": "^3.23.0"
+  }
+}

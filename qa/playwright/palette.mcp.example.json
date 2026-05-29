@@ -1,0 +1,15 @@
+{
+  "_comment": "The Player agent's ENTIRE MCP surface for the AI playtester (issue #324). qa/ui_playtest.sh generates the real per-run config from this shape (filling the env). The Player is launched with --strict-mcp-config + ONLY this server, so it can ONLY screenshot/a11y_tree/click/type/key/wait/report_bug/give_up against the Playwright-driven browser — no source, no engine, no filesystem.",
+  "mcpServers": {
+    "clawdnd-uiplayer": {
+      "command": "node",
+      "args": ["qa/playwright/palette_server.js"],
+      "env": {
+        "CLAWDND_UIPT_URL": "http://127.0.0.1:8993/openworlds/",
+        "CLAWDND_UIPT_RUNDIR": "qa/ui_playtest_runs/play1",
+        "CLAWDND_UIPT_CHANNEL": "",
+        "CLAWDND_UIPT_PERSONA": "newbie"
+      }
+    }
+  }
+}
