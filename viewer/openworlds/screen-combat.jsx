@@ -229,7 +229,7 @@ function ScreenCombat({ onNavigate, state }) {
 
         <Panel framed style={{ padding: 18, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <SectionTitle>Battle Log</SectionTitle>
-          <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div tabIndex={0} style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
             {visibleLog.length
               ? visibleLog.map((row, i) => <BattleLogLine key={`${row.event || "log"}-${i}`} l={row} />)
               : <div className="body-sm" style={{ color: "var(--ink-600)" }}>Combat events will appear here.</div>}

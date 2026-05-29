@@ -272,7 +272,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         {/* Log */}
         <Panel framed style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", minHeight: 0, padding: 22 }}>
           <SectionTitle ordinal="·">The Tabletop Chronicle</SectionTitle>
-          <div ref={logRef} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
+          <div ref={logRef} tabIndex={0} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}

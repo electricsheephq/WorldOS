@@ -98,7 +98,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
           </div>
 
           {/* Faction detail */}
-          <div style={{ overflow: "auto", display: "flex", flexDirection: "column" }}>
+          <div tabIndex={0} style={{ overflow: "auto", display: "flex", flexDirection: "column" }}>
             {selectedFaction ? <FactionDetail f={selectedFaction} /> : <div className="body-sm muted">No faction selected.</div>}
           </div>
         </div>
@@ -140,7 +140,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
             {!npcs.length && <div className="body-sm muted">No one met yet. NPCs appear here once the party speaks with them.</div>}
           </div>
 
-          <div style={{ overflow: "auto" }}>
+          <div tabIndex={0} style={{ overflow: "auto" }}>
             {selectedNPC ? <NPCDetail n={selectedNPC} onNavigate={onNavigate} campBeats={campBeats} canAct={canAct} campaignId={campaignId} toast={toast} /> : <div className="body-sm muted">No acquaintance selected.</div>}
           </div>
         </div>

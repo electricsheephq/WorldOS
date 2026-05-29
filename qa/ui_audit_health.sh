@@ -261,10 +261,10 @@ if [ "$AXE" -eq 1 ]; then
           warn "axe ${hash}: ${N} violations — see $AXE_OUT/${hash}.txt"
         fi
       done
-      if [ "$TOTAL" -le 11 ]; then
-        pass "axe total: $TOTAL violations (Loop-5 baseline = 11; no regression)"
+      if [ "$TOTAL" -le 0 ]; then
+        pass "axe total: $TOTAL violations (baseline = 0; clean — #291/#292 + scroll-region fixes closed all 11)"
       else
-        fail "axe total: $TOTAL violations (Loop-5 baseline = 11; regression detected)"
+        fail "axe total: $TOTAL violations (baseline = 0; a11y regression detected)"
       fi
     fi
   fi
