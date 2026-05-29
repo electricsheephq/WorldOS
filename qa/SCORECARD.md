@@ -58,3 +58,10 @@
 - **Story ~4.0 (vs 4.3 target)** — close. The Campaign Director (#71–73) is the lever (scene-debt: setup-without-payoff, no-reversal, NPC-introduced-but-silent).
 - **Companion-agent surface under-tested** — recent QA = player+DM duos only; restore `run_party.sh` (1 AI companion + DM-voiced others) to the cadence (exercises companion clarify/tactics + the betrayal path, #142).
 - **must_offer_out (set-piece path)** — DONE: the `start_combat` outlook fold-in (#146) now auto-surfaces it for any over-matched fight, not just wander.
+
+---
+
+## Releases
+
+- **v1.0.2 — 2026-05-29 (graphics-release burndown).** Cut from `583b8a5` (tag `v1.0.2`, GitHub release live). Drove the OpenWorlds UI audit (epic #242 Phase 5) into the product: **axe-core 11→0** across 16 screens (#291/#292 + scroll-region focus); the `window.slug` item-art bug fixed (3 screens rendered placeholders despite art existing, #270); title-bar overlap on every screen (#260); Bestiary/Forge demo-leaks (#262/#263/#264); Create art (#265); engine player-in-party invariant + `update_character` skills alias + combat auto-hit doctrine; 4 new QA gates (`no_rejected_tool_calls`/`xp_awarded_on_progression` FATAL, `caster_has_spellbook`/`quest_objectives_progress` WARN). Engine 1435 + viewer 86 + axe 0 + license green; native app builds clean + codesign valid. Combat-sprint 3.0→3.7. **Next (toward v1.0.3): Wave-0 features** — ST-02 save/load+Export (in flight), #263 Bestiary intel-tier (designing), #266 seed write-lane, #265 portrait gateway-gen. Story/mech lens re-measure still blocked by the 16GB host's memory pressure (duos die mid-run; Codex code-index leak — restart Codex to reclaim ~2GB).
+- **v1.0.1 — 2026-05-28** · **v1.0.0 — 2026-05-27** (see CHANGELOG.md).
