@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://worldos/qa/ui_playtest_bug_schema.json",
+  "title": "WorldOS UI playtest bug record",
+  "description": "One bug/UX finding emitted by the AI playtester (issue #324). bugs.ndjson holds one of these objects per line. Records come from the Player persona (source=player), the harness's passive console/network capture (source=auto), or a give_up (source=give_up).",
+  "type": "object",
+  "required": ["ts", "persona", "screen", "category", "severity", "title", "expected", "actual"],
+  "additionalProperties": true,
+  "properties": {
+    "ts": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp (seconds precision)."
+    },
+    "action_seq": {
+      "type": "integer",
+      "description": "The palette action sequence number in effect when the bug was recorded."
+    },
+    "persona": {
+      "type": "string",
+      "description": "Persona slug for the run, e.g. 'newbie'."
+    },
+    "screen": {
+      "type": "string",
+      "description": "Best-effort current screen/area, e.g. 'launcher', 'table', 'forge', 'roster', 'character'."
+    },
+    "category": {
+      "type": "string",
+      "enum": ["ux", "bug", "content", "accessibility", "performance", "console", "network"],
+      "description": "Kind of finding. 'console'/'network' are auto-captured by the harness; the rest are persona-reported."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "major", "minor", "trivial"],
+      "description": "critical = blocks all play; major = blocks the current task; minor = annoying; trivial = cosmetic."
+    },
+    "title": {
+      "type": "string",
+      "description": "One-line summary of the problem."
+    },
+    "expected": {
+      "type": "string",
+      "description": "What a real user expected to happen."
+    },
+    "actual": {
+      "type": "string",
+      "description": "What actually happened."
+    },
+    "screenshot": {
+      "type": "string",
+      "description": "Run-relative path to the evidence screenshot, e.g. 'screenshots/step-012-bug.png'. May be empty."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Structured evidence for auto-captured findings (console_error, pageerror, network_failure, http_status).",
+      "additionalProperties": true
+    },
+    "tried_alternatives": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other things the player tried before reporting."
+    },
+    "blocks_progress": {
+      "type": "boolean",
+      "description": "Whether this stopped the player from continuing."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["player", "auto", "give_up"],
+      "description": "Origin of the record: the Player persona, the harness's passive capture, or a give_up."
+    }
+  }
+}
