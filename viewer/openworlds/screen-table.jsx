@@ -1,5 +1,84 @@
 /* Screen: Campaign Table — live session: scene art + party + GM narration + actions */
 
+// #335: hard viewer-side guard against DM-INTERNAL housekeeping leaking into the
+// player-facing story scroll. The /chat tail can carry the DM agent "thinking out
+// loud" — a GM-Advisory directive ("NPC introduced but hasn't spoken — record their
+// first memory with `remember`") or a bare engine-tool mention. That text is the
+// AI-DM equivalent of a leaked system prompt and must NEVER render in the chronicle.
+// The engine stays the sole writer; this is a read/projection filter only.
+//
+// `sanitizeNarration(text)` returns a cleaned narration string, or "" when the WHOLE
+// beat was internal (caller drops it). It is line-oriented so a single stray advisory
+// line inside an otherwise-real beat is removed without nuking the prose around it.
+const DM_ENGINE_TOOLS = [
+  "remember", "recall", "recall_decisions", "log_event", "add_quest",
+  "update_decision", "record_decision", "add_consequence", "check_consequences",
+  "world_tick", "travel_to", "advance_time", "long_rest", "downtime", "award_xp",
+  "adjust_reputation", "social_check", "companion_advise", "check_companion_arc",
+  "lookup_lore", "recall_lore", "resolve_scene_debt", "end_combat", "start_combat",
+  "end_session", "begin_session", "create_character", "level_up", "set_scene",
+];
+// A line whose ENTIRE content is a GM-advisory directive or a bare tool reference.
+const _TOOLS_ALT = DM_ENGINE_TOOLS.join("|");
+// Header line of the right-panel Director advisory if it ever bleeds into prose.
+const _GM_ADVISORY_HEADER = /^\s*(?:#{1,6}\s*)?(?:\**\s*)?GM\s+Advisory\b/i;
+const _ADVISORY_SUBTITLE = /^\s*what the campaign owes the story\b/i;
+// The debt-nudge family (mirrors servers/engine/director.py::_nudge) — DM-facing
+// imperatives that name an engine tool / structural-debt action.
+const _ADVISORY_DIRECTIVE = new RegExp(
+  "(?:" +
+    "\\b(?:has been introduced but hasn'?t spoken)\\b|" +
+    "\\b(?:untracked hook)\\b.*\\bcall\\b|" +
+    "\\bquest\\b.*\\bhas stalled\\b|" +
+    "\\bwas offered but never resolved\\b|" +
+    "\\bconsequence\\b.*\\b(?:is due|overdue)\\b|" +
+    "\\bstanding thread\\b.*\\b(?:overdue|world-?beat)\\b|" +
+    "\\b(?:record|give) (?:their|them) (?:a line|first memory)\\b|" +
+    // generic "…with/via/using/call <tool>" imperative naming an engine tool
+    "\\b(?:call|use|via|with|using)\\b[^.]{0,40}\\b(?:" + _TOOLS_ALT + ")\\b" +
+  ")", "i",
+);
+// A line that is ESSENTIALLY just an engine-tool token (optionally back-ticked,
+// optionally with a trivial call signature) — e.g. "`remember`", "remember(...)".
+const _BARE_TOOL_LINE = new RegExp(
+  "^\\s*[`'\"(]*\\s*(?:" + _TOOLS_ALT + ")\\s*(?:\\([^)]*\\))?\\s*[`'\")]*\\s*[.;:]?\\s*$",
+  "i",
+);
+function _isInternalLine(line) {
+  const t = (line || "").trim();
+  if (!t) return false; // keep blank lines for caller's join (they're harmless)
+  return _GM_ADVISORY_HEADER.test(t)
+    || _ADVISORY_SUBTITLE.test(t)
+    || _ADVISORY_DIRECTIVE.test(t)
+    || _BARE_TOOL_LINE.test(t);
+}
+function sanitizeNarration(text) {
+  if (typeof text !== "string" || !text) return "";
+  const kept = text
+    .split(/\r?\n/)
+    .filter((line) => !_isInternalLine(line));
+  // Collapse the blank-line runs an excised directive may leave behind.
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// #337: the quick-action buttons (Continue / Say / Do / Check / Save) and the dice buttons are
+// icon+label only — a first-timer can't tell how they differ from typing free-text + Declare, so
+// the #324 newbie ignored all of them. These short hints surface as native `title=` tooltips
+// (hover + most screen readers expose them) so the affordance is discoverable with zero new DOM.
+// Keyed by the engine action `id` (server.py build_action_model); viewer-only copy, no wire change.
+const ACTION_HINTS = {
+  continue: "Continue — advance the scene without adding a new action of your own.",
+  say: "Say — speak in-character; formats your input as spoken dialogue.",
+  do: "Do — attempt a physical action; formats your input as something your hero does.",
+  check: "Check — roll a skill or ability check (Perception, Persuasion, …).",
+  save: "Save — make a saving throw to resist or avoid an effect.",
+  attack: "Attack — strike a foe; uses your action this turn.",
+  "bonus-action": "Bonus — take a bonus action this turn (a quick second move).",
+  reaction: "Reaction — respond out of turn (e.g. an opportunity attack or parry).",
+};
+const DICE_HINT = (sides) => `Roll a d${sides} — ask the Dungeon Master to resolve a d${sides} check.`;
+const DECLARE_HINT = "Type what your hero does in your own words, then Declare to take the turn.";
+
 function ScreenTable({ onNavigate, state, setState }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -90,12 +169,22 @@ function ScreenTable({ onNavigate, state, setState }) {
         const cPayload = await cResp.json();
         const items = Array.isArray(cPayload.items) ? cPayload.items : [];
         if (!isCancelled() && items.length) {
-          const beats = items.map((it) => it.role === "player"
-            ? { kind: "dialog", who: "You", text: it.text }
-            : { kind: "narration", text: it.text });
-          setChatBeats((prev) => [...prev, ...beats]);
+          // #335: player dialog passes through untouched; DM narration is run through
+          // sanitizeNarration so a GM-advisory directive / bare engine-tool line that
+          // bled into the /chat stream never reaches the player's chronicle. A beat that
+          // sanitizes to empty (it was *entirely* internal) is dropped.
+          const beats = items
+            .map((it) => {
+              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text };
+              const clean = sanitizeNarration(it.text);
+              return clean ? { kind: "narration", text: clean } : null;
+            })
+            .filter(Boolean);
+          if (beats.length) setChatBeats((prev) => [...prev, ...beats]);
           // #327: a fresh DM narration beat means the turn resolved — clear the pending indicator
-          // so the action bar re-opens and the spinner stops. (Player echoes don't count.)
+          // so the action bar re-opens and the spinner stops. (Player echoes don't count; and a
+          // beat that was wholly internal advisory — now dropped — must not count either, else a
+          // leak-only turn would silently re-open the bar with no visible narration. #335)
           const dmArrived = beats.some((b) => b.kind === "narration");
           if (dmArrived) {
             dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
@@ -307,7 +396,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}
-            {pending && <DmNarratingBeat />}
+            {pending && <DmNarratingBeat since={pending.since} />}
           </div>
 
           {/* Action bar */}
@@ -318,10 +407,15 @@ function ScreenTable({ onNavigate, state, setState }) {
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
-              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
+              <button onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+            </div>
+            {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
+            <div className="body-xs muted" style={{ marginBottom: 6 }}>
+              Type freely and press <strong>Declare</strong>, or use the quick actions on the right (hover each for what it does).
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -330,10 +424,11 @@ function ScreenTable({ onNavigate, state, setState }) {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendAction()}
                 disabled={Boolean(pending)}
+                title={DECLARE_HINT}
                 placeholder={pending ? "The Dungeon Master is narrating…" : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pending ? 0.6 : 1 }}
               />
-              <BrassButton onClick={sendAction} disabled={!actionById("do")?.available || Boolean(pending)}>{pending ? "Narrating…" : "Declare"}</BrassButton>
+              <BrassButton onClick={sendAction} title={DECLARE_HINT} disabled={!actionById("do")?.available || Boolean(pending)}>{pending ? "Narrating…" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -416,6 +511,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 icon={a.available ? (a.icon || "quest.scroll") : "inventory.locked"}
                 label={a.label}
                 detail={a.available ? a.groupLabel : a.disabled_reason}
+                hint={ACTION_HINTS[a.id]}
                 tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
                 disabled={!a.available || Boolean(pending)}
                 onClick={() => invokeAction(a)}
@@ -516,6 +612,12 @@ function ConditionRow({ icon, name, who, detail, tone }) {
 function LogEntry({ entry }) {
   const kind = entry.kind || "narration";
   if (entry.kind === "narration") {
+    // #335: render-path-complete guard. Every narration source (the /chat tail AND
+    // engine recentEvents) flows through this one branch, so sanitizing here means a
+    // GM-advisory/tool-name leak can't reach the player regardless of which projection
+    // produced it. A beat that is wholly internal renders nothing.
+    const text = sanitizeNarration(entry.text);
+    if (!text) return null;
     return (
       <div style={{ margin: "14px 0", display: "flex", gap: 12 }}>
         <div style={{
@@ -524,7 +626,7 @@ function LogEntry({ entry }) {
         }} />
         <div className="body" style={{ flex: 1 }}>
           <span className="eyebrow" style={{ color: "var(--crimson)", marginRight: 8 }}>Chronicle</span>
-          {entry.text}
+          {text}
         </div>
       </div>
     );
@@ -570,25 +672,49 @@ function LogEntry({ entry }) {
   );
 }
 
-// #327: the persistent "DM is narrating…" beat shown in the chronicle while a submitted move is
-// being resolved. The DM's turn is long (minutes), so this is the difference between "the world
-// is thinking" and "the app froze". Mirrors the narration LogEntry's gilt-rule styling, with a
-// gentle pulsing trio of dots (honored only when reduced-motion is off). aria-live so a screen
-// reader announces the wait too.
-function DmNarratingBeat() {
+// #327 + #336: the persistent "DM is narrating…" beat shown in the chronicle while a submitted
+// move is being resolved. The DM's turn is long (35–60+s), so this is the difference between "the
+// world is thinking" and "the app froze". #328 added the label + pulsing dots; #336 adds the
+// missing *progress* signal so a 35–60s wait no longer reads as a freeze:
+//   • a LIVE elapsed-time readout (0:07 → 0:42 …) — the strongest "still alive" cue, and it keeps
+//     ticking even under reduced-motion (it's information, not decoration);
+//   • a one-line "this can take up to a minute" hint so a first-timer knows the wait is expected.
+// a11y: role="status" + aria-live="polite" announces the wait ONCE on mount. The per-second
+// elapsed counter and the dots are aria-hidden so a screen reader isn't spammed every tick.
+// Reduced-motion: the pulsing dots + shimmer are disabled (CSS below + the global token); the
+// elapsed text and hint remain, so the "is it busy?" question is still answered without motion.
+function DmNarratingBeat({ since }) {
+  const start = typeof since === "number" ? since : Date.now();
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - start) / 1000));
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, "0");
+  const elapsedLabel = `${mm}:${ss}`;
   return (
     <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
       <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
-      <div className="body" style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}>
-        <span className="eyebrow" style={{ color: "var(--crimson)" }}>The Dungeon Master is narrating</span>
-        <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
-          {[0, 1, 2].map((i) => (
-            <span key={i} style={{
-              width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
-              animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
-            }} />
-          ))}
-        </span>
+      <div className="body" style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>The Dungeon Master is narrating</span>
+          <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
+            {[0, 1, 2].map((i) => (
+              <span key={i} style={{
+                width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
+                animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
+              }} />
+            ))}
+          </span>
+          <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-600)", fontVariantNumeric: "tabular-nums" }}>
+            {elapsedLabel}
+          </span>
+        </div>
+        <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+          Weaving the next beat — this can take up to a minute.
+        </div>
       </div>
     </div>
   );
@@ -596,24 +722,32 @@ function DmNarratingBeat() {
 
 // Keyframes + reduced-motion fallback, injected once (the OpenWorlds bundle is in-browser Babel,
 // so a tiny self-contained <style> keeps this affordance from needing a styles.css round-trip).
+// A subtle shimmer on the label adds motion beyond the dots; both are stilled under reduced-motion
+// (the global [data-reduced-motion='on'] *  rule covers it, and we belt-and-suspenders it here).
 (function ensureDmNarrateStyle() {
   if (typeof document === "undefined" || document.getElementById("dm-narrate-style")) return;
   const el = document.createElement("style");
   el.id = "dm-narrate-style";
   el.textContent =
     "@keyframes dmNarratePulse{0%,80%,100%{opacity:0.25;transform:scale(0.8)}40%{opacity:1;transform:scale(1)}}" +
-    "html[data-reduced-motion='on'] .dm-narrating-dots span{animation:none!important;opacity:0.7}";
+    "@keyframes dmNarrateShimmer{0%,100%{opacity:0.6}50%{opacity:1}}" +
+    ".dm-narrating-label{animation:dmNarrateShimmer 1800ms ease-in-out infinite}" +
+    "html[data-reduced-motion='on'] .dm-narrating-dots span,html[data-reduced-motion='on'] .dm-narrating-label{animation:none!important}" +
+    "html[data-reduced-motion='on'] .dm-narrating-dots span{opacity:0.7}" +
+    "@media (prefers-reduced-motion: reduce){.dm-narrating-dots span,.dm-narrating-label{animation:none!important}.dm-narrating-dots span{opacity:0.7}}";
   document.head.appendChild(el);
 })();
 
 Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarratingBeat });
 
-function EncounterButton({ icon, label, detail, tone, onClick, disabled }) {
+function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)
     ? <window.OpenWorldsIcon id={icon} size={17} label={label} />
     : icon;
   return (
-    <button onClick={onClick} style={{
+    // #337: `title` surfaces the one-line affordance on hover (and as a screen-reader
+    // description) without changing the visible label that remains the accessible name.
+    <button onClick={onClick} title={hint || undefined} style={{
       display: "grid", gridTemplateColumns: "24px 1fr", gap: 8, alignItems: "center",
       textAlign: "left",
       padding: "8px 10px",
