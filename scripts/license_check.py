@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""ClawDnD license / content gate.
+"""WorldOS license / content gate.
 
 Fails the build if:
   - any file under a FORBIDDEN prefix is tracked in git — privately imported,
     user-owned, or unpublished content that must NEVER be committed; or
-  - a required top-level licensing/attribution file is missing; or
+  - a required top-level licensing, contributor, or attribution file is missing; or
   - a committed world seed (content/worlds/<id>/world.json) lacks its LICENSE.md —
-    world seeds based on existing settings ship as FREE, unofficial Fan Content and
+    world seeds based on existing settings ship as free, unofficial Fan Content and
     must carry the required Fan-Content / OGL notice beside them.
 
 This is intentionally conservative and fast; it runs in CI on every push.
@@ -20,7 +20,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = ["LICENSE", "THIRD_PARTY_NOTICES.md", "data/srd/ATTRIBUTION.md"]
+REQUIRED = [
+    "LICENSE",
+    "ROYALTY-ADDENDUM.md",
+    "COMMERCIAL-LICENSE.md",
+    "CLA.md",
+    "CONTRIBUTING.md",
+    "THIRD_PARTY_NOTICES.md",
+    "data/srd/ATTRIBUTION.md",
+]
 # Paths that must NEVER be committed (private / user-owned; may be copyrighted). Includes
 # BOTH the _imported staging area AND every documented _private/ area (worlds AND campaigns).
 FORBIDDEN_PREFIXES = (
@@ -35,7 +43,7 @@ FORBIDDEN_PREFIXES = (
 
 def _check_ingested_attribution(tracked: list[str]) -> list[str]:
     """Every committed INGESTED record must carry its per-source attribution (it's wiki-derived
-    CC-BY-SA, not MIT) — the docs promise it, so the gate enforces it instead of trusting memory.
+    CC-BY-SA, not the WorldOS license) — the docs promise it, so the gate enforces it instead of trusting memory.
     JSON records (characters/areas) need non-empty `license` + `attribution` (a wiki-derived one
     also carries `source_url`, but original ClawDnD exemplars legitimately have none); wiki lore
     .md needs a Source/license footer. Authored lore under lore/*.md is exempt — it's our prose."""
@@ -155,7 +163,7 @@ def main() -> int:
             if license_md not in tracked:
                 errors.append(
                     f"world seed {f} is missing its required {license_md} "
-                    f"(FREE/unofficial Fan-Content + OGL/CC-BY notice)"
+                    f"(free/unofficial Fan-Content + OGL/CC-BY notice)"
                 )
 
     # Ingested (wiki-derived) records/pages must each carry per-source attribution.

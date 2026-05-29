@@ -3,10 +3,10 @@
   "version": "1.0.3",
   "description": "WorldOS — simulate living, AI-generated worlds and play epic D&D 5e inside them. An AI DM generates stories live within persistent, canon-anchored worlds; deterministic 5e rules, searchable memory, a voiced AI companion, fully voice-acted.",
   "author": {
-    "name": "electricsheephq"
+    "name": "ElectricSheep"
   },
   "repository": "https://github.com/electricsheephq/WorldOS",
-  "license": "MIT",
+  "license": "LicenseRef-WorldOS-Source-Available-Commercial-1.0",
   "keywords": [
     "dnd",
     "dungeons-and-dragons",

@@ -173,6 +173,6 @@ instead of aborting `start_world`.
 `scripts/license_check.py` requires a `LICENSE.md` beside every committed `world.json`.
 - **Original seeds** (e.g. `sundered-reach`): original WorldOS content, **CC-BY-4.0**, on SRD primitives. No third-party setting IP.
 - **Setting-based seeds** (e.g. `baldurs-gate`): **FREE, unofficial Fan Content** — rules under CC-BY/OGL SRD, setting names/lore under the **Wizards Fan Content Policy** (+ Larian for BG3); each ingested page carries its source + CC-BY-SA. Not official, not endorsed, never sold.
-- WorldOS's MIT license covers **code only** — it does not extend to the world seeds.
+- The root WorldOS license does **not** override per-seed licensing or third-party rights.
 
 See `sundered-reach/` (original) and `baldurs-gate/` (fan content) as worked examples.

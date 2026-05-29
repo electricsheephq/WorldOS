@@ -6,7 +6,7 @@ post-Baldur's-Gate-3 5e living world. This file is auto-loaded when working in t
 exists so we never again run the wrong UI or work from the wrong checkout (both have bitten us).
 
 > Naming note: the project was renamed `ClawDnD` → `WorldOS` (GitHub repo
-> `100yenadmin/ClawDnD` → `electricsheephq/WorldOS`; the old URL redirects). The product name is
+> `electricsheephq/WorldOS`; prior owner paths may redirect). The product name is
 > now **WorldOS**. Some lower-level identifiers are still being migrated in later PRs and remain
 > `clawdnd`-named on purpose: the MCP servers (`clawdnd-engine`, `clawdnd-rules`, `clawdnd-voice`,
 > `clawdnd-player`), the `CLAWDND_*` env vars, and the `dev.clawdnd.app` bundle id. Treat those as
@@ -14,13 +14,13 @@ exists so we never again run the wrong UI or work from the wrong checkout (both 
 
 ## Which checkout am I in?
 - **Canonical working checkout: `/Users/lume/ClawDnD-val`** — it tracks GitHub
-  `electricsheephq/WorldOS` `main`. Edit, run, commit, and verify here. (The directory name is
-  kept as-is for now; only the product was renamed.)
+  `electricsheephq/WorldOS` `main`. Edit, run, commit, and verify here unless a
+  task explicitly asks for a fresh Lexar worktree.
 - **`/Volumes/LEXAR/repos/ClawDnD-val` and `/Volumes/LEXAR/repos/ClawDnD` are DEPRECATED**
   (the pre-2026-05-28 location). Do not edit or run from them. They're kept only as
   fast-forwarded read-only mirrors and are guarded so an accidental run still serves local code.
-- If your `pwd` is under `/Volumes/LEXAR/…`, you're on the deprecated mirror — switch to
-  `/Users/lume/ClawDnD-val`.
+- If `git remote -v` shows `electricsheephq/WorldOS` but your `pwd` is under `/Volumes/LEXAR/…`,
+  you're on the deprecated mirror unless the task explicitly requested a fresh Lexar worktree.
 - The Claude Code **preview tool roots at the LEXAR path**, so don't trust `preview_start`
   blindly — run the viewer yourself (below) from the canonical checkout, or confirm the served
   code is current (root must 302→`/openworlds/`; `chrome.jsx` must have zero `traffic-lights`).
