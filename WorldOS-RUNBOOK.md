@@ -37,14 +37,13 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 - **Goal: a universe-system that generates worlds.** Reverse-engineer how BG3 / Skyrim /
   Kingmaker structure story → a seed/engine that can spin up new lore-grounded worlds. A
   2nd world is meant to be near-free once the system is perfected on the first.
-- **FREE product.** BG3 ingestion is **INTERNAL-ONLY** — we ship a **wiki-INDEX + a
+- **Source-available commercial product.** BG3 ingestion is **INTERNAL-ONLY** — we ship a **wiki-INDEX + a
   self-serve ingestor**, and distribute **nothing copyrighted**. (Owner steer: P0
-  commercial-license question is resolved as FREE; the public `baldurs-gate/` world is
-  unofficial Fan Content, never sold.)
+  the public `baldurs-gate/` world is unofficial Fan Content, never sold.)
 - **BG-ONLY focus.** Baldur's Gate is THE world. Sundered Reach is a deprioritized
   side-option (left in place, no investment). All content + QA target BG. Perfect the
   whole system on BG.
-- Code is **MIT**; rules data is **CC-BY-4.0 SRD 5.2.1**; universe seeds are unofficial
+- Code uses the root **WorldOS Source-Available Commercial EULA**; rules data is **CC-BY-4.0 SRD 5.2.1**; universe seeds are unofficial
   free Fan Content with their own `LICENSE.md`.
 
 ---

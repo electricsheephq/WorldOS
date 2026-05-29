@@ -2,13 +2,19 @@
 
 All notable changes to WorldOS (formerly ClawDnD) are documented here.
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
-WorldOS's code is MIT; world seeds are licensed separately (see `content/worlds/README.md`).
+WorldOS is source-available commercial software; world seeds are licensed separately
+(see `LICENSE`, `ROYALTY-ADDENDUM.md`, `COMMERCIAL-LICENSE.md`, and
+`content/worlds/README.md`).
 
 ---
 
 ## [Unreleased]
 
-Nothing queued yet.
+- Licensing update: WorldOS now uses the WorldOS Source-Available Commercial
+  EULA v1.0 with a separate `ROYALTY-ADDENDUM.md`, adds
+  `COMMERCIAL-LICENSE.md`, `CLA.md`, `CONTRIBUTING.md`, and a pull request CLA
+  acknowledgement template. Prior MIT grants for older copies remain preserved
+  in `LICENSE`.
 
 ---
 
@@ -20,7 +26,7 @@ CI-green PRs so nothing broke mid-flight:
 
 - **Identity (#296):** plugin id `clawdnd` → **`worldos`**; the macOS app is now
   `WorldOSApp` / `WorldOS.app`; author `electricsheephq`; repo moved to
-  `github.com/electricsheephq/WorldOS` (the old `100yenadmin/ClawDnD` URL redirects).
+  `github.com/electricsheephq/WorldOS` (prior owner paths may redirect).
   README, CLAUDE.md, docs, and the dev skill (`worldos-dev`) rebranded.
 - **Code + docs (#299):** ClawDnD → WorldOS across source and documentation; **zero
   ClawDnD references remain in `servers/engine`**.
@@ -312,4 +318,4 @@ NPC memory and check-gated social, exploration/travel, encounters, multi-session
 persistence and "Previously on…" recaps, time-deferred consequences, a multi-act arc
 generator. Bundled SRD 5.2.1 (CC-BY-4.0) and bestiary. Original adventures ("The Cellar
 Rats", "The Embergloom Pact"). Voice (Kokoro / ElevenLabs / null) and STT seam. Player
-slash commands, README, MIT license and third-party notices.
+slash commands, README, then-current licensing, and third-party notices.

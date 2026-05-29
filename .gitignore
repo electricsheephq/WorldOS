@@ -25,7 +25,7 @@
 /content/campaigns/_private/
 
 # Private world seeds for personal/internal play (e.g. Forgotten Realms / post-BG3).
-# Loaded by the same IP-agnostic start_world loader; kept out of the MIT-licensed
+# Loaded by the same IP-agnostic start_world loader; kept out of the root-licensed
 # tree so the public repo stays clean. NEVER commit.
 /content/worlds/_private/
 

@@ -7,7 +7,7 @@ description: Develop, test, and QA the WorldOS plugin (the living-world D&D 5e e
 
 You build and harden **WorldOS** — a post-BG3 living-world D&D 5e Claude Code plugin. North
 star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; goal: a
-universe-system that generates worlds. FREE product, BG-only. **Read `WorldOS-RUNBOOK.md`
+universe-system that generates worlds. Source-available commercial product, BG-focused. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
 ## Load-bearing INVARIANTS (never violate)

@@ -188,11 +188,25 @@ Kokoro runs on-device; no API key needed. ElevenLabs can drop in later via
 
 ## Licensing
 
-WorldOS's own **code is MIT** (see `LICENSE`). It reuses only permissively-licensed components and ships the **CC-BY-4.0 SRD 5.2** for rules. See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
+WorldOS is a **custom source-available commercial EULA, not OSI open source**
+(see `LICENSE`, `ROYALTY-ADDENDUM.md`, and `COMMERCIAL-LICENSE.md`). It reuses
+permissively licensed components and ships the **CC-BY-4.0 SRD 5.2** for rules.
+See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
+
+Commercial terms in brief:
+
+- You own your original game, tabletop product, campaign, world, art, audio, and generated output; ElectricSheep owns WorldOS technology and trademarks.
+- Non-commercial personal, educational, evaluation, research, hobby, and home tabletop use is free.
+- Private/internal static exports, pitch images, world bibles, and campaign notes do not owe royalties by themselves unless sold, monetized, publisher-backed, or included in a commercial project.
+- Indie commercial projects pay **USD $20 once per project**, owe **0%** on the first **USD $1M** of lifetime gross project revenue, and owe **2.5%** only on royalty revenue above that threshold.
+- Studio terms apply from day one if the company has over **USD $1M** annual revenue, over **USD $1M** funding, publisher-backed development, or more than **10** employees/contractors on the project.
+- Studio projects owe **2.5%** when WorldOS is used for design, universe generation, tabletop, pre-production, export, narrative/world bible, static output, or content pipeline use where WorldOS Runtime Code does not ship.
+- Studio projects owe **5%** when WorldOS Runtime Code, the playable tabletop/game shell, agentic world simulation, generated-play loop, or a substantially complete WorldOS-derived playable experience ships to users or players.
+- Custom buyouts are available by written agreement with ElectricSheep.
 
 **World seeds** (`content/worlds/`) are a separate layer with their own licensing:
 
 - **Original seeds** (e.g. *The Sundered Reach*) are original WorldOS content, **CC-BY-4.0**, built on SRD primitives.
-- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's Gate 3+ Universe Seed*) are **unofficial, FREE fan content** — game rules under the **D&D Open Game License / CC-BY SRD**, and setting names/lore/characters under the **Wizards Fan Content Policy** (and, for Baldur's Gate 3 elements, used as unofficial fan content of Larian Studios). They are **not official, not endorsed**, and never sold. Each such seed ships a `LICENSE.md` carrying the required notice. The MIT license covers WorldOS's code only — **it does not extend to the universe seeds**, which remain the property of their respective rights-holders and are used here strictly as free, unofficial Fan Content.
+- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's Gate 3+ Universe Seed*) are **unofficial, free fan content** — game rules under the **D&D Open Game License / CC-BY SRD**, and setting names/lore/characters under the **Wizards Fan Content Policy** (and, for Baldur's Gate 3 elements, used as unofficial fan content of Larian Studios). They are **not official, not endorsed**, and never sold. Each such seed ships a `LICENSE.md` carrying the required notice. The WorldOS license does **not** extend to universe seeds, which remain the property of their respective rights-holders and are used here strictly as free, unofficial Fan Content.
 
 A `_private/` path under each content area stays **gitignored** for material you don't intend to publish.

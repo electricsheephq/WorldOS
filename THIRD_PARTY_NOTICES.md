@@ -1,8 +1,8 @@
 # Third-Party Notices
 
-WorldOS's own source code is licensed under MIT (see `LICENSE`). This file
-records third-party material that WorldOS bundles, adapts, or depends on, and
-the licensing decisions behind them.
+WorldOS is source-available commercial software under the root `LICENSE` and
+`ROYALTY-ADDENDUM.md`. This file records third-party material that WorldOS
+bundles, adapts, or depends on, and the licensing decisions behind them.
 
 ## Bundled data
 
@@ -73,8 +73,8 @@ knowledge.
 - **heffrey78/dnd-mcp** — no declared license. Encounter / CR-difficulty logic
   referenced only; reimplemented from the SRD.
 - **Sstobo/Claude-Code-Game-Master** — CC-BY-NC-SA-4.0 (NonCommercial +
-  ShareAlike), incompatible with WorldOS's MIT licensing. Architecture studied;
-  not copied.
+  ShareAlike), incompatible with WorldOS licensing. Architecture studied; not
+  copied.
 - **PinchOfData/claude-dungeon-master** — no declared license. DM persona/tone
   studied; not copied.
 
@@ -88,8 +88,8 @@ git-ignored directory and never committed).
 
 ## World seeds (`content/worlds/`)
 
-World seeds are a distinct content layer with their own licensing (the project's
-MIT license covers code only and does **not** extend to them). Each seed ships a
+World seeds are a distinct content layer with their own licensing (the root
+WorldOS license does **not** override separate per-seed terms). Each seed ships a
 `LICENSE.md`; the CI gate (`scripts/license_check.py`) requires it.
 
 - **Original seeds** (e.g. *The Sundered Reach*) — original WorldOS content under

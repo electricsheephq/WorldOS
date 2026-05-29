@@ -17,7 +17,8 @@ Design (mirrors the rules lookup + the ledger's FTS approach, kept dependency-fr
   excerpts so the DM gets canon without dumping a whole wiki into context.
 
 The corpus is content (CC-BY-4.0 original, or CC-BY-SA wiki-derived fan content); this
-code is MIT and reads it generically — it never hard-codes any setting.
+code is covered by the root WorldOS license and reads it generically — it never hard-codes
+any setting.
 """
 
 from __future__ import annotations

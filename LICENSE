@@ -1,28 +1,236 @@
-MIT License
+WorldOS Source-Available Commercial EULA v1.0
 
-Copyright (c) 2026 electricsheephq
+License type: Custom source-available commercial EULA, not OSI open source.
+SPDX-License-Identifier: LicenseRef-WorldOS-Source-Available-Commercial-1.0
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright (c) 2026 ElectricSheep
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This WorldOS Source-Available Commercial EULA ("Agreement") governs Your use
+of WorldOS unless ElectricSheep signs a separate written agreement with You.
+This Agreement is inspired by engine-style commercial licensing: You can inspect,
+learn from, modify, and build with the source, but commercial rights depend on
+the license tier and Royalty Addendum below.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This Agreement is not legal advice. If You plan to ship a commercial Project
+using WorldOS, review these terms with counsel and contact ElectricSheep for any
+custom commercial agreement or buyout.
 
----
+1. Prior MIT Grants
 
-NOTE: This MIT license covers WorldOS's own source code. Bundled third-party
-data and content carry their own licenses — see THIRD_PARTY_NOTICES.md and
-data/srd/ATTRIBUTION.md. In particular, the System Reference Document (SRD 5.2)
-data is licensed under CC-BY-4.0, not MIT.
+Copies of the project that were obtained under the prior MIT license remain
+licensed under that prior license for those copies. This Agreement applies to
+this version and later versions that include this Agreement unless ElectricSheep
+states otherwise in writing.
+
+2. What ElectricSheep Licenses To You
+
+"WorldOS Technology" means WorldOS source code, runtime code, tools, examples,
+documentation, project-authored content, and other materials in this repository
+unless a file or directory states a different license.
+
+"Runtime Code" means WorldOS code or components needed to run a Project for
+users or players, including the playable tabletop/game shell, agentic world
+simulation, runtime services, generated-play loop, or a substantially complete
+WorldOS-derived playable experience.
+
+"Examples" means sample code, sample worlds, sample campaigns, templates, and
+documentation examples that ElectricSheep marks or presents as examples.
+
+"Generated Output" means text, data, designs, exports, world bibles, campaign
+notes, maps, static files, images, lore documents, or other materials generated
+with or exported from WorldOS.
+
+"Project" means a game, tabletop product, tool, campaign, world, export,
+prototype, build, release, service, or other work made with, incorporating, or
+derived from WorldOS Technology.
+
+"Distribute" means to sell, license, publish, transfer, host, stream, provide
+access to, make available over a network, or otherwise provide a Project or
+WorldOS Technology to another person or entity.
+
+"Commercial Use" means use that is intended for, connected to, or results in
+commercial advantage, revenue, funding, paid distribution, paid services,
+publisher-backed development, monetization, or business operations.
+
+"Non-Commercial Use" means personal, educational, evaluation, research, hobby,
+home tabletop, or internal learning use that is not Commercial Use.
+
+"You" means the individual or legal entity using WorldOS.
+
+3. Source-Available Status
+
+WorldOS is source-available software. It is not open source, and this Agreement
+is not an OSI-approved license. You may not describe WorldOS as open source
+unless ElectricSheep separately releases the relevant materials under an
+OSI-approved license.
+
+4. Non-Commercial License
+
+ElectricSheep grants You a worldwide, royalty-free, non-exclusive,
+non-transferable, revocable license to use, copy, modify, and run WorldOS
+Technology for Non-Commercial Use.
+
+You may share modified source code or patches for Non-Commercial Use if You
+preserve this Agreement, preserve copyright and attribution notices, and clearly
+mark material changes.
+
+5. Commercial License Tiers
+
+Commercial Use is permitted only under the applicable commercial tier below,
+the Royalty Addendum in ROYALTY-ADDENDUM.md, and this Agreement.
+
+5.1 Indie Commercial License
+
+You qualify for the Indie Commercial License only if, when Commercial Use begins
+and throughout the Project's commercial life:
+
+- You and Your company have less than USD $1,000,000 in annual gross revenue;
+- You and Your company have raised less than USD $1,000,000 in funding;
+- the Project is not publisher-backed, publisher-funded, or publisher-directed;
+  and
+- the company or team has 10 or fewer employees and contractors working on the
+  Project.
+
+If You qualify and pay the USD $20 Project fee when Commercial Use begins,
+ElectricSheep grants You a worldwide, non-exclusive, non-transferable
+commercial license to use, copy, modify, run, reproduce, Distribute, and
+otherwise exploit WorldOS Technology in connection with that Project, subject to
+this Agreement and the Royalty Addendum.
+
+5.2 Studio Commercial License
+
+The Studio Commercial License applies from day one of Commercial Use if You,
+Your company, or the Project has any of the following:
+
+- more than USD $1,000,000 in annual gross revenue;
+- more than USD $1,000,000 in funding;
+- publisher-backed, publisher-funded, or publisher-directed development; or
+- more than 10 employees and contractors working on the Project.
+
+Under the Studio Commercial License, ElectricSheep grants You a worldwide,
+non-exclusive, non-transferable commercial license to use, copy, modify, run,
+reproduce, Distribute, and otherwise exploit WorldOS Technology in connection
+with the Project, subject to this Agreement and the Royalty Addendum unless a
+separate written agreement replaces these terms.
+
+If You stop qualifying for the Indie Commercial License, You must move to the
+Studio Commercial License or a separate written commercial agreement before
+continuing Commercial Use.
+
+6. Distribution Of Projects
+
+You may Distribute a Project that incorporates Runtime Code only as an
+integrated part of that Project and only to the extent necessary for users or
+players to use the Project. You may not provide WorldOS Technology as a
+standalone engine, source-available product, SDK, marketplace, hosted service,
+or competing platform.
+
+You may let end users use the incorporated WorldOS Technology solely as part of
+Your Project. You may not grant end users the right to extract WorldOS
+Technology for their own projects or to use WorldOS Technology independently of
+Your Project.
+
+7. Non-Royalty Uses
+
+The following uses do not owe royalties to ElectricSheep by themselves:
+
+- Non-Commercial Use;
+- private internal evaluation, research, and learning;
+- private home tabletop campaigns that are not monetized;
+- Generated Output used privately or internally and not sold, licensed,
+  monetized, publisher-backed, or included in a commercial Project;
+- screenshots, rendered media, pitch images, or static previews that do not
+  themselves generate revenue or provide paid Project access; and
+- indirect revenue that is not attributable to Project access, Project features,
+  in-Project benefits, or a commercial release shaped by WorldOS.
+
+These exclusions do not remove royalties owed under the Royalty Addendum when
+WorldOS is used for a qualifying commercial Project or when Runtime Code ships.
+
+8. Ownership
+
+As between You and ElectricSheep, You own Your original Project, including Your
+original game content, tabletop content, campaign content, characters, settings,
+art, audio, and Generated Output, except for WorldOS Technology and third-party
+materials.
+
+ElectricSheep owns WorldOS Technology, WorldOS trademarks, and all ElectricSheep
+intellectual property. No rights are granted by sale, implication, estoppel, or
+otherwise except as expressly stated in this Agreement.
+
+9. Third-Party Materials and Separate Licenses
+
+This Agreement does not apply to materials that state a different license,
+including but not limited to:
+
+- SRD data and other Creative Commons materials;
+- world seeds with their own LICENSE.md files;
+- unofficial fan-content seeds and third-party setting material;
+- vendored runtime libraries and icon assets;
+- trademarks, logos, brand assets, and rights of publicity; and
+- private imported content that is not intended for publication.
+
+See THIRD_PARTY_NOTICES.md, data/srd/ATTRIBUTION.md, and per-world LICENSE.md
+files for those terms. Separate third-party terms control if they conflict with
+this Agreement for those third-party materials.
+
+10. Restrictions
+
+You may not:
+
+- remove or obscure copyright, license, attribution, or third-party notices;
+- use WorldOS for Commercial Use except under the applicable commercial terms
+  or a separate written agreement;
+- sell, sublicense, host, or provide WorldOS Technology itself as a competing
+  engine, platform, hosted service, marketplace, SDK, or source-available
+  product;
+- use ElectricSheep, WorldOS, ClawDnD, OpenWorlds, or related names, logos, or
+  marks in a way that implies endorsement or ownership;
+- combine WorldOS Technology with code or content under terms that would require
+  WorldOS Technology to be governed by another license;
+- commit or redistribute private, imported, user-owned, unpublished, or
+  third-party-restricted content from gitignored private paths; or
+- use third-party materials in this repository outside their own license terms.
+
+11. Contributions
+
+Outside contributions are accepted only under the WorldOS Contributor License
+Agreement in CLA.md unless ElectricSheep agrees otherwise in writing.
+
+12. Custom Agreements
+
+Custom buyouts, capped royalties, enterprise terms, publisher terms, custom
+support, and other commercial arrangements are available only by a separate
+written agreement signed by ElectricSheep.
+
+If ElectricSheep signs a separate written agreement for a Project, that written
+agreement controls for that Project.
+
+13. Notices and Amendments
+
+If ElectricSheep changes this Agreement, You are not required to accept the
+amended Agreement for copies of WorldOS Technology You already obtained under
+this Agreement. New downloads, updates, services, or repository versions may be
+conditioned on accepting the then-current Agreement.
+
+14. No Warranty
+
+WorldOS is provided "as is", without warranty of any kind, express or implied,
+including but not limited to warranties of merchantability, fitness for a
+particular purpose, title, and non-infringement.
+
+15. Limitation of Liability
+
+To the maximum extent permitted by law, ElectricSheep and contributors are not
+liable for any claim, damages, lost profits, lost revenue, loss of data,
+business interruption, or other liability arising from or related to WorldOS,
+whether in contract, tort, or otherwise, even if advised of the possibility of
+such damages.
+
+16. Termination
+
+If You violate this Agreement, Your rights under this Agreement terminate
+automatically. ElectricSheep may reinstate rights in writing after the violation
+is cured. Sections intended to survive termination, including payment
+obligations, restrictions, ownership, third-party notices, warranty disclaimers,
+and liability limits, survive termination.

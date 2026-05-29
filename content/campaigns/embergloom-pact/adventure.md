@@ -1,7 +1,7 @@
 # The Embergloom Pact
 
 *A ClawDnD showcase campaign — SRD 5.2, levels 1 → 5, ~4 sessions.*
-*100% original prose on SRD primitives. Ships under the repo's MIT license.*
+*100% original prose on SRD primitives. Ships under the root WorldOS license unless a separate content license is stated.*
 
 ---
 
