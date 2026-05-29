@@ -168,6 +168,60 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 **Loop 6 confidence: still ~95% on the audit** (the audit findings remain accurate; this loop just verified the implementation status). The Code Health is partially improved but not "release-ready" yet — #260 alone is a release blocker per the user observation.
 
+## Loop 7 update (2026-05-29 cont.) — post-rename verification round 2
+
+After Loop 6 the agent landed the rename (ClawDnD → WorldOS, repo moved to electricsheephq/WorldOS) AND addressed 4 of the 5 Loop-6 NOT-FIXED criticals. Loop 7 verified against current main (HEAD `a3a7bf6`). **Substantial progress; one critical fix went too far; #286 still broken.**
+
+### NOT-FIXED items from Loop 6 — current status
+
+| Issue | Status | Evidence |
+|---|---|---|
+| [#260](https://github.com/electricsheephq/WorldOS/issues/260) | ⚠️ **partially fixed, new bug** | chrome.jsx:436 changed `paddingLeft: 76` → `nativeStatus?.bridge ? 76 : 0`. Solves the macOS traffic-light overlap ✓ BUT the browser `paddingLeft: 0` makes title-text START at x=0, which is INSIDE the 56px-wide nav-rail column. Title wraps over 3 lines AT the nav rail. **The user's complaint persists.** Re-commented with proposed fix (`paddingLeft: nativeStatus?.bridge ? 76 : 56` + `whiteSpace: nowrap` + ellipsis). |
+| [#268](https://github.com/electricsheephq/WorldOS/issues/268) | ✅ FIXED | screen-character.jsx:829-892 has Browse-spellbook path with count |
+| [#271](https://github.com/electricsheephq/WorldOS/issues/271) | ✅ FIXED | screen-inventory.jsx:293 EQUIP_SLOTS expanded to 12 canonical slots + PaperDoll component (cloak/amulet/ranged/mainhand/offhand/left+right cols) |
+| [#282](https://github.com/electricsheephq/WorldOS/issues/282) | ✅ FIXED | camp-sidebar.jsx:128-130 posts `kind: "rest"` to `/move`; line 365 toggles "Resting…" CTA |
+| [#286](https://github.com/electricsheephq/WorldOS/issues/286) | ❌ STILL BROKEN | server.py:3418 + 3421 still both iterate `for f in features` — feats and classFeatures arrays identical |
+
+### Other audit items verified this loop
+
+| Issue | Status | Evidence |
+|---|---|---|
+| [#275](https://github.com/electricsheephq/WorldOS/issues/275) | ✅ CLOSED (this loop) | screen-map.jsx:520-523 moved watermark out of node band, opacity 0.13, fontSize 3 |
+| [#277](https://github.com/electricsheephq/WorldOS/issues/277) | ❌ STILL BROKEN | screen-create.jsx:63 initial hero shape lacks `house`/`biography`; bindHero spec doesn't carry them |
+| [#283](https://github.com/electricsheephq/WorldOS/issues/283) | ❌ STILL BROKEN | camp-sidebar.jsx:600 `TALK_PROMPTS` still `_default`-only |
+| [#284](https://github.com/electricsheephq/WorldOS/issues/284) | ❌ STILL BROKEN | `grep -rE "stack-on-narrow" viewer/openworlds/` — zero applications; rule still orphan |
+
+### New finding — roster screen needs audit doc
+
+The new `screen-roster.jsx` (339 LOC, commit 6bd4843 "canon-NPC picker") was added without `docs/ui-audit/screens/roster.md`. Authored this loop — 78/100 Polish-Pass. Filed as [#302](https://github.com/electricsheephq/WorldOS/issues/302).
+
+### Maintain-loop verification
+
+- `qa/ui_audit_health.sh --port 8765 --quick --axe` → **31 PASS** + **17 screens × 0 axe violations** (incl. new roster). No regressions.
+- Asset catalog intact at 2,359 art dirs.
+- All 11 surface routes return 200.
+- Rename hygiene: only 2 `clawdnd` refs left in `viewer/openworlds/*.jsx` (both in `app.jsx` env-var references, intentionally kept per Wave-4 backward-compat plan in #295).
+
+### Outstanding work after Loop 7
+
+| Open (verified still broken) | Open (need re-verification) |
+|---|---|
+| #260 (partial fix) · #277 · #283 · #284 · #286 | ~30 other audit-cycle issues #244–#290 that may have been silently fixed by the rename + v1.0.3 work but never closed |
+
+The "GH state lags code" pattern from Loop 6 persists. Implementation agent should run `qa/ui_audit_health.sh --quick --axe` after each fix + close issues with `Closes #N` in commits.
+
+### Loop 7 deliverables
+
+| Artifact | Purpose |
+|---|---|
+| [docs/ui-audit/screens/roster.md](screens/roster.md) | new — Roster screen audit doc (78/100) |
+| Closed [#275](https://github.com/electricsheephq/WorldOS/issues/275) | Atlas watermark verified dim |
+| Re-comment on [#260](https://github.com/electricsheephq/WorldOS/issues/260) | nav-rail overlap diagnosis + proposed fix |
+| Re-comments on #277, #283, #284, #286 | still-broken confirmations |
+| [#302](https://github.com/electricsheephq/WorldOS/issues/302) | New issue tracking the Roster audit doc |
+
+**Loop 7 confidence: ~96%.** The audit's structural findings remain accurate. Wave-1 cross-cutting is now ~80% landed; the implementation agent's habit of not closing issues remains the open-issue tally's biggest distortion.
+
 ---
 
 ## Scoreboard
@@ -191,6 +245,7 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 | 15 | Codex (Bestiary) | **56** | Finish-Wave | [#254](https://github.com/electricsheephq/WorldOS/issues/254) | [bestiary.md](screens/bestiary.md) | [png](screenshots/bestiary-1512.png) |
 | 16 | World Seed | **50** | Finish-Wave | [#258](https://github.com/electricsheephq/WorldOS/issues/258) | [seed.md](screens/seed.md) | [png](screenshots/seed-1512.png) |
 | 17* | Camp Sidebar (Loop 2) | **60** | Polish-Pass | (rolls up under #249) | [camp-sidebar.md](screens/camp-sidebar.md) | _capture in Map campMode_ |
+| 18 | Roster (canon-NPC picker, Loop 7) | **78** | Polish-Pass | new screen — no per-screen epic yet | [roster.md](screens/roster.md) | _local-only — regen via owshot_ |
 
 **Average: 66.2/100** (across 17 audited surfaces). Bottom-up: 9 screens lift through Polish; 2 through Finish; 1 Release-Ready. \*Camp Sidebar is mounted inside Atlas (campMode) and rolls under #249; standalone audit added in Loop 2.
 
