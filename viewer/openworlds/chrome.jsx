@@ -428,11 +428,12 @@ function CapabilityBadge({ capability, nativeStatus }) {
 function TitleBar({ campaign, location, day, capability, nativeStatus }) {
   return (
     <div className="title-bar">
-      {/* The macOS window now shows the REAL native traffic lights (RootView.swift)
-          floating at top-left over this transparent bar, so we no longer draw fake
-          CSS lights (they'd double up). Pad the title left to clear the native
-          buttons; harmless in a plain browser where there are none. */}
-      <div className="title-text" style={{ paddingLeft: 76 }}>
+      {/* Platform-aware (#260): the macOS native window floats the REAL traffic lights
+          (RootView.swift) at top-left over this transparent bar, so reserve 76px to clear them —
+          but ONLY in the native app (nativeStatus.bridge true). A plain browser has no traffic
+          lights, so the padding is 0 there and the title text is no longer shoved off its mark /
+          over the nav rail. The Loop-4 ask was this fork; it had been hardcoded to 76. */}
+      <div className="title-text" style={{ paddingLeft: nativeStatus?.bridge ? 76 : 0 }}>
         <span>Open Worlds</span><em>·</em><span>{campaign || "Open Worlds"}</span>
         {location && (<><em>·</em><span>{location}</span></>)}
       </div>
