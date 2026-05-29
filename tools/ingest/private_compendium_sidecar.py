@@ -17,7 +17,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# WorldOS rename (issue #295, W0-E/4.2): prefer the new ~worldos~ scratch root +
+# WORLDOS_* env var; keep the legacy clawdnd ones as warn-only fallbacks for v1.x.
+WORLDOS_DEFAULT_SIDECAR_ROOT = Path("/Volumes/LEXAR/Codex/worldos-private-compendium")
 DEFAULT_SIDECAR_ROOT = Path("/Volumes/LEXAR/Codex/clawdnd-private-compendium")
+ENV_SIDECAR_ROOT_WORLDOS = "WORLDOS_PRIVATE_COMPENDIUM_ROOT"
 ENV_SIDECAR_ROOT = "CLAWDND_PRIVATE_COMPENDIUM_ROOT"
 MANIFEST_NAME = "private-compendium-manifest.json"
 SUPPORTED_FORMATS = {"markdown", "json", "text"}
@@ -164,9 +168,29 @@ def load_plan(manifest_path: Path, repo_root: Path = _REPO) -> SidecarPlan:
     )
 
 
+def _sidecar_root() -> Path:
+    """The sidecar root, preferring the WORLDOS_* name/path with a warn-only
+    fallback to the legacy CLAWDND_* name and the legacy on-disk root (#295)."""
+    env = os.environ.get(ENV_SIDECAR_ROOT_WORLDOS)
+    if env:
+        return Path(env).expanduser()
+    legacy = os.environ.get(ENV_SIDECAR_ROOT)
+    if legacy:
+        print(
+            f"[worldos] DEPRECATION: env var {ENV_SIDECAR_ROOT} is renamed to "
+            f"{ENV_SIDECAR_ROOT_WORLDOS}; the old name still works for v1.x but "
+            f"will be removed in v2.0.",
+            file=sys.stderr,
+        )
+        return Path(legacy).expanduser()
+    # No override: prefer the new worldos root unless only the legacy dir exists.
+    if not WORLDOS_DEFAULT_SIDECAR_ROOT.exists() and DEFAULT_SIDECAR_ROOT.exists():
+        return DEFAULT_SIDECAR_ROOT
+    return WORLDOS_DEFAULT_SIDECAR_ROOT
+
+
 def _default_manifest_path() -> Path:
-    root = Path(os.environ.get(ENV_SIDECAR_ROOT, str(DEFAULT_SIDECAR_ROOT))).expanduser()
-    return root / MANIFEST_NAME
+    return _sidecar_root() / MANIFEST_NAME
 
 
 def _write_template(manifest_path: Path) -> None:

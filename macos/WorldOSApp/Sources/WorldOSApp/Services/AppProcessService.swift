@@ -72,7 +72,11 @@ final class AppProcessService: ObservableObject {
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
         var env: [String: String] = [:]
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            env["CLAWDND_STATE_DIR"] = (stateDir as NSString).expandingTildeInPath
+            // Set BOTH names; the viewer/engine prefer WORLDOS_* and keep CLAWDND_*
+            // as the v1.x warn-only fallback (issue #295, W0-E).
+            let expandedStateDir = (stateDir as NSString).expandingTildeInPath
+            env["WORLDOS_STATE_DIR"] = expandedStateDir
+            env["CLAWDND_STATE_DIR"] = expandedStateDir
         }
         // IMPORTANT: launch the viewer with an ABSOLUTE script path and an
         // internal-disk working directory — NOT a relative path with cwd=repoURL.
@@ -84,6 +88,7 @@ final class AppProcessService: ObservableObject {
         // LaunchServices with an ad-hoc signature. An absolute script path + a cwd
         // on the internal disk avoids that volume enumeration entirely; server.py
         // resolves all of its assets from __file__, so cwd is irrelevant to it.
+        env["WORLDOS_REPO_ROOT"] = repoURL.path
         env["CLAWDND_REPO_ROOT"] = repoURL.path
         let serverScript = repoURL.appendingPathComponent("viewer/server.py").path
         let safeCWD = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)

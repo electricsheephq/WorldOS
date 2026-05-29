@@ -9,7 +9,6 @@ hook becomes the opening quest. The DM skill then reads the scenes and runs play
 from __future__ import annotations
 
 import json
-import os
 import random
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from pydantic import ValidationError
 
 import questgen
 import worldsim
+from _env import env_var
 from models import (
     BacklogItem,
     Campaign,
@@ -44,7 +44,7 @@ from store import safe_path_segment  # path-containment guard for world/adventur
 
 
 def _content_dir() -> Path:
-    raw = os.environ.get("CLAWDND_CONTENT_DIR")
+    raw = env_var("CONTENT_DIR")
     return Path(raw).expanduser() if raw else Path(__file__).resolve().parents[2] / "content"
 
 

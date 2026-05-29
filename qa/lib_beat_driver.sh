@@ -20,6 +20,32 @@
 # Sourced by BOTH loops so the two harnesses can't drift. Pure bash + a tiny `uv run` python
 # shim into servers/engine (the engine's venv has the deps; bare python3 does not).
 
+# --- WorldOS rename env-compat (issue #295, W0-E) ---------------------------------
+# Resolve an env var by suffix, preferring WORLDOS_<suffix> and falling back to the
+# legacy CLAWDND_<suffix> (one-time stderr deprecation warning), else a default.
+#   worldos_env DM_MODEL sonnet   ->  $WORLDOS_DM_MODEL, else $CLAWDND_DM_MODEL, else "sonnet"
+# Mirrors servers/*/_env.py for the shell side; both names resolve for v1.x.
+# Note: worldos_env is typically called inside $(...) (a forked subshell), so an
+# in-memory "warned" flag wouldn't survive between calls. We key the once-warning off
+# a tiny per-(invocation, var) sentinel file under $TMPDIR so it stays one-time across
+# the subshells of a single script run (PPID = the script's pid from the subshell).
+worldos_env() {
+  local suffix="$1" default="${2:-}"
+  local w="WORLDOS_${suffix}" c="CLAWDND_${suffix}"
+  if [ -n "${!w:-}" ]; then
+    printf '%s' "${!w}"
+  elif [ -n "${!c:-}" ]; then
+    local sentinel="${TMPDIR:-/tmp}/worldos-envwarn.$PPID.$c"
+    if [ ! -e "$sentinel" ]; then
+      : > "$sentinel" 2>/dev/null || true
+      printf '[worldos] DEPRECATION: env var %s is renamed to %s; the old name still works for v1.x but will be removed in v2.0.\n' "$c" "$w" >&2
+    fi
+    printf '%s' "${!c}"
+  else
+    printf '%s' "$default"
+  fi
+}
+
 # Resolve the run's campaign snapshot.json the same way the harnesses pick state for scoring:
 # the LARGEST non-empty snapshot under <state_dir>/campaigns (never a blind head -1, which a
 # fat-fingered campaign_id could point at a lock-only orphan dir). Echoes the path or nothing.
@@ -97,7 +123,7 @@ clawdnd_soft_tick() {
   # transient cache error; that's non-fatal here (the NEXT beat re-reads the clock and re-ticks),
   # so we never let the tick's exit status fail the loop (the function always returns 0).
   local camp out; camp="$(basename "$(dirname "$snap")")"
-  out="$(CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>&1 <<'PY'
+  out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>&1 <<'PY'
 import sys
 import server
 camp = sys.argv[1]
@@ -259,7 +285,7 @@ clawdnd_director_advisory() {
   snap="$(clawdnd_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
   camp="$(basename "$(dirname "$snap")")"
-  out="$(CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
+  out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
 import sys
 import server
 try:
@@ -288,7 +314,7 @@ clawdnd_event_advisory() {
   snap="$(clawdnd_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
   camp="$(basename "$(dirname "$snap")")"
-  out="$(CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
+  out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
 import sys
 import server
 try:

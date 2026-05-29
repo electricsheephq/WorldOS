@@ -96,7 +96,9 @@ PLIST
 }
 
 open_app() {
-  CLAWDND_REPO_ROOT="$ROOT_DIR" /usr/bin/open -n "$APP_BUNDLE"
+  # Set BOTH names so the native app's RepositoryLocator resolves the repo root
+  # whether it reads the new WORLDOS_* name or the legacy CLAWDND_* one (#295, W0-E).
+  WORLDOS_REPO_ROOT="$ROOT_DIR" CLAWDND_REPO_ROOT="$ROOT_DIR" /usr/bin/open -n "$APP_BUNDLE"
 }
 
 release_check() {

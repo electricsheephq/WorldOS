@@ -22,17 +22,17 @@ code is MIT and reads it generically — it never hard-codes any setting.
 
 from __future__ import annotations
 
-import os
 import re
 import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from _env import env_var
 from store import safe_path_segment  # path-containment guard for world ids
 
 
 def _content_dir() -> Path:
-    raw = os.environ.get("CLAWDND_CONTENT_DIR")
+    raw = env_var("CONTENT_DIR")
     return Path(raw).expanduser() if raw else Path(__file__).resolve().parents[2] / "content"
 
 

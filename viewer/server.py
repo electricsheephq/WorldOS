@@ -49,6 +49,13 @@ from typing import Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 _HERE = Path(__file__).resolve().parent
+# Make this dir importable so `import _env` resolves whether server.py is run as a
+# script (sys.path[0] == viewer/) OR loaded via importlib.spec_from_file_location
+# in the test suite (which does NOT add viewer/ to sys.path).
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from _env import env_var, env_var_legacy  # noqa: E402  (after the path bootstrap above)
+
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
 # servers/engine — shelled (never imported) by POST /portrait-gen to generate a PC
@@ -103,9 +110,16 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
 
 
 def _state_dir() -> Path:
-    """Mirror servers/engine/store.state_dir(): $CLAWDND_STATE_DIR or ~/.clawdnd/state."""
-    env = os.environ.get("CLAWDND_STATE_DIR")
-    return Path(env) if env else Path.home() / ".clawdnd" / "state"
+    """Mirror servers/engine/store.state_dir(): $WORLDOS_STATE_DIR (or the legacy
+    $CLAWDND_STATE_DIR), else ~/.worldos/state if that home exists, else the legacy
+    ~/.clawdnd/state."""
+    env = env_var("STATE_DIR")
+    if env:
+        return Path(env)
+    worldos_home = Path.home() / ".worldos" / "state"
+    if worldos_home.parent.exists():
+        return worldos_home
+    return Path.home() / ".clawdnd" / "state"
 
 
 def _campaigns_dir() -> Path:
@@ -115,7 +129,7 @@ def _campaigns_dir() -> Path:
 def _moves_path() -> Path | None:
     """The single write target: $CLAWDND_PLAYER_MOVES, an append-only log of player
     *move intents* (NOT campaign state). Unset ⇒ no live game ⇒ no write path."""
-    env = os.environ.get("CLAWDND_PLAYER_MOVES")
+    env = env_var("PLAYER_MOVES")
     return Path(env) if env else None
 
 
@@ -4994,7 +5008,7 @@ def _viewer_config() -> dict:
     the voice server is present, and whether a live move sink is configured. Pure
     reader: no writes, no engine import, just env + filesystem the viewer already
     knows. Campaign settings (pacing_mode, leveling_mode) come from /state instead."""
-    backend = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro").strip().lower() or "kokoro"
+    backend = (env_var("TTS_BACKEND", "kokoro") or "kokoro").strip().lower() or "kokoro"
     voice_ready = _VOICE_DIR.is_dir() and backend != "null"
     return {
         "voice": {"backend": backend, "ready": voice_ready},
@@ -5217,7 +5231,7 @@ def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
         return {"ok": False, "reason": "empty text"}
     if not _VOICE_DIR.is_dir():
         return {"ok": False, "reason": "voice server not found"}
-    backend = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro").strip().lower() or "kokoro"
+    backend = (env_var("TTS_BACKEND", "kokoro") or "kokoro").strip().lower() or "kokoro"
     req = json.dumps({"text": text[:_MOVE_MAXLEN], "voice_id": voice_id, "backend": backend})
     cmd = [
         "uv", "run", "--directory", str(_VOICE_DIR), "--no-project",
@@ -5358,7 +5372,12 @@ def _portrait_gen(payload: dict) -> dict:
     # Inherit env so the provider stays whatever the HOST configured (null on a normal box —
     # no network, no gateway). Add ONLY the interactive poll bound; never set the provider here.
     env = dict(os.environ)
-    env.setdefault("CLAWDND_OPENCLAW_POLL_TIMEOUT", _PORTRAIT_GEN_POLL_TIMEOUT)
+    # Set BOTH names so the engine child resolves the bound regardless of which
+    # convention it reads (the engine prefers WORLDOS_*; CLAWDND_* is the v1.x
+    # warn-only fallback). See issue #295 (W0-E).
+    if "WORLDOS_OPENCLAW_POLL_TIMEOUT" not in env and "CLAWDND_OPENCLAW_POLL_TIMEOUT" not in env:
+        env["WORLDOS_OPENCLAW_POLL_TIMEOUT"] = _PORTRAIT_GEN_POLL_TIMEOUT
+        env["CLAWDND_OPENCLAW_POLL_TIMEOUT"] = _PORTRAIT_GEN_POLL_TIMEOUT
     cmd = [
         "uv", "run", "--directory", str(_ENGINE_DIR), "--no-project",
         "python", "-c", _PORTRAIT_GEN_SNIPPET,
@@ -5587,7 +5606,7 @@ class _Handler(BaseHTTPRequestHandler):
             _oh = os.environ.get("OPENCLAW_HOME")
             roots = [
                 _state_dir() / "images",
-                Path(os.environ.get("CLAWDND_OPENCLAW_MEDIA_DIR")
+                Path(env_var_legacy("CLAWDND_OPENCLAW_MEDIA_DIR")
                      or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
                 # W2b: ingested wiki art (gitignored _private; never committed).
                 _ingested_images_root(),
@@ -6107,11 +6126,11 @@ def main() -> int:
     _Handler.pinned = bool(arg_campaign)
     # Optional agent-transcript to tail in the "Agent activity" panel — point it at a
     # QA run's stream-json (e.g. qa/transcripts/<run>.jsonl) to WATCH the agents play.
-    _Handler.transcript_path = os.environ.get("CLAWDND_VIEWER_TRANSCRIPT") or (
+    _Handler.transcript_path = env_var("VIEWER_TRANSCRIPT") or (
         sys.argv[3] if len(sys.argv) > 3 else ""
     )
     # Optional two-sided conversation log to show the player+DM exchange in the chat.
-    _Handler.chat_path = os.environ.get("CLAWDND_VIEWER_CHAT") or ""
+    _Handler.chat_path = env_var("VIEWER_CHAT") or ""
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     if campaign_id:
         print(f"WorldOS play-view: http://127.0.0.1:{port}  (campaign: {campaign_id})")
@@ -6125,7 +6144,7 @@ def main() -> int:
         if moves
         else "Player moves: DISABLED (set CLAWDND_PLAYER_MOVES to enable POST /move)."
     )
-    tts = os.environ.get("CLAWDND_TTS_BACKEND", "kokoro")
+    tts = env_var("TTS_BACKEND", "kokoro")
     if _VOICE_DIR.is_dir():
         print(f"Voice (POST /speak): backend={tts} via {_VOICE_DIR}")
     else:

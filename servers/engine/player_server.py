@@ -36,7 +36,6 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -44,6 +43,7 @@ from mcp.server.fastmcp import FastMCP
 
 import spells
 import store
+from _env import env_var
 from models import SKILL_ABILITIES, Character
 
 mcp = FastMCP("clawdnd-player")
@@ -66,7 +66,7 @@ def _actor_id() -> str:
     """The character this facade speaks for, or "" for default (the player PC). A
     blank/whitespace value is treated as unset — so an empty env var doesn't silently
     select 'no character'."""
-    return (os.environ.get("CLAWDND_ACTOR_ID") or "").strip()
+    return (env_var("ACTOR_ID") or "").strip()
 
 
 _ACTOR_ROLES = ("player", "companion")  # the only roles the ensemble emits
@@ -80,7 +80,7 @@ def _actor_role() -> str:
     allowlist so a typo (or an injected value) can't smuggle an arbitrary role onto
     every move the DM/dashboard then trusts — blank -> "player" (today's default),
     any unknown value -> "companion" (the safe non-narrator peer role)."""
-    raw = (os.environ.get("CLAWDND_ACTOR_ROLE") or "").strip().lower()
+    raw = (env_var("ACTOR_ROLE") or "").strip().lower()
     if not raw:
         return "player"
     return raw if raw in _ACTOR_ROLES else "companion"
@@ -151,7 +151,7 @@ def _record(kind: str, text: str, **fields) -> dict:
     aid = _actor_id()
     if aid:
         move["actor_id"] = aid
-    p = os.environ.get("CLAWDND_PLAYER_MOVES")
+    p = env_var("PLAYER_MOVES")
     if p:
         with Path(p).open("a", encoding="utf-8") as f:
             with contextlib.suppress(OSError):
@@ -171,7 +171,7 @@ def _consecutive_clarifies() -> int:
     the 'this turn' proxy that bounds the question budget. Reads the moves-file tail; a real action
     (say/do/attack/…) resets it. 0 when there's no moves file or it's unreadable (fail-open: a read
     glitch must never block a legitimate question)."""
-    p = os.environ.get("CLAWDND_PLAYER_MOVES")
+    p = env_var("PLAYER_MOVES")
     if not p or not Path(p).exists():
         return 0
     role, aid = _actor_role(), _actor_id()

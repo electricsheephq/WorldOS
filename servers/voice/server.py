@@ -15,12 +15,11 @@ STT backends: null (default, placeholder/CI), macos / whisper (stubs). See stt.p
 
 from __future__ import annotations
 
-import os
-
 from mcp.server.fastmcp import FastMCP
 
 import registry
 import stt
+from _env import env_var
 from interface import SpeakResult
 
 mcp = FastMCP("clawdnd-voice")
@@ -29,7 +28,7 @@ _stt_backend: stt.SttBackend | None = None
 
 
 def _backend_name() -> str:
-    return os.environ.get("CLAWDND_TTS_BACKEND", "kokoro").lower()
+    return (env_var("TTS_BACKEND", "kokoro") or "kokoro").lower()
 
 
 def _get_backend():

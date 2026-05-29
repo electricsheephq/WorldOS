@@ -16,7 +16,7 @@ cd "$ROOT" || exit 1
 . "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-cs-$(date +%H%M%S)}"
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 T="$ROOT/qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"

@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
 import store
+from _env import env_var, env_var_legacy
 
 # The image kinds the engine knows how to ask for.
 KINDS = ("map", "portrait", "scene")
@@ -222,7 +223,7 @@ class _UnconfiguredHostedProvider:
     def configured(self) -> bool:
         """True once the credential env var is set. get_provider() uses this to
         decide whether to hand back this provider or degrade to null."""
-        return bool(os.environ.get(self.api_key_env, "").strip())
+        return bool((env_var_legacy(self.api_key_env, "") or "").strip())
 
     def generate(self, kind: str, prompt: str, *, seed: Optional[int] = None) -> dict:
         raise NotImplementedError(
@@ -348,7 +349,7 @@ _HOSTED: dict[str, type] = {
 
 def provider_name() -> str:
     """The selected image provider name (env CLAWDND_IMAGE_PROVIDER, default 'null')."""
-    return os.environ.get("CLAWDND_IMAGE_PROVIDER", "null").strip().lower()
+    return (env_var("IMAGE_PROVIDER", "null") or "null").strip().lower()
 
 
 def get_provider() -> ImageProvider:

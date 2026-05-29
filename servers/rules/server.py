@@ -28,7 +28,6 @@ CLAWDND_RULES_OFFLINE=1 to disable network lookups (used in CI).
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -36,12 +35,14 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from rapidfuzz import fuzz, process
 
+from _env import env_var
+
 mcp = FastMCP("clawdnd-rules")
 
 _DATA_DIR = Path(
-    os.environ.get("CLAWDND_SRD_DIR", Path(__file__).resolve().parents[2] / "data" / "srd")
+    env_var("SRD_DIR") or Path(__file__).resolve().parents[2] / "data" / "srd"
 )
-_FULL_DIR = Path(os.environ.get("CLAWDND_SRD524_DIR", _DATA_DIR / "srd524"))
+_FULL_DIR = Path(env_var("SRD524_DIR") or _DATA_DIR / "srd524")
 _API_HOST = "https://www.dnd5eapi.co"
 
 
@@ -343,7 +344,7 @@ def _fuzzy_get(query: str, table: dict[str, dict]) -> Optional[dict]:
 
 
 def _api_lookup(category: str, query: str) -> Optional[dict]:
-    if os.environ.get("CLAWDND_RULES_OFFLINE"):
+    if env_var("RULES_OFFLINE"):
         return None
     try:
         r = httpx.get(f"{_API_HOST}/api/{category}", params={"name": query}, timeout=8.0)

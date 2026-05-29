@@ -28,10 +28,10 @@ BEATS="${4:-6}"
 BUDGET="${5:-0.80}"
 # The DM model is an env var so A/B-testing Opus vs sonnet for structural adherence is a
 # one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default sonnet.
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
-# so behavior is unchanged) kept consistent with the party harness's CLAWDND_ACTOR_MODEL.
-CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
+# so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
+CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 

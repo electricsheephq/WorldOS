@@ -9,15 +9,14 @@ character data never changes.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
+from _env import env_var
+
 _MAP_PATH = Path(
-    os.environ.get(
-        "CLAWDND_VOICE_MAP",
-        Path(__file__).resolve().parents[2] / "content" / "voices" / "voice-map.json",
-    )
+    env_var("VOICE_MAP")
+    or Path(__file__).resolve().parents[2] / "content" / "voices" / "voice-map.json"
 )
 
 
