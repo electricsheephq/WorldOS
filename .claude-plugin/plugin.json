@@ -1,11 +1,11 @@
 {
-  "name": "clawdnd",
+  "name": "worldos",
   "version": "1.0.2",
-  "description": "Adventure inside living, AI-generated D&D 5e worlds with a voiced AI companion — an AI DM generates epic stories live within persistent, canon-anchored worlds; deterministic 5e rules, searchable memory, fully voice-acted.",
+  "description": "WorldOS — simulate living, AI-generated worlds and play epic D&D 5e inside them. An AI DM generates stories live within persistent, canon-anchored worlds; deterministic 5e rules, searchable memory, a voiced AI companion, fully voice-acted.",
   "author": {
-    "name": "100yenadmin"
+    "name": "electricsheephq"
   },
-  "repository": "https://github.com/100yenadmin/ClawDnD",
+  "repository": "https://github.com/electricsheephq/WorldOS",
   "license": "MIT",
   "keywords": [
     "dnd",
@@ -21,5 +21,5 @@
     "claude-code",
     "mcp"
   ],
-  "homepage": "https://github.com/100yenadmin/ClawDnD#readme"
+  "homepage": "https://github.com/electricsheephq/WorldOS#readme"
 }

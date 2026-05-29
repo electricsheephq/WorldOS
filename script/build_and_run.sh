@@ -2,13 +2,15 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="ClawDnDApp"
-DISPLAY_NAME="ClawDnD"
+APP_NAME="WorldOSApp"
+DISPLAY_NAME="WorldOS"
+# Bundle ID intentionally kept as dev.clawdnd.app: changing it orphans existing
+# installs (no upgrade path). Revisit at v2.0 with a migration. See issue #295 (W0-B).
 BUNDLE_ID="dev.clawdnd.app"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_DIR="$ROOT_DIR/macos/ClawDnDApp"
+PACKAGE_DIR="$ROOT_DIR/macos/WorldOSApp"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$DISPLAY_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -37,10 +39,10 @@ build_bundle() {
   # App icon (the brass d20 + claw-scratch mark). Copy the prebuilt .icns into
   # Contents/Resources and reference it via CFBundleIconFile so Finder / Dock /
   # the title bar show a real icon instead of the generic executable placeholder.
-  local icon_src="$ROOT_DIR/assets/icon/ClawDnD.icns"
+  local icon_src="$ROOT_DIR/assets/icon/WorldOS.icns"
   if [ -f "$icon_src" ]; then
     mkdir -p "$APP_CONTENTS/Resources"
-    cp "$icon_src" "$APP_CONTENTS/Resources/ClawDnD.icns"
+    cp "$icon_src" "$APP_CONTENTS/Resources/WorldOS.icns"
   fi
 
   cat >"$INFO_PLIST" <<PLIST
@@ -59,9 +61,9 @@ build_bundle() {
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <string>ClawDnD</string>
+  <string>WorldOS</string>
   <key>CFBundleIconName</key>
-  <string>ClawDnD</string>
+  <string>WorldOS</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>

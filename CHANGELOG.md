@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to ClawDnD are documented here.
+All notable changes to WorldOS (formerly ClawDnD) are documented here.
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
-ClawDnD's code is MIT; world seeds are licensed separately (see `content/worlds/README.md`).
+WorldOS's code is MIT; world seeds are licensed separately (see `content/worlds/README.md`).
 
 ---
 

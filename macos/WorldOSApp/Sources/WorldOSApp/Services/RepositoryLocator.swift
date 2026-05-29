@@ -19,7 +19,7 @@ enum RepositoryLocator {
         }
 
         let homeRepo = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("repos/ClawDnD")
+            .appendingPathComponent("repos/WorldOS")
         if looksLikeRepo(homeRepo) {
             return homeRepo.path
         }

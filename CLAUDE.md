@@ -1,17 +1,26 @@
-# ClawDnD — working guide (read before editing/running)
+# WorldOS — working guide (read before editing/running)
 
-A post-Baldur's-Gate-3 D&D 5e living-world game shipped as a Claude Code plugin, with a
-native macOS app. This file is auto-loaded when working in the repo — it exists so we never
-again run the wrong UI or work from the wrong checkout (both have bitten us).
+WorldOS simulates living, AI-generated worlds and lets you play epic D&D 5e inside them —
+shipped as a Claude Code plugin, with a native macOS app. The flagship world is a
+post-Baldur's-Gate-3 5e living world. This file is auto-loaded when working in the repo — it
+exists so we never again run the wrong UI or work from the wrong checkout (both have bitten us).
+
+> Naming note: the project was renamed `ClawDnD` → `WorldOS` (GitHub repo
+> `100yenadmin/ClawDnD` → `electricsheephq/WorldOS`; the old URL redirects). The product name is
+> now **WorldOS**. Some lower-level identifiers are still being migrated in later PRs and remain
+> `clawdnd`-named on purpose: the MCP servers (`clawdnd-engine`, `clawdnd-rules`, `clawdnd-voice`,
+> `clawdnd-player`), the `CLAWDND_*` env vars, and the `dev.clawdnd.app` bundle id. Treat those as
+> the live wire/contract names until their dedicated rename PRs land — don't "fix" them ad hoc.
 
 ## Which checkout am I in?
 - **Canonical working checkout: `/Users/lume/ClawDnD-val`** — it tracks GitHub
-  `100yenadmin/ClawDnD` `main`. Edit, run, commit, and verify here.
+  `electricsheephq/WorldOS` `main`. Edit, run, commit, and verify here. (The directory name is
+  kept as-is for now; only the product was renamed.)
 - **`/Volumes/LEXAR/repos/ClawDnD-val` and `/Volumes/LEXAR/repos/ClawDnD` are DEPRECATED**
   (the pre-2026-05-28 location). Do not edit or run from them. They're kept only as
   fast-forwarded read-only mirrors and are guarded so an accidental run still serves local code.
-- If `git remote -v` shows `100yenadmin/ClawDnD` but your `pwd` is under `/Volumes/LEXAR/…`,
-  you're on the deprecated mirror — switch to `/Users/lume/ClawDnD-val`.
+- If your `pwd` is under `/Volumes/LEXAR/…`, you're on the deprecated mirror — switch to
+  `/Users/lume/ClawDnD-val`.
 - The Claude Code **preview tool roots at the LEXAR path**, so don't trust `preview_start`
   blindly — run the viewer yourself (below) from the canonical checkout, or confirm the served
   code is current (root must 302→`/openworlds/`; `chrome.jsx` must have zero `traffic-lights`).
@@ -19,7 +28,8 @@ again run the wrong UI or work from the wrong checkout (both have bitten us).
 ## The UI is OpenWorlds — NOT the root dashboard
 - The real, current UI is the **OpenWorlds React SPA at `/openworlds/`**
   (`viewer/openworlds/*.jsx`, in-browser Babel, no build step), served by `viewer/server.py`.
-  The native app `dist/ClawDnD.app` loads `/openworlds/`.
+  The native app `dist/WorldOS.app` loads `/openworlds/`. ("OpenWorlds" is the SPA codename —
+  a sub-component of WorldOS — and stays.)
 - **`http://127.0.0.1:<port>/` (the root) is the LEGACY pre-OpenWorlds dashboard** — it now
   redirects to `/openworlds/`. Never treat the root, `viewer/index.html`, or `dashboard.html`
   as the current UI. Always verify at `/openworlds/`.
@@ -31,6 +41,7 @@ CLAWDND_STATE_DIR=<state-dir> CLAWDND_REPO_ROOT="$PWD" \
 # Pass "" for the campaign to just set a port (a bare numeric arg is read as a CAMPAIGN id,
 # not the port, and silently binds the default 8765). Then open /openworlds/ — not the root.
 ```
+(The `CLAWDND_*` env vars are the current names; a later PR adds `WORLDOS_*` aliases.)
 Headless capture: `qa/owshot.sh <screen-hash> <out.png> <port>` (fresh Chrome profile → no
 stale cache). The viewer sends `Cache-Control: no-store` and version-stamps the index scripts,
 but a long-lived browser profile can still hold an old copy — use a fresh profile when in doubt.
@@ -65,8 +76,8 @@ full sweep when the main disk is tight; engine single-process locally is light.
 An agent resuming this project should read in this order, then consult the rest by need:
 
 1. **`CLAUDE.md`** (this file) — checkout/UI/run guardrails + this map. Auto-loaded.
-2. **`ClawDnD-RUNBOOK.md`** — the compaction-resilience doc: architecture, invariants, dev/QA loops, lessons, work queue. READ FIRST after this.
-3. **`ClawDnD-NORTH-STAR.md`** — *what "great" means* (the optimization target). The score is a **proxy** for the felt prestige-CRPG session; come here when score and gut disagree.
+2. **`WorldOS-RUNBOOK.md`** — the compaction-resilience doc: architecture, invariants, dev/QA loops, lessons, work queue. READ FIRST after this.
+3. **`WorldOS-NORTH-STAR.md`** — *what "great" means* (the optimization target). The score is a **proxy** for the felt prestige-CRPG session; come here when score and gut disagree.
 4. **`qa/SCORECARD.md`** — the running results ledger (every scored run). 
 5. Latest **session runbook**: `/Volumes/LEXAR/Codex/session-notes/<date>/clawdnd-*/` (`implementation-notes.html` or `runbook.html`) — the in-flight day-log. Current sprint: `2026-05-27/clawdnd-1.0-autonomous-sprint/runbook.html`.
 

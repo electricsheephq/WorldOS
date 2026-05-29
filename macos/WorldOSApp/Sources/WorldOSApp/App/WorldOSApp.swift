@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct ClawDnDApp: App {
+struct WorldOSApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
     @StateObject private var processService = AppProcessService()

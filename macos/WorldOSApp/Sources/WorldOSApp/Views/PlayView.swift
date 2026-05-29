@@ -26,7 +26,7 @@ struct PlayView: View {
             Divider()
             webSurface
         }
-        .alert("ClawDnD could not start", isPresented: alertBinding) {
+        .alert("WorldOS could not start", isPresented: alertBinding) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")

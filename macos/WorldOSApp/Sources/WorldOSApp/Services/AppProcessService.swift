@@ -19,7 +19,7 @@ final class AppProcessService: ObservableObject {
 
     var diagnostics: String {
         """
-        ClawDnD Native App Diagnostics
+        WorldOS Native App Diagnostics
         Viewer: \(viewerEndpoint?.url.absoluteString ?? "stopped")
         Viewer status: \(viewerEndpoint?.status.rawValue ?? "stopped")
         Active campaign: \(activeCampaignID ?? "none")
@@ -58,7 +58,7 @@ final class AppProcessService: ObservableObject {
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
         guard RepositoryLocator.looksLikeRepo(repoURL) else {
-            try throwAndRecord("Repo path is not a ClawDnD checkout: \(repoPath)")
+            try throwAndRecord("Repo path is not a WorldOS checkout: \(repoPath)")
         }
         guard Shell.which("python3") != nil else {
             try throwAndRecord("python3 is missing. Install Python 3 before launching the viewer.")
@@ -131,7 +131,7 @@ final class AppProcessService: ObservableObject {
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
         guard RepositoryLocator.looksLikeRepo(repoURL) else {
-            try throwAndRecord("Repo path is not a ClawDnD checkout: \(repoPath)")
+            try throwAndRecord("Repo path is not a WorldOS checkout: \(repoPath)")
         }
 
         guard let port = PortFinder.firstFreePort(startingAt: preferredPort) else {

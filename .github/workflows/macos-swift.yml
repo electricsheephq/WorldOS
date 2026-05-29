@@ -7,7 +7,7 @@ on:
       - macos/swift-ci
     paths:
       - ".github/workflows/*.yml"
-      - "macos/ClawDnDApp/**"
+      - "macos/WorldOSApp/**"
       - "script/build_and_run.sh"
       - "scripts/*.sh"
       - "scripts/**/*.sh"
@@ -17,7 +17,7 @@ on:
       - macos/native-app-shell
     paths:
       - ".github/workflows/*.yml"
-      - "macos/ClawDnDApp/**"
+      - "macos/WorldOSApp/**"
       - "script/build_and_run.sh"
       - "scripts/*.sh"
       - "scripts/**/*.sh"
@@ -38,4 +38,4 @@ jobs:
           find scripts -type f -name "*.sh" -print0 | xargs -0 -n 1 bash -n
 
       - name: Build native app
-        run: swift build --package-path macos/ClawDnDApp
+        run: swift build --package-path macos/WorldOSApp

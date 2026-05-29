@@ -1,11 +1,12 @@
-# ClawDnD — RUNBOOK (READ FIRST on resume)
+# WorldOS — RUNBOOK (READ FIRST on resume)
 
 > **Before anything: confirm you are in the canonical checkout and know the right UI.**
 > `CLAUDE.md` (repo root, auto-loaded) is the hub — canonical checkout is
-> `/Users/lume/ClawDnD-val` (== GitHub `100yenadmin/ClawDnD` main; the `/Volumes/LEXAR/…`
+> `/Users/lume/ClawDnD-val` (== GitHub `electricsheephq/WorldOS` main; the `/Volumes/LEXAR/…`
 > copies are DEPRECATED), the UI is OpenWorlds at `/openworlds/` (the root is the legacy
 > dashboard), and it carries the full project map + read order. See also the auto-memory
-> `clawdnd-canonical-setup`.
+> `clawdnd-canonical-setup`. (Product renamed ClawDnD → WorldOS; the checkout dir keeps its
+> `ClawDnD-val` name for now per issue #295/W0-F.)
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -21,13 +22,13 @@
 >
 > Last updated: 2026-05-28 (post-v1.0.1).
 >
-> **v1.0.1 ([Release](https://github.com/100yenadmin/ClawDnD/releases/tag/v1.0.1)):** Phase-4 action lanes complete — Merchant BUY and Forge Craft now relay structured `/move` intents during live play (Create was already wired to the bridge). The seven BG3 origin heroes carry full `companion_dossier` blocks (wound / wants / fears / values / approval / banter / camp prompts). Native-app reliability: build script prefers stable Developer ID signing when keychain ACL allows; `script/unblock_native_app.sh` is a one-shot helper for security-scanner re-evaluation hangs. `docs/SPARKLE_SETUP.md` is the 7-step path to auto-update on top of Developer ID. Engine **1385/1385 ✓**, viewer **90/90 ✓**, license-check clean. **Open gap (owner-only):** first-run Keychain "Always Allow" click on a Developer-ID-signed app to end "popup every rebuild" — or run `script/unblock_native_app.sh` once.
+> **v1.0.1 ([Release](https://github.com/electricsheephq/WorldOS/releases/tag/v1.0.1)):** Phase-4 action lanes complete — Merchant BUY and Forge Craft now relay structured `/move` intents during live play (Create was already wired to the bridge). The seven BG3 origin heroes carry full `companion_dossier` blocks (wound / wants / fears / values / approval / banter / camp prompts). Native-app reliability: build script prefers stable Developer ID signing when keychain ACL allows; `script/unblock_native_app.sh` is a one-shot helper for security-scanner re-evaluation hangs. `docs/SPARKLE_SETUP.md` is the 7-step path to auto-update on top of Developer ID. Engine **1385/1385 ✓**, viewer **90/90 ✓**, license-check clean. **Open gap (owner-only):** first-run Keychain "Always Allow" click on a Developer-ID-signed app to end "popup every rebuild" — or run `script/unblock_native_app.sh` once.
 
 ---
 
 ## PROJECT
 
-**ClawDnD** — a post-Baldur's-Gate-3, **living-world D&D 5e Claude Code plugin**. You don't
+**WorldOS** — a post-Baldur's-Gate-3, **living-world D&D 5e Claude Code plugin**. You don't
 play *against* the AI; you adventure *with* it. An AI Dungeon Master narrates and voices
 every NPC; a voiced AI companion adventures alongside you with its own sheet and agency.
 
@@ -358,7 +359,7 @@ The detailed queue below is now mostly HISTORICAL — read `implementation-notes
 ### NATIVE DESKTOP APP — the play path (IN SCOPE; was the sibling lane)
 The macOS/OpenWorlds Swift shell is now part of this lane (the old "another agent owns it,
 stay out" note is retired; those PRs #150/#182/#187/#190-192 are merged). The app
-(`macos/ClawDnDApp/`, built by `script/build_and_run.sh run` → `dist/ClawDnD.app`) is a
+(`macos/WorldOSApp/`, built by `script/build_and_run.sh run` → `dist/WorldOS.app`) is a
 WKWebView loading the **live worktree** viewer at `/openworlds/` — so a **viewer/JS change
 lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op).
 

@@ -80,8 +80,8 @@ clawdnd_choose_port() {
   fi
   if [ "$explicit" = "1" ]; then
     echo "Port $requested is already in use." >&2
-    echo "Close the existing ClawDnD window, or run with another port:" >&2
-    echo "  ./clawdnd-play.command baldurs-gate '' 8766" >&2
+    echo "Close the existing WorldOS window, or run with another port:" >&2
+    echo "  ./worldos-play.command baldurs-gate '' 8766" >&2
     return 1
   fi
   for p in $(seq $((requested + 1)) $((requested + 40))); do

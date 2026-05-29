@@ -120,8 +120,8 @@ struct CodexProvider: ProviderAdapter {
             kind: kind,
             availability: .configured,
             detail: configuredCommand.isEmpty
-                ? "Ready. Launches the checked-in Codex wrapper with the ClawDnD provider environment and player-facade-only tool surface."
-                : "Ready. Launches your configured Codex command with the ClawDnD provider environment and player-facade-only tool surface.",
+                ? "Ready. Launches the checked-in Codex wrapper with the WorldOS provider environment and player-facade-only tool surface."
+                : "Ready. Launches your configured Codex command with the WorldOS provider environment and player-facade-only tool surface.",
             detectedPath: configuredCommand.isEmpty ? wrapper.path : cli
         )
     }
@@ -188,7 +188,7 @@ struct OpenClawProvider: ProviderAdapter {
                 return ProviderStatus(
                     kind: kind,
                     availability: .installed,
-                    detail: "OpenClaw CLI found. Configure a local ClawDnD launch command before starting sessions.",
+                    detail: "OpenClaw CLI found. Configure a local WorldOS launch command before starting sessions.",
                     detectedPath: cli
                 )
             }
@@ -210,7 +210,7 @@ struct OpenClawProvider: ProviderAdapter {
         return ProviderStatus(
             kind: kind,
             availability: .configured,
-            detail: "Configured. The app will launch your command with ClawDnD provider environment variables.",
+            detail: "Configured. The app will launch your command with WorldOS provider environment variables.",
             detectedPath: cli
         )
     }
