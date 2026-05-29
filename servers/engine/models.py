@@ -740,6 +740,12 @@ class Character(_StrictModel):
     # Quest ids/slugs this NPC is tied to (giver, target, ally), so the DM can pull "who's in
     # the X quest". Short slugs; empty == not tied to any tracked quest.
     quest_ties: list[str] = Field(default_factory=list)
+    # Canonical bestiary slug for a spawned monster ("goblin-warrior"), so kill/encounter
+    # intel can be recorded by TYPE and the intel-tier codex (#263) can join a defeated
+    # instance back to its creature type. Set at the spawn sites from the bestiary name via
+    # bestiary.creature_slug. "" == not a bestiary spawn (today's behavior); old snapshots
+    # round-trip unchanged.
+    creature_slug: str = ""
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
@@ -1530,6 +1536,12 @@ class Campaign(_StrictModel):
     events: dict[str, "Event"] = Field(default_factory=dict)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
+    # Intel-tier bestiary codex (#263): creature_slug -> the HIGHEST intel tier the party has
+    # earned for that creature TYPE (1=sighted at spawn, 2=engaged at start_combat, 3=slain).
+    # Engine is the SOLE writer; bumped monotonically (max) at the spawn/combat/kill sites. The
+    # viewer reads it and threads it into bestiary.player_bestiary to gate the stat reveal.
+    # Empty == today's narrow behavior; old snapshots lacking the key round-trip to {}.
+    bestiary_intel: dict[str, int] = Field(default_factory=dict)
     party: list[str] = Field(default_factory=list)  # character ids that are PCs / companions
     quests: dict[str, Quest] = Field(default_factory=dict)
     locations: dict[str, Location] = Field(default_factory=dict)

@@ -300,3 +300,99 @@ def test_resolve_token_prefix_near_miss():
     # existing exact / <name> Warrior paths are unchanged
     assert bestiary.resolve("Aboleth") == "Aboleth"
     assert bestiary.resolve("Goblin") == "Goblin Warrior"
+
+
+# --- intel-tier codex: creature_slug + stat_block speed/senses/saves + intel_projection (#263) ----
+
+
+def test_creature_slug_matches_viewer_regex():
+    """The engine slug MUST equal the viewer's creatureSlug (screen-bestiary.jsx) char-for-char:
+    lowercase, runs of [^a-z0-9]+ -> '-', leading/trailing '-' trimmed. If these drift, the
+    intel key and the UI art-scope key diverge and the codex mis-joins."""
+    assert bestiary.creature_slug("Goblin Warrior") == "goblin-warrior"
+    assert bestiary.creature_slug("Mind Flayer") == "mind-flayer"
+    assert bestiary.creature_slug("Will-o-Wisp") == "will-o-wisp"
+    assert bestiary.creature_slug("  Aboleth  ") == "aboleth"          # trim collapses to bare
+    assert bestiary.creature_slug("Gray Ooze (Larva)") == "gray-ooze-larva"  # punctuation -> '-'
+    assert bestiary.creature_slug("---") == ""                         # all non-alnum -> empty
+    assert bestiary.creature_slug("") == ""
+
+
+def test_stat_block_now_carries_speed_senses_saves():
+    """stat_block gains speed/senses/saves (the fight/kill-tier reveal data) from the raw SRD
+    fields — purely additive; the existing keys are untouched."""
+    sb = bestiary.stat_block("Goblin Warrior")
+    assert sb["speed"] == {"walk": 30}                    # only present modes, in feet
+    assert sb["senses"] == {"darkvision": 60, "passive_perception": 9}
+    assert sb["saves"] == {}                              # goblin has NO proficient saves
+    # A creature WITH proficient saves + multiple speeds exercises the richer path.
+    ab = bestiary.stat_block("Aboleth")
+    assert ab["speed"] == {"walk": 10, "swim": 40}
+    assert ab["senses"]["darkvision"] == 120 and ab["senses"]["passive_perception"] == 20
+    # proficient saves only (save bonus exceeds the bare ability modifier)
+    assert ab["saves"] == {"dex": 3, "con": 6, "int": 8, "wis": 6}
+
+
+def test_saves_lists_only_proficient_saves():
+    """A save is listed only when its total bonus EXCEEDS the bare ability modifier (i.e. the
+    creature is proficient) — matching a printed stat block. Adult Red Dragon: DEX + WIS only."""
+    drg = bestiary.stat_block("Adult Red Dragon")
+    assert set(drg["saves"].keys()) == {"dex", "wis"}
+    assert drg["saves"]["dex"] == 6 and drg["saves"]["wis"] == 7
+
+
+def test_authored_stat_block_speed_senses_saves_default_empty():
+    """Authored packs lack speed/senses/saves in their schema — they default to empty so the
+    intel reveal degrades gracefully (UI hides the blanks); never a crash, never a fake row."""
+    errs = bestiary.authored_validation_errors()
+    assert isinstance(errs, list)
+    for name in bestiary.find("", 50):
+        sb = bestiary.stat_block(name)
+        if sb and sb.get("content_origin") == "authored":
+            assert sb["speed"] == {} and sb["senses"] == {} and sb["saves"] == {}
+            break  # one authored creature is enough to prove the contract
+
+
+def test_intel_projection_tier_gating():
+    """Each tier reveals a strict SUPERSET of the lower one; tier<=0 and unknown creatures
+    return None (the caller renders an 'unknown' row instead)."""
+    assert bestiary.intel_projection("Goblin Warrior", 0) is None
+    assert bestiary.intel_projection("Nonexistent Beast", 3) is None
+    t1 = bestiary.intel_projection("Aboleth", 1)
+    assert t1["tier"] == 1
+    assert set(t1.keys()) >= {"name", "size", "type", "cr", "tier"}
+    # tier 1 must NOT leak defenses or vitals
+    assert "ac" not in t1 and "hp" not in t1 and "saves" not in t1 and "abilities" not in t1
+    t2 = bestiary.intel_projection("Aboleth", 2)
+    assert t2["tier"] == 2
+    assert "ac" in t2 and "speed" in t2 and "senses" in t2
+    assert "hp" not in t2 and "saves" not in t2 and "abilities" not in t2  # vitals still gated
+    t3 = bestiary.intel_projection("Aboleth", 3)
+    assert t3["tier"] == 3
+    assert "hp" in t3 and "hit_dice" in t3 and "abilities" in t3 and "saves" in t3
+    assert "known_actions" in t3 and t3.get("tactics")  # full kill-tier reveal
+    # superset: every tier-2 key still present at tier 3
+    assert set(t2.keys()) - {"tier"} <= set(t3.keys())
+
+
+def test_player_bestiary_no_intel_is_back_compat():
+    """player_bestiary() with no intel is BYTE-identical to the pre-#263 preview surface."""
+    out = bestiary.player_bestiary("goblin", 10)
+    assert "items" in out and "validation_errors" in out
+    for item in out["items"]:
+        # the old preview shape: identity + cr + known_actions, NO tier / ac / hp
+        assert "tier" not in item and "ac" not in item and "hp" not in item
+        assert "name" in item and "cr" in item and "known_actions" in item
+
+
+def test_player_bestiary_intel_mode_tiers_and_rumours():
+    """With an intel dict, matches at tier>=1 get the tiered projection and unencountered
+    matches become blurred tier-0 'unknown' rumour rows (so the codex shows what's left)."""
+    out = bestiary.player_bestiary("goblin", 20, intel={"goblin-warrior": 2})
+    by_name = {i.get("name"): i for i in out["items"]}
+    gw = by_name["Goblin Warrior"]
+    assert gw["tier"] == 2 and "ac" in gw and "speed" in gw and "hp" not in gw
+    # a sibling goblin the party hasn't met is a tier-0 rumour row
+    rumours = [i for i in out["items"] if i.get("unknown")]
+    assert rumours and all(i.get("tier") == 0 for i in rumours)
+    assert all("ac" not in i and "cr" not in i for i in rumours)  # no stats leaked on a rumour

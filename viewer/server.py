@@ -670,11 +670,18 @@ def build_options_response(campaign_id: Optional[str], character_id: Optional[st
     }
 
 
-def build_bestiary_response(query: str = "", limit: int = 20) -> dict:
+def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "") -> dict:
     """GET /bestiary-surface read model.
 
     Bridges to the engine-owned player-safe bestiary projection. It exposes no write
     path and does not import or call any campaign/combat mutation helper.
+
+    When ``campaign_id`` resolves to a live snapshot, the campaign's earned ``bestiary_intel``
+    (creature_slug -> max tier) is loaded READ-ONLY and threaded into the engine projection so
+    the codex reveals stats per intel tier (#263) — sighted/engaged/slain. With no campaign (or
+    no snapshot / no recorded intel) the surface stays the honest global SRD browse (tier-less
+    preview), so an empty/new game is never a stat dump. The engine stays the projection
+    authority and the sole writer; this only reads the snapshot and passes a dict in.
     """
     engine = _load_engine_server()
     if engine is None:
@@ -683,7 +690,19 @@ def build_bestiary_response(query: str = "", limit: int = 20) -> dict:
             "validation_errors": [],
             "error": f"engine import failed: {_ENGINE_IMPORT_ERROR}",
         }
-    return engine.bestiary.player_bestiary(query, limit)
+    intel: Optional[dict] = None
+    safe = _safe_campaign_id(campaign_id) if campaign_id else ""
+    if safe:
+        snap = _read_snapshot(safe)
+        raw = snap.get("bestiary_intel") if isinstance(snap, dict) else None
+        if isinstance(raw, dict):
+            # Coerce to the {slug: int-tier} shape the engine expects; ignore malformed rows.
+            cleaned: dict[str, int] = {}
+            for slug, tier in raw.items():
+                if isinstance(slug, str) and isinstance(tier, int) and not isinstance(tier, bool):
+                    cleaned[slug] = tier
+            intel = cleaned
+    return engine.bestiary.player_bestiary(query, limit, intel=intel)
 
 
 def _clean_slot(slot: Optional[str]) -> str:
@@ -5392,14 +5411,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/bestiary-surface":
             # Read-only player-safe bestiary/codex projection. No campaign or combat
             # mutation route is exposed here; the engine returns only public preview fields.
+            # The campaign scope (resolved the same way /build-options does) lets the engine
+            # gate the stat reveal by the party's earned intel tier (#263); no campaign keeps
+            # it the honest global preview.
             qs = parse_qs(parsed.query)
             query = (qs.get("q") or qs.get("query") or [""])[0]
+            cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
             raw_limit = (qs.get("limit") or ["20"])[0]
             try:
                 limit = int(raw_limit)
             except (TypeError, ValueError):
                 limit = 20
-            self._json(build_bestiary_response(query, limit))
+            self._json(build_bestiary_response(query, limit, cid))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).

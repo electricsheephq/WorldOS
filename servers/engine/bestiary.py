@@ -32,6 +32,16 @@ _ABILITIES = ("strength", "dexterity", "constitution", "intelligence", "wisdom",
 _ABILITY_SHORTS = ("str", "dex", "con", "int", "wis", "cha")
 _CONTENT_METADATA = ("license", "source", "provenance")
 
+_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def creature_slug(name: str) -> str:
+    """Stable join key for a creature TYPE — IDENTICAL to the viewer's ``creatureSlug``
+    (screen-bestiary.jsx): lowercase, runs of ``[^a-z0-9]+`` collapsed to ``-``, then any
+    leading/trailing ``-`` trimmed. So the engine's intel key and the UI's art-scope key
+    never diverge ("Goblin Warrior" -> "goblin-warrior"). Pure; ``""`` for an empty name."""
+    return _SLUG_NON_ALNUM.sub("-", str(name or "").lower()).strip("-")
+
 
 def _dirs() -> list:
     """Creature-data dirs in PRECEDENCE order: srd524 first (canonical), then any
@@ -240,6 +250,62 @@ def _as_list(value) -> list[str]:
     return [p.strip() for p in str(value).replace(";", ",").split(",") if p.strip()]
 
 
+# Movement / sense modes carried by the srd524 Creature fixture (feet, or None when absent).
+# Order is the conventional stat-block order so a composed display string reads naturally.
+_SPEED_MODES = ("walk", "fly", "swim", "climb", "burrow")
+_SENSE_MODES = (
+    ("darkvision", "darkvision_range"),
+    ("blindsight", "blindsight_range"),
+    ("tremorsense", "tremorsense_range"),
+    ("truesight", "truesight_range"),
+)
+
+
+def _speed_from_srd(f: dict) -> dict[str, int]:
+    """The creature's movement modes from the raw srd524 fields, as ``{mode: feet}`` for
+    every mode actually present (walk/fly/swim/climb/burrow). Empty when none are set —
+    so the UI hides the row rather than print a fake '0 ft'. Pure."""
+    out: dict[str, int] = {}
+    for mode in _SPEED_MODES:
+        val = f.get(mode)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+            out[mode] = int(val)
+    return out
+
+
+def _senses_from_srd(f: dict) -> dict[str, int]:
+    """The creature's special senses + passive Perception from the raw srd524 fields, as
+    ``{sense: range_or_value}`` for every sense present (darkvision/blindsight/tremorsense/
+    truesight ranges in feet + ``passive_perception``). Empty when none are set. Pure."""
+    out: dict[str, int] = {}
+    for label, key in _SENSE_MODES:
+        val = f.get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+            out[label] = int(val)
+    pp = f.get("passive_perception")
+    if isinstance(pp, (int, float)) and not isinstance(pp, bool):
+        out["passive_perception"] = int(pp)
+    return out
+
+
+def _saves_from_srd(f: dict, abilities: dict[str, int]) -> dict[str, int]:
+    """The creature's PROFICIENT saving throws from the raw srd524 fields, as
+    ``{ability_short: total_bonus}``. srd524 stores all six ``saving_throw_*`` as the
+    creature's TOTAL save bonus; a save is proficient (and so worth listing, matching a
+    printed stat block) only when that total EXCEEDS the bare ability modifier. Returns
+    only the proficient ones; empty when the creature has no save proficiencies. Pure."""
+    out: dict[str, int] = {}
+    for short, full in zip(_ABILITY_SHORTS, _ABILITIES):
+        save = f.get(f"saving_throw_{full}")
+        if not isinstance(save, (int, float)) or isinstance(save, bool):
+            continue
+        score = abilities.get(short, 10)
+        ability_mod = (int(score) - 10) // 2
+        if int(save) > ability_mod:
+            out[short] = int(save)
+    return out
+
+
 def authored_validation_errors() -> list[str]:
     """Validation errors for committed/native authored monster packs.
 
@@ -275,6 +341,12 @@ def _stat_block_from_authored(entry: dict, fallback_name: str) -> dict:
         "damage_immunities": _as_list(f.get("damage_immunities")),
         "damage_vulnerabilities": _as_list(f.get("damage_vulnerabilities")),
         "condition_immunities": _as_list(f.get("condition_immunities")),
+        # The authored pack schema does not carry speed/senses/saves yet (see
+        # MONSTER_AUTHORING.md). Default empty so the intel-tier reveal (#263) degrades
+        # gracefully — the UI simply hides the blank rows; no fake "0 ft" / empty save.
+        "speed": {},
+        "senses": {},
+        "saves": {},
         "actions": list(f.get("actions") or []),
         "content_origin": "authored",
         "license": entry["license"],
@@ -323,6 +395,11 @@ def stat_block(name: str) -> Optional[dict]:
         "damage_immunities": _as_list(f.get("damage_immunities")),
         "damage_vulnerabilities": _as_list(f.get("damage_vulnerabilities")),
         "condition_immunities": _as_list(f.get("condition_immunities")),
+        # speed/senses/saves power the intel-tier reveal (#263). Additive keys; existing
+        # callers ignore them. Empty dict when a mode/sense/proficiency is absent.
+        "speed": _speed_from_srd(f),
+        "senses": _senses_from_srd(f),
+        "saves": _saves_from_srd(f, abilities),
         "actions": _actions_by_source_parent().get((entry["src"], row.get("pk")), []),
         "content_origin": "srd",
     }
@@ -373,14 +450,114 @@ def player_bestiary_preview(name: str) -> Optional[dict]:
     return preview
 
 
-def player_bestiary(query: str = "", limit: int = 20) -> dict:
-    """Read-only player-facing bestiary/codex projection."""
+def _tactics_text(sb: dict) -> str:
+    """A short tactics blurb composed from the creature's action TEXT (kill-tier only).
+    Joins the first few actions' name + desc into a paragraph the codex 'Tactics' panel can
+    render. Pure; "" when the creature has no action text."""
+    lines: list[str] = []
+    for a in sb.get("actions", []) or []:
+        name = str(a.get("name", "")).strip()
+        desc = str(a.get("desc", "")).strip()
+        if name and desc:
+            lines.append(f"{name}. {desc}")
+        elif desc:
+            lines.append(desc)
+        if len(lines) >= 4:
+            break
+    return "\n\n".join(lines)
+
+
+def intel_projection(name: str, tier: int) -> Optional[dict]:
+    """Tier-gated player-facing stat reveal for a creature (intel-tier codex, #263).
+
+    The party earns intel per creature TYPE: 1=sighted (CR + size + type), 2=engaged
+    (+ AC + speed + senses), 3=slain (+ HP/HD + ability scores + saves + actions/tactics).
+    Each higher tier strictly SUPERSETS the lower, so the reveal grows monotonically. Pure +
+    read-only over the bestiary index; ``None`` for an unknown creature, ``None`` for tier<=0
+    (an unencountered creature has no stat reveal — the caller renders an 'unknown' row).
+
+    The returned dict always carries ``tier`` so the UI can label the page. speed/senses/saves
+    are passed through as structured dicts (the viewer formats them for display); ac/hp/hit_dice
+    are raw. authored creatures (no speed/senses/saves in their schema) simply omit empty slots,
+    which the hide-when-blank UI drops — never a fake stat block.
+    """
+    t = int(tier)
+    if t <= 0:
+        return None
+    sb = stat_block(name)
+    if sb is None:
+        return None
+    # Tier 1 — sighted: identity + threat rating only (mirrors player_bestiary_preview's
+    # safe surface, minus action names which are a kill-tier reveal here).
+    out: dict = {
+        "name": sb["name"],
+        "size": sb.get("size", ""),
+        "type": sb.get("type", ""),
+        "cr": sb.get("cr", "0"),
+        "content_origin": sb.get("content_origin", "srd"),
+        "tier": t,
+    }
+    if sb.get("content_origin") == "authored":
+        out["source"] = sb["source"]
+        out["license"] = sb["license"]
+        out["provenance"] = sb["provenance"]
+    # Tier 2 — engaged: defenses you'd learn trading blows.
+    if t >= 2:
+        out["ac"] = sb.get("ac")
+        if sb.get("speed"):
+            out["speed"] = dict(sb["speed"])
+        if sb.get("senses"):
+            out["senses"] = dict(sb["senses"])
+    # Tier 3 — slain: the full sheet — vitals, ability scores, proficient saves, actions.
+    if t >= 3:
+        out["hp"] = sb.get("hp")
+        out["hit_dice"] = sb.get("hit_dice", "")
+        if sb.get("abilities"):
+            out["abilities"] = dict(sb["abilities"])
+        if sb.get("saves"):
+            out["saves"] = dict(sb["saves"])
+        out["known_actions"] = [
+            str(a.get("name", "")).strip() for a in sb.get("actions", []) if a.get("name")
+        ][:8]
+        tactics = _tactics_text(sb)
+        if tactics:
+            out["tactics"] = tactics
+    return out
+
+
+def player_bestiary(query: str = "", limit: int = 20, intel: Optional[dict] = None) -> dict:
+    """Read-only player-facing bestiary/codex projection.
+
+    Two modes, selected by ``intel`` (kept PURE — this module never opens a campaign file;
+    the viewer loads the snapshot read-only and passes the dict in):
+
+    * ``intel is None`` (today's call): the global SRD browse — ``player_bestiary_preview``
+      for every match, no campaign scope, no leakage. Back-compat preserved byte-for-byte.
+    * ``intel`` set (a ``{creature_slug: max_tier}`` dict, the campaign's earned intel): the
+      intel-tier codex (#263). Each match's tier is looked up by ``creature_slug(name)``;
+      creatures at tier >= 1 get ``intel_projection`` (progressively more stats per tier),
+      and unencountered matches (tier 0) become an ``{name, tier:0, unknown:true}`` rumour row
+      so the index can show "N known · M rumoured" — the party sees how much is left to learn.
+    """
     n = max(1, min(int(limit), 50))
     names = find(query, n)
-    return {
-        "items": [p for name in names if (p := player_bestiary_preview(name)) is not None],
-        "validation_errors": authored_validation_errors(),
-    }
+    if intel is None:
+        return {
+            "items": [p for name in names if (p := player_bestiary_preview(name)) is not None],
+            "validation_errors": authored_validation_errors(),
+        }
+    items: list[dict] = []
+    for name in names:
+        tier = int(intel.get(creature_slug(name), 0) or 0)
+        if tier >= 1:
+            proj = intel_projection(name, tier)
+            if proj is not None:
+                items.append(proj)
+        else:
+            # Unencountered: a blurred rumour row (name withheld by the UI), so the codex
+            # shows the party there is more to discover without spoiling the stat block.
+            items.append({"name": name, "tier": 0, "unknown": True})
+    return {"items": items, "validation_errors": authored_validation_errors()}
 
 
 def _entry_name(entry: dict) -> str:

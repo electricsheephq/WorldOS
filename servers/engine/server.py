@@ -1653,6 +1653,19 @@ _SHORT_TO_FULL_AB = {
 }
 
 
+def _bump_intel(c: Campaign, slug: str, tier: int) -> None:
+    """Record the party's bestiary intel for a creature TYPE at a monotonic max (#263).
+
+    ``slug`` is the canonical bestiary slug (bestiary.creature_slug); ``tier`` is 1=sighted,
+    2=engaged, 3=slain. No-op for an empty slug (a non-bestiary monster), so today's behavior
+    is unchanged. ``max()`` keeps the tier non-regressing — a kill (3) past an earlier sighting
+    (1) lands at 3, and a higher tier already recorded is never lowered. The caller already
+    holds ``campaign_lock`` and persists via ``save_campaign`` (sole-writer respected)."""
+    if not slug:
+        return
+    c.bestiary_intel[slug] = max(c.bestiary_intel.get(slug, 0), int(tier))
+
+
 @mcp.tool()
 def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     """Spawn combat-ready monster(s) from the bundled SRD bestiary by name.
@@ -1679,6 +1692,7 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
     actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
     summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
+    slug = bestiary.creature_slug(sb["name"])  # stable intel/art join key for this TYPE
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         spawned = []
@@ -1701,9 +1715,13 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
                 parry=bestiary.parry_bonus(sb),
                 notes=summary,
                 xp_value=sb["xp"],
+                creature_slug=slug,
             )
             c.characters[ch.id] = ch
             spawned.append({"id": ch.id, "name": ch.name})
+        # Tier 1 — sighted: spawning puts the creature on the table; the party has laid
+        # eyes on it. Bumped once for the type (monotonic max).
+        _bump_intel(c, slug, 1)
         save_campaign(c)
     return {
         "spawned": spawned,
@@ -1750,6 +1768,7 @@ def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) 
     scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
     actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
     summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
+    slug = bestiary.creature_slug(sb["name"])  # stable intel/art join key for this TYPE
     spawned: list[dict] = []
     for i in range(n):
         label = f"{sb['name']} {i + 1}" if n > 1 else sb["name"]
@@ -1770,9 +1789,13 @@ def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) 
             notes=summary,
             xp_value=sb["xp"],
             location_id=location_id,
+            creature_slug=slug,
         )
         c.characters[ch.id] = ch
         spawned.append({"id": ch.id, "name": ch.name})
+    # Tier 1 — sighted: a wandering encounter erupting into the scene = the party sees it.
+    # Caller holds the lock + saves (sole-writer).
+    _bump_intel(c, slug, 1)
     return spawned
 
 
@@ -2566,6 +2589,12 @@ def start_combat(
             turn_index=0,
             order=[Combatant(character_id=o[0], initiative=o[1]) for _, o in indexed],
         )
+        # Tier 2 — engaged: the party has joined battle with each monster type in the fight.
+        # Bumped per combatant that is a bestiary monster (has a creature_slug); monotonic max.
+        for cid in combatant_ids:
+            ch = c.characters.get(cid)
+            if ch is not None and getattr(ch, "kind", "") == "monster":
+                _bump_intel(c, getattr(ch, "creature_slug", ""), 2)
         save_campaign(c)
         view = _combat_view(c)
         # Surface the surprise edge in the runtime view so the DM resolves the opener
@@ -3939,6 +3968,13 @@ def _award_kill_xp(c, monster) -> "dict | None":
     (robust to DM sequencing — see end_combat). Idempotent: zeroes xp_value, so a
     re-call (or end_combat's backstop sweep) never double-awards. No-op outside 'xp'
     leveling mode, for non-monsters, the living, or zero-value foes."""
+    # Tier 3 — slain: record bestiary intel the MOMENT a bestiary monster dies (#263).
+    # Placed BEFORE the xp-mode/xp-value gates so a kill is recorded in EVERY leveling mode
+    # and through every death path that reaches this hook (set_hp / attack / apply_damage /
+    # end_combat's backstop sweep). Idempotent via _bump_intel's monotonic max — a re-call
+    # never regresses. No-op for non-monsters, the living, or a monster with no creature_slug.
+    if getattr(monster, "kind", "") == "monster" and monster.dead:
+        _bump_intel(c, getattr(monster, "creature_slug", ""), 3)
     if c.leveling_mode != "xp":
         return None
     if getattr(monster, "kind", "") != "monster" or not monster.dead or monster.xp_value <= 0:

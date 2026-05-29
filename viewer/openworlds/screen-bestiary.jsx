@@ -18,17 +18,58 @@ function creatureSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-// Map one live /bestiary-surface item (player_bestiary_preview shape:
-// { name, size, type, cr, content_origin, known_actions[], source?, license?, provenance? })
-// onto the codex entry shape this screen renders. Fields the player-safe preview does NOT
-// expose (stats / hd / ac / body / tactics / loot) are simply absent, so BestiaryEntry hides
-// them — never a fake stat block.
+// Compose the engine's structured speed/senses/saves dicts into the short display strings the
+// StatLine grid renders. Each returns "" when the dict is empty/absent, so the hide-when-blank
+// grid drops the row (never a naked "Speed:" label or a fake "0 ft"). These mirror the SRD
+// stat-block phrasing (e.g. "30 ft, fly 60 ft" · "darkvision 60 ft, passive Perception 9").
+const _SPEED_ORDER = ["walk", "fly", "swim", "climb", "burrow"];
+const _SENSE_LABELS = { darkvision: "darkvision", blindsight: "blindsight", tremorsense: "tremorsense", truesight: "truesight" };
+function fmtSpeed(speed) {
+  if (!speed || typeof speed !== "object") return "";
+  const parts = [];
+  _SPEED_ORDER.forEach((mode) => {
+    const ft = speed[mode];
+    if (typeof ft === "number" && ft > 0) parts.push(mode === "walk" ? `${ft} ft` : `${mode} ${ft} ft`);
+  });
+  return parts.join(", ");
+}
+function fmtSenses(senses) {
+  if (!senses || typeof senses !== "object") return "";
+  const parts = [];
+  Object.keys(_SENSE_LABELS).forEach((k) => {
+    const v = senses[k];
+    if (typeof v === "number" && v > 0) parts.push(`${_SENSE_LABELS[k]} ${v} ft`);
+  });
+  if (typeof senses.passive_perception === "number") parts.push(`passive Perception ${senses.passive_perception}`);
+  return parts.join(", ");
+}
+function fmtSaves(saves) {
+  if (!saves || typeof saves !== "object") return "";
+  return ["str", "dex", "con", "int", "wis", "cha"]
+    .filter((k) => typeof saves[k] === "number")
+    .map((k) => `${k.toUpperCase()} ${saves[k] >= 0 ? "+" : ""}${saves[k]}`)
+    .join(", ");
+}
+
+// Map one live /bestiary-surface item onto the codex entry shape this screen renders.
+//
+// The surface is intel-tiered (#263): an item carries a `tier` (1=sighted, 2=engaged, 3=slain)
+// and only the fields earned at that tier — tier 1: identity + CR; tier 2: + ac/speed/senses;
+// tier 3: + hp/hit_dice/abilities/saves/known_actions/tactics. A tier-0 (unencountered) item
+// is `{name, tier:0, unknown:true}` → rendered as a blurred "?????" rumour row. Because the
+// server omits fields below the earned tier, the hide-when-blank slots in BestiaryEntry do the
+// gating for free — each stat line only appears once its value is truly present. The old
+// preview shape (no `tier`) still maps cleanly: absent stats stay hidden.
 function liveBestiaryEntry(item) {
   const name = String(item?.name || "").trim();
   const size = String(item?.size || "").trim();
   const type = String(item?.type || "").trim();
   const descriptor = [size, type].filter(Boolean).join(" · ");
   const cslug = creatureSlug(name);
+  const tier = (typeof item?.tier === "number") ? item.tier : null;
+  const unknown = item?.unknown === true || tier === 0;
+  // Intel eyebrow so the player sees how much they've learned (only when tiered).
+  const tierLabel = tier === 1 ? "Sighted" : tier === 2 ? "Engaged" : tier === 3 ? "Slain" : "";
   return {
     id: "live:" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || Math.random().toString(36).slice(2)),
     name: name || "Unknown",
@@ -40,7 +81,19 @@ function liveBestiaryEntry(item) {
     size,
     kind: type,
     alignment: "",            // preview is player-safe — no alignment leaked; eyebrow shows size·kind
+    unknown,
+    tier,
+    tierLabel,
     cr: (item?.cr !== undefined && item?.cr !== null && String(item.cr) !== "") ? String(item.cr) : "",
+    // Tier-gated stat slots (BestiaryEntry hides any that come back blank).
+    ac: (typeof item?.ac === "number") ? String(item.ac) : "",
+    hd: item?.hit_dice ? String(item.hit_dice) : "",
+    speed: fmtSpeed(item?.speed),
+    senses: fmtSenses(item?.senses),
+    save: fmtSaves(item?.saves),
+    // The 6-ability grid (tier 3 only); absent at lower tiers so the grid stays hidden.
+    stats: (item?.abilities && typeof item.abilities === "object") ? item.abilities : undefined,
+    tactics: item?.tactics ? String(item.tactics) : "",
     knownActions: Array.isArray(item?.known_actions) ? item.known_actions.filter((a) => String(a).trim()) : [],
     contentOrigin: String(item?.content_origin || "srd"),
     source: item?.source ? String(item.source) : "",
@@ -245,6 +298,15 @@ function BestiaryEntry({ entry, tab }) {
           </div>
           <h1 className="h1" style={{ marginTop: 2 }}>{entry.name}</h1>
           {entry.subtitle && <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{entry.subtitle}</div>}
+          {/* Intel-tier chip (#263): the party's standing knowledge of this foe —
+              Sighted / Engaged / Slain. Shown only when the surface is campaign-scoped. */}
+          {tab === "creatures" && entry.tierLabel && (
+            <span className="pill" style={{
+              marginTop: 6, display: "inline-block",
+              background: "rgba(176,141,87,0.18)", boxShadow: "inset 0 0 0 1px var(--b-500)",
+              fontSize: 11, letterSpacing: "0.08em",
+            }}>{entry.tierLabel}</span>
+          )}
 
           <Divider />
 
