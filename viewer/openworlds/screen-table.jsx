@@ -79,7 +79,7 @@ const ACTION_HINTS = {
 const DICE_HINT = (sides) => `Roll a d${sides} — ask the Dungeon Master to resolve a d${sides} check.`;
 const DECLARE_HINT = "Type what your hero does in your own words, then Declare to take the turn.";
 
-function ScreenTable({ onNavigate, state, setState }) {
+function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
     campaigns.find((c) => c.id === state?.activeCampaign) ||
@@ -90,18 +90,15 @@ function ScreenTable({ onNavigate, state, setState }) {
   const [advisory, setAdvisory] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const demoLog = [];
-  const [log, setLog] = React.useState([]);
-  const [chatBeats, setChatBeats] = React.useState([]);
-  const chatCursor = React.useRef(0);
   const [input, setInput] = React.useState("");
-  // #327: a visible "DM is narrating…" affordance. The unchanged DM's opening / resolving turn
-  // can take many minutes; without this the play loop reads as frozen the moment a move is sent.
-  // `pending` holds the submitted line + when it was sent; it is set the instant /move succeeds
-  // and cleared when a NEW DM narration beat lands via /chat (tracked by dmBeatCount below) — or
-  // by a long safety timeout so a dropped beat can never wedge the bar shut forever.
-  const [pending, setPending] = React.useState(null);
-  const dmBeatCountRef = React.useRef(0);
-  const pendingTimer = React.useRef(null);
+  // #340: the in-flight-turn state (the /chat tail + accumulated beats, the local player echo, and
+  // the "DM is narrating…" pending indicator) is owned by the APP (useLiveSession) so it survives
+  // screen navigation — a DM beat that lands while the player is on another screen still gets
+  // ingested, and the narrating state clears on the turn that actually resolved it. ScreenTable
+  // reads/writes that lifted state through the `liveSession` prop. A no-op fallback keeps the
+  // screen renderable in isolation (e.g. a direct deep-link before the hook has bound a campaign).
+  const session = liveSession || { chatBeats: [], log: [], pending: null, armPending: () => {}, clearPending: () => {}, recordPlayerEcho: () => {} };
+  const { chatBeats, log, pending } = session;
   const logRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const toast = window.useToast ? window.useToast() : (() => {});
@@ -158,42 +155,11 @@ function ScreenTable({ onNavigate, state, setState }) {
         if (!isCancelled()) setAdvisory(advPayload?.directorAdvisory || null);
       }
     } catch (error) { /* advisory is non-critical; keep last good */ }
-    // Live DM narration (#242 EPIC C): tail /chat so the player sees the DM's prose beats +
-    // their own lines during a LIVE session — not just engine recentEvents. Best-effort;
-    // empty/no-op when no chat is configured (read-only view). Mirrors dashboard.html's poll.
-    try {
-      const cParams = new URLSearchParams(params);
-      cParams.set("since", String(chatCursor.current));
-      const cResp = await fetch(`/chat?${cParams.toString()}`, { cache: "no-store" });
-      if (cResp.ok) {
-        const cPayload = await cResp.json();
-        const items = Array.isArray(cPayload.items) ? cPayload.items : [];
-        if (!isCancelled() && items.length) {
-          // #335: player dialog passes through untouched; DM narration is run through
-          // sanitizeNarration so a GM-advisory directive / bare engine-tool line that
-          // bled into the /chat stream never reaches the player's chronicle. A beat that
-          // sanitizes to empty (it was *entirely* internal) is dropped.
-          const beats = items
-            .map((it) => {
-              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text };
-              const clean = sanitizeNarration(it.text);
-              return clean ? { kind: "narration", text: clean } : null;
-            })
-            .filter(Boolean);
-          if (beats.length) setChatBeats((prev) => [...prev, ...beats]);
-          // #327: a fresh DM narration beat means the turn resolved — clear the pending indicator
-          // so the action bar re-opens and the spinner stops. (Player echoes don't count; and a
-          // beat that was wholly internal advisory — now dropped — must not count either, else a
-          // leak-only turn would silently re-open the bar with no visible narration. #335)
-          const dmArrived = beats.some((b) => b.kind === "narration");
-          if (dmArrived) {
-            dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
-            setPending(null);
-          }
-        }
-        if (!isCancelled() && typeof cPayload.next === "number") chatCursor.current = cPayload.next;
-      }
-    } catch (error) { /* chat tail is non-critical; keep last good */ }
+    // NOTE (#340): the live DM-narration /chat tail used to be polled HERE, but it's now owned by
+    // the app-level useLiveSession hook (app.jsx) so a beat that lands while the player is on
+    // another screen still gets ingested and the narrating indicator clears correctly. ScreenTable
+    // only loads its own surface + advisory; the chronicle's chat beats arrive via the `liveSession`
+    // prop. (Engine stays sole writer — this is purely where the read-poll lives.)
   }, [campaignId, activeCampaign.source, activeCampaign.runId]);
 
   React.useEffect(() => {
@@ -241,34 +207,51 @@ function ScreenTable({ onNavigate, state, setState }) {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [visibleLog]);
 
-  // #327: arm the "DM is narrating…" pending state when a move is accepted, and a safety
-  // auto-clear so a missed /chat beat can't lock the bar forever (the DM turn is long but
-  // bounded). The /chat poll clears `pending` the instant a new DM narration beat arrives.
-  const armPending = (text) => {
-    setPending({ text, since: Date.now() });
-    if (pendingTimer.current) window.clearTimeout(pendingTimer.current);
-    pendingTimer.current = window.setTimeout(() => setPending(null), 12 * 60 * 1000);
-  };
-  React.useEffect(() => () => { if (pendingTimer.current) window.clearTimeout(pendingTimer.current); }, []);
+  // #340 + #342: arming / clearing the "DM is narrating…" pending state now lives in the app-level
+  // useLiveSession hook (so it survives navigation, and carries the 90s recovery + 12-min backstop).
+  // ScreenTable just calls into it. `pendingActive` is the gate for the action bar — a turn that the
+  // recovery timeout flagged `stuck` is NO LONGER pending (the bar re-opens so the player can retry).
+  const armPending = session.armPending;
+  const recordPlayerEcho = session.recordPlayerEcho;
+  const pendingActive = Boolean(pending && !pending.stuck);
+  const pendingStuck = Boolean(pending && pending.stuck);
+
+  // #342: surface the recovery exactly once when a turn goes `stuck` so the player knows the bar
+  // re-opened on purpose (the DM stalled) rather than silently.
+  const stuckNotified = React.useRef(false);
+  React.useEffect(() => {
+    if (pendingStuck && !stuckNotified.current) {
+      stuckNotified.current = true;
+      toast({ kind: "danger", title: "The Dungeon Master seems stuck", body: "No reply came back in time — your input is re-enabled. Try again or rephrase." });
+    }
+    if (!pending) stuckNotified.current = false;
+  }, [pendingStuck, pending, toast]);
 
   const postMove = async (move, label, actionId) => {
     const enabledAction = actionId ? enabledActionById(actionId) : null;
-    if (!move || !canAct || pending || (actionId && !enabledAction)) {
-      toast({ kind: "danger", title: "Action unavailable", body: pending ? "The Dungeon Master is still narrating — one move at a time." : readOnlyReason });
+    if (!move || !canAct || pendingActive || (actionId && !enabledAction)) {
+      toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : readOnlyReason });
       return;
     }
-    const text = label || move.text || move.name || "declares an action";
+    // #342: neutralize any markup in a free-text move (kind "do"/"say"/etc. carry the player's words
+    // in move.text) BEFORE it is sent to the engine OR echoed — so an injection-y turn can't choke
+    // the DM or ride along in the chronicle as raw markup. Structured moves (no free text) pass through.
+    const cleanMove = (typeof move.text === "string" && move.text)
+      ? { ...move, text: window.neutralizeMarkup(move.text) }
+      : move;
+    const rawLabel = label || cleanMove.text || cleanMove.name || "declares an action";
+    const text = window.neutralizeMarkup(String(rawLabel)) || "declares an action";
     try {
       const response = await fetch(writeLane.endpoint || "/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...move, campaign: surface?.campaign_id || campaignId }),
+        body: JSON.stringify({ ...cleanMove, campaign: surface?.campaign_id || campaignId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.reason || `move ${response.status}`);
       }
-      setLog((l) => [...l, { kind: "action", who: hero.name, text }]);
+      recordPlayerEcho(hero.name, text);
       armPending(text);
       loadSurface();
     } catch (error) {
@@ -277,7 +260,7 @@ function ScreenTable({ onNavigate, state, setState }) {
   };
 
   const sendAction = async () => {
-    if (pending) return;
+    if (pendingActive) return;
     const text = input.trim();
     if (!text) return;
     const action = actionById("do");
@@ -299,7 +282,7 @@ function ScreenTable({ onNavigate, state, setState }) {
   };
 
   const invokeAction = (action) => {
-    if (pending) {
+    if (pendingActive) {
       toast({ kind: "danger", title: "Action unavailable", body: "The Dungeon Master is still narrating — one move at a time." });
       return;
     }
@@ -396,7 +379,8 @@ function ScreenTable({ onNavigate, state, setState }) {
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}
-            {pending && <DmNarratingBeat since={pending.since} />}
+            {pendingActive && <DmNarratingBeat since={pending.since} />}
+            {pendingStuck && <DmStuckBeat />}
           </div>
 
           {/* Action bar */}
@@ -408,10 +392,10 @@ function ScreenTable({ onNavigate, state, setState }) {
               </strong>
               <div style={{ flex: 1 }} />
               {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
-              <button onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              <button onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
@@ -423,12 +407,12 @@ function ScreenTable({ onNavigate, state, setState }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendAction()}
-                disabled={Boolean(pending)}
+                disabled={pendingActive}
                 title={DECLARE_HINT}
-                placeholder={pending ? "The Dungeon Master is narrating…" : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
-                style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pending ? 0.6 : 1 }}
+                placeholder={pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
+                style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={sendAction} title={DECLARE_HINT} disabled={!actionById("do")?.available || Boolean(pending)}>{pending ? "Narrating…" : "Declare"}</BrassButton>
+              <BrassButton onClick={sendAction} title={DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -513,7 +497,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 detail={a.available ? a.groupLabel : a.disabled_reason}
                 hint={ACTION_HINTS[a.id]}
                 tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
-                disabled={!a.available || Boolean(pending)}
+                disabled={!a.available || pendingActive}
                 onClick={() => invokeAction(a)}
               />
             ))}
@@ -724,12 +708,19 @@ function DmNarratingBeat({ since }) {
 // so a tiny self-contained <style> keeps this affordance from needing a styles.css round-trip).
 // A subtle shimmer on the label adds motion beyond the dots; both are stilled under reduced-motion
 // (the global [data-reduced-motion='on'] *  rule covers it, and we belt-and-suspenders it here).
+//
+// #341: the pulse is OPACITY-ONLY (no `transform: scale`). The old scale animation changed each
+// dot's bounding box every frame, which kept the chronicle in perpetual layout motion while the
+// "narrating" beat was on screen — that is exactly the kind of never-settles churn an automated /
+// assistive consumer's "is this element stable yet?" actionability wait can trip on, contributing
+// to nav clicks appearing to "time out" during a long narration. Opacity doesn't affect layout, so
+// the page is geometrically still while still reading as "the world is thinking".
 (function ensureDmNarrateStyle() {
   if (typeof document === "undefined" || document.getElementById("dm-narrate-style")) return;
   const el = document.createElement("style");
   el.id = "dm-narrate-style";
   el.textContent =
-    "@keyframes dmNarratePulse{0%,80%,100%{opacity:0.25;transform:scale(0.8)}40%{opacity:1;transform:scale(1)}}" +
+    "@keyframes dmNarratePulse{0%,80%,100%{opacity:0.25}40%{opacity:1}}" +
     "@keyframes dmNarrateShimmer{0%,100%{opacity:0.6}50%{opacity:1}}" +
     ".dm-narrating-label{animation:dmNarrateShimmer 1800ms ease-in-out infinite}" +
     "html[data-reduced-motion='on'] .dm-narrating-dots span,html[data-reduced-motion='on'] .dm-narrating-label{animation:none!important}" +
@@ -738,7 +729,24 @@ function DmNarratingBeat({ since }) {
   document.head.appendChild(el);
 })();
 
-Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarratingBeat });
+// #342: the recovery beat shown when a turn went `stuck` (the DM didn't reply within the 90s
+// recovery window). It replaces the live "narrating…" beat, re-enables the bar, and tells the
+// player the wait was abandoned on purpose so the session can advance instead of freezing.
+function DmStuckBeat() {
+  return (
+    <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.95 }}>
+      <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
+      <div className="body" style={{ flex: 1 }}>
+        <span className="eyebrow" style={{ color: "var(--crimson)" }}>The Dungeon Master seems stuck</span>
+        <div className="hand muted" style={{ fontSize: 13, marginTop: 4 }}>
+          No reply came back in time. Your input is open again — try your action once more, or rephrase it.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarratingBeat, DmStuckBeat, sanitizeNarration });
 
 function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)
