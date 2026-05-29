@@ -517,7 +517,10 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
             <path d="M-5.5 0 L0 -.7 L5.5 0 L0 .7 Z" fill="rgba(60,30,10,0.7)" />
             <text y="-7" textAnchor="middle" fontFamily="Cinzel" fontSize="2" fill="rgba(60,30,10,0.9)">N</text>
           </g>
-          <text x="50" y="12" textAnchor="middle" fontFamily="Cinzel" fontSize="5" fill="rgba(60,30,10,0.24)" letterSpacing="1.5">OPEN WORLDS ATLAS</text>
+          {/* Atlas watermark — moved out of the top node band (it crowded the northern pins)
+              into a dim bottom-left cartouche opposite the compass rose, smaller + fainter so
+              it reads as map furniture, never competing with location labels (M-03). */}
+          <text x="11" y="95" textAnchor="start" fontFamily="Cinzel" fontSize="3" fill="rgba(60,30,10,0.13)" letterSpacing="1.2">OPEN WORLDS ATLAS</text>
         </svg>
 
         <div style={{
@@ -539,6 +542,9 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
             <button
               key={loc.id}
               onClick={() => onSelect(loc.id)}
+              title={loc.name}
+              aria-label={loc.current ? `${loc.name} (current location)` : loc.name}
+              aria-pressed={selected?.id === loc.id}
               style={{
                 position: "absolute",
                 left: `${p.x}%`,
@@ -561,11 +567,11 @@ function AtlasMap({ locations, edges, selected, currentId, region, time, onSelec
         {locations.length > 0 && (
           <div style={{ position: "absolute", right: 8, top: 8, display: "flex", flexDirection: "column", gap: 4, zIndex: 4 }}>
             <button onClick={() => setView((v) => { const s = Math.min(ZOOM_MAX, v.scale * 1.3); return s === 1 ? { scale: 1, tx: 0, ty: 0 } : { ...v, scale: s }; })}
-              title="Zoom in" style={atlasZoomBtn}>+</button>
+              title="Zoom in" aria-label="Zoom in" style={atlasZoomBtn}>+</button>
             <button onClick={() => setView((v) => { const s = Math.max(ZOOM_MIN, v.scale / 1.3); return s === 1 ? { scale: 1, tx: 0, ty: 0 } : { ...clampPan(v.tx, v.ty, s), scale: s }; })}
-              title="Zoom out" style={atlasZoomBtn}>−</button>
+              title="Zoom out" aria-label="Zoom out" style={atlasZoomBtn}>−</button>
             {zoomed && (
-              <button onClick={() => setView({ scale: 1, tx: 0, ty: 0 })} title="Fit the whole map"
+              <button onClick={() => setView({ scale: 1, tx: 0, ty: 0 })} title="Fit the whole map" aria-label="Fit the whole map"
                 style={{ ...atlasZoomBtn, fontSize: 8, letterSpacing: "0.08em" }}>FIT</button>
             )}
           </div>

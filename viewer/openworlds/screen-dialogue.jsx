@@ -8,6 +8,20 @@
 
 const DIFFICULTY_OPTIONS = ["easy", "medium", "hard"];
 
+/* Build the /image scope for the parley actor's portrait — derive from the NAME slug, NOT the
+   instance id, matching the character/combat/inventory/relations portraitScope fix on main.
+   `surface.actor_id` is an opaque engine hash ("char_7d98224877ec") that only resolves via the
+   server's _portrait_by_name bridge; slug(name) is the stable key the ingested canon art is
+   actually filed under ("portrait-dal-lightspark"). Falls back to the actor_id scope (still
+   bridged), then the scene's anchor NPC, then a graceful silhouette via <Img>'s onError. */
+function parleyPortraitScope(surface, actorName) {
+  const s = (actorName && window.slug) ? window.slug(actorName) : "";
+  if (s) return "portrait-" + s;
+  if (surface && surface.actor_id) return "portrait-" + surface.actor_id;
+  if (surface && surface.event && surface.event.anchor_npc_id) return "portrait-" + surface.event.anchor_npc_id;
+  return "";
+}
+
 function ScreenDialogue({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -100,7 +114,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
     setHistory((h) => [...h, { skill: slot.label, dc: slot.suggested_dc, mod: slot.modifier }]);
     if (!canAct) {
-      toast({ kind: "danger", eyebrow: "Parley", title: "Read-only", body: "This view can't land moves. The DM voices the chosen approach." });
+      toast({ kind: "danger", eyebrow: "Parley", title: "Preview — no live DM", body: "Open a chronicle from Chronicles to converse; then the DM voices and adjudicates the approach you pick." });
       return;
     }
     fetch("/move", {
@@ -115,7 +129,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
   const freeForm = () => {
     if (!canAct) {
-      toast({ kind: "danger", eyebrow: "Parley", title: "Read-only", body: "The DM voices the free-form path." });
+      toast({ kind: "danger", eyebrow: "Parley", title: "Preview — no live DM", body: "Open a chronicle from Chronicles to converse; the DM voices the free-form path at the table." });
       return;
     }
     fetch("/move", {
@@ -190,7 +204,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
             {/* Actor portrait (left) */}
             <div style={{ padding: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRight: "1px solid rgba(140,100,60,0.35)" }}>
-              <Img scope={surface.actor_id ? "portrait-" + surface.actor_id : (surface.event?.anchor_npc_id ? "portrait-" + surface.event.anchor_npc_id : "")} label={actorName} w={120} h={150} framed />
+              <Img scope={parleyPortraitScope(surface, actorName)} label={actorName} w={120} h={150} framed />
               <div style={{ marginTop: 8, fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)", textAlign: "center" }}>
                 {actorName}
               </div>

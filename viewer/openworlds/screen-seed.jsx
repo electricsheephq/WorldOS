@@ -46,6 +46,32 @@ function seedLabel(key, value) {
   return opt ? opt.label : (value == null ? "" : String(value));
 }
 
+// The engine reports `identity.by` as the WORLD id slug ("baldurs-gate"). Raw, it reads as a
+// bug ("By baldurs-gate"); humanise the slug to Title Case ("Baldur's Gate") for the StatLine.
+// Anything that isn't a bare slug (already-spaced, or the "the chronicle" fallback) passes through.
+window.seedBy = function seedBy(by) {
+  const v = (by || "").trim();
+  if (!v) return "the chronicle";
+  if (/\s/.test(v)) return v; // already a human phrase
+  return v.split(/[-_]+/).filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ")
+    .replace(/\bBaldurs\b/, "Baldur's"); // restore the apostrophe the slug dropped
+};
+
+// One-line register descriptor for the Quickening, derived from the live `tone` param so the
+// prose matches the seed instead of asserting a fixed "heroic" register. Falls back to a
+// neutral phrasing for an unknown/absent tone.
+const SEED_REGISTER = {
+  Heroic: "a heroic register — players are who they say they are",
+  Grim: "a grim register — successes are uncomfortable, and most are",
+  Picaresque: "a picaresque register — the party will lie, and the chronicle will pretend not to notice",
+  Mythic: "a mythic register — the land is older than the law, and is winning",
+};
+window.seedRegister = function seedRegister(tone) {
+  return SEED_REGISTER[tone] || "the register its seed was sown with";
+};
+
 function ScreenSeed({ onNavigate, state, setState }) {
   const activeCampaign =
     (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
@@ -163,7 +189,10 @@ function ScreenSeed({ onNavigate, state, setState }) {
 
         <Divider />
 
-        {/* Quote / seed identity */}
+        {/* Seed epigraph — an on-theme, world-neutral inscription about the act of chronicling
+            (the screen's own subject), not a setting-specific line that would contradict whatever
+            world is loaded. The previous "border marches / post-road" couplet read as a demo leak
+            on a Baldur's Gate seed. */}
         <div style={{
           padding: 20,
           background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
@@ -173,30 +202,49 @@ function ScreenSeed({ onNavigate, state, setState }) {
         }}>
           <div style={{ position: "absolute", top: 6, left: 8, fontSize: 28, color: "var(--crimson-bright)", fontFamily: "var(--f-display)", lineHeight: 1 }}>"</div>
           <div className="body" style={{ fontSize: 17, fontStyle: "italic", lineHeight: 1.55, paddingLeft: 22, color: "var(--p-100)" }}>
-            The marches do not respect a single law. Travel by post-road if you must travel by anything.
+            A world is sown once and remembered ever after. Set its first conditions with care; the chronicle will hold you to them.
           </div>
           <div className="hand" style={{ marginTop: 8, paddingLeft: 22, fontSize: 13, color: "var(--gold-glow)" }}>
-            — found in a border coachman's pocket, undated
+            — the first leaf of every chronicle
           </div>
         </div>
 
         <Divider />
 
         <SectionTitle ordinal="·">The Quickening</SectionTitle>
+        {/* The register line reflects the LIVE tone param (heroic/grim/…) rather than asserting
+            a fixed register the seed may not carry. */}
         <div className="body" style={{ fontSize: 15 }}>
           <p>
-            This chronicle is sown for a heroic register in the tradition of frontier baronies and the contested marches. The reading voice is communal — we, when we walked; we, when we found. Decisions are remembered. Failure is rarely permanent but always written down. Salt and silence have meanings the rules will not state.
+            This chronicle is sown for {window.seedRegister(params.tone)}. The reading voice is communal — we, when we walked; we, when we found. Decisions are remembered. Failure is rarely permanent but always written down. Salt and silence have meanings the rules will not state.
           </p>
         </div>
 
+        {/* The engine's `era` directive is the chronicle's living chronology — long-form prose,
+            so it gets its own readable block (NOT a cramped single-line StatLine, which mangled
+            a 400-char directive into an unreadable column). Shown verbatim from the live seed. */}
+        {present && identity.era && (
+          <div style={{
+            marginTop: 12, padding: "12px 14px",
+            background: "rgba(176,141,87,0.06)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.2)",
+          }}>
+            <div className="eyebrow" style={{ fontSize: 9, color: "var(--b-700)", marginBottom: 6 }}>Chronology</div>
+            <p className="body" style={{ fontSize: 14, lineHeight: 1.55, color: "var(--ink-700)", whiteSpace: "pre-line", margin: 0 }}>
+              {identity.era}
+            </p>
+          </div>
+        )}
+
         <Divider />
 
-        {/* De-faked seed identity (S-03) — every value is a real campaign field. */}
+        {/* De-faked seed identity (S-03) — every value is a real campaign field. The long-form
+            `era` directive lives in its own Chronology block above; only genuinely short facts
+            sit in this two-column grid so neither column overflows. */}
         {present && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {identity.seeded ? <StatLine k="Seeded" v={identity.seeded} /> : null}
-            <StatLine k="By" v={identity.by || "the chronicle"} />
-            {identity.era ? <StatLine k="Chronology" v={identity.era} /> : null}
+            <StatLine k="By" v={window.seedBy(identity.by)} />
             {identity.pattern ? <StatLine k="Pattern" v={identity.pattern} /> : null}
             {identity.engine ? <StatLine k="Engine" v={identity.engine} /> : null}
             {identity.ending ? <StatLine k="Ending" v={identity.ending} /> : null}
