@@ -75,7 +75,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parents[1]
-_UA = "ClawDnD-image-ingest/0.1 (private, non-commercial fan project; MediaWiki API)"
+_UA = "WorldOS-image-ingest/0.1 (private, non-commercial fan project; MediaWiki API)"
 
 # Descriptor filename written under the scope dir (single file per scope —
 # the viewer's _latest_descriptor picks newest *.json so this is stable).

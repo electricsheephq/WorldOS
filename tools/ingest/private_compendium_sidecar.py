@@ -3,7 +3,7 @@
 
 This is local-only ingest scaffolding for user-owned books, adventures, exports, or
 homebrew. It validates a sidecar manifest kept outside the git checkout and prints
-the private, gitignored ClawDnD outputs a later importer would write. It does not
+the private, gitignored WorldOS outputs a later importer would write. It does not
 copy records, mutate campaign state, or write tracked content.
 """
 

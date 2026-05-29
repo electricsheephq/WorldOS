@@ -3,7 +3,7 @@
 Offline content tooling (NOT an MCP tool, NOT imported by the engine; **stdlib only** —
 urllib + json). Pulls a curated, bounded slice of online wikis into a world seed: **lore**
 pages (so the DM can `lookup_lore` deep canon) and **character** records (clean JSON NPC
-profiles ClawDnD can later load as world NPCs). Two Stage-2 converters share one fetcher.
+profiles WorldOS can later load as world NPCs). Two Stage-2 converters share one fetcher.
 
 ## The fetcher (`wiki_fetch.py`)
 
@@ -140,7 +140,7 @@ Sources differ — record the license **per source**:
   CC BY-NC-SA 4.0**; older revisions are **CC BY-NC-SA 4.0 (NonCommercial) only**. Also subject
   to Larian's and Wizards' Fan Content Policies. (Verified at
   `https://bg3.wiki/wiki/bg3wiki:Copyrights`; the API `rightsinfo` reports
-  `"CC BY-NC-SA 4.0 or CC BY-SA 4.0"`.) ClawDnD is a non-commercial fan project, so both
+  `"CC BY-NC-SA 4.0 or CC BY-SA 4.0"`.) WorldOS is a non-commercial fan project, so both
   options are satisfied; we attribute with a back-link per the wiki's stated requirement and
   carry the NonCommercial caveat in the per-source `license` string.
 

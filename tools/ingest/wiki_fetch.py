@@ -35,7 +35,7 @@ import urllib.request
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_UA = "ClawDnD-lore-ingest/0.1 (private, non-commercial fan project; MediaWiki API)"
+_UA = "WorldOS-lore-ingest/0.1 (private, non-commercial fan project; MediaWiki API)"
 
 
 def _cache_dir(world_id: str) -> Path:
