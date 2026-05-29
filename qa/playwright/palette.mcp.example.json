@@ -6,7 +6,7 @@
       "args": ["qa/playwright/palette_server.js"],
       "env": {
         "CLAWDND_UIPT_URL": "http://127.0.0.1:8993/openworlds/",
-        "CLAWDND_UIPT_RUNDIR": "qa/ui_playtest_runs/play1/player",
+        "CLAWDND_UIPT_RUNDIR": "qa/ui_playtest_runs/play1",
         "CLAWDND_UIPT_CHANNEL": "",
         "CLAWDND_UIPT_PERSONA": "newbie"
       }
