@@ -31,7 +31,10 @@ function classScope(id) {
 // silhouette via <Img> (the scope matches /portrait/ so it shows a face silhouette, not a
 // crest). "Bring your own — drop a PNG" remains a future affordance.
 const PORTRAIT_GALLERY = [
-  { slug: "dal-lightspark", name: "Dal Lightspark" },
+  // A LIVING canon face leads the gallery (Aubree, a Flaming Fist ranger). Was Dal Lightspark,
+  // but he is dead in canon — per #305's content-curation policy a dead figure is lore-only,
+  // never offered as a player avatar.
+  { slug: "aubree", name: "Aubree" },
   { slug: "shadowheart", name: "Shadowheart" },
   { slug: "astarion", name: "Astarion" },
   { slug: "gale", name: "Gale" },

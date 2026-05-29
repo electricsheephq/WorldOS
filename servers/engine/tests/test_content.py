@@ -526,8 +526,11 @@ def test_roster_surface_filters_and_combine():
     both = content.roster_surface("baldurs-gate", race="Dwarf", char_class="Wizard")
     assert both["total"] <= wiz["total"]
     assert all(c["race"] == "Dwarf" and c["class"] == "Wizard" for c in both["characters"])
-    # the canonical test pick (Dal Lightspark — a Dwarf wizard Harper) is offered
-    assert any(c["id"] == "dal-lightspark" for c in both["characters"])
+    # a LIVING Dwarf-Wizard pick is offered (Hartlebury, a Flaming Fist wizard) — but the
+    # canon-DEAD Dal Lightspark is NOT, even though he is a Dwarf Wizard (#305: the playable
+    # surface is alive-only by default).
+    assert any(c["id"] == "hartlebury" for c in both["characters"])
+    assert not any(c["id"] == "dal-lightspark" for c in both["characters"])
     # level filter
     lvl = content.roster_surface("baldurs-gate", level="5")
     assert lvl["total"] > 0 and all(c["level"] == "5" for c in lvl["characters"])

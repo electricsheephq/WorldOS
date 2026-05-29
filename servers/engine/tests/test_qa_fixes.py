@@ -179,7 +179,7 @@ def test_player_kind_always_in_party(tmp_path, monkeypatch):
     pid = server.create_character(cid, "Hero", kind="player", add_to_party=False, max_hp=10)["id"]
     assert _in_party(pid), "player must be in party even with add_to_party=False"
     # load_canon_character(kind="player") (add_to_party defaults False) must also add to party
-    out = server.load_canon_character(cid, "Dal Lightspark", kind="player")
+    out = server.load_canon_character(cid, "Charming Latham", kind="player")
     assert out.get("in_party") is True
     assert _in_party(out["id"])
     # a plain NPC stays OUT of the party (invariant doesn't over-reach)
@@ -946,6 +946,9 @@ def test_created_npc_is_anchored_to_current_location(tmp_path, monkeypatch):
 
 
 # --- audit-tests Section B: convert LLM-scorer findings into engine gates -------------
+# These seat a canon L5 Wizard as the PC to exercise class-math / player-kind / XP paths.
+# The canon figure used to be Dal Lightspark, but #305 made a canon-DEAD figure un-seatable as
+# the PC; Charming Latham (a LIVING Guild wizard, also L5) exercises the identical paths.
 
 
 def test_load_canon_character_as_player_keeps_player_kind(tmp_path, monkeypatch):
@@ -954,7 +957,7 @@ def test_load_canon_character_as_player_keeps_player_kind(tmp_path, monkeypatch)
     player_in_party behavioral gate (ow-duoF went RED). kind="player" must pass through."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     assert out["kind"] == "player" and out["in_party"] is True
     c = server._require(bg)
     assert any(c.characters[i].kind == "player" for i in c.party)  # gate would have failed before
@@ -969,7 +972,7 @@ def test_load_canon_character_grants_class_skill_proficiencies(tmp_path, monkeyp
     level-5 wizard's Arcana carries the proficiency bonus, not raw INT."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     ch = server.get_character(bg, out["id"])
     assert "arcana" in [s.lower() for s in ch["skill_proficiencies"]]  # wizard signature skill
     assert ch["proficiency_bonus"] == 3                                # level-5 -> +3
@@ -984,7 +987,7 @@ def test_update_character_accepts_flat_level_class_aliases(tmp_path, monkeypatch
     genuine typo still trips extra='forbid' (the strict guard test_engine relies on)."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     cidp = out["id"]
     ch = server.update_character(bg, cidp, {
         "level": 3, "class_name": "Wizard", "subclass": "School of Evocation"})
@@ -1001,7 +1004,7 @@ def test_update_character_flat_level_only_keeps_existing_class(tmp_path, monkeyp
     is patched, so a bare level bump doesn't blank the class."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     ch = server.update_character(bg, out["id"], {"level": 6})
     assert ch["classes"][0]["name"].lower() == "wizard"   # class preserved
     assert ch["classes"][0]["level"] == 6
@@ -1014,7 +1017,7 @@ def test_session_close_tops_up_zero_xp_companion(tmp_path, monkeypatch):
     companion up to the party's max XP when the session advanced (never lowers anyone)."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    pc = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)["id"]
+    pc = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)["id"]
     server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3,
                              abilities={"strength": 18, "constitution": 16})
     server.start_session(bg)
@@ -1033,7 +1036,7 @@ def test_session_close_no_topup_when_not_advanced(tmp_path, monkeypatch):
     PC alone leaves the companion at 0 (no free parity for a smoke run)."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    pc = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)["id"]
+    pc = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)["id"]
     server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3)
     server.start_session(bg)
     server.award_xp(bg, pc, 300, "solo award")

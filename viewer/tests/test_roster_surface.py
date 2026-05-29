@@ -119,23 +119,27 @@ class RosterSurfaceTests(unittest.TestCase):
             self.assertEqual(c["portrait_scope"], "portrait-" + c["id"])
 
     def test_known_canon_pick_resolves_its_ingested_portrait(self):
-        # Dal Lightspark is the canonical test pick (a mid-tier Harper wizard with an ingested
-        # face). Confirm the roster offers them AND that their portrait_scope serves real pixels —
-        # the whole point of "pick a canon NPC" is a real face, not a silhouette. (Skips if this
-        # checkout has no _private ingested art for the slug — the art is gitignored.)
+        # Hartlebury (a LIVING Flaming Fist Dwarf wizard with an ingested face) is the canonical
+        # test pick. Confirm the roster offers them AND that their portrait_scope serves real
+        # pixels — the whole point of "pick a canon NPC" is a real face, not a silhouette. (Skips
+        # if this checkout has no _private ingested art for the slug — the art is gitignored.)
+        # Was Dal Lightspark, but #305: Dal is canon-DEAD with NO ingested portrait (his face
+        # 404'd here), so the roster now FILTERS him out — assert that too.
         status, surface = self._get_json("/roster-surface?class=Wizard&race=Dwarf")
         self.assertEqual(status, 200)
-        dal = next((c for c in surface.get("characters", []) if c.get("id") == "dal-lightspark"), None)
-        self.assertIsNotNone(dal, "Dal Lightspark should be a playable Dwarf Wizard pick")
+        ids = {c.get("id") for c in surface.get("characters", [])}
+        self.assertNotIn("dal-lightspark", ids, "a canon-dead figure must not be a playable pick")
+        pick = next((c for c in surface.get("characters", []) if c.get("id") == "hartlebury"), None)
+        self.assertIsNotNone(pick, "Hartlebury should be a playable Dwarf Wizard pick")
         conn = http.client.HTTPConnection(self._host, self._port, timeout=10)
         try:
-            conn.request("GET", "/image?scope=" + dal["portrait_scope"])
+            conn.request("GET", "/image?scope=" + pick["portrait_scope"])
             resp = conn.getresponse()
             body = resp.read()
         finally:
             conn.close()
         if resp.status == 404:
-            self.skipTest("no ingested _private portrait for dal-lightspark in this checkout")
+            self.skipTest("no ingested _private portrait for hartlebury in this checkout")
         self.assertEqual(resp.status, 200)
         self.assertTrue(body, "the ingested portrait should serve real image bytes")
 
