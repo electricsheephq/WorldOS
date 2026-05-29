@@ -12,6 +12,39 @@ Nothing queued yet.
 
 ---
 
+## [1.0.3] — 2026-05-29
+
+**Renamed ClawDnD → WorldOS.** The product is now **WorldOS** — "simulate living,
+AI-generated worlds and play epic D&D 5e inside them." Shipped as four phased,
+CI-green PRs so nothing broke mid-flight:
+
+- **Identity (#296):** plugin id `clawdnd` → **`worldos`**; the macOS app is now
+  `WorldOSApp` / `WorldOS.app`; author `electricsheephq`; repo moved to
+  `github.com/electricsheephq/WorldOS` (the old `100yenadmin/ClawDnD` URL redirects).
+  README, CLAUDE.md, docs, and the dev skill (`worldos-dev`) rebranded.
+- **Code + docs (#299):** ClawDnD → WorldOS across source and documentation; **zero
+  ClawDnD references remain in `servers/engine`**.
+- **Env compatibility (#300, non-breaking):** a shared resolver now prefers
+  `WORLDOS_<X>` and falls back to the legacy `CLAWDND_<X>` (one-time deprecation
+  warning); `~/.worldos` preferred with `~/.clawdnd` fallback. **Both names still
+  work** — no migration required.
+- **Intentionally unchanged wire contracts:** the MCP server ids
+  (`clawdnd-engine/rules/voice/player`) and the `dev.clawdnd.app` bundle id are kept
+  as live contracts and will migrate in their own dedicated releases.
+
+Also folded in since 1.0.2: OpenWorlds UI-audit fixes — platform-aware title bar
+(#260), Browse-spellbook CTA + modal (#268), the 12-slot canonical paper-doll (#271),
+the camp rest action (#282), and the canon-NPC reverse-picker (roster surface) —
+**axe-core 0 across 18 screens**. Player-bind correctness: the DM/test flow now
+SELECTS a real canon NPC as the PC (`load_canon_character(kind="player")`) and never
+invents one, with the `kind="player"` ⇒ in-party engine invariant (#162) closing the
+player-outside-party gate.
+
+Engine **1511** + viewer **146** + voice 17 + rules 16 + axe 0 + license-check green;
+SwiftPM build clean.
+
+---
+
 ## [1.0.2] — 2026-05-29
 
 **OpenWorlds UI graphics-release burndown — every screen cleaner, every image present,
