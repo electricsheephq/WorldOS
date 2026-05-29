@@ -208,10 +208,10 @@ function ScreenRoster({ onNavigate, state, setState }) {
       // FOLLOW-UP (flagged): a browser-only preview has no supervisor to mint the session. The
       // native path is the supported bind; here we surface the chosen hero so the flow is honest.
       setBindNote(
-        `Selected ${npc.name} as your hero. Live play starts from the ClawDnD app — ` +
+        `Selected ${npc.name} as your hero. Live play starts from the WorldOS app — ` +
         `open this world there to begin the chronicle as ${npc.name}.`
       );
-      toast({ kind: "info", title: `Chosen: ${npc.name}`, body: "Start live play from the ClawDnD app to embody this hero." });
+      toast({ kind: "info", title: `Chosen: ${npc.name}`, body: "Start live play from the WorldOS app to embody this hero." });
       return;
     }
     setSummoningName(npc.name);

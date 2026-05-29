@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ClawDnD — Adventure</title>
+<title>WorldOS — Adventure</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -855,7 +855,7 @@
 </head>
 <body>
   <nav>
-    <div class="brand">ClawDnD<small>Living World</small></div>
+    <div class="brand">WorldOS<small>Living World</small></div>
     <div class="nav-i tab active" data-view="play"><span class="ic">▶</span> Play</div>
     <div class="nav-i tab" data-view="character"><span class="ic">▣</span> Character</div>
     <div class="nav-i tab" data-view="inventory"><span class="ic">▤</span> Inventory</div>
@@ -871,7 +871,7 @@
   </nav>
 
   <main>
-    <div class="topbar"><h1 id="title">ClawDnD</h1>
+    <div class="topbar"><h1 id="title">WorldOS</h1>
       <!-- Campaign switcher (H3): name of the campaign being VIEWED; click to pick another. -->
       <div class="switcher" id="switcher" hidden>
         <button class="switcher-btn" id="switcher-btn" type="button" aria-haspopup="listbox" aria-expanded="false"
@@ -1597,7 +1597,7 @@ function applyLiveMode(live) {
     ? "Speak in-character, or describe an action…"
     : "Director's view — play your turns in Claude Code.";
   // LOW-1: the nav-rail footer must not claim "read-only" once the palette is live
-  // (e.g. launched via clawdnd-play.command) — keep it honest with the actual mode.
+  // (e.g. launched via worldos-play.command) — keep it honest with the actual mode.
   const foot = $("foot-mode");
   if (foot) foot.innerHTML = live
     ? "<b>Play mode</b> — act through the palette below; the DM responds live in this window."
@@ -2917,7 +2917,7 @@ function renderState(s) {
   if (s && s.empty) {
     // No campaign on disk yet (#M2): show a waiting message and keep the action layer off —
     // do NOT run the full render below, which would paint the scene/title with empty data.
-    $("title").textContent = "ClawDnD";
+    $("title").textContent = "WorldOS";
     $("when").textContent = "";
     $("where").textContent = "";
     applyLiveMode(false);
@@ -2946,7 +2946,7 @@ function renderState(s) {
   renderActionBar(s);
   if (activeView !== "play") renderSheet();   // keep an open sheet live across polls
   if ($("settings-scrim").classList.contains("open")) renderSettings();  // live while open
-  $("title").textContent = s.title || "ClawDnD";
+  $("title").textContent = s.title || "WorldOS";
   // the mode badge reflects the engine's pacing_mode (downtime = a quieter beat)
   $("mode-badge").textContent = (s.pacing_mode === "downtime") ? "Downtime Mode" : "Adventure Mode";
   $("when").textContent = s.day ? `Day ${s.day}, ${s.time_of_day||""}` : "";
@@ -3336,7 +3336,7 @@ async function poll() {
     const act = await (await fetch(withCampaign("/activity?since="+actCursor))).json();
     const lv = $("live"); lv.textContent = act.live?"live":"idle"; lv.className = act.live?"on":"off";
     const ac = $("activity");
-    if (actCursor===0) ac.innerHTML = act.live ? "" : `<div class="empty">Open via clawdnd-dashboard.command to watch a run's agents.</div>`;
+    if (actCursor===0) ac.innerHTML = act.live ? "" : `<div class="empty">Open via worldos-dashboard.command to watch a run's agents.</div>`;
     (act.items||[]).forEach(it=>{
       if (it.kind==="roll") return;  // roll items feed the dice tray, not this text log
       const d=document.createElement("div"); d.className="act "+it.kind;

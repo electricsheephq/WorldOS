@@ -17,7 +17,7 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     setSelected(fallback);
   }, [campaigns, selected, state?.activeCampaign]);
 
-  // Begin a live, playable session. Inside the native ClawDnD app this asks the supervisor
+  // Begin a live, playable session. Inside the native WorldOS app this asks the supervisor
   // to start a provider session (scripts/play.sh: a move-sink-wired viewer + a claude -p
   // Dungeon Master). The app repoints its WebView at that live viewer on a fresh port, so
   // the page reloads and app.jsx auto-lands us in the table once a provider is running.

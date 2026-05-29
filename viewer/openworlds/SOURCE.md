@@ -9,7 +9,7 @@ rules, voice, or campaign-state authority.
 - Source artifact: `OpenWorlds.zip`
 - Source SHA256: `8e9e2b885764fd3492b74b2d02eda5db9827eb087121054e8ca52e9ace10fd0a`
 - Extraction label used during review: `openworlds-design-2026-05-25/openworlds`
-- Provenance: internal design handoff for ClawDnD/OpenWorlds implementation, not
+- Provenance: internal design handoff for WorldOS/OpenWorlds implementation, not
   a blanket license for third-party screenshots, uploads, or generated images.
 
 ## Included Source Files
