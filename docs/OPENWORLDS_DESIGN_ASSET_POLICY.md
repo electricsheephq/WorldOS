@@ -1,6 +1,6 @@
 # OpenWorlds Design Asset Policy
 
-This policy governs any ClawDnD work derived from the local OpenWorlds design
+This policy governs any WorldOS work derived from the local OpenWorlds design
 bundle. It exists to preserve visual fidelity without accidentally committing
 uncleared reference art, prototype-only dependencies, private content, or
 third-party game UI material.
@@ -63,7 +63,7 @@ license/provenance note.
   patterns ported from the primary export.
 - Locally vendored runtime libraries for the first exact-fidelity sprint, when
   their license notices are included and no network CDN calls remain.
-- ClawDnD-authored docs that describe source buckets, fidelity requirements,
+- WorldOS-authored docs that describe source buckets, fidelity requirements,
   and asset handling.
 
 ## Not Allowed In Repo
@@ -81,7 +81,7 @@ license/provenance note.
 ## Prototype Dependency Policy
 
 The OpenWorlds prototype currently references Google Fonts, React, ReactDOM, and
-Babel through network CDNs. Production ClawDnD builds must not depend on those
+Babel through network CDNs. Production WorldOS builds must not depend on those
 network calls.
 
 The first exact-fidelity PR may use locally vendored React, ReactDOM, and Babel

@@ -2,7 +2,7 @@
 
 This document supersedes the SwiftUI repaint direction explored in PR #123.
 OpenWorlds should be integrated as an exact web surface first, then wired to
-ClawDnD read models screen by screen.
+WorldOS read models screen by screen.
 
 ## Decision
 
@@ -93,7 +93,7 @@ screenshot-level parity evidence against the exported OpenWorlds reference.
 
 Before a visual PR is marked ready:
 
-- Capture exported reference and ClawDnD candidate screenshots at `1366x768`,
+- Capture exported reference and WorldOS candidate screenshots at `1366x768`,
   `1440x900`, and `1920x1080`.
 - Add `1024x768` and mobile-like widths when the PR claims responsive web
   parity; otherwise record those viewports as deferred.
@@ -111,7 +111,7 @@ cd <repo-root>
 pwd
 python3 -m py_compile viewer/server.py
 python3 -m unittest discover -s viewer/tests -q
-swift build --package-path macos/ClawDnDApp
+swift build --package-path macos/WorldOSApp
 ./script/build_and_run.sh --verify
 python3 scripts/license_check.py
 git diff --check

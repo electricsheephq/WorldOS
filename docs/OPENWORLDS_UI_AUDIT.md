@@ -1,7 +1,7 @@
 # OpenWorlds App — Page-by-Page UI/UX Audit (2026-05-27)
 
 **Method:** live walkthrough of every screen via the preview server (`127.0.0.1:8799/openworlds/`).
-**This is the same UI the desktop app ("ClawDnD") shows** — the app launches `viewer/server.py` and loads `/openworlds/`. (`/dashboard` is the *old* `dashboard.html`, the `play.sh` surface — not this UI.) So fixes here land in the app on rebuild/restart.
+**This is the same UI the desktop app ("WorldOS") shows** — the app launches `viewer/server.py` and loads `/openworlds/`. (`/dashboard` is the *old* `dashboard.html`, the `play.sh` surface — not this UI.) So fixes here land in the app on rebuild/restart.
 **Scope of this doc:** audit + scored backlog ONLY. No product code changed. We prioritize/sequence together before fixing.
 
 > Honest framing: the engine, live read-model binding, and a few screens (Relations, Parley) are genuinely good. But the owner's read is correct — the app is **unfinished, unmapped, and disconnected**. The three roots: (1) **you can't actually play in it** (read-only viewer, dead action buttons); (2) **no real map** (one city photo repeated everywhere); (3) **portraits/art missing almost everywhere**. Overall app readiness ≈ **4.5/10**.

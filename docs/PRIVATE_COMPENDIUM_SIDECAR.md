@@ -1,6 +1,6 @@
 # Private Compendium Sidecar
 
-ClawDnD can plan local imports from user-owned books, adventures, exports, and
+WorldOS can plan local imports from user-owned books, adventures, exports, and
 homebrew without committing or redistributing that material. The private compendium
 sidecar is a local-only directory outside the git checkout. It is for metadata,
 source files, converter output, and future normalized private content owned by the
@@ -15,12 +15,12 @@ generated corpora to the repository.
 - Keep the sidecar outside the repo. The default is
   `/Volumes/LEXAR/Codex/clawdnd-private-compendium`.
 - Override the sidecar root with `CLAWDND_PRIVATE_COMPENDIUM_ROOT` when needed.
-- Treat `content/worlds/_private/<world-id>/...` as the only future ClawDnD output
+- Treat `content/worlds/_private/<world-id>/...` as the only future WorldOS output
   namespace for private world material.
 - Do not mutate campaign state, engine state, or public `content/worlds/*` content from
   this tool.
 - Do not make Java/Quarkus, Obsidian vaults, or converter-specific indexes runtime
-  authority for ClawDnD. They are sidecar inputs only.
+  authority for WorldOS. They are sidecar inputs only.
 
 ## Manifest
 

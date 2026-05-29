@@ -72,8 +72,8 @@ that needs handling.
 
 **Loop-5 axe baseline (2026-05-29):** 11 violations across 8 screens (10
 `scrollable-region-focusable` + 1 `label`). Filed as
-[#291](https://github.com/100yenadmin/ClawDnD/issues/291) +
-[#292](https://github.com/100yenadmin/ClawDnD/issues/292). `--axe` mode passes
+[#291](https://github.com/electricsheephq/WorldOS/issues/291) +
+[#292](https://github.com/electricsheephq/WorldOS/issues/292). `--axe` mode passes
 as long as the total stays ≤ 11. After #291 + #292 land, **lower the baseline
 in the script to 0** so any new violation FAILs the check.
 
@@ -124,7 +124,7 @@ substantial portion of the audit.
 | Loop 2 closeout | ~85% | Read skipped shared sources (data.js / icon-registry / tooltip / toast / server.py); cataloged 2,359 art dirs in `_private`; standalone camp-sidebar audit; #281 asset re-calibration; #284 responsive |
 | Loop 3 closeout | ~90% | Multi-viewport captures at 1366 / 1920; state validation against populated save; #286 + #287 + #288 + #289 sub-issues; generativity proof |
 | Loop 4 closeout | ~95% | Snapshot-at-rest inspection of `camp_54fd704d985b` confirms live combat state shape; native Swift chrome inspection clarifies #260 platform-awareness; this maintain-loop script + doc |
-| Loop 5 closeout | **~97–98%** | L5-B Swift build verifies clean (1.74s) + dist/ClawDnD.app codesign valid; L5-C axe-core scan across all 16 screens (11 violations, 8 screens clean) filed as #291 + #292; `--axe` flag added to health script with Loop-5 baseline = 11 |
+| Loop 5 closeout | **~97–98%** | L5-B Swift build verifies clean (1.74s) + dist/WorldOS.app codesign valid; L5-C axe-core scan across all 16 screens (11 violations, 8 screens clean) filed as #291 + #292; `--axe` flag added to health script with Loop-5 baseline = 11 |
 
 **The remaining ~2-3% asymptote (post-Loop-5).** Two items remain:
 

@@ -1,6 +1,6 @@
 # Monster Authoring Skeleton
 
-ClawDnD keeps bundled SRD creatures canonical. Native authored monster packs are
+WorldOS keeps bundled SRD creatures canonical. Native authored monster packs are
 additive only: they can introduce net-new monster names, but they cannot override
 or shadow an SRD creature.
 

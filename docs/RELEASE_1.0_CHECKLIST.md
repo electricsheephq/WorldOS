@@ -1,8 +1,8 @@
-# ClawDnD 1.0.0 — Release Checklist
+# WorldOS 1.0.0 — Release Checklist
 
 **Scope:** local/personal 1.0 build. The bundled `baldurs-gate` world ships as-is for
 personal use (Wizards Fan Content Policy). Public distribution and notarization are
-deferred to 1.0.1 (see `macos/ClawDnDApp/RELEASE_CHECKLIST.md` for the signing state).
+deferred to 1.0.1 (see `macos/WorldOSApp/RELEASE_CHECKLIST.md` for the signing state).
 
 Do NOT execute steps here until the pre-release sanity checks below are green.
 
@@ -39,7 +39,7 @@ Do NOT execute steps here until the pre-release sanity checks below are green.
   ```bash
   script/build_and_run.sh
   ```
-  Confirm `ClawDnD.app` launches in `dist/` and the OpenWorlds screens load.
+  Confirm `WorldOS.app` launches in `dist/` and the OpenWorlds screens load.
 
 ---
 
@@ -61,7 +61,7 @@ Also update `.claude-plugin/marketplace.json` if it carries a version field.
 ## Step 2 — commit the version bump
 
 ```bash
-cd /path/to/ClawDnD          # your local checkout (not a QA worktree)
+cd /path/to/WorldOS          # your local checkout (not a QA worktree)
 git add .claude-plugin/plugin.json .claude-plugin/marketplace.json
 git commit -m "chore: bump version to 1.0.0"
 git push origin main
@@ -74,7 +74,7 @@ Wait for CI to go green on that commit before tagging.
 ## Step 3 — tag v1.0.0
 
 ```bash
-git tag -a v1.0.0 -m "ClawDnD 1.0.0 — local/personal release"
+git tag -a v1.0.0 -m "WorldOS 1.0.0 — local/personal release"
 git push origin v1.0.0
 ```
 
@@ -87,7 +87,7 @@ then publish:
 
 ```bash
 gh release create v1.0.0 \
-  --title "ClawDnD 1.0.0 — Living-World Engine" \
+  --title "WorldOS 1.0.0 — Living-World Engine" \
   --notes-file <(awk '/^\[1\.0\.0\]/{found=1} found && /^\[0\.[0-9]/{exit} found{print}' CHANGELOG.md) \
   --draft
 ```
@@ -99,12 +99,12 @@ gh release edit v1.0.0 --draft=false
 ```
 
 No binary artifacts are attached for this local build. If you want to ship a zip of
-`dist/ClawDnD.app` for personal archival:
+`dist/WorldOS.app` for personal archival:
 
 ```bash
-script/build_and_run.sh   # builds dist/ClawDnD.app
-cd dist && zip -r ClawDnD-1.0.0-macos.zip ClawDnD.app
-gh release upload v1.0.0 ClawDnD-1.0.0-macos.zip
+script/build_and_run.sh   # builds dist/WorldOS.app
+cd dist && zip -r WorldOS-1.0.0-macos.zip WorldOS.app
+gh release upload v1.0.0 WorldOS-1.0.0-macos.zip
 ```
 
 ---
@@ -122,7 +122,7 @@ open). Requires macOS 13+, Xcode Command Line Tools (`xcode-select --install`).
 
 Signing state at 1.0: ad-hoc only. Gatekeeper will warn on first launch — right-click →
 Open to bypass. Full Developer ID signing + notarization is a 1.0.1 item (see
-`macos/ClawDnDApp/RELEASE_CHECKLIST.md`).
+`macos/WorldOSApp/RELEASE_CHECKLIST.md`).
 
 ---
 
@@ -152,6 +152,6 @@ Open to bypass. Full Developer ID signing + notarization is a 1.0.1 item (see
 | Play dashboard script | `scripts/play.sh` |
 | License check | `scripts/license_check.py` |
 | Changelog | `CHANGELOG.md` |
-| Native app package | `macos/ClawDnDApp/Package.swift` |
+| Native app package | `macos/WorldOSApp/Package.swift` |
 | World seeds | `content/worlds/{sundered-reach,tidal-commonwealth,baldurs-gate}/` |
-| App source | `macos/ClawDnDApp/Sources/ClawDnDApp/` |
+| App source | `macos/WorldOSApp/Sources/WorldOSApp/` |

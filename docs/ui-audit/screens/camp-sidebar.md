@@ -57,5 +57,5 @@
 ## Recommended next pass
 
 1. **CS-01 (Begin Resting wire)** unlocks the entire screen — the rest of the UI is supporting the moment of long rest.
-2. **CS-02 + CS-03 (per-companion TALK_PROMPTS + SPECIAL_ROLES)** are the biggest visible content gap and pair with the Owlcat-style companion campaigns epic [#58](https://github.com/100yenadmin/ClawDnD/issues/58).
+2. **CS-02 + CS-03 (per-companion TALK_PROMPTS + SPECIAL_ROLES)** are the biggest visible content gap and pair with the Owlcat-style companion campaigns epic [#58](https://github.com/electricsheephq/WorldOS/issues/58).
 3. **CS-05 (keyboard equivalent)** is the highest accessibility leverage on this screen.
