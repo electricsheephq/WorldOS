@@ -151,27 +151,8 @@ function ScreenInventory({ onNavigate, state, setState }) {
           </div>
         )}
 
-        {/* Hero portrait + slots */}
-        <div style={{ position: "relative", marginTop: 16, padding: "0 8px" }}>
-          <Img scope={heroPortraitScope(hero)} label={`${hero.name} · full art`} h={220} framed style={{ width: "100%" }} />
-
-          {/* Equipment slots ringing portrait */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginTop: 10 }}>
-            {EQUIP_SLOTS.map((s) => {
-              const equipped = hero.equipped.find((e) => e.slot === s.label);
-              return (
-                <div key={s.label} style={{ textAlign: "center" }}>
-                  {equipped
-                    ? <Img scope={"item-" + slug(equipped.name)} label={equipped.name} w="100%" h={44} framed />
-                    : <Placeholder label={s.label} w="100%" h={44} framed />}
-                  <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, marginTop: 2, color: "var(--ink-600)" }}>
-                    {s.label}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        {/* Hero paper-doll: portrait flanked by the canonical equipment slots (#271). */}
+        <PaperDoll hero={hero} />
 
         <Divider />
 
@@ -305,10 +286,132 @@ function ScreenInventory({ onNavigate, state, setState }) {
   );
 }
 
+// #271: the canonical D&D/BG3 equipment slot set, laid out as a paper-doll (two columns
+// flanking the portrait + a weapons row beneath). Each slot has a stable `id` (used for
+// item→slot assignment), a short `label`, and a `col` (left/right/arms) placing it in the
+// doll. Ring 1 / Ring 2 and Main / Off-Hand are distinct so a hero can wear two of each.
 const EQUIP_SLOTS = [
-  { label: "Head" }, { label: "Neck" }, { label: "Body" },
-  { label: "Hands" }, { label: "Ring" }, { label: "Boots" },
+  { id: "head",    label: "Head",    col: "left"  },
+  { id: "cloak",   label: "Cloak",   col: "left"  },
+  { id: "body",    label: "Body",    col: "left"  },
+  { id: "hands",   label: "Hands",   col: "left"  },
+  { id: "belt",    label: "Belt",    col: "left"  },
+  { id: "amulet",  label: "Amulet",  col: "right" },
+  { id: "ring1",   label: "Ring I",  col: "right" },
+  { id: "ring2",   label: "Ring II", col: "right" },
+  { id: "boots",   label: "Boots",   col: "right" },
+  { id: "mainhand", label: "Main Hand", col: "arms" },
+  { id: "offhand",  label: "Off-Hand",  col: "arms" },
+  { id: "ranged",   label: "Ranged",    col: "arms" },
 ];
+
+// Name→slot inference. The engine carries no per-item slot (the Item model has no `slot`
+// field, so the surface emits slot:"Worn" for everything), so we infer the doll cell from
+// the item NAME — exactly as the surface infers item TYPE from the name. Forward-compatible:
+// if the surface ever emits a real canonical slot id, assignEquipSlots prefers it.
+const _SLOT_NAME_HINTS = [
+  ["head",   ["helm", "helmet", "circlet", "crown", "hat", "hood", "cap", "coif", "mask", "diadem"]],
+  ["cloak",  ["cloak", "cape", "mantle", "shawl"]],
+  ["amulet", ["amulet", "necklace", "pendant", "talisman", "torc", "locket", "periapt", "medallion", "brooch"]],
+  ["body",   ["robe", "armor", "armour", "mail", "plate", "cuirass", "breastplate", "leather", "hide", "vest", "tunic", "garb", "raiment", "padded", "scale", "brigandine", "chain shirt", "half plate"]],
+  ["hands",  ["gauntlet", "glove", "bracer", "vambrace", "handwrap", "gloves"]],
+  ["belt",   ["belt", "girdle", "sash", "cord"]],
+  ["boots",  ["boot", "boots", "greave", "sabaton", "shoe", "sandal", "footwrap", "slipper"]],
+  ["ring",   ["ring", "band", "signet"]],
+  // Off-hand / ranged are detected before generic main-hand weapons.
+  ["offhand", ["shield", "buckler", "off-hand", "offhand"]],
+  ["ranged",  ["bow", "crossbow", "sling", "dart", "javelin", "arrows", "bolts", "ammunition", "quiver"]],
+  ["mainhand", ["sword", "axe", "dagger", "mace", "spear", "rapier", "blade", "hammer", "staff", "club", "flail", "scimitar", "glaive", "halberd", "warhammer", "maul", "trident", "whip", "wand", "scepter", "morningstar", "pike", "lance", "greatsword", "longsword", "shortsword"]],
+];
+
+function inferEquipSlotId(name) {
+  const low = (name || "").toLowerCase();
+  for (const [slot, needles] of _SLOT_NAME_HINTS) {
+    if (needles.some((n) => low.includes(n))) return slot;
+  }
+  return ""; // unrecognized — placed into the first free generic cell by assignEquipSlots
+}
+
+// Build a { slotId: equippedItem } map from hero.equipped. Rings and weapons spill from
+// their primary cell to the secondary (ring1→ring2, mainhand→offhand) so a hero wearing two
+// rings or dual-wielding shows both. Anything unrecognized lands in the first open cell so
+// no equipped item is ever silently dropped from the doll.
+function assignEquipSlots(equipped) {
+  const byId = {};
+  const order = EQUIP_SLOTS.map((s) => s.id);
+  const place = (item, preferred) => {
+    // honor a real canonical slot id from the surface if present
+    const fromSurface = order.includes(item.slot) ? item.slot : "";
+    const chain = fromSurface
+      ? [fromSurface]
+      : preferred === "ring" ? ["ring1", "ring2"]
+      : preferred === "mainhand" ? ["mainhand", "offhand"]
+      : preferred ? [preferred]
+      : [];
+    for (const id of chain) {
+      if (!byId[id]) { byId[id] = item; return true; }
+    }
+    return false;
+  };
+  const leftovers = [];
+  for (const it of (Array.isArray(equipped) ? equipped : [])) {
+    if (!it || !it.name) continue;
+    const placed = place(it, inferEquipSlotId(it.name));
+    if (!placed) leftovers.push(it);
+  }
+  // Drop any still-unplaced equipped items into the first open cell (never lose worn gear).
+  for (const it of leftovers) {
+    const open = order.find((id) => !byId[id]);
+    if (open) byId[open] = it;
+  }
+  return byId;
+}
+
+function EquipSlotCell({ slot, item }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      {item
+        ? (
+          <window.Tooltip content={<window.InfoTooltip kind="Equipped" title={item.name} body={`Worn in the ${slot.label} slot.`} />} side="top">
+            <div>
+              <Img scope={"item-" + slug(item.name)} label={`${item.name} · ${slot.label}`} w="100%" h={44} framed />
+            </div>
+          </window.Tooltip>
+        )
+        : <Placeholder label={slot.label} w="100%" h={44} framed />}
+      <div style={{ fontFamily: "var(--f-mono)", fontSize: 8, marginTop: 2, color: item ? "var(--ink-700)" : "var(--ink-600)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {item ? item.name : slot.label}
+      </div>
+    </div>
+  );
+}
+
+function PaperDoll({ hero }) {
+  // Paper-doll equip layout (#271): portrait centered, equipment slots flanking it in two
+  // columns (left + right), with the weapons row (Main / Off-Hand / Ranged) beneath. Each
+  // cell shows the equipped item's name-slug icon, or an honest empty slot with its label.
+  const assigned = assignEquipSlots(hero.equipped);
+  const col = (name) => EQUIP_SLOTS.filter((s) => s.col === name);
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>Equipped</div>
+      {/* doll: left slots | portrait | right slots */}
+      <div style={{ display: "grid", gridTemplateColumns: "52px 1fr 52px", gap: 8, alignItems: "start" }}>
+        <div style={{ display: "grid", gap: 6 }}>
+          {col("left").map((s) => <EquipSlotCell key={s.id} slot={s} item={assigned[s.id]} />)}
+        </div>
+        <Img scope={heroPortraitScope(hero)} label={`${hero.name} · full art`} h={258} framed style={{ width: "100%" }} />
+        <div style={{ display: "grid", gap: 6 }}>
+          {col("right").map((s) => <EquipSlotCell key={s.id} slot={s} item={assigned[s.id]} />)}
+        </div>
+      </div>
+      {/* weapons row under the doll */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginTop: 8 }}>
+        {col("arms").map((s) => <EquipSlotCell key={s.id} slot={s} item={assigned[s.id]} />)}
+      </div>
+    </div>
+  );
+}
 
 function CoinSlot({ tone, label, val }) {
   return (
@@ -460,4 +563,4 @@ const ITEM_TYPES = {
 
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, ITEM_TYPES, toRoman, slug, itemScope });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, toRoman, slug, itemScope });
