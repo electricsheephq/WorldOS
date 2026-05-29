@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 100yenadmin
+Copyright (c) 2026 electricsheephq
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-NOTE: This MIT license covers ClawDnD's own source code. Bundled third-party
+NOTE: This MIT license covers WorldOS's own source code. Bundled third-party
 data and content carry their own licenses — see THIRD_PARTY_NOTICES.md and
 data/srd/ATTRIBUTION.md. In particular, the System Reference Document (SRD 5.2)
 data is licensed under CC-BY-4.0, not MIT.

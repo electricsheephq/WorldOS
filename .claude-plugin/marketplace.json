@@ -1,18 +1,18 @@
 {
-  "name": "clawdnd",
+  "name": "worldos",
   "owner": {
-    "name": "100yenadmin"
+    "name": "electricsheephq"
   },
   "metadata": {
-    "description": "ClawDnD — voice-acted D&D 5e campaigns with an AI Dungeon Master and a voiced AI companion.",
-    "homepage": "https://github.com/100yenadmin/ClawDnD"
+    "description": "WorldOS — simulate living worlds and play voice-acted D&D 5e campaigns inside them, with an AI Dungeon Master and a voiced AI companion.",
+    "homepage": "https://github.com/electricsheephq/WorldOS"
   },
   "plugins": [
     {
-      "name": "clawdnd",
+      "name": "worldos",
       "version": "1.0.0",
       "source": "./",
-      "description": "Adventure inside living, AI-generated D&D 5e worlds with a voiced AI companion — an AI DM generates epic stories live within persistent, canon-anchored worlds."
+      "description": "WorldOS — simulate living, AI-generated worlds and play epic D&D 5e inside them, with a voiced AI companion and an AI DM running stories within persistent, canon-anchored worlds."
     }
   ]
 }

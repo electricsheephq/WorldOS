@@ -541,7 +541,7 @@ struct SidebarView: View {
         .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("ClawDnD")
+                Text("WorldOS")
                     .font(.headline)
             }
         }

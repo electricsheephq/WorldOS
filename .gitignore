@@ -47,8 +47,8 @@ venv/
 
 # Native macOS app build outputs
 /dist/
-/macos/ClawDnDApp/.build/
-/macos/ClawDnDApp/.swiftpm/
+/macos/WorldOSApp/.build/
+/macos/WorldOSApp/.swiftpm/
 
 # TTS models / audio caches (large, regenerated locally)
 *.onnx

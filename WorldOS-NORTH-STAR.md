@@ -1,11 +1,11 @@
-# ClawDnD — NORTH STAR (READ FIRST, alongside the RUNBOOK)
+# WorldOS — NORTH STAR (READ FIRST, alongside the RUNBOOK)
 
 > **This is the optimization target.** The RUNBOOK tells you *how to work* (invariants, dev/QA
 > loops, the file map). This doc tells you *what "great" means* — the thing the whole loop serves.
 > When a decision is ambiguous, when the score and your gut disagree, when you're about to add a
 > feature: come back here. The North Star is **more than a score.** The score is a proxy for it.
 >
-> Read order on resume: `ClawDnD-RUNBOOK.md` → this file → `implementation-notes.html` → `qa/SCORECARD.md`.
+> Read order on resume: `WorldOS-RUNBOOK.md` → this file → `implementation-notes.html` → `qa/SCORECARD.md`.
 >
 > Voice: confident, opinionated, builder's. Last updated 2026-05-28 (post-v1.0.1).
 >
@@ -15,7 +15,7 @@
 
 ## PART 1 — THE TRUE GOAL (beyond the score)
 
-ClawDnD has **two deliverables, and they are inseparable:**
+WorldOS has **two deliverables, and they are inseparable:**
 
 **(A) The felt prestige-CRPG session.** A player should finish a session feeling what they feel
 after a great night of Baldur's Gate 3 — *that mattered; that was mine; I want to know what happens

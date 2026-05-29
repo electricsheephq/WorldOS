@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ClawDnD — CAMPAIGN MONITOR. DOUBLE-CLICK this file to open a live page that shows EVERY
+# WorldOS — CAMPAIGN MONITOR. DOUBLE-CLICK this file to open a live page that shows EVERY
 # campaign running — your own games AND every parallel QA test run — in one place, auto-
 # refreshing. Jump between them, watch how each is going at a glance (party, location, day,
 # scores). It is READ-ONLY: it only watches; it never changes a campaign.
@@ -17,7 +17,7 @@ if [ -z "$PY" ]; then
 fi
 URL="http://127.0.0.1:${PORT}/monitor"
 
-echo "ClawDnD campaign monitor → ${URL}"
+echo "WorldOS campaign monitor → ${URL}"
 echo "(read-only; watches every play + QA campaign. Ctrl-C or close this window to stop.)"
 echo
 

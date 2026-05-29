@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClawDnDApp",
+    name: "WorldOSApp",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "ClawDnDApp", targets: ["ClawDnDApp"])
+        .executable(name: "WorldOSApp", targets: ["WorldOSApp"])
     ],
     targets: [
-        .executableTarget(name: "ClawDnDApp")
+        .executableTarget(name: "WorldOSApp")
     ]
 )

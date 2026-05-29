@@ -1,14 +1,14 @@
-# ClawDnD
+# WorldOS
 
-**Play full D&D 5e campaigns with an AI Dungeon Master *and* a voiced AI companion — fully voice-acted.**
+**Simulate living worlds. Play epic D&D 5e inside them — with an AI Dungeon Master *and* a voiced AI companion, fully voice-acted.**
 
-ClawDnD is a Claude Code plugin. You don't play *against* the AI; you go on an adventure *with* it. A Dungeon Master narrates the world and voices every NPC, and a companion party member adventures alongside you — with its own character sheet, personality, voice, and agency. Dice and rules are deterministic (never hallucinated), campaigns persist across sessions, and every line is spoken aloud.
+WorldOS is a Claude Code plugin. It simulates persistent, canon-anchored worlds whose standing threads move on their own — and lets you drop in and *play* a full D&D 5e adventure inside them. You don't play *against* the AI; you go on an adventure *with* it. A Dungeon Master narrates the world and voices every NPC, and a companion party member adventures alongside you — with its own character sheet, personality, voice, and agency. Dice and rules are deterministic (never hallucinated), worlds and campaigns persist across sessions, and every line is spoken aloud.
 
-> **Status:** **v1.0.1** ([Release](https://github.com/100yenadmin/ClawDnD/releases/tag/v1.0.1), 2026-05-28). Tier-1 **plus a living-world generative engine plus a native macOS desktop app (OpenWorlds)** — built and green in CI: **engine 1385/1385 ✓, viewer 90/90 ✓**, license-check clean. The full deterministic stack (dice, characters, combat with tactical zones / monster Multiattack / Parry reactions / end-of-turn repeat saves, full SRD 5.2.1 spellcasting, rests, inventory/economy, NPC memory + companion dossiers, encounters, persistence, voice) runs under an AI DM that **generates epic, mature, Baldur's-Gate-caliber stories live inside persistent, canon-anchored worlds** — grounded by on-demand lore lookup, a searchable campaign memory, chronology, standing threads that move on their own, and a 2,076-record canon roster for the Sword Coast (the seven BG3 origin heroes carry full companion-dossier seeds for the engine's living-world systems). QA-scored on a story-craft lens (≥4.3/5, prestige-fantasy). The OpenWorlds desktop app renders 14 polished screens (Launcher / Table / Combat / Map / Character / Inventory / Relations / Dialogue / Forge / Merchant / Bestiary / Journal / Acts / World Seed / Create / Settings), all data-bound to live read-models; the Merchant BUY and Forge Craft buttons relay structured `/move` intents to the DM during a live session. Tier 2 (OpenClaw companion fork) remains the optional gateway milestone. See the [issues](https://github.com/100yenadmin/ClawDnD/issues) for the roadmap.
+> **Status:** **v1.0.1** ([Release](https://github.com/electricsheephq/WorldOS/releases/tag/v1.0.1), 2026-05-28). Tier-1 **plus a living-world generative engine plus a native macOS desktop app (OpenWorlds)** — built and green in CI: **engine 1385/1385 ✓, viewer 90/90 ✓**, license-check clean. The full deterministic stack (dice, characters, combat with tactical zones / monster Multiattack / Parry reactions / end-of-turn repeat saves, full SRD 5.2.1 spellcasting, rests, inventory/economy, NPC memory + companion dossiers, encounters, persistence, voice) runs under an AI DM that **generates epic, mature, Baldur's-Gate-caliber stories live inside persistent, canon-anchored worlds** — grounded by on-demand lore lookup, a searchable campaign memory, chronology, standing threads that move on their own, and a 2,076-record canon roster for the Sword Coast (the seven BG3 origin heroes carry full companion-dossier seeds for the engine's living-world systems). QA-scored on a story-craft lens (≥4.3/5, prestige-fantasy). The OpenWorlds desktop app renders 14 polished screens (Launcher / Table / Combat / Map / Character / Inventory / Relations / Dialogue / Forge / Merchant / Bestiary / Journal / Acts / World Seed / Create / Settings), all data-bound to live read-models; the Merchant BUY and Forge Craft buttons relay structured `/move` intents to the DM during a live session. Tier 2 (OpenClaw companion fork) remains the optional gateway milestone. See the [issues](https://github.com/electricsheephq/WorldOS/issues) for the roadmap.
 
 ## What makes it different
 
-The closest existing tools each miss something: commercial AI-DMs treat voice as a bolt-on, voice-first tools are screen-watching overlays rather than full games, and the Claude-native D&D projects have no voice at all. ClawDnD is the unoccupied intersection: **Claude-native + plays the whole game + deterministic 5e rules + persistent campaigns + multi-character voice acting.**
+The closest existing tools each miss something: commercial AI-DMs treat voice as a bolt-on, voice-first tools are screen-watching overlays rather than full games, and the Claude-native D&D projects have no voice at all. WorldOS is the unoccupied intersection: **Claude-native + a living-world simulation + plays the whole game + deterministic 5e rules + persistent worlds + multi-character voice acting.**
 
 ## Architecture
 
@@ -57,7 +57,7 @@ The deterministic core runs in three Python MCP servers and is exercised by a fu
 
 Once installed, drive the game from Claude Code with these commands:
 
-**Living worlds — the generative mode, ClawDnD at its best:** drop into a persistent world and the DM generates an epic, mature story *live* within its canon (real places, factions, history, and an era it stays true to), grounded by on-demand lore lookup, with the world's standing threads moving on their own — different every playthrough.
+**Living worlds — the generative mode, WorldOS at its best:** drop into a persistent world and the DM generates an epic, mature story *live* within its canon (real places, factions, history, and an era it stays true to), grounded by on-demand lore lookup, with the world's standing threads moving on their own — different every playthrough.
 
 | Command | What it does |
 |---|---|
@@ -71,7 +71,7 @@ Once installed, drive the game from Claude Code with these commands:
 | `/roll <expr>` | Make a real, auditable engine roll (`/roll d20 advantage`, `/roll 2d6+3`). |
 | `/voice-toggle [on\|off]` | Switch spoken voice on or off — text-only fallback when off. |
 
-You don't strictly need the commands: the **dungeon-master** skill activates whenever you ask to start or continue a ClawDnD adventure. The commands are just the front door.
+You don't strictly need the commands: the **dungeon-master** skill activates whenever you ask to start or continue a WorldOS adventure. The commands are just the front door.
 
 ## Play in the dashboard
 
@@ -80,10 +80,10 @@ The local viewer can be more than a window onto the game — it can be the surfa
 - **In Claude Code** — type your turns and the DM responds in chat. Use `/world-play [id]` (or just ask).
 - **In the dashboard** — play in your browser: you act through the on-screen **action palette** (**Say** to speak in-scene, **Do** to attempt something, **Continue**, the dice / skill / save / combat buttons, and click-to-travel), and a live AI DM responds beside it, turn by turn.
 
-To play in the dashboard, **double-click `clawdnd-play.command`** (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`), or run it from a terminal:
+To play in the dashboard, **double-click `worldos-play.command`** (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`), or run it from a terminal:
 
 ```bash
-./clawdnd-play.command            # default living world
+./worldos-play.command            # default living world
 scripts/play.sh sundered-reach    # a specific world — see /world-list
 ```
 
@@ -91,7 +91,7 @@ What to expect: your browser opens to `http://127.0.0.1:8765/dashboard`, the DM 
 
 The DM loop is **safety-capped** so it can't run away: a per-turn budget, a whole-session budget ceiling, and a hard turn cap — adjust them with `CLAWDND_PLAY_BUDGET`, `CLAWDND_PLAY_SESSION_BUDGET`, and `CLAWDND_PLAY_MAX_TURNS`. Press **Ctrl-C** (or close the window) to stop.
 
-> Not to be confused with `clawdnd-dashboard.command`, the read-only **director's view** — it *watches* a game (live or a QA run) without an action palette. `clawdnd-play.command` is the one that lets you *play*.
+> Not to be confused with `worldos-dashboard.command`, the read-only **director's view** — it *watches* a game (live or a QA run) without an action palette. `worldos-play.command` is the one that lets you *play*.
 
 ## Quick start — install, create a character, play your first session
 
@@ -106,20 +106,21 @@ The DM loop is **safety-capped** so it can't run away: a per-turn budget, a whol
 Clone the repo and register it with Claude Code in a single step:
 
 ```bash
-git clone https://github.com/100yenadmin/ClawDnD.git
-cd ClawDnD
+git clone https://github.com/electricsheephq/WorldOS.git
+cd WorldOS
 ```
 
 Then inside Claude Code, register the local marketplace and install the plugin:
 
 ```
 /plugin marketplace add .
-/plugin install clawdnd@clawdnd
+/plugin install worldos@worldos
 ```
 
 Claude Code reads `.claude-plugin/plugin.json` and `.mcp.json`, starts the three MCP
 servers (`clawdnd-engine`, `clawdnd-rules`, `clawdnd-voice`) via `uv`, and the plugin
-is live for the session.
+is live for the session. (Those MCP server ids keep the `clawdnd-` prefix for now; a later
+release migrates them alongside the `CLAWDND_*` env vars.)
 
 ### 3. Create a character and begin
 
@@ -153,7 +154,7 @@ Or start a scripted campaign: `/campaign-new [name]` then `/session-start [id]`.
 
 ```bash
 # Double-click the desktop shortcut (after scripts/install-desktop-shortcut.sh), or:
-./clawdnd-play.command            # default world (baldurs-gate)
+./worldos-play.command            # default world (baldurs-gate)
 scripts/play.sh sundered-reach    # specific world
 ```
 
@@ -167,7 +168,7 @@ resolves each move through the engine and narrates the next beat live.
 script/build_and_run.sh           # builds with Swift, ad-hoc signs, opens the app
 ```
 
-The app (`macos/ClawDnDApp/`) hosts the same read-model screens (atlas, party, quests,
+The app (`macos/WorldOSApp/`) hosts the same read-model screens (atlas, party, quests,
 event feed, combat, portrait art) as live engine read-models. Requires macOS 13+ and
 `swift` in your PATH (Xcode Command Line Tools).
 
@@ -187,11 +188,11 @@ Kokoro runs on-device; no API key needed. ElevenLabs can drop in later via
 
 ## Licensing
 
-ClawDnD's own **code is MIT** (see `LICENSE`). It reuses only permissively-licensed components and ships the **CC-BY-4.0 SRD 5.2** for rules. See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
+WorldOS's own **code is MIT** (see `LICENSE`). It reuses only permissively-licensed components and ships the **CC-BY-4.0 SRD 5.2** for rules. See `THIRD_PARTY_NOTICES.md` and `data/srd/ATTRIBUTION.md`.
 
 **World seeds** (`content/worlds/`) are a separate layer with their own licensing:
 
-- **Original seeds** (e.g. *The Sundered Reach*) are original ClawDnD content, **CC-BY-4.0**, built on SRD primitives.
-- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's Gate 3+ Universe Seed*) are **unofficial, FREE fan content** — game rules under the **D&D Open Game License / CC-BY SRD**, and setting names/lore/characters under the **Wizards Fan Content Policy** (and, for Baldur's Gate 3 elements, used as unofficial fan content of Larian Studios). They are **not official, not endorsed**, and never sold. Each such seed ships a `LICENSE.md` carrying the required notice. The MIT license covers ClawDnD's code only — **it does not extend to the universe seeds**, which remain the property of their respective rights-holders and are used here strictly as free, unofficial Fan Content.
+- **Original seeds** (e.g. *The Sundered Reach*) are original WorldOS content, **CC-BY-4.0**, built on SRD primitives.
+- **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's Gate 3+ Universe Seed*) are **unofficial, FREE fan content** — game rules under the **D&D Open Game License / CC-BY SRD**, and setting names/lore/characters under the **Wizards Fan Content Policy** (and, for Baldur's Gate 3 elements, used as unofficial fan content of Larian Studios). They are **not official, not endorsed**, and never sold. Each such seed ships a `LICENSE.md` carrying the required notice. The MIT license covers WorldOS's code only — **it does not extend to the universe seeds**, which remain the property of their respective rights-holders and are used here strictly as free, unofficial Fan Content.
 
 A `_private/` path under each content area stays **gitignored** for material you don't intend to publish.

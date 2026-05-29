@@ -188,18 +188,18 @@ struct WebView: NSViewRepresentable {
         private func send(_ reply: NativeBridgeReply) {
             let dictionary = reply.dictionary
             guard JSONSerialization.isValidJSONObject(dictionary) else {
-                NSLog("ClawDnD native bridge produced an invalid JSON reply: \(dictionary)")
+                NSLog("WorldOS native bridge produced an invalid JSON reply: \(dictionary)")
                 return
             }
             do {
                 let data = try JSONSerialization.data(withJSONObject: dictionary)
                 guard let json = String(data: data, encoding: .utf8) else {
-                    NSLog("ClawDnD native bridge failed to encode reply as UTF-8: \(dictionary)")
+                    NSLog("WorldOS native bridge failed to encode reply as UTF-8: \(dictionary)")
                     return
                 }
                 webView?.evaluateJavaScript("window.ClawDnDNative && window.ClawDnDNative._reply(\(json));")
             } catch {
-                NSLog("ClawDnD native bridge reply serialization failed: \(error); reply=\(dictionary)")
+                NSLog("WorldOS native bridge reply serialization failed: \(error); reply=\(dictionary)")
             }
         }
     }

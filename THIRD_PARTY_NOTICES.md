@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-ClawDnD's own source code is licensed under MIT (see `LICENSE`). This file
-records third-party material that ClawDnD bundles, adapts, or depends on, and
+WorldOS's own source code is licensed under MIT (see `LICENSE`). This file
+records third-party material that WorldOS bundles, adapts, or depends on, and
 the licensing decisions behind them.
 
 ## Bundled data
@@ -15,7 +15,7 @@ the licensing decisions behind them.
 
 ## Runtime dependencies (permissive, installed from PyPI via uv)
 
-ClawDnD's MCP servers depend on these packages:
+WorldOS's MCP servers depend on these packages:
 - **mcp** (MIT) — the Model Context Protocol SDK / FastMCP.
 - **pydantic** (MIT) — state-model validation.
 - **rapidfuzz** (MIT) — fuzzy matching for rules lookups.
@@ -52,13 +52,13 @@ attacks, dice, travel, quests, camp, settlements, consumables, and coins.
 - **Authors in this subset:** Lorc, Delapouite, and Willdabeast.
 
 The imported SVGs were normalized only for presentation by removing the opaque
-background rectangle so the app can tint them as local CSS masks. ClawDnD does
+background rectangle so the app can tint them as local CSS masks. WorldOS does
 not vendor the full icon set and does not fetch icon assets from a network CDN.
 
 ## Structural references — learn-from only (NO code copied)
 
-These projects informed ClawDnD's design. After verifying their licensing
-(2026-05-22), we copy **no code** from any of them; ClawDnD's engine, rules, and
+These projects informed WorldOS's design. After verifying their licensing
+(2026-05-22), we copy **no code** from any of them; WorldOS's engine, rules, and
 voice code is a clean-room implementation from the SRD and our own D&D 5e
 knowledge.
 
@@ -73,7 +73,7 @@ knowledge.
 - **heffrey78/dnd-mcp** — no declared license. Encounter / CR-difficulty logic
   referenced only; reimplemented from the SRD.
 - **Sstobo/Claude-Code-Game-Master** — CC-BY-NC-SA-4.0 (NonCommercial +
-  ShareAlike), incompatible with ClawDnD's MIT licensing. Architecture studied;
+  ShareAlike), incompatible with WorldOS's MIT licensing. Architecture studied;
   not copied.
 - **PinchOfData/claude-dungeon-master** — no declared license. DM persona/tone
   studied; not copied.
@@ -81,7 +81,7 @@ knowledge.
 ## Content policy
 
 Published commercial **adventures** (e.g. WotC titles) are copyrighted and are
-**never** redistributed in this repository. ClawDnD ships original and
+**never** redistributed in this repository. WorldOS ships original and
 CC-licensed content, generates campaigns from SRD primitives, and supports
 *private, local* import of adventures the user legally owns (kept under a
 git-ignored directory and never committed).
@@ -92,7 +92,7 @@ World seeds are a distinct content layer with their own licensing (the project's
 MIT license covers code only and does **not** extend to them). Each seed ships a
 `LICENSE.md`; the CI gate (`scripts/license_check.py`) requires it.
 
-- **Original seeds** (e.g. *The Sundered Reach*) — original ClawDnD content under
+- **Original seeds** (e.g. *The Sundered Reach*) — original WorldOS content under
   **CC-BY-4.0**, built on SRD primitives. Clean-room; no third-party setting IP.
 - **Universe seeds based on existing settings** (e.g. the *Unofficial Baldur's
   Gate 3+ Universe Seed*) — **FREE, unofficial Fan Content**, never sold:

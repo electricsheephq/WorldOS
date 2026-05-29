@@ -18,7 +18,7 @@ struct ProvidersView: View {
                 VStack(alignment: .leading) {
                     Text("Providers")
                         .font(.title2.weight(.semibold))
-                    Text("Launch adapters can only start processes that speak through ClawDnD's existing engine/player paths.")
+                    Text("Launch adapters can only start processes that speak through WorldOS's existing engine/player paths.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

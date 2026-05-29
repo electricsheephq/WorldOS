@@ -82,15 +82,15 @@ struct SettingsView: View {
         let expanded = repoPath.trimmingCharacters(in: .whitespacesAndNewlines) as NSString
         let path = expanded.expandingTildeInPath
         guard !path.isEmpty else {
-            return "Choose a ClawDnD checkout folder."
+            return "Choose a WorldOS checkout folder."
         }
 
         guard path.hasPrefix("/") else {
-            return "Use a full path, for example /Volumes/LEXAR/repos/ClawDnD."
+            return "Use a full path, for example /Users/you/WorldOS."
         }
 
         guard RepositoryLocator.looksLikeRepo(URL(fileURLWithPath: path)) else {
-            return "This folder does not look like a ClawDnD checkout."
+            return "This folder does not look like a WorldOS checkout."
         }
 
         return nil
