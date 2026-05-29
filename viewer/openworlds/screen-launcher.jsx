@@ -8,6 +8,17 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   const [summonError, setSummonError] = React.useState("");
   const toast = window.useToast ? window.useToast() : (() => {});
   const active = campaigns.find((c) => c.id === selected) || campaigns[0] || null;
+  const hasBridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
+  // #326: the in-browser play-entry. The catalog marks a session the engine can take moves for as
+  // `live` (its move sink is writable) and `canResume` (it is the attached, current run). When such
+  // a session exists — the #324 harness pre-mints exactly this, and a resumable save is the same —
+  // the player can step straight into the live table and play; the table's own /move + /chat loop
+  // carries it from there. We surface that as an unmistakable primary so a newbie is never left
+  // hunting (the old launcher led with "Begin a new chronicle", which dead-ends without the app).
+  const playableCampaign =
+    campaigns.find((c) => c.live && c.canResume) ||
+    campaigns.find((c) => c.canResume) ||
+    null;
 
   React.useEffect(() => {
     if (campaigns.some((c) => c.id === selected)) return;
@@ -69,8 +80,30 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     startPlay(c?.world);
   };
 
+  // #326: drop straight into the live table for an already-playable session. Unlike startPlay
+  // (which, in the native app, mints a NEW provider session), this binds the table to an EXISTING
+  // live/resumable chronicle and navigates there — the only step a browser player needs, since the
+  // session and its DM already exist. Used by the in-browser "Continue / Resume → play" primary.
+  const enterPlayable = (c) => {
+    const target = c || playableCampaign;
+    if (!target) return;
+    setState((s) => ({ ...s, activeCampaign: target.id }));
+    onNavigate("table");
+  };
+
   return (
     <div className="screen" style={{ padding: "32px 40px 48px", minHeight: "100%" }}>
+      {/* #326: a can't-miss in-browser play-entry. When a live/resumable session exists, this is
+          the FIRST thing the player sees — clicking it drops straight into the live table (no app,
+          no bridge needed; the session + DM already exist). This is the affordance the #324 newbie
+          was missing when they instead clicked "Begin a new chronicle" and hit the app-only wall. */}
+      {playableCampaign && (
+        <ContinueBanner
+          campaign={playableCampaign}
+          onEnter={() => enterPlayable(playableCampaign)}
+        />
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 36, alignItems: "start" }}>
 
         {/* LEFT: Hero with title plate */}
@@ -168,6 +201,19 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                 <span style={{ fontSize: 22, color: "var(--crimson)", lineHeight: 1 }}>✦</span>
                 <span>Begin a new chronicle</span>
               </button>
+              {/* #326: be honest, not silent. Starting a BRAND-NEW chronicle mints a fresh DM
+                  provider session — only the desktop app can do that (it has the supervisor
+                  bridge). In a plain browser there is no DM to attach, so picking a hero through
+                  here can't begin play (the roster says so too). Say it up-front rather than
+                  letting a newbie walk into the dead-end. (If a live/resumable session exists,
+                  the Continue banner above is their way in.) */}
+              {!hasBridge && (
+                <div className="hand muted" style={{ fontSize: 12, lineHeight: 1.4, padding: "0 4px" }}>
+                  {playableCampaign
+                    ? "Browsing heroes here is fine — to actually start a NEW chronicle you'll need the WorldOS desktop app. To keep playing now, use Continue above."
+                    : "Starting a new chronicle needs the WorldOS desktop app (it spins up the Dungeon Master). You can still browse the roster here."}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -272,18 +318,32 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                     </p>
                   </div>
 
-                  {/* CTA bar */}
-                  <div style={{
-                    marginTop: 24, paddingTop: 16,
-                    borderTop: "1px solid rgba(140,100,60,0.3)",
-                    display: "flex", gap: 8,
-                  }}>
-                    <BrassButton onClick={onResume} size="lg" style={{ flex: 1 }} disabled={summoning}>
-                      {summoning ? "Summoning the Dungeon Master…" : (c.canResume ? "Resume Chronicle" : "View Chronicle")}
-                    </BrassButton>
-                    <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")}>Roster</BrassButton>
-                    <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")}>Journal</BrassButton>
-                  </div>
+                  {/* CTA bar. #326: in a plain browser a resumable session is played by entering
+                      the live table directly (enterPlayable) — no provider to "summon", so don't
+                      mislabel it. In the native app, Resume mints/attaches a provider via the
+                      bridge (onResume → startProviderSession). A non-resumable card is read-only. */}
+                  {(() => {
+                    const browserPlayable = !hasBridge && c.canResume && c.live;
+                    const onCta = browserPlayable ? () => enterPlayable(c) : onResume;
+                    const label = summoning
+                      ? "Summoning the Dungeon Master…"
+                      : browserPlayable
+                        ? "Continue Chronicle"
+                        : (c.canResume ? "Resume Chronicle" : "View Chronicle");
+                    return (
+                      <div style={{
+                        marginTop: 24, paddingTop: 16,
+                        borderTop: "1px solid rgba(140,100,60,0.3)",
+                        display: "flex", gap: 8,
+                      }}>
+                        <BrassButton onClick={onCta} size="lg" style={{ flex: 1 }} disabled={summoning}>
+                          {label}
+                        </BrassButton>
+                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")}>Roster</BrassButton>
+                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")}>Journal</BrassButton>
+                      </div>
+                    );
+                  })()}
                   {summonError && (
                     <div className="hand" style={{ color: "var(--crimson)", fontSize: 13, marginTop: 10 }}>
                       {summonError}
@@ -301,6 +361,43 @@ function ScreenLauncher({ onNavigate, state, setState }) {
         setShowNew(false);
         startPlay(c.world);
       }} />}
+    </div>
+  );
+}
+
+// #326: the unmistakable in-browser "Continue / Resume → play" primary. Shown at the very top of
+// the launcher whenever a live/resumable session exists (the #324 harness, or any resumable save).
+// Clicking it binds the table to this chronicle and drops the player straight into the live loop —
+// the single click the browser player needs, since the session + DM already exist. A live session
+// gets the brighter "Continue" treatment; a resumable-but-idle save says "Resume".
+function ContinueBanner({ campaign, onEnter }) {
+  const isLive = Boolean(campaign?.live);
+  const region = campaignRegion(campaign);
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 20,
+        padding: "18px 24px", marginBottom: 28,
+        background: "linear-gradient(180deg, var(--p-100), var(--p-300))",
+        boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 0 0 4px var(--p-100), inset 0 0 0 5px var(--b-400), 0 8px 18px rgba(0,0,0,0.35)",
+      }}
+    >
+      <Img scope={campaign?.imageScope || ""} label={`scene · ${region.toLowerCase()}`} w={92} h={64} framed fit="cover" />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="eyebrow" style={{ color: "var(--crimson)", display: "flex", alignItems: "center", gap: 8 }}>
+          <Pill tone={isLive ? "emerald" : "royal"} dot={isLive}>{isLive ? "Live now" : "Ready to resume"}</Pill>
+          <span>Your chronicle awaits</span>
+        </div>
+        <div style={{ fontFamily: "var(--f-display)", fontSize: 22, color: "var(--ink-900)", letterSpacing: "0.04em", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {campaign?.title || "Open Worlds"}
+        </div>
+        <div className="hand" style={{ fontSize: 14, color: "var(--ink-700)", marginTop: 2 }}>
+          {campaign?.subtitle || region}
+        </div>
+      </div>
+      <BrassButton onClick={onEnter} size="lg">
+        {isLive ? "Continue → play" : "Resume → play"}
+      </BrassButton>
     </div>
   );
 }
@@ -514,4 +611,4 @@ function SegRadio({ value, onChange, options }) {
   );
 }
 
-Object.assign(window, { ScreenLauncher, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });
+Object.assign(window, { ScreenLauncher, ContinueBanner, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });
