@@ -4,7 +4,8 @@ A **blind UI/UX test**: an AI "player" drives the real `/openworlds/` browser UI
 source-code access and reports every bug + UX gap it hits. Different signal from the
 code-reading audit — this finds bugs by *trying to play*.
 
-This is v1: **one persona (The First-Timer), Playwright, a single end-to-end run.**
+v1 shipped **one persona (The First-Timer)**, Playwright, a single end-to-end run.
+**v2 adds the other four personas + a cross-persona scoring aggregator** (issue #324).
 
 ## Run it
 
@@ -16,9 +17,27 @@ qa/ui_playtest.sh play1 baldurs-gate newbie 30 3.00
 
 - `runid`   — names the output dir `qa/ui_playtest_runs/<runid>/` (wiped + recreated).
 - `world`   — world id seeded for the session (e.g. `baldurs-gate`).
-- `persona` — picks `qa/play_player_browser_<persona>.txt` (v1 ships `newbie`).
+- `persona` — picks `qa/play_player_browser_<persona>.txt`. The runner dispatches purely by
+              this name (line 40), so adding a persona is just adding its brief file.
 - `beats`   — soft cap on the number of Player **palette actions**.
 - `budget`  — USD cap for the **Player** `claude -p` process.
+
+### The five personas (v2)
+
+Each persona is a self-contained brief over the **same** 8-tool palette; only the player's
+mindset + bug-hunting focus differs. They are designed so the bugs they hit *overlap* — a
+defect every persona reports is the highest-priority one (see the aggregator below).
+
+| persona | brief | what it hunts |
+|---|---|---|
+| `newbie` | `play_player_browser_newbie.txt` | first-timer onboarding: can a blind new player reach + sustain play? jargon, dead buttons, getting-stuck. |
+| `veteran` | `play_player_browser_veteran.txt` | BG3 affordance gaps: hotbar / action economy, character-sheet depth, equipment paper-doll + compare, tactical combat (movement/spell-area preview), approval/subclass. |
+| `adversarial` | `play_player_browser_adversarial.txt` | tries to BREAK it: dead/lying controls, rapid/double-fire, empty/huge/markup input, navigate-away mid-DM-turn, modal traps, state corruption. |
+| `narrative` | `play_player_browser_narrative.txt` | story-first / menu-averse: immersion breaks, DM-internal leaks, lifeless NPC dialogue, jargon tabs that pull you out of the fiction. |
+| `optimizer` | `play_player_browser_optimizer.txt` | data depth: complete bestiary stat blocks, deep inspectors (full rules text), compare-on-hover, level-up / subclass / re-prepare build planning. |
+
+> The persona briefs are committed (they're the deliverable). Only the per-run **outputs**
+> under `qa/ui_playtest_runs/` and `qa/playwright/node_modules/` are gitignored.
 
 Output under `qa/ui_playtest_runs/<runid>/`:
 
@@ -111,6 +130,40 @@ persona doesn't notice it.
 A run **passes** when `completed_intro_flow` **and** `critical == 0` **and** `console_errors == 0`
 **and** `satisfaction ≥ 6`.
 
+## Aggregating a persona sweep (qa/ui_playtest_aggregate.py)
+
+Run the personas one at a time into sibling dirs, then aggregate them into one release-readiness
+picture:
+
+```sh
+SWEEP=qa/ui_playtest_runs/sweep-$(date +%Y%m%d)
+qa/ui_playtest.sh "$SWEEP/newbie"      baldurs-gate newbie      30 3.00
+qa/ui_playtest.sh "$SWEEP/veteran"     baldurs-gate veteran     30 3.00
+qa/ui_playtest.sh "$SWEEP/adversarial" baldurs-gate adversarial 30 3.00
+qa/ui_playtest.sh "$SWEEP/narrative"   baldurs-gate narrative   30 3.00
+qa/ui_playtest.sh "$SWEEP/optimizer"   baldurs-gate optimizer   30 3.00
+python3 qa/ui_playtest_aggregate.py "$SWEEP"   # → $SWEEP/RELEASE_SUMMARY.md
+```
+
+The aggregator reads each run's `score.json` + `bugs.ndjson` and writes `RELEASE_SUMMARY.md`
+(+ `release_summary.json`):
+
+- a **per-persona scorecard** (pass / satisfaction / played / dead-clicks / console-errors / cost);
+- **cross-persona findings ranked by how many personas hit each defect**. Bugs are clustered
+  across personas by `(screen, category)` + a synonym-normalized token overlap (so "dead Forge
+  button" and "Forge tab does nothing" merge). Priority = **breadth of impact**: a defect ALL
+  personas hit is **P0**, one persona is **P3** — the natural prioritization from the persona
+  strategy. The persona's own severity (critical/major/minor/trivial) breaks ties within a band.
+- the by-design **missing-image 404 noise collapsed** into one advisory line (never prioritized).
+
+Release verdict is **READY** only when every persona passed AND there is no P0/P1 cross-persona
+defect.
+
+> **Serial only on this host.** A 16 GB host OOMs running concurrent heavy DM sessions, so the
+> sweep above runs personas **one at a time** (each is its own engine+DM+player triple). True
+> parallelism — a persona panel running side by side — needs a bigger host; on a 16 GB box, keep
+> it serial.
+
 ## Setup (one time)
 
 Playwright + the MCP SDK live in their own workspace so the repo root stays clean:
@@ -136,5 +189,7 @@ npx playwright install chromium  # ONLY if chromium isn't already cached (it oft
 - Constraints honored: the engine (`servers/engine/`) is the **sole writer**; the harness only
   reads viewer surfaces + drives the UI / `/move`. No wire-contract changes (`CLAWDND_*` env,
   `clawdnd-*` MCP ids, bundle id). No assets / `_private/` committed.
-- v2 adds the other four personas (BG3 veteran, adversarial QA, storyteller, min-maxer) + a
-  parallel panel runner. See issue #324.
+- v2 adds the other four personas (BG3 veteran, adversarial QA, storyteller, min-maxer) + the
+  cross-persona scoring aggregator (`qa/ui_playtest_aggregate.py`). The sweep runs **serially**
+  on this 16 GB host (concurrent heavy DM runs OOM it); a true parallel panel needs a bigger
+  host. See issue #324.
