@@ -209,7 +209,11 @@ function ScreenCharacter({ onNavigate, state, setState }) {
                   background: "rgba(176,141,87,0.08)",
                   boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 }}>
-                  <Placeholder label={it.glyph} w={32} h={32} framed />
+                  {/* Equipped item art — mirror screen-inventory's `item-<slug(name)>` scope
+                      (the engine keys ingested item icons by a name-slug; the surface emits
+                      it.name on each equipped entry). <Img> falls back to a Placeholder on a
+                      404, so a missing icon degrades gracefully. */}
+                  <Img scope={it.name ? "item-" + (window.slug ? window.slug(it.name) : "") : ""} label={it.name || it.glyph} w={32} h={32} fit="contain" framed />
                   <div style={{ minWidth: 0 }}>
                     <div className="eyebrow" style={{ fontSize: 9 }}>{it.slot}</div>
                     <div style={{ fontFamily: "var(--f-display)", fontSize: 11, color: "var(--ink-900)", letterSpacing: "0.05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
