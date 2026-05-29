@@ -27,7 +27,7 @@ CI-green PRs so nothing broke mid-flight:
 - **Identity (#296):** plugin id `clawdnd` → **`worldos`**; the macOS app is now
   `WorldOSApp` / `WorldOS.app`; author `electricsheephq`; repo moved to
   `github.com/electricsheephq/WorldOS` (prior owner paths may redirect).
-  README, CLAUDE.md, docs, and the dev skill (`worldos-dev`) rebranded.
+  README, public docs, and the dev skill (`worldos-dev`) rebranded.
 - **Code + docs (#299):** ClawDnD → WorldOS across source and documentation; **zero
   ClawDnD references remain in `servers/engine`**.
 - **Env compatibility (#300, non-breaking):** a shared resolver now prefers
@@ -134,9 +134,9 @@ signatures).
   longer calls `getcwd()` on an external/removable volume — a kernel-level enumeration
   that some security scanners hang on `open$NOCANCEL`. `server.py` resolves all of its
   assets from `__file__`, so the cwd change is transparent to it.
-- **Repo can be checked out anywhere.** Verified by cloning into `~/ClawDnD-val` on
-  internal disk in parallel with the LEXAR worktree; the build + the test suites + the
-  whole OpenWorlds screen set all run identically from either location.
+- **Repo can be checked out anywhere.** Verified by cloning into a clean checkout in
+  parallel with another worktree; the build + the test suites + the whole OpenWorlds
+  screen set all run identically from either location.
 
 ### Fixed
 

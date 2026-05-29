@@ -1,6 +1,6 @@
 ---
 name: worldos-dev
-description: Develop, test, and QA the WorldOS plugin (the living-world D&D 5e engine). Use when implementing an engine/content/QA change, running or scoring a playtest, delegating a build to a subagent, or resuming the project after a compaction. Encodes the exact dev loop (worktree → additive change → single-process LEXAR pytest → PR → squash-admin merge → prune), the QA loop (duo / combat-sprint runners + the 3 lenses + behavioral gate), and the load-bearing engine invariants. Read WorldOS-RUNBOOK.md first for full context.
+description: Develop, test, and QA the WorldOS plugin (the living-world D&D 5e engine). Use when implementing an engine/content/QA change, running or scoring a playtest, delegating a build to a subagent, or resuming the project after a compaction. Encodes the exact dev loop (worktree → additive change → focused single-process pytest → PR → merge → prune), the QA loop (duo / combat-sprint runners + the 3 lenses + behavioral gate), and the load-bearing engine invariants. Read WorldOS-RUNBOOK.md first for full context.
 ---
 
 # WorldOS Dev
@@ -29,8 +29,8 @@ universe-system that generates worlds. Source-available commercial product, BG-f
    touch agents `main`/`operations`.
 
 ## THE DEV LOOP (exact)
-Test policy: **GitHub-CI-first; local only on LEXAR; SINGLE-PROCESS** (main disk ~4.3 GB
-free — parallel workers OOM the host). This repo is on LEXAR, so local single-process is OK.
+Test policy: **GitHub-CI-first for broad validation; focused local tests for fast feedback.**
+Keep Python tests single-process unless the lane explicitly supports parallel execution.
 
 1. **Worktree off main** (keeps the engine/content/QA lane disjoint from the sibling
    macOS/OpenWorlds lane). Implement **additively** (honor every invariant).
@@ -38,8 +38,8 @@ free — parallel workers OOM the host). This repo is on LEXAR, so local single-
    ```bash
    uv run --directory servers/engine python -m pytest <relpath> -q -p no:xdist
    ```
-   **NEVER pass `-n` / use xdist** — parallel workers OOM the host. Run focused files for
-   the change; run the full `servers/engine/tests` before merge.
+   Run focused files for the change; rely on GitHub CI for broad validation unless the
+   full local suite is explicitly needed.
 3. **Push + open the PR** with a HEREDOC body:
    ```bash
    gh pr create --title "…" --body "$(cat <<'EOF'
@@ -49,8 +49,8 @@ free — parallel workers OOM the host). This repo is on LEXAR, so local single-
    ```
    **DO NOT pipe `gh pr create` through `tail` inside an `&&` chain** — it masks a transient
    failure and silently skips the merge (bit us on #185). Verify the returned PR URL.
-4. **Merge (local-gate):** `gh pr merge --squash --admin` — GitHub Actions is degraded
-   repo-wide; we gate on local single-process pytest + `license_check`, CI reconciles post-merge.
+4. **Merge only after checks pass.** Use the repository's normal PR merge path and treat
+   local `license_check` + focused pytest as pre-push confidence, not a replacement for CI.
 5. **Sync + clean:**
    ```bash
    git pull --ff-only origin main

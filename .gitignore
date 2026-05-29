@@ -6,13 +6,15 @@
 /play-state/
 
 # QA harness runtime artifacts — sandboxed playtest state, transcripts, logs.
-# The harness scripts/rubric/config (qa/*.sh, qa/*.py, qa/*.json, qa/*.txt, qa/*.md)
-# ARE committed; only these run outputs are ignored.
+# The harness scripts/rubric/config are committed. Local machine overrides and run
+# outputs are ignored; the portable MCP template is qa/qa.mcp.example.json.
 /qa/state/
 /qa/state-oc/
 /qa/transcripts/
+/qa/runs/
 /qa/*.err
 /qa/smoke*.json
+/qa/qa.mcp.json
 # The on-demand findings ledger (qa/collect_findings.py output) — a regenerable digest of
 # local QA run scores, derived from the ignored qa/transcripts/. The collector script IS
 # committed; its output is not.
@@ -56,6 +58,18 @@ venv/
 *.bin
 .cache/
 /state/audio/
+
+# Local operator / agent artifacts. Public repo guidance should live in tracked docs;
+# machine-specific Claude/Codex notes stay local.
+/CLAUDE.md
+.claude/local.json
+.claude/settings.local.json
+.claude/*.local.json
+.claude.local/
+.aider*
+*.har
+*.trace
+*.tmp
 
 # OS / editor
 .DS_Store

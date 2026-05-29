@@ -4,8 +4,8 @@ Synthesizes a line of D&D narration/dialogue in several distinct character
 voices and writes WAV files, proving the local Kokoro backend produces real,
 nonzero, multi-voice audio. The first run downloads the Kokoro model.
 
-Run (point the HF cache at LEXAR to spare the small main disk):
-    HF_HOME=/Volumes/LEXAR/.cache/huggingface \
+Run (optionally point HF_HOME at a large local cache directory):
+    HF_HOME="$HOME/.cache/huggingface" \
       uv run --directory servers/voice --group kokoro python smoke_test.py
 """
 

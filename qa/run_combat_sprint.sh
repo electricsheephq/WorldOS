@@ -38,16 +38,16 @@ fi
 echo "[cs] seed JSON: $SEED_JSON"
 
 # ── 2. Per-run MCP config (engine points at THIS worktree + THIS state dir) ──
-# Mirror run_duo.sh lines ~39-46: patch qa.mcp.json with the run-local state dir
+# Mirror run_duo.sh lines ~39-46: patch qa.mcp.example.json with the run-local state dir
 # AND override the engine --directory to this worktree so we use local code.
 DM_CFG="$STATE_DIR/dm.mcp.json"
-python3 - "$ROOT/qa/qa.mcp.json" "$STATE_DIR" "$ROOT" "$DM_CFG" <<'PY'
+python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$ROOT" "$DM_CFG" <<'PY'
 import json, sys
 src, state_dir, root, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(src))
 eng = cfg["mcpServers"]["clawdnd-engine"]
 eng["env"]["CLAWDND_STATE_DIR"] = state_dir
-# Override --directory arg to use THIS worktree's engine (not the qa.mcp.json default)
+# Override --directory arg to use THIS worktree's engine (not the template default)
 args = eng.get("args", [])
 try:
     idx = args.index("--directory")

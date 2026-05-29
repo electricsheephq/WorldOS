@@ -1,24 +1,18 @@
 # WorldOS — RUNBOOK (READ FIRST on resume)
 
-> **Before anything: confirm you are in the canonical checkout and know the right UI.**
-> `CLAUDE.md` (repo root, auto-loaded) is the hub — canonical checkout is
-> `/Users/lume/ClawDnD-val` (== GitHub `electricsheephq/WorldOS` main; the `/Volumes/LEXAR/…`
-> copies are DEPRECATED), the UI is OpenWorlds at `/openworlds/` (the root is the legacy
-> dashboard), and it carries the full project map + read order. See also the auto-memory
-> `clawdnd-canonical-setup`. (Product renamed ClawDnD → WorldOS; the checkout dir keeps its
-> `ClawDnD-val` name for now per issue #295/W0-F.)
+> **Before anything: confirm you are in the repo root and know the right UI.**
+> The current product UI is OpenWorlds at `/openworlds/`; the root dashboard is
+> legacy. This runbook is the public project map + read order. Machine-specific
+> agent notes such as `CLAUDE.md` are intentionally local-only and gitignored.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
 > project, architecture, the load-bearing invariants you must not violate, the exact dev
 > + QA loops, how to delegate, the hard-won lessons, and the current state + work queue.
 >
-> Companion artifacts (the live day-log + decision records) live at
-> `/Volumes/LEXAR/Codex/session-notes/2026-05-26/clawdnd-overnight-qa/`:
-> `implementation-notes.html` (running log — read it for the latest in-flight state),
-> `decision-quest-arc-engine.md`, `decision-143-variant-matrices.md`,
-> `decision-campaign-director.md`, `decision-event-parley.md`, `insights-encounter-balance.md`.
 > The QA results ledger is `qa/SCORECARD.md`; the scoring spec is `qa/SCORING.md`.
+> If an operator hands you local session notes or decision records, treat them as
+> private working artifacts unless they are intentionally promoted into tracked docs.
 >
 > Last updated: 2026-05-28 (post-v1.0.1).
 >
@@ -135,14 +129,13 @@ change must respect them.
 
 ## THE DEV LOOP (exact)
 
-> **Test-execution policy (from `~/.claude/CLAUDE.md`): GitHub-CI-first; local only on
-> LEXAR; SINGLE-PROCESS.** Main disk (`/`) has ~4.3 GB free and parallel test workers have
-> OOM-ed the host. This repo (`/Volumes/LEXAR/repos/ClawDnD*`) is on LEXAR, so local
-> single-process pytest is OK. **NEVER run with `-n` / xdist — parallel workers OOM the host.**
+> **Test-execution policy:** prefer GitHub CI for broad validation. For local
+> development, run focused tests first and keep Python test runs single-process unless
+> you have explicitly verified your machine can handle parallel workers.
 
 1. **Branch off main in a fresh worktree** (keeps lanes disjoint from the sibling desktop
    work). Implement **additively** (honor every invariant above).
-2. **Single-process test on LEXAR:**
+2. **Run focused local tests single-process:**
    ```bash
    uv run --directory servers/engine python -m pytest <relpath> -q -p no:xdist
    ```
@@ -176,7 +169,7 @@ change must respect them.
    git worktree prune
    ```
 
-**The whole shape:** worktree off main → implement additive → single-process LEXAR test →
+**The whole shape:** worktree off main → implement additive → focused single-process test →
 push → `gh pr create` (no `tail` in an `&&` chain) → `gh pr merge --squash --admin` →
 `git pull --ff-only origin main` → remove worktree + delete branch + prune.
 
@@ -238,7 +231,7 @@ Orchestrate via subagents; verify from the top.
 
 1. **Create a fresh worktree** off main for the agent's lane.
 2. **Spawn an agent** (Agent tool / `claude -p`) with: a **precise spec**, the
-   **single-process-test guardrail** (`-p no:xdist`, never `-n`, LEXAR only), and the
+   **single-process-test guardrail** (`-p no:xdist`, never `-n` unless the lane explicitly supports it), and the
    directive **"flag-don't-force-fix if many tests break"** (don't let an agent weaken
    assertions or paper over a real regression to make a suite go green).
 3. **Review the diff** — *trust BUT verify*. Read what the agent actually changed; confirm
@@ -268,7 +261,7 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
   after #181). Use it deliberately.
 - **First-principles for load-bearing decisions.** A public contract / schema / tool API /
   concurrency change with real trade-offs = run the research/decision loop and write a
-  decision doc (see the four in the session-notes dir), not speculative code.
+  decision record, not speculative code.
 - **Don't reflexively import a gate from one code path into another** — ask "in which
   domain is this concern real?" first (e.g. apply_damage is *legit* for traps/poison, so a
   blanket "reject apply_damage" rule was wrong).
@@ -393,8 +386,8 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
 ---
 
 ## RESUME CHECKLIST
-1. Read this file, then `implementation-notes.html` (latest in-flight state) + `qa/SCORECARD.md`.
-2. `cd /Volumes/LEXAR/repos/ClawDnD` (or the relevant worktree); `git log --oneline -10`.
+1. Read this file, then any handed-off local session notes + `qa/SCORECARD.md`.
+2. `cd` to the repo checkout or relevant worktree; `git log --oneline -10`.
 3. `gh pr list` + `gh issue list` to see open lanes (avoid the desktop-lane PRs above).
-4. Pick up the Quest-Arc L3 build / the queued waves; build → single-process LEXAR test →
+4. Pick up the Quest-Arc L3 build / the queued waves; build → focused single-process test →
    PR (no `tail` in `&&`) → `--squash --admin` → sync + prune. Log every QA run to SCORECARD.

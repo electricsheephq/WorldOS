@@ -48,7 +48,7 @@
 ## Asset gaps (wiki-first inventory)
 
 - **Chronicle cover scenes** — need `_private/<world>/scenes/cover-<campaign>.jpg` OR reuse `location:<location_id>` as the chronicle thumbnail.
-- **Hero (Caelar) portrait** — Caelar is a custom test PC; per `clawdnd-canonical-setup` memory, a faceless custom PC must show the silhouette, never a class crest. Behavior is correct ✓. Provide a portrait pipeline for created characters (gateway-gen vs default; see EPIC A discussion in `#242`).
+- **Hero (Caelar) portrait** — Caelar is a custom test PC; a faceless custom PC must show the silhouette, never a class crest. Behavior is correct ✓. Provide a portrait pipeline for created characters (gateway-gen vs default; see EPIC A discussion in `#242`).
 
 ## Recommended next pass
 

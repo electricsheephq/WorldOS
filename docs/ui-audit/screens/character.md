@@ -51,7 +51,7 @@
 
 - **Item icons** for canonical 5e gear in `_private/baldurs-gate/items/<slug>.png`: longsword, mace, dagger, shortbow, longbow, hand crossbow, light/medium/heavy armor (leather/studded/scale/chain/plate), shield, helmet, cloak, ring, amulet, potion-of-healing, … reuse via inventory's `itemScope`.
 - **Ability/Feat glyphs** in the icon registry (#174 already tracks): Lay on Hands, Channel Divinity, Sneak Attack, Bardic Inspiration, Sorcerer Metamagic, Pact Boon, etc.
-- **Class portraits** are NOT actually needed here — header uses portrait-<id>, not class crest (per `clawdnd-canonical-setup` invariant).
+- **Class portraits** are NOT actually needed here — header uses portrait-<id>, not class crest.
 
 ## Recommended next pass
 

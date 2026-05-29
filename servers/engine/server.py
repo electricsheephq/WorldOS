@@ -2063,8 +2063,8 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
         ch = Character(
             name=canonical,
             # A canon figure can be pulled in as the PROTAGONIST (the player), not just an
-            # npc/companion — using one as the PC is the documented testing path (CLAUDE.md:
-            # "Use CANON BG NPCs ... as the player persona"). Coercing kind down to "npc"/
+            # npc/companion — using one as the PC is a documented QA path for player
+            # personas. Coercing kind down to "npc"/
             # "companion" meant a canon-loaded PC left `party` with ZERO kind=="player" members
             # and tripped the player_in_party behavioral gate (QA: ow-duoF went RED). Allow
             # "player" through; anything unexpected still defaults to "npc".

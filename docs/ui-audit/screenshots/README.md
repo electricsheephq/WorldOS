@@ -12,9 +12,9 @@ commit; the same logic applies to derivative screenshots that embed them.
 ## How to regenerate locally
 
 ```sh
-# From the canonical repo root (/Users/lume/ClawDnD-val).
+# From the repo root.
 # Viewer must be running (default port 8799):
-CLAWDND_STATE_DIR=/tmp/clawdnd-audit-state CLAWDND_REPO_ROOT="$PWD" \
+CLAWDND_STATE_DIR="$(mktemp -d)" CLAWDND_REPO_ROOT="$PWD" \
   python3 viewer/server.py "" 8799 &
 
 # Then capture all 16 screens:

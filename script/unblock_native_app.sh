@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot unblock for the ClawDnD desktop app.
+# One-shot unblock for the WorldOS desktop app.
 #
 # Background: NordVPN Threat Protection's Shield (an Endpoint Security extension)
 # re-scans freshly-rebuilt ad-hoc-signed apps on every build, and that scan can
@@ -13,7 +13,7 @@
 # app (prefers Developer ID signing if your keychain ACL permits it, falls back to
 # ad-hoc), opens it, and polls for the viewer to bind. Usage:
 #
-#   bash ~/ClawDnD-val/script/unblock_native_app.sh
+#   bash ~/WorldOS/script/unblock_native_app.sh
 #
 # If the Keychain dialog appears during codesign and you click "Always Allow", the
 # Developer ID identity becomes silent for every future rebuild (no more popups —
@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-REPO="${CLAWDND_REPO:-$HOME/ClawDnD-val}"
+REPO="${WORLDOS_REPO:-${CLAWDND_REPO:-$HOME/WorldOS}}"
 PORTS_TO_CHECK="${CLAWDND_PORTS:-8765 8766 8767 8768 8769}"
 
 step() { printf "\n→ %s\n" "$1"; }

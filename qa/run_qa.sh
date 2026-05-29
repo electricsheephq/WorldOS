@@ -36,9 +36,9 @@ mkdir -p "$T" "$STATE_DIR"
 echo "[qa] run=$RUN budget=\$$BUDGET state=$STATE_DIR"
 rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
-# Per-run MCP config: qa/qa.mcp.json with this run's state dir patched in, so each
+# Per-run MCP config: qa/qa.mcp.example.json with this run's state dir patched in, so each
 # parallel run's engine writes to its own campaigns/ tree.
-python3 - "$ROOT/qa/qa.mcp.json" "$STATE_DIR" "$MCP_CONFIG" <<'PY'
+python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$MCP_CONFIG" <<'PY'
 import json, sys
 src, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = json.load(open(src))
