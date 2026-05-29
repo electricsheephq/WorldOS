@@ -12,4 +12,4 @@ What a newcomer notices: the wind, always, scoured clean and cold off the open B
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

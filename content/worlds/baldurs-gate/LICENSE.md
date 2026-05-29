@@ -1,7 +1,7 @@
 # Unofficial Baldur's Gate 3+ Universe Seed — Licensing & Attribution
 
 **This world seed is FREE, unofficial Fan Content. It is NOT official, NOT endorsed,
-and is never sold.** It is **not** covered by ClawDnD's MIT license (which applies to
+and is never sold.** It is **not** covered by WorldOS's MIT license (which applies to
 the project's code only); it is published under the terms below.
 
 ## Wizards Fan Content Policy (Forgotten Realms / D&D setting)
@@ -34,7 +34,7 @@ Pages under `lore/wiki/` are ingested from the **Forgotten Realms Wiki (Fandom)*
 is licensed **CC-BY-SA**. Each page carries its source URL + a CC-BY-SA attribution
 footer. They are free, unofficial fan content. Note CC-BY-SA (ShareAlike) is a different
 license from the original seed prose (CC-BY-4.0). The hand-authored pages at `lore/*.md`
-are original ClawDnD content.
+are original WorldOS content.
 
 ## Ingested character profiles (`characters/`)
 
@@ -57,4 +57,4 @@ redistributed).
 - Ingested `lore/wiki/` pages: CC-BY-SA (Forgotten Realms Wiki / Fandom), attributed per page.
 - Ingested `characters/` profiles: bg3.wiki (dual CC-BY-SA / CC-BY-NC-SA, non-commercial) + FR Fandom (CC-BY-SA), text-only, attributed per record.
 - Rules: CC-BY-4.0 SRD / OGL.
-- ClawDnD code: MIT (separate; does not extend to this seed).
+- WorldOS code: MIT (separate; does not extend to this seed).

@@ -16,4 +16,4 @@ The COLD LAMP's most recent survey — the one that brought back a crate locked 
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

@@ -41,5 +41,5 @@ is acting as though it were. Whether anything actually stirs under the harbor is
 per campaign; the verse itself is, and remains, apocryphal.
 
 ---
-*Original ClawDnD content (the "hallucinated-lore" easter egg) — free, unofficial fan content,
+*Original WorldOS content (the "hallucinated-lore" easter egg) — free, unofficial fan content,
 CC-BY-4.0. Not Larian/WotC canon; deliberately apocryphal in-fiction.*

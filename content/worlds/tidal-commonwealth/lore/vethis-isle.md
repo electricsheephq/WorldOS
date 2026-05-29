@@ -14,4 +14,4 @@ What a newcomer notices: the drill-drums carrying off the cliffs at dawn; the ci
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*

@@ -1,6 +1,6 @@
 # The Sundered Reach — Licensing & Attribution
 
-**Original ClawDnD world content — free and open.**
+**Original WorldOS world content — free and open.**
 
 - **World content** (setting, regions, factions, NPCs, lore in `world.json`):
   original work, licensed **Creative Commons Attribution 4.0 (CC-BY-4.0)**.
@@ -8,5 +8,5 @@
   **CC-BY-4.0** (see `data/srd/ATTRIBUTION.md`).
 
 This is clean-room original content — no Wizards of the Coast / Larian / Forgotten
-Realms / Baldur's Gate IP. ClawDnD's code is MIT (separate `LICENSE`); this world's
+Realms / Baldur's Gate IP. WorldOS's code is MIT (separate `LICENSE`); this world's
 prose is CC-BY-4.0.

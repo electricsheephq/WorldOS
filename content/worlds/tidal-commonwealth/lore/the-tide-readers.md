@@ -18,4 +18,4 @@ The Tide-Readers are not armed. They are not powerful. What they have is right, 
 
 ---
 
-*Original work. CC-BY-4.0 © ClawDnD contributors.*
+*Original work. CC-BY-4.0 © WorldOS contributors.*
