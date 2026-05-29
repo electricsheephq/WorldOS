@@ -163,8 +163,8 @@ The remaining ~2–3% lives in:
 |---|---|---|---|---|
 | [#260](https://github.com/100yenadmin/ClawDnD/issues/260) | Title-bar text overlaps nav-rail on every screen | Critical | per-page-polish | Polish Wave |
 | [#261](https://github.com/100yenadmin/ClawDnD/issues/261) | Atlas — seed the BG nav graph (Lower City / Upper City / …) | Critical | atlas | Polish Wave |
-| [#262](https://github.com/100yenadmin/ClawDnD/issues/262) | Bestiary 'THE MARCHES' → Sword Coast (demo-leak) | Critical | demo-leak | Finish Wave |
-| [#263](https://github.com/100yenadmin/ClawDnD/issues/263) | Bestiary intel-tier stat block or hide-when-blank | Critical | per-page-polish + wire-prototypes | Finish Wave |
+| ~~[#262](https://github.com/100yenadmin/ClawDnD/issues/262)~~ | ✅ Bestiary 'THE MARCHES' → Sword Coast (demo-leak) | Critical | demo-leak | **DONE v1.0.2 bfc8ad9** |
+| ~~[#263](https://github.com/100yenadmin/ClawDnD/issues/263)~~ | ✅ Bestiary intel-tier stat block (sighted→engaged→slain) | Critical | per-page-polish + wire-prototypes | **DONE 137e482** |
 | [#264](https://github.com/100yenadmin/ClawDnD/issues/264) | Forge Workshop Ledger demo leak (the scribe / the smith / a companion) | Critical | demo-leak | Polish Wave |
 | [#265](https://github.com/100yenadmin/ClawDnD/issues/265) | Creation Plane race + class + portrait gallery art | Critical | portraits + per-scene-art | Polish Wave |
 | [#266](https://github.com/100yenadmin/ClawDnD/issues/266) | World Seed write-lane decision + de-fake hardcoded values | Critical | wire-prototypes + demo-leak | Finish Wave |
