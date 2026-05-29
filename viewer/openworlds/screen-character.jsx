@@ -4,6 +4,18 @@
    Polls every 5s while visible; renders an empty state until the first live fetch (never the demo party).
    Layout/design unchanged from the prototype. */
 
+/* Build the /image scope for a hero portrait. Ingested canon art is keyed by a NAME-slug
+   ("portrait_dal-lightspark") which the server normalises from "portrait-<name-slug>"; a met
+   roster NPC already carries a slug id ("npc-minsc") that also normalises to the same key.
+   A loaded PC/companion, however, carries a random instance id ("char_40c15af4c9fc") that
+   matches no art — so we derive the scope from slug(name), which resolves real faces for
+   canon heroes and degrades to the silhouette (via Img's onError) for portrait-less ones. */
+function portraitScope(p) {
+  const s = (p && p.name && window.slug) ? window.slug(p.name) : "";
+  if (s) return "portrait-" + s;
+  return (p && p.id) ? "portrait-" + p.id : "";
+}
+
 function ScreenCharacter({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -46,6 +58,11 @@ function ScreenCharacter({ onNavigate, state, setState }) {
   }, [loadSurface]);
 
   const hero = party.find((p) => p.id === active) || party[0];
+  // Portrait scope: ingested canon art is keyed by a NAME-slug ("portrait_dal-lightspark"),
+  // which the server normalises from "portrait-<name-slug>". A loaded party member's id is a
+  // random instance hash ("char_40c15af4c9fc") that never matches, so deriving the scope from
+  // the name slug is what makes a canon hero's real face render (a custom/portrait-less hero
+  // still falls back to the silhouette via Img's onError). See heroPortraitScope below.
 
   React.useEffect(() => {
     if (party.length > 0 && !party.find((p) => p.id === active)) {
@@ -76,7 +93,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
               : "inset 0 0 0 1px rgba(140,100,60,0.2)",
             textAlign: "left",
           }}>
-            <Img scope={p.id ? "portrait-" + p.id : ""} label={p.short} w={36} h={44} framed />
+            <Img scope={portraitScope(p)} label={p.name} w={36} h={44} framed />
             <div>
               <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
                 {p.name}
@@ -114,12 +131,12 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         {/* Hero header card */}
         <Panel framed style={{ padding: 22 }}>
           <div style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 22, alignItems: "start" }}>
-            <Img scope={hero.id ? "portrait-" + hero.id : ""} label={`${hero.short} · portrait`} w={140} h={170} framed />
+            <Img scope={portraitScope(hero)} label={`${hero.name} · portrait`} w={140} h={170} framed />
             <div>
               <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
               <h1 className="h1" style={{ marginTop: 2 }}>{hero.name}</h1>
               <div className="hand" style={{ fontSize: 17, color: "var(--ink-700)", marginTop: 2 }}>
-                {hero.race} · {hero.class} · {hero.archetype}
+                {[hero.race, hero.class, hero.archetype].map((s) => (s || "").trim()).filter(Boolean).join(" · ")}
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
@@ -201,6 +218,20 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <Divider />
 
             <div className="eyebrow">Equipped</div>
+            {(!Array.isArray(hero.equipped) || hero.equipped.length === 0) ? (
+              <div style={{
+                marginTop: 8, padding: "12px 14px", textAlign: "center",
+                background: "rgba(176,141,87,0.06)",
+                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+              }}>
+                <div className="hand muted" style={{ fontSize: 12 }}>No gear equipped.</div>
+                {onNavigate && (
+                  <BrassButton tone="ghost" size="sm" style={{ marginTop: 8 }} onClick={() => onNavigate("inventory")}>
+                    Open the stash
+                  </BrassButton>
+                )}
+              </div>
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
               {hero.equipped.map((it, i) => (
                 <div key={`${it.slot}-${it.name || i}`} style={{
@@ -223,6 +254,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
                 </div>
               ))}
             </div>
+            )}
           </Panel>
 
           {/* Center tab content */}
@@ -241,28 +273,43 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <Divider />
 
             <SectionTitle>Traits</SectionTitle>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {hero.traits.map((t) => (
-                <div key={t.name} style={{
-                  padding: 10,
-                  background: "rgba(176,141,87,0.08)",
-                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
-                }}>
-                  <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-900)" }}>
-                    {t.name}
+            {(Array.isArray(hero.traits) && hero.traits.length > 0) ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {hero.traits.map((t) => (
+                  <div key={t.name} style={{
+                    padding: 10,
+                    background: "rgba(176,141,87,0.08)",
+                    boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+                  }}>
+                    <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-900)" }}>
+                      {t.name}
+                    </div>
+                    {t.detail && <div className="body-sm muted" style={{ marginTop: 2 }}>{t.detail}</div>}
                   </div>
-                  <div className="body-sm muted" style={{ marginTop: 2 }}>{t.detail}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="body-sm muted" style={{ margin: 0 }}>No distinguishing traits recorded.</p>
+            )}
 
-            <Divider />
-
-            <SectionTitle>Damage Reduction</SectionTitle>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-              <StatLine k="Value" v={hero.dr.value} />
-              <StatLine k="Energy" v={hero.dr.energy} />
-            </div>
+            {/* Resistances / Immunities — 5e carries no flat "damage reduction"; the read-model
+                emits dr.value / dr.energy as named resistances. Hide the whole section when the
+                hero has none ("None"/blank) rather than show a confusing "None / None". */}
+            {(() => {
+              const dr = hero.dr || {};
+              const has = (v) => { const s = String(v ?? "").trim().toLowerCase(); return s && s !== "none" && s !== "0"; };
+              if (!has(dr.value) && !has(dr.energy)) return null;
+              return (
+                <>
+                  <Divider />
+                  <SectionTitle>Resistances</SectionTitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    {has(dr.value) && <StatLine k="Physical" v={dr.value} />}
+                    {has(dr.energy) && <StatLine k="Elemental" v={dr.energy} />}
+                  </div>
+                </>
+              );
+            })()}
           </Panel>
         </div>
       </div>
@@ -433,7 +480,7 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
                               <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.06em", color: "var(--ink-900)" }}>
                                 {sp.name}
                               </div>
-                              <div className="hand muted" style={{ fontSize: 11 }}>{sp.school} · {sp.time}</div>
+                              <div className="hand muted" style={{ fontSize: 11 }}>{spellMeta(sp)}</div>
                             </div>
                             {isPrepared && <span style={{ color: "var(--emerald)", fontSize: 14 }}>✓</span>}
                           </button>
@@ -566,23 +613,35 @@ function ResourcesStatus({ hero }) {
 }
 
 function AbilitiesTab({ hero }) {
+  const abilities = Array.isArray(hero.abilities) ? hero.abilities : [];
+  const feats = Array.isArray(hero.feats) ? hero.feats : [];
   return (
     <div>
       <SectionTitle ordinal="·">Special Abilities</SectionTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {hero.abilities.map((a) => (
-          <AbilityCard key={a.name} a={a} />
-        ))}
-      </div>
+      {abilities.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {abilities.map((a) => (
+            <AbilityCard key={a.name} a={a} />
+          ))}
+        </div>
+      ) : (
+        <p className="body-sm muted" style={{ margin: 0 }}>
+          No active abilities recorded — this hero's edge is in their feats and class features.
+        </p>
+      )}
 
       <Divider />
 
       <SectionTitle>Feats</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {hero.feats.map((f) => (
-          <FeatRow key={f.name} f={f} />
-        ))}
-      </div>
+      {feats.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {feats.map((f) => (
+            <FeatRow key={f.name} f={f} />
+          ))}
+        </div>
+      ) : (
+        <p className="body-sm muted" style={{ margin: 0 }}>No feats taken yet.</p>
+      )}
     </div>
   );
 }
@@ -622,10 +681,26 @@ function FeatRow({ f }) {
           <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.1em", color: "var(--ink-900)" }}>
             {f.name}
           </span>
-          <span className="body-sm muted" style={{ marginLeft: 8 }}>— {f.detail}</span>
+          {f.detail && <span className="body-sm muted" style={{ marginLeft: 8 }}>— {f.detail}</span>}
         </div>
       </div>
     </window.Tooltip>
+  );
+}
+
+function ProficiencyDot({ proficient, expertise }) {
+  const filled = {
+    width: 7, height: 7, borderRadius: "50%",
+    background: "radial-gradient(circle at 30% 30%, var(--gold-glow, #f4d27b), var(--b-500))",
+    boxShadow: "inset 0 0 0 1px var(--b-600)",
+  };
+  const hollow = { width: 7, height: 7, borderRadius: "50%", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.5)" };
+  const title = expertise ? "Expertise (double proficiency)" : proficient ? "Proficient" : "Not proficient";
+  return (
+    <span title={title} aria-label={title} style={{ display: "inline-flex", gap: 2, alignSelf: "center", flexShrink: 0 }}>
+      <span style={proficient || expertise ? filled : hollow} />
+      {expertise && <span style={filled} />}
+    </span>
   );
 }
 
@@ -638,10 +713,15 @@ function SkillsTab({ hero }) {
           <div key={s.name} style={{
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             padding: "6px 12px",
-            background: s.mod > 0 ? "rgba(176,141,87,0.1)" : "transparent",
+            background: (s.proficient || s.mod > 0) ? "rgba(176,141,87,0.1)" : "transparent",
             boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.15)",
           }}>
-            <span className="body-sm" style={{ color: "var(--ink-800)" }}>{s.name}</span>
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+              {/* Proficiency marker (DNDBeyond/BG3 convention): filled gold dot = proficient,
+                  two dots = expertise (double proficiency), hollow = untrained. */}
+              <ProficiencyDot proficient={s.proficient} expertise={s.expertise} />
+              <span className="body-sm" style={{ color: s.proficient ? "var(--ink-900)" : "var(--ink-700)" }}>{s.name}</span>
+            </span>
             <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: s.mod >= 0 ? "var(--ink-900)" : "var(--crimson)" }}>
               {s.mod >= 0 ? "+" : ""}{s.mod}
             </span>
@@ -658,6 +738,14 @@ function SkillsTab({ hero }) {
 // never the nonsense "Level Known", and never invented slot math.
 function spellGroupLabel(level) {
   return (typeof level === "number" || /^\d+$/.test(String(level))) ? `Level ${level}` : String(level);
+}
+
+// Compose a spell's "school · casting-time" subline, dropping any em-dash / blank placeholder
+// the read-model emits when the school isn't projected (the engine stores spell names, not
+// full SRD blocks) — so we never render the bare "— · prepared".
+function spellMeta(sp) {
+  const clean = (v) => { const s = String(v ?? "").trim(); return (s && s !== "—" && s !== "-") ? s : ""; };
+  return [clean(sp.school), clean(sp.time)].filter(Boolean).join(" · ");
 }
 
 function LineagePanel({ hero }) {
@@ -759,7 +847,7 @@ function SpellsTab({ hero }) {
                     <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
                       {sp.name}
                     </div>
-                    <div className="body-sm muted">{sp.school} · {sp.time}</div>
+                    <div className="body-sm muted">{spellMeta(sp)}</div>
                   </div>
                 </div>
               ))}
@@ -790,7 +878,7 @@ function FeatsTab({ hero }) {
         {hero.classFeatures.map((c) => (
           <div key={c.name} style={{ padding: 10, background: "rgba(176,141,87,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)" }}>
             <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.12em", color: "var(--ink-900)" }}>{c.name}</div>
-            <div className="body-sm muted" style={{ marginTop: 2 }}>{c.detail}</div>
+            {c.detail && <div className="body-sm muted" style={{ marginTop: 2 }}>{c.detail}</div>}
           </div>
         ))}
       </div>
@@ -798,4 +886,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, portraitScope, spellMeta });
