@@ -164,6 +164,29 @@ def test_update_character_skills_alias_maps_to_proficiencies(tmp_path, monkeypat
         server.update_character(cid, pc, {"skilz": ["Stealth"]})
 
 
+def test_player_kind_always_in_party(tmp_path, monkeypatch):
+    # QA ow-rv1: a canon PC loaded via load_canon_character(kind="player") got kind=player
+    # but sat OUTSIDE c.party (add_to_party defaults False) → player_in_party gate RED with
+    # only a recruited companion present. Invariant: a kind="player" character is ALWAYS in
+    # the party regardless of add_to_party; a companion still joins only when add_to_party.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    # get_state hydrates party into member dicts (not raw ids), so match by id/name.
+    def _in_party(needle: str) -> bool:
+        return any(m.get("id") == needle or m.get("name") == needle
+                   for m in server.get_state(cid)["party"])
+    # create_character(add_to_party=False) must STILL put a player in the party
+    pid = server.create_character(cid, "Hero", kind="player", add_to_party=False, max_hp=10)["id"]
+    assert _in_party(pid), "player must be in party even with add_to_party=False"
+    # load_canon_character(kind="player") (add_to_party defaults False) must also add to party
+    out = server.load_canon_character(cid, "Dal Lightspark", kind="player")
+    assert out.get("in_party") is True
+    assert _in_party(out["id"])
+    # a plain NPC stays OUT of the party (invariant doesn't over-reach)
+    server.create_character(cid, "Bystander", kind="npc", max_hp=5)
+    assert not _in_party("Bystander")
+
+
 # --- iteration 3: off-turn attack is a reaction (turn-order enforcement) -----
 
 

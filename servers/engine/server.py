@@ -1152,7 +1152,9 @@ def create_character(
         if kind in ("npc", "monster"):
             ch.location_id = location_id or c.current_location_id
         c.characters[ch.id] = ch
-        if add_to_party and kind in ("player", "companion"):
+        # INVARIANT: a kind="player" character is always in the party (it's the protagonist),
+        # even if add_to_party=False was passed; a companion joins only when add_to_party.
+        if (kind == "player" or (add_to_party and kind == "companion")) and ch.id not in c.party:
             c.party.append(ch.id)
         save_campaign(c)
     return {"id": ch.id, "name": ch.name, "kind": ch.kind}
@@ -2091,7 +2093,12 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             canon_hp = 0
         ch.max_hp = max(canon_hp, 10)
         ch.current_hp = ch.max_hp  # a fresh identity stub stands at full (placeholder) health
-        if add_to_party:
+        # INVARIANT: a kind="player" character IS the party's protagonist — always in the
+        # party, regardless of add_to_party. QA ow-rv1: the brief told the DM to load a canon
+        # PC via load_canon_character(kind="player"), but add_to_party defaults False, so the
+        # PC got kind="player" yet sat OUTSIDE c.party → player_in_party gate RED (party had
+        # only a recruited companion). Force the player in.
+        if add_to_party or ch.kind == "player":
             ch.met = True  # brought into the party => met
             if ch.id not in c.party:
                 c.party.append(ch.id)
