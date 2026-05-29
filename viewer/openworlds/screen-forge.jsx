@@ -27,11 +27,10 @@ function ScreenForge({ onNavigate, state, setState }) {
   const [category, setCategory] = React.useState("smith");
   const [selected, setSelected] = React.useState(RECIPES_LIST[0]);
   const [crafter, setCrafter] = React.useState("");
-  const [log, setLog] = React.useState([
-    { when: "yesterday", who: "the scribe", item: "Scroll of Light", success: true },
-    { when: "2 days past", who: "the smith", item: "Iron-shod boots (repair)", success: true },
-    { when: "5 days past", who: "a companion", item: "Potion of Healing", success: false, note: "DC missed by 3" },
-  ]);
+  // Workshop ledger starts empty — entries are prepended by an actual craft attempt
+  // (relayed move when live, local-roll sim in read-only preview). No seeded history;
+  // a fresh party's bench has nothing on the ledger until the first craft.
+  const [log, setLog] = React.useState([]);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
@@ -297,6 +296,11 @@ function ScreenForge({ onNavigate, state, setState }) {
 
         <SectionTitle>Workshop ledger</SectionTitle>
         <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+          {log.length === 0 && (
+            <div className="body-sm muted" style={{ marginTop: 4 }}>
+              No entries yet. The first craft will appear here.
+            </div>
+          )}
           {log.map((l, i) => (
             <div key={i} style={{
               padding: "6px 10px",
