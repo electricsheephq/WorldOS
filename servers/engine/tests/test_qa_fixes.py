@@ -903,3 +903,131 @@ def test_created_npc_is_anchored_to_current_location(tmp_path, monkeypatch):
     assert server.get_character(cid, npc2)["location_id"] == far          # explicit wins
     pc = server.create_character(cid, "Hero", kind="player")["id"]
     assert not server.get_character(cid, pc)["location_id"]               # players unanchored
+
+
+# --- audit-tests Section B: convert LLM-scorer findings into engine gates -------------
+
+
+def test_load_canon_character_as_player_keeps_player_kind(tmp_path, monkeypatch):
+    """THE RED-RUN BUG: load_canon_character coerced kind down to "npc"/"companion", so using
+    a canon figure AS THE PC left `party` with ZERO kind=="player" members and tripped the
+    player_in_party behavioral gate (ow-duoF went RED). kind="player" must pass through."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    assert out["kind"] == "player" and out["in_party"] is True
+    c = server._require(bg)
+    assert any(c.characters[i].kind == "player" for i in c.party)  # gate would have failed before
+    # An unexpected kind still defaults to "npc" (the coercion floor is kept).
+    out2 = server.load_canon_character(bg, "Astarion", kind="bogus")
+    assert out2["kind"] == "npc"
+
+
+def test_load_canon_character_grants_class_skill_proficiencies(tmp_path, monkeypatch):
+    """B1: a canon PC must arrive with real class math (the Wizard-Arcana root cause). The
+    canon-defaults block already applies SRD defaults at load; this pins the contract so a
+    level-5 wizard's Arcana carries the proficiency bonus, not raw INT."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    ch = server.get_character(bg, out["id"])
+    assert "arcana" in [s.lower() for s in ch["skill_proficiencies"]]  # wizard signature skill
+    assert ch["proficiency_bonus"] == 3                                # level-5 -> +3
+    r = server.skill_check(bg, out["id"], "arcana", dc=10)
+    int_mod = (ch["abilities"]["intelligence"] - 10) // 2
+    assert r["modifier"] == int_mod + ch["proficiency_bonus"]          # +prof is applied
+
+
+def test_update_character_accepts_flat_level_class_aliases(tmp_path, monkeypatch):
+    """B3: the intuitive flat keys ({"level":3,"class_name":"Wizard","subclass":...}) are
+    folded into the canonical `classes` patch and the retier recomputes prof bonus — while a
+    genuine typo still trips extra='forbid' (the strict guard test_engine relies on)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    cidp = out["id"]
+    ch = server.update_character(bg, cidp, {
+        "level": 3, "class_name": "Wizard", "subclass": "School of Evocation"})
+    assert ch["classes"][0]["level"] == 3
+    assert ch["classes"][0]["subclass"] == "School of Evocation"
+    assert ch["proficiency_bonus"] == 2          # L3 -> +2 recomputed from the new level
+    # A genuine typo is still rejected (the model's strict-typo guard is untouched).
+    with pytest.raises(Exception):
+        server.update_character(bg, cidp, {"levl": 4})
+
+
+def test_update_character_flat_level_only_keeps_existing_class(tmp_path, monkeypatch):
+    """The alias shim defaults the class name to the existing head class when only `level`
+    is patched, so a bare level bump doesn't blank the class."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    out = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)
+    ch = server.update_character(bg, out["id"], {"level": 6})
+    assert ch["classes"][0]["name"].lower() == "wizard"   # class preserved
+    assert ch["classes"][0]["level"] == 6
+    assert ch["proficiency_bonus"] == 3                   # L6 -> +3
+
+
+def test_session_close_tops_up_zero_xp_companion(tmp_path, monkeypatch):
+    """B4 / mech2 #3A: when the DM awards XP to the PC only, a companion who fought all
+    session must not close at 0 while the PC banked XP. The per-member backstop tops the
+    companion up to the party's max XP when the session advanced (never lowers anyone)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pc = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)["id"]
+    server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3,
+                             abilities={"strength": 18, "constitution": 16})
+    server.start_session(bg)
+    server.award_xp(bg, pc, 300, "solo award")   # PC only -> the bug trigger
+    c = server._require(bg)
+    c.day = 2                                     # advance the world so the backstop is eligible
+    server.save_campaign(c)
+    out = server.end_session(bg, summary="advanced")
+    assert out.get("xp_awarded") == 300
+    assert server.get_character(bg, "npc-karlach")["xp"] == 300   # topped up to parity
+    assert server.get_character(bg, pc)["xp"] == 300              # PC never lowered
+
+
+def test_session_close_no_topup_when_not_advanced(tmp_path, monkeypatch):
+    """The backstop only fires when the session ADVANCED — a static session that awarded the
+    PC alone leaves the companion at 0 (no free parity for a smoke run)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pc = server.load_canon_character(bg, "Dal Lightspark", kind="player", add_to_party=True)["id"]
+    server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3)
+    server.start_session(bg)
+    server.award_xp(bg, pc, 300, "solo award")
+    out = server.end_session(bg, summary="no advancement")
+    assert "xp_awarded" not in out                                # backstop did not fire
+    assert server.get_character(bg, "npc-karlach")["xp"] == 0
+
+
+def test_end_combat_warns_on_living_hostiles(tmp_path, monkeypatch):
+    """B2 / #E2: end_combat with a hostile monster still alive at >0 HP surfaces a
+    NON-blocking warning_live_hostiles cue (it still ends the fight — a legit retreat ends
+    with foes alive — but the DM/gate now sees the continuity risk)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pc = server.create_character(bg, "Hero", kind="player", max_hp=20)["id"]
+    foe = server.create_character(bg, "Ghoul", kind="monster", max_hp=22)["id"]
+    server.start_combat(bg, [pc, foe])
+    out = server.end_combat(bg)
+    assert out["active"] is False
+    warn = out.get("warning_live_hostiles")
+    assert warn and warn["count"] == 1
+    assert any(h["name"] == "Ghoul" for h in warn["hostiles"])
+    # combat is genuinely cleared (non-blocking)
+    assert server.get_state(bg)["in_combat"] is False
+
+
+def test_end_combat_no_warning_when_hostiles_down(tmp_path, monkeypatch):
+    """When every monster combatant is dead, end_combat carries NO warning (the all-clear
+    path stays byte-identical to before)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pc = server.create_character(bg, "Hero", kind="player", max_hp=20)["id"]
+    foe = server.create_character(bg, "Goblin", kind="monster", max_hp=1)["id"]
+    server.start_combat(bg, [pc, foe])
+    server.set_hp(bg, foe, 0)            # drop the monster -> dead at 0
+    out = server.end_combat(bg)
+    assert "warning_live_hostiles" not in out

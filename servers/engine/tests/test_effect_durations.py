@@ -947,3 +947,59 @@ def test_expire_clock_effects_deadline_and_long_rest():
     # Mage Armor's deadline is far off, but a long rest ends it
     assert combat.expire_clock_effects(ch, 1, 3, long_rest=True) == ["Mage Armor"]
     assert ch.active_effects == []
+
+
+# --- VOLUNTARY concentration drop (#E1): drop_concentration tool ----------------------
+# Until this tool existed, a DM who NARRATED a concentration spell lapsing (without a damage
+# save or a recast) had no verb to clear it, so `concentration` + the tracked effect persisted
+# into the next session (QA ow-cs2: a phantom Hold Person corrupted a later session).
+
+def test_drop_concentration_clears_field_and_linked_effect(monkeypatch):
+    """drop_concentration clears the caster's concentration field, expires the caster's own
+    concentration-flagged effects, AND frees a TARGET locked by the repeat-save twin (the
+    inverse-link reconciliation, run immediately rather than next round)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    # Pre-state: caster concentrating, foe paralyzed with the Hold Person twin.
+    assert server.get_character(cid, caster)["concentration"] == "Hold Person"
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    assert [e["name"] for e in _effects(cid, foe)] == ["Hold Person"]
+
+    out = server.drop_concentration(cid, caster, reason="narrated as shattering")
+    assert out["ended"] is True
+    assert out["was_concentrating_on"] == "Hold Person"
+    assert out["concentration"] is None
+    # The TARGET twin was freed by this call (reported + actually cleared).
+    assert any(f["character_id"] == foe and f["name"] == "Hold Person"
+               for f in out["freed_targets"])
+    assert server.get_character(cid, caster)["concentration"] is None
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+
+
+def test_drop_concentration_expires_caster_side_effect(monkeypatch):
+    """A self-buff concentration (Bless) ends on drop_concentration: the field clears and the
+    caster's own concentration-flagged ActiveEffect is expired (no target twin to free)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _cleric(cid)
+    server.cast_spell(cid, caster, "Bless")  # self-buff, concentration
+    assert server.get_character(cid, caster)["concentration"] == "Bless"
+    assert "Bless" in [e["name"] for e in _effects(cid, caster)]
+    out = server.drop_concentration(cid, caster)
+    assert out["ended"] is True and out["concentration"] is None
+    assert "Bless" in out["expired_effects"]
+    assert server.get_character(cid, caster)["concentration"] is None
+    assert _effects(cid, caster) == []
+
+
+def test_drop_concentration_is_a_noop_when_not_concentrating():
+    """No concentration in play -> a harmless no-op (ended False, nothing freed)."""
+    cid = server.create_campaign("S")["id"]
+    ch = _cleric(cid)
+    out = server.drop_concentration(cid, ch)
+    assert out["ended"] is False
+    assert out["was_concentrating_on"] is None
+    assert out["concentration"] is None
+    assert out["freed_targets"] == [] and out["expired_effects"] == []

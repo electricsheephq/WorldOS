@@ -37,6 +37,7 @@ import importlib.util
 import json
 import mimetypes
 import os
+import re
 import subprocess
 import sys
 import time
@@ -207,6 +208,71 @@ def _scope_key(scope: Optional[str]) -> str:
     return "-".join(toks)
 
 
+def _slug_variants(scope: Optional[str]) -> set[str]:
+    """Generate normalized SLUG variants for a scope key so item-icon (and other) art
+    resolves through common slug drift (the W2 integration's #2 art gap): US/UK spelling
+    (armour/armor, colour/color, defence/defense), apostrophe-possessives folded by
+    _scope_key into a stray `s` token (alchemist-s-fire / wavemother-s-robe), trailing
+    numeric suffixes (rations-1, thieves-tools-1), and a singular/plural fold (rations /
+    ration, boots / boot). Returns the base key PLUS every derived variant so the caller
+    can match a requested scope against a descriptor's scope from either direction. Pure;
+    a key with no drift just yields {itself}."""
+    base = _scope_key(scope)
+    if not base:
+        return set()
+    out: set[str] = {base}
+    # Build from a working set so each transform composes (armour-1 -> armor).
+    work = {base}
+
+    def _add(transform) -> None:
+        for v in list(work):
+            nv = transform(v)
+            if nv and nv != v:
+                work.add(nv)
+                out.add(nv)
+
+    # US/UK spelling folds (apply to the whole key — substrings are fine, these are
+    # word fragments that don't collide with unrelated slugs).
+    def _spell(v: str) -> str:
+        for uk, us in (("armour", "armor"), ("colour", "color"),
+                       ("defence", "defense"), ("vapour", "vapor"), ("flavour", "flavor")):
+            v = v.replace(uk, us)
+        return v
+    _add(_spell)
+    # Drop a trailing numeric disambiguator (rations-1 -> rations).
+    _add(lambda v: re.sub(r"-\d+$", "", v))
+    # Fold a possessive `-s-` that _scope_key left as its own token
+    # (alchemist-s-fire -> alchemist-fire; wavemother-s-robe -> wavemother-robe).
+    _add(lambda v: v.replace("-s-", "-"))
+    # Drop a possessive/plural `s` tail glued to ANY token (alchemists-fire ->
+    # alchemist-fire; wavemothers-robe -> wavemother-robe), so a possessive whether
+    # split (`-s-`) or glued resolves to the same base. Only strips a trailing `s` from a
+    # token long enough to be a word and not ending in `ss` (so `glass`/`brass` survive).
+    def _depossess_each(v: str) -> str:
+        toks = v.split("-")
+        return "-".join(
+            t[:-1] if (len(t) > 3 and t.endswith("s") and not t.endswith("ss")) else t
+            for t in toks
+        )
+    _add(_depossess_each)
+    # Singular/plural fold on the LAST token (rations -> ration, boots -> boot), and the
+    # inverse (ration -> rations) so a singular request hits a plural dir too.
+    def _plural(v: str) -> str:
+        toks = v.split("-")
+        if toks and len(toks[-1]) > 3 and toks[-1].endswith("s") and not toks[-1].endswith("ss"):
+            return "-".join(toks[:-1] + [toks[-1][:-1]])
+        return v
+
+    def _singular_to_plural(v: str) -> str:
+        toks = v.split("-")
+        if toks and len(toks[-1]) > 2 and not toks[-1].endswith("s"):
+            return "-".join(toks[:-1] + [toks[-1] + "s"])
+        return v
+    _add(_plural)
+    _add(_singular_to_plural)
+    return out
+
+
 def _load_ingested_descriptor(desc_path: Path) -> Optional[dict]:
     """Load a wiki_ingest.json + re-anchor its `path` field to live next to the
     descriptor. The ingest pipeline writes an absolute `path` at ingest time (e.g.
@@ -264,9 +330,17 @@ def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
     # slugs (portrait:<slug>, scene:<slug>). When the exact safe-scope dir misses, match by
     # normalized name-key so wiki art resolves regardless of separator/prefix. Same path
     # containment guard. This is what makes the render bridge SHOW the ingested portraits.
+    #
+    # SLUG-DRIFT fallback (P2 art gap): item-icon scopes 404 on US/UK spelling (armour/armor),
+    # apostrophe-possessives, plurals, and trailing `-1` disambiguators even when the art is
+    # present under a drifted dir name. So match against the VARIANT SET of both the requested
+    # scope and the descriptor's scope — an overlap means the same item. Exact-key matches are
+    # tried first (a same-key dir always wins); the variant overlap only rescues a miss.
     want = _scope_key(scope)
     if not want:
         return None
+    want_variants = _slug_variants(scope)
+    fuzzy_hit: Optional[dict] = None
     for world_dir in root.iterdir():
         images_dir = world_dir / "images"
         if not images_dir.is_dir():
@@ -281,9 +355,14 @@ def _ingested_descriptor(scope: Optional[str]) -> Optional[dict]:
             except OSError:
                 continue
             d = _load_ingested_descriptor(desc_path)
-            if d is not None and _scope_key(d.get("scope")) == want:
-                return d
-    return None
+            if d is None:
+                continue
+            dkey = _scope_key(d.get("scope"))
+            if dkey == want:
+                return d  # exact normalized-key match wins outright
+            if fuzzy_hit is None and (want_variants & _slug_variants(d.get("scope"))):
+                fuzzy_hit = d  # remember the first slug-drift match; prefer an exact hit if one exists later
+    return fuzzy_hit
 
 
 def _newest_json_descriptor(cdir: Path) -> Optional[dict]:
@@ -3648,17 +3727,23 @@ def build_parley_surface(
     `resolve_event`. No live Event -> no block (today's freeform parley, byte-for-byte)."""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     actor_id, actor = _lead_pc(snapshot)
+    # Parley backdrop scope (P2 fix): the old behavior reused the SAME `location:<id>` scope
+    # the Table scene plate and the Map sidebar already render, so every conversation at a
+    # location showed the identical skyline — reading as "the art is broken / there's only one
+    # picture." Differentiate per NPC/event: when a live stumble-into Event is anchored on an
+    # NPC, prefer that NPC's portrait-derived scope (so each interlocutor gets a distinct
+    # backdrop); else an explicit per-event scene scope; else fall back to the location plate.
+    # Computed below once `live_event` is resolved; seeded here with the location fallback.
+    loc_id = _text(snapshot.get("current_location_id"))
+    parley_scope = f"location:{loc_id}" if loc_id else ""
     base = {
         "campaign_id": campaign_id,
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "dayLabel": _openworlds_day_label(snapshot),
         "actor": _text(actor.get("name"), actor_id),
         "actor_id": actor_id,
-        "location_id": _text(snapshot.get("current_location_id")),
-        "imageScope": (
-            f"location:{_text(snapshot.get('current_location_id'))}"
-            if _text(snapshot.get("current_location_id")) else ""
-        ),
+        "location_id": loc_id,
+        "imageScope": parley_scope,
         "alignment": _text(actor.get("alignment")),
         "free_form": True,
         "difficulty": difficulty,
@@ -3680,6 +3765,16 @@ def build_parley_surface(
     live_event = _live_parley_event(snapshot)
     if live_event is not None:
         base["event"] = live_event
+        # Differentiate the parley backdrop by the live Event (P2): prefer the anchor NPC's
+        # portrait-derived scope (so each interlocutor gets a distinct plate instead of the
+        # shared location skyline), else the event id; the location fallback stays underneath.
+        # This is what stops consecutive parleys from all rendering the same location image.
+        anchor = _text(live_event.get("anchor_npc_id"))
+        ev_id = _text(live_event.get("id"))
+        if anchor:
+            base["imageScope"] = f"portrait-{anchor}"
+        elif ev_id:
+            base["imageScope"] = f"event:{ev_id}"
     if not actor_id or not actor:
         base["source"] = "empty"
         return base

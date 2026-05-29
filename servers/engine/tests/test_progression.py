@@ -528,15 +528,20 @@ def test_end_session_backstop_awards_when_advanced_and_zero_xp():
     assert server.get_character(cid, b)["xp"] > 0
 
 
-def test_end_session_no_backstop_when_xp_already_earned():
-    cid, a, b = _xp_party_of_two("NoBackstop")
+def test_end_session_tops_up_zero_xp_member_to_party_parity():
+    # PER-MEMBER backstop (mech2 #3A): when the DM awards XP to ONE member only (the common
+    # single-target award_xp on the PC), a companion who fought all session must not close at
+    # 0 while the other banked XP. The advanced-session backstop tops the 0-XP member up to the
+    # party's max XP (levels them together) — it never stacks onto a member who already earned,
+    # and never lowers anyone. (Was: the all-zero guard could not rescue an uneven party.)
+    cid, a, b = _xp_party_of_two("Parity")
     server.start_session(cid)
     server.advance_time(cid, to="evening")               # session advanced...
-    server.award_xp(cid, a, 50)                          # ...and someone already earned XP
+    server.award_xp(cid, a, 50)                          # ...and only `a` earned XP
     out = server.end_session(cid)
-    assert "xp_awarded" not in out                       # no stacking on a normal session
-    assert server.get_character(cid, a)["xp"] == 50      # unchanged by end_session
-    assert server.get_character(cid, b)["xp"] == 0
+    assert out["xp_awarded"] == 50                       # the 0-XP member is topped up by 50
+    assert server.get_character(cid, a)["xp"] == 50      # `a` is NOT stacked (already had it)
+    assert server.get_character(cid, b)["xp"] == 50      # `b` raised to party parity
 
 
 def test_end_session_no_backstop_when_not_advanced():

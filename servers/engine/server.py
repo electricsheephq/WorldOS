@@ -2028,7 +2028,13 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
             classes = [ClassLevel(name=str(rec["class"]), level=lvl)]
         ch = Character(
             name=canonical,
-            kind=kind if kind in ("npc", "companion") else "npc",
+            # A canon figure can be pulled in as the PROTAGONIST (the player), not just an
+            # npc/companion — using one as the PC is the documented testing path (CLAUDE.md:
+            # "Use CANON BG NPCs ... as the player persona"). Coercing kind down to "npc"/
+            # "companion" meant a canon-loaded PC left `party` with ZERO kind=="player" members
+            # and tripped the player_in_party behavioral gate (QA: ow-duoF went RED). Allow
+            # "player" through; anything unexpected still defaults to "npc".
+            kind=kind if kind in ("npc", "companion", "player") else "npc",
             race=rec.get("race", ""),
             classes=classes,
             alignment=rec.get("alignment", ""),
@@ -2106,6 +2112,14 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
     `patch` is a dict of fields to change (deep-merged for nested objects), e.g.
     {"current_hp": 12, "armor_class": 15}. Unknown field names are REJECTED.
 
+    CLASS / LEVEL: level lives inside `classes` (a list of {name, level, subclass}),
+    so the canonical retier patch is `{"classes":[{"name":"Wizard","level":3}]}`. As a
+    convenience the flat aliases `level`, `class_name`, and `subclass` are also accepted
+    and folded into the head class entry; when level/class change this way the engine
+    recomputes proficiency bonus, saves, and features for the new level (an existing
+    sheet's HP and a DM-chosen AC are preserved). A genuine unknown field (a typo) is
+    still rejected.
+
     WARNING: list fields (conditions, inventory, spells_known, classes) are
     REPLACED wholesale by the patch, not merged. To change a single condition
     use add_condition / remove_condition; for HP use set_hp. Vitals are clamped
@@ -2118,7 +2132,38 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
         _deep_update(data, patch)
         data["id"] = character_id  # identity is IMMUTABLE: the stored model's id must equal its
         # dict key, so a patch can't strand the character under a visible-but-unusable id (#41).
-        c.characters[character_id] = Character.model_validate(data)
+        # DM affordance: accept the intuitive flat class keys ({"level":3,"class_name":"Wizard",
+        # "subclass":...}) by folding them into the canonical `classes` patch, so a reasonable
+        # level/class edit isn't rejected by the model's extra="forbid" (QA ow-fixC: a DM's
+        # level-3 retarget failed and the PC played the whole session at the wrong tier). The
+        # strict rejection is load-bearing (test_engine asserts a typo like "max_hpp" must raise)
+        # so we TRANSLATE these three known aliases here in the tool rather than loosen the model —
+        # a genuine typo ("levl") still trips forbid.
+        flat_level = data.pop("level", None)
+        flat_class = data.pop("class_name", None)
+        flat_subclass = data.pop("subclass", None)
+        if flat_level is not None or flat_class is not None or flat_subclass is not None:
+            existing = data.get("classes") or [{}]
+            head = dict(existing[0]) if isinstance(existing[0], dict) else {}
+            if flat_class is not None:
+                head["name"] = flat_class
+            if flat_level is not None:
+                head["level"] = flat_level
+            if flat_subclass is not None:
+                head["subclass"] = flat_subclass
+            head.setdefault("name", ch.classes[0].name if ch.classes else "")
+            data["classes"] = [head] + list(existing[1:])
+        new_ch = Character.model_validate(data)
+        # Recompute derived class math when level/class changed via the aliases (today even a
+        # correct `classes` patch leaves prof_bonus/saves/features stale — this finishes the
+        # canon-load fix's downstream story). Idempotent fill: skill_proficiencies are only
+        # seeded if empty (a DM-set list is respected), HP is only computed at the max_hp<=1
+        # stub (an existing sheet's HP is preserved), and set_base_ac=False so a DM-chosen AC
+        # is never clobbered. prof_bonus is always recomputed from the new total_level.
+        if (flat_level is not None or flat_class is not None) and new_ch.classes:
+            _apply_srd_class_defaults(new_ch, new_ch.classes[0].name,
+                                      new_ch.total_level, set_base_ac=False)
+        c.characters[character_id] = new_ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")
 
@@ -2821,16 +2866,48 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
             "using the sheet bonuses above — never invent or copy another combatant's."
         )
     # --- limited resources (class_resources with remaining > 0) ---
+    # Each surfaced resource gets a tactical `suggested_when` trigger (#A3): turn_brief
+    # already listed what's LEFT, but a flat {remaining:1} gave the DM no reason to spend it,
+    # so nova features (Second Wind / Action Surge / Channel Divinity) ended every sprint at
+    # full charge. The trigger names the moment to use it. Context: HP fraction + round.
+    hp_frac = (ch.current_hp / ch.max_hp) if ch.max_hp else 1.0
+    rnd = c.combat.round if c.combat.active else 0
     resources: dict = {}
     for rid, res in ch.class_resources.items():
         remaining = res.max - res.used
         if remaining > 0:
-            resources[rid] = {
+            entry_r = {
                 "remaining": remaining,
                 "max": res.max,
                 "label": f"{remaining}/{res.max}" + (f" {res.size}" if res.size else ""),
             }
+            rid_l = rid.lower()
+            if rid_l == "second_wind" and hp_frac < 0.75:
+                entry_r["suggested_when"] = (
+                    f"{ch.name} is at {ch.current_hp}/{ch.max_hp} HP — Second Wind (a BONUS "
+                    "action, 1d10+level, no spell slot) is available right now.")
+            elif rid_l == "action_surge" and rnd >= 2:
+                entry_r["suggested_when"] = (
+                    "Action Surge grants a full EXTRA action this turn — use it to finish a "
+                    "bloodied foe or land a second Attack action.")
+            elif rid_l == "channel_divinity":
+                entry_r["suggested_when"] = (
+                    "Channel Divinity is available (e.g. War Domain Guided Strike: +10 to one "
+                    "attack roll) — spend it to turn a key miss into a hit.")
+            resources[rid] = entry_r
     brief["resources"] = resources
+    # --- reactions (#A2): surface a monster's stat-block reaction (Parry) so the DM knows
+    # it's on the table this round even when the engine won't auto-spend it (it spends Parry
+    # only when it would flip a hit). Keeps the reaction visible/narratable. PCs/companions
+    # track reactions through their own resources/economy. ---
+    if ch.kind == "monster" and getattr(ch, "parry", 0) > 0:
+        brief["reactions"] = {
+            "parry": {
+                "ac_bonus": ch.parry,
+                "note": (f"{ch.name} has Parry (+{ch.parry} AC vs one melee hit it can see) as "
+                         "its reaction — narrate it turning a blow aside when one lands."),
+            }
+        }
     # --- spell slots with at least 1 remaining ---
     slots: dict = {}
     for lvl, slot in ch.spell_slots.items():
@@ -2839,6 +2916,17 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
             slots[str(lvl)] = rem
     if slots:
         brief["spell_slots"] = slots
+    # --- concentration cue (#E1): if this combatant is still holding a concentration
+    # spell, surface it on the proven channel so a DM who narrates it lapsing actually
+    # calls drop_concentration instead of narrate-and-forget (which desyncs state into
+    # the next session). Absent when not concentrating (byte-identical to before). ---
+    if getattr(ch, "concentration", None):
+        brief["concentrating"] = {
+            "spell": ch.concentration,
+            "note": (f"{ch.name} is still concentrating on {ch.concentration} — if you "
+                     "narrate it lapsing or being broken (without a damage save), call "
+                     "drop_concentration so the engine state matches the fiction."),
+        }
     return brief
 
 
@@ -3504,6 +3592,69 @@ def attack(
             ]
             result["advantage_source"] = adv_marker.name
             result["advantage_consumed"] = True
+        # --- ADHERENCE CUES (tool-return, the proven channel — #A1/#A2/#A4) ---------------
+        # These NEVER auto-apply or block; they surface a deterministic signal the DM keeps
+        # skipping from prose alone. Only meaningful while a fight is active.
+        if c.combat.active:
+            # (A4) Lift concentration_dc to the TOP of the result. apply_damage buries it in
+            # target_state, one level too deep to be read reliably mid-Multiattack (QA: the
+            # concentration save kept getting deferred). Promote it so the DM acts on it NOW.
+            ts = result.get("target_state") or {}
+            conc_dc = ts.get("concentration_dc")
+            if conc_dc:
+                result["concentration_dc"] = {
+                    "target": target.name,
+                    "dc": conc_dc,
+                    "note": (f"{target.name} was concentrating — call concentration_save("
+                             f"{target.name!r}, dc={conc_dc}) NOW, before the next attack or "
+                             "next_turn (5e checks concentration the instant damage lands)."),
+                }
+            # (A1) Ranged-in-melee disadvantage nudge. The engine has no positional model
+            # (theater-of-mind), so it can't auto-apply the penalty — but a ranged attack with
+            # no adv/dis flag, fired while a living opposing hostile is in the order, is the
+            # exact pattern that needs disadvantage if a foe is within 5 ft. Conservative: a
+            # nudge to re-issue, never a block, honoring theater-of-mind (the foe MAY be 10 ft
+            # away). Only when the attacker is a combatant and didn't already flag adv/dis.
+            if is_ranged and not adv and not dis and attacker_cb is not None:
+                opp = "monster" if attacker.kind in ("player", "companion") else "player"
+                foes_live = any(
+                    (h := c.characters.get(cb.character_id)) is not None
+                    and h.id != attacker_id and h.current_hp > 0 and not h.dead
+                    and (h.kind == opp or (opp == "player" and h.kind == "companion"))
+                    for cb in c.combat.order
+                )
+                if foes_live:
+                    result["ranged_in_melee_check"] = {
+                        "note": (f"ranged attack with no disadvantage flag — if a hostile is "
+                                 f"within 5 ft of {attacker.name} (theater-of-mind), 5e requires "
+                                 "disadvantage:true. Re-issue with disadvantage=True if so."),
+                    }
+            # (A2) Parry-available cue. The engine spends Parry ONLY when it would FLIP the hit
+            # to a miss (above); when the blow lands anyway the reaction is correctly NOT spent
+            # — but then it's invisible and the DM never narrates the attempted defense (the
+            # recurring "reaction never fired" ding). Surface that the defender HAS Parry and
+            # why it wasn't spent, so the failed-but-attempted defense is narratable, WITHOUT
+            # wasting the reaction. Only on a landed melee hit vs a parry-capable, reaction-able
+            # defender whose parry wouldn't have stopped this blow.
+            if (
+                hit and not is_ranged and parry_info is None and target.parry > 0
+                and not combat.is_incapacitated(target)
+                and Condition.BLINDED not in target.conditions
+            ):
+                target_cb = next(
+                    (cb for cb in c.combat.order if cb.character_id == target_id), None
+                )
+                if target_cb is not None and not target_cb.reaction_used:
+                    eff_ac = target.armor_class + target.parry
+                    result["parry_available"] = {
+                        "defender": target.name,
+                        "ac_bonus": target.parry,
+                        "effective_ac": eff_ac,
+                        "note": (f"{target.name} has a Parry reaction (+{target.parry} AC vs one "
+                                 f"melee hit) but it would not have stopped this blow (roll "
+                                 f"{atk.total} >= effective AC {eff_ac}). Reaction NOT spent — "
+                                 "narrate the attempted-but-overwhelmed defense if you like."),
+                    }
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
         if hit and result["damage"]:
             # Use the resolved damage type label so a multi-component strike (#210)
@@ -3639,6 +3790,54 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
             "maintained": maintained,
             "concentration": ch.concentration,
             "expired_effects": expired,
+        }
+
+
+@mcp.tool()
+def drop_concentration(campaign_id: str, character_id: str, reason: str = "") -> dict:
+    """VOLUNTARILY end a caster's concentration — the verb for the most common narrative
+    concentration event: the caster lets a spell lapse, or it's broken without a damage
+    save (the DM narrates "the Hold Person shatters"). Until this tool existed, the only
+    paths that cleared `concentration` were a failed concentration_save, incapacitation/0
+    HP/death, and casting a NEW concentration spell — so a DM who narrated a drop with no
+    follow-up cast left `concentration` (and its tracked effect) set, desyncing state into
+    the next session (QA ow-cs2: a phantom multi-round Hold Person persisted past close and
+    corrupted a later session). This clears the caster's `concentration` field, expires the
+    caster's concentration-flagged ActiveEffects, AND frees every TARGET still locked by a
+    repeat-save twin of this concentration (e.g. a paralyzed Hold Person victim) — the same
+    inverse-link reconciliation next_turn performs, run NOW instead of next round. A no-op
+    (concentration stays None) when the caster wasn't concentrating."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _char(c, character_id)
+        was = ch.concentration
+        ch.concentration = None
+        # The caster's own engine-tracked concentration effect(s) end with the concentration.
+        expired = combat.expire_concentration_effects(ch)
+        # TARGET-side twin: a repeat-save marker (Hold Person -> paralyzed) is the victim's
+        # twin of THIS caster's concentration. With the concentration gone the spell is over,
+        # so free every holder whose marker is sourced to this caster + this spell — drop the
+        # effect and lift the condition it imposed. Mirrors next_turn's inverse-link sweep
+        # (server.py ~2999) so a voluntarily-dropped hold releases its victim immediately,
+        # not a round later. We can only reconcile the spell we just dropped (`was`).
+        freed: list[dict] = []
+        if was:
+            for holder in list(c.characters.values()):
+                for eff in list(holder.active_effects):
+                    if eff.repeat_save is None or eff.source_id != character_id:
+                        continue
+                    if eff.name != was:
+                        continue
+                    combat.end_repeat_save_effect(holder, eff)
+                    freed.append({"character_id": holder.id, "name": eff.name})
+        save_campaign(c)
+        return {
+            "ended": was is not None,
+            "was_concentrating_on": was,
+            "concentration": ch.concentration,
+            "expired_effects": expired,
+            "freed_targets": freed,
+            "reason": reason,
         }
 
 
@@ -3794,6 +3993,30 @@ def end_combat(campaign_id: str) -> dict:
             if all_total > 0:
                 result["xp_awarded"] = all_total
                 result["grants"] = all_grants
+        # Live-hostile advisory (#E2, NON-blocking): 5e ends combat only when a side is
+        # incapacitated / flees / surrenders. Ending it administratively with hostile
+        # monsters still standing at >0 HP leaves them alive in state, a continuity break
+        # for the next load (QA ow-cs2: end_combat fired with a Ghoul at 22/22 + Bandit
+        # Captain at 34/52, both dead:false). We do NOT block — a legitimate retreat/parley
+        # ends combat with foes alive — we surface it, mirroring the existing range_warning /
+        # extra_attack_reminder advisory pattern. Computed from the order BEFORE the reset.
+        live_hostiles = [
+            {"id": ch.id, "name": ch.name, "hp": f"{ch.current_hp}/{ch.max_hp}"}
+            for cb in c.combat.order
+            if (ch := c.characters.get(cb.character_id)) is not None
+            and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
+        ]
+        if live_hostiles:
+            result["warning_live_hostiles"] = {
+                "count": len(live_hostiles),
+                "hostiles": live_hostiles,
+                "note": (
+                    f"combat ended with {len(live_hostiles)} hostile(s) still alive at >0 HP "
+                    "— if they didn't flee/surrender/die, this leaves them standing in state. "
+                    "Bring them to 0 via attack/apply_damage, or log a flee/parley/surrender "
+                    "event, before ending."
+                ),
+            }
         if was_active or c.combat.order:
             ended_order = [
                 _combatant_ref(c.characters[cb.character_id])
@@ -6101,18 +6324,44 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
         c.active_session_id = None
         # Reward backstop: a session that genuinely advanced must not close at 0 XP in
         # xp-mode (QA: real social/exploration wins, party still at 0 — a broken reward
-        # loop the scorer docks). Only fires when (a) xp-mode, (b) every living party
+        # loop the scorer docks). Only fires when (a) xp-mode, (b) at least one living party
         # member is still at 0 XP, and (c) the session advanced (clock moved past the
         # opening phase OR >1 location visited). Modest, deterministic; the session was
         # already cleared above, so it can only fire once per session close.
+        #
+        # PER-MEMBER top-up (QA ow-fixD): the DM often uses the single-target award_xp on the
+        # PC only, so a companion who fought all session closes at 0 while the PC banked XP.
+        # The old all-zero guard could not rescue that (the PC already had XP -> guard False).
+        # So: if the session advanced and ANY living member is at 0 while the party has earned
+        # XP, top those individuals up to the party's max XP (level them together). Only ever
+        # RAISES a 0-XP member to parity, never lowers anyone. When NO ONE earned XP (the whole
+        # party is at 0) fall back to the original modest milestone grant.
         award = None
         if c.leveling_mode == "xp":
             living = [c.characters[i] for i in c.party
                       if i in c.characters and not c.characters[i].dead]
             advanced = (c.day > 1 or c.time_of_day != "morning"
                         or sum(1 for loc in c.locations.values() if loc.visited) > 1)
-            if living and advanced and all(ch.xp == 0 for ch in living):
-                award = _award_milestone_xp(c, 100 * max(_party_levels(c)), "session close")
+            if living and advanced:
+                target = max((ch.xp for ch in living), default=0)
+                zeros = [ch for ch in living if ch.xp == 0]
+                if target > 0 and zeros:
+                    for ch in zeros:
+                        ch.xp = target
+                    award = {
+                        "xp_awarded": target * len(zeros),
+                        "grants": [
+                            {
+                                "id": ch.id, "name": ch.name, "xp": ch.xp,
+                                "level_available": srd_tables.level_for_xp(ch.xp),
+                                "can_level_up": srd_tables.level_for_xp(ch.xp) > ch.total_level,
+                            }
+                            for ch in zeros
+                        ],
+                        "reason": "session close: companion XP parity",
+                    }
+                elif all(ch.xp == 0 for ch in living):
+                    award = _award_milestone_xp(c, 100 * max(_party_levels(c)), "session close")
         save_campaign(c)
         out = {"ended": sid, "number": len(c.session_ids)}
         if award is not None:
