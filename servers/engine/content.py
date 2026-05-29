@@ -203,6 +203,159 @@ def find_canon_characters(
     return out
 
 
+def _backstory_snippet(text: str, limit: int = 220) -> str:
+    """A short, single-paragraph backstory teaser for the roster card. Collapses internal
+    whitespace and trims to ~`limit` chars on a word boundary with an ellipsis. Empty in ->
+    empty out (the card then shows just the identity line)."""
+    s = " ".join(str(text or "").split())
+    if not s:
+        return ""
+    if len(s) <= limit:
+        return s
+    cut = s[:limit].rsplit(" ", 1)[0].rstrip(",.;:")
+    return (cut or s[:limit]) + "…"
+
+
+def roster_surface(
+    world_id: str,
+    *,
+    race: str = "",
+    char_class: str = "",
+    level: str = "",
+    playable_only: bool = True,
+    limit: int = 120,
+) -> dict:
+    """Read-only roster projection for the canon-NPC PICKER (the "reverse character creator").
+
+    The player filters the ingested canon roster by race / class / level and picks a pre-made
+    canon NPC to play AS — they never invent one. This returns the richer per-record shape the
+    picker card needs (the light `list_canon_characters` drops level/backstory/id):
+
+      {id, name, race, class, level, role, playable, backstory (short snippet), portrait_scope}
+
+    `id` is the file slug (content/worlds/<id>/characters/<slug>.json) — there is no `id` field on
+    the records, and the slug is what `portrait-<slug>` resolves to (the ingested face). `level` is
+    carried through verbatim as the record stores it (a string, e.g. "5").
+
+    `playable_only` defaults True so origins/legends (the 7 BG3 origin companions, marked
+    `playable:false`) are EXCLUDED — the player picks a minor figure, never an origin hero. Any
+    of race / char_class / level narrows the result (case-insensitive exact match on the record's
+    field; an empty filter is ignored). De-duplicated by name (a figure on two wikis collapses).
+
+    Also returns `facets` — the distinct race / class / level values present in the playable
+    roster (BEFORE the race/class/level filters narrow it, frequency-ordered so the densest chips
+    lead) so the picker can offer real filter chips. The unfiltered playable roster is ~2,000, far
+    too many cards to paint at once, so the returned `characters` list is capped to `limit` (a
+    `limit <= 0` disables the cap); `total` is the FULL matched count and `returned` is how many
+    cards rode along — the picker shows "N of total" and narrows via the chips. READ-ONLY: never
+    mutates content, never touches a snapshot. Mirrors `find_canon_characters` structurally."""
+    racel = race.strip().lower()
+    classl = char_class.strip().lower()
+    levell = level.strip().lower()
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    # Facet tallies (lower-key -> [display, count]) so chips can be ordered by how many of the
+    # roster they cover — "Human"/"Fighter" before the long tail of one-off wiki values.
+    facet_races: dict[str, list] = {}
+    facet_classes: dict[str, list] = {}
+    facet_levels: dict[str, list] = {}
+
+    def _tally(store: dict, value: str) -> None:
+        key = value.lower()
+        if key in store:
+            store[key][1] += 1
+        else:
+            store[key] = [value, 1]
+
+    for cdir in _characters_dirs(world_id):
+        if not cdir.is_dir():
+            continue
+        for p in sorted(cdir.glob("*.json")):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            nm = (rec.get("name") or p.stem).strip()
+            if not nm or nm.lower() in seen:
+                continue
+            if playable_only and not is_playable(rec):
+                continue
+            seen.add(nm.lower())
+
+            rrace = str(rec.get("race", "") or "").strip()
+            rclass = str(rec.get("class", "") or "").strip()
+            rlevel = str(rec.get("level", "") or "").strip()
+            # Facets reflect the full playable roster, BEFORE the per-request filters narrow it,
+            # so the chips always offer every real option (not just what the current filter left).
+            if rrace:
+                _tally(facet_races, rrace)
+            if rclass:
+                _tally(facet_classes, rclass)
+            if rlevel:
+                _tally(facet_levels, rlevel)
+
+            # AND-combined filters (an empty filter is "don't filter on this").
+            if racel and rrace.lower() != racel:
+                continue
+            if classl and rclass.lower() != classl:
+                continue
+            if levell and rlevel.lower() != levell:
+                continue
+
+            slug = p.stem  # the file slug IS the portrait/id key (portrait-<slug> resolves)
+            out.append({
+                "id": slug,
+                "name": nm,
+                "race": rrace,
+                "class": rclass,
+                "level": rlevel,
+                "role": str(rec.get("role", "") or ""),
+                "playable": is_playable(rec),
+                "backstory": _backstory_snippet(rec.get("backstory", "")),
+                # The /image scope the picker card renders. Ingested canon faces resolve by the
+                # name slug (the viewer's _scope_key folds portrait-<slug> -> <slug>).
+                "portrait_scope": "portrait-" + slug,
+            })
+
+    # `total` is the FULL matched count; the returned list is capped to `limit` so the picker
+    # grid stays renderable (the unfiltered playable roster is ~2,000 — far too many cards/images
+    # to paint at once). The UI shows "showing N of total" and narrows via the facet chips. A
+    # `limit <= 0` means "no cap" (the test/headless path that wants the whole slice).
+    total = len(out)
+    if limit and limit > 0:
+        out = out[:limit]
+
+    def _by_count(store: dict) -> list[str]:
+        # Most-covered value first (ties alphabetical) so the picker's chips lead with the
+        # races/classes that actually populate the roster, not a one-off wiki value.
+        return [v[0] for v in sorted(store.values(), key=lambda dc: (-dc[1], dc[0].lower()))]
+
+    def _sorted_levels(store: dict) -> list[str]:
+        # Numeric-aware sort so "2" < "10" (levels are stored as strings); non-numeric tail last.
+        def _key(dc: list):
+            try:
+                return (0, int(dc[0]))
+            except (TypeError, ValueError):
+                return (1, dc[0].lower())
+        return [v[0] for v in sorted(store.values(), key=_key)]
+
+    return {
+        "world_id": world_id,
+        "total": total,            # full matched count (before the render cap)
+        "returned": len(out),      # how many cards this payload actually carries
+        "limit": limit,
+        "characters": out,
+        "facets": {
+            "races": _by_count(facet_races),
+            "classes": _by_count(facet_classes),
+            "levels": _sorted_levels(facet_levels),
+        },
+    }
+
+
 def load_canon_character(world_id: str, name: str) -> "dict | None":
     """Load one ingested canon character record by name (or file slug), or None."""
     want = name.strip().lower()

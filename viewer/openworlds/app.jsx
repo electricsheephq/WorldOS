@@ -228,11 +228,11 @@ function App() {
   // specific screen possible. On mount we honor the hash; hashchange re-routes live.
   React.useEffect(() => {
     const VALID = new Set([
-      "launcher", "table", "combat", "dialogue", "map", "character", "inventory",
+      "launcher", "roster", "table", "combat", "dialogue", "map", "character", "inventory",
       "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
       "seed", "settings",
     ]);
-    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory" };
+    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory", heroes: "character", pick: "roster", picker: "roster" };
     const fromHash = () => {
       const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
       if (!raw) return null;
@@ -330,6 +330,7 @@ function App() {
 
 const SCREEN_TITLES = {
   launcher: "Chronicles",
+  roster: "Choose Your Hero",
   table: "The Session",
   combat: "Battle",
   character: "Heroes",
@@ -360,6 +361,7 @@ function capabilityForScreen(screen, nativeState) {
 function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative }) {
   switch (screen) {
     case "launcher":  return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
+    case "roster":    return <ScreenRoster state={state} setState={setState} onNavigate={onNavigate} />;
     case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} />;
     case "combat":    return <ScreenCombat state={state} setState={setState} onNavigate={onNavigate} />;
     case "character": return <ScreenCharacter state={state} setState={setState} onNavigate={onNavigate} />;

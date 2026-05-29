@@ -106,10 +106,33 @@ import server  # engine tools as plain functions (state dir from CLAWDND_STATE_D
 import imagegen  # for the 265 portrait re-key; derived cache only, never touches snapshot.json
 
 spec = json.loads(spec_raw)
-# A new campaign in this world with an active session — the authored PC is then minted
-# into it with a full SRD sheet (saves, HP, proficiency, class AC, slots, gear, party).
+# A new campaign in this world with an active session — the player's PC is then seated into it.
 camp = server.start_world(world)["campaign_id"]
 server.start_session(camp, title="Authored hero")
+# TWO bind variants share this pre-seed plumbing:
+#   • canon PICKUP (the roster picker / "reverse character creator", the default new-game path):
+#     spec={canon:true, name:"<canon NPC>"} — seat that EXACT ingested canon figure (real
+#     race/class/backstory + ingested portrait) AS the player via load_canon_character. NEVER
+#     invents and NEVER an origin hero (the picker only offers playable_only=true rows).
+#   • custom AUTHORED hero (the Creation wizard, deferred today): the full create_character path.
+if spec.get("canon"):
+    canon_name = (spec.get("name") or "").strip()
+    rec = server.load_canon_character(camp, canon_name, kind="player", add_to_party=True)
+    if not isinstance(rec, dict) or rec.get("error"):
+        # Unknown canon name — fail loudly so play.sh falls back to DM-invents-PC rather than
+        # silently seating nobody (the empty stdout triggers the "pre-seed FAILED" branch below).
+        sys.stderr.write("canon pickup failed: " + str((rec or {}).get("error") if isinstance(rec, dict) else rec) + "\n")
+        sys.exit(1)
+    # load_canon_character returns the seated character directly — {id, name, race, class, kind,
+    # in_party} — with the canon figure's real identity, so the opener re-grounding text below
+    # speaks the true race/class. (Equip a full combat sheet on first DM turn via
+    # apply_srd_defaults, exactly as the DM-invents path does for a pickup.)
+    print(json.dumps({
+        "campaign_id": camp,
+        "pc": {"id": rec.get("id"), "name": rec.get("name") or canon_name,
+               "race": str(rec.get("race", "") or ""), "class": str(rec.get("class", "") or "")},
+    }))
+    sys.exit(0)
 try:
     level = int(spec.get("level", 1) or 1)
 except (TypeError, ValueError):

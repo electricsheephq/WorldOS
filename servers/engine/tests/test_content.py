@@ -495,6 +495,55 @@ def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
     assert "Astarion" not in play and "Gale" not in play
 
 
+def test_roster_surface_excludes_origins_and_filters():
+    # The canon-NPC PICKER projection: the PLAYABLE roster (origins excluded), filtered by
+    # race/class/level, each row carrying the picker card fields + a portrait slug, plus the
+    # facets for the filter chips. Tested against the shipped baldurs-gate roster.
+    r = content.roster_surface("baldurs-gate")
+    assert r["world_id"] == "baldurs-gate"
+    assert r["total"] > 0 and r["characters"]
+    names = {c["name"] for c in r["characters"]}
+    # the seven BG3 origin heroes are NEVER offered as a playable pick
+    assert not (names & {"Astarion", "Gale", "Karlach", "Lae'zel", "Shadowheart", "Wyll", "Minthara"})
+    # every card carries the picker fields, with portrait_scope keyed off the file slug (id)
+    c0 = r["characters"][0]
+    for field in ("id", "name", "race", "class", "level", "backstory", "portrait_scope", "playable"):
+        assert field in c0
+    assert all(c["portrait_scope"] == "portrait-" + c["id"] for c in r["characters"])
+    assert all(c["playable"] is True for c in r["characters"])
+    # facets ride along, frequency-ordered (the post-BG3 roster is Human/Fighter-dense)
+    assert r["facets"]["races"][0] == "Human"
+    assert r["facets"]["classes"][0] == "Fighter"
+
+
+def test_roster_surface_filters_and_combine():
+    wiz = content.roster_surface("baldurs-gate", char_class="Wizard")
+    assert wiz["total"] > 0
+    assert all(c["class"] == "Wizard" for c in wiz["characters"])
+    # case-insensitive
+    assert content.roster_surface("baldurs-gate", char_class="wizard")["total"] == wiz["total"]
+    # AND-combine: race + class is a strict subset of class alone, all matching both
+    both = content.roster_surface("baldurs-gate", race="Dwarf", char_class="Wizard")
+    assert both["total"] <= wiz["total"]
+    assert all(c["race"] == "Dwarf" and c["class"] == "Wizard" for c in both["characters"])
+    # the canonical test pick (Dal Lightspark — a Dwarf wizard Harper) is offered
+    assert any(c["id"] == "dal-lightspark" for c in both["characters"])
+    # level filter
+    lvl = content.roster_surface("baldurs-gate", level="5")
+    assert lvl["total"] > 0 and all(c["level"] == "5" for c in lvl["characters"])
+
+
+def test_roster_surface_caps_the_unfiltered_roster():
+    # The unfiltered playable roster is ~2,000 — too many cards to paint, so the returned list is
+    # capped while `total` reports the full match. `limit<=0` disables the cap (the headless path).
+    capped = content.roster_surface("baldurs-gate", limit=25)
+    assert capped["total"] > capped["returned"]
+    assert capped["returned"] == len(capped["characters"]) == 25
+    full = content.roster_surface("baldurs-gate", limit=0)
+    assert full["returned"] == full["total"] == len(full["characters"])
+    assert full["total"] == capped["total"]
+
+
 def test_start_character_origins(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]

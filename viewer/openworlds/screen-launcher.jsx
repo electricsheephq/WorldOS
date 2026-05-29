@@ -143,8 +143,12 @@ function ScreenLauncher({ onNavigate, state, setState }) {
                 <span style={{ fontSize: 22, color: "var(--crimson)", lineHeight: 1 }}>♕</span>
                 <span>Forge a new hero</span>
               </button>
+              {/* The DEFAULT new-game path: the canon-NPC picker ("reverse character creator").
+                  The player filters the living roster and chooses a real canon figure to play AS —
+                  never an invented, portrait-less PC, never a BG3 origin. (The freeform
+                  NewCampaignModal is retained below but no longer the primary new-game entry.) */}
               <button
-                onClick={() => setShowNew(true)}
+                onClick={() => onNavigate("roster")}
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
                   padding: "18px 22px",

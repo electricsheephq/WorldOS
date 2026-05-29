@@ -710,6 +710,75 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
     return engine.bestiary.player_bestiary(query, limit, intel=intel)
 
 
+# The default world the picker browses when no campaign scopes it yet (a brand-new game, the
+# launcher's "Begin a chronicle" path). This is the shipped post-BG3 setting; a campaign with a
+# real ``world_id`` overrides it below.
+_DEFAULT_ROSTER_WORLD = "baldurs-gate"
+
+
+def _roster_world_for_campaign(campaign_id: str) -> str:
+    """Which world's canon roster the picker browses. A campaign with a snapshot carries the
+    authoritative ``world_id``; otherwise (no/empty/unknown campaign — the new-game path) fall
+    back to the shipped default world. Read-only: just inspects the snapshot."""
+    safe = _safe_campaign_id(campaign_id) if campaign_id else ""
+    if safe:
+        snap = _read_snapshot(safe)
+        if isinstance(snap, dict):
+            wid = snap.get("world_id")
+            if isinstance(wid, str) and wid.strip():
+                return wid.strip()
+    return _DEFAULT_ROSTER_WORLD
+
+
+def build_roster_response(
+    campaign_id: str = "",
+    race: str = "",
+    char_class: str = "",
+    level: str = "",
+    limit: int = 120,
+) -> dict:
+    """GET /roster-surface read model — the canon-NPC PICKER ("reverse character creator").
+
+    Bridges to the engine-owned canon-roster projection (``content.roster_surface``): the
+    PLAYABLE roster (origins/legends EXCLUDED via the record ``playable`` flag), filtered by
+    race / class / level, each row carrying {id, name, race, class, level, role, backstory
+    snippet, portrait_scope}. Also returns the distinct race/class/level ``facets`` so the picker
+    can offer filter chips. The world is resolved from the campaign's snapshot (or the shipped
+    default for a brand-new game). READ-ONLY — exposes no write/seat path; the bind happens via
+    the native startProviderSession bridge / load_canon_character, never here. Mirrors
+    build_bestiary_response: a graceful empty payload when the engine can't be imported."""
+    engine = _load_engine_server()
+    world_id = _roster_world_for_campaign(campaign_id)
+    if engine is None or not hasattr(engine, "content_mod") or not hasattr(engine.content_mod, "roster_surface"):
+        detail = _ENGINE_IMPORT_ERROR or "engine roster projection is unavailable"
+        return {
+            "world_id": world_id,
+            "total": 0,
+            "returned": 0,
+            "characters": [],
+            "facets": {"races": [], "classes": [], "levels": []},
+            "error": f"engine import failed: {detail}",
+        }
+    try:
+        return engine.content_mod.roster_surface(
+            world_id,
+            race=race,
+            char_class=char_class,
+            level=level,
+            playable_only=True,
+            limit=limit,
+        )
+    except Exception as exc:
+        return {
+            "world_id": world_id,
+            "total": 0,
+            "returned": 0,
+            "characters": [],
+            "facets": {"races": [], "classes": [], "levels": []},
+            "error": str(exc),
+        }
+
+
 def _clean_slot(slot: Optional[str]) -> str:
     """Normalize a caller-supplied save-slot name to a flat, safe-ish slug (the engine's
     store.safe_path_segment is the authoritative guard; this just trims/defaults). Empty ⇒
@@ -5768,6 +5837,27 @@ class _Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 limit = 20
             self._json(build_bestiary_response(query, limit, cid))
+        elif route == "/roster-surface":
+            # Read-only canon-NPC PICKER projection (the "reverse character creator"): the
+            # PLAYABLE roster (origins excluded by the record `playable` flag), filtered by
+            # ?race / ?class / ?level, plus the distinct race/class/level facets for the filter
+            # chips. The campaign scope (resolved like /bestiary-surface) only picks which world's
+            # roster to browse — no campaign falls back to the shipped default world (the new-game
+            # path). Exposes NO write/seat route; the bind is the native startProviderSession
+            # bridge / load_canon_character, never here.
+            qs = parse_qs(parsed.query)
+            cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
+            race = (qs.get("race") or [""])[0]
+            char_class = (qs.get("class") or qs.get("char_class") or [""])[0]
+            level = (qs.get("level") or [""])[0]
+            # Cap the returned cards so the picker grid stays renderable (the unfiltered playable
+            # roster is ~2,000). ?limit tunes it; bounded to [1, 500] (a bad value -> the default).
+            try:
+                limit = int((qs.get("limit") or ["120"])[0])
+            except (TypeError, ValueError):
+                limit = 120
+            limit = max(1, min(500, limit))
+            self._json(build_roster_response(cid, race, char_class, level, limit))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).
