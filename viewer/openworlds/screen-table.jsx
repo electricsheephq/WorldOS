@@ -15,6 +15,14 @@ function ScreenTable({ onNavigate, state, setState }) {
   const [chatBeats, setChatBeats] = React.useState([]);
   const chatCursor = React.useRef(0);
   const [input, setInput] = React.useState("");
+  // #327: a visible "DM is narrating…" affordance. The unchanged DM's opening / resolving turn
+  // can take many minutes; without this the play loop reads as frozen the moment a move is sent.
+  // `pending` holds the submitted line + when it was sent; it is set the instant /move succeeds
+  // and cleared when a NEW DM narration beat lands via /chat (tracked by dmBeatCount below) — or
+  // by a long safety timeout so a dropped beat can never wedge the bar shut forever.
+  const [pending, setPending] = React.useState(null);
+  const dmBeatCountRef = React.useRef(0);
+  const pendingTimer = React.useRef(null);
   const logRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const toast = window.useToast ? window.useToast() : (() => {});
@@ -86,6 +94,13 @@ function ScreenTable({ onNavigate, state, setState }) {
             ? { kind: "dialog", who: "You", text: it.text }
             : { kind: "narration", text: it.text });
           setChatBeats((prev) => [...prev, ...beats]);
+          // #327: a fresh DM narration beat means the turn resolved — clear the pending indicator
+          // so the action bar re-opens and the spinner stops. (Player echoes don't count.)
+          const dmArrived = beats.some((b) => b.kind === "narration");
+          if (dmArrived) {
+            dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
+            setPending(null);
+          }
         }
         if (!isCancelled() && typeof cPayload.next === "number") chatCursor.current = cPayload.next;
       }
@@ -137,10 +152,20 @@ function ScreenTable({ onNavigate, state, setState }) {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [visibleLog]);
 
+  // #327: arm the "DM is narrating…" pending state when a move is accepted, and a safety
+  // auto-clear so a missed /chat beat can't lock the bar forever (the DM turn is long but
+  // bounded). The /chat poll clears `pending` the instant a new DM narration beat arrives.
+  const armPending = (text) => {
+    setPending({ text, since: Date.now() });
+    if (pendingTimer.current) window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = window.setTimeout(() => setPending(null), 12 * 60 * 1000);
+  };
+  React.useEffect(() => () => { if (pendingTimer.current) window.clearTimeout(pendingTimer.current); }, []);
+
   const postMove = async (move, label, actionId) => {
     const enabledAction = actionId ? enabledActionById(actionId) : null;
-    if (!move || !canAct || (actionId && !enabledAction)) {
-      toast({ kind: "danger", title: "Action unavailable", body: readOnlyReason });
+    if (!move || !canAct || pending || (actionId && !enabledAction)) {
+      toast({ kind: "danger", title: "Action unavailable", body: pending ? "The Dungeon Master is still narrating — one move at a time." : readOnlyReason });
       return;
     }
     const text = label || move.text || move.name || "declares an action";
@@ -155,6 +180,7 @@ function ScreenTable({ onNavigate, state, setState }) {
         throw new Error(payload.reason || `move ${response.status}`);
       }
       setLog((l) => [...l, { kind: "action", who: hero.name, text }]);
+      armPending(text);
       loadSurface();
     } catch (error) {
       toast({ kind: "danger", title: "Move not sent", body: error?.message || `The viewer could not reach ${writeLane.endpoint || "/move"}.` });
@@ -162,6 +188,7 @@ function ScreenTable({ onNavigate, state, setState }) {
   };
 
   const sendAction = async () => {
+    if (pending) return;
     const text = input.trim();
     if (!text) return;
     const action = actionById("do");
@@ -183,6 +210,10 @@ function ScreenTable({ onNavigate, state, setState }) {
   };
 
   const invokeAction = (action) => {
+    if (pending) {
+      toast({ kind: "danger", title: "Action unavailable", body: "The Dungeon Master is still narrating — one move at a time." });
+      return;
+    }
     if (!action?.available) {
       toast({ kind: "danger", title: action?.label || "Action unavailable", body: action?.disabled_reason || readOnlyReason });
       return;
@@ -276,6 +307,7 @@ function ScreenTable({ onNavigate, state, setState }) {
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}
+            {pending && <DmNarratingBeat />}
           </div>
 
           {/* Action bar */}
@@ -286,10 +318,10 @@ function ScreenTable({ onNavigate, state, setState }) {
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
-              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              <button onClick={() => requestRoll(20)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button onClick={() => requestRoll(12)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button onClick={() => requestRoll(8)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button onClick={() => requestRoll(6)} className="btn ghost sm" disabled={!actionById("check")?.available || Boolean(pending)}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -297,10 +329,11 @@ function ScreenTable({ onNavigate, state, setState }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendAction()}
-                placeholder={canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`}
-                style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16 }}
+                disabled={Boolean(pending)}
+                placeholder={pending ? "The Dungeon Master is narrating…" : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
+                style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pending ? 0.6 : 1 }}
               />
-              <BrassButton onClick={sendAction} disabled={!actionById("do")?.available}>Declare</BrassButton>
+              <BrassButton onClick={sendAction} disabled={!actionById("do")?.available || Boolean(pending)}>{pending ? "Narrating…" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -384,7 +417,7 @@ function ScreenTable({ onNavigate, state, setState }) {
                 label={a.label}
                 detail={a.available ? a.groupLabel : a.disabled_reason}
                 tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
-                disabled={!a.available}
+                disabled={!a.available || Boolean(pending)}
                 onClick={() => invokeAction(a)}
               />
             ))}
@@ -537,7 +570,43 @@ function LogEntry({ entry }) {
   );
 }
 
-Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry });
+// #327: the persistent "DM is narrating…" beat shown in the chronicle while a submitted move is
+// being resolved. The DM's turn is long (minutes), so this is the difference between "the world
+// is thinking" and "the app froze". Mirrors the narration LogEntry's gilt-rule styling, with a
+// gentle pulsing trio of dots (honored only when reduced-motion is off). aria-live so a screen
+// reader announces the wait too.
+function DmNarratingBeat() {
+  return (
+    <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
+      <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
+      <div className="body" style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="eyebrow" style={{ color: "var(--crimson)" }}>The Dungeon Master is narrating</span>
+        <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
+          {[0, 1, 2].map((i) => (
+            <span key={i} style={{
+              width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
+              animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
+            }} />
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Keyframes + reduced-motion fallback, injected once (the OpenWorlds bundle is in-browser Babel,
+// so a tiny self-contained <style> keeps this affordance from needing a styles.css round-trip).
+(function ensureDmNarrateStyle() {
+  if (typeof document === "undefined" || document.getElementById("dm-narrate-style")) return;
+  const el = document.createElement("style");
+  el.id = "dm-narrate-style";
+  el.textContent =
+    "@keyframes dmNarratePulse{0%,80%,100%{opacity:0.25;transform:scale(0.8)}40%{opacity:1;transform:scale(1)}}" +
+    "html[data-reduced-motion='on'] .dm-narrating-dots span{animation:none!important;opacity:0.7}";
+  document.head.appendChild(el);
+})();
+
+Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarratingBeat });
 
 function EncounterButton({ icon, label, detail, tone, onClick, disabled }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)

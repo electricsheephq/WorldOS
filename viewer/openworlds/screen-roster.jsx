@@ -140,6 +140,14 @@ function ScreenRoster({ onNavigate, state, setState }) {
   const campaignId = campaigns.some((c) => c.id === state?.activeCampaign)
     ? state.activeCampaign
     : (campaigns[0]?.id || "");
+  const hasBridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
+  // #326: an already-playable session (live + resumable) the browser player can enter directly,
+  // mirroring the launcher. Without the desktop bridge a NEW hero bind can't mint a DM session,
+  // so if such a session exists we redirect the player to CONTINUE it rather than dead-ending.
+  const playableCampaign =
+    campaigns.find((c) => c.live && c.canResume) ||
+    campaigns.find((c) => c.canResume) ||
+    null;
 
   const [race, setRace] = React.useState("");
   const [klass, setKlass] = React.useState("");
@@ -204,14 +212,23 @@ function ScreenRoster({ onNavigate, state, setState }) {
   const playAs = async (npc) => {
     if (summoningName) return;
     setBindNote("");
-    if (!window.OpenWorldsNative?.hasBridge?.()) {
-      // FOLLOW-UP (flagged): a browser-only preview has no supervisor to mint the session. The
-      // native path is the supported bind; here we surface the chosen hero so the flow is honest.
+    if (!hasBridge) {
+      // #326: a browser-only preview has no supervisor to mint a NEW session for a freshly-picked
+      // hero. Don't dead-end. If a live/resumable chronicle already exists (the #324 harness case),
+      // send the player there to actually PLAY; otherwise be honest that a new chronicle needs the
+      // desktop app — never a silent nothing.
+      if (playableCampaign) {
+        setState((s) => ({ ...s, activeCampaign: playableCampaign.id }));
+        toast({ kind: "info", title: "Continuing your live chronicle", body: "A session is already in progress — dropping you into the table." });
+        onNavigate("table");
+        return;
+      }
       setBindNote(
-        `Selected ${npc.name} as your hero. Live play starts from the WorldOS app — ` +
-        `open this world there to begin the chronicle as ${npc.name}.`
+        `Picking ${npc.name} as a brand-new hero starts a fresh chronicle, which needs the ` +
+        `WorldOS desktop app (it spins up the Dungeon Master). In this browser preview you can ` +
+        `browse the roster, but you can't begin a new chronicle here.`
       );
-      toast({ kind: "info", title: `Chosen: ${npc.name}`, body: "Start live play from the WorldOS app to embody this hero." });
+      toast({ kind: "info", title: `Chosen: ${npc.name}`, body: "Starting a new chronicle needs the WorldOS desktop app." });
       return;
     }
     setSummoningName(npc.name);
