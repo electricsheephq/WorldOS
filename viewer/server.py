@@ -294,8 +294,8 @@ def _slug_variants(scope: Optional[str]) -> set[str]:
 
 def _load_ingested_descriptor(desc_path: Path) -> Optional[dict]:
     """Load a wiki_ingest.json + re-anchor its `path` field to live next to the
-    descriptor. The ingest pipeline writes an absolute `path` at ingest time (e.g.
-    /Volumes/LEXAR/.../class_fighter/image.png); when the repo is cloned / moved /
+    descriptor. The ingest pipeline writes an absolute `path` at ingest time (for
+    example, /path/to/sidecar/class_fighter/image.png); when the repo is cloned / moved /
     checked out on a different machine, that original absolute path no longer exists
     and `_serve_image`'s containment check correctly rejects it — even though the
     image bytes ARE present at the canonical location next to wiki_ingest.json

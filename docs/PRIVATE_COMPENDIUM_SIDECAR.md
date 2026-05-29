@@ -13,8 +13,8 @@ generated corpora to the repository.
 ## Boundaries
 
 - Keep the sidecar outside the repo. The default is
-  `/Volumes/LEXAR/Codex/clawdnd-private-compendium`.
-- Override the sidecar root with `CLAWDND_PRIVATE_COMPENDIUM_ROOT` when needed.
+  `~/.worldos/private-compendium`.
+- Override the sidecar root with `WORLDOS_PRIVATE_COMPENDIUM_ROOT` when needed.
 - Treat `content/worlds/_private/<world-id>/...` as the only future WorldOS output
   namespace for private world material.
 - Do not mutate campaign state, engine state, or public `content/worlds/*` content from
@@ -33,7 +33,7 @@ python3 tools/ingest/private_compendium_sidecar.py --init
 By default this writes:
 
 ```text
-/Volumes/LEXAR/Codex/clawdnd-private-compendium/private-compendium-manifest.json
+~/.worldos/private-compendium/private-compendium-manifest.json
 ```
 
 Example manifest:

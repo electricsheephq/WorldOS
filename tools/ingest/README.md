@@ -126,8 +126,8 @@ python3 tools/ingest/private_compendium_sidecar.py --init
 python3 tools/ingest/private_compendium_sidecar.py
 ```
 
-The default sidecar root is `/Volumes/LEXAR/Codex/clawdnd-private-compendium`, overridable
-with `CLAWDND_PRIVATE_COMPENDIUM_ROOT`. See `docs/PRIVATE_COMPENDIUM_SIDECAR.md`.
+The default sidecar root is `~/.worldos/private-compendium`, overridable with
+`WORLDOS_PRIVATE_COMPENDIUM_ROOT`. See `docs/PRIVATE_COMPENDIUM_SIDECAR.md`.
 
 ## Licensing (TEXT ONLY)
 

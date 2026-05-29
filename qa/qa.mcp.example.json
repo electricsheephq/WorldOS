@@ -6,11 +6,11 @@
       "args": [
         "run",
         "--directory",
-        "/Users/lume/WorldOS-val/servers/engine",
+        "servers/engine",
         "server.py"
       ],
       "env": {
-        "CLAWDND_STATE_DIR": "/Users/lume/WorldOS-val/qa/state"
+        "CLAWDND_STATE_DIR": "qa/state"
       }
     },
     "clawdnd-rules": {
@@ -19,7 +19,7 @@
       "args": [
         "run",
         "--directory",
-        "/Users/lume/WorldOS-val/servers/rules",
+        "servers/rules",
         "server.py"
       ],
       "env": {
@@ -32,7 +32,7 @@
       "args": [
         "run",
         "--directory",
-        "/Users/lume/WorldOS-val/servers/voice",
+        "servers/voice",
         "server.py"
       ],
       "env": {

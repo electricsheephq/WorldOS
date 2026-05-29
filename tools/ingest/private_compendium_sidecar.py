@@ -17,10 +17,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# WorldOS rename (issue #295, W0-E/4.2): prefer the new ~worldos~ scratch root +
+# WorldOS rename (issue #295, W0-E/4.2): prefer the new worldos scratch root +
 # WORLDOS_* env var; keep the legacy clawdnd ones as warn-only fallbacks for v1.x.
-WORLDOS_DEFAULT_SIDECAR_ROOT = Path("/Volumes/LEXAR/Codex/worldos-private-compendium")
-DEFAULT_SIDECAR_ROOT = Path("/Volumes/LEXAR/Codex/clawdnd-private-compendium")
+WORLDOS_DEFAULT_SIDECAR_ROOT = Path("~/.worldos/private-compendium").expanduser()
+DEFAULT_SIDECAR_ROOT = Path("~/.clawdnd/private-compendium").expanduser()
 ENV_SIDECAR_ROOT_WORLDOS = "WORLDOS_PRIVATE_COMPENDIUM_ROOT"
 ENV_SIDECAR_ROOT = "CLAWDND_PRIVATE_COMPENDIUM_ROOT"
 MANIFEST_NAME = "private-compendium-manifest.json"

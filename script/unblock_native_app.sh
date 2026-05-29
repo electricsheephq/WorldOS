@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot unblock for the ClawDnD desktop app.
+# One-shot unblock for the WorldOS desktop app.
 #
 # Background: NordVPN Threat Protection's Shield (an Endpoint Security extension)
 # re-scans freshly-rebuilt ad-hoc-signed apps on every build, and that scan can
@@ -13,7 +13,7 @@
 # app (prefers Developer ID signing if your keychain ACL permits it, falls back to
 # ad-hoc), opens it, and polls for the viewer to bind. Usage:
 #
-#   bash ~/ClawDnD-val/script/unblock_native_app.sh
+#   bash ~/WorldOS/script/unblock_native_app.sh
 #
 # If the Keychain dialog appears during codesign and you click "Always Allow", the
 # Developer ID identity becomes silent for every future rebuild (no more popups —
@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-REPO="${CLAWDND_REPO:-$HOME/ClawDnD-val}"
+REPO="${WORLDOS_REPO:-${CLAWDND_REPO:-$HOME/WorldOS}}"
 PORTS_TO_CHECK="${CLAWDND_PORTS:-8765 8766 8767 8768 8769}"
 
 step() { printf "\n→ %s\n" "$1"; }
@@ -32,10 +32,11 @@ warn() { printf "  ! %s\n" "$1"; }
 err()  { printf "  ✗ %s\n" "$1" 1>&2; }
 
 if [ ! -d "$REPO" ]; then
-  err "repo not found at $REPO (set CLAWDND_REPO to override)"; exit 2
+  err "repo not found at $REPO (set WORLDOS_REPO to override; CLAWDND_REPO is also supported)"; exit 2
 fi
 
-step "Reap any stale ClawDnD / viewer processes (clean host)"
+step "Reap any stale WorldOS / viewer processes (clean host)"
+pkill -f "dist/WorldOS.app" 2>/dev/null || true
 pkill -f "dist/ClawDnD.app" 2>/dev/null || true
 pkill -f "viewer/server.py" 2>/dev/null || true
 sleep 1
@@ -52,7 +53,7 @@ else
   warn "no NordVPN Shield / helper running — already clean"
 fi
 
-step "Build + launch the ClawDnD app (prefers Developer ID, falls back to ad-hoc)"
+step "Build + launch the WorldOS app (prefers Developer ID, falls back to ad-hoc)"
 cd "$REPO"
 script/build_and_run.sh run
 ok "build + open issued"
@@ -72,7 +73,7 @@ done
 
 if [ -n "$bound" ]; then
   ok "viewer is serving on port $bound — the desktop app window should be playable now"
-  printf "\n  Open the ClawDnD window and click Resume / Forge a hero / Begin.\n  Engine 1385/1385 ✓ · viewer 90/90 ✓ · all 14 screens render polished.\n\n"
+  printf "\n  Open the WorldOS window and click Resume / Forge a hero / Begin.\n  Engine 1385/1385 ✓ · viewer 90/90 ✓ · all 14 screens render polished.\n\n"
   exit 0
 fi
 

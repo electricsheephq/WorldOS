@@ -22,7 +22,7 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 DM_CFG="$STATE_DIR/dm.mcp.json"; MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"
 CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"; COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
 
-python3 - "$ROOT/qa/qa.mcp.json" "$STATE_DIR" "$DM_CFG" <<'PY'
+python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
 cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
 json.dump(cfg, open(sys.argv[3], "w"))

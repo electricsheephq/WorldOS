@@ -2,8 +2,8 @@
 adventure, each in its assigned character voice, proving the voice layer plays
 actual campaign content with distinct voices.
 
-Run (HF cache on LEXAR to spare the main disk):
-    HF_HOME=/Volumes/LEXAR/.cache/huggingface \
+Run (optionally point HF_HOME at a large local cache directory):
+    HF_HOME="$HOME/.cache/huggingface" \
       uv run --directory servers/voice --group kokoro python playtest_voice.py
 """
 
