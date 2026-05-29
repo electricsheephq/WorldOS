@@ -246,7 +246,7 @@ if [ "$AXE" -eq 1 ]; then
       mkdir -p "$AXE_OUT"
       TOTAL=0
       for hash in launcher table combat dialogue map character inventory forge \
-                  relations journal bestiary acts merchant create seed settings; do
+                  relations journal bestiary acts merchant create seed settings roster; do
         npx --yes @axe-core/cli "http://127.0.0.1:$PORT/openworlds/#${hash}" \
           --tags wcag2a,wcag2aa \
           --chromedriver-path "$CHROMEDRIVER" \
