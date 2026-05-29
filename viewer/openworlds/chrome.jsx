@@ -289,10 +289,12 @@ function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onC
   );
 }
 
-function BrassButton({ children, onClick, tone, size, disabled, style, type = "button" }) {
+function BrassButton({ children, onClick, tone, size, disabled, style, type = "button", title }) {
   const cls = ["btn", tone, size, disabled ? "disabled" : ""].filter(Boolean).join(" ");
+  // `title` is optional — forwarded so callers can attach a hover/affordance tooltip
+  // (e.g. the #337 action-bar hints) without giving every BrassButton one.
   return (
-    <button className={cls} onClick={onClick} disabled={disabled} type={type} style={style}>
+    <button className={cls} onClick={onClick} disabled={disabled} type={type} style={style} title={title || undefined}>
       {children}
     </button>
   );
