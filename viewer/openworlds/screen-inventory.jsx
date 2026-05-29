@@ -21,6 +21,16 @@ function itemScope(item) {
   return s ? "item-" + s : "";
 }
 
+/* Hero portrait scope — like itemScope, derive from the NAME slug. Ingested canon art is
+   keyed "portrait_<name-slug>"; a loaded party member's id is a random instance hash
+   ("char_…") that matches no art, so building the scope from slug(name) is what makes a
+   canon hero's real face render (portrait-less heroes still fall back to the silhouette). */
+function heroPortraitScope(hero) {
+  const s = slug(hero && hero.name);
+  if (s) return "portrait-" + s;
+  return (hero && hero.id) ? "portrait-" + hero.id : "";
+}
+
 function ScreenInventory({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -143,7 +153,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
         {/* Hero portrait + slots */}
         <div style={{ position: "relative", marginTop: 16, padding: "0 8px" }}>
-          <Img scope={hero.id ? "portrait-" + hero.id : ""} label={`${hero.short} · full art`} h={220} framed style={{ width: "100%" }} />
+          <Img scope={heroPortraitScope(hero)} label={`${hero.name} · full art`} h={220} framed style={{ width: "100%" }} />
 
           {/* Equipment slots ringing portrait */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginTop: 10 }}>
@@ -248,9 +258,8 @@ function ScreenInventory({ onNavigate, state, setState }) {
                 }}
               />
             ))}
-            {Array.from({ length: Math.max(0, 60 - filtered.length) }).map((_, i) => (
-              <Placeholder key={`e${i}`} w="100%" h={68} label="" />
-            ))}
+            {/* I-07: no fixed 60-slot pack — the grid grows to actual content (OpenWorlds is
+                organic, with no max pack size), so empty placeholder slots are not padded in. */}
           </div>
         )}
 

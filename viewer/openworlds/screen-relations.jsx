@@ -5,6 +5,17 @@
    empty-states — it never falls back to demo data.
    Layout/design unchanged from the prototype. */
 
+/* Build the /image scope for an NPC/companion portrait. Ingested canon art is keyed by a
+   NAME-slug ("portrait_jaheira"); a met roster NPC already carries a slug id ("npc-jaheira")
+   that normalises to the same key, but a RECRUITED companion carries a random instance id
+   ("char_…") that matches no art. Deriving the scope from slug(name) resolves real faces for
+   both, and degrades to the silhouette (via Img's onError) when no art exists. */
+function npcPortraitScope(n) {
+  const s = (n && n.name && window.slug) ? window.slug(n.name) : "";
+  if (s) return "portrait-" + s;
+  return (n && n.id) ? "portrait-" + n.id : "";
+}
+
 function ScreenRelations({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -127,7 +138,7 @@ function ScreenRelations({ onNavigate, state, setState }) {
                   : "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 cursor: "pointer",
               }}>
-                <Img scope={n.id ? "portrait-" + n.id : ""} label={n.short} w={44} h={54} framed />
+                <Img scope={npcPortraitScope(n)} label={n.name} w={44} h={54} framed />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.04em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {n.name}
@@ -239,12 +250,16 @@ function FactionDetail({ f }) {
         display: "flex", alignItems: "center", justifyContent: "center",
         marginBottom: 14,
       }}>
+        {/* The banner shows the faction's motto; when the seed carries no motto, fall back to
+            the faction name so the banner is never an empty colored band. Right-padded to 44px
+            so long mottos clear the 36px sigil medallion at top-right (R-04). */}
         <div style={{
           fontFamily: "var(--f-display)",
           fontSize: 14, letterSpacing: "0.22em", textTransform: "uppercase",
           color: "rgba(255,250,220,0.92)",
           textShadow: "0 1px 2px rgba(0,0,0,0.6)",
-        }}>{f.motto}</div>
+          textAlign: "center", padding: "0 44px",
+        }}>{(f.motto && f.motto.trim()) ? f.motto : f.name}</div>
         {/* Sigil */}
         <div style={{
           position: "absolute", top: -10, right: 10,
@@ -380,7 +395,7 @@ function NPCDetail({ n, onNavigate, campBeats, canAct, campaignId, toast }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <Img scope={n.id ? "portrait-" + n.id : ""} label={n.short} w={120} h={148} framed />
+        <Img scope={npcPortraitScope(n)} label={n.name} w={120} h={148} framed />
         <div style={{ flex: 1 }}>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>{n.role}</div>
           <h2 className="h1" style={{ fontSize: 20, marginTop: 2 }}>{n.name}</h2>
@@ -522,4 +537,4 @@ function CampBeatLedger({ npcId, campBeats }) {
   );
 }
 
-Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, CompanionArcCard, RepBar, DispositionDot });
+Object.assign(window, { ScreenRelations, FactionDetail, NPCDetail, BetrayalWarning, CompanionArcCard, RepBar, DispositionDot, npcPortraitScope });
