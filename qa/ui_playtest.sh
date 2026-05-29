@@ -90,8 +90,10 @@ json.dump(cfg, open(out, "w"))
 PY
 
 # --- PLAYER MCP config: ONLY the Playwright palette server (strict, no other tools).
-# This is the constrained surface — the player sees ONLY the screen.
-python3 - "$PW_DIR" "$URL" "$PLAYERDIR" "$PW_CHANNEL" "$PERSONA" "$PLAYER_CFG" <<'PY'
+# This is the constrained surface — the player sees ONLY the screen. The palette treats
+# CLAWDND_UIPT_RUNDIR as the RUN ROOT (bugs.ndjson + status.json land there; screenshots/
+# a11y/action/console/network logs go under player/), so pass $RUNDIR, not $PLAYERDIR.
+python3 - "$PW_DIR" "$URL" "$RUNDIR" "$PW_CHANNEL" "$PERSONA" "$PLAYER_CFG" <<'PY'
 import json, sys
 pw_dir, url, rundir, channel, persona, out = sys.argv[1:7]
 json.dump({"mcpServers": {"clawdnd-uiplayer": {
@@ -214,7 +216,7 @@ json.dump({
     "run": run, "world": world, "persona": persona, "port": int(port),
     "beats_cap": int(beats), "budget_usd": float(budget),
     "player_cost_usd": round(float(cost or 0), 4), "player_rc": int(rc),
-    "finished_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+    "finished_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z",
 }, open(out, "w"), indent=2)
 PY
 
