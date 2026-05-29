@@ -42,6 +42,151 @@ window.OpenWorldsA11y = window.OpenWorldsA11y || {
   },
 };
 
+// #342: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into the
+// chronicle. The adversarial run (#324 v2) found that submitting "<script>…</script>", "{{ }}", or
+// "<b>…</b>" sent the raw markup straight to the DM (it stalled 35s+) and rode along in the local
+// echo. React already escapes on *display* (it never renders raw HTML), so this is NOT an XSS fix —
+// it is a robustness fix: a hostile/odd free-text turn must not be able to wedge the DM or the loop.
+// We strip angle-bracket tags and defang template-style "{{ … }}" / "}}" runs to plain text, collapse
+// whitespace, and cap absurd length — keeping ordinary apostrophes, quotes, punctuation, and emoji
+// intact so a normal in-character line is untouched. Viewer-side only; the engine stays sole writer.
+window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(raw) {
+  if (typeof raw !== "string") return "";
+  let t = raw;
+  // Drop anything that looks like an HTML/XML tag (incl. <script>…</script> bodies are kept as text
+  // once their tags are removed). Do it twice so "<<b>>" style nesting can't leave a stray bracket.
+  t = t.replace(/<\/?[a-zA-Z][^>]*>/g, " ").replace(/<\/?[a-zA-Z][^>]*>/g, " ");
+  // Defang stray angle brackets that weren't part of a full tag.
+  t = t.replace(/[<>]/g, " ");
+  // Defang template/handlebars-style delimiters so they can't be interpreted downstream.
+  t = t.replace(/\{\{+/g, "(").replace(/\}\}+/g, ")");
+  // Collapse whitespace runs (a pasted wall of newlines/tabs shouldn't reach the DM as-is).
+  t = t.replace(/\s+/g, " ").trim();
+  // Hard cap — a 1000+ char dump is an attack-class input, not a turn.
+  if (t.length > 2000) t = t.slice(0, 2000).trim();
+  return t;
+};
+
+// #340 + #342: the live-session "in-flight turn" state — the /chat tail, its cursor, the
+// accumulated DM/player beats, the local player echo, AND the "DM is narrating…" pending
+// indicator — lifted from ScreenTable to the App so it SURVIVES screen navigation. Previously
+// all of this was local to ScreenTable, so navigating away (Table→Map→Party) unmounted it: the
+// in-flight DM beat that landed while away was never ingested (a silent "story hole", #340) and
+// the pending indicator reset to null on return (the bar re-opened as if the turn had finished).
+// Owning it at the app level means the /chat poll keeps running regardless of which screen is
+// mounted, the beat always lands in the log, and the narrating state clears correctly on the
+// turn that actually resolved it — no matter where the player wandered.
+//
+// The poll is best-effort and a no-op unless a LIVE campaign is bound (mirrors the server's
+// /chat gating: empty items when no chat is configured / the view isn't the live run).
+const PENDING_RECOVERY_MS = 90 * 1000;        // #342: re-enable the bar if the DM stalls this long…
+const PENDING_BACKSTOP_MS = 12 * 60 * 1000;   // …with the original hard backstop as a final net.
+function useLiveSession(state) {
+  const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const activeCampaign =
+    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns[0] ||
+    {};
+  const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
+  const source = activeCampaign.source || "";
+  const runId = activeCampaign.runId || "";
+
+  const [chatBeats, setChatBeats] = React.useState([]);
+  const [log, setLog] = React.useState([]);           // local optimistic player echoes
+  const [pending, setPending] = React.useState(null);  // { text, since, stuck? } | null
+  const chatCursor = React.useRef(0);
+  const dmBeatCountRef = React.useRef(0);
+  const recoveryTimer = React.useRef(null);
+  const backstopTimer = React.useRef(null);
+
+  // sanitizeNarration lives in screen-table.jsx (loaded first); fall back to identity if absent.
+  const sanitize = (txt) => (typeof window.sanitizeNarration === "function" ? window.sanitizeNarration(txt) : (txt || ""));
+
+  const clearTimers = React.useCallback(() => {
+    if (recoveryTimer.current) { window.clearTimeout(recoveryTimer.current); recoveryTimer.current = null; }
+    if (backstopTimer.current) { window.clearTimeout(backstopTimer.current); backstopTimer.current = null; }
+  }, []);
+
+  const clearPending = React.useCallback(() => { clearTimers(); setPending(null); }, [clearTimers]);
+
+  // #342: arm the narrating indicator + a SHORT recovery timeout. If a DM beat doesn't arrive within
+  // PENDING_RECOVERY_MS the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
+  // instead of staying frozen until the 12-minute backstop. A real beat (below) clears it outright.
+  const armPending = React.useCallback((text) => {
+    clearTimers();
+    setPending({ text, since: Date.now(), stuck: false });
+    recoveryTimer.current = window.setTimeout(() => {
+      setPending((p) => (p ? { ...p, stuck: true } : p));
+    }, PENDING_RECOVERY_MS);
+    backstopTimer.current = window.setTimeout(() => setPending(null), PENDING_BACKSTOP_MS);
+  }, [clearTimers]);
+
+  const recordPlayerEcho = React.useCallback((who, text) => {
+    setLog((l) => [...l, { kind: "action", who, text }]);
+  }, []);
+
+  React.useEffect(() => clearTimers, [clearTimers]);
+
+  // When the bound live campaign changes, reset the tail so we don't bleed one run's beats into
+  // another (the cursor is per-file; a new run starts at 0).
+  React.useEffect(() => {
+    chatCursor.current = 0;
+    dmBeatCountRef.current = 0;
+    setChatBeats([]);
+    setLog([]);
+    clearPending();
+  }, [campaignId, source, runId, clearPending]);
+
+  // The app-level /chat poll. Visibility-aware (pauses when the tab is hidden) and best-effort.
+  React.useEffect(() => {
+    if (!campaignId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const pollOnce = async () => {
+      if (cancelled) return;
+      try {
+        const params = new URLSearchParams();
+        params.set("campaign", campaignId);
+        if (source) params.set("source", source);
+        if (runId) params.set("run", runId);
+        params.set("since", String(chatCursor.current));
+        const resp = await fetch(`/chat?${params.toString()}`, { cache: "no-store" });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!cancelled && items.length) {
+          const beats = items
+            .map((it) => {
+              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text };
+              const clean = sanitize(it.text);
+              return clean ? { kind: "narration", text: clean } : null;
+            })
+            .filter(Boolean);
+          if (beats.length) setChatBeats((prev) => [...prev, ...beats]);
+          // A fresh DM narration beat means the turn resolved → clear the narrating indicator
+          // (and its timers). Player echoes / wholly-internal beats don't count.
+          if (beats.some((b) => b.kind === "narration")) {
+            dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
+            clearPending();
+          }
+        }
+        if (!cancelled && typeof payload.next === "number") chatCursor.current = payload.next;
+      } catch (_e) { /* chat tail is non-critical; keep last good */ }
+    };
+    const stop = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    const start = () => { if (timer === null) timer = window.setInterval(pollOnce, 4000); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { pollOnce(); start(); } else { stop(); }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
+    return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [campaignId, source, runId, clearPending]);
+
+  return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho };
+}
+window.useLiveSession = useLiveSession;
+
 function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
   const [screen, setScreen] = React.useState("launcher");
@@ -56,6 +201,12 @@ function App() {
   const [t, setTweak] = (window.useTweaks
     ? window.useTweaks(TWEAK_DEFAULTS)
     : [TWEAK_DEFAULTS, () => {}]);
+
+  // #340: the in-flight-turn / live-narration state lives HERE (above the screen router) so it
+  // survives navigation — the DM beat lands and the narrating indicator clears no matter which
+  // screen is mounted when the turn resolves. ScreenTable reads/writes it via the `liveSession`
+  // prop; the nav rail and every other screen are intentionally untouched by it.
+  const liveSession = useLiveSession(state);
 
   React.useEffect(() => {
     document.documentElement.setAttribute("data-palette", t.palette || "warm");
@@ -281,6 +432,7 @@ function App() {
                   setCampMode={setCampMode}
                   nativeState={nativeState}
                   refreshNative={refreshNative}
+                  liveSession={liveSession}
                 />
               </div>
             </div>
@@ -358,11 +510,11 @@ function capabilityForScreen(screen, nativeState) {
   return null;
 }
 
-function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative }) {
+function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative, liveSession }) {
   switch (screen) {
     case "launcher":  return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
     case "roster":    return <ScreenRoster state={state} setState={setState} onNavigate={onNavigate} />;
-    case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} />;
+    case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} liveSession={liveSession} />;
     case "combat":    return <ScreenCombat state={state} setState={setState} onNavigate={onNavigate} />;
     case "character": return <ScreenCharacter state={state} setState={setState} onNavigate={onNavigate} />;
     case "create":    return <ScreenCreate state={state} setState={setState} onNavigate={onNavigate} />;
