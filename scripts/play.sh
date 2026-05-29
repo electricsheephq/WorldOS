@@ -240,7 +240,7 @@ else
 Begin a SOLO session in a living world for a single human player who will act through the dashboard:
 - start_world(\"$WORLD\") and read the returned bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster). If it returns existing_campaigns, start fresh.
 - start_session (for continuity and the recap).
-- Create a level-3 player character (generate_ability_scores + create_character, apply_srd_defaults, sensible skills/spells). You may pick a fitting concept for them and tell the player who they are.
+- Choose the player's hero by SELECTING a real canon NPC — NEVER invent a custom character. Use list_canon_characters(playable_only=true) (the 7 BG3 origin heroes are excluded), pick a fitting MID-TIER canon figure who has an ingested portrait + real backstory (a Harper agent, a Flaming Fist officer, a Guild operative, a hedge-wizard), then load_canon_character(that name, kind=\"player\", add_to_party=true) to seat them as the PC and tell the player who they are. (Custom character creation is a separate wizard flow — never invent a portrait-less PC here.)
 - Open a human-scale, personal scene grounded in the world's canon, with real quoted dialogue, and hand the player an open moment + a clear, real choice.
 - A companion should ENTER as part of that opening scene — a roster legend (recruit_companion / load_canon_character) or an original — someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together), NOT a name that silently appears in the party. Recruit them into the party as that meeting lands.
 
