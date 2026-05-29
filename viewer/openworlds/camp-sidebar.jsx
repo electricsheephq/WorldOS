@@ -48,8 +48,20 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   });
   const [recipe, setRecipe] = React.useState("hearty");
   const [healing, setHealing] = React.useState("spells");
+  // Controlled so its value flows into the rest intent (CS-06): an unread defaultChecked box
+  // would be theater. When off, the rest text tells the engine to ration sparingly.
+  const [useRations, setUseRations] = React.useState(true);
   const [draggingHero, setDraggingHero] = React.useState(null);
+  const [resting, setResting] = React.useState(false);
   const talkHero = talkPartner ? party.find((p) => p.id === talkPartner) : null;
+
+  // Engine-write gate. The camp sidebar is a READER of /character-surface; resting is an
+  // engine action, so it only lands when a live session is attached (`can_act`). When the
+  // chronicle is read-only we keep the CTA visible but disabled with an honest reason —
+  // mirrors the merchant / relations live-action pattern (a structured `do` move via /move).
+  const toast = window.useToast ? window.useToast() : (() => {});
+  const canAct = Boolean(surface?.can_act);
+  const campaignId = surface?.campaign_id || state?.activeCampaign || "";
 
   // Get the special-roles cards for any companion not assigned to a primary role
   const assignedIds = new Set(Object.values(roles).filter(Boolean));
@@ -76,6 +88,52 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   };
 
   const clearSlot = (slot) => setRoles((r) => ({ ...r, [slot]: null }));
+
+  // Resolve a slot's hero id → a readable name for the rest intent text.
+  const heroName = (id) => {
+    if (!id) return "";
+    const p = party.find((x) => x.id === id);
+    return p ? (p.name || p.short || id) : id;
+  };
+
+  // Begin a long rest THROUGH THE ENGINE. The viewer never writes snapshot — like the
+  // merchant ("I buy …") and relations ("I send word …") screens, we compose the camp
+  // configuration into a natural-language `do` move and POST /move; the DM/engine resolves
+  // it into `long_rest` / `camp_scene` (refreshing HP + spell slots, advancing the clock to
+  // morning, and firing companion camp beats). The constrained /move palette accepts `do`
+  // free-text intents, so the watch/cook/recipe/healing choices ride in the sentence.
+  const beginRest = async () => {
+    if (!canAct || resting) return;
+    const watch = [heroName(roles.watch1), heroName(roles.watch2)].filter(Boolean);
+    const clauses = [];
+    if (watch.length === 2) clauses.push(`${watch[0]} takes first watch and ${watch[1]} the second`);
+    else if (watch.length === 1) clauses.push(`${watch[0]} keeps watch`);
+    if (roles.hunting) clauses.push(`${heroName(roles.hunting)} hunts for fresh rations`);
+    if (roles.cooking) clauses.push(`${heroName(roles.cooking)} cooks ${RECIPES[recipe]?.name || "a meal"}`);
+    if (roles.camouflage) clauses.push(`${heroName(roles.camouflage)} camouflages the camp`);
+    clauses.push(useRations ? "we eat from our rations" : "we ration our supplies sparingly");
+    clauses.push(healing === "spells" ? "spend healing spells and abilities before sleeping" : "rely on natural healing only");
+    const text = `We make camp and take a long rest. ${clauses.join("; ")}.`;
+    setResting(true);
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "do", text, campaign: campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      toast({ kind: "rest", eyebrow: "Camp", title: "Resting", body: "Move relayed to the DM — the engine resolves the long rest, refreshes the party, and advances the clock to morning." });
+      // Keep the existing screen-map nicety working if the parent supplied one.
+      if (typeof onBeginRest === "function") { try { onBeginRest(); } catch (_) { /* non-fatal */ } }
+    } catch (error) {
+      toast({ kind: "danger", eyebrow: "Camp", title: "Rest not sent", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      setResting(false);
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, overflow: "auto" }}>
@@ -112,7 +170,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
           </div>
         )}
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
-          <input type="checkbox" defaultChecked style={{ accentColor: "var(--b-400)" }} />
+          <input type="checkbox" checked={useRations} onChange={(e) => setUseRations(e.target.checked)} style={{ accentColor: "var(--b-400)" }} />
           <span className="body-sm">Use rations</span>
         </label>
       </Panel>
@@ -287,12 +345,31 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       {/* Inline conversation panel */}
       {talkHero && <TalkPanel hero={talkHero} onClose={() => onTalk(null)} />}
 
-      {/* Begin resting */}
-      <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
-        <BrassButton tone="ghost" size="sm" onClick={onExit}>Leave camp</BrassButton>
-        <BrassButton tone="dark" disabled style={{ flex: 1 }} title="Display-only — resting is not yet wired to the engine; nothing is saved">
-          ✺ Begin Resting
-        </BrassButton>
+      {/* Begin resting — wired to the engine via /move (CS-01). Enabled + functional when a
+          live session is attached (can_act); honestly disabled + explained when the chronicle
+          is read-only, or with no party to rest. */}
+      <div style={{ flex: "0 0 auto" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <BrassButton tone="ghost" size="sm" onClick={onExit}>Leave camp</BrassButton>
+          <BrassButton
+            tone="dark"
+            disabled={!canAct || party.length === 0 || resting}
+            onClick={beginRest}
+            style={{ flex: 1 }}
+            title={
+              canAct
+                ? (party.length === 0 ? "No party in camp to rest" : "Relays a long rest to the DM via /move — the engine refreshes the party and advances the clock to morning")
+                : "The chronicle is read-only — start a session to rest"
+            }
+          >
+            {resting ? "✺ Resting…" : "✺ Begin Resting"}
+          </BrassButton>
+        </div>
+        {!canAct && (
+          <div className="hand muted" style={{ fontSize: 11, marginTop: 6, textAlign: "center" }}>
+            The chronicle is read-only. Start a session to make camp and rest.
+          </div>
+        )}
       </div>
     </div>
   );
