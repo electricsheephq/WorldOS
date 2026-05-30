@@ -1741,14 +1741,21 @@ def reroll_character(
 
 @mcp.tool()
 def generate_image(kind: str, prompt: str, seed: Optional[int] = None, scope: Optional[str] = None) -> dict:
-    """Generate (or recall from cache) an image for the campaign. `kind` is 'map'
-    (region/dungeon), 'portrait' (NPC/PC), or 'scene' (illustration); `prompt` is the
-    visual brief. The active provider is chosen by CLAWDND_IMAGE_PROVIDER (default
-    'null' → a deterministic placeholder, no network); pass `scope` (a world or
-    campaign id) to partition the derived image cache. Repeat requests hit the
-    content-hash cache for free. The cache is a derived, rebuildable artifact — it
-    never touches campaign state (engine stays sole writer)."""
-    return imagegen.generate(kind, prompt, seed=seed, scope=scope)
+    """Kick off (fire-and-forget) an image for the campaign and return IMMEDIATELY.
+    `kind` is 'map' (region/dungeon), 'portrait' (NPC/PC), or 'scene' (illustration);
+    `prompt` is the visual brief. The active provider is chosen by CLAWDND_IMAGE_PROVIDER
+    (default 'null' → a deterministic placeholder, no network); pass `scope` (a world or
+    campaign id) to partition the derived image cache.
+
+    This is an OPTIONAL OVERLAY that never blocks the engine or the DM's turn: a cache
+    hit returns the descriptor straight away (`status="ready"`); a miss enqueues a
+    background worker and returns a `status="pending"` handle (with the `scope`/`hash`
+    the viewer keys off) in well under a second — the actual generation (which can take
+    tens of seconds against a real gateway) happens off the turn path. The dashboard's
+    /image?scope=… serves a placeholder until the image lands, so play never waits on art.
+    The image cache is a derived, rebuildable artifact written by the worker; it never
+    touches campaign state (engine stays sole writer)."""
+    return imagegen.async_generate(kind, prompt, seed=seed, scope=scope)
 
 
 _SHORT_TO_FULL_AB = {

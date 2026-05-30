@@ -362,3 +362,151 @@ def test_copy_scope_corrupt_source_is_a_miss(state):
     cdir.mkdir(parents=True, exist_ok=True)
     (cdir / "bad.json").write_text("{ not json", encoding="utf-8")
     assert imagegen.copy_scope(src, "portrait-char_c") is None
+
+
+# --------------------------------------------------------------------------- #
+# async_generate — non-blocking, off the synchronous DM-turn path.
+# Proves the DM never waits on (possibly slow) generation: the call returns in
+# well under a second EVEN WHEN the provider is slow, and the image still lands in
+# the derived cache shortly after via the background worker.
+# --------------------------------------------------------------------------- #
+
+import threading as _threading  # noqa: E402  (kept local to the async block)
+import time as _time  # noqa: E402
+
+
+class _SlowProvider:
+    """A provider whose generate() blocks for a while — stands in for the real
+    gateway (which polls up to 180s). Used to prove async_generate doesn't wait."""
+
+    name = "slow"
+
+    def __init__(self, delay: float = 0.6):
+        self.delay = delay
+        self.started = _threading.Event()
+
+    def generate(self, kind, prompt, *, seed=None):
+        self.started.set()
+        _time.sleep(self.delay)
+        return {
+            "provider": self.name,
+            "kind": imagegen._normalize_kind(kind),
+            "prompt": prompt,
+            "seed": seed,
+            "placeholder": False,
+            "url": "https://example.test/generated.png",
+        }
+
+
+def _wait_for(predicate, timeout=5.0, interval=0.02):
+    """Poll `predicate` until true or timeout (so tests don't sleep on a fixed budget)."""
+    deadline = _time.monotonic() + timeout
+    while _time.monotonic() < deadline:
+        if predicate():
+            return True
+        _time.sleep(interval)
+    return predicate()
+
+
+def test_async_generate_returns_immediately_even_with_slow_provider(state, monkeypatch):
+    """The whole point: a slow (gateway-like) provider must NOT block the caller.
+    async_generate returns a pending handle in well under the provider's own delay."""
+    slow = _SlowProvider(delay=1.5)  # would add 1.5s if it ran synchronously
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+
+    t0 = _time.monotonic()
+    desc = imagegen.async_generate("scene", "a storm over the moor", scope="async-w")
+    elapsed = _time.monotonic() - t0
+
+    # Returned far faster than the provider's own work would have taken (and < the
+    # 500ms budget the tool promises). Generous bound to stay non-flaky on a busy CI box.
+    assert elapsed < 0.5, f"async_generate blocked for {elapsed:.3f}s"
+    assert desc["status"] == "pending"
+    assert desc["placeholder"] is True and desc["cache_hit"] is False
+    # The worker actually got kicked off.
+    assert slow.started.wait(timeout=2.0)
+
+
+def test_async_generate_eventually_writes_to_cache(state, monkeypatch):
+    """After the background worker finishes, the descriptor lands in the derived cache
+    under the SAME scope/hash the pending handle advertised — so /image can serve it."""
+    slow = _SlowProvider(delay=0.2)
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+
+    desc = imagegen.async_generate("scene", "a torchlit crypt", scope="async-w2")
+    key, scope = desc["hash"], desc["scope"]
+    # Nothing cached at the instant of return (work is off-thread).
+    # Then the worker completes and writes the real descriptor.
+    assert _wait_for(lambda: imagegen.cache_read(key, scope) is not None)
+    cached = imagegen.cache_read(key, scope)
+    assert cached["url"] == "https://example.test/generated.png"
+    assert cached["provider"] == "slow"
+    # And the hash the pending handle advertised matches the cached descriptor's key.
+    assert key == imagegen.content_hash("scene", "a torchlit crypt", provider="slow")
+
+
+def test_async_generate_cache_hit_is_synchronous_ready(state):
+    """A content-hash hit needs no worker — async_generate hands the cached descriptor
+    straight back as status='ready' (null provider, so generate() already cached it)."""
+    # Prime the cache with a normal (null-provider) synchronous generate.
+    imagegen.generate("map", "the ashen barrow", seed=3, scope="async-w3")
+    desc = imagegen.async_generate("map", "the ashen barrow", seed=3, scope="async-w3")
+    assert desc["cache_hit"] is True
+    assert desc["status"] == "ready"
+    assert desc["kind"] == "map" and desc["prompt"] == "the ashen barrow"
+
+
+def test_async_generate_pending_descriptor_has_caller_keys(state, monkeypatch):
+    """The pending return preserves the keys existing fire-and-forget callers read —
+    provider/kind/prompt/seed/placeholder — and adds status/hash/scope additively."""
+    slow = _SlowProvider(delay=0.05)
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+    d = imagegen.async_generate("portrait", "a hooded figure", seed=9, scope="async-w4")
+    for k in ("provider", "kind", "prompt", "seed", "placeholder", "status", "hash", "scope"):
+        assert k in d, f"missing key {k!r}"
+    assert d["kind"] == "portrait" and d["prompt"] == "a hooded figure" and d["seed"] == 9
+    # let the worker drain so we don't leak a thread into the next test
+    _wait_for(lambda: imagegen.cache_read(d["hash"], d["scope"]) is not None)
+
+
+def test_async_generate_dedups_concurrent_requests(state, monkeypatch):
+    """Two back-to-back requests for the SAME (key, scope) must spawn only ONE worker —
+    the second sees the in-flight guard and returns already_pending without re-queuing."""
+    calls = {"n": 0}
+    gate = _threading.Event()
+
+    class _Counting:
+        name = "count"
+
+        def generate(self, kind, prompt, *, seed=None):
+            calls["n"] += 1
+            gate.wait(timeout=2.0)  # hold the worker so the 2nd request races the 1st
+            return {"provider": self.name, "kind": imagegen._normalize_kind(kind),
+                    "prompt": prompt, "seed": seed, "placeholder": False, "url": "u"}
+
+    monkeypatch.setattr(imagegen, "get_provider", lambda: _Counting())
+    d1 = imagegen.async_generate("scene", "twin request", scope="async-w5")
+    d2 = imagegen.async_generate("scene", "twin request", scope="async-w5")
+    assert d1["already_pending"] is False
+    assert d2["already_pending"] is True  # the second was de-duped
+    gate.set()  # release the held worker
+    assert _wait_for(lambda: imagegen.cache_read(d1["hash"], d1["scope"]) is not None)
+    assert calls["n"] == 1  # provider.generate ran exactly once
+
+
+def test_async_generate_worker_failure_does_not_crash(state, monkeypatch):
+    """A background-worker failure must never propagate. generate() degrades a provider
+    error to the null placeholder (uncached), so the cache stays empty and the viewer
+    keeps its placeholder — and async_generate itself already returned cleanly."""
+    class _Boom:
+        name = "boom"
+
+        def generate(self, kind, prompt, *, seed=None):
+            raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(imagegen, "get_provider", lambda: _Boom())
+    d = imagegen.async_generate("scene", "a doomed render", scope="async-w6")
+    assert d["status"] == "pending"  # returned cleanly despite the doomed worker
+    # generate() degrades-to-null and does NOT cache the failure, so the key stays a miss.
+    _time.sleep(0.2)  # let the worker run + finish
+    assert imagegen.cache_read(d["hash"], d["scope"]) is None
