@@ -670,6 +670,78 @@ const RECIPES = {
 // per-hero entry the talk affordance stays hidden and TalkPanel uses the generic prompt below —
 // no demo companions are invented here.
 const TALK_PROMPTS = {
+  astarion: {
+    openingPrompt: "Ah, you've come to gawk at the vampire by firelight. How thrilling for us both.",
+    responses: [
+      { text: "I trust you, Astarion.", heroReply: "...Do you. How tediously sincere of you. Don't make a habit of it — I might start to believe it." },
+      { text: "Two hundred years. Tell me one good one.", heroReply: "One? There was a dawn once, before all this. I watched it without burning. I'd nearly forgotten the color." },
+      { text: "Are you all right?", heroReply: "Darling, I am never all right. But the fire's warm and you haven't tried to stake me. Call it a good night." },
+    ],
+  },
+  gale: {
+    openingPrompt: "Care to join me? I was just reflecting on the orb, the weave, and the small matter of my impending detonation.",
+    responses: [
+      { text: "We'll find another way, Gale.", heroReply: "I do admire your optimism. And perhaps — perhaps you're right. Mystra is not the only author of my fate. Not anymore." },
+      { text: "Tell me about Mystra.", heroReply: "Ah. The Lady of Mysteries. I loved her as only a fool with too much talent can. She gave me everything, then took it back with interest." },
+      { text: "You talk a great deal.", heroReply: "An occupational hazard of the well-read. But I'll spare you the footnotes tonight, friend." },
+    ],
+  },
+  shadowheart: {
+    openingPrompt: "You're up late. The dark suits some of us better than others. Sit, if you must.",
+    responses: [
+      { text: "You can trust me with it.", heroReply: "Trust. Shar teaches that trust is a wound waiting to open. And yet... here I am, telling you things. Make of that what you will.", tag: "Trust" },
+      { text: "What does Shar ask of you?", heroReply: "Sacrifice. Forgetting. The blessing of the dark is that it takes the pain with the memory. I used to be grateful for that." },
+      { text: "Do you remember anything from before?", heroReply: "Fragments. A scent. A wolf, perhaps. Pain, mostly. The Lady of Loss prefers I leave it buried — and yet it keeps clawing up." },
+    ],
+  },
+  wyll: {
+    openingPrompt: "Well met by firelight. The Blade of Frontiers rests, but never sleeps — there's always one more devil to outwit.",
+    responses: [
+      { text: "Tell me of your pact, Wyll.", heroReply: "Mizora. A name that tastes of brimstone and broken promises. I signed in good faith to save my city. The horns came later — the price always does." },
+      { text: "Your father — Duke Ravengard?", heroReply: "He cast me out, and still I'd march into the Nine Hells for him. A son's duty doesn't end where a father's pride begins." },
+      { text: "You're a good man, Wyll.", heroReply: "Hold to that thought when you next see these horns in the firelight. I try to be. Some days that's the whole of the heroism." },
+    ],
+  },
+  karlach: {
+    openingPrompt: "Soldier! Come warm yourself — though gods know I've got heat to spare. This engine doesn't exactly run cool.",
+    responses: [
+      { text: "We'll fix your heart, Karlach.", heroReply: "Yeah? YEAH. See, that's why I follow you into the fire — pun extremely intended. We crack this thing open and I get to hug people again." },
+      { text: "Tell me about Avernus.", heroReply: "Ten years in Zariel's war machine. Blood, ash, and a furnace where my heart used to be. I clawed my way out. I'm not going back." },
+      { text: "You doing okay tonight?", heroReply: "Running hot, same as ever. But I'm topside, I'm free, and I'm sat next to you. That's a good bloody night by my count." },
+    ],
+  },
+  laezel: {
+    openingPrompt: "You approach the fire of a githyanki warrior. Speak plainly, or do not waste my breath. Chk.",
+    responses: [
+      { text: "I trust your blade, Lae'zel.", heroReply: "As you should. A githyanki edge does not dull, and it does not betray. Stay at my side and you will not fall. That is not a boast — it is fact." },
+      { text: "Tell me of Vlaakith.", heroReply: "The Queen who is deathless. We are raised to serve her, to die for her crèche. And yet the more I see of this world, the more her certainties... fray." },
+      { text: "Will the ghaik plague claim us?", heroReply: "Not while I draw breath. The illithid tadpole is a corruption. We cut it out, or we cut down everything between us and the cure. Istik — we do not kneel." },
+    ],
+  },
+  jaheira: {
+    openingPrompt: "Sit, then. The fire remembers more wars than you've seen winters, little cub. As do I.",
+    responses: [
+      { text: "Teach me, Jaheira.", heroReply: "Hah. The young always want the lesson without the bruises. Very well — first lesson: balance. Push too hard and nature pushes back. So do I." },
+      { text: "You knew Gorion's Ward.", heroReply: "Aye. A long road, that one. Saved Baldur's Gate more than once and never thanked for half of it. You remind me of them — for good and for ill." },
+      { text: "The Harpers still answer to you?", heroReply: "Some. The Harpers are a stubborn flock, and I am the most stubborn of them. We watch. We balance. We endure — which is more than most can claim." },
+    ],
+  },
+  minsc: {
+    openingPrompt: "Ah, a friend by the fire! Sit, sit! Boo has been keeping watch — nothing escapes the eyes of a miniature giant space hamster!",
+    responses: [
+      { text: "Stand with me, Minsc!", heroReply: "STAND? We shall CHARGE! Evil will tremble, for Minsc and Boo march at your side! Boo agrees — see how fiercely he twitches his nose!", tag: "Lawful Good" },
+      { text: "What does Boo say tonight?", heroReply: "Boo says the stars are bright and the villains are nervous. He is a hamster of great wisdom and modest appetite. Listen well to Boo!" },
+      { text: "Rest a while, old friend.", heroReply: "Rest is for the wicked, who shall get plenty of it once Minsc is done with them! But... for you, a moment by the fire. Boo likes the warm." },
+    ],
+  },
+  halsin: {
+    openingPrompt: "Peace, friend. Come, sit by the fire. There is a calm in the flames that the forest knows well.",
+    responses: [
+      { text: "The Grove is safe because of you.", heroReply: "The Grove endures because many hands held it — mine among them, yours now too. Nature does not thank, but I do. Sincerely." },
+      { text: "Tell me of the Shadow Curse.", heroReply: "A wound in the land, festering for a century. I have walked its dark a long time, seeking the root. With you beside me, I begin to believe it can be healed." },
+      { text: "You carry a great burden.", heroReply: "All who lead do. The trick is to set it down by the fire now and then, and remember why you carry it at all. Tonight, that is easy company." },
+    ],
+  },
   _default: {
     openingPrompt: "Sit. The fire is low. There is room.",
     responses: [
