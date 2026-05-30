@@ -215,6 +215,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const recordPlayerEcho = session.recordPlayerEcho;
   const pendingActive = Boolean(pending && !pending.stuck);
   const pendingStuck = Boolean(pending && pending.stuck);
+  // #344: remember the move that is currently in flight so the "Try again" recovery (shown when a
+  // turn goes `stuck`) can actually RE-POST it. The first submit clears the input box (setInput("")),
+  // so by the time the bar re-opens stuck the box is empty — without the original move stored, the
+  // old "Try again" path (sendAction → input.trim() → empty → early-return) was a silent no-op. We
+  // keep the canonical move object + its label here, set on every postMove, so a retry resends the
+  // exact stalled turn (free-text, roll, or structured action alike).
+  const lastMoveRef = React.useRef(null);
 
   // #342: surface the recovery exactly once when a turn goes `stuck` so the player knows the bar
   // re-opened on purpose (the DM stalled) rather than silently.
@@ -241,6 +248,9 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       : move;
     const rawLabel = label || cleanMove.text || cleanMove.name || "declares an action";
     const text = window.neutralizeMarkup(String(rawLabel)) || "declares an action";
+    // #344: capture the (already-neutralized) move + label + actionId so a later "Try again"
+    // recovery can re-POST this exact turn if the DM stalls on it.
+    lastMoveRef.current = { move: cleanMove, label: text, actionId };
     try {
       const response = await fetch(writeLane.endpoint || "/move", {
         method: "POST",
@@ -271,6 +281,33 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     await postMove({ kind: "do", text }, text, "do");
     setInput("");
   };
+
+  // #344: the recovery action for a `stuck` turn. The old "Try again" reused sendAction, which reads
+  // the (now-empty) input box and early-returned — a dead button. This handler resends the stalled
+  // turn: if the player typed something new into the re-opened box we send THAT (a rephrase, the
+  // toast's other option); otherwise we re-POST the exact move that stalled. Either way the bar
+  // re-arms via postMove → armPending, so the turn goes back to "narrating" and the recovery clears.
+  const retryStuck = async () => {
+    const typed = input.trim();
+    if (typed) {
+      // Player rephrased — send the new text as a fresh `do` (this path already worked).
+      await sendAction();
+      return;
+    }
+    const last = lastMoveRef.current;
+    if (!last || !last.move) {
+      // Nothing captured to retry (shouldn't happen for a stuck turn) — nudge the player to type.
+      toast({ kind: "danger", title: "Nothing to retry", body: "Type your action again, then press Try again." });
+      inputRef.current?.focus();
+      return;
+    }
+    // Re-POST the stalled move verbatim. postMove re-arms pending + the recovery/backstop timers.
+    await postMove(last.move, last.label, last.actionId);
+  };
+
+  // #344: the Declare button doubles as the stuck-recovery "Try again" button (same slot, relabeled).
+  // Route the click to the right handler so a stuck turn actually retries instead of no-op'ing.
+  const onDeclareClick = () => (pendingStuck ? retryStuck() : sendAction());
 
   const requestRoll = (sides = 20) => {
     const action = actionById("check");
@@ -406,13 +443,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendAction()}
+                onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
                 disabled={pendingActive}
                 title={DECLARE_HINT}
                 placeholder={pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={sendAction} title={DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
