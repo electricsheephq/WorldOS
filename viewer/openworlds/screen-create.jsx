@@ -545,27 +545,56 @@ function StepPortrait({ hero, setHero }) {
       <h1 className="h1">What will the chronicle remember of you?</h1>
       <Divider />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
-        {/* #315: only canon faces of the hero's lineage, and never a dead figure. The original
-            gallery index drives selection + scope, so map filtered entries back to it. */}
-        {PORTRAIT_GALLERY.filter(p => (!hero.race || p.race === hero.race) && p.alive !== false).map((p) => {
-          const i = PORTRAIT_GALLERY.indexOf(p);
-          return (
-          <button key={p.slug} onClick={() => pickGallery(i)} title={p.name} style={{
-            padding: 4,
-            background: (!genMode && hero.portrait === i) ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
-            boxShadow: (!genMode && hero.portrait === i)
-              ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 16px -2px var(--gold-glow)"
-              : "inset 0 0 0 1px rgba(140,100,60,0.3)",
-            cursor: "pointer",
-          }}>
-            {/* CR-04: real ingested portraits via the render bridge; a miss falls back to a
-                neutral head-and-shoulders silhouette (the scope matches /portrait/), never a crest. */}
-            <Img scope={portraitScope(i)} label={p.name} w="100%" h={140} fit="cover" framed />
-          </button>
-          );
-        })}
-      </div>
+      {/* #315/#379: filter to the hero's lineage. If that lineage has NO canon
+          portrait yet (#379 — 5 of 12 races land empty until #378's curated
+          catalogue lands), surface a banner explaining the gap + fall back to
+          showing the full living gallery so the wizard never dead-ends the
+          player. The original gallery index drives selection + scope, so map
+          filtered entries back to it. */}
+      {(() => {
+        const livingAll = PORTRAIT_GALLERY.filter(p => p.alive !== false);
+        const lineageMatches = hero.race ? livingAll.filter(p => p.race === hero.race) : livingAll;
+        const usingFallback = !!hero.race && lineageMatches.length === 0;
+        const toRender = usingFallback ? livingAll : lineageMatches;
+        const raceName = RACES[hero.race]?.name || hero.race;
+        return (
+          <React.Fragment>
+            {usingFallback && (
+              <div role="status" aria-live="polite" style={{
+                margin: "0 0 12px",
+                padding: "10px 14px",
+                background: "rgba(140,100,60,0.06)",
+                border: "1px dashed rgba(140,100,60,0.35)",
+                borderRadius: 6,
+                fontSize: 13,
+                color: "var(--ink-2)",
+                lineHeight: 1.45,
+              }}>
+                No canon portrait curated for <strong>{raceName}</strong> yet — pick any face below for now, or generate a unique one with "A face of your own" further down. The full per-race catalogue lands as <strong>#378</strong> finishes ingest (tracked: #379).
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+              {toRender.map((p) => {
+                const i = PORTRAIT_GALLERY.indexOf(p);
+                return (
+                  <button key={p.slug} onClick={() => pickGallery(i)} title={p.name} style={{
+                    padding: 4,
+                    background: (!genMode && hero.portrait === i) ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
+                    boxShadow: (!genMode && hero.portrait === i)
+                      ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 16px -2px var(--gold-glow)"
+                      : "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                    cursor: "pointer",
+                  }}>
+                    {/* CR-04: real ingested portraits via the render bridge; a miss falls back to a
+                        neutral head-and-shoulders silhouette (the scope matches /portrait/), never a crest. */}
+                    <Img scope={portraitScope(i)} label={p.name} w="100%" h={140} fit="cover" framed />
+                  </button>
+                );
+              })}
+            </div>
+          </React.Fragment>
+        );
+      })()}
 
       <Divider />
 
