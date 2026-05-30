@@ -19,7 +19,9 @@ The fix makes the FIRST-BEAT branch obviously alive on the surfaces that matter:
   • the per-second-changing text lives OUTSIDE the aria-live region (a separate
     visually-hidden role="status" announces a STABLE reassurance ONCE) so a screen reader
     isn't spammed every tick.
-Later beats (the ~35–60s norm) keep the original #336 treatment unchanged.
+Later beats keep the original #336 STRUCTURE (steady "narrating" label + aria-hidden ticking
+elapsed); #399 only adjusted the later-beat wait-hint wording ("a minute or two") + raised the
+recovery window to 180s (a content-rich beat 2–4 runs ~90–120s) — neither is asserted here.
 
 These tests exercise the REAL component by transpiling the actual `screen-table.jsx` with the
 SAME bundled Babel-standalone the browser uses and rendering `DmNarratingBeat` under a tiny
