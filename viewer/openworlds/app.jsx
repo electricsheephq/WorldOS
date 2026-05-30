@@ -1,5 +1,16 @@
 /* App router + tweaks */
 
+// #410: strip the leading write-lane routing tag ("[do] ", "[say] ", "[check] ", …) from a line
+// before it is SHOWN in the chronicle. The tag is internal plumbing the engine uses to classify a
+// player move; the player must see their own words, never "[do] opens the door". The write lane
+// KEEPS the tag (engine routing) — this is display-only. Shared by every player-line render path:
+// the optimistic echo (postMove) AND the /chat replay of the player's logged line. Defined as a
+// window-guarded global (like neutralizeMarkup) so screen-table + the pytest suite can reach it.
+window.stripRoutingTag = window.stripRoutingTag || function stripRoutingTag(text) {
+  return String(text == null ? "" : text)
+    .replace(/^\s*\[(say|do|check|save|continue|attack|cast|use_item|clarify)\]\s*/i, "");
+};
+
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "palette": "warm",
   "ornaments": true,
@@ -367,7 +378,11 @@ function useLiveSession(state) {
             .map((it) => {
               // #274: stamp each beat with the shared monotonic counter at ingest time so it
               // time-merges correctly against local player echoes (which share the same counter).
-              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text, at: nextLogSeq() };
+              // #410: the engine logs the player's line WITH its routing tag ("[do] …") for move
+              // classification, and /chat replays it verbatim. Strip the tag for DISPLAY so the
+              // replayed dialog row shows the player's words, not "[do] …" (matches the optimistic
+              // echo above, which already strips via the same helper).
+              if (it.role === "player") return { kind: "dialog", who: "You", text: window.stripRoutingTag(it.text), at: nextLogSeq() };
               dmLineArrived = true;
               // #405: a /chat DM line is the turn-RESOLUTION signal (it clears the pending indicator
               // below). It is NOT a second narration row when this run is streaming its prose via the
