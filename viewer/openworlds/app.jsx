@@ -161,6 +161,14 @@ function useLiveSession(state) {
   const chatCursor = React.useRef(0);
   const eventsCursor = React.useRef(0);                // #393: per-file cursor for the live /events tail
   const dmBeatCountRef = React.useRef(0);
+  // #406: the count of turns that have RESOLVED on /chat (the turn-END signal), bumped ONLY in the
+  // /chat poll — NOT by streamed /events paragraphs. `firstBeat` (the generous cold-open recovery
+  // window) keys off THIS, not dmBeatCountRef: the cold-open is still "the first beat" until its
+  // turn actually resolves, so a player who hits "Try again" after one paragraph streamed keeps the
+  // 4-min window instead of being dropped to the 180s later-beat window (the #348 false-stuck trap
+  // re-introduced for the still-opening cold open). dmBeatCountRef stays the per-paragraph counter
+  // (it gates streaming dedup/order), but it no longer decides the recovery window.
+  const resolvedTurnsRef = React.useRef(0);
   // #393/#405: dedup key sets across BOTH narration sources. There are TWO key spaces and the
   // distinction is the whole fix:
   //   • `seenSeq` — the STABLE session-log line index (`seq`) the server now stamps on every /events
@@ -176,6 +184,10 @@ function useLiveSession(state) {
   // its turn-END reply — or /chat carrying the whole beat as one blob while /events carried N
   // paragraphs — defeated the dedup and the chronicle showed each beat 3-4× and out of order.
   const seenSeq = React.useRef(new Set());
+  // #406: seenText is RESET per turn (when a /chat DM line resolves a turn, below) — it only needs to
+  // span one turn's /events→/chat gap, so a run-long text set is wrong: it would permanently suppress
+  // a legitimately-repeated short line (a catchphrase, a repeated "Yes.") on a /chat-only path. seenSeq
+  // stays run-long (stable ids never collide and must absorb re-ingests).
   const seenText = React.useRef(new Set());
   // #405: did the CURRENT in-flight turn stream any narration via the canonical /events source? When
   // true, the turn-END /chat DM line is a pure turn-RESOLUTION signal (it clears the pending
@@ -216,10 +228,16 @@ function useLiveSession(state) {
     return true;
   }, []);
 
-  const clearTimers = React.useCallback(() => {
+  // Clear ONLY the adaptive 'stuck' recovery timer (the one notePendingProgress re-arms each
+  // streamed beat). Kept separate from the absolute backstop so a streaming turn can reset 'stuck'
+  // WITHOUT pushing the hard 12-min cap forward (see notePendingProgress / #406).
+  const clearRecoveryTimer = React.useCallback(() => {
     if (recoveryTimer.current) { window.clearTimeout(recoveryTimer.current); recoveryTimer.current = null; }
-    if (backstopTimer.current) { window.clearTimeout(backstopTimer.current); backstopTimer.current = null; }
   }, []);
+  const clearTimers = React.useCallback(() => {
+    clearRecoveryTimer();
+    if (backstopTimer.current) { window.clearTimeout(backstopTimer.current); backstopTimer.current = null; }
+  }, [clearRecoveryTimer]);
 
   // #393: a ref mirror of `pending` so a poll callback (whose effect deps deliberately EXCLUDE
   // `pending`, to avoid re-subscribing the 3s interval every turn) can read the CURRENT turn state
@@ -247,7 +265,10 @@ function useLiveSession(state) {
   // real narration beat regardless of this flag).
   const armPending = React.useCallback((text) => {
     clearTimers();
-    const firstBeat = dmBeatCountRef.current === 0;
+    // #406: "first beat?" = no turn has RESOLVED on /chat yet (resolvedTurnsRef), NOT "no paragraph
+    // has streamed" (dmBeatCountRef). So a retried cold-open — one paragraph streamed, then "Try
+    // again" before the turn resolved — still gets the generous PENDING_RECOVERY_FIRST_MS window.
+    const firstBeat = resolvedTurnsRef.current === 0;
     const recoveryMs = recoveryWindowMs(firstBeat);
     setPendingState({ text, since: Date.now(), stuck: false, firstBeat });
     recoveryTimer.current = window.setTimeout(() => {
@@ -268,15 +289,20 @@ function useLiveSession(state) {
     // StrictMode's double-invoked updaters.
     const p = pendingRef.current;
     if (!p) return;
-    clearTimers();
+    // #406: re-arm ONLY the adaptive 'stuck' recovery timer — NOT the absolute backstop. The
+    // backstop is a hard wall-clock cap from submit (armed once in armPending); re-arming it on
+    // every streamed beat let a turn that streams a paragraph every few seconds but never resolves
+    // on /chat defer the 12-min cap FOREVER (so neither 'stuck' nor the backstop ever fired). Now a
+    // long-but-healthy streaming turn keeps resetting 'stuck' (it's plainly alive) while the
+    // absolute cap still fires at its original deadline.
+    clearRecoveryTimer();
     const recoveryMs = recoveryWindowMs(Boolean(p.firstBeat));
     recoveryTimer.current = window.setTimeout(() => {
       setPendingState((q) => (q ? { ...q, stuck: true } : q));
     }, recoveryMs);
-    backstopTimer.current = window.setTimeout(() => setPendingState(null), PENDING_BACKSTOP_MS);
     // Clear any prior 'stuck' flag — fresh prose just arrived, so the turn is plainly not stuck.
     if (p.stuck) setPendingState((q) => (q ? { ...q, stuck: false } : q));
-  }, [clearTimers, setPendingState]);
+  }, [clearRecoveryTimer, setPendingState]);
 
   // #399: idempotent player echo. The #344 'Try again' recovery re-POSTs the EXACT stalled move
   // (postMove → recordPlayerEcho again), which used to append a SECOND identical action row — the
@@ -305,6 +331,7 @@ function useLiveSession(state) {
     chatCursor.current = 0;
     eventsCursor.current = 0;          // #393: reset the live /events tail per run
     dmBeatCountRef.current = 0;
+    resolvedTurnsRef.current = 0;       // #406: a fresh run has resolved no turns yet (cold-open window)
     seenSeq.current = new Set();        // #405: a fresh run shares no seq dedup keys with the last
     seenText.current = new Set();       // #405: …nor any text-key fallback keys
     eventsStreamedThisTurnRef.current = false;  // #405: no /events narration streamed for any turn yet
@@ -364,11 +391,24 @@ function useLiveSession(state) {
           // Player echoes alone never resolve a turn.
           if (dmLineArrived) {
             dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
+            // #406: a /chat DM line is the turn-RESOLUTION signal — count it so the NEXT turn is no
+            // longer treated as the cold-open 'firstBeat'. This is the ONLY place the count bumps
+            // (the /events stream bumps dmBeatCountRef, not this), so a retried cold-open whose first
+            // turn never resolved keeps its generous recovery window.
+            resolvedTurnsRef.current += 1;
             clearPending();
             // #405: the turn is over → reset the per-turn "/events streamed" flag so the NEXT turn is
             // judged on ITS OWN streaming. Without this, a streamed turn would wrongly suppress a
             // later TERSE turn's /chat-only prose (the flag would stay stuck true for the whole run).
             eventsStreamedThisTurnRef.current = false;
+            // #406: scope the TEXT-key dedup to the turn (the seq-keyed /events path is the canonical,
+            // run-long dedup; #407). seenText only needs to span ONE turn's /events→/chat gap, so a
+            // run-long text set would PERMANENTLY suppress a legitimately-repeated short line on a
+            // /chat-only path (an NPC catchphrase, a repeated "Yes." / "The door is locked." on a
+            // later turn) — the turn resolves but shows no new prose ("the DM said nothing"). Reset
+            // it once the turn resolves so the next turn's identical line renders. (seenSeq is NOT
+            // reset — stable ids never collide, and it must stay run-long to absorb re-ingests.)
+            seenText.current = new Set();
           }
         }
         if (!cancelled && typeof payload.next === "number") chatCursor.current = payload.next;
@@ -504,9 +544,16 @@ function App() {
   // cold-open. It hands off (clears) when the first DM narration beat lands in liveSession.chatBeats
   // (the same real milestone the in-table cold-open clears on). Falls back gracefully if the
   // bundle/hook is absent.
+  // #405: a cold-open / session error reported on the native bridge (appStatus.lastError, mirrored
+  // into nativeState.error) means no narration will ever arrive — feed it to the hook so the overlay
+  // DISMISSES immediately (yielding to the table, which surfaces the error + a retry) rather than
+  // wedging a full-screen cover over the recovery. Pre-RELOAD mint failures are already torn down by
+  // screen-launcher / screen-create (they call OpenWorldsBuilding.clear()); this catches the
+  // POST-reload cold-open error, where the overlay is up and only the bridge status can flag it.
+  const coldOpenError = (nativeState && (nativeState.appStatus?.lastError || nativeState.error)) || "";
   const building = (typeof window.useBuildingUniverse === "function")
-    ? window.useBuildingUniverse(liveSession)
-    : { active: false, record: null, handoff: false, dismiss: () => {} };
+    ? window.useBuildingUniverse(liveSession, coldOpenError)
+    : { active: false, record: null, handoff: false, escapable: false, dismiss: () => {} };
 
   React.useEffect(() => {
     document.documentElement.setAttribute("data-palette", t.palette || "warm");
@@ -796,9 +843,16 @@ function App() {
 
       {/* The full-screen "building your universe" loading overlay. position:fixed (styles.css), so
           it covers the whole app — title bar, rail, stage — while the table boots underneath and
-          the app-level /chat poll keeps running. Clears itself when the first DM narration lands. */}
+          the app-level /chat poll keeps running. Clears itself when the first DM narration lands —
+          or, #405, on a cold-open error, a ~120s stall ceiling, or the manual "Enter anyway →"
+          (onEnterAnyway → dismiss), so it can never wedge over the table's own recovery. */}
       {building.active && window.BuildingUniverse && (
-        <window.BuildingUniverse record={building.record} handoff={building.handoff} />
+        <window.BuildingUniverse
+          record={building.record}
+          handoff={building.handoff}
+          escapable={building.escapable}
+          onEnterAnyway={building.dismiss}
+        />
       )}
     </React.Fragment>
   );
