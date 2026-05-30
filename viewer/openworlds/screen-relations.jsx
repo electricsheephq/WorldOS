@@ -262,7 +262,7 @@ function FactionDetail({ f }) {
         }}>{(f.motto && f.motto.trim()) ? f.motto : f.name}</div>
         {/* Sigil */}
         <div style={{
-          position: "absolute", top: -10, right: 10,
+          position: "absolute", top: 8, right: 10,
           width: 36, height: 36, borderRadius: "50%",
           background: "radial-gradient(circle at 30% 30%, var(--b-200), var(--b-500))",
           boxShadow: "inset 0 0 0 1px var(--b-600), 0 2px 4px rgba(0,0,0,0.4)",
