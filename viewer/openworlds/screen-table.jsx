@@ -195,6 +195,54 @@ const DECLARE_HINT = "Type what your hero does in your own words, then Declare t
 // Older beats are still available in full in the Quest Journal.
 const CHRONICLE_RENDER_CAP = 50;
 
+// #405: assemble the chronicle's full ordered, de-duplicated row list from its three sources. Pure
+// (no React, no DOM) so the exactly-once + chronological-order contract is unit-testable. The whole
+// narration-duplication fix lives here + in app.jsx's useLiveSession dedup:
+//   • ORDER by the STABLE session-log sequence (`orderSeq` on a live /events beat / `seq` on a
+//     recentEvents row — both = the engine's absolute session-log line index) when present, so the
+//     live tail can never interleave out of chronological order; fall back to the client-side ingest
+//     counter `.at` for rows with no seq (player echoes, a chat-only beat). Array.prototype.sort is
+//     stable (ES2019+), so equal-key rows keep insertion order.
+//   • DEDUP recentEvents (the server's trailing window of the SAME session log the live /events
+//     stream reads) against the live tail so a paragraph never shows in BOTH bands. Prefer the
+//     stable `seq` (a row in both bands shares it → the match is immune to the prose AND to a
+//     windowing re-mount); fall back to a normalized TEXT key only for rows lacking a seq (legacy
+//     server / a chat-only beat), keyed identically to app.jsx's text fallback. Non-narration
+//     history rows (rolls/system/combat) are always kept.
+// recentEvents stay the leading (oldest) band: they are the session log's trailing lines, all at or
+// before the live tail's lines, and the dedup guarantees no overlap — so a plain concat is in order.
+function buildChronicleLog(recentEvents, chatBeats, log) {
+  const recent = Array.isArray(recentEvents) ? recentEvents : [];
+  const beats = Array.isArray(chatBeats) ? chatBeats : [];
+  const echoes = Array.isArray(log) ? log : [];
+  const sanitize = (t) => (typeof window !== "undefined" && typeof window.sanitizeNarration === "function")
+    ? window.sanitizeNarration(t || "") : (t || "");
+  const narrationKey = (t) => sanitize(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const orderOf = (e) => (e && typeof e.orderSeq === "number") ? e.orderSeq : null;
+  const mergedTail = [...beats, ...echoes].sort((a, b) => {
+    const sa = orderOf(a), sb = orderOf(b);
+    if (sa !== null && sb !== null) return sa - sb;   // both from the session log → true beat order
+    return (a?.at || 0) - (b?.at || 0);               // else fall back to client ingest order
+  });
+  const liveSeqs = new Set(
+    mergedTail.filter((b) => b && b.kind === "narration" && typeof b.orderSeq === "number").map((b) => b.orderSeq),
+  );
+  const liveNarrationKeys = new Set(
+    mergedTail.filter((b) => b && b.kind === "narration").map((b) => narrationKey(b.text)).filter(Boolean),
+  );
+  const dedupedRecent = recent.filter((row) => {
+    const kind = (row && (row.kind || row.type)) || "narration";
+    if (kind !== "narration" && kind !== "dialogue") return true;  // mechanics rows always kept
+    const seq = row && row.seq;
+    if (typeof seq === "number") return !liveSeqs.has(seq);  // stable-id match (prose-independent)
+    const key = narrationKey(row && (row.text || row.detail));
+    return !key || !liveNarrationKeys.has(key);
+  });
+  return [...dedupedRecent, ...mergedTail];
+}
+// Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
+if (typeof window !== "undefined") window.buildChronicleLog = buildChronicleLog;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -247,33 +295,12 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
   const readOnlyReason = blockedActions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
-  // #274: the chronicle merges three sources — recentEvents (engine history), chatBeats (the live
-  // DM/player tail) and log (local optimistic player echoes). A plain concat let a just-typed action
-  // (in `log`) sort ABOVE the older DM prose it answered (in `chatBeats`), because the two live in
-  // separate arrays appended at different times. chatBeats + log carry a shared monotonic `.at`
-  // (stamped client-side in app.jsx at creation/ingest), so a STABLE sort by `.at` restores true
-  // chronological order across both. recentEvents have no `.at` (server history with no client
-  // sequence) and are always the oldest, so they keep their leading position and relative order.
-  // Array.prototype.sort is stable (ES2019+); ties are impossible anyway since the counter is unique.
-  const mergedTail = [...chatBeats, ...log].sort((a, b) => (a?.at || 0) - (b?.at || 0));
-  // #393: dedup recentEvents against the live tail. recentEvents is the server's trailing window of
-  // the SAME session log that the live narration stream (chatBeats, fed by app.jsx's /events poll)
-  // now reads — so a paragraph that has already streamed into the live band would otherwise ALSO
-  // show in this leading history band (the same prose twice, adjacent). Drop any recentEvents
-  // narration row whose text already appears in the live tail; non-narration history rows and
-  // genuine pre-session prose (not in the live tail) are untouched. Keyed identically to app.jsx's
-  // claimNarration (whitespace-collapsed + lowercased) so the two projections of one paragraph match.
-  const narrationKey = (t) => sanitizeNarration(t || "").replace(/\s+/g, " ").trim().toLowerCase();
-  const liveNarrationKeys = new Set(
-    mergedTail.filter((b) => b && b.kind === "narration").map((b) => narrationKey(b.text)).filter(Boolean),
-  );
-  const dedupedRecent = recentEvents.filter((row) => {
-    const kind = (row && (row.kind || row.type)) || "narration";
-    if (kind !== "narration" && kind !== "dialogue") return true;  // mechanics rows always kept
-    const key = narrationKey(row && (row.text || row.detail));
-    return !key || !liveNarrationKeys.has(key);
-  });
-  const visibleLog = surface ? [...dedupedRecent, ...mergedTail] : [...demoLog, ...log];
+  // #274/#393/#405: the chronicle merges three sources — recentEvents (the server's trailing window
+  // of the session log), chatBeats (the live DM/player tail), and log (local optimistic player
+  // echoes) — into one ordered, de-duplicated list. The merge/dedup/order is a PURE function
+  // (buildChronicleLog, below) so the exactly-once + chronological-order contract is unit-testable
+  // without mounting the component. See its doc-comment for the stable-`seq`-keyed reconciliation.
+  const visibleLog = surface ? buildChronicleLog(recentEvents, chatBeats, log) : [...demoLog, ...log];
   // #402: BOUND what the chronicle RENDERS. Even with the live tail capped in useLiveSession, the
   // leading history band (recentEvents from the server) can be large, so the merged list could still
   // mount hundreds of rows into the DOM + the accessibility tree — the exact thing that buried the

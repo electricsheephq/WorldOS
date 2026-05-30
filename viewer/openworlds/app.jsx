@@ -161,25 +161,58 @@ function useLiveSession(state) {
   const chatCursor = React.useRef(0);
   const eventsCursor = React.useRef(0);                // #393: per-file cursor for the live /events tail
   const dmBeatCountRef = React.useRef(0);
-  // #393: dedup key set shared across BOTH narration sources. The session log streams a turn's
-  // narration mid-flight via /events; the duo/human runner ALSO appends the SAME prose to /chat at
-  // turn-END. Without a shared seen-set the player would see each streamed paragraph twice (once live,
-  // once when the chat line lands). Keyed by normalized narration text so whichever source surfaces a
-  // given paragraph FIRST wins and the later duplicate is dropped. Player echoes are never deduped.
-  const seenNarration = React.useRef(new Set());
+  // #393/#405: dedup key sets across BOTH narration sources. There are TWO key spaces and the
+  // distinction is the whole fix:
+  //   • `seenSeq` — the STABLE session-log line index (`seq`) the server now stamps on every /events
+  //     entry (and on the recentEvents history band). This is the engine's sole-writer per-beat
+  //     identity; it does NOT depend on the prose, so a re-ingest (windowing / a session-rotation
+  //     cursor rewind) of the same line collapses to one row, and it is the chronological sort key.
+  //   • `seenText` — a normalized-TEXT fallback, used ONLY for narration that has NO seq (a /chat-only
+  //     beat: a terse turn that streamed nothing via /events, or the human/native path where /chat is
+  //     the sole source). Text keys are fragile (a reworded reply, or a whole-turn /chat blob vs the
+  //     per-paragraph /events rows, hash differently) — which is exactly why /chat narration is now a
+  //     FALLBACK only and the canonical live source is the seq-keyed /events stream.
+  // #405 root-cause: previously a single text-keyed set reconciled both sources, so the DM rewording
+  // its turn-END reply — or /chat carrying the whole beat as one blob while /events carried N
+  // paragraphs — defeated the dedup and the chronicle showed each beat 3-4× and out of order.
+  const seenSeq = React.useRef(new Set());
+  const seenText = React.useRef(new Set());
+  // #405: did the CURRENT in-flight turn stream any narration via the canonical /events source? When
+  // true, the turn-END /chat DM line is a pure turn-RESOLUTION signal (it clears the pending
+  // indicator) and adds NO narration row — the session log already carried that beat's canonical,
+  // seq-keyed, per-paragraph prose. When the turn streamed NOTHING via /events (a terse turn that
+  // logged no narration, or the human/native path where /chat is the sole source) the /chat copy is
+  // the only source and IS rendered (text-keyed). This is reset each time a /chat DM line resolves a
+  // turn, so the decision is per-TURN, not per-run: a streamed turn 1 followed by a terse turn 2 still
+  // shows turn 2's /chat-only prose. The /events poll always lands a turn's paragraphs before its
+  // turn-END /chat blob (prose is logged DURING the turn; /chat is written only at turn-end, and
+  // /events polls faster), so this flag is reliably set by the time the resolving /chat line arrives.
+  const eventsStreamedThisTurnRef = React.useRef(false);
   const recoveryTimer = React.useRef(null);
   const backstopTimer = React.useRef(null);
 
   // sanitizeNarration lives in screen-table.jsx (loaded first); fall back to identity if absent.
   const sanitize = (txt) => (typeof window.sanitizeNarration === "function" ? window.sanitizeNarration(txt) : (txt || ""));
-  // #393: a stable dedup key for a narration paragraph — whitespace-collapsed + lowercased so the
-  // /events copy and the /chat copy of the same prose hash identically. First-seen returns true (show
-  // it + record the key); a repeat returns false (suppress). Empty/blank text is never recorded.
+  // #405: claim a narration beat by its STABLE session-log `seq` (the server-stamped absolute line
+  // index). First-seen returns true (show it + record the id); any later arrival of the same line —
+  // a windowing re-mount, a session-rotation cursor rewind, or the recentEvents history band
+  // overlapping the live tail — returns false and is suppressed. Keyed by id, so it is immune to the
+  // DM rewording the prose between its streamed copy and its reply.
+  const claimNarrationSeq = React.useCallback((seq) => {
+    if (typeof seq !== "number" || !Number.isFinite(seq)) return false;
+    if (seenSeq.current.has(seq)) return false;
+    seenSeq.current.add(seq);
+    return true;
+  }, []);
+  // #393/#405: the TEXT-key fallback for narration with no seq (a /chat-only beat). Whitespace-
+  // collapsed + lowercased. First-seen returns true; a repeat returns false. Used only when no seq is
+  // available — seq-keyed beats never consult this set, so a reworded /chat copy can't double a beat
+  // that already streamed (that path is gated by eventsStreamedThisTurnRef, below).
   const claimNarration = React.useCallback((txt) => {
     const key = String(txt || "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!key) return false;
-    if (seenNarration.current.has(key)) return false;
-    seenNarration.current.add(key);
+    if (seenText.current.has(key)) return false;
+    seenText.current.add(key);
     return true;
   }, []);
 
@@ -272,7 +305,9 @@ function useLiveSession(state) {
     chatCursor.current = 0;
     eventsCursor.current = 0;          // #393: reset the live /events tail per run
     dmBeatCountRef.current = 0;
-    seenNarration.current = new Set();  // #393: a fresh run shares no dedup keys with the last
+    seenSeq.current = new Set();        // #405: a fresh run shares no seq dedup keys with the last
+    seenText.current = new Set();       // #405: …nor any text-key fallback keys
+    eventsStreamedThisTurnRef.current = false;  // #405: no /events narration streamed for any turn yet
     setChatBeats([]);
     setLog([]);
     clearPending();
@@ -307,9 +342,18 @@ function useLiveSession(state) {
               // time-merges correctly against local player echoes (which share the same counter).
               if (it.role === "player") return { kind: "dialog", who: "You", text: it.text, at: nextLogSeq() };
               dmLineArrived = true;
+              // #405: a /chat DM line is the turn-RESOLUTION signal (it clears the pending indicator
+              // below). It is NOT a second narration row when this run is streaming its prose via the
+              // canonical seq-keyed /events source: the /chat reply is the SAME beat, but as the whole
+              // turn's reply text — often a single blob, and sometimes REWORDED — so rendering it would
+              // duplicate (and mis-order) what already streamed per-paragraph. The session log is the
+              // canonical chronicle; the /chat copy is suppressed here. We ONLY render a /chat DM line
+              // as narration when nothing streamed via /events for this run (a terse turn that logged
+              // no narration, or the human/native path where /chat is the sole source) — text-keyed,
+              // since a chat-only beat has no session-log seq, and there is no /events stream to
+              // collide with in that case.
+              if (eventsStreamedThisTurnRef.current) return null;
               const clean = sanitize(it.text);
-              // #393: drop a turn-END chat beat whose prose already streamed live via /events this
-              // turn (claimNarration is false on a repeat) so the same paragraph isn't shown twice.
               return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
             })
             .filter(Boolean);
@@ -321,6 +365,10 @@ function useLiveSession(state) {
           if (dmLineArrived) {
             dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
             clearPending();
+            // #405: the turn is over → reset the per-turn "/events streamed" flag so the NEXT turn is
+            // judged on ITS OWN streaming. Without this, a streamed turn would wrongly suppress a
+            // later TERSE turn's /chat-only prose (the flag would stay stuck true for the whole run).
+            eventsStreamedThisTurnRef.current = false;
           }
         }
         if (!cancelled && typeof payload.next === "number") chatCursor.current = payload.next;
@@ -370,7 +418,18 @@ function useLiveSession(state) {
               const kind = (e && (e.kind || e.type)) || "narration";
               if (kind !== "narration" && kind !== "dialogue") return null;
               const clean = sanitize(e && (e.text || e.detail));
-              return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
+              if (!clean) return null;
+              // #405: dedup by the STABLE session-log `seq` the server stamps on each entry — NOT by
+              // prose. So a paragraph re-ingested by a windowing re-mount or a session-rotation cursor
+              // rewind collapses to one row, and the dedup can't be defeated by a reworded copy. A
+              // legacy entry with no seq (older server) falls back to the text key. The seq doubles as
+              // the chronological order key: `orderSeq` keeps the engine's session-log line order so
+              // live narration can never interleave out of order with the (now-removed) /chat source.
+              const seq = (e && typeof e.seq === "number") ? e.seq : null;
+              const fresh = (seq !== null) ? claimNarrationSeq(seq) : claimNarration(clean);
+              if (!fresh) return null;
+              eventsStreamedThisTurnRef.current = true;  // the current turn HAS streamed live narration
+              return { kind: "narration", text: clean, at: nextLogSeq(), orderSeq: seq };
             })
             .filter(Boolean);
           if (beats.length) {

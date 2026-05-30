@@ -1,8 +1,24 @@
+import contextlib
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+
+
+@contextlib.contextmanager
+def _env(key: str, value: str):
+    """Temporarily set an env var (restored on exit) — for pointing _state_dir() at a temp dir."""
+    old = os.environ.get(key)
+    os.environ[key] = value
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = old
 
 
 _SERVER_PATH = Path(__file__).resolve().parents[1] / "server.py"
@@ -373,6 +389,67 @@ class SessionSurfaceTests(unittest.TestCase):
 
         self.assertEqual(surface["recentEvents"], [])
         self.assertEqual(surface["title"], "Unsafe Session")
+
+    # --- #405: the session-log tail stamps each row with its ABSOLUTE line index as a stable `seq`,
+    # and that seq survives into the surface's recentEvents — so the viewer can dedup the history band
+    # against the live /events tail by ID (immune to a reworded copy), not by prose. ----------------
+    def test_session_event_tail_stamps_stable_absolute_seq(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        campaign_dir = root / "campaigns" / "camp_seq"
+        (campaign_dir / "sessions").mkdir(parents=True)
+        # 20 lines; tail of 5 → absolute indices 15..19 (NOT 0..4). This is the load-bearing property:
+        # the seq is the line's index in the WHOLE log, so it matches the /events feed's per-line id.
+        (campaign_dir / "sessions" / "sess_1.jsonl").write_text(
+            "".join(
+                json.dumps({"kind": "narration", "text": f"event {i}"}) + "\n"
+                for i in range(20)
+            ),
+            encoding="utf-8",
+        )
+        tail = server._session_event_tail_from_dir(campaign_dir, {"active_session_id": "sess_1"}, limit=5)
+        self.assertEqual([row["seq"] for row in tail], [15, 16, 17, 18, 19],
+                         "each tailed row must carry its ABSOLUTE session-log line index as `seq`")
+        self.assertEqual([row["text"] for row in tail], [f"event {i}" for i in range(15, 20)])
+
+        # And the seq propagates through the surface projection (recentEvents) for the viewer's dedup.
+        surface = server.build_session_surface(
+            {"title": "Seq Session", "active_session_id": "sess_1"},
+            campaign_id="camp_seq",
+            live=False,
+            is_live_view=False,
+            recent_events=tail,
+        )
+        seqs = [row.get("seq") for row in surface["recentEvents"]]
+        self.assertTrue(all(isinstance(s, int) for s in seqs), "recentEvents rows carry the stable seq")
+        self.assertEqual(seqs, sorted(seqs), "recentEvents seq is monotonic (session-log order)")
+
+    # --- #405: /events stamps each entry with its absolute line index, consistent ACROSS polls (the
+    # cursor advances), so the client's seq-keyed dedup has a single stable id space per session log. -
+    def test_read_events_stamps_absolute_seq_across_polls(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(_env("WORLDOS_STATE_DIR", str(root)))
+        campaign_dir = root / "campaigns" / "camp_evt"
+        (campaign_dir / "sessions").mkdir(parents=True)
+        log = campaign_dir / "sessions" / "sess_1.jsonl"
+        (campaign_dir / "snapshot.json").write_text(
+            json.dumps({"title": "Evt", "active_session_id": "sess_1"}), encoding="utf-8"
+        )
+        # First two lines.
+        log.write_text(
+            json.dumps({"kind": "narration", "text": "line 0"}) + "\n"
+            + json.dumps({"kind": "narration", "text": "line 1"}) + "\n",
+            encoding="utf-8",
+        )
+        first, nxt = server._read_events("camp_evt", 0)
+        self.assertEqual([e["seq"] for e in first], [0, 1], "first poll stamps absolute indices 0,1")
+        self.assertEqual(nxt, 2)
+        # Append a third line; the next poll (since=cursor) must stamp it seq 2 (absolute), not 0.
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "narration", "text": "line 2"}) + "\n")
+        second, nxt2 = server._read_events("camp_evt", nxt)
+        self.assertEqual([e["seq"] for e in second], [2],
+                         "the seq is the ABSOLUTE line index, stable across polls (not reset to 0)")
+        self.assertEqual(nxt2, 3)
 
     def assert_no_private_keys(self, value) -> None:
         private_keys = {

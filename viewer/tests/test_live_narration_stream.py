@@ -217,6 +217,14 @@ const h = {
   setCampaign: (id) => { state.activeCampaign = id; state.campaigns = [{ id, campaign_id: id }]; reactHost.mount(() => useLiveSession(state)); },
   beats: () => (reactHost.api().chatBeats || []).map((b) => ({ kind: b.kind, text: b.text })),
   narrationTexts: () => (reactHost.api().chatBeats || []).filter((b) => b.kind === 'narration').map((b) => b.text),
+  // #405: the FULLY-ASSEMBLED chronicle (recentEvents history band + live tail + echoes), ordered +
+  // de-duplicated exactly as ScreenTable renders it, via the pure buildChronicleLog from screen-table.
+  // `recent` is the server's recentEvents band (default empty). Returns ordered narration text only.
+  chronicleNarration: (recent) => sandbox.window.buildChronicleLog(recent || [], reactHost.api().chatBeats || [], reactHost.api().log || [])
+    .filter((e) => e.kind === 'narration').map((e) => e.text),
+  // The full ordered chronicle rows (kind+text+who) for asserting interleaved order across sources.
+  chronicle: (recent) => sandbox.window.buildChronicleLog(recent || [], reactHost.api().chatBeats || [], reactHost.api().log || [])
+    .map((e) => ({ kind: e.kind, text: e.text, who: e.who })),
   pending: () => reactHost.api().pending,
   // arm the "DM is narrating…" indicator exactly as a posted player move does (armPending is on
   // the hook's returned api). Used to prove a streamed paragraph CLEARS it (the give-up fix).
@@ -515,6 +523,143 @@ class LiveNarrationStreamTests(unittest.TestCase):
                          "the most-recent DM narration must always survive the trim (the player's latest reply)")
         self.assertNotEqual(out["first"], "beat 0",
                          "the oldest beats must be dropped once the cap is exceeded (the tail slides forward)")
+
+    # ============================================================================================
+    # #405: the narration-DUPLICATION regression fix. The chronicle showed DM narration 3-4× and
+    # out of chronological order in a multi-beat session because the two narration sources were
+    # reconciled by TEXT. These tests reproduce the exact failure modes the text-key dedup missed
+    # and prove the stable-`seq`-keyed fix renders each beat EXACTLY ONCE, in order.
+    # ============================================================================================
+
+    # --- #405 ROOT CAUSE 1 — the DM REWORDS its turn-END /chat reply. The streamed /events copy and
+    # the /chat copy differ, so the old text-key dedup hashed them differently and showed the beat
+    # TWICE. With /events as the canonical seq-keyed source and the /chat DM line suppressed as a
+    # pure resolution signal, the beat shows exactly once regardless of the reword. -----------------
+    def test_reworded_chat_reply_does_not_duplicate_a_streamed_beat(self):
+        out = self._run(
+            "h.arm('I push open the door');"
+            # mid-turn: the canonical paragraph streams via /events WITH its stable session-log seq.
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'The oak door groans inward, revealing a smoke-choked hall.', seq: 0 }], next: 1 });"
+            "await h.tick();"
+            "var afterStream = h.narrationTexts();"
+            # turn-END: the DM's /chat reply is a REWORDED telling of the same beat (different prose).
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'You shove the heavy door wide; beyond it a hall thick with smoke opens up before you.' }], next: 1 });"
+            "await h.tick();"
+            "return ({ afterStream: afterStream, narration: h.narrationTexts(), pending: h.pending() });"
+        )
+        self.assertEqual(len(out["afterStream"]), 1, "the streamed paragraph appears once mid-turn")
+        self.assertEqual(out["narration"], ["The oak door groans inward, revealing a smoke-choked hall."],
+                         "a REWORDED /chat reply must NOT add a second row — the seq-keyed streamed copy is canonical (#405)")
+        self.assertIsNone(out["pending"], "the /chat DM line still RESOLVES the turn (clears the indicator)")
+
+    # --- #405 ROOT CAUSE 2 — /events streams N PER-PARAGRAPH rows; the turn-END /chat line carries the
+    # WHOLE turn as ONE blob. Even verbatim, the blob key matches no single paragraph key, so the old
+    # dedup rendered the blob as an extra row → "opening narration appears 3 times". The whole turn
+    # must show as its per-paragraph streamed rows ONLY. --------------------------------------------
+    def test_chat_blob_does_not_duplicate_per_paragraph_stream(self):
+        out = self._run(
+            "h.arm('I enter the hall');"
+            # mid-turn: two distinct paragraphs stream as two /events rows (seq 0 and seq 1).
+            "h.enqueue('/events', { entries: ["
+            "  { kind: 'narration', text: 'The hall is vast and cold.', seq: 0 },"
+            "  { kind: 'narration', text: 'A figure waits by the hearth.', seq: 1 }"
+            "], next: 2 });"
+            "await h.tick();"
+            "var afterStream = h.narrationTexts();"
+            # turn-END: /chat carries BOTH paragraphs joined into one reply blob (the DMSG result).
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The hall is vast and cold. A figure waits by the hearth.' }], next: 1 });"
+            "await h.tick();"
+            "return ({ afterStream: afterStream, narration: h.narrationTexts() });"
+        )
+        self.assertEqual(out["afterStream"], ["The hall is vast and cold.", "A figure waits by the hearth."],
+                         "both paragraphs stream live as separate beats")
+        self.assertEqual(out["narration"], ["The hall is vast and cold.", "A figure waits by the hearth."],
+                         "the turn-END /chat BLOB must NOT add a third row — the per-paragraph stream is canonical (#405)")
+
+    # --- #405 ROOT CAUSE 3 — windowing / a session-rotation cursor rewind RE-INGESTS the same /events
+    # line. Keyed by the stable session-log seq, the second arrival of seq N collapses to one row even
+    # if its text differs slightly — proving the dedup is ID-keyed, not prose-keyed. ----------------
+    def test_same_seq_reingested_is_shown_once(self):
+        out = self._run(
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'Lightning splits the sky.', seq: 5 }], next: 6 });"
+            "await h.tick();"
+            "var first = h.narrationTexts();"
+            # the SAME session-log line (seq 5) re-arrives — e.g. a windowing re-mount re-read the tail —
+            # with cosmetically different text. A stable-id dedup must still drop it.
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'Lightning  splits   the sky!!', seq: 5 }], next: 6 });"
+            "await h.tick();"
+            "return ({ first: first, second: h.narrationTexts() });"
+        )
+        self.assertEqual(out["first"], ["Lightning splits the sky."])
+        self.assertEqual(out["second"], ["Lightning splits the sky."],
+                         "a re-ingested session-log line (same seq) must collapse to one row, immune to its prose (#405)")
+
+    # --- #405: CHRONOLOGICAL ORDER — beats that stream out of arrival order still render in session-log
+    # (seq) order in the assembled chronicle. -------------------------------------------------------
+    def test_chronicle_orders_by_session_log_seq(self):
+        out = self._run(
+            # Three paragraphs arrive across two polls, the later seq landing in the FIRST poll.
+            "h.enqueue('/events', { entries: ["
+            "  { kind: 'narration', text: 'THIRD beat.', seq: 2 },"
+            "  { kind: 'narration', text: 'FIRST beat.', seq: 0 }"
+            "], next: 3 });"
+            "await h.tick();"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'SECOND beat.', seq: 1 }], next: 4 });"
+            "await h.tick();"
+            "return ({ ordered: h.chronicleNarration() });"
+        )
+        self.assertEqual(out["ordered"], ["FIRST beat.", "SECOND beat.", "THIRD beat."],
+                         "the assembled chronicle must render strictly in session-log seq order, not arrival order (#405)")
+
+    # --- #405: the per-TURN canonical decision. A STREAMED turn followed by a TERSE turn (which logs no
+    # /events narration, landing prose ONLY on /chat) must still show the terse turn's prose — the
+    # 'suppress /chat when /events streamed' rule is per-turn, reset when each turn resolves. ---------
+    def test_terse_turn_after_streamed_turn_still_renders(self):
+        out = self._run(
+            # Turn 1: streams a paragraph via /events, resolves on /chat (its blob is suppressed).
+            "h.arm('open the door');"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'The door opens.', seq: 0 }], next: 1 });"
+            "await h.tick();"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The door opens onto the hall.' }], next: 1 });"
+            "await h.tick();"
+            "var afterTurn1 = h.narrationTexts();"
+            # Turn 2 (TERSE): nothing streams via /events; the beat lands ONLY as a /chat DM line.
+            "h.arm('listen');"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'You hear footsteps approaching.' }], next: 2 });"
+            "await h.tick();"
+            "return ({ afterTurn1: afterTurn1, afterTurn2: h.narrationTexts() });"
+        )
+        self.assertEqual(out["afterTurn1"], ["The door opens."],
+                         "turn 1 shows its streamed paragraph once (the reworded /chat blob suppressed)")
+        self.assertEqual(out["afterTurn2"], ["The door opens.", "You hear footsteps approaching."],
+                         "a TERSE turn 2 (no /events stream) must still render its /chat-only prose — the suppression is per-turn (#405)")
+
+    # --- #405: recentEvents (the server history band) is de-duped against the live tail by the STABLE
+    # seq — a paragraph in BOTH bands shows once, immune to the prose. (Exercises buildChronicleLog,
+    # the pure ScreenTable assembler, with a recentEvents band that carries server `seq`.) -----------
+    def test_recent_events_deduped_against_live_tail_by_seq(self):
+        out = self._run(
+            # The live tail streams seq 0 + seq 1 via /events.
+            "h.enqueue('/events', { entries: ["
+            "  { kind: 'narration', text: 'A bell tolls thrice.', seq: 0 },"
+            "  { kind: 'narration', text: 'The crowd falls silent.', seq: 1 }"
+            "], next: 2 });"
+            "await h.tick();"
+            # The server's recentEvents history band carries the SAME two session-log lines (seq 0,1) —
+            # here with cosmetically different prose — PLUS one older pre-session line (seq -1, no live
+            # twin) that must survive. Assert each live beat shows ONCE and the older line is kept.
+            "var recent = ["
+            "  { kind: 'narration', text: 'An older, pre-session beat.', seq: -1 },"
+            "  { kind: 'narration', text: 'A BELL tolls thrice!', seq: 0 },"
+            "  { kind: 'narration', text: 'the crowd  falls silent', seq: 1 }"
+            "];"
+            "return ({ chronicle: h.chronicleNarration(recent) });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            ["An older, pre-session beat.", "A bell tolls thrice.", "The crowd falls silent."],
+            "recentEvents rows sharing a live seq must be dropped (immune to prose); the older un-twinned line is kept, leading, in order (#405)",
+        )
 
 
 if __name__ == "__main__":
