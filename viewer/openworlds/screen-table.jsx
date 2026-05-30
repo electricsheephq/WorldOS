@@ -318,6 +318,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const recordPlayerEcho = session.recordPlayerEcho;
   const pendingActive = Boolean(pending && !pending.stuck);
   const pendingStuck = Boolean(pending && pending.stuck);
+  // #385: the COLD-OPEN (first beat) gets action-bar copy that reads as "the DM is taking its turn"
+  // (alive) rather than the generic "Narrating…" — so the locked bar matches the obviously-alive
+  // chronicle indicator and never looks like the app is wedged.
+  const pendingFirstBeat = Boolean(pendingActive && pending.firstBeat);
   // #344: remember the move that is currently in flight so the "Try again" recovery (shown when a
   // turn goes `stuck`) can actually RE-POST it. The first submit clears the input box (setInput("")),
   // so by the time the bar re-opens stuck the box is empty — without the original move stored, the
@@ -551,10 +555,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
                 disabled={pendingActive}
                 title={DECLARE_HINT}
-                placeholder={pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
+                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -814,6 +818,23 @@ function LogEntry({ entry }) {
 // takes several minutes. Telling a first-timer "up to a minute" then re-opening the bar at 90s was
 // the #348 false-stuck trap. For the opening we say "a few minutes"; later beats keep "up to a
 // minute" (they really are ~35–60s). This copy mirrors the adaptive recovery window in app.jsx.
+// #385: the rotating "the world is being made" flavor lines for the COLD-OPEN only. The first beat
+// legitimately takes minutes (the engine builds the world + sets the scene; no streaming), and the
+// old single static line ("Setting the opening scene — …") read as FROZEN: it never changed, the
+// pulsing dots / shimmer / elapsed were all decorative-and-aria-hidden, so to the accessibility tree
+// AND to a single screenshot the whole affordance collapsed to two unchanging strings. A fresh
+// player (and the §8.2 a11y-snapshot harness) saw nothing move and gave up. These lines ROTATE every
+// few seconds so consecutive renders/snapshots DIFFER — visible, honest progress (it's the DM
+// composing, not fake percent-progress) — and they're announced via the live region below.
+const DM_COLD_OPEN_FLAVOR = [
+  "The Dungeon Master is composing your opening scene…",
+  "Lighting the candles and unrolling the map…",
+  "Gathering the threads of your story…",
+  "Setting the stage and casting the first players…",
+  "Sketching the world around you…",
+  "The ink is still drying on your opening…",
+];
+
 function DmNarratingBeat({ since, firstBeat }) {
   const start = typeof since === "number" ? since : Date.now();
   const [now, setNow] = React.useState(() => Date.now());
@@ -825,15 +846,64 @@ function DmNarratingBeat({ since, firstBeat }) {
   const mm = Math.floor(secs / 60);
   const ss = String(secs % 60).padStart(2, "0");
   const elapsedLabel = `${mm}:${ss}`;
+  // #385: the headline reads as an ACTIVE process, not a passive status. The cold-open rotates a
+  // flavor line every ~4s (so the text itself visibly changes); later beats keep the steady label.
+  const label = firstBeat
+    ? DM_COLD_OPEN_FLAVOR[Math.floor(secs / 4) % DM_COLD_OPEN_FLAVOR.length]
+    : "The Dungeon Master is narrating";
   const waitHint = firstBeat
-    ? "Setting the opening scene — the first beat of a session can take a few minutes."
+    ? "The first beat of a session can take a few minutes — hang tight, your story is on its way."
     : "Weaving the next beat — this can take up to a minute.";
+  // #385: a11y model for the cold-open. The frozen-app illusion came from the live region being the
+  // ONLY accessible text AND it never changing (the dots/shimmer/elapsed were all aria-hidden). Fix:
+  //   • The visible label + elapsed are NO LONGER aria-hidden for the first beat, so they appear in
+  //     the accessibility tree / ariaSnapshot AND visibly change between renders — the proof-of-life
+  //     the §8.2 snapshot harness and a real screen reader can actually perceive.
+  //   • But they live OUTSIDE the aria-live region (the outer div is a plain container here): a
+  //     polite region re-announces its whole text on every change, so leaving the per-second elapsed
+  //     inside it would spam a screen reader every tick — the exact noise #336 avoided by hiding it.
+  //   • A SEPARATE visually-hidden role="status" announces the reassurance ONCE on mount (it never
+  //     changes → announced once, not per tick). Later beats keep the original single-region behavior.
+  if (firstBeat) {
+    return (
+      <div style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
+        <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
+        <div className="body" style={{ flex: 1 }}>
+          {/* announced ONCE — stable text, so a polite region doesn't re-fire every second */}
+          <span role="status" aria-live="polite" style={{
+            position: "absolute", width: 1, height: 1, padding: 0, margin: -1,
+            overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
+          }}>
+            The Dungeon Master is composing your opening scene. {waitHint}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* visible + in the a11y tree (NOT aria-hidden) so the rotating text + elapsed prove life */}
+            <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>{label}</span>
+            <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
+                  animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
+                }} />
+              ))}
+            </span>
+            <span style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-600)", fontVariantNumeric: "tabular-nums" }}>
+              {`composing · ${elapsedLabel}`}
+            </span>
+          </div>
+          <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+            {waitHint}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
       <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
       <div className="body" style={{ flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>The Dungeon Master is narrating</span>
+          <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>{label}</span>
           <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
             {[0, 1, 2].map((i) => (
               <span key={i} style={{
@@ -897,6 +967,9 @@ function DmStuckBeat() {
 }
 
 Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarratingBeat, DmStuckBeat, sanitizeNarration });
+// #385: expose the cold-open flavor pool for tests/devtools introspection (purely additive —
+// nothing in the running app reads it off window; DmNarratingBeat closes over the const directly).
+window.DM_COLD_OPEN_FLAVOR = DM_COLD_OPEN_FLAVOR;
 
 function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)
