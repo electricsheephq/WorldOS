@@ -17,6 +17,15 @@ prose for the just-resolved beat. It is READ-ONLY on engine state (the engine st
 writer); on a missing snapshot / session log / narration it prints nothing and the caller keeps
 today's behavior (no regression).
 
+#357 RE-SCOPE (nb3 cold-open): the recovered prose must be a PLAYER-FACING 2nd-person scene,
+never a 3rd-person setup brief / game-system notation. On the cold open the DM did its setup
+silently via tools and logged only a 3rd-person brief ("COLD OPEN — ARRIVAL: Rolan (tiefling
+wizard, PC) walks toward…") via log_event(kind="narration"), then ended its turn with EMPTY
+reply text -- so this fallback (then) recovered that brief and the player saw developer/GM
+notation instead of an opening scene. We now REJECT the high-confidence setup-brief shapes (a
+leading ALLCAPS label header; a (… PC)/(… NPC)/(level N …) character-sheet tag) so a brief is
+treated like bookkeeping and never reaches the chat; a real 2nd-person scene always survives.
+
 It lives as a standalone file (not a heredoc inside `$(...)`) because the macOS system bash
 (3.2.57) mis-parses a quoted heredoc nested in command substitution -- it is invoked by path
 from `clawdnd_dm_narration_or_fallback` in qa/lib_beat_driver.sh.
@@ -26,6 +35,7 @@ Prints the recovered prose to stdout (empty when there is nothing player-facing 
 """
 import json
 import os
+import re
 import sys
 
 # Engine session-log kinds (SessionLogEntry.kind): narration | dialogue | roll | system | combat.
@@ -34,6 +44,37 @@ PROSE_KINDS = {"narration", "dialogue"}
 
 # Cap the recovered block so one fat multi-paragraph beat can't dump the whole log into the chat.
 MAX_PROSE_ROWS = 6
+
+# #357 re-scope (nb3): a narration row can ALSO be a 3rd-person SETUP BRIEF in game-system
+# notation that the DM logged via log_event during silent cold-open setup -- e.g.
+#   "COLD OPEN — ARRIVAL: Rolan (tiefling wizard, PC) walks toward Sorcerous Sundries…"
+# That is the DM's scratchpad, NOT a scene the player can read and respond to. Recovering it
+# (what #360 did) is WORSE than recovering nothing: the player sees developer/GM notation
+# instead of prose. So before a narration row qualifies as recoverable player-facing prose we
+# REJECT the high-confidence setup-brief / system-notation shapes. HIGH-CONFIDENCE ONLY -- a
+# real 2nd-person scene ("You step into the Heapside warren…") must always survive.
+
+# A leading ALLCAPS structural LABEL followed by ':' or ' — ' — the chronicle/brief header the
+# DM writes for itself ("COLD OPEN — ARRIVAL:", "SETUP:", "BRIEF —", "CHRONICLE:"). Two+ caps
+# words so an in-fiction shout ("HELP!") or a single proper noun never trips it.
+_SETUP_LABEL = re.compile(r"^\s*[A-Z][A-Z'’]+(?:[ \-—–][A-Z][A-Z'’]+){0,5}\s*(?::|—|–|-\s)")
+# A parenthetical CHARACTER-SHEET tag — "(tiefling wizard, PC)", "(PC)", "(NPC)",
+# "(level 3 fighter)". The PC/NPC/level/class role annotation is pure game-system notation;
+# in-fiction parentheticals ("(or so the rumor went)") don't carry these tokens.
+_SHEET_TAG = re.compile(
+    r"\((?:[^)]*\b(?:PC|NPC)\b[^)]*|[^)]*\blevel\s*\d+[^)]*)\)",
+    re.IGNORECASE,
+)
+
+
+def _is_system_notation(text):
+    """True when a narration row is a 3rd-person setup brief / game-system notation rather than
+    a player-facing scene (#357). Conservative: only the high-confidence shapes -- a leading
+    ALLCAPS label header, or a (… PC)/(… NPC)/(level N …) character-sheet tag."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_SETUP_LABEL.match(t) or _SHEET_TAG.search(t))
 
 
 def _recover(snap_path):
@@ -78,6 +119,13 @@ def _recover(snap_path):
                     continue
                 kind = str(row.get("kind") or "narration").strip().lower()
                 text = str(row.get("text") or "").strip()
+                # A 3rd-person setup brief / system-notation NARRATION row (#357) is the DM's
+                # scratchpad, not a scene — treat it like bookkeeping: it breaks the trailing
+                # block and is never recovered (showing the player notation is worse than blank).
+                # Dialogue rows are always a quoted character line, so they're never system-notation.
+                if kind == "narration" and text and _is_system_notation(text):
+                    block = []
+                    continue
                 if kind in PROSE_KINDS and text:
                     speaker = str(row.get("speaker") or "").strip()
                     # A dialogue row keeps its speaker tag so a quoted line still reads as the
