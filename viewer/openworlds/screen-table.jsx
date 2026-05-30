@@ -281,6 +281,15 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const actions = Array.isArray(surface?.availableActions) ? surface.availableActions : [];
   const enabledActions = Array.isArray(surface?.enabledActions) ? surface.enabledActions : actions.filter((a) => a?.available);
   const blockedActions = Array.isArray(surface?.blockedActions) ? surface.blockedActions : actions.filter((a) => !a?.available);
+  // #G3: split the action model by group so the MAIN-column palette can show exploration verbs
+  // (say/do/check/continue/cast/use) always, and combat verbs (attack/bonus/reaction) only when a
+  // fight is on. No truncation — every verb the read model emits renders (the old right-rail
+  // slice(0,6) silently dropped bonus-action + reaction). `actionsInCombat` keys off the same
+  // engine-mutated combat gauge the read model uses (any combat verb is enabled, or the encounter
+  // is flagged active) — never off fiction.
+  const explorationActions = actions.filter((a) => a.group !== "combat");
+  const combatActions = actions.filter((a) => a.group === "combat");
+  const actionsInCombat = Boolean(surface?.encounter?.active) || combatActions.some((a) => a.available);
   const writeLane = surface?.writeLane || { endpoint: surface?.write_lane || "/move" };
   const actionContext = surface?.actionContext || {};
   const consequenceContext = actionContext?.consequences || {};
@@ -657,7 +666,61 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             {pendingStuck && <DmStuckBeat />}
           </div>
 
-          {/* Action bar — #402: flex 0 0 auto so it is ALWAYS anchored at the bottom of the panel and
+          {/* #G3: PRIMARY action palette — promoted into the MAIN column, anchored in the Chronicle
+              panel footer directly above the Declare box. This is the obvious, unmissable way to act
+              in the main play flow (it is NOT buried in the right rail any more). ALL relevant verbs
+              render — no slice(0,6) cap: exploration verbs (Say/Do/Check/Continue/Cast/Use) always,
+              combat verbs (Attack/Bonus/Reaction) in an "In Combat" group when in combat. Reuses the
+              EncounterButton component + invokeAction + ACTION_HINTS — the click path is unchanged.
+              flex 0 0 auto so it stays anchored/visible no matter how long the chronicle grows. */}
+          <div style={{ flex: "0 0 auto", marginTop: 14 }}>
+            <SectionTitle>Actions</SectionTitle>
+            {!actions.length && (
+              <div className="body-sm muted" style={{ marginTop: 4 }}>
+                No actions are available until a campaign snapshot loads.
+              </div>
+            )}
+            {explorationActions.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 6, marginTop: 8 }}>
+                {explorationActions.map((a) => (
+                  <EncounterButton
+                    key={`${a.group}:${a.id}`}
+                    icon={a.available ? (a.icon || "quest.scroll") : "inventory.locked"}
+                    label={a.label}
+                    detail={a.available ? a.groupLabel : a.disabled_reason}
+                    hint={ACTION_HINTS[a.id]}
+                    tone={a.available ? "" : "crimson"}
+                    disabled={!a.available || pendingActive}
+                    onClick={() => invokeAction(a)}
+                  />
+                ))}
+              </div>
+            )}
+            {actionsInCombat && combatActions.length > 0 && (
+              <React.Fragment>
+                <div className="body-sm" style={{ color: "var(--crimson)", fontFamily: "var(--f-display)", letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 11, marginTop: 12, marginBottom: 6 }}>
+                  In Combat
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 6 }}>
+                  {combatActions.map((a) => (
+                    <EncounterButton
+                      key={`${a.group}:${a.id}`}
+                      icon={a.available ? (a.icon || "combat.attack") : "inventory.locked"}
+                      label={a.label}
+                      detail={a.available ? a.groupLabel : a.disabled_reason}
+                      hint={ACTION_HINTS[a.id]}
+                      tone={a.available ? "royal" : "crimson"}
+                      disabled={!a.available || pendingActive}
+                      onClick={() => invokeAction(a)}
+                    />
+                  ))}
+                </div>
+              </React.Fragment>
+            )}
+          </div>
+
+          {/* DECLARE: free-text action box — the other primary input, paired with the palette above.
+              Action bar — #402: flex 0 0 auto so it is ALWAYS anchored at the bottom of the panel and
               never pushed out of view by an ever-growing chronicle above it. */}
           <div style={{ flex: "0 0 auto", marginTop: 14, padding: 12, background: "rgba(80,50,20,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
@@ -674,7 +737,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
-              Type freely and press <strong>Declare</strong>, or use the quick actions on the right (hover each for what it does).
+              Type freely and press <strong>Declare</strong>, or use the <strong>Actions</strong> above (hover each for what it does).
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -747,20 +810,14 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               <span style={{ color: "var(--crimson)" }}> · {consequenceContext.dueCount} consequence due</span>
             )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {actions.slice(0, 6).map((a) => (
-              <EncounterButton
-                key={`${a.group}:${a.id}`}
-                icon={a.available ? (a.icon || "quest.scroll") : "inventory.locked"}
-                label={a.label}
-                detail={a.available ? a.groupLabel : a.disabled_reason}
-                hint={ACTION_HINTS[a.id]}
-                tone={a.available ? (a.group === "combat" ? "royal" : "") : "crimson"}
-                disabled={!a.available || pendingActive}
-                onClick={() => invokeAction(a)}
-              />
-            ))}
-            {!actions.length && <div className="body-sm muted">No actions are available until a campaign snapshot loads.</div>}
+          {/* #G3: the actionable palette now lives in the MAIN column beside the Declare
+              box (see ActionPalette below SceneHeader's chronicle panel) so it is the
+              obvious, primary way to act and is never buried in this side rail. This rail
+              keeps only the encounter framing + Round Order. */}
+          <div className="body-sm muted" style={{ marginBottom: 4 }}>
+            {actions.length
+              ? "Your moves are in the main column, beside Declare."
+              : "No actions are available until a campaign snapshot loads."}
           </div>
 
           <div className="divider" style={{ margin: "14px 0" }}>
@@ -867,7 +924,11 @@ function LogEntry({ entry }) {
           width: 4, alignSelf: "stretch",
           background: "linear-gradient(180deg, var(--b-400), transparent)",
         }} />
-        <div className="body" style={{ flex: 1 }}>
+        {/* #G4: whiteSpace:"pre-line" honors the DM's blank-line paragraph breaks
+            (the sibling skill PR emits \n\n) so a multi-paragraph beat renders as
+            separated paragraphs instead of one run-on block. sanitizeNarration is
+            still applied above, untouched. */}
+        <div className="body" style={{ flex: 1, whiteSpace: "pre-line" }}>
           <span className="eyebrow" style={{ color: "var(--crimson)", marginRight: 8 }}>Chronicle</span>
           {text}
         </div>
