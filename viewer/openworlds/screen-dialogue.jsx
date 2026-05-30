@@ -109,6 +109,10 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
   const canAct = Boolean(surface.can_act);
   const sceneScope = surface.imageScope ||
     (surface.location_id ? `location:${surface.location_id}` : "");
+  // Free-form path: reveal a textarea so the player types their OWN line, then POST that
+  // actual text (not a hardcoded placeholder). Send is disabled until something is typed.
+  const [freeFormMode, setFreeFormMode] = React.useState(false);
+  const [userText, setUserText] = React.useState("");
 
   const pick = (slot) => {
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
@@ -127,16 +131,27 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
     }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
   };
 
-  const freeForm = () => {
+  const openFreeForm = () => {
     if (!canAct) {
       toast({ kind: "danger", eyebrow: "Parley", title: "Preview — no live DM", body: "Open a chronicle from Chronicles to converse; the DM voices the free-form path at the table." });
       return;
     }
+    setFreeFormMode(true);
+  };
+
+  const sendFreeForm = () => {
+    const text = userText.trim();
+    if (!text) return;
     fetch("/move", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "say", text: `${actorName} speaks their own way`, campaign: surface.campaign_id || "" }),
-    }).then(() => toast({ kind: "item", eyebrow: "Parley", title: "Free-form", body: "Speak it at the table — the DM adjudicates." }))
-      .catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "unreachable" }));
+      body: JSON.stringify({ kind: "say", text, campaign: surface.campaign_id || "" }),
+    }).then((r) => r.json().catch(() => ({}))).then((payload) => {
+      if (payload && payload.ok === false) throw new Error(payload.reason || "move rejected");
+      setHistory((h) => [...h, { skill: "Free-form", dc: null, mod: null, text }]);
+      setUserText("");
+      setFreeFormMode(false);
+      toast({ kind: "item", eyebrow: "Parley", title: `${actorName} — Free-form`, body: "Spoke their own words — the DM adjudicates." });
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
   };
 
   return (
@@ -172,22 +187,28 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
             letterSpacing: "0.22em",
             textTransform: "uppercase",
           }}>
-            Parley · {surface.dayLabel || "the table"}
+            Parley · Speaking with {actorName} · {surface.dayLabel || "the table"}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* Approach difficulty for THIS attempt — sets the suggested DC of the check
-                the engine projects (easy 10 / medium 14 / hard 18, before any house shift). */}
-            <window.Tooltip side="bottom" content="Approach difficulty for this attempt — sets the suggested DC of the check below (easy ≈ 10 · medium ≈ 14 · hard ≈ 18).">
-              <span className="eyebrow" style={{ color: "var(--p-100)", letterSpacing: "0.16em", fontSize: 9, cursor: "help" }}>DC</span>
-            </window.Tooltip>
-            {DIFFICULTY_OPTIONS.map((d) => (
-              <button key={d} onClick={() => setDifficulty(d)} className="btn sm" title={`Set this attempt's approach difficulty to ${d}`} style={{
-                textTransform: "capitalize",
-                background: difficulty === d ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(20,10,4,0.5)",
-                color: difficulty === d ? "var(--w-300)" : "var(--p-100)",
-                boxShadow: difficulty === d ? "inset 0 0 0 1px var(--b-600)" : "inset 0 0 0 1px rgba(176,141,87,0.4)",
-              }}>{d}</button>
-            ))}
+          {/* Approach difficulty for THIS attempt — sets the suggested DC of the check
+              the engine projects (easy 10 / medium 14 / hard 18, before any house shift). */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            {/* Visible inline caption above the buttons (not just the hover tooltip). */}
+            <div className="eyebrow" style={{ color: "var(--p-100)", letterSpacing: "0.16em", fontSize: 9, textAlign: "right" }}>
+              Approach difficulty
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <window.Tooltip side="bottom" content="Approach difficulty for this attempt — sets the suggested DC of the check below (easy ≈ 10 · medium ≈ 14 · hard ≈ 18).">
+                <span className="eyebrow" style={{ color: "var(--p-100)", letterSpacing: "0.16em", fontSize: 9, cursor: "help" }}>DC</span>
+              </window.Tooltip>
+              {DIFFICULTY_OPTIONS.map((d) => (
+                <button key={d} onClick={() => setDifficulty(d)} className="btn sm" title={`Set this attempt's approach difficulty to ${d}`} style={{
+                  textTransform: "capitalize",
+                  background: difficulty === d ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(20,10,4,0.5)",
+                  color: difficulty === d ? "var(--w-300)" : "var(--p-100)",
+                  boxShadow: difficulty === d ? "inset 0 0 0 1px var(--b-600)" : "inset 0 0 0 1px rgba(176,141,87,0.4)",
+                }}>{d}</button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -259,18 +280,55 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
                   </button>
                 ))}
 
-                {/* Free-form path — always present (free_form is always true). */}
-                <button onClick={freeForm} style={{
-                  display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "center",
-                  padding: "8px 12px", textAlign: "left", background: "transparent",
-                  boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.25)", cursor: "pointer", fontSize: 15,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(176,141,87,0.12)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                  <span style={{ fontFamily: "var(--f-display)", color: "var(--crimson)", fontSize: 14 }}>✦</span>
-                  <span className="body" style={{ color: "var(--ink-800)", fontStyle: "italic" }}>Speak freely — your own words</span>
-                  <span style={{ color: "var(--b-500)", fontFamily: "var(--f-display)", fontSize: 12 }}>free-form</span>
-                </button>
+                {/* Free-form path — always present (free_form is always true). When active,
+                    reveal a textarea so the player types their OWN line and POSTs that text. */}
+                {!freeFormMode ? (
+                  <button onClick={openFreeForm} style={{
+                    display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "center",
+                    padding: "8px 12px", textAlign: "left", background: "transparent",
+                    boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.25)", cursor: "pointer", fontSize: 15,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(176,141,87,0.12)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                    <span style={{ fontFamily: "var(--f-display)", color: "var(--crimson)", fontSize: 14 }}>✦</span>
+                    <span className="body" style={{ color: "var(--ink-800)", fontStyle: "italic" }}>Speak freely — your own words</span>
+                    <span style={{ color: "var(--b-500)", fontFamily: "var(--f-display)", fontSize: 12 }}>free-form</span>
+                  </button>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 4px" }}>
+                    <div className="eyebrow" style={{ color: "var(--crimson)", letterSpacing: "0.16em", fontSize: 9 }}>
+                      ✦ Speak freely — {actorName}'s own words
+                    </div>
+                    <textarea
+                      aria-label="Speak freely"
+                      autoFocus
+                      value={userText}
+                      onChange={(e) => setUserText(e.target.value)}
+                      placeholder={`What does ${actorName.split(" ")[0]} say? The DM voices and adjudicates your own words.`}
+                      style={{
+                        width: "100%", minHeight: 72, padding: 12,
+                        background: "rgba(255,250,230,0.5)",
+                        border: 0,
+                        boxShadow: "inset 0 0 0 1px var(--b-500), inset 0 2px 4px rgba(80,50,20,0.15)",
+                        fontFamily: "var(--f-hand)", fontSize: 15, fontStyle: "italic",
+                        color: "var(--ink-700)", resize: "vertical",
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button onClick={() => { setFreeFormMode(false); setUserText(""); }} className="btn sm" style={{
+                        background: "rgba(20,10,4,0.5)", color: "var(--p-100)",
+                        boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.4)",
+                      }}>Cancel</button>
+                      <button onClick={sendFreeForm} disabled={!userText.trim()} className="btn sm" title={userText.trim() ? "Send your words to the DM" : "Type something first"} style={{
+                        background: userText.trim() ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(20,10,4,0.4)",
+                        color: userText.trim() ? "var(--w-300)" : "var(--p-200)",
+                        boxShadow: "inset 0 0 0 1px var(--b-600)",
+                        cursor: userText.trim() ? "pointer" : "not-allowed",
+                        opacity: userText.trim() ? 1 : 0.6,
+                      }}>Send</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -294,7 +352,9 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
                   {h.skill}
                 </div>
                 <div className="hand" style={{ fontSize: 11, color: "var(--b-300)", marginTop: 2 }}>
-                  {h.mod >= 0 ? "+" : ""}{h.mod} vs DC {h.dc}
+                  {(typeof h.mod === "number" && typeof h.dc === "number")
+                    ? `${h.mod >= 0 ? "+" : ""}${h.mod} vs DC ${h.dc}`
+                    : (h.text ? `“${h.text}”` : "own words")}
                 </div>
               </div>
             ))}
