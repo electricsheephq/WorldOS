@@ -26,10 +26,25 @@ const _TOOLS_ALT = DM_ENGINE_TOOLS.join("|");
 // Header line of the right-panel Director advisory if it ever bleeds into prose.
 const _GM_ADVISORY_HEADER = /^\s*(?:#{1,6}\s*)?(?:\**\s*)?GM\s+Advisory\b/i;
 const _ADVISORY_SUBTITLE = /^\s*what the campaign owes the story\b/i;
+// The scene-debt KIND labels (mirrors servers/engine/director.py debt kinds; the GM-Advisory
+// panel renders them with underscores→spaces, e.g. "npc_introduced_silent" → "npc introduced
+// silent"). #357 (nb3): the WHOLE advisory panel string leaked to the player —
+// "npc introduced silent NPC 'Vanos' has been introduced but hasn't spoken — give them a line
+// or record their first memory with remember." A line that LEADS with one of these debt-kind
+// labels is GM bookkeeping, never fiction.
+// HIGH-CONFIDENCE only: the space-rendered form is limited to "npc introduced silent" (the
+// nb3 leak; never fiction) — the other kinds' nudge BODIES are already caught below, and their
+// space-forms ("quest stalled", "due consequence") could brush legitimate prose. The raw
+// underscore tokens never occur in prose, so all of those are safe to list verbatim.
+const _DEBT_KIND_LABEL =
+  "(?:npc introduced silent|hook_untracked|npc_introduced_silent|quest_stalled|" +
+  "choice_without_outcome|due_consequence|thread_pressure)";
 // The debt-nudge family (mirrors servers/engine/director.py::_nudge) — DM-facing
 // imperatives that name an engine tool / structural-debt action.
 const _ADVISORY_DIRECTIVE = new RegExp(
   "(?:" +
+    // #357: a line LED by a scene-debt kind label (optionally back-ticked) — the panel leak.
+    "^\\s*[`'\"]?\\s*" + _DEBT_KIND_LABEL + "\\b|" +
     "\\b(?:has been introduced but hasn'?t spoken)\\b|" +
     "\\b(?:untracked hook)\\b.*\\bcall\\b|" +
     "\\bquest\\b.*\\bhas stalled\\b|" +
@@ -181,7 +196,6 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     {};
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
   const [surface, setSurface] = React.useState(null);
-  const [advisory, setAdvisory] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const demoLog = [];
   const [input, setInput] = React.useState("");
@@ -249,19 +263,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       if (isCancelled()) return;
       setSurfaceStatus(error?.message || "unavailable");
     }
-    // GM Advisory (Campaign Director #72): a separate, best-effort fetch so a journal
-    // hiccup never blocks the table. Surfaces the top structural debt during play.
-    try {
-      const advResp = await fetch(`/journal-surface${query}`, { cache: "no-store" });
-      if (advResp.ok) {
-        const advPayload = await advResp.json();
-        if (!isCancelled()) setAdvisory(advPayload?.directorAdvisory || null);
-      }
-    } catch (error) { /* advisory is non-critical; keep last good */ }
+    // #357 (nb3): the GM Advisory (Campaign Director #72) fetch was removed here — its only
+    // consumer was the GM-bookkeeping panel that leaked into the player's live-play sidebar
+    // (see the RIGHT column below). The director advisory still loads on the journal surface.
     // NOTE (#340): the live DM-narration /chat tail used to be polled HERE, but it's now owned by
     // the app-level useLiveSession hook (app.jsx) so a beat that lands while the player is on
     // another screen still gets ingested and the narrating indicator clears correctly. ScreenTable
-    // only loads its own surface + advisory; the chronicle's chat beats arrive via the `liveSession`
+    // only loads its own surface; the chronicle's chat beats arrive via the `liveSession`
     // prop. (Engine stays sole writer — this is purely where the read-poll lives.)
   }, [campaignId, activeCampaign.source, activeCampaign.runId]);
 
@@ -564,30 +572,14 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         </Panel>
       </div>
 
-      {/* RIGHT — Quests + Quick stash + GM tools */}
+      {/* RIGHT — Quests + Quick stash + Encounter (GM Advisory removed #357 — see below) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-        {advisory && Array.isArray(advisory.debts) && advisory.debts.length > 0 && (
-          <Panel framed style={{ padding: "14px 18px" }}>{/* #320: tighter panel padding */}
-            <SectionTitle right={advisory.total_debts ? <Pill tone="crimson">{advisory.total_debts}</Pill> : null}>GM Advisory</SectionTitle>
-            <div className="body-sm muted" style={{ marginBottom: 8 }}>What the campaign owes the story.</div>
-            <div style={{
-              padding: "10px 12px",
-              background: "rgba(176,141,87,0.08)",
-              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3), inset 3px 0 0 " +
-                (advisory.debts[0].severity === "high" ? "var(--crimson)" : advisory.debts[0].severity === "low" ? "var(--b-400)" : "var(--royal)"),
-            }}>
-              <div className="eyebrow" style={{ fontSize: 9, color: "var(--crimson)" }}>
-                {(advisory.debts[0].kind || "debt").replace(/_/g, " ")}
-              </div>
-              <div className="hand" style={{ fontSize: 13, color: "var(--ink-700)", marginTop: 3 }}>
-                {advisory.debts[0].nudge}
-              </div>
-            </div>
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn ghost sm" onClick={() => onNavigate("journal")}>{window.OpenWorldsIcon?.has?.("codex.book") && <window.OpenWorldsIcon id="codex.book" size={13} />} Open chronicle</button>
-            </div>
-          </Panel>
-        )}
+        {/* #357 (nb3): the "GM Advisory" panel (Campaign Director debts — "what the campaign
+            OWES the story", with the raw debt-kind label + a tool-naming nudge like "…record
+            their first memory with remember") is GM/director bookkeeping, NOT player-facing
+            content. It leaked into a newbie's live-play sidebar here on the PLAYER table screen.
+            The advisory still renders on the journal/Director surface (screen-journal.jsx) where
+            a director framing is appropriate; it is removed from the player's live-play view. */}
 
         <Panel framed style={{ padding: "14px 18px" }}>{/* #320: tighter panel padding */}
           <SectionTitle>Quests</SectionTitle>{/* #320: "Active Quests" → "Quests" */}

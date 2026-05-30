@@ -142,3 +142,65 @@ def test_malformed_snapshot_recovers_nothing(tmp_path, monkeypatch):
     snap = camp_dir / "snapshot.json"
     snap.write_text("{not valid json", encoding="utf-8")
     assert _run(snap) == ""
+
+
+# ── #357 re-scope (nb3): never recover a 3rd-person setup brief / game-system notation ──────
+
+def test_coldopen_setup_brief_is_not_recovered(tmp_path, monkeypatch):
+    # The EXACT nb3 failure: on the cold open the DM logged ONLY a 3rd-person setup brief in
+    # game-system notation (a leading ALLCAPS label + a "(tiefling wizard, PC)" sheet tag) and
+    # ended its turn with empty reply text. Recovering that brief showed the player developer
+    # notation, not a scene. The fallback must now recover NOTHING here (blank > notation).
+    entries = [
+        SessionLogEntry(t=1.0, kind="system", text="Session 1 began: Winter After the War"),
+        SessionLogEntry(
+            t=2.0, kind="narration",
+            text=("COLD OPEN — ARRIVAL: Rolan (tiefling wizard, PC) walks toward Sorcerous "
+                  "Sundries to pick up reagents. A new Flaming Fist checkpoint blocks the lane "
+                  "near Siltwharf Rise. Rolan joins the back of the queue."),
+        ),
+    ]
+    snap = _seed(tmp_path, monkeypatch, campaign_id="camp_h", session_id="sess_h", entries=entries)
+    out = _run(snap)
+    assert out == ""
+    assert "COLD OPEN" not in out
+    assert "(tiefling wizard, PC)" not in out
+
+
+def test_setup_brief_breaks_block_but_real_scene_after_survives(tmp_path, monkeypatch):
+    # A setup brief followed by the REAL 2nd-person opening scene: the brief is excluded
+    # (treated like bookkeeping that breaks the trailing block); only the real scene is recovered.
+    entries = [
+        SessionLogEntry(t=1.0, kind="narration",
+                        text="SETUP: Mara (PC) is a Harper agent newly arrived in the Lower City."),
+        SessionLogEntry(
+            t=2.0, kind="narration",
+            text=("You stand at the mouth of Siltwharf Rise, the morning fog clinging to the "
+                  "cobblestones, a Flaming Fist checkpoint blocking the lane ahead."),
+        ),
+        SessionLogEntry(t=3.0, kind="dialogue", text="Papers. Now.", speaker="Fist Sergeant"),
+    ]
+    snap = _seed(tmp_path, monkeypatch, campaign_id="camp_i", session_id="sess_i", entries=entries)
+    out = _run(snap)
+    assert out == (
+        "You stand at the mouth of Siltwharf Rise, the morning fog clinging to the "
+        "cobblestones, a Flaming Fist checkpoint blocking the lane ahead.\n\n"
+        "Fist Sergeant: Papers. Now."
+    )
+    assert "SETUP:" not in out and "(PC)" not in out
+
+
+def test_real_2nd_person_prose_with_innocent_parens_survives(tmp_path, monkeypatch):
+    # GUARD against over-matching: real 2nd-person prose with an in-fiction parenthetical that
+    # does NOT carry a PC/NPC/level token must be recovered untouched (no false positive).
+    entries = [
+        SessionLogEntry(
+            t=1.0, kind="narration",
+            text=("You duck beneath the awning (or what's left of it) as the rain hammers the "
+                  "tin roofs of Heapside, and a hooded figure waits by the well."),
+        ),
+    ]
+    snap = _seed(tmp_path, monkeypatch, campaign_id="camp_j", session_id="sess_j", entries=entries)
+    out = _run(snap)
+    assert out.startswith("You duck beneath the awning")
+    assert "hooded figure" in out

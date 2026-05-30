@@ -33,6 +33,21 @@ NOT a rail and NOT a read-aloud list.**
 > the SKILL.md non-negotiable "never play their part" at its sharpest — the cold open is where
 > it's most tempting to break.)
 
+> **The cold open's FINAL output is the opening SCENE itself — as your reply text, in 2nd
+> person.** This is the same non-negotiable as every beat (SKILL.md: "Your turn's FINAL output
+> is ALWAYS 2nd-person player-facing narration"), and the cold open is where it's most often
+> dropped: you do all the silent setup with tools — `start_world`/`get_state`, seat the PC,
+> recruit the companion, `look_around`, `generate_image`, `log_event`, `remember` — and then
+> *end the turn on a tool call or a 3rd-person setup note instead of writing the scene*. The
+> player reads **only your reply text** as their opening; an empty reply or a 3rd-person brief
+> means a first-timer sees no scene at all. So: do the setup FIRST, then **close the turn by
+> writing the Arrival as 2nd-person prose addressed to "you"** — where you are, what you see/
+> hear/smell, who's present and a real quoted line, ending on the open moment + choice.
+> **NEVER** let your reply be a game-system setup brief like *"COLD OPEN — ARRIVAL: Rolan
+> (tiefling wizard, PC) walks toward Sorcerous Sundries…"* — that 3rd-person, sheet-tagged
+> notation is your private scratchpad, never the player's scene. If you `log_event` a setup
+> note, you must STILL write the 2nd-person scene as your reply text.
+
 Spend real scene-time here. A strong cold open is the difference between "a session that started"
 and "a session someone wants to keep playing." Then enter the normal beat cycle.
 

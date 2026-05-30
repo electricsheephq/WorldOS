@@ -143,6 +143,34 @@ class SanitizeNarrationTests(unittest.TestCase):
         self.assertIn("The gate groans open", out["bare_tool"])
         self.assertNotIn("remember(", out["bare_tool"])
 
+    def test_357_gm_advisory_panel_leak_is_stripped(self):
+        # #357 (nb3): the WHOLE GM-Advisory panel string (the rendered debt-kind label +
+        # the tool-naming nudge) leaked into the player's live-play view. A narration line
+        # led by a scene-debt KIND label (space-rendered "npc introduced silent" or the raw
+        # underscore tokens) is GM bookkeeping and must be stripped; legitimate prose using
+        # the words "silent"/"consequence"/"npc" as ordinary language must survive.
+        cases = {
+            "panel_leak": (
+                "npc introduced silent NPC 'Vanos' has been introduced but hasn't spoken — "
+                "give them a line or record their first memory with remember."
+            ),
+            "raw_kind_npc": "npc_introduced_silent: Vanos has not spoken yet.",
+            "raw_kind_consequence": "due_consequence is overdue — call check_consequences.",
+            "raw_kind_quest": "quest_stalled — weave an advancement beat.",
+            # false-positive guards: ordinary fiction using these words must pass verbatim
+            "legit_silent": "The hall falls silent as the duke rises.",
+            "legit_silent_figure": "A silent figure waits in the doorway, hood drawn.",
+            "legit_consequence": "The consequence of his oath weighed on him as he climbed.",
+        }
+        out = self._sanitize_many(cases)
+        self.assertEqual(out["panel_leak"], "")
+        self.assertEqual(out["raw_kind_npc"], "")
+        self.assertEqual(out["raw_kind_consequence"], "")
+        self.assertEqual(out["raw_kind_quest"], "")
+        self.assertEqual(out["legit_silent"], cases["legit_silent"])
+        self.assertEqual(out["legit_silent_figure"], cases["legit_silent_figure"])
+        self.assertEqual(out["legit_consequence"], cases["legit_consequence"])
+
     def test_scaffolding_line_inside_a_multiline_beat_is_dropped(self):
         beat = (
             "Rain hammers the cobbles outside the Elfsong.\n"
