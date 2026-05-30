@@ -8329,5 +8329,176 @@ def set_seed_param(campaign_id: str, param: str, value, force: bool = False) -> 
         }
 
 
+# --- Per-beat round-trip collapse (latency) ---------------------------------
+# The #1 wall-clock cost of a DM beat is tool round-trips (each MCP call is a
+# ~3–6s network hop). The beat cycle in skills/dungeon-master/SKILL.md prescribes
+# a CLUSTER of reads at the START of every beat (step 1: get_state +
+# get_campaign_director + present_events + check_companion_arc, plus an optional
+# recall) and a CLUSTER of writes at the END (step 7: log_event + remember(s) +
+# record_decision + advance_time). Each was its own round-trip. These two ADDITIVE
+# tools collapse each cluster into a single call. They are pure composition over
+# the existing tools — every underlying tool stays, and the old per-call path is
+# byte-identical to before (an unused combined tool ships nothing).
+
+
+@mcp.tool()
+def scene_context(campaign_id: str, recall_query: str = "", recall_limit: int = 6) -> dict:
+    """ONE-CALL beat re-ground — the whole start-of-beat read cluster in a single
+    round-trip (latency collapse; additive — the individual tools all still exist).
+
+    Returns, in one payload, exactly what the DM reads at the top of every beat
+    (SKILL.md step 1) so it makes 1 call instead of 3–4:
+
+      - ``state``     — get_state(campaign_id): scene, party vitals, day/time,
+                        active quests, combat status, pacing_mode, seed_params.
+      - ``director``  — get_campaign_director(campaign_id): the top structural
+                        debts the campaign OWES right now (advisory, read-only).
+      - ``events``    — present_events(campaign_id): stumble-into decisionals whose
+                        contract-safe trigger has fired this beat (READ-ONLY).
+      - ``companion_arcs`` — check_companion_arc(campaign_id): bonds that just
+                        turned / a ``betrayal_warning`` to foreshadow. (This is the
+                        one sub-call that persists arc progress — same effect as
+                        calling the tool directly; idempotent across beats.)
+      - ``recall``    — present ONLY when ``recall_query`` is non-empty: the same
+                        fuzzy memory search recall(query, limit) returns. Pass it
+                        when the moment touches the past ("have we met this NPC?",
+                        "what did we decide about the cult?"); leave it blank
+                        otherwise and no recall is run (no wasted work).
+
+    Read-mostly: it runs the SAME code paths as the individual tools (so behavior
+    and side effects are identical — including check_companion_arc's arc-progress
+    save), just bundled. Use this every beat in place of the separate
+    get_state / get_campaign_director / present_events / check_companion_arc
+    calls. For a returning NPC you still want recall_npc(npc_id) / get_scene on
+    arrival — those stay their own calls (situational, not every beat).
+    """
+    # Each delegate takes (and fully releases) the per-campaign flock before the
+    # next runs — sequential, never nested — so this is deadlock-free even though
+    # check_companion_arc acquires the lock. (Nesting campaign_lock in one process
+    # WOULD deadlock: flock is not reentrant across fds.)
+    out = {
+        "state": get_state(campaign_id),
+        "director": get_campaign_director(campaign_id),
+        "events": present_events(campaign_id),
+        "companion_arcs": check_companion_arc(campaign_id),
+    }
+    if recall_query and recall_query.strip():
+        out["recall"] = recall(campaign_id, recall_query.strip(), limit=recall_limit)
+    return out
+
+
+@mcp.tool()
+def persist_beat(
+    campaign_id: str,
+    events: Optional[list] = None,
+    memories: Optional[list] = None,
+    decision: Optional[dict] = None,
+    advance: Optional[dict] = None,
+) -> dict:
+    """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md
+    step 7) into a single round-trip AND a single disk write (latency collapse;
+    additive — log_event / remember / record_decision / advance_time all still
+    exist for one-off use).
+
+    Persistence is OFF the player's critical path: write the player-facing prose
+    FIRST, then make ONE persist_beat call LAST with everything the beat produced.
+    N writes become 1 MCP hop and 1 atomic snapshot save (the individual tools each
+    take the lock + fsync separately; this takes them ONCE).
+
+    All fields are optional — pass only what the beat produced; an empty call is a
+    no-op. Order of application: events -> memories -> decision, all inside ONE
+    campaign_lock + ONE save, then (if given) advance_time as its OWN locked call.
+
+      - ``events``   — list of beat log entries, each a dict
+                       ``{"kind","text","speaker"?,"payload"?}`` (kind:
+                       narration|dialogue|roll|system|combat). Same as log_event.
+      - ``memories`` — list of facts to append, each
+                       ``{"character_id","fact"}``. Same as remember (de-duped per
+                       character). Target the COMPANION's id after a character beat
+                       AND the PC's id for what the hero learns — symmetric memory.
+      - ``decision`` — a single dict ``{"summary", "options"?, "chosen"?,
+                       "rationale"?, "actor_ids"?, "sets_flag"?}``. Same as
+                       record_decision (records the choice; sets_flag arms a gated
+                       companion agenda). Omit when the beat had no real decision.
+      - ``advance``  — a dict ``{"phases"?, "to"?, "note"?}`` to move the in-world
+                       clock when the fiction moved time forward. Same as
+                       advance_time (no-op / skipped during combat). For a real
+                       JOURNEY or a rest keep using travel_to(advance_time=True) /
+                       long_rest — those are their own beats, not a persist step.
+
+    Returns a per-section summary: ``{"logged":[...], "remembered":[...],
+    "decision":{...}|None, "time":{...}|None}``.
+    """
+    logged: list[dict] = []
+    remembered: list[dict] = []
+    decision_out: Optional[dict] = None
+
+    # ONE critical section for every simple write (log/remember/decision). This is
+    # the batching win: a single load -> mutate-all -> save, instead of one
+    # lock+load+fsync-save per write. (advance_time is handled AFTER, as its own
+    # locked call, because its body — worldsim ticks, effect expiry, combat guard —
+    # is non-trivial and re-entering campaign_lock here would deadlock.)
+    if events or memories or decision:
+        with campaign_lock(campaign_id):
+            c = _require(campaign_id)
+            for ev in (events or []):
+                if not isinstance(ev, dict):
+                    raise ValueError("each events item must be a dict {kind,text,...}")
+                entry = _log_session_entry(
+                    c,
+                    kind=ev.get("kind", "narration"),
+                    text=ev.get("text", ""),
+                    speaker=ev.get("speaker", ""),
+                    payload=ev.get("payload"),
+                )
+                logged.append(entry.model_dump())
+            for mem in (memories or []):
+                if not isinstance(mem, dict):
+                    raise ValueError("each memories item must be a dict {character_id,fact}")
+                ch = _char(c, mem["character_id"])
+                fact = mem.get("fact", "")
+                if fact and fact not in ch.memory:  # de-dupe identical facts (matches remember)
+                    ch.memory.append(fact)
+                remembered.append({"id": ch.id, "name": ch.name, "memory": ch.memory})
+            if decision:
+                if not isinstance(decision, dict):
+                    raise ValueError("decision must be a dict {summary,...}")
+                d = Decision(
+                    day=c.day,
+                    summary=decision.get("summary", ""),
+                    options=list(decision.get("options") or []),
+                    chosen=decision.get("chosen", ""),
+                    rationale=decision.get("rationale", ""),
+                    actor_ids=list(decision.get("actor_ids") or []),
+                )
+                c.decisions.append(d)
+                flag = str(decision.get("sets_flag", "") or "").strip()
+                if flag:
+                    c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
+                decision_out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
+                if flag:
+                    decision_out["flag"] = flag
+            save_campaign(c)  # ONE atomic write for all of the above
+
+    # advance_time as its own locked call (sequential, not nested → no deadlock).
+    time_out: Optional[dict] = None
+    if advance is not None:
+        if not isinstance(advance, dict):
+            raise ValueError("advance must be a dict {phases?,to?,note?}")
+        time_out = advance_time(
+            campaign_id,
+            phases=int(advance.get("phases", 0) or 0),
+            to=str(advance.get("to", "") or ""),
+            note=str(advance.get("note", "") or ""),
+        )
+
+    return {
+        "logged": logged,
+        "remembered": remembered,
+        "decision": decision_out,
+        "time": time_out,
+    }
+
+
 if __name__ == "__main__":
     mcp.run()
