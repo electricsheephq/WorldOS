@@ -79,8 +79,29 @@ window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(r
 //
 // The poll is best-effort and a no-op unless a LIVE campaign is bound (mirrors the server's
 // /chat gating: empty items when no chat is configured / the view isn't the live run).
-const PENDING_RECOVERY_MS = 90 * 1000;        // #342: re-enable the bar if the DM stalls this long…
-const PENDING_BACKSTOP_MS = 12 * 60 * 1000;   // …with the original hard backstop as a final net.
+// #348: the recovery 'stuck' timeout is ADAPTIVE by turn position, because the DM beat lands
+// all-at-once (the /chat tail carries NO streaming/partial/heartbeat signal — the duo+human
+// runners append ONE {"role":"dm",...} line only after the whole turn's `result` is in, so the
+// poll sees zero new items for the entire turn then the complete beat). With no in-flight
+// progress to reset on, a fixed wall-clock from submit was the only lever — and at 90s it
+// PRE-EMPTED the legit Act-opening (the #324 narrative persona saw the cold-open take several
+// minutes and still succeed → false 'stuck', narration lost at a cliffhanger, #348).
+//   • FIRST beat of a session (the cold-open / Act-opening) gets a generous window — the engine
+//     is building the world + setting the scene; a blind newbie run saw this take 5–8 min.
+//   • LATER beats are quick (the old 90s was tuned for these); keep them snappy so a genuine
+//     mid-session stall still recovers fast.
+// The 12-min hard backstop is UNCHANGED — a turn that blows even the first-beat window still
+// gets force-cleared. "first beat?" = no DM narration has arrived this session yet (the hook's
+// dmBeatCountRef, reset to 0 on every run change).
+const PENDING_RECOVERY_MS = 90 * 1000;            // #342: later-beat stall window (DM turns are ~35–60s).
+const PENDING_RECOVERY_FIRST_MS = 4 * 60 * 1000;  // #348: first-beat (Act-opening) window — fits the multi-minute cold open.
+const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard backstop as a final net.
+// #348: the single source of truth for the recovery window, by turn position. Pure + exported
+// (window.__PENDING_TIMING__ below) so the timing contract is unit-testable without reaching into
+// the hook's internal beat counter. firstBeat ⇒ the longer cold-open window; else the snappy one.
+function recoveryWindowMs(firstBeat) {
+  return firstBeat ? PENDING_RECOVERY_FIRST_MS : PENDING_RECOVERY_MS;
+}
 function useLiveSession(state) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -109,15 +130,23 @@ function useLiveSession(state) {
 
   const clearPending = React.useCallback(() => { clearTimers(); setPending(null); }, [clearTimers]);
 
-  // #342: arm the narrating indicator + a SHORT recovery timeout. If a DM beat doesn't arrive within
-  // PENDING_RECOVERY_MS the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
+  // #342 + #348: arm the narrating indicator + a recovery timeout. If a DM beat doesn't arrive within
+  // the recovery window the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
   // instead of staying frozen until the 12-minute backstop. A real beat (below) clears it outright.
+  // #348: the window is turn-position-aware — the FIRST beat of a session (the cold-open, which the
+  // engine spends minutes building) gets PENDING_RECOVERY_FIRST_MS so a slow-but-valid opening is no
+  // longer falsely declared stuck; later beats keep the snappy PENDING_RECOVERY_MS. `firstBeat` is
+  // recorded on the pending object so the narrating affordance can set an honest expectation, and so
+  // a beat that lands AFTER 'stuck' still renders (the #340 path is unchanged — clearPending on any
+  // real narration beat regardless of this flag).
   const armPending = React.useCallback((text) => {
     clearTimers();
-    setPending({ text, since: Date.now(), stuck: false });
+    const firstBeat = dmBeatCountRef.current === 0;
+    const recoveryMs = recoveryWindowMs(firstBeat);
+    setPending({ text, since: Date.now(), stuck: false, firstBeat });
     recoveryTimer.current = window.setTimeout(() => {
       setPending((p) => (p ? { ...p, stuck: true } : p));
-    }, PENDING_RECOVERY_MS);
+    }, recoveryMs);
     backstopTimer.current = window.setTimeout(() => setPending(null), PENDING_BACKSTOP_MS);
   }, [clearTimers]);
 
@@ -186,6 +215,14 @@ function useLiveSession(state) {
   return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho };
 }
 window.useLiveSession = useLiveSession;
+// #348: expose the recovery-timing contract for tests (and devtools introspection). Purely
+// additive — nothing in the running app reads these off window; the hook uses the locals above.
+window.recoveryWindowMs = recoveryWindowMs;
+window.__PENDING_TIMING__ = {
+  recoveryMs: PENDING_RECOVERY_MS,
+  recoveryFirstMs: PENDING_RECOVERY_FIRST_MS,
+  backstopMs: PENDING_BACKSTOP_MS,
+};
 
 function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
