@@ -135,6 +135,14 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <div>
               <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
               <h1 className="h1" style={{ marginTop: 2 }}>{hero.name}</h1>
+              {/* Loop-10 #383: player-authored house line under the name, italic and
+                  muted so it reads as a subtitle, not a status. Renders only when
+                  the wizard's Family/House input is set; honest empty otherwise. */}
+              {hero.house && (
+                <div className="hand" style={{ fontSize: 14, color: "var(--ink-600)", marginTop: 0, fontStyle: "italic" }}>
+                  of House {hero.house}
+                </div>
+              )}
               <div className="hand" style={{ fontSize: 17, color: "var(--ink-700)", marginTop: 2 }}>
                 {[hero.race, hero.class, hero.archetype].map((s) => (s || "").trim()).filter(Boolean).join(" · ")}
               </div>
@@ -783,6 +791,20 @@ function LineagePanel({ hero }) {
         <p className="body dropcap" style={{ marginTop: race ? 10 : 0, marginBottom: 0, fontSize: 15 }}>
           {note}
         </p>
+      )}
+      {/* Loop-10 #383: the wizard's "Biography" textarea, surfaced as its own
+          paragraph with a small eyebrow so the player can see their authored
+          prose preserved on the Character sheet. Distinct from lineageNote
+          (which pulls backstory/personality from the engine's NPC-flavor
+          fields) — biography is the PLAYER's longer narrative input. Render
+          only when set; honest empty otherwise. */}
+      {(hero.biography || "").trim() && (
+        <div style={{ marginTop: (note || race) ? 12 : 0 }}>
+          <div className="eyebrow" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--ink-600)", marginBottom: 4 }}>Biography</div>
+          <p className="body" style={{ margin: 0, fontSize: 14, color: "var(--ink-700)", whiteSpace: "pre-wrap" }}>
+            {hero.biography}
+          </p>
+        </div>
       )}
     </div>
   );
