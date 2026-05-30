@@ -88,6 +88,14 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     const target = c || playableCampaign;
     if (!target) return;
     setState((s) => ({ ...s, activeCampaign: target.id }));
+    // #356: in the native app a canResume-but-not-yet-live campaign has NO attached DM, so navigating
+    // straight to the table lands in the read-only director's view. Mint a provider session via the
+    // bridge (the startPlay path, exactly as onResume does). Only drop straight into the table when the
+    // session is ALREADY live (an in-browser already-live run, or a browser preview with no bridge).
+    if (window.OpenWorldsNative?.hasBridge?.() && !target.live) {
+      startPlay(target.world);
+      return;
+    }
     onNavigate("table");
   };
 
