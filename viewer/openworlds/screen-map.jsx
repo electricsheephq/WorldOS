@@ -47,6 +47,10 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const [selectedId, setSelectedId] = React.useState("");
   const [busyTravel, setBusyTravel] = React.useState("");
   const [talkPartner, setTalkPartner] = React.useState(null);
+  // Urgent filter (M-02): the "N urgent" pill is a live control — toggling it focuses the
+  // strategic sidebar on urgent clocks/projects and jumps the map selection to the first
+  // urgent thread's location so the count is actionable, not just a read-only badge.
+  const [urgentOnly, setUrgentOnly] = React.useState(false);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
@@ -165,17 +169,32 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   };
 
   const locationQuests = selected ? quests.filter((q) => !q.location_id || q.location_id === selected.id) : quests;
-  const locationClocks = selected ? clocks.filter((c) => !c.location_id || c.location_id === selected.id) : clocks;
-  const locationProjects = selected ? projects.filter((p) => !p.location_id || p.location_id === selected.id) : projects;
+  const baseClocks = selected ? clocks.filter((c) => !c.location_id || c.location_id === selected.id) : clocks;
+  const baseProjects = selected ? projects.filter((p) => !p.location_id || p.location_id === selected.id) : projects;
+  // When the urgent filter is on, the strategic sidebar narrows to urgent threads only.
+  const locationClocks = urgentOnly ? baseClocks.filter((c) => c.urgent) : baseClocks;
+  const locationProjects = urgentOnly ? baseProjects.filter((p) => p.urgent) : baseProjects;
   const locationControl = selected ? controls.find((c) => c.location_id === selected.id) : null;
   const calendar = surface?.calendar?.available ? surface.calendar : null;
   const calendarMoon = Array.isArray(calendar?.moons) ? calendar.moons[0] : null;
   const calendarDetail = calendar ? [calendar.season, calendarMoon ? `${calendarMoon.name}: ${calendarMoon.phase}` : ""].filter(Boolean).join(" · ") : "";
 
+  // Urgent pill control: count across ALL clocks/projects, plus a toggle that jumps the
+  // map selection to the first urgent thread that carries a location so the badge acts.
+  const urgentCount = clocks.filter((c) => c.urgent).length + projects.filter((p) => p.urgent).length;
+  const toggleUrgent = () => {
+    const next = !urgentOnly;
+    setUrgentOnly(next);
+    if (next) {
+      const firstUrgent = [...clocks, ...projects].find((it) => it.urgent && it.location_id && locations.some((l) => l.id === it.location_id));
+      if (firstUrgent) setSelectedId(firstUrgent.location_id);
+    }
+  };
+
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 340px", gap: 14, padding: 14 }}>
       <Panel framed style={{ padding: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, position: "relative", zIndex: 3, flex: "0 0 auto", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, position: "relative", zIndex: 3, flex: "0 0 auto", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>{surface?.world || "Open Worlds"}</div>
             <h1 className="h1" style={{ fontSize: 24, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -238,7 +257,23 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
           alignItems: "center",
         }}>
           <Pill dot>{locations.length} known</Pill>
-          <Pill dot>{clocks.filter((c) => c.urgent).length + projects.filter((p) => p.urgent).length} urgent</Pill>
+          <button
+            type="button"
+            onClick={toggleUrgent}
+            disabled={urgentCount === 0}
+            aria-pressed={urgentOnly}
+            title={urgentCount === 0 ? "No urgent threads" : urgentOnly ? "Showing urgent threads — click to clear" : "Filter the strategic context to urgent threads"}
+            style={{
+              background: "none", border: "none", padding: 0, margin: 0,
+              cursor: urgentCount === 0 ? "default" : "pointer",
+              display: "inline-flex", alignItems: "center", borderRadius: 999,
+              outline: urgentOnly ? "1px solid var(--crimson)" : "none",
+              outlineOffset: 2,
+              opacity: urgentCount === 0 ? 0.6 : 1,
+            }}
+          >
+            <Pill dot tone={urgentOnly ? "crimson" : ""}>{urgentCount} urgent</Pill>
+          </button>
           <div style={{ flex: 1 }} />
           <div style={{ color: "var(--b-200)", fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", padding: "0 8px" }}>
             Last strategic tick: {surface?.last_world_tick || "none"}
@@ -339,6 +374,34 @@ function computeAtlasLayout(locations, edges) {
       if (pinned[i]) continue;
       px[i] += Math.max(-4, Math.min(4, fx[i] * cool));
       py[i] += Math.max(-4, Math.min(4, fy[i] * cool));
+    }
+  }
+
+  // Collision-resolution pass (M-04): the force sim can still leave two nodes nearly
+  // co-located when the repulsion balances against several springs, so pins overlap and
+  // a label hides another. Do a few short relaxation sweeps that push any pair closer
+  // than MIN_SEP apart along their separation axis. A pinned node holds (it carries a
+  // real engine hex); when both are free they share the nudge. Units are the pre-scale
+  // layout space — MIN_SEP ≈ 8 here normalizes to a ~60px gap in the framed viewport.
+  const MIN_SEP = 8, SEP_SWEEPS = 14;
+  for (let sweep = 0; sweep < SEP_SWEEPS; sweep++) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let dx = px[i] - px[j], dy = py[i] - py[j];
+        let d = Math.sqrt(dx * dx + dy * dy);
+        if (d >= MIN_SEP) continue;
+        // Degenerate (exactly stacked) → pick a deterministic axis from the id hashes.
+        if (d < 0.001) {
+          const a = (hashSeed(locations[i].id) + hashSeed(locations[j].id)) * 6.283;
+          dx = Math.cos(a); dy = Math.sin(a); d = 1;
+        }
+        const push = (MIN_SEP - d) / d;
+        const ux = dx * push, uy = dy * push;
+        if (pinned[i] && pinned[j]) continue; // two anchors — leave the engine's truth
+        if (pinned[i]) { px[j] -= ux; py[j] -= uy; }
+        else if (pinned[j]) { px[i] += ux; py[i] += uy; }
+        else { px[i] += ux * 0.5; py[i] += uy * 0.5; px[j] -= ux * 0.5; py[j] -= uy * 0.5; }
+      }
     }
   }
 
@@ -705,7 +768,7 @@ function ContextRow({ title, meta, urgent }) {
       background: urgent ? "rgba(120,32,32,0.12)" : "rgba(176,141,87,0.08)",
       boxShadow: urgent ? "inset 0 0 0 1px rgba(120,32,32,0.22)" : "inset 0 0 0 1px rgba(140,100,60,0.18)",
     }}>
-      <div style={{ fontFamily: "var(--f-display)", fontSize: 11, color: urgent ? "var(--crimson)" : "var(--ink-900)", letterSpacing: "0.08em" }}>{title}</div>
+      <div style={{ fontFamily: "var(--f-display)", fontSize: 13, lineHeight: 1.5, color: urgent ? "var(--crimson)" : "var(--ink-900)", letterSpacing: "0.08em" }}>{title}</div>
       {meta && <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 2 }}>{meta}</div>}
     </div>
   );
@@ -851,7 +914,7 @@ function ClockDial({ phase }) {
         );
       })}
       <span style={{
-        marginLeft: 4, fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.14em",
+        marginLeft: 4, fontFamily: "var(--f-display)", fontSize: 13, lineHeight: 1, letterSpacing: "0.14em",
         textTransform: "uppercase", color: "var(--ink-700)",
       }}>{active.title}</span>
     </div>
