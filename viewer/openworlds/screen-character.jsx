@@ -181,7 +181,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         </Panel>
 
         {/* Lower split: stats blocks + tab content */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1.7fr 1fr", gap: 14, minHeight: 0 }}>
+        <div className="stack-on-narrow" style={{ display: "grid", gridTemplateColumns: "1.05fr 1.7fr 1fr", gap: 14, minHeight: 0 }}>
 
           {/* Combat block */}
           <Panel framed style={{ padding: 22, overflow: "auto" }}>
@@ -749,6 +749,9 @@ function spellMeta(sp) {
 }
 
 function LineagePanel({ hero }) {
+  // A dead hero's sheet drops the lineage panel entirely (#308) — the living-world surface
+  // stops projecting lineage flavor for the fallen, so render nothing rather than a stale block.
+  if (hero.dead) return null;
   // Surface the engine's authoritative lineage: race (+ subrace) as the heading, the
   // racial traits the snapshot carries, and any backstory/personality flavor note. Honest
   // empty-state only when the snapshot truly records no race and no flavor — never invent.
