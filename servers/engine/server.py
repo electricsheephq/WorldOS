@@ -1020,6 +1020,27 @@ def _derive_canon_abilities(class_name: str, level: int) -> "AbilityScores | Non
     return AbilityScores(**{_AB3_TO_FULL[ab]: val for ab, val in assigned.items()})
 
 
+def _class_level_hp(class_name: str, level: int, con_mod: int) -> "int | None":
+    """The SRD fixed-HP max for a single-class character of `class_name` at `level` with the
+    given CON modifier: max die + CON at L1, then average (die//2+1) + CON per level after.
+    Returns None for an unknown class (the caller can't size it). Deterministic and pure.
+
+    Extracted from _apply_srd_class_defaults so the canon-load seat path can use the SAME
+    formula to (a) compute a class+level-appropriate max_hp for a record that ships none and
+    (b) recognize a record whose explicit max_hp is BELOW the class+level floor (the #352
+    "critically-low canon max_hp" defect — a L5 Wizard seated at a flat 10 instead of ~32)."""
+    try:
+        die = srd_tables.hit_die(class_name.lower())
+    except (ValueError, AttributeError):
+        return None
+    try:
+        lvl = max(1, int(level))
+    except (TypeError, ValueError):
+        lvl = 1
+    per_level_after_first = (die // 2 + 1) + con_mod
+    return max(1, die + con_mod + (lvl - 1) * per_level_after_first)
+
+
 def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
     """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
     hit dice, level-1 HP (max die + CON), proficiency bonus, class base AC (when
@@ -1035,8 +1056,7 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         if ch.max_hp <= 1:  # HP not explicitly provided -> compute for the FULL level
             # SRD fixed-HP: max die + CON at L1, then average (die//2+1) + CON per level.
             con = ch.abilities.modifier(Ability.CON)
-            per_level_after_first = (die // 2 + 1) + con
-            ch.max_hp = max(1, die + con + (level - 1) * per_level_after_first)
+            ch.max_hp = _class_level_hp(cname, level, con) or ch.max_hp
             ch.current_hp = ch.max_hp
         ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
         if set_base_ac:
@@ -2229,19 +2249,40 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
         if classes:
             _apply_srd_class_defaults(ch, classes[0].name, classes[0].level,
                                       set_base_ac=(ch.armor_class == 10))
-        # The Character default HP is a placeholder max_hp=1 (the model's bare default). An identity
-        # stub left at 1 HP is an INSTANT-KILL combatant: the first hit trips combat's SRD massive-
-        # damage rule (damage >= max_hp at 0 HP) and flags it dead before it's ever fleshed out
-        # (QA: a canon NPC pulled into a fight pre-recruit died in one hit, then stayed dead). Give
-        # the stub a SANE floor so a fresh canon figure can take a swing while awaiting its real
-        # sheet: honor a canon HP hint if the record carries one, else a modest default. (The full
-        # combat sheet still comes from apply_srd_defaults / recruit_companion.)
+        # MAX_HP (#352 — canon PC seated with a critically-low max_hp). The Character default is a
+        # placeholder max_hp=1, and an identity stub left at 1 HP is an INSTANT-KILL combatant: the
+        # first hit trips combat's SRD massive-damage rule (damage >= max_hp at 0 HP) and flags it
+        # dead before it's ever fleshed out (QA: a canon NPC pulled into a fight pre-recruit died in
+        # one hit). The OLD code floored every canon load to `max(canon_hp, 10)` — but for a CLASSED
+        # record that floor CLOBBERED the class+level HP _apply_srd_class_defaults just computed
+        # above (QA ow-living1: Latham, a L5 Guild Wizard with no `max_hp` field, was seated at a
+        # flat 10 instead of his class+level 32 — the angry-dm scorer's "single worst seam, must fix
+        # before combat"). Mirror the #322 ability-derivation: when the canon record lacks a SENSIBLE
+        # max_hp, DERIVE a class+level-appropriate one (hit-die + CON modifier per level, the same
+        # _class_level_hp formula the SRD defaults use) so a seated canon combatant is sized for its
+        # class+level. Precedence, deterministic + additive:
+        #   1. _apply_srd_class_defaults already set max_hp from the class+level floor (it ran on the
+        #      max_hp<=1 stub) — that is the class-appropriate value; keep it as the floor.
+        #   2. an EXPLICIT canon max_hp/hit_points that is >= that class floor is honored (a
+        #      hand-authored sheet, or a higher-than-formula canon value, always wins upward).
+        #   3. a class-less / unknown-class record (no floor) keeps the modest flat-10 stub default.
+        # An explicit canon HP BELOW the class+level floor is treated as a low placeholder and the
+        # class floor wins (the issue's "absent, OR below the class+level floor" case).
         try:
             canon_hp = int(rec.get("max_hp") or rec.get("hit_points") or 0)
         except (TypeError, ValueError):
             canon_hp = 0
-        ch.max_hp = max(canon_hp, 10)
-        ch.current_hp = ch.max_hp  # a fresh identity stub stands at full (placeholder) health
+        # The class+level floor (None for a class-less / unknown-class record). Computed off the now-
+        # seated abilities (derived/canon/placeholder), so CON is real — matches the SRD-defaults HP.
+        con_mod = ch.abilities.modifier(Ability.CON)
+        class_floor = _class_level_hp(classes[0].name, classes[0].level, con_mod) if classes else None
+        if class_floor is not None:
+            # Classed: never below the class+level floor; an explicit canon value above it wins.
+            ch.max_hp = max(class_floor, canon_hp)
+        else:
+            # Class-less / unknown class: honor an explicit canon HP, else the modest flat-10 stub.
+            ch.max_hp = max(canon_hp, 10)
+        ch.current_hp = ch.max_hp  # a fresh identity stub stands at full health
         # INVARIANT: a kind="player" character IS the party's protagonist — always in the
         # party, regardless of add_to_party. QA ow-rv1: the brief told the DM to load a canon
         # PC via load_canon_character(kind="player"), but add_to_party defaults False, so the
