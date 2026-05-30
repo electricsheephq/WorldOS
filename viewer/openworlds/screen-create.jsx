@@ -30,22 +30,26 @@ function classScope(id) {
 // hero.portrait maps into this list; an out-of-range or future index falls back to a clean
 // silhouette via <Img> (the scope matches /portrait/ so it shows a face silhouette, not a
 // crest). "Bring your own — drop a PNG" remains a future affordance.
+// Each entry carries its canon RACE (keyed to the RACES ids below) and an `alive` flag.
+// #315: StepPortrait filters the gallery to faces whose race matches the hero's chosen
+// lineage (so a dwarf isn't offered a tiefling face) and never offers a dead figure as a
+// player avatar (per #305's content-curation policy — a dead figure is lore-only).
 const PORTRAIT_GALLERY = [
   // A LIVING canon face leads the gallery (Aubree, a Flaming Fist ranger). Was Dal Lightspark,
   // but he is dead in canon — per #305's content-curation policy a dead figure is lore-only,
   // never offered as a player avatar.
-  { slug: "aubree", name: "Aubree" },
-  { slug: "shadowheart", name: "Shadowheart" },
-  { slug: "astarion", name: "Astarion" },
-  { slug: "gale", name: "Gale" },
-  { slug: "lae-zel", name: "Lae'zel" },
-  { slug: "wyll", name: "Wyll" },
-  { slug: "karlach", name: "Karlach" },
-  { slug: "jaheira", name: "Jaheira" },
-  { slug: "minsc", name: "Minsc" },
-  { slug: "halsin", name: "Halsin" },
-  { slug: "minthara", name: "Minthara" },
-  { slug: "dame-aylin", name: "Dame Aylin" },
+  { slug: "aubree", name: "Aubree", race: "human", alive: true },
+  { slug: "shadowheart", name: "Shadowheart", race: "half", alive: true },
+  { slug: "astarion", name: "Astarion", race: "elf", alive: true },
+  { slug: "gale", name: "Gale", race: "human", alive: true },
+  { slug: "lae-zel", name: "Lae'zel", race: "githyanki", alive: true },
+  { slug: "wyll", name: "Wyll", race: "human", alive: true },
+  { slug: "karlach", name: "Karlach", race: "tiefling", alive: true },
+  { slug: "jaheira", name: "Jaheira", race: "half", alive: true },
+  { slug: "minsc", name: "Minsc", race: "human", alive: true },
+  { slug: "halsin", name: "Halsin", race: "elf", alive: true },
+  { slug: "minthara", name: "Minthara", race: "drow", alive: true },
+  { slug: "dame-aylin", name: "Dame Aylin", race: "aasimar", alive: true },
 ];
 function portraitScope(i) {
   const p = PORTRAIT_GALLERY[i];
@@ -65,6 +69,8 @@ function ScreenCreate({ onNavigate, state, setState }) {
   const [step, setStep] = React.useState(0);
   const [hero, setHero] = React.useState({
     name: "",
+    house: "",
+    biography: "",
     race: "human",
     class: "fighter",
     background: "wanderer",
@@ -110,6 +116,8 @@ function ScreenCreate({ onNavigate, state, setState }) {
     }
     const spec = {
       name: (hero.name || "").trim() || "Unnamed Hero",
+      house: (hero.house || "").trim(),
+      biography: (hero.biography || "").trim(),
       race: hero.race,
       class: hero.class,
       level: 1,
@@ -538,7 +546,11 @@ function StepPortrait({ hero, setHero }) {
       <Divider />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
-        {PORTRAIT_GALLERY.map((p, i) => (
+        {/* #315: only canon faces of the hero's lineage, and never a dead figure. The original
+            gallery index drives selection + scope, so map filtered entries back to it. */}
+        {PORTRAIT_GALLERY.filter(p => (!hero.race || p.race === hero.race) && p.alive !== false).map((p) => {
+          const i = PORTRAIT_GALLERY.indexOf(p);
+          return (
           <button key={p.slug} onClick={() => pickGallery(i)} title={p.name} style={{
             padding: 4,
             background: (!genMode && hero.portrait === i) ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
@@ -551,7 +563,8 @@ function StepPortrait({ hero, setHero }) {
                 neutral head-and-shoulders silhouette (the scope matches /portrait/), never a crest. */}
             <Img scope={portraitScope(i)} label={p.name} w="100%" h={140} fit="cover" framed />
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <Divider />
@@ -605,7 +618,6 @@ function StepPortrait({ hero, setHero }) {
 }
 
 function StepName({ hero, setHero }) {
-  const [biography, setBiography] = React.useState("");
   return (
     <div>
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>VI. Of Name</div>
@@ -623,14 +635,16 @@ function StepName({ hero, setHero }) {
 
       <div className="eyebrow" style={{ marginTop: 18, marginBottom: 6 }}>Family / House (optional)</div>
       <input
+        value={hero.house || ""}
+        onChange={(e) => setHero({ ...hero, house: e.target.value })}
         placeholder="e.g. House of the Three Bells"
         style={{ ...window.inkInput, fontSize: 16 }}
       />
 
       <div className="eyebrow" style={{ marginTop: 18, marginBottom: 6 }}>Biography</div>
       <textarea
-        value={biography}
-        onChange={(e) => setBiography(e.target.value)}
+        value={hero.biography || ""}
+        onChange={(e) => setHero({ ...hero, biography: e.target.value })}
         placeholder="A few lines for the chronicle. What you have done. What you are still doing. What you intend never to do."
         style={{ ...window.inkInput, fontSize: 15, fontFamily: "var(--f-body)", height: 140, resize: "vertical", lineHeight: 1.5 }}
       />
@@ -809,6 +823,46 @@ const RACES = {
     body: "Touched by something hot once. Counts the chambers of the soul on three hands.",
     bonus: { int: 1, cha: 2 },
   },
+  dragonborn: {
+    name: "Dragonborn",
+    size: "Medium",
+    life: "80 years",
+    glyph: "dragonborn",
+    body: "Born of draconic blood and built like a closed gate. Breathes the element of an ancestor and remembers a clan name longer than most kingdoms.",
+    bonus: { str: 2, cha: 1 },
+  },
+  drow: {
+    name: "Drow",
+    size: "Medium",
+    life: "750 years",
+    glyph: "drow",
+    body: "Of the Underdark, where the sun is a rumour and trust is a weapon. Sees in the dark and is rarely surprised by what comes out of it.",
+    bonus: { dex: 2, cha: 1 },
+  },
+  githyanki: {
+    name: "Githyanki",
+    size: "Medium",
+    life: "100 years",
+    glyph: "githyanki",
+    body: "Raised on a dead god's body in the Astral Sea and trained to the sword before the cradle. Disciplined, severe, and unimpressed by the material plane.",
+    bonus: { str: 2, int: 1 },
+  },
+  gnome: {
+    name: "Gnome",
+    size: "Small",
+    life: "400 years",
+    glyph: "gnome",
+    body: "Small, sharp, and endlessly curious about how the latch works. Tinkers, illusionists, and keepers of inventions no one asked for.",
+    bonus: { int: 2, con: 1 },
+  },
+  "half-orc": {
+    name: "Half-Orc",
+    size: "Medium",
+    life: "75 years",
+    glyph: "half-orc",
+    body: "Strong enough to end the argument and stubborn enough to outlast it. Refuses to fall when a lesser frame would, and rises angrier.",
+    bonus: { str: 2, con: 1 },
+  },
 };
 
 const CLASSES = {
@@ -893,6 +947,90 @@ const CLASSES = {
       { name: "Chain mail", qty: 1 },
       { name: "Shield", qty: 1 },
       { name: "Holy symbol", qty: 1 },
+    ],
+  },
+  barbarian: {
+    name: "Barbarian",
+    role: "Rage and ruin",
+    glyph: "barbarian · sigil",
+    body: "Fights from a place words don't reach. The rage makes the hurt smaller and the swing larger; the cleanup is someone else's problem.",
+    tags: ["d12 HP", "rage", "reckless"],
+    hp: 12,
+    kit: [
+      { name: "Greataxe", qty: 1 },
+      { name: "Handaxe", qty: 2 },
+      { name: "Explorer's pack", qty: 1 },
+      { name: "Rations", qty: 6 },
+    ],
+  },
+  druid: {
+    name: "Druid",
+    role: "Wild and warding",
+    glyph: "druid · sigil",
+    body: "Keeps the old pact with root and claw. Wears the shape of the beast when the argument needs teeth and reads weather like a letter.",
+    tags: ["d8 HP", "wild shape", "nature magic"],
+    hp: 8,
+    kit: [
+      { name: "Scimitar", qty: 1 },
+      { name: "Leather armour", qty: 1 },
+      { name: "Druidic focus", qty: 1 },
+      { name: "Herbalism kit", qty: 1 },
+    ],
+  },
+  monk: {
+    name: "Monk",
+    role: "Fist and focus",
+    glyph: "monk · sigil",
+    body: "Made the body the weapon so nothing could be taken away. Moves between the raindrops and strikes faster than the eye keeps count.",
+    tags: ["d8 HP", "martial arts", "ki"],
+    hp: 8,
+    kit: [
+      { name: "Shortsword", qty: 1 },
+      { name: "Darts", qty: 10 },
+      { name: "Explorer's pack", qty: 1 },
+      { name: "Rations", qty: 4 },
+    ],
+  },
+  ranger: {
+    name: "Ranger",
+    role: "Bow and border",
+    glyph: "ranger · sigil",
+    body: "Knows the wild the way a city-dweller knows their street. Marks a quarry, follows a cold trail, and ends the hunt at distance.",
+    tags: ["d10 HP", "favoured enemy", "tracker"],
+    hp: 10,
+    kit: [
+      { name: "Longbow", qty: 1 },
+      { name: "Shortswords", qty: 2 },
+      { name: "Leather armour", qty: 1 },
+      { name: "Arrows", qty: 20 },
+    ],
+  },
+  sorcerer: {
+    name: "Sorcerer",
+    role: "Blood and birthright",
+    glyph: "sorcerer · sigil",
+    body: "Did not study the lightning — was born holding it. The magic leaks whether invited or not; the trick is aiming the spill.",
+    tags: ["d6 HP", "innate magic", "metamagic"],
+    hp: 6,
+    kit: [
+      { name: "Dagger", qty: 2 },
+      { name: "Arcane focus", qty: 1 },
+      { name: "Component pouch", qty: 1 },
+      { name: "Travel rations", qty: 4 },
+    ],
+  },
+  warlock: {
+    name: "Warlock",
+    role: "Pact and price",
+    glyph: "warlock · sigil",
+    body: "Signed something with something. Wields borrowed power on terms not entirely read, and the patron is rarely far from the page.",
+    tags: ["d8 HP", "eldritch blast", "pact magic"],
+    hp: 8,
+    kit: [
+      { name: "Quarterstaff", qty: 1 },
+      { name: "Leather armour", qty: 1 },
+      { name: "Arcane focus", qty: 1 },
+      { name: "Component pouch", qty: 1 },
     ],
   },
 };
