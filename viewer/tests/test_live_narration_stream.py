@@ -221,6 +221,12 @@ const h = {
   // arm the "DM is narrating…" indicator exactly as a posted player move does (armPending is on
   // the hook's returned api). Used to prove a streamed paragraph CLEARS it (the give-up fix).
   arm: (text) => reactHost.api().armPending(text || 'open the scene'),
+  // #399: the hook's public player-echo append (the chronicle's optimistic "You: …" row). Idempotent
+  // so a #344 'Try again' re-POST of the exact stalled move doesn't double the line.
+  echo: (who, text) => reactHost.api().recordPlayerEcho(who, text),
+  log: () => (reactHost.api().log || []).map((e) => ({ kind: e.kind, who: e.who, text: e.text })),
+  // #399: the recovery-window selector by turn position (firstBeat ⇒ cold-open window, else later).
+  recoveryWindowMs: (firstBeat) => sandbox.window.recoveryWindowMs(firstBeat),
   drain,
 };
 
@@ -403,6 +409,66 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertEqual(out["run1"], ["A familiar refrain."])
         self.assertEqual(out["run2"], ["A familiar refrain."],
                          "a new run must reset the dedup set so identical prose isn't wrongly suppressed across runs")
+
+    # --- #399: a resolved DM beat makes the NEXT turn a LATER beat (firstBeat=false) -----------
+    # The recovery window is turn-position-aware: the cold-open gets the generous 4-min window, but
+    # turns 2+ get the (now 180s, #399) later window. This proves the firstBeat flip happens after a
+    # real beat resolves on /chat — so the later-beat window genuinely governs beats 2–4 (the slow-
+    # but-working turns the playtester gave up on), NOT the cold-open window.
+    def test_resolved_beat_makes_next_turn_a_later_beat(self):
+        out = self._run(
+            # Turn 1: arm, then resolve it with a turn-END /chat DM line (bumps the internal beat count).
+            "h.arm('open the scene');"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'You stand at the gates of Baldur\\u2019s Gate.' }], next: 1 });"
+            "await h.tick();"
+            "var afterTurn1 = h.pending();"  # JS string; afterTurn1 should be null (turn resolved)
+            # Turn 2: arm again — this pending must be a LATER beat (firstBeat:false).
+            "h.arm('walk through the gate');"
+            "var turn2 = h.pending();"
+            "return ({ turn1_resolved: afterTurn1 === null, turn2_firstBeat: !!(turn2 && turn2.firstBeat), turn2_active: !!(turn2 && !turn2.stuck) });"
+        )
+        self.assertTrue(out["turn1_resolved"], "the turn-END /chat line should resolve turn 1")
+        self.assertTrue(out["turn2_active"], "turn 2 should arm a fresh narrating indicator")
+        self.assertFalse(out["turn2_firstBeat"],
+                         "turn 2 must be a LATER beat (firstBeat=false) → it uses the 180s later-beat window, not the cold-open window")
+
+    # --- #399: the later-beat recovery window is 180s (covers the worst-case ~120s turn) -------
+    def test_later_beat_window_is_180s(self):
+        out = self._run(
+            "return ({ first: h.recoveryWindowMs(true), later: h.recoveryWindowMs(false) });"
+        )
+        self.assertEqual(out["later"], 180 * 1000,
+                         "the later-beat window must be 180s so a content-rich 90–120s beat 2–4 isn't falsely declared stuck (#399)")
+        self.assertEqual(out["first"], 4 * 60 * 1000, "the cold-open window is unchanged (4 min)")
+
+    # --- #399: the player echo is IDEMPOTENT (the 'Try again' re-POST doesn't duplicate) -------
+    # The #344 stuck-recovery re-POSTs the EXACT stalled move (postMove → recordPlayerEcho again),
+    # which used to append a SECOND identical action row — the duplicated "Rolan—" the playtester
+    # filed. A back-to-back identical (who, text) must NOT double the chronicle line.
+    def test_player_echo_is_idempotent_on_retry(self):
+        out = self._run(
+            "await h.drain();"
+            "h.echo('Rolan', 'Rolan\\u2014 hold the line');"  # original submit
+            "var afterFirst = h.log();"
+            "h.echo('Rolan', 'Rolan\\u2014 hold the line');"  # 'Try again' re-POST (exact same move)
+            "var afterRetry = h.log();"
+            "return ({ afterFirst: afterFirst, afterRetry: afterRetry });"
+        )
+        self.assertEqual(len(out["afterFirst"]), 1, "the first submit records one action row")
+        self.assertEqual(len(out["afterRetry"]), 1,
+                         "a 'Try again' re-POST of the exact same move must NOT duplicate the chronicle action (#399)")
+        self.assertEqual(out["afterRetry"][0]["text"], "Rolan— hold the line")
+
+    # --- #399: a DIFFERENT action (a rephrase, or a later turn) is NOT deduped -----------------
+    def test_player_echo_keeps_distinct_actions(self):
+        out = self._run(
+            "await h.drain();"
+            "h.echo('Rolan', 'hold the line');"
+            "h.echo('Rolan', 'fall back to the bridge');"  # a genuinely different move
+            "return ({ log: h.log() });"
+        )
+        self.assertEqual(len(out["log"]), 2,
+                         "two distinct actions must both appear (idempotence only suppresses a back-to-back exact repeat)")
 
 
 if __name__ == "__main__":

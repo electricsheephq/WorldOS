@@ -825,8 +825,9 @@ function LogEntry({ entry }) {
 // #348: `firstBeat` makes the expectation HONEST. The DM beat lands all-at-once (no streaming),
 // and the FIRST beat — the cold-open/Act-opening the engine spends minutes building — legitimately
 // takes several minutes. Telling a first-timer "up to a minute" then re-opening the bar at 90s was
-// the #348 false-stuck trap. For the opening we say "a few minutes"; later beats keep "up to a
-// minute" (they really are ~35–60s). This copy mirrors the adaptive recovery window in app.jsx.
+// the #348 false-stuck trap. For the opening we say "a few minutes"; later beats say "a minute or
+// two" (the ~35–60s norm, but a content-rich beat 2–4 runs 90–120s — #399). This copy mirrors the
+// adaptive recovery window in app.jsx (later-beat window raised 90s → 180s in #399).
 // #385: the rotating "the world is being made" flavor lines for the COLD-OPEN only. The first beat
 // legitimately takes minutes (the engine builds the world + sets the scene; no streaming), and the
 // old single static line ("Setting the opening scene — …") read as FROZEN: it never changed, the
@@ -862,7 +863,9 @@ function DmNarratingBeat({ since, firstBeat }) {
     : "The Dungeon Master is narrating";
   const waitHint = firstBeat
     ? "The first beat of a session can take a few minutes — hang tight, your story is on its way."
-    : "Weaving the next beat — this can take up to a minute.";
+    // #399: a content-rich beat can run up to ~two minutes (the window is 180s); say "a minute or
+    // two" so a 90–120s wait reads as expected, not as the app having stalled.
+    : "Weaving the next beat — this can take a minute or two.";
   // #385: a11y model for the cold-open. The frozen-app illusion came from the live region being the
   // ONLY accessible text AND it never changing (the dots/shimmer/elapsed were all aria-hidden). Fix:
   //   • The visible label + elapsed are NO LONGER aria-hidden for the first beat, so they appear in

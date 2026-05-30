@@ -204,8 +204,8 @@ class RecoveryTimingTests(unittest.TestCase):
         # and still strictly inside the hard backstop. This is the whole shape of the #348 fix.
         self.assertLess(c["recoveryMs"], c["recoveryFirstMs"])
         self.assertLess(c["recoveryFirstMs"], c["backstopMs"])
-        # Concretely: later = 90s, first = 4 min, backstop = 12 min.
-        self.assertEqual(c["recoveryMs"], 90 * 1000)
+        # Concretely: later = 180s (#399, was 90s), first = 4 min, backstop = 12 min.
+        self.assertEqual(c["recoveryMs"], 180 * 1000)
         self.assertEqual(c["recoveryFirstMs"], 4 * 60 * 1000)
         self.assertEqual(c["backstopMs"], 12 * 60 * 1000)
 
@@ -213,7 +213,25 @@ class RecoveryTimingTests(unittest.TestCase):
     def test_recovery_window_selector_both_branches(self):
         out = self._run("({ first: h.recoveryWindowMs(true), later: h.recoveryWindowMs(false) })")
         self.assertEqual(out["first"], 4 * 60 * 1000)
-        self.assertEqual(out["later"], 90 * 1000)
+        self.assertEqual(out["later"], 180 * 1000)  # #399: was 90s
+
+    # --- #399 CORE: the FIRST-beat window covers a 120s turn without going stuck --------------
+    # The first beat already gets the generous 4-min window, so a 120s turn is comfortably inside it.
+    # (The LATER-beat 180s window can't be exercised in THIS harness — flipping firstBeat=false needs
+    # a real DM beat to arrive via the /chat poll, which is stubbed here; that path is covered in
+    # test_live_narration_stream.py::test_resolved_beat_makes_next_turn_a_later_beat. Here we lock
+    # that NEITHER window trips at 120s, the worst-case content-rich turn the playtester gave up on.)
+    def test_no_false_stuck_at_120s(self):
+        out = self._run(
+            "h.arm('open the scene');"
+            # 120s in — the OLD later-beat window (90s) would already be 'stuck'. The first-beat
+            # window (and the new 180s later window) must NOT be.
+            "h.advance(120 * 1000);"
+            "var p1 = h.pending();"
+            "({ stuck_at_120s: !!(p1 && p1.stuck), active_at_120s: !!(p1 && !p1.stuck) })"
+        )
+        self.assertFalse(out["stuck_at_120s"], "a 120s turn must not be falsely declared stuck (#399)")
+        self.assertTrue(out["active_at_120s"], "a 120s turn should still be narrating (pending, not stuck)")
 
     # --- #348 CORE: the FIRST beat is NOT falsely declared stuck at 90s -------
     def test_first_beat_survives_past_the_old_90s_threshold(self):
