@@ -42,6 +42,12 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     }
     setSummonError("");
     setSummoning(true);
+    // Show the full-screen "building your universe" loading experience THE INSTANT play is
+    // pressed — before the async mint and the reload it triggers. The flag is stamped into
+    // sessionStorage so it survives the location.assign reload below and keeps covering the
+    // cold-open on the live viewer, handing off to the table when the first narration lands.
+    // (building-universe.jsx; App reads it via useBuildingUniverse.)
+    window.OpenWorldsBuilding?.begin?.({ world: world || "baldurs-gate", kind: "play" });
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
     try {
       const reply = await window.OpenWorldsNative.request("startProviderSession", {
@@ -59,9 +65,13 @@ function ScreenLauncher({ onNavigate, state, setState }) {
         window.location.assign(liveUrl);
         return;
       }
+      window.OpenWorldsBuilding?.clear?.();
       setSummoning(false);
       setSummonError("The session started, but its live viewer address was missing.");
     } catch (error) {
+      // Mint failed before any reload — tear the loading overlay back down so the player isn't
+      // stranded on it, and surface the error here on the launcher.
+      window.OpenWorldsBuilding?.clear?.();
       setSummoning(false);
       setSummonError(error?.message || String(error));
       toast({

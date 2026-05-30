@@ -389,6 +389,17 @@ function App() {
   // prop; the nav rail and every other screen are intentionally untouched by it.
   const liveSession = useLiveSession(state);
 
+  // "Building your universe" loading experience (building-universe.jsx). The launcher's
+  // startPlay / the Forge's bindHero stamp a sessionStorage "building" flag at the click; this
+  // hook reads it on mount so the full-screen loading overlay covers BOTH waits — the
+  // startProviderSession mint + the location.assign reload (the flag survives the reload) AND the
+  // cold-open. It hands off (clears) when the first DM narration beat lands in liveSession.chatBeats
+  // (the same real milestone the in-table cold-open clears on). Falls back gracefully if the
+  // bundle/hook is absent.
+  const building = (typeof window.useBuildingUniverse === "function")
+    ? window.useBuildingUniverse(liveSession)
+    : { active: false, record: null, handoff: false, dismiss: () => {} };
+
   React.useEffect(() => {
     document.documentElement.setAttribute("data-palette", t.palette || "warm");
   }, [t.palette]);
@@ -499,6 +510,21 @@ function App() {
     }
   }, [nativeState, screen]);
 
+  // Building→table handoff. The "building your universe" overlay clears (active → inactive) the
+  // moment the first DM narration beat lands — that beat is already in the chronicle, so land the
+  // player on the table to read it. This is belt-and-suspenders with didAutoRoute above (which
+  // covers the native runningProvider signal); it also handles the in-browser already-live case
+  // where the overlay was shown but no native provider status flips. Only redirects FROM the
+  // launcher, so a player who navigated mid-build is respected.
+  const wasBuilding = React.useRef(false);
+  React.useEffect(() => {
+    if (building.active) { wasBuilding.current = true; return; }
+    if (wasBuilding.current && screen === "launcher") {
+      setScreen("table");
+    }
+    wasBuilding.current = false;
+  }, [building.active, screen]);
+
   // During a live play session (a DM provider is attached), keep the active campaign bound to
   // the viewer's CURRENT (live) campaign. The DM mints this run's campaign a few seconds after
   // the page loads, so the initial catalog pick can be a stale save; once the re-poll surfaces
@@ -589,6 +615,7 @@ function App() {
     { title: "Open Worlds", day: "" };
 
   return (
+    <React.Fragment>
     <div className="window">
       <TitleBar
         campaign={current.title}
@@ -658,6 +685,14 @@ function App() {
         </window.TweaksPanel>
       )}
     </div>
+
+      {/* The full-screen "building your universe" loading overlay. position:fixed (styles.css), so
+          it covers the whole app — title bar, rail, stage — while the table boots underneath and
+          the app-level /chat poll keeps running. Clears itself when the first DM narration lands. */}
+      {building.active && window.BuildingUniverse && (
+        <window.BuildingUniverse record={building.record} handoff={building.handoff} />
+      )}
+    </React.Fragment>
   );
 }
 
