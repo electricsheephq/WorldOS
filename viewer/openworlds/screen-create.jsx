@@ -134,6 +134,11 @@ function ScreenCreate({ onNavigate, state, setState }) {
     };
     setSummonError("");
     setSummoning(true);
+    // Show the full-screen "building your universe" loading experience the instant Bind is
+    // pressed — it persists through the mint, the reload, and the cold-open, and hands off to the
+    // table when the first narration lands. kind:"forge" tunes the overlay's eyebrow to the
+    // hero-binding flow. (building-universe.jsx; App reads it via useBuildingUniverse.)
+    window.OpenWorldsBuilding?.begin?.({ world: "baldurs-gate", kind: "forge", title: spec.name });
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
     try {
       const reply = await window.OpenWorldsNative.request("startProviderSession", {
@@ -151,9 +156,13 @@ function ScreenCreate({ onNavigate, state, setState }) {
         window.location.assign(liveUrl);
         return;
       }
+      window.OpenWorldsBuilding?.clear?.();
       setSummoning(false);
       setSummonError("The hero was bound, but the live viewer address was missing.");
     } catch (error) {
+      // Bind failed before any reload — tear the loading overlay back down so the player isn't
+      // stranded on it, and surface the error here on the wizard.
+      window.OpenWorldsBuilding?.clear?.();
       setSummoning(false);
       setSummonError(error?.message || String(error));
       toast({

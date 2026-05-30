@@ -954,3 +954,213 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   font-family: var(--f-display) !important;
 }
 .tw-panel * { font-family: inherit; }
+
+/* =========================================================================
+   BUILDING YOUR UNIVERSE — full-screen loading experience (building-universe.jsx).
+   Covers BOTH play-start waits: the startProviderSession mint + the location.assign
+   reload (the sessionStorage flag survives it) AND the cold-open generation; hands off
+   to the live table the instant the first DM narration lands. On-brand parchment/brass,
+   animated (a forging brass seal + an HONEST indeterminate sweep — never a faked %), with
+   a live elapsed readout. Motion is stilled under reduced-motion / prefers-reduced-motion.
+   ========================================================================= */
+.building-universe {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;               /* above the window frame, the tweaks panel, toasts */
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  overflow: hidden;
+  color: var(--ink-800);
+  /* Warm parchment wash so the loading state IS the world's material, not a neutral spinner. */
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 38%, rgba(244, 210, 123, 0.18), transparent 70%),
+    radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, rgba(40, 25, 10, 0.55) 100%),
+    linear-gradient(180deg, var(--p-100) 0%, var(--p-300) 55%, var(--p-400) 100%);
+  animation: bu-fade-in 420ms ease both;
+}
+/* A faint inked frame so the overlay reads as a deliberate plate, not a raw fill. */
+.building-universe::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px var(--b-500),
+    inset 0 0 0 4px rgba(246, 236, 210, 0.5),
+    inset 0 0 0 5px var(--b-400);
+  opacity: 0.7;
+}
+
+.building-universe .bu-stage {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 92vw);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ---- the forging brass seal ---- */
+.building-universe .bu-seal {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 26px;
+}
+.building-universe .bu-candleglow {
+  position: absolute;
+  inset: -40px;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 210, 123, 0.5), transparent 62%);
+  mix-blend-mode: screen;
+  animation: flicker 4s ease-in-out infinite;
+}
+.building-universe .bu-seal svg { position: relative; z-index: 1; overflow: visible; }
+.building-universe .bu-ring { transform-origin: 60px 60px; }
+.building-universe .bu-ring-outer { animation: bu-spin 14s linear infinite; }
+.building-universe .bu-ring-inner { animation: bu-spin 9s linear infinite reverse; }
+.building-universe .bu-core { transform-origin: 60px 60px; animation: bu-breathe 3.2s ease-in-out infinite; }
+
+.building-universe .bu-eyebrow {
+  font-family: var(--f-display);
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--crimson);
+  margin-bottom: 12px;
+}
+.building-universe .bu-headline {
+  font-family: var(--f-display);
+  font-size: 30px;
+  line-height: 1.18;
+  letter-spacing: 0.02em;
+  color: var(--ink-900);
+  margin: 0 0 12px;
+  min-height: 1.18em;          /* hold height as the rotating line changes — no layout jump */
+  text-wrap: balance;
+}
+.building-universe .bu-subline {
+  font-family: var(--f-hand);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-700);
+  margin: 0 0 26px;
+  max-width: 46ch;
+  min-height: 2.6em;
+}
+
+/* ---- the HONEST indeterminate sweep (an etched channel; loops, never claims a %) ---- */
+.building-universe .bu-sweep {
+  position: relative;
+  width: min(380px, 80vw);
+  height: 6px;
+  background: rgba(120, 90, 50, 0.18);
+  box-shadow: inset 0 0 0 1px var(--b-500), inset 0 1px 2px rgba(80, 50, 20, 0.3);
+  overflow: hidden;
+}
+.building-universe .bu-sweep-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, var(--b-300), var(--gold-glow), var(--b-300), transparent);
+  animation: bu-sweep 1900ms ease-in-out infinite;
+}
+
+.building-universe .bu-meta {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.building-universe .bu-dots { display: inline-flex; gap: 5px; }
+.building-universe .bu-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--b-400);
+  animation: bu-dot 1200ms ease-in-out infinite;
+}
+.building-universe .bu-dots span:nth-child(2) { animation-delay: 200ms; }
+.building-universe .bu-dots span:nth-child(3) { animation-delay: 400ms; }
+.building-universe .bu-elapsed {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-600);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The brief "Your story begins…" flourish as the first beat lands and we hand off to the table. */
+.building-universe.is-handoff { animation: bu-fade-in 320ms ease both; }
+.building-universe.is-handoff .bu-headline { color: var(--crimson); }
+
+/* Visually-hidden but in the a11y tree — the once-announced role="status" reassurance. */
+.building-universe .visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes bu-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bu-spin { to { transform: rotate(360deg); } }
+@keyframes bu-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes bu-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+/* The sweep travels the channel and back-eases — clearly "ongoing work", not a measured fill. */
+@keyframes bu-sweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(370%); }
+}
+
+/* Narrow windows: scale the centerpiece down so it never overflows the frame. */
+@media (max-width: 720px) {
+  .building-universe .bu-headline { font-size: 24px; }
+  .building-universe .bu-seal { width: 100px; height: 100px; }
+}
+
+/* Reduced motion (Settings opt-in OR OS preference): kill the spin/sweep/flicker/breathe but
+   KEEP the elapsed clock + rotating text (they're information, not decoration — they still answer
+   "is it alive?"). The sweep-fill is parked centered at a steady glow so the channel isn't empty. */
+[data-reduced-motion="on"] .building-universe .bu-ring,
+[data-reduced-motion="on"] .building-universe .bu-core,
+[data-reduced-motion="on"] .building-universe .bu-candleglow,
+[data-reduced-motion="on"] .building-universe .bu-dots span,
+[data-reduced-motion="on"] .building-universe .bu-sweep-fill,
+[data-reduced-motion="on"] .building-universe.is-handoff,
+[data-reduced-motion="on"] .building-universe {
+  animation: none !important;
+}
+/* The travelling sweep is purely decorative; under reduced motion we hide it entirely (rather
+   than park a half-animated transform) and show a steady inked rule in its place — the proof-of-
+   life is carried by the elapsed clock + the rotating text, which remain. */
+[data-reduced-motion="on"] .building-universe .bu-sweep { background: rgba(120, 90, 50, 0.3); }
+[data-reduced-motion="on"] .building-universe .bu-sweep-fill { display: none !important; }
+[data-reduced-motion="on"] .building-universe .bu-dots span { opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) {
+  .building-universe .bu-ring,
+  .building-universe .bu-core,
+  .building-universe .bu-candleglow,
+  .building-universe .bu-dots span,
+  .building-universe { animation: none !important; }
+  .building-universe .bu-sweep { background: rgba(120, 90, 50, 0.3); }
+  .building-universe .bu-sweep-fill { display: none !important; }
+  .building-universe .bu-dots span { opacity: 0.7; }
+}
+
+/* High-contrast: drop the decorative washes, strengthen text + the seal/sweep edges. */
+[data-contrast="high"] .building-universe {
+  background: var(--p-100);
+}
+[data-contrast="high"] .building-universe::before { box-shadow: inset 0 0 0 2px var(--ink-800); }
+[data-contrast="high"] .building-universe .bu-candleglow { display: none; }
+[data-contrast="high"] .building-universe .bu-sweep { box-shadow: inset 0 0 0 2px var(--ink-800); }
