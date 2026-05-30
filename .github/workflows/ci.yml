@@ -20,6 +20,42 @@ jobs:
       - name: Voice tests (torch-free; null backend + static metadata)
         run: uv run --directory servers/voice --group dev pytest -q
 
+  viewer-tests:
+    # The viewer is where most recent regressions landed, but its suite was not in
+    # CI (three viewer PRs each had to caveat "verified locally"). This job runs the
+    # whole viewer/tests/ suite, single-process, on push + PR so viewer regressions
+    # are caught in CI like the engine/rules/voice suites.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Node (for the JSX behaviour harness)
+        # A subset of viewer tests transpile the real .jsx through the VENDORED
+        # babel-standalone (viewer/openworlds/vendor/) and run it under node's `vm`.
+        # Babel is vendored and the harness only requires node built-ins (fs, vm), so
+        # NO `npm install` is needed — just a node binary on PATH. Without node these
+        # tests `skipIf` themselves; we install it so they actually RUN in CI.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Create + activate a venv with the viewer test deps
+        # Most viewer tests import viewer/server.py (stdlib-only at import time) and need
+        # no third-party deps. The exception is test_portrait_gen's real-subprocess test,
+        # which shells the engine via `uv run --directory servers/engine --no-project`
+        # (a bare interpreter) to prove the null image provider opens no socket. That
+        # child resolves the ACTIVE venv, so installing pydantic (the engine's runtime
+        # dep, declared in servers/engine/pyproject.toml) here lets the engine subprocess
+        # import `store`/`imagegen` and the test runs instead of erroring on import.
+        run: |
+          uv venv .venv-viewer --python 3.12
+          echo "VIRTUAL_ENV=$PWD/.venv-viewer" >> "$GITHUB_ENV"
+          echo "$PWD/.venv-viewer/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv-viewer pydantic pytest
+      - name: Viewer tests (single-process; JSX harness via node + vendored babel)
+        # -p no:xdist keeps this single-process (no parallel workers) — lean by design.
+        run: python -m pytest viewer/tests -q -p no:xdist
+
   license-check:
     runs-on: ubuntu-latest
     steps:
