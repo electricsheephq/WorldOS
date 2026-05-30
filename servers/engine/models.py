@@ -858,7 +858,14 @@ class WorldGraphEdge(_StrictModel):
 
     from_id: str
     to_id: str
-    route_kind: Literal["street", "road", "trail", "sea", "river", "passage", "portal"] = "road"
+    # Loop-10 #381: added "ferry" (was already a dead branch in screen-map.jsx
+    # edgeStyle), "bridge" (Wyrm's Crossing — the BG canon load-bearing crossing
+    # over the Chionthar), "underground" (Underdark passages — coming with #380
+    # when the Underdark / Bhaal Temple POIs land).
+    route_kind: Literal[
+        "street", "road", "trail", "sea", "river", "passage", "portal",
+        "ferry", "bridge", "underground",
+    ] = "road"
     minutes: Optional[int] = Field(None, ge=1)
     distance: Optional[float] = Field(None, ge=0)
     difficulty: Literal["easy", "normal", "hard", "hazardous"] = "normal"
