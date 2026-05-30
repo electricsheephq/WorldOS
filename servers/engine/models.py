@@ -818,6 +818,14 @@ class Location(_StrictModel):
     connections: list[str] = Field(default_factory=list)  # location ids
     notes: str = ""
     visited: bool = False
+    # Whether this place is KNOWN on the map (atlas/nav-graph visibility) — ADDITIVE.
+    # The viewer shows a location when it is visited OR discovered; an explicitly
+    # undiscovered, unvisited place is fog-of-war. Default False is additive at the
+    # engine layer (nothing in the engine reads this flag; it only enriches the
+    # snapshot the viewer projects). seed_world flips the world's known day-1 places
+    # (authored regions + ingested areas) to True so the atlas renders the shipped
+    # nav graph from day one — see content.seed_world.
+    discovered: bool = False
     # Optional axial-hex (q, r) coords — PRESENTATION ONLY (the viewer renders them).
     # The engine's adjacency/travel is governed solely by `connections`; coords are
     # never used for movement or distance.

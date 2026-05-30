@@ -1649,3 +1649,86 @@ def test_start_character_lia_battlemaster_template_no_spells(tmp_path, monkeypat
     assert not sheet.get("spell_slots"), "Fighter must have no spell_slots"
     assert not sheet.get("spells_known"), "lia-battlemaster must have no spells_known"
     assert not sheet.get("spells_prepared"), "lia-battlemaster must have no spells_prepared"
+
+
+# --- atlas day-1 discovery seeding (issue #261) --------------------------------------
+
+
+def _atlas_is_visible(loc) -> bool:
+    """Mirror of the viewer's known-location predicate (viewer/server.py
+    _atlas_visible_location_ids): a place shows on the atlas when it is visited OR
+    discovered; it is hidden only when explicitly undiscovered-and-unvisited (or
+    flagged hidden). Inlined here so the engine test locks the day-1 contract
+    without importing the viewer."""
+    if getattr(loc, "hidden", False):
+        return False
+    if loc.visited:
+        return True
+    return loc.discovered is True or loc.discovered is None
+
+
+def test_seed_world_marks_known_regions_discovered_day_one():
+    # Issue #261: a fresh baldurs-gate seed must mark the world's shipped nav graph as
+    # discovered so the atlas renders the known regions on day 1 (not just the single
+    # start location). The BG world ships 7 authored regions and declares none as
+    # discovered, so every one should come back discovered=True.
+    w = content.load_world_data("baldurs-gate")
+    region_ids = {str(r["id"]) for r in w["regions"]}
+    assert len(region_ids) == 7  # guards the fixture: 7 known regions ship day-1
+
+    c = content.seed_world(w)
+
+    # every authored region the world ships is KNOWN day-1
+    seeded_regions = {lid: loc for lid, loc in c.locations.items() if lid in region_ids}
+    assert seeded_regions.keys() == region_ids
+    assert all(loc.discovered is True for loc in seeded_regions.values()), (
+        "fresh seed_world must mark all known BG regions discovered (day-1 atlas)"
+    )
+
+    # the start is additionally VISITED (today's behavior, unchanged) — and is one of
+    # the now-discovered known regions, not the only visible place.
+    start = c.locations[c.current_location_id]
+    assert start.visited is True
+    assert start.discovered is True
+    assert sum(1 for loc in c.locations.values() if loc.visited) == 1
+
+    # every seeded location (regions + any ingested areas) is atlas-visible day-1, so the
+    # known nav graph shows immediately rather than collapsing to ~1 location.
+    assert all(_atlas_is_visible(loc) for loc in c.locations.values())
+    assert sum(1 for loc in c.locations.values() if _atlas_is_visible(loc)) >= 7
+
+
+def test_location_discovered_defaults_false_and_is_additive():
+    # The new field is ADDITIVE: it defaults False (an unseeded/legacy Location is
+    # exactly as before), and nothing forces it true outside seed_world's known graph.
+    from models import Location
+
+    bare = Location(name="Nowhere")
+    assert bare.discovered is False
+    # round-trips through the snapshot serialization the viewer reads
+    assert json.loads(bare.model_dump_json())["discovered"] is False
+
+
+def test_seed_world_honors_explicit_region_discovered_opt_out():
+    # A world MAY hide a region day-1 (fog-of-war) by declaring discovered=False; the
+    # engine must honor that rather than force every region visible. The other region,
+    # which omits the flag, still defaults to discovered=True (the #261 day-1 behavior).
+    world = {
+        "id": "fog-test",
+        "name": "Fog Test",
+        "premise": "discovery opt-out fixture",
+        "era": "now",
+        "regions": [
+            {"id": "loc-known", "name": "Known", "description": "open", "connections": []},
+            {"id": "loc-fog", "name": "Hidden Vale", "description": "secret", "connections": [], "discovered": False},
+        ],
+        "starting_options": [{"location_id": "loc-known", "framing": "Start in the open."}],
+    }
+
+    c = content.seed_world(world)
+
+    assert c.locations["loc-known"].discovered is True
+    assert c.locations["loc-fog"].discovered is False
+    # the opted-out, unvisited region is fog-of-war in the atlas; the known one shows
+    assert _atlas_is_visible(c.locations["loc-known"]) is True
+    assert _atlas_is_visible(c.locations["loc-fog"]) is False
