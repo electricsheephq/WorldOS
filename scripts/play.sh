@@ -271,6 +271,9 @@ Begin a SOLO session in a living world for a single human player who will act th
 
 Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
 fi
+# #357: same empty-reply fallback as the beat loop — recover the engine's logged opening
+# narration if the DM's first turn ended on a tool call rather than prose.
+DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 chatlog dm "$DMSG"; DM_TURNS=1
 
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn
@@ -313,9 +316,13 @@ while true; do
 
 $PMSG
 
-Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. If a move is tagged [set_seed_param] param=value, that is a World-Seed dial the player changed from the Seed screen — apply it with the engine's set_seed_param(campaign_id, param, value[, force=True]) tool (it returns applied/warning), then briefly acknowledge it in-world rather than treating it as an in-scene action.
+Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it. If a move is tagged [set_seed_param] param=value, that is a World-Seed dial the player changed from the Seed screen — apply it with the engine's set_seed_param(campaign_id, param, value[, force=True]) tool (it returns applied/warning), then briefly acknowledge it in-world rather than treating it as an in-scene action.
 
 $RUNBOOK")"
+    # #357: if the DM turn ended on a tool call / 3rd-person status line, its final reply text is
+    # empty — fall back to the player-facing narration the engine logged this beat so the chat is
+    # never blank on a resolved move (engine stays the sole writer; this only READS its log).
+    DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
     chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))
     # C — soft clock-tick backstop: advance one phase via the engine only if the DM left the
     # clock frozen this beat (engine stays the sole writer; defers to the DM's in-fiction pacing).

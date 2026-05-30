@@ -51,6 +51,12 @@ if [ -f "$COMMON" ]; then
   # shellcheck source=launch_common.sh
   . "$COMMON"
 fi
+# Shared beat-driver helpers (the SAME ones play.sh + the QA duo source) — for the #357
+# empty-narration fallback (clawdnd_dm_narration_or_fallback). The solo path execs play.sh
+# (which sources this itself) before reaching the ensemble code below, so this only engages
+# the ensemble loop; pure function defs, safe to source unconditionally.
+# shellcheck source=../qa/lib_beat_driver.sh
+. "$ROOT/qa/lib_beat_driver.sh"
 if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
   clawdnd_missing_commands python3 claude uv jq curl || exit 127
 fi
@@ -338,6 +344,9 @@ Begin a session in a living world for a single human player (who acts through th
 - Open a human-scale, personal scene grounded in the world's canon, with real quoted dialogue, that includes the human's PC AND their companions, and hand the player an open moment + a clear, real choice.
 
 Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — from the HUMAN (their PC) and from each companion (banner-tagged with the companion's name). Resolve EACH actor's moves through the engine.")"
+# #357: recover the engine's logged opening narration if the DM's first turn ended on a tool
+# call rather than prose — BEFORE the abort check, so a tool-final-but-narrated opener stands.
+DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 [ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 chatlog dm "$DMSG"; AGENT_TURNS=1
 echo "[play-party] DM opened: ${DMSG:0:120}…"
@@ -377,6 +386,8 @@ if [ -n "$INTRO_BLOCK" ]; then
 $INTRO_BLOCK
 
 Narrate the RESULT of each declared move (never invent a companion's internal choice), then weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
+  # #357: recover engine-logged narration if this DM turn ended on a tool call.
+  DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
   [ -n "$DMSG" ] && { chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
 fi
 
@@ -438,7 +449,10 @@ $PARTY_BLOCK
 
 For EACH companion this beat, call check_companion_arc(companion_id) — the engine tracks each companion's relationship arc + any SEALED agenda. If it reports a newly-unlocked gate or a FIRED agenda, DRAMATIZE it now: a fired betrayal agenda becomes a REAL attack on the party (resolve it through combat, do not soften it into narration); an unlocked gate becomes a real scene beat. Do not invent a turn the engine hasn't fired, and do not suppress one it has.
 
-Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
+Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.' ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it.")"
+    # #357: if the DM turn ended on a tool call / 3rd-person status line, recover the
+    # player-facing narration the engine logged this beat so the chat is never blank.
+    DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
     chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
   else
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
