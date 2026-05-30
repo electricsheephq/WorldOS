@@ -212,7 +212,11 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   position: relative;
   z-index: 5;
   display: grid;
-  grid-template-columns: 130px 1fr 130px;
+  /* #306: two real children only (.title-text + .title-end — the traffic lights are drawn by the
+     native RootView, not DOM). The old empty 130px left spacer is gone; the title spans the left
+     and clears the rail via its own paddingLeft, and a fixed 240px band on the right holds the day +
+     capability pills so they never collide with a long title. */
+  grid-template-columns: 1fr 240px;
   align-items: center;
   height: 38px;
   padding: 0 16px;
@@ -246,6 +250,13 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   text-transform: uppercase;
   color: var(--b-200);
   text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+  /* #306: a long campaign name used to wrap to 3 lines and run under the nav-rail / over the day
+     pill. Keep it on ONE line, ellipsize the overflow, and cap its width so the 240px right band is
+     always free. (paddingLeft, which clears the rail / native traffic lights, stays inline.) */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 240px);
 }
 .title-text em {
   font-style: normal;
@@ -256,11 +267,14 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
 .title-end {
   display: flex; justify-content: flex-end; gap: 12px;
   font-family: var(--f-display);
-  font-size: 10px;
+  /* #306: the day pill ("DAY 1 · MORNING") read far too small next to the campaign title — bump the
+     base size and reserve a real right band so it never gets squeezed under the title. */
+  font-size: 13px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--b-300);
   align-items: center;
+  min-width: 240px;
 }
 
 .capability-badge {

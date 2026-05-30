@@ -102,6 +102,19 @@ const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard b
 function recoveryWindowMs(firstBeat) {
   return firstBeat ? PENDING_RECOVERY_FIRST_MS : PENDING_RECOVERY_MS;
 }
+
+// #274: a monotonic, client-side sequence stamped on every chronicle entry created here (player
+// echoes + each ingested chat beat) as `.at`. The session log in screen-table.jsx concatenates
+// three sources (recentEvents → chatBeats → log); because the player's optimistic echo (`log`) and
+// the DM's narration (`chatBeats`) live in SEPARATE arrays, a plain concat put a just-typed action
+// ABOVE the older DM prose it was responding to. A shared ever-increasing counter records true
+// creation order across BOTH arrays, so a stable sort by `.at` interleaves them correctly. It is a
+// counter, not a wall-clock — two entries can never tie, and it survives across runs harmlessly
+// (it only needs to be monotonic, not absolute). recentEvents (server history, no `.at`) stay the
+// oldest band; that ordering is handled where visibleLog is assembled.
+let __logSeq = 0;
+function nextLogSeq() { __logSeq += 1; return __logSeq; }
+
 function useLiveSession(state) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -151,7 +164,7 @@ function useLiveSession(state) {
   }, [clearTimers]);
 
   const recordPlayerEcho = React.useCallback((who, text) => {
-    setLog((l) => [...l, { kind: "action", who, text }]);
+    setLog((l) => [...l, { kind: "action", who, text, at: nextLogSeq() }]);  // #274: creation-order stamp
   }, []);
 
   React.useEffect(() => clearTimers, [clearTimers]);
@@ -186,9 +199,11 @@ function useLiveSession(state) {
         if (!cancelled && items.length) {
           const beats = items
             .map((it) => {
-              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text };
+              // #274: stamp each beat with the shared monotonic counter at ingest time so it
+              // time-merges correctly against local player echoes (which share the same counter).
+              if (it.role === "player") return { kind: "dialog", who: "You", text: it.text, at: nextLogSeq() };
               const clean = sanitize(it.text);
-              return clean ? { kind: "narration", text: clean } : null;
+              return clean ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
             })
             .filter(Boolean);
           if (beats.length) setChatBeats((prev) => [...prev, ...beats]);

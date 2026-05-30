@@ -430,18 +430,23 @@ function CapabilityBadge({ capability, nativeStatus }) {
 function TitleBar({ campaign, location, day, capability, nativeStatus }) {
   return (
     <div className="title-bar">
-      {/* Platform-aware (#260): the macOS native window floats the REAL traffic lights
-          (RootView.swift) at top-left over this transparent bar, so reserve 76px to clear them —
-          but ONLY in the native app (nativeStatus.bridge true). A plain browser has no traffic
-          lights, so the padding is 0 there and the title text is no longer shoved off its mark /
-          over the nav rail. The Loop-4 ask was this fork; it had been hardcoded to 76. */}
-      <div className="title-text" style={{ paddingLeft: nativeStatus?.bridge ? 76 : 0 }}>
+      {/* Platform-aware (#260, finished in #306): the macOS native window floats the REAL traffic
+          lights (RootView.swift) at top-left over this transparent bar, so reserve 76px to clear
+          them in the native app (nativeStatus.bridge true). #306: the browser branch was 0, which
+          let a long campaign title's left edge run UNDER the 78px nav-rail below it (the rail starts
+          at x=0 in the column beneath this bar) — so reserve ~78px there too. paddingLeft stays
+          inline because it's the only nativeStatus-conditional bit; the nowrap + ellipsis + maxWidth
+          clamp that keeps a long title on ONE line (clear of the day/capability pills) lives in
+          styles.css (.title-text). */}
+      <div className="title-text" style={{ paddingLeft: nativeStatus?.bridge ? 76 : 78 }}>
         <span>Open Worlds</span><em>·</em><span>{campaign || "Open Worlds"}</span>
         {location && (<><em>·</em><span>{location}</span></>)}
       </div>
+      {/* #306: the right band (minWidth + larger font) now lives in styles.css (.title-end); the day
+          pill keeps a slightly larger size so "DAY 1 · MORNING" reads against the campaign title. */}
       <div className="title-end">
         <CapabilityBadge capability={capability} nativeStatus={nativeStatus} />
-        {day && <span>{day}</span>}
+        {day && <span style={{ fontSize: 13, letterSpacing: "0.06em" }}>{day}</span>}
       </div>
     </div>
   );

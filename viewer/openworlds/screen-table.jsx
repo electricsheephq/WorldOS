@@ -219,7 +219,16 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
   const readOnlyReason = blockedActions.find((a) => a.disabled_reason)?.disabled_reason || "read-only surface";
-  const visibleLog = surface ? [...recentEvents, ...chatBeats, ...log] : [...demoLog, ...log];
+  // #274: the chronicle merges three sources — recentEvents (engine history), chatBeats (the live
+  // DM/player tail) and log (local optimistic player echoes). A plain concat let a just-typed action
+  // (in `log`) sort ABOVE the older DM prose it answered (in `chatBeats`), because the two live in
+  // separate arrays appended at different times. chatBeats + log carry a shared monotonic `.at`
+  // (stamped client-side in app.jsx at creation/ingest), so a STABLE sort by `.at` restores true
+  // chronological order across both. recentEvents have no `.at` (server history with no client
+  // sequence) and are always the oldest, so they keep their leading position and relative order.
+  // Array.prototype.sort is stable (ES2019+); ties are impossible anyway since the counter is unique.
+  const mergedTail = [...chatBeats, ...log].sort((a, b) => (a?.at || 0) - (b?.at || 0));
+  const visibleLog = surface ? [...recentEvents, ...mergedTail] : [...demoLog, ...log];
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
 
@@ -435,7 +444,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
 
       {/* LEFT — Party roster */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-        <Panel framed style={{ padding: 18, flex: "0 0 auto" }}>
+        <Panel framed style={{ padding: "14px 18px", flex: "0 0 auto" }}>{/* #320: tighter panel padding */}
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>{encounter.active ? encounter.summary : "Session"}</div>
           <SectionTitle>The Party</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -450,7 +459,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           </div>
         </Panel>
 
-        <Panel framed style={{ padding: 18, flex: "1 1 auto", minHeight: 0, overflow: "auto" }}>
+        <Panel framed style={{ padding: "14px 18px", flex: "1 1 auto", minHeight: 0, overflow: "auto" }}>{/* #320: tighter panel padding */}
           <SectionTitle>Conditions</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {conditions.length ? conditions.map((c) => (
@@ -504,8 +513,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         </div>
 
         {/* Log */}
-        <Panel framed style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", minHeight: 0, padding: 22 }}>
-          <SectionTitle ordinal="·">The Tabletop Chronicle</SectionTitle>
+        <Panel framed style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", minHeight: 0, padding: "14px 18px" }}>{/* #320: tighter panel padding */}
+          {/* #320: trimmed "The Tabletop Chronicle" → "Chronicle" and dropped the "·" lead dot
+              (read as visual noise on a busy screen). */}
+          <SectionTitle>Chronicle</SectionTitle>
           <div ref={logRef} tabIndex={0} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
@@ -552,7 +563,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       {/* RIGHT — Quests + Quick stash + GM tools */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
         {advisory && Array.isArray(advisory.debts) && advisory.debts.length > 0 && (
-          <Panel framed style={{ padding: 18 }}>
+          <Panel framed style={{ padding: "14px 18px" }}>{/* #320: tighter panel padding */}
             <SectionTitle right={advisory.total_debts ? <Pill tone="crimson">{advisory.total_debts}</Pill> : null}>GM Advisory</SectionTitle>
             <div className="body-sm muted" style={{ marginBottom: 8 }}>What the campaign owes the story.</div>
             <div style={{
@@ -574,8 +585,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           </Panel>
         )}
 
-        <Panel framed style={{ padding: 18 }}>
-          <SectionTitle>Active Quests</SectionTitle>
+        <Panel framed style={{ padding: "14px 18px" }}>{/* #320: tighter panel padding */}
+          <SectionTitle>Quests</SectionTitle>{/* #320: "Active Quests" → "Quests" */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {visibleQuests.map((q) => (
               <button key={q.id} onClick={() => onNavigate("journal")} style={{
@@ -598,7 +609,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           </div>
         </Panel>
 
-        <Panel framed style={{ padding: 18 }}>
+        <Panel framed style={{ padding: "14px 18px" }}>{/* #320: tighter panel padding */}
           <SectionTitle right={<button className="btn ghost sm" onClick={() => onNavigate("inventory")}>Open</button>}>Quick Stash</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
             {stash.slice(0, 8).map((it) => (
@@ -611,7 +622,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           </div>
         </Panel>
 
-        <Panel framed style={{ padding: 18, flex: 1, minHeight: 0, overflow: "auto" }}>
+        <Panel framed style={{ padding: "14px 18px", flex: 1, minHeight: 0, overflow: "auto" }}>{/* #320: tighter panel padding */}
           <SectionTitle>Encounter</SectionTitle>
           <div className="body-sm muted" style={{ marginBottom: 10 }}>
             {encounter.summary || scene.summary || "Choose what to risk."}
