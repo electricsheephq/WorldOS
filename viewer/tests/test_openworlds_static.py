@@ -211,6 +211,69 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # The action bar is explicitly anchored (never pushed out by a growing chronicle).
         self.assertIn('flex: "0 0 auto"', source)
 
+    def test_openworlds_table_promotes_action_palette_into_main_column(self):
+        # #G3: the action palette must be PROMINENT in the main play flow, not buried in the
+        # 320px right rail. It is rendered in the CENTER column (LEFT — Party / CENTER — Scene
+        # + log / RIGHT — Quests), co-located with the free-text Declare box, so a first-time
+        # viewer (or a blind AI playtester) sees clickable actions without hunting in a side rail.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        # The three layout-region markers are present and ordered LEFT → CENTER → RIGHT.
+        left = source.index("LEFT — Party")
+        center = source.index("CENTER — Scene")
+        right = source.index("RIGHT — Quests")
+        self.assertLess(left, center)
+        self.assertLess(center, right)
+        # An EncounterButton palette renders inside the CENTER column (between the CENTER and
+        # RIGHT markers) — i.e. the palette is in the main column, not only the right rail.
+        first_button = source.index("<EncounterButton")
+        self.assertGreater(first_button, center)
+        self.assertLess(first_button, right)
+        # The palette sits with the Declare box (the primary input) in the main action flow.
+        self.assertIn(">Actions<", source)
+        self.assertIn("DECLARE: free-text action box", source)
+        self.assertLess(source.index(">Actions<"), source.index("DECLARE: free-text action box"))
+
+    def test_openworlds_table_renders_all_actions_without_truncation(self):
+        # #G3: the palette must not silently cap the action list. The read model emits up to 8
+        # verbs (exploration: say/do/check/continue/cast/use + combat: attack/bonus/reaction);
+        # the old right-rail `actions.slice(0, 6)` dropped bonus-action + reaction. The palette
+        # now splits by group and renders ALL of each group — no slice cap remains.
+        status, _ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        # No surviving slice that truncates the action list below the full set.
+        self.assertNotRegex(source, r"actions\.slice\(\s*0\s*,\s*[0-7]\s*\)")
+        # Exploration verbs render always; combat verbs are grouped behind the in-combat gate.
+        self.assertIn("explorationActions", source)
+        self.assertIn("combatActions", source)
+        self.assertIn("actionsInCombat", source)
+        self.assertIn("explorationActions.map", source)
+        self.assertIn("combatActions.map", source)
+        # The grouping keys off the engine-mutated combat gauge (encounter.active / a combat verb
+        # being available), never off fiction — keeping the gates/triggers invariant.
+        self.assertIn("surface?.encounter?.active", source)
+        # The click path is unchanged: the palette still wires through invokeAction.
+        self.assertIn("onClick={() => invokeAction(a)}", source)
+
+    def test_openworlds_table_chronicle_preserves_paragraph_breaks(self):
+        # #G4: a multi-paragraph DM beat must render as separated paragraphs, not one run-on
+        # block. The narration branch renders sanitized {text} in a `div.body`; with the default
+        # white-space the embedded blank-line paragraph breaks the DM emits collapse. The render
+        # honors them via whiteSpace:"pre-line" (and sanitizeNarration is still applied first).
+        status, _ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        # The narration div opts into preserving newlines…
+        self.assertRegex(source, r'whiteSpace:\s*"pre-line"')
+        # …and the GM-advisory strip is still in the narration path (not removed by this change).
+        self.assertIn("sanitizeNarration(entry.text)", source)
+
     def test_openworlds_app_bounds_the_live_session_tail(self):
         # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long
         # session doesn't accumulate state without limit (the upstream half of the DOM-growth fix).
