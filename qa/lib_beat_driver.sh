@@ -56,6 +56,43 @@ clawdnd_snapshot_path() {
     -exec ls -S {} + 2>/dev/null | head -1
 }
 
+# EMPTY-NARRATION FALLBACK (issue #357). The play/QA loops record the DM turn's FINAL reply
+# text to the chat panel (chatlog dm "$DMSG"). But a DM turn can end on a tool call (e.g. its
+# last act was log_event/roll) or a bare 3rd-person status line, leaving that final `result`
+# text EMPTY — so the player-facing chat shows nothing even though the engine work happened and
+# the DM logged real 2nd-person prose via log_event(kind="narration"/"dialogue"). That prose
+# lands in the engine's per-session log (campaigns/<id>/sessions/<sid>.jsonl) and renders in the
+# viewer's `recentEvents`, but never reaches the chat. This recovers it: given the (possibly
+# empty) reply text + the run's STATE_DIR, echo the reply unchanged when it has prose, else fall
+# back to the most recent player-facing narration the engine logged THIS turn — so every resolved
+# beat shows non-empty 2nd-person prose. Read-only on engine state (the engine stays the sole
+# writer); a missing snapshot / session log / narration just yields the original text (no
+# regression — today's behavior). Mirrors the viewer's session-log resolution
+# (viewer/server.py:_session_event_tail_from_dir): active_session_id, else the last session id.
+# $1 = the DM turn's reply text (may be empty)  $2 = STATE_DIR ; echoes the text to chatlog.
+clawdnd_dm_narration_or_fallback() {
+  local reply="$1" state_dir="$2" snap
+  # Non-empty (after trimming whitespace) → the DM ended on prose; use it verbatim.
+  if [ -n "${reply//[[:space:]]/}" ]; then
+    printf '%s' "$reply"
+    return 0
+  fi
+  snap="$(clawdnd_snapshot_path "$state_dir")"
+  [ -n "$snap" ] || { printf '%s' "$reply"; return 0; }
+  # Read the tail of the active session log and stitch the most recent contiguous run of
+  # player-facing entries (narration | dialogue) into the prose for this missing beat (see
+  # qa/dm_narration_fallback.py). It is a standalone script (NOT a heredoc-in-command-sub: the
+  # macOS system bash 3.2 mis-parses a quoted heredoc nested in $(...), which is why every other
+  # such call here is one too). Bounded; skips roll/system/combat rows. Empty when no such prose.
+  local recovered fb_py="${CLAWDND_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")}/dm_narration_fallback.py"
+  recovered="$(python3 "$fb_py" "$snap" 2>/dev/null)"
+  if [ -n "${recovered//[[:space:]]/}" ]; then
+    printf '%s' "$recovered"
+  else
+    printf '%s' "$reply"   # nothing to recover → unchanged (no regression)
+  fi
+}
+
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
 # TAB-separated line:  day <TAB> time_of_day <TAB> visited_count <TAB> npcs_met <TAB>
 # current_location_id <TAB> current_location_visited(0/1) <TAB> combat_active(0/1)
