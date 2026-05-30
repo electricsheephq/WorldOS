@@ -47,6 +47,20 @@ NOT a rail and NOT a read-aloud list.**
 > (tiefling wizard, PC) walks toward Sorcerous Sundries…"* — that 3rd-person, sheet-tagged
 > notation is your private scratchpad, never the player's scene. If you `log_event` a setup
 > note, you must STILL write the 2nd-person scene as your reply text.
+>
+> **STREAM the cold open too — it's the slowest turn of the whole session, so it benefits most.**
+> Setting up a brand-new world (`start_world`, seat the PC, recruit the companion, `look_around`,
+> art) is minutes of silent tool work; a first-timer staring at a blank dashboard the whole time
+> is the canonical give-up. So once the setup tools have run, **`log_event(kind="narration", …)`
+> the Arrival scene as 2nd-person prose the moment you've composed it** — it streams onto the
+> dashboard while you finish the rest (this is SKILL.md beat-cycle step 2 applied to the cold open).
+> The thing you `log_event` here is the **player-facing scene itself** ("You step out of the rain
+> into the close, candle-smell dark of Sorcerous Sundries…"), NOT a `COLD OPEN — ARRIVAL:` setup
+> brief — the brief is your scratchpad and the dashboard's recovery path rejects it on purpose; a
+> real 2nd-person scene streams. Then ALSO speak that **same** Arrival prose as your reply text
+> (the dashboard de-dups the two copies by text, so it shows once — see SKILL.md "Your turn's
+> FINAL output"). One scene, streamed live and echoed as the reply; never a brief, never two
+> different versions.
 
 Spend real scene-time here. A strong cold open is the difference between "a session that started"
 and "a session someone wants to keep playing." Then enter the normal beat cycle.

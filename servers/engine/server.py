@@ -8419,6 +8419,11 @@ def persist_beat(
       - ``events``   — list of beat log entries, each a dict
                        ``{"kind","text","speaker"?,"payload"?}`` (kind:
                        narration|dialogue|roll|system|combat). Same as log_event.
+                       NOTE: player-facing narration/dialogue should be STREAMED
+                       live via log_event DURING the turn (the viewer tails the
+                       session log mid-beat), NOT batched here — passing prose you
+                       already streamed re-logs it twice. Leave events empty unless
+                       you have a record row you did NOT already log live.
       - ``memories`` — list of facts to append, each
                        ``{"character_id","fact"}``. Same as remember (de-duped per
                        character). Target the COMPANION's id after a character beat
