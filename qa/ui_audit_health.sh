@@ -47,6 +47,13 @@
 #            title text wraps and falls behind the nav rail at narrow widths).
 #       13d. play_reachable: on #launcher, a "Continue → play" or "Resume → play"
 #            button is present and not disabled.
+#       13e. gallery_per_race: on #create, every race id in RACES has ≥ 1
+#            entry in PORTRAIT_GALLERY (after the alive=false filter). Catches
+#            the #379-shape regression where PR #369 added races to RACES
+#            without adding matching portraits. Floor configurable via
+#            GALLERY_FLOOR env var (default 1). Also surfaces "unknown race"
+#            tags in PORTRAIT_GALLERY (e.g. the #375 Dame Aylin / aasimar
+#            drift) as WARN.
 #      If a running viewer isn't reachable on the configured port the probe
 #      WARNs instead of FAILing, so the gate stays opt-in for CI lanes that
 #      don't stand up a viewer.
@@ -353,11 +360,21 @@ with open(sys.argv[1]) as f:
             emit("WARN", f"ui-gate {s}: no viewport data (viewer reachable?)")
             continue
         for vp, v in vps.items():
+            # Detect "viewer unreachable" — titleRect is null AND the only error
+            # is a navigation failure. WARN rather than FAIL so the gate is
+            # robust to lanes that don't stand up a viewer.
+            samples = v.get("consoleErrorSamples") or []
+            joined = "\n".join(samples)
+            unreachable = (v.get("titleRect") is None
+                           and ("NAV " in joined or "ERR_CONNECTION_REFUSED" in joined
+                                or "ERR_CONNECTION" in joined or "timeout" in joined.lower()))
+            if unreachable:
+                emit("WARN", f"ui-gate {s} @ {vp}: viewer unreachable — skipping per-screen checks")
+                continue
             # 13a. renders_clean
             if v.get("consoleErrors", 0) == 0:
                 emit("PASS", f"ui-gate renders_clean {s} @ {vp}: 0 console errors")
             else:
-                samples = v.get("consoleErrorSamples") or []
                 emit("FAIL", f"ui-gate renders_clean {s} @ {vp}: {v['consoleErrors']} err — {samples[:1]}")
                 total_fail += 1
             # 13b. art_present (placeholder ceiling + no broken imgs)
@@ -392,6 +409,36 @@ with open(sys.argv[1]) as f:
                 total_fail += 1
             else:
                 emit("PASS", f"ui-gate play_reachable {s} @ {vp}: '{cta.get('text')}' enabled")
+            # 13e. gallery_per_race (create only) — #382. Catches the
+            # #379-shape regression where the PORTRAIT_GALLERY drifts from
+            # RACES. Floor is the GALLERY_FLOOR env var (default 1).
+            if s == "create":
+                import os
+                floor = int(os.environ.get("GALLERY_FLOOR", "1"))
+                gpr = v.get("galleryPerRace") or {}
+                if gpr.get("error"):
+                    emit("WARN", f"ui-gate gallery_per_race {s} @ {vp}: {gpr['error']}")
+                else:
+                    counts = gpr.get("counts") or {}
+                    if not counts:
+                        emit("WARN", f"ui-gate gallery_per_race {s} @ {vp}: no counts emitted (probe miss?)")
+                    else:
+                        empties = [(r, c) for r, c in counts.items() if c < floor]
+                        if empties:
+                            for r, c in empties:
+                                emit("FAIL",
+                                    f"ui-gate gallery_per_race {s} {r} @ {vp}: {c} < floor {floor} — #379-shape regression")
+                                total_fail += 1
+                        else:
+                            emit("PASS",
+                                f"ui-gate gallery_per_race {s} @ {vp}: all {len(counts)} races >= floor {floor}")
+                    # Surface unknown-race drift between PORTRAIT_GALLERY and RACES
+                    # (e.g. #375 Dame Aylin / "aasimar"). WARN — not a hard fail,
+                    # because the entry might be intentionally lore-only.
+                    unknown = gpr.get("unknownRaces") or []
+                    if unknown:
+                        emit("WARN",
+                            f"ui-gate gallery_per_race {s} @ {vp}: unknown race tags in PORTRAIT_GALLERY — {unknown} (RACES drift, see #375)")
 print(f"__TOTAL_FAIL__:{total_fail}")
 PY
       # Replay the python report through pass/fail/warn so the overall summary

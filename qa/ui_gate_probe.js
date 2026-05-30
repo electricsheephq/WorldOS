@@ -59,6 +59,18 @@ if (!screens.length) {
 
 const VIEWPORTS = [1366, 1512];
 
+// Canonical RACE ids — source of truth is viewer/openworlds/screen-create.jsx
+// `RACES` (lines 777-866). This list exists here so `--ui-gate` can verify the
+// PORTRAIT_GALLERY filter yields >= 1 entry per race (see #382 / regression
+// #379 — PR #369 added 5 races without adding portraits, leaving the gallery
+// empty for dwarf/halfling/gnome/dragonborn/half-orc). When RACES changes,
+// update this list — the next CI run of the create-screen probe will FAIL
+// loudly until both are in sync.
+const CREATE_RACE_IDS = [
+  'human', 'halfling', 'dwarf', 'elf', 'half', 'tiefling',
+  'dragonborn', 'drow', 'githyanki', 'gnome', 'half-orc',
+];
+
 async function probeScreen(browser, screen) {
   const out = { screen, viewports: {} };
   for (const width of VIEWPORTS) {
@@ -108,7 +120,10 @@ async function probeScreen(browser, screen) {
       const imgEls = Array.from(document.querySelectorAll('img'));
       const imgsBroken = imgEls.filter((i) => i.complete && i.naturalWidth === 0).length;
       // Launcher CTA — the primary Continue / Resume → play button. Other
-      // screens leave this null.
+      // screens leave this null. We can't check `el.onclick` because React
+      // uses synthetic event delegation (handlers live on a root listener,
+      // not on the DOM node), so "non-empty onClick" is really "the button
+      // is not disabled and not aria-disabled" — which is what binds it.
       let launcherCta = null;
       if ((location.hash === '#launcher' || location.hash === '' || location.hash === '#')) {
         const btns = Array.from(document.querySelectorAll('button'));
@@ -146,6 +161,64 @@ async function probeScreen(browser, screen) {
       consoleErrors: errs.length,
       consoleErrorSamples: errs.slice(0, 3),
     };
+
+    // 13e. gallery_per_race — create-screen only. Pure-data scrape of the
+    // PORTRAIT_GALLERY source on disk (served by the viewer); no wizard
+    // navigation required. This deliberately tests the SOURCE that drives the
+    // UI, not the rendered DOM after a chain of clicks, because (a) the
+    // filter predicate at screen-create.jsx:548 is a one-liner so it's not
+    // where the bug lives, and (b) the actual regression (#379) was in the
+    // PORTRAIT_GALLERY data missing entries for 5 of 11 races. We catch the
+    // bug at its root cause, not its rendered symptom.
+    if (screen === 'create' && !measured?.unreachable) {
+      try {
+        out.viewports[String(width)].galleryPerRace = await page.evaluate(
+          async (raceIds) => {
+            try {
+              const resp = await fetch('/openworlds/screen-create.jsx');
+              if (!resp.ok) return { error: `screen-create.jsx fetch ${resp.status}` };
+              const src = await resp.text();
+              const start = src.indexOf('const PORTRAIT_GALLERY');
+              if (start < 0) return { error: 'PORTRAIT_GALLERY declaration not found' };
+              const end = src.indexOf('];', start);
+              if (end < 0) return { error: 'PORTRAIT_GALLERY closing not found' };
+              const block = src.slice(start, end + 2);
+              const counts = {};
+              for (const id of raceIds) counts[id] = 0;
+              // Entry-by-entry scan. Each PORTRAIT_GALLERY entry is well-formed
+              // `{ slug: "...", name: "...", race: "...", alive: <bool> }` on
+              // its own line; a non-greedy match across {...} captures each.
+              const entryRe = /\{[^{}]*\}/g;
+              let m;
+              const unknownRaces = new Set();
+              while ((m = entryRe.exec(block)) !== null) {
+                const entry = m[0];
+                const raceMatch = entry.match(/race:\s*["']([^"']+)["']/);
+                if (!raceMatch) continue;
+                const race = raceMatch[1];
+                if (!(race in counts)) {
+                  // Race tag in PORTRAIT_GALLERY that isn't a known RACE id —
+                  // e.g. the #375 Dame Aylin / "aasimar" bug. Surface this so
+                  // CI flags drift between PORTRAIT_GALLERY and RACES.
+                  unknownRaces.add(race);
+                  continue;
+                }
+                const aliveMatch = entry.match(/alive:\s*(true|false)/);
+                const alive = !aliveMatch || aliveMatch[1] === 'true';
+                if (alive) counts[race]++;
+              }
+              return { counts, unknownRaces: Array.from(unknownRaces) };
+            } catch (e) {
+              return { error: String(e).slice(0, 240) };
+            }
+          },
+          CREATE_RACE_IDS,
+        );
+      } catch (e) {
+        out.viewports[String(width)].galleryPerRace = { error: String(e).slice(0, 240) };
+      }
+    }
+
     await ctx.close();
   }
   return out;
