@@ -1,6 +1,6 @@
 /* Camp Sidebar — D&D 5e party role assignment during a long rest */
 
-function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
+function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }) {
   // LIVE party for the active campaign. The camp sidebar has no dedicated surface route, so it
   // reuses the same /character-surface read-model screen-character.jsx polls (it carries `.party`).
   // We never fall back to `state.party` (the non-canonical demo party).
@@ -103,6 +103,15 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
   // morning, and firing companion camp beats). The constrained /move palette accepts `do`
   // free-text intents, so the watch/cook/recipe/healing choices ride in the sentence.
   const beginRest = async () => {
+    // #402: the DM is mid-narration — a long rest is a new action the player can't take yet. Don't
+    // silently no-op (the old behavior: the button stayed enabled because `can_act` is still true,
+    // so a click POSTed a move that just queued behind the in-flight turn and nothing advanced —
+    // it read as an identical reload). Give clear feedback, mirroring ScreenTable's "one move at a
+    // time" gate. The button is also disabled while busy (below), so this is the keyboard/edge path.
+    if (dmBusy) {
+      toast({ kind: "danger", eyebrow: "Camp", title: "The Dungeon Master is still narrating", body: "Resolve the current beat first — then make camp and rest." });
+      return;
+    }
     if (!canAct || resting) return;
     const watch = [heroName(roles.watch1), heroName(roles.watch2)].filter(Boolean);
     const clauses = [];
@@ -346,30 +355,38 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner }) {
       {talkHero && <TalkPanel hero={talkHero} onClose={() => onTalk(null)} />}
 
       {/* Begin resting — wired to the engine via /move (CS-01). Enabled + functional when a
-          live session is attached (can_act); honestly disabled + explained when the chronicle
-          is read-only, or with no party to rest. */}
+          live session is attached (can_act) AND the DM isn't mid-turn (#402); honestly disabled +
+          explained when the chronicle is read-only, the DM is narrating, or there's no party. */}
       <div style={{ flex: "0 0 auto" }}>
         <div style={{ display: "flex", gap: 6 }}>
           <BrassButton tone="ghost" size="sm" onClick={onExit}>Leave camp</BrassButton>
           <BrassButton
             tone="dark"
-            disabled={!canAct || party.length === 0 || resting}
+            disabled={!canAct || dmBusy || party.length === 0 || resting}
             onClick={beginRest}
             style={{ flex: 1 }}
             title={
-              canAct
-                ? (party.length === 0 ? "No party in camp to rest" : "Relays a long rest to the DM via /move — the engine refreshes the party and advances the clock to morning")
-                : "The chronicle is read-only — start a session to rest"
+              !canAct
+                ? "The chronicle is read-only — start a session to rest"
+                : dmBusy
+                  ? "The Dungeon Master is still narrating — resolve the current beat first"
+                  : (party.length === 0 ? "No party in camp to rest" : "Relays a long rest to the DM via /move — the engine refreshes the party and advances the clock to morning")
             }
           >
-            {resting ? "✺ Resting…" : "✺ Begin Resting"}
+            {/* #402: the label reflects the DM-busy state so the disabled button isn't a mystery. */}
+            {resting ? "✺ Resting…" : dmBusy ? "✺ DM is narrating…" : "✺ Begin Resting"}
           </BrassButton>
         </div>
-        {!canAct && (
+        {!canAct ? (
           <div className="hand muted" style={{ fontSize: 11, marginTop: 6, textAlign: "center" }}>
             The chronicle is read-only. Start a session to make camp and rest.
           </div>
-        )}
+        ) : dmBusy ? (
+          // #402: explain WHY the rest CTA is disabled mid-turn (the silent no-op was the bug).
+          <div className="hand muted" style={{ fontSize: 11, marginTop: 6, textAlign: "center" }}>
+            Resolve the current beat first — the Dungeon Master is narrating.
+          </div>
+        ) : null}
       </div>
     </div>
   );
