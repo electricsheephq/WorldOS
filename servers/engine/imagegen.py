@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
@@ -557,3 +558,111 @@ def generate(
         cache_write(descriptor, scope)
 
     return descriptor
+
+
+# --------------------------------------------------------------------------- #
+# Non-blocking generation — off the synchronous DM-turn path (latency).
+#
+# The DM calls generate_image as a *fire-and-forget* overlay: "the image is an
+# optional overlay that never blocks the engine or the DM." With the null provider
+# generate() is ~instant, but a real provider (openclaw) polls the gateway media dir
+# up to DEFAULT_POLL_TIMEOUT (180s) — blocking the DM's turn for tens of seconds in
+# real play. async_generate() returns IMMEDIATELY (<500ms) with the cache scope/hash
+# the viewer already keys off, and a background worker does the actual generate()
+# (provider call + atomic cache write). The viewer's /image?scope=… 404s → placeholder
+# until the descriptor lands, so a not-yet-ready image degrades gracefully.
+#
+# Invariant safety: the worker calls the SAME generate() the synchronous path uses, so
+# it writes ONLY the derived, rebuildable image cache (<state>/images/<scope>/…) via the
+# existing atomic writer — never snapshot.json. The engine stays the SOLE writer of
+# campaign state; this touches only the one derived artifact a background writer may.
+# --------------------------------------------------------------------------- #
+
+# Guards the in-flight set so two concurrent requests for the SAME (key, scope) don't
+# both spawn a worker (the second would redo the provider's slow generation pointlessly).
+_inflight_lock = threading.Lock()
+_inflight: set[tuple[str, Optional[str]]] = set()
+
+
+def _worker(kind: str, prompt: str, seed: Optional[int], scope: Optional[str],
+            key: str) -> None:
+    """Background thread body: run the real (possibly slow) generation and let
+    generate() write the result into the derived cache. NEVER raises out of the
+    thread — generate() already degrades a provider failure to the null placeholder,
+    and we swallow anything else (the cache is rebuildable; a failed background job
+    just means the viewer keeps its placeholder and a later call can retry)."""
+    try:
+        generate(kind, prompt, seed=seed, scope=scope)
+    except Exception:
+        # Defensive: generate() is already crash-proof, but a background thread must
+        # never propagate. A miss is benign — the viewer shows its placeholder.
+        pass
+    finally:
+        with _inflight_lock:
+            _inflight.discard((key, scope))
+
+
+def async_generate(
+    kind: str,
+    prompt: str,
+    *,
+    seed: Optional[int] = None,
+    scope: Optional[str] = None,
+) -> dict:
+    """Enqueue an image generation and return IMMEDIATELY with a cache handle.
+
+    Fast path (always <500ms, no network on the calling thread):
+    - On a content-hash cache HIT, returns the cached descriptor right away
+      (``status="ready"``, ``cache_hit=True``) — nothing to enqueue.
+    - On a MISS, spawns a daemon worker to do the real generate() (provider +
+      cache write) and returns a ``status="pending"`` descriptor carrying the
+      ``scope`` + ``hash`` the viewer keys off. The image lands in the cache when
+      the worker finishes; the viewer's /image endpoint 404→placeholder until then.
+
+    The return ALWAYS includes the keys existing callers read — ``provider``,
+    ``kind``, ``prompt``, ``seed``, ``placeholder`` — so it is a drop-in for the old
+    synchronous ``generate()`` return on the fire-and-forget DM path. ``status`` and
+    ``hash`` are additive (new keys; nothing pre-existing is removed or repurposed).
+
+    Provider selection happens here (cheap: env read + a lazy client import for
+    ``configured()`` — no network), so the cache ``hash`` matches what the worker's
+    ``generate()`` will write, including the graceful degrade-to-null name when a
+    hosted provider is named but unconfigured.
+    """
+    provider = get_provider()
+    pname = getattr(provider, "name", "null")
+    key = content_hash(kind, prompt, seed=seed, provider=pname)
+
+    # Cache hit -> hand it straight back; no worker, no wait.
+    hit = cache_read(key, scope)
+    if hit is not None:
+        hit["cache_hit"] = True
+        hit.setdefault("status", "ready")
+        return hit
+
+    # Miss -> enqueue exactly one worker per (key, scope) and return a pending handle.
+    with _inflight_lock:
+        already = (key, scope) in _inflight
+        if not already:
+            _inflight.add((key, scope))
+    if not already:
+        t = threading.Thread(
+            target=_worker,
+            args=(kind, prompt, seed, scope, key),
+            name=f"imagegen-{key[:8]}",
+            daemon=True,
+        )
+        t.start()
+
+    return {
+        "provider": pname,
+        "kind": _normalize_kind(kind),
+        "prompt": prompt,
+        "seed": seed,
+        "placeholder": True,   # nothing servable YET — viewer shows its placeholder
+        "status": "pending",   # additive: signals "enqueued, not yet in cache"
+        "hash": key,           # the content-hash the descriptor will be cached under
+        "scope": scope,        # the cache scope the viewer fetches via /image?scope=…
+        "cache_hit": False,
+        "already_pending": already,  # additive: a worker for this key was already running
+    }
