@@ -34,7 +34,7 @@ function atlasShortLabel(name) {
   return base.length <= 16 ? base : base.slice(0, 15) + "…";
 }
 
-function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
+function ScreenMap({ onNavigate, state, campMode, setCampMode, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
     campaigns.find((c) => c.id === state?.activeCampaign) ||
@@ -116,6 +116,14 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
   const selectedTravel = selected ? travelOptions.find((t) => t.to === selected.id) : null;
   const canCamp = Boolean(surface?.camp_available);
   const canAct = Boolean(surface?.can_act);
+  // #402: is the DM mid-turn? The /move sink always accepts (it just appends an intent), and
+  // `can_act` stays true while the DM narrates — so a camp "Begin Resting" click during a beat used
+  // to POST a move that silently queued behind the in-flight turn (no advance, a misleading success
+  // toast). Mirror ScreenTable's gate: `pending` (present + not flagged stuck) ⇒ the DM is narrating
+  // and the player can't take a new action yet. Threaded down to CampSidebar so the rest CTA can
+  // disable + explain instead of no-op'ing. (`pending` lives on the app-level liveSession hook.)
+  const dmPending = liveSession?.pending || null;
+  const dmBusy = Boolean(dmPending && !dmPending.stuck);
   // Day/night is CLOCK-DRIVEN: read the engine's normalized phase off the surface (falling
   // back to a sniff of the legacy day label for older builds). There is no manual toggle —
   // the indicator always reflects the live campaign clock.
@@ -230,6 +238,7 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode }) {
                 onBeginRest={beginRest}
                 onTalk={setTalkPartner}
                 talkPartner={talkPartner}
+                dmBusy={dmBusy}
               />
             </div>
           ) : (

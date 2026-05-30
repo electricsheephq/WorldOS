@@ -186,6 +186,70 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("snapshot.json", source)
         self.assertNotIn("writeSnapshot", source)
 
+    def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
+        # #402: the chronicle must stay navigable across a long session — the rendered row count is
+        # CAPPED (DOM + a11y tree bounded so the latest beat isn't truncated), the scroll region is
+        # labelled role="log" and tracks user scroll, auto-follow respects a reader scrolled up
+        # (stick-to-bottom) while a new move snaps to latest, and the action bar is anchored.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        # Rendered window cap (bounds the DOM + accessibility tree).
+        self.assertIn("CHRONICLE_RENDER_CAP", source)
+        self.assertIn("renderedLog", source)
+        self.assertIn("hiddenLogCount", source)
+        # The scroll region is a labelled log and reports scroll position for the auto-follow guard.
+        self.assertIn('role="log"', source)
+        self.assertIn("onLogScroll", source)
+        # Auto-follow respects a reader scrolled up, and a new move re-pins to the latest.
+        self.assertIn("stickToBottomRef", source)
+        self.assertIn("snapNextRef", source)
+        # The auto-scroll effect follows the pending/narrating indicator into view too (not just log).
+        self.assertIn("}, [renderedLog, pending]);", source)
+        # The action bar is explicitly anchored (never pushed out by a growing chronicle).
+        self.assertIn('flex: "0 0 auto"', source)
+
+    def test_openworlds_app_bounds_the_live_session_tail(self):
+        # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long
+        # session doesn't accumulate state without limit (the upstream half of the DOM-growth fix).
+        status, ctype, body = self._get("/openworlds/app.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("MAX_LIVE_BEATS", source)
+        self.assertIn("MAX_LIVE_ECHOES", source)
+        self.assertIn("boundTail(", source)
+        # The cap is applied at the chatBeats append sites and the player-echo append site.
+        self.assertIn("boundTail([...prev, ...beats], MAX_LIVE_BEATS)", source)
+        self.assertIn("MAX_LIVE_ECHOES", source)
+
+    def test_openworlds_camp_rest_gives_feedback_when_dm_is_busy(self):
+        # #402: the Camp "Begin Resting" CTA must give clear feedback when the DM is mid-turn (the
+        # bug was a silent no-op — can_act stays true so the click POSTed a move that just queued).
+        # ScreenMap threads the DM-busy state from the live session into CampSidebar, which disables
+        # the CTA + explains why (and the click handler toasts on the keyboard/edge path).
+        _s_map, _c_map, map_body = self._get("/openworlds/screen-map.jsx")
+        map_source = map_body.decode("utf-8")
+        self.assertIn("liveSession", map_source)
+        self.assertIn("dmBusy", map_source)
+        self.assertIn("dmBusy={dmBusy}", map_source)
+
+        _s_camp, _c_camp, camp_body = self._get("/openworlds/camp-sidebar.jsx")
+        camp_source = camp_body.decode("utf-8")
+        self.assertIn("dmBusy", camp_source)
+        # The button is disabled while busy, and the early-return path toasts instead of no-op'ing.
+        self.assertIn("!canAct || dmBusy", camp_source)
+        self.assertIn("still narrating", camp_source)
+
+        # And the app actually passes liveSession to the map screen (so dmBusy is real, not always false).
+        _s_app, _c_app, app_body = self._get("/openworlds/app.jsx")
+        app_source = app_body.decode("utf-8")
+        self.assertIn("ScreenMap", app_source)
+        self.assertRegex(app_source, r"case \"map\":\s*return <ScreenMap[^>]*liveSession=\{liveSession\}")
+
     def test_openworlds_acts_screen_binds_viewer_acts_surface(self):
         status, ctype, body = self._get("/openworlds/screen-acts.jsx")
 

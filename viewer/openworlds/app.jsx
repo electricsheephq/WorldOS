@@ -114,6 +114,25 @@ function recoveryWindowMs(firstBeat) {
   return firstBeat ? PENDING_RECOVERY_FIRST_MS : PENDING_RECOVERY_MS;
 }
 
+// #402: BOUND the live tail. `chatBeats` (every streamed/turn-end DM narration + dialogue beat) and
+// `log` (every optimistic player echo) accumulated for the WHOLE session with no cap — so a long
+// playtest grew them without limit. The chronicle rendered ALL of it (screen-table visibleLog.map),
+// so the DOM + the accessibility tree grew unbounded: after a few beats an a11y reader (and a real
+// screen reader) truncated BEFORE reaching the newest narration, and the latest beat + action box
+// were buried under an ever-taller scroll region — the player couldn't see the DM's reply and the
+// run stalled. We keep only the most-recent MAX_LIVE_* entries in each array; older prose still
+// lives in the server's recentEvents history band (screen-table's leading window), so nothing is
+// truly lost — the live tail just stops growing. The caps are generous so a single multi-paragraph
+// DM turn (several /events beats in one turn) is NEVER clipped mid-beat. Pure + exported for tests.
+const MAX_LIVE_BEATS = 60;   // DM narration/dialogue beats kept in the live tail (≫ one turn's paragraphs).
+const MAX_LIVE_ECHOES = 40;  // optimistic player-action echoes kept in the live tail.
+// Trim an append-only array to its last `max` entries WITHOUT copying when already within bound
+// (so a steady-state turn doesn't reallocate the array every poll). Returns the same ref when no
+// trim is needed — React's setState bails out on an identical ref, avoiding a needless re-render.
+function boundTail(arr, max) {
+  return (Array.isArray(arr) && arr.length > max) ? arr.slice(arr.length - max) : arr;
+}
+
 // #274: a monotonic, client-side sequence stamped on every chronicle entry created here (player
 // echoes + each ingested chat beat) as `.at`. The session log in screen-table.jsx concatenates
 // three sources (recentEvents → chatBeats → log); because the player's optimistic echo (`log`) and
@@ -239,7 +258,9 @@ function useLiveSession(state) {
           && String(last.text || "").trim() === String(text || "").trim()) {
         return l;  // identical to the row already showing (a Try-again re-POST) — no duplicate.
       }
-      return [...l, { kind: "action", who, text, at: nextLogSeq() }];  // #274: creation-order stamp
+      // #402: bound the echo tail so a long session doesn't grow `log` (and the rendered DOM /
+      // a11y tree) without limit. Keep the most-recent MAX_LIVE_ECHOES.
+      return boundTail([...l, { kind: "action", who, text, at: nextLogSeq() }], MAX_LIVE_ECHOES);  // #274: creation-order stamp
     });
   }, []);
 
@@ -292,7 +313,7 @@ function useLiveSession(state) {
               return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
             })
             .filter(Boolean);
-          if (beats.length) setChatBeats((prev) => [...prev, ...beats]);
+          if (beats.length) setChatBeats((prev) => boundTail([...prev, ...beats], MAX_LIVE_BEATS));  // #402: cap the live tail
           // The arrival of the DM's turn-END line means the turn RESOLVED → clear the narrating
           // indicator + its timers. This fires even when the prose was wholly deduped (a turn whose
           // entire beat streamed live via /events), so a fully-streamed turn still re-opens the bar.
@@ -353,7 +374,7 @@ function useLiveSession(state) {
             })
             .filter(Boolean);
           if (beats.length) {
-            setChatBeats((prev) => [...prev, ...beats]);
+            setChatBeats((prev) => boundTail([...prev, ...beats], MAX_LIVE_BEATS));  // #402: cap the live tail
             // The scene is visibly building → the turn is plainly alive. Count the streamed prose as
             // real DM beats (so the NEXT turn isn't mis-treated as a cold-open 'firstBeat') and reset
             // the stall clock so a long-but-healthy streaming turn is never falsely declared 'stuck'.
@@ -391,6 +412,10 @@ window.__PENDING_TIMING__ = {
   recoveryFirstMs: PENDING_RECOVERY_FIRST_MS,
   backstopMs: PENDING_BACKSTOP_MS,
 };
+// #402: expose the live-tail bound for tests/devtools introspection (purely additive — the hook
+// closes over the consts directly; nothing in the running app reads these off window).
+window.boundTail = boundTail;
+window.__LIVE_TAIL_CAPS__ = { maxBeats: MAX_LIVE_BEATS, maxEchoes: MAX_LIVE_ECHOES };
 
 function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
@@ -763,7 +788,7 @@ function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMo
     case "acts":      return <ScreenActs state={state} setState={setState} onNavigate={onNavigate} />;
     case "seed":      return <ScreenSeed state={state} setState={setState} onNavigate={onNavigate} />;
     case "inventory": return <ScreenInventory state={state} setState={setState} onNavigate={onNavigate} />;
-    case "map":       return <ScreenMap state={state} setState={setState} onNavigate={onNavigate} campMode={campMode} setCampMode={setCampMode} />;
+    case "map":       return <ScreenMap state={state} setState={setState} onNavigate={onNavigate} campMode={campMode} setCampMode={setCampMode} liveSession={liveSession} />;
     case "journal":   return <ScreenJournal state={state} setState={setState} onNavigate={onNavigate} />;
     case "bestiary":  return <ScreenBestiary state={state} setState={setState} onNavigate={onNavigate} />;
     case "merchant":  return <ScreenMerchant state={state} setState={setState} onNavigate={onNavigate} />;

@@ -188,6 +188,13 @@ const ACTION_HINTS = {
 const DICE_HINT = (sides) => `Roll a d${sides} — ask the Dungeon Master to resolve a d${sides} check.`;
 const DECLARE_HINT = "Type what your hero does in your own words, then Declare to take the turn.";
 
+// #402: the maximum number of chronicle rows MOUNTED at once (the live tail + the leading history
+// band, merged). Keeps the DOM + the accessibility tree bounded so the newest DM beat and the
+// action bar stay reachable no matter how long the session runs. Generous on purpose: well above a
+// handful of turns AND above one multi-paragraph DM turn, so a beat is never clipped as it streams.
+// Older beats are still available in full in the Quest Journal.
+const CHRONICLE_RENDER_CAP = 50;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -209,6 +216,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const { chatBeats, log, pending } = session;
   const logRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  // #402: auto-follow state. `stickToBottomRef` is true while the player is at/near the bottom of the
+  // chronicle (the default) and false once they scroll UP to read history — so the auto-scroll effect
+  // follows new narration to the bottom WITHOUT yanking a reader back down mid-read. `snapNextRef` is
+  // a one-shot "force to bottom on the next content change" flag set when the player submits a move
+  // (a new turn) — so declaring an action always re-pins to the latest, even if they'd scrolled up.
+  const stickToBottomRef = React.useRef(true);
+  const snapNextRef = React.useRef(false);
   const toast = window.useToast ? window.useToast() : (() => {});
   const fallbackParty = [];
   const party = Array.isArray(surface?.party) && surface.party.length ? surface.party : fallbackParty;
@@ -260,6 +274,17 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     return !key || !liveNarrationKeys.has(key);
   });
   const visibleLog = surface ? [...dedupedRecent, ...mergedTail] : [...demoLog, ...log];
+  // #402: BOUND what the chronicle RENDERS. Even with the live tail capped in useLiveSession, the
+  // leading history band (recentEvents from the server) can be large, so the merged list could still
+  // mount hundreds of rows into the DOM + the accessibility tree — the exact thing that buried the
+  // latest DM beat (and the action box) and made an a11y reader truncate before the newest content.
+  // We render only the most-recent CHRONICLE_RENDER_CAP rows so a 10-beat session is as navigable as
+  // a 2-beat one: the latest beat is always near the bottom of a short, fully-exposed list, and the
+  // sticky action bar below is always reachable. Older beats remain in the Quest Journal (full
+  // history); a one-line affordance says so when rows are hidden. The cap is generous (≫ a handful of
+  // turns, and ≫ one multi-paragraph DM turn) so we never clip an in-flight beat as it streams.
+  const hiddenLogCount = Math.max(0, visibleLog.length - CHRONICLE_RENDER_CAP);
+  const renderedLog = hiddenLogCount > 0 ? visibleLog.slice(visibleLog.length - CHRONICLE_RENDER_CAP) : visibleLog;
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
 
@@ -331,9 +356,34 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     }
   }, [party, activeHero]);
 
+  // #402: auto-follow the newest narration to the bottom — but RESPECT a reader who scrolled up.
+  // The old effect pinned scrollTop to scrollHeight on EVERY content change unconditionally, which
+  // (a) yanked a player back down the instant a streamed paragraph or 5s surface poll arrived while
+  // they were reading history, and (b) never fired when ONLY the pending/narrating indicator toggled
+  // (it wasn't a dependency), so the "DM is narrating…" beat could sit below the fold. Now we scroll
+  // to bottom only when the player is already at/near the bottom (stickToBottomRef) OR a new move was
+  // just submitted (snapNextRef, a one-shot re-pin on a new turn). Depending on `pending` too means
+  // the narrating indicator (and a freshly-streamed beat) is followed into view the same way.
   React.useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [visibleLog]);
+    const el = logRef.current;
+    if (!el) return;
+    if (snapNextRef.current || stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      snapNextRef.current = false;
+      stickToBottomRef.current = true;  // a programmatic snap leaves us pinned to the bottom
+    }
+  }, [renderedLog, pending]);
+
+  // #402: track whether the player is reading history (scrolled up) vs. parked at the bottom. A
+  // generous threshold (~64px) keeps "near the bottom" sticky through small layout shifts (the
+  // narrating dots, a wrapping line) so normal play stays auto-following; deliberately scrolling up
+  // to re-read clears it, and scrolling back to the bottom re-arms it.
+  const onLogScroll = React.useCallback(() => {
+    const el = logRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom <= 64;
+  }, []);
 
   // #340 + #342: arming / clearing the "DM is narrating…" pending state now lives in the app-level
   // useLiveSession hook (so it survives navigation, and carries the 90s recovery + 12-min backstop).
@@ -395,6 +445,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       }
       recordPlayerEcho(hero.name, text);
       armPending(text);
+      // #402: a new turn was just submitted — force the chronicle back to the bottom on the next
+      // content change even if the player had scrolled up, so they always see their move land and
+      // the DM's reply begin. The auto-follow effect honors this one-shot, then re-arms stickiness.
+      snapNextRef.current = true;
       loadSurface();
     } catch (error) {
       toast({ kind: "danger", title: "Move not sent", body: error?.message || `The viewer could not reach ${writeLane.endpoint || "/move"}.` });
@@ -546,16 +600,39 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           {/* #320: trimmed "The Tabletop Chronicle" → "Chronicle" and dropped the "·" lead dot
               (read as visual noise on a busy screen). */}
           <SectionTitle>Chronicle</SectionTitle>
-          <div ref={logRef} tabIndex={0} style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}>
-            {visibleLog.length ? visibleLog.map((entry, i) => (
+          {/* #402: role="log" + a label names this region in the accessibility tree so an assistive
+              reader can target "the latest beat" directly; `onScroll` tracks whether the player is
+              reading history (scrolled up) so the auto-follow effect doesn't yank them to the bottom
+              mid-read. The scroll region is the SOLE grower (flex 1 1 auto) — the action bar below is
+              flex 0 0 auto, so it stays anchored/visible no matter how long the chronicle gets. */}
+          <div
+            ref={logRef}
+            tabIndex={0}
+            role="log"
+            aria-label="Chronicle — most recent narration at the bottom"
+            onScroll={onLogScroll}
+            style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}
+          >
+            {/* #402: when older beats are windowed out of the DOM, say so + point to the full history
+                (the Quest Journal). Keeps the rendered list short so the newest beat + action box stay
+                reachable, without pretending the earlier story is gone. */}
+            {hiddenLogCount > 0 && (
+              <div className="body-xs muted" style={{ margin: "0 0 10px", padding: "6px 0", borderBottom: "1px solid rgba(140,100,60,0.2)" }}>
+                {hiddenLogCount} earlier {hiddenLogCount === 1 ? "beat is" : "beats are"} kept in your{" "}
+                <button className="btn ghost sm" style={{ padding: "0 4px" }} onClick={() => onNavigate("journal")}>Quest Journal</button>
+                {" "}— the latest beats are shown below.
+              </div>
+            )}
+            {renderedLog.length ? renderedLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}
             {pendingActive && <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} />}
             {pendingStuck && <DmStuckBeat />}
           </div>
 
-          {/* Action bar */}
-          <div style={{ marginTop: 14, padding: 12, background: "rgba(80,50,20,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)" }}>
+          {/* Action bar — #402: flex 0 0 auto so it is ALWAYS anchored at the bottom of the panel and
+              never pushed out of view by an ever-growing chronicle above it. */}
+          <div style={{ flex: "0 0 auto", marginTop: 14, padding: 12, background: "rgba(80,50,20,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
               <span className="eyebrow">Active</span>
               <strong style={{ fontFamily: "var(--f-display)", color: "var(--ink-900)", letterSpacing: "0.1em" }}>

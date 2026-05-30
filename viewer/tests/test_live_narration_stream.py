@@ -227,6 +227,10 @@ const h = {
   log: () => (reactHost.api().log || []).map((e) => ({ kind: e.kind, who: e.who, text: e.text })),
   // #399: the recovery-window selector by turn position (firstBeat ⇒ cold-open window, else later).
   recoveryWindowMs: (firstBeat) => sandbox.window.recoveryWindowMs(firstBeat),
+  // #402: the live-tail caps (so a test asserts against the SAME numbers the hook trims to) and the
+  // raw chatBeats length (the bounded DM-narration/dialogue tail).
+  caps: () => sandbox.window.__LIVE_TAIL_CAPS__,
+  beatCount: () => (reactHost.api().chatBeats || []).length,
   drain,
 };
 
@@ -469,6 +473,48 @@ class LiveNarrationStreamTests(unittest.TestCase):
         )
         self.assertEqual(len(out["log"]), 2,
                          "two distinct actions must both appear (idempotence only suppresses a back-to-back exact repeat)")
+
+    # --- #402: the live chatBeats tail is BOUNDED so a long session can't grow the DOM/a11y tree --
+    # The bug: chatBeats accumulated every streamed/turn-end narration for the WHOLE session with no
+    # cap, so the chronicle rendered an ever-growing list — burying the latest beat + the action box,
+    # and truncating an a11y reader before it reached the newest content. Stream far MORE than the
+    # cap of unique narration paragraphs and assert the tail is trimmed to the cap.
+    def test_live_beats_tail_is_bounded(self):
+        out = self._run(
+            "await h.drain();"
+            "var cap = h.caps().maxBeats;"
+            "var total = cap + 25;"          # stream well past the cap
+            "for (var i = 0; i < total; i++) {"
+            "  h.enqueue('/events', { entries: [{ kind: 'narration', text: 'paragraph number ' + i }], next: i + 1 });"
+            "  await h.tick();"
+            "}"
+            "return ({ cap: cap, total: total, count: h.beatCount() });"
+        )
+        self.assertEqual(out["count"], out["cap"],
+                         "the live narration tail must be trimmed to MAX_LIVE_BEATS no matter how long the session runs (#402)")
+        self.assertLess(out["count"], out["total"],
+                         "the tail must drop the oldest beats once it exceeds the cap (it must not grow unbounded)")
+
+    # --- #402: trimming keeps the NEWEST beats (the latest DM narration must always survive) ------
+    # A naive trim that kept the FIRST N would hide exactly the content the player needs (the reply
+    # to their latest move). Assert the most-recent paragraph is present and the oldest is gone.
+    def test_bounded_tail_keeps_the_newest_beats(self):
+        out = self._run(
+            "await h.drain();"
+            "var cap = h.caps().maxBeats;"
+            "var total = cap + 10;"
+            "for (var i = 0; i < total; i++) {"
+            "  h.enqueue('/events', { entries: [{ kind: 'narration', text: 'beat ' + i }], next: i + 1 });"
+            "  await h.tick();"
+            "}"
+            "var texts = h.narrationTexts();"
+            "return ({ first: texts[0], last: texts[texts.length - 1], total: total });"
+        )
+        # The newest beat (index total-1) must still be in the tail; the very oldest (beat 0) must not.
+        self.assertEqual(out["last"], f"beat {out['total'] - 1}",
+                         "the most-recent DM narration must always survive the trim (the player's latest reply)")
+        self.assertNotEqual(out["first"], "beat 0",
+                         "the oldest beats must be dropped once the cap is exceeded (the tail slides forward)")
 
 
 if __name__ == "__main__":
