@@ -135,7 +135,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
   ];
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, padding: 14 }}>
+    <div className="screen stack-on-narrow" style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, padding: 14 }}>
 
       {/* LEFT — section list */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
@@ -196,6 +196,10 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
           <SettingsSection title="What the Eye Sees" eyebrow="Lantern & ink" ordinal="II.">
             {/* GENUINELY FUNCTIONAL: drives --ui-scale on <html> (styles.css zooms .window). */}
             <Slider label="UI scale" value={a11y.uiScale} onChange={(v) => applyA11y({ uiScale: v })} min={75} max={150} unit="%" />
+
+            <Divider />
+            <SectionTitle>Not yet wired</SectionTitle>
+            <PreviewBanner>Display-only — the controls below have no backing yet. UI scale above is live and persists across reloads.</PreviewBanner>
             <Slider preview label="Contrast" value={display.contrast} onChange={(v) => setDisplay({ ...display, contrast: v })} />
 
             <Divider />
@@ -349,9 +353,14 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
                 </ul>
                 <Divider />
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <BrassButton size="sm" tone="ghost">Patch notes</BrassButton>
-                  <BrassButton size="sm" tone="ghost">Licenses</BrassButton>
-                  <BrassButton size="sm" tone="ghost">Report a bug</BrassButton>
+                  {/* The CHANGELOG.md / THIRD_PARTY_NOTICES.md docs live at the repo root, which the
+                      viewer's HTTP server does NOT serve (only /openworlds/* assets are reachable,
+                      and traversal outside the bundle is blocked — see server.py _openworlds_asset).
+                      Pointing at /CHANGELOG.md would 404, so to stay honest we open the canonical
+                      source on GitHub in a new tab rather than wiring a dead local link. */}
+                  <BrassButton size="sm" tone="ghost" title="Open the changelog on GitHub" onClick={() => window.open("https://github.com/electricsheephq/WorldOS/blob/HEAD/CHANGELOG.md", "_blank", "noopener,noreferrer")}>Patch notes</BrassButton>
+                  <BrassButton size="sm" tone="ghost" title="Open the third-party licenses on GitHub" onClick={() => window.open("https://github.com/electricsheephq/WorldOS/blob/HEAD/THIRD_PARTY_NOTICES.md", "_blank", "noopener,noreferrer")}>Licenses</BrassButton>
+                  <BrassButton size="sm" tone="ghost" title="Report a bug on GitHub" onClick={() => window.open("https://github.com/electricsheephq/WorldOS/issues/new", "_blank", "noopener,noreferrer")}>Report a bug</BrassButton>
                 </div>
               </div>
             </div>
@@ -417,12 +426,12 @@ function NativeAppSection({ nativeState, refreshNative }) {
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Native Actions</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <BrassButton size="sm" onClick={() => nativeAction("startViewer")}>Start Viewer</BrassButton>
-            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("stopViewer")}>Stop Viewer</BrassButton>
-            <BrassButton size="sm" onClick={startProvider}>Start Provider</BrassButton>
-            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("stopProvider")}>Stop Provider</BrassButton>
-            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("copyDiagnostics")}>Copy Diagnostics</BrassButton>
-            <BrassButton size="sm" tone="ghost" onClick={() => nativeAction("openFallbackDashboard")}>Debug Dashboard</BrassButton>
+            <BrassButton size="sm" title="Start the local viewer process that serves this UI" onClick={() => nativeAction("startViewer")}>Start Viewer</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Stop the local viewer process serving this UI" onClick={() => nativeAction("stopViewer")}>Stop Viewer</BrassButton>
+            <BrassButton size="sm" title="Launch a provider session for the default world (e.g. Claude)" onClick={startProvider}>Start Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Stop the running provider session" onClick={() => nativeAction("stopProvider")}>Stop Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Copy app status and recent diagnostics to the clipboard" onClick={() => nativeAction("copyDiagnostics")}>Copy Diagnostics</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Open the fallback debug dashboard in your browser" onClick={() => nativeAction("openFallbackDashboard")}>Debug Dashboard</BrassButton>
           </div>
           <p className="body-sm muted" style={{ marginTop: 12 }}>
             Native actions supervise local processes only. Game intent still travels through the existing engine/player move lane.
