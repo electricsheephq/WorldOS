@@ -72,8 +72,7 @@ def test_house_and_biography_persist_on_the_character_model():
         house="Anvilforge",
         biography="Three winters in the Iron Shield; one summer at the Spear Gate.",
     )
-    snapshot = server.get_state(camp)
-    pc = snapshot["characters"][rec["id"]]
+    pc = server.get_character(camp, rec["id"])
     assert pc["house"] == "Anvilforge"
     assert pc["biography"].startswith("Three winters in the Iron Shield")
 
@@ -90,8 +89,7 @@ def test_house_and_biography_default_to_empty_when_omitted():
         name="Stoic Stranger",
         kind="npc",
     )
-    snapshot = server.get_state(camp)
-    npc = snapshot["characters"][rec["id"]]
+    npc = server.get_character(camp, rec["id"])
     assert npc["house"] == ""
     assert npc["biography"] == ""
 
@@ -118,8 +116,7 @@ def test_house_and_biography_round_trip_through_get_state():
             "The infernal contract was cut; the heart is hers again. The forge owes her a name."
         ),
     )
-    snapshot = server.get_state(camp)
-    pc = snapshot["characters"][rec["id"]]
+    pc = server.get_character(camp, rec["id"])
     # House + biography survived the model → snapshot → dict path
     assert "Ember" in pc["house"]
     assert "Hellfire" in pc["biography"]
