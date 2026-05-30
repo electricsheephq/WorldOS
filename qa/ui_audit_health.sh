@@ -6,6 +6,12 @@
 #   qa/ui_audit_health.sh              # full sweep, port 8799
 #   qa/ui_audit_health.sh --port 8895  # custom port
 #   qa/ui_audit_health.sh --quick      # skip screenshot capture (fastest)
+#   qa/ui_audit_health.sh --axe        # add the axe-core a11y sweep (slower)
+#   qa/ui_audit_health.sh --ui-gate    # add the "UI gate with teeth" probe (Loop-9):
+#                                      #   per-screen Playwright check for console
+#                                      #   errors, placeholder explosion, broken
+#                                      #   imgs, title-bar/nav-rail collision (#260),
+#                                      #   and the launcher Resume/Continue CTA.
 #
 # Output: structured PASS/FAIL lines to stdout, exit 0 if all PASS, 1 otherwise.
 #
@@ -23,9 +29,27 @@
 #      (no rename / refactor accidentally dropped a route).
 #   9. styles.css responsive breakpoints + a11y rules still defined.
 #  10. _private/baldurs-gate/images/ still has ≥ 2000 dirs (asset catalog intact).
-#  11. (optional) Re-capture screenshots at 1366 + 1512 to /tmp/ow-health/ —
+#  11. (optional, --quick=0) Re-capture screenshots at 1366 + 1512 to /tmp/ow-health/ —
 #      compare against the audit baseline (visual diff is manual; this just
 #      checks the capture pipeline works).
+#  12. (optional, --axe) axe-core a11y sweep across every screen. Baseline = 0.
+#  13. (optional, --ui-gate) "UI gate with teeth", driven by qa/ui_gate_probe.js
+#      (headless Playwright). For each screen, at viewports 1366 + 1512:
+#       13a. renders_clean: 0 JS console errors and 0 page-level exceptions
+#            (404 resource warns from un-ingested art are dropped — those are
+#            tracked by check #10 + check 13b).
+#       13b. art_present: total `.placeholder` count ≤ per-screen Loop-9 baseline
+#            + 2 slack (launcher 26, character 9, bestiary 20, inventory 13,
+#            forge 1, all others 0). Broken-img count (resolved + naturalWidth
+#            == 0) must be 0.
+#       13c. title_bar_clearance: `.title-text` and `.nav-rail` bounding rects
+#            do NOT overlap (this catches the #260 / #306 regression where the
+#            title text wraps and falls behind the nav rail at narrow widths).
+#       13d. play_reachable: on #launcher, a "Continue → play" or "Resume → play"
+#            button is present and not disabled.
+#      If a running viewer isn't reachable on the configured port the probe
+#      WARNs instead of FAILing, so the gate stays opt-in for CI lanes that
+#      don't stand up a viewer.
 #
 # Exit codes:
 #   0 — all PASS, audit findings still valid as filed.
@@ -35,11 +59,13 @@ set -u
 PORT=8799
 QUICK=0
 AXE=0
+UI_GATE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
     --quick) QUICK=1; shift ;;
     --axe) AXE=1; shift ;;
+    --ui-gate) UI_GATE=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -266,6 +292,119 @@ if [ "$AXE" -eq 1 ]; then
       else
         fail "axe total: $TOTAL violations (baseline = 0; a11y regression detected)"
       fi
+    fi
+  fi
+fi
+
+# 13. Optional: "UI gate with teeth" — per-screen Playwright probe (Loop-9).
+# Off by default. Drives qa/ui_gate_probe.js at 1366 + 1512 viewports against
+# the configured viewer; checks: renders_clean, art_present, title_bar_clearance,
+# play_reachable. Baselines were measured 2026-05-30 against viewer/server.py
+# on the full _private asset catalog (≥2359 dirs). If the viewer isn't reachable
+# this whole block WARNs rather than FAILs — the gate is opt-in for lanes that
+# stand up a viewer first.
+if [ "$UI_GATE" -eq 1 ]; then
+  if ! command -v node >/dev/null 2>&1; then
+    warn "node not on PATH; skipping --ui-gate"
+  elif [ ! -f qa/playwright/node_modules/playwright/package.json ]; then
+    warn "qa/playwright/node_modules/playwright not installed; run (cd qa/playwright && npm install)"
+  elif [ ! -f qa/ui_gate_probe.js ]; then
+    warn "qa/ui_gate_probe.js missing; --ui-gate skipped"
+  else
+    # Per-screen placeholder ceilings (Loop-9 baseline + 2 slack) — kept inline
+    # in the python report block below (macOS ships bash 3.2 which has no
+    # associative arrays; rather than gate the script on bash 4, we let python
+    # carry the table).
+    SCREENS_UI=(launcher table combat character map relations dialogue bestiary \
+                inventory journal acts merchant forge create seed settings roster)
+    UI_OUT=/tmp/ow-ui-gate.ndjson
+    : > "$UI_OUT"
+    if ! node qa/ui_gate_probe.js "$PORT" "${SCREENS_UI[@]}" > "$UI_OUT" 2>/tmp/ow-ui-gate.err; then
+      warn "ui_gate_probe exited non-zero — see /tmp/ow-ui-gate.err"
+      warn "(skipping per-screen checks)"
+    else
+      # Parse NDJSON via python for portability (jq isn't a hard dep here).
+      # Emit one PASS/FAIL per screen × check, then a roll-up.
+      python3 - "$UI_OUT" <<'PY' > /tmp/ow-ui-gate.report
+import json, sys
+PH_CAP = {
+    "launcher": 28, "table": 2, "combat": 2, "character": 11, "map": 2,
+    "relations": 2, "dialogue": 2, "bestiary": 22, "inventory": 15,
+    "journal": 2, "acts": 2, "merchant": 2, "forge": 3, "create": 2,
+    "seed": 2, "settings": 2, "roster": 2,
+}
+def emit(verdict, line): print(f"{verdict}  {line}")
+total_fail = 0
+with open(sys.argv[1]) as f:
+    for raw in f:
+        raw = raw.strip()
+        if not raw.startswith("{"): continue
+        try:
+            d = json.loads(raw)
+        except Exception as e:
+            emit("FAIL", f"ui-gate parse error: {e}")
+            total_fail += 1
+            continue
+        s = d["screen"]
+        cap = PH_CAP.get(s, 2)
+        # Aggregate across the two viewports — both must pass for a green light.
+        vps = d.get("viewports", {})
+        if not vps:
+            emit("WARN", f"ui-gate {s}: no viewport data (viewer reachable?)")
+            continue
+        for vp, v in vps.items():
+            # 13a. renders_clean
+            if v.get("consoleErrors", 0) == 0:
+                emit("PASS", f"ui-gate renders_clean {s} @ {vp}: 0 console errors")
+            else:
+                samples = v.get("consoleErrorSamples") or []
+                emit("FAIL", f"ui-gate renders_clean {s} @ {vp}: {v['consoleErrors']} err — {samples[:1]}")
+                total_fail += 1
+            # 13b. art_present (placeholder ceiling + no broken imgs)
+            ph = v.get("placeholders", 0)
+            broken = v.get("imgsBroken", 0)
+            if ph <= cap and broken == 0:
+                emit("PASS", f"ui-gate art_present {s} @ {vp}: placeholders={ph}/cap{cap} broken=0/{v.get('imgsTotal',0)}")
+            else:
+                why = []
+                if ph > cap: why.append(f"placeholders={ph} > cap {cap}")
+                if broken > 0: why.append(f"broken imgs={broken}/{v.get('imgsTotal',0)}")
+                emit("FAIL", f"ui-gate art_present {s} @ {vp}: " + "; ".join(why))
+                total_fail += 1
+            # 13c. title_bar_clearance — #260 / #306
+            if not v.get("titleNavOverlap", False):
+                emit("PASS", f"ui-gate title_bar_clearance {s} @ {vp}: no title/nav-rail collision")
+            else:
+                tr = v.get("titleRect"); nr = v.get("navRect")
+                emit("FAIL",
+                    f"ui-gate title_bar_clearance {s} @ {vp}: title-text rect overlaps nav-rail "
+                    f"(title={tr} nav={nr}) — #260 regression")
+                total_fail += 1
+            # 13d. play_reachable (launcher only)
+            cta = v.get("launcherCta")
+            if cta is None:
+                pass  # non-launcher screens skip this check
+            elif cta.get("missing"):
+                emit("FAIL", f"ui-gate play_reachable {s} @ {vp}: no Resume/Continue CTA found on launcher")
+                total_fail += 1
+            elif cta.get("disabled"):
+                emit("FAIL", f"ui-gate play_reachable {s} @ {vp}: CTA '{cta.get('text')}' is disabled")
+                total_fail += 1
+            else:
+                emit("PASS", f"ui-gate play_reachable {s} @ {vp}: '{cta.get('text')}' enabled")
+print(f"__TOTAL_FAIL__:{total_fail}")
+PY
+      # Replay the python report through pass/fail/warn so the overall summary
+      # picks up failures via the shell's FAIL variable.
+      while IFS= read -r line; do
+        case "$line" in
+          PASS*) pass "${line#PASS  }" ;;
+          FAIL*) fail "${line#FAIL  }" ;;
+          WARN*) warn "${line#WARN  }" ;;
+          __TOTAL_FAIL__:*) ;;  # rollup only
+          *) echo "$line" ;;
+        esac
+      done < /tmp/ow-ui-gate.report
     fi
   fi
 fi
