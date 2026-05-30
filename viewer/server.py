@@ -3250,6 +3250,39 @@ _SKILL_ABILITIES = {
 _ABILITY_KEYS = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
 
 
+def _equipped_items(ch: dict) -> list[dict]:
+    """Projected list of a character's EQUIPPED gear for the heroes-screen paper-doll +
+    the inventory equip slots. Each entry carries name/slot/glyph plus the item's REAL SRD
+    combat stats (kind / damage / damageType / ac / rarity / attunement) when the catalog
+    resolves the name — so the doll's slot tooltip can read "Main Hand · 1d8 slashing"
+    honestly, and stays just the name when the catalog has no record. The engine carries no
+    canonical slot on the Item model, so `slot` is whatever the snapshot recorded (else "Worn");
+    the screen's name->slot inference places it in the doll cell (forward-compatible if the
+    engine ever emits a real slot id)."""
+    out: list[dict] = []
+    for it in (ch.get("inventory") or []):
+        if not isinstance(it, dict) or not bool(it.get("equipped")):
+            continue
+        name = _text(it.get("name"))
+        if not name:
+            continue
+        meta = _catalog_meta(name)
+        damage = _text(meta.get("damage")) if meta else ""
+        ac_raw = meta.get("ac") if meta else None
+        out.append({
+            "slot": _text(it.get("slot"), "Worn"),
+            "name": name,
+            "glyph": name.lower(),
+            "kind": _text(meta.get("kind")) if meta else "",
+            "damage": damage,
+            "damageType": _text(meta.get("damage_type")) if (meta and damage) else "",
+            "ac": int(ac_raw) if isinstance(ac_raw, (int, float)) else None,
+            "rarity": (_text(it.get("rarity")) or (_text(meta.get("rarity")) if meta else "")) or "",
+            "attunement": bool(it.get("requires_attunement") or (meta.get("requires_attunement") if meta else False)),
+        })
+    return out
+
+
 def _character_sheet(cid: str, ch: dict) -> dict:
     """One party character's full sheet for the heroes screen, mapping 5e snapshot fields
     into the shape screen-character.jsx renders (stats block, skills, spells, class
@@ -3304,32 +3337,29 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         for sk in skill_ids if sk in _SKILL_ABILITIES
     ]
 
-    # Spells: the snapshot stores spell NAMES only (no per-spell level/school blocks), so
-    # we render the names the engine actually carries — never fabricating. Prepared spells
-    # are the union of spells_prepared and spells_known marked prepared; we surface the full
-    # known/prepared list grouped under "Prepared" / "Known" so a caster with spells SHOWS
-    # them and a caster with none shows an honest empty list (the SpellsTab fallback).
+    # Spells: the snapshot stores spell NAMES only, but the engine bundles the full srd524
+    # spell dump — so for each known/prepared spell we look up its REAL rules block (level,
+    # school, range, casting time, duration, concentration, save ability, damage, components,
+    # upcast, desc) via `_spell_card`. A spell the SRD doesn't carry degrades to just its name
+    # (today's behavior). The per-spell save DC is the caster's computed DC (None for a non-
+    # caster class), surfaced only for save-forcing spells. We group under "Prepared"/"Known"
+    # so the distinction stays honest; a caster with none shows an honest empty list.
     spells_known = [s for s in (ch.get("spells_known") or []) if isinstance(s, str)]
     prepared_list = [s for s in (ch.get("spells_prepared") or []) if isinstance(s, str)]
     spells_prepared = set(prepared_list)
+    save_dc = _spell_save_dc(ch)
     spells = []
     if prepared_list:
         spells.append({
             "level": "Prepared",
-            "list": [
-                {"name": s, "school": "—", "time": "prepared", "glyph": "spell"}
-                for s in prepared_list
-            ],
+            "list": [_spell_card(s, "prepared", save_dc) for s in prepared_list],
         })
     # Known-but-not-prepared spells get their own group so the distinction stays honest.
     known_only = [s for s in spells_known if s not in spells_prepared]
     if known_only:
         spells.append({
             "level": "Known",
-            "list": [
-                {"name": s, "school": "—", "time": "known", "glyph": "spell"}
-                for s in known_only
-            ],
+            "list": [_spell_card(s, "known", save_dc) for s in known_only],
         })
 
     # Spell slots: the engine owns ch.spell_slots {level: {maximum, used}}. Surface the
@@ -3393,10 +3423,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
             fname = seg.split(":", 1)[1].strip()
             if fname and fname not in feat_names:
                 feat_names.append(fname)
-    equipped = [
-        {"slot": _text(it.get("slot"), "Worn"), "name": _text(it.get("name")), "glyph": _text(it.get("name"), "item").lower()}
-        for it in (ch.get("inventory") or []) if isinstance(it, dict) and bool(it.get("equipped")) and _text(it.get("name"))
-    ]
+    equipped = _equipped_items(ch)
 
     return {
         "id": cid,
@@ -3522,6 +3549,124 @@ def _infer_item_type(name: str, item: dict) -> str:
 
 _ITEMCATALOG = None
 _ITEMCATALOG_TRIED = False
+_SPELLS_MOD = None
+_SPELLS_TRIED = False
+
+
+def _engine_module(modname: str):
+    """Lazily import a pure engine helper module (itemcatalog / spells) so the viewer can
+    enrich the read-model with the engine's REAL bundled SRD data. Returns the module or
+    None; on None the surface degrades to today's behavior (the viewer stays a pure reader,
+    never fabricating). Adds servers/engine to sys.path once (same pattern as _catalog_meta)."""
+    try:
+        engine_dir = (_HERE.parent / "servers" / "engine").resolve()
+        if str(engine_dir) not in sys.path:
+            sys.path.insert(0, str(engine_dir))
+        return __import__(modname)
+    except Exception:
+        return None
+
+
+def _spell_meta(name: str) -> dict:
+    """Lazily resolve a spell's structured SRD record (level / school / range / duration /
+    concentration / ritual / save ability / damage / components / upcast / desc) from the
+    engine's bundled srd524 dump via ``spells.srd_spell``. Returns {} when the spell isn't
+    in the SRD (an honest miss -> the screen shows just the name, today's behavior). The
+    viewer never invents spell rules text — it only surfaces what the engine already owns."""
+    global _SPELLS_MOD, _SPELLS_TRIED
+    if not name:
+        return {}
+    if _SPELLS_MOD is None and not _SPELLS_TRIED:
+        _SPELLS_TRIED = True
+        _SPELLS_MOD = _engine_module("spells")
+    if _SPELLS_MOD is None:
+        return {}
+    try:
+        return _SPELLS_MOD.srd_spell(name) or {}
+    except Exception:
+        return {}
+
+
+# Casting ability per SRD class (mirror of srd_tables._CASTING_ABILITY). A character's spell
+# save DC / attack bonus key off their FIRST caster class's ability mod (engine _casting_mod).
+# Non-caster classes (Fighter/Rogue/etc.) are absent -> no DC is computed (we never fabricate
+# one; the per-spell `save` still names which save the TARGET rolls, which is class-independent).
+_CASTING_ABILITY = {
+    "bard": "charisma", "cleric": "wisdom", "druid": "wisdom", "paladin": "charisma",
+    "ranger": "wisdom", "sorcerer": "charisma", "warlock": "charisma", "wizard": "intelligence",
+}
+
+
+def _spell_save_dc(ch: dict) -> int | None:
+    """A caster's spell save DC = 8 + proficiency + casting-ability modifier, mirroring
+    engine ``server.spell_save_dc`` read-only from the snapshot. Returns None when the
+    character has no SRD caster class (a Fighter with stray spell names, an NPC) — we then
+    omit the DC rather than invent one. Honest: reads only engine-set abilities/prof."""
+    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    ability = None
+    for cl in classes:
+        if isinstance(cl, dict):
+            a = _CASTING_ABILITY.get(_text(cl.get("name")).lower())
+            if a:
+                ability = a
+                break
+    if ability is None:
+        return None
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    prof = _num(ch.get("proficiency_bonus"))
+    prof = int(prof) if prof is not None else 2
+    return 8 + prof + _ability_mod(abilities.get(ability))
+
+
+def _spell_card(name: str, time_label: str, save_dc: int | None) -> dict:
+    """One spell's render card for the heroes screen: the name plus the engine's REAL SRD
+    rules fields (level / school / range / casting time / duration / components / save / damage)
+    when the spell resolves in srd524, and just the name (today's behavior) when it doesn't.
+
+    `time_label` is the engine-derived prepared/known grouping. `save_dc` is the caster's
+    computed DC (None for non-casters) — surfaced ONLY for spells that force a save, so the
+    inspector can show "DC 15 DEX" honestly. Never fabricates a field the SRD record lacks."""
+    meta = _spell_meta(name)
+    card = {"name": name, "school": "—", "time": time_label, "glyph": "spell"}
+    if not meta:
+        return card
+    school = _text(meta.get("school"))
+    level_raw = meta.get("level")
+    level = int(level_raw) if isinstance(level_raw, (int, float)) else None
+    rng = _text(meta.get("range_text"))
+    casting_time = _text(meta.get("casting_time"))
+    duration = _text(meta.get("duration"))
+    concentration = bool(meta.get("concentration"))
+    ritual = bool(meta.get("ritual"))
+    save_ability = _text(meta.get("saving_throw_ability"))
+    attack_roll = bool(meta.get("attack_roll"))
+    damage = _text(meta.get("damage_roll"))
+    dtypes = [_text(t) for t in (meta.get("damage_types") or []) if _text(t)]
+    # Components V/S/M -> a compact "V, S, M" string (only the ones present).
+    comp = [c for c, on in (("V", meta.get("verbal")), ("S", meta.get("somatic")), ("M", meta.get("material"))) if on]
+    card.update({
+        "school": school.title() if school else "—",
+        "level": level,
+        # "Cantrip" reads better than "Level 0" for a 0-level spell.
+        "levelLabel": "Cantrip" if level == 0 else (f"Level {level}" if level is not None else ""),
+        "range": rng,
+        "castingTime": casting_time,
+        "duration": duration,
+        "concentration": concentration,
+        "ritual": ritual,
+        "components": ", ".join(comp),
+        "material": _text(meta.get("material_specified")),
+        # save: which ability the TARGET rolls (class-independent SRD fact). saveDc: the
+        # caster's DC (omitted when the character isn't a caster, or the spell forces no save).
+        "save": save_ability,
+        "saveDc": save_dc if (save_ability and save_dc is not None) else None,
+        "attack": attack_roll,
+        "damage": damage,
+        "damageType": ", ".join(dtypes),
+        "higherLevel": _text(meta.get("higher_level")),
+        "desc": _text(meta.get("desc")),
+    })
+    return card
 
 
 def _catalog_meta(name: str) -> dict:
@@ -3533,20 +3678,34 @@ def _catalog_meta(name: str) -> dict:
         return {}
     if _ITEMCATALOG is None and not _ITEMCATALOG_TRIED:
         _ITEMCATALOG_TRIED = True
-        try:
-            engine_dir = (_HERE.parent / "servers" / "engine").resolve()
-            if str(engine_dir) not in sys.path:
-                sys.path.insert(0, str(engine_dir))
-            import itemcatalog as _ic  # type: ignore
-            _ITEMCATALOG = _ic
-        except Exception:
-            _ITEMCATALOG = None
+        _ITEMCATALOG = _engine_module("itemcatalog")
     if _ITEMCATALOG is None:
         return {}
     try:
         return _ITEMCATALOG.resolve(name) or {}
     except Exception:
         return {}
+
+
+# Weapon-property slugs the SRD catalog stamps on a Weapon record (`is_simple` ->
+# "simple", `is_improvised` -> "improvised") and the attunement clause it stamps on a
+# MagicItem ("attune:<detail>"). Rendered verbatim as pills; the leading "attune:" is
+# stripped at display so the chip reads "Requires attunement (...)" cleanly.
+def _catalog_property_chips(meta: dict) -> list[str]:
+    """Human-readable property chips for an item from its SRD catalog record. Surfaces
+    ONLY the real, item-specific data the catalog carries (weapon simple/improvised flags,
+    the attunement clause). Never invents a property the catalog didn't stamp."""
+    chips: list[str] = []
+    for p in (meta.get("properties") or []):
+        s = _text(p)
+        if not s:
+            continue
+        if s.startswith("attune:"):
+            detail = s.split(":", 1)[1].strip()
+            chips.append(f"Attunement: {detail}" if detail else "Requires attunement")
+        else:
+            chips.append(s.replace("-", " "))
+    return chips
 
 
 def _inventory_items(cid: str, ch: dict) -> list[dict]:
@@ -3564,32 +3723,59 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
         weight = _num(item.get("weight"))
         cost = _num(item.get("cost"))
         rarity = _text(item.get("rarity"))
-        # Backfill weight/value/rarity from the SRD catalog when the granted item omits them
-        # (engine stays the source of truth; this is display-only enrichment for the reader).
-        if (weight is None or weight <= 0) or (cost is None or cost <= 0) or not rarity:
-            meta = _catalog_meta(name)
-            if meta:
-                if weight is None or weight <= 0:
-                    weight = _num(meta.get("weight"))
-                if cost is None or cost <= 0:
-                    cost = _num(meta.get("cost"))
-                if not rarity:
-                    rarity = _text(meta.get("rarity"))
+        # Resolve the SRD catalog record ONCE. It is the source of the item's stat block
+        # (damage dice / damage type / base AC / weapon properties / attunement clause) and
+        # also backfills weight/value/rarity the granted item omits. The engine stays the
+        # source of truth — a granted item's own value always wins; the catalog only fills
+        # gaps and supplies combat stats the Item model has no field for. A name the catalog
+        # can't resolve (e.g. "Longsword +1", "Healing Potion") yields {} -> the stat fields
+        # stay empty exactly as today (HONEST: never fabricate a number the engine lacks).
+        meta = _catalog_meta(name)
+        if meta:
+            if weight is None or weight <= 0:
+                weight = _num(meta.get("weight"))
+            if cost is None or cost <= 0:
+                cost = _num(meta.get("cost"))
+            if not rarity:
+                rarity = _text(meta.get("rarity"))
+        # Damage / AC: real catalog stats. Damage type is only meaningful with a dice expr.
+        damage = _text(meta.get("damage")) if meta else ""
+        damage_type = _text(meta.get("damage_type")) if (meta and damage) else ""
+        ac_raw = meta.get("ac") if meta else None
+        ac = int(ac_raw) if isinstance(ac_raw, (int, float)) else None
+        # Catalog `kind` ("weapon"/"armor"/"wondrous"/"potion"/"ring"/…) is the SRD's own
+        # classification; carry it through as the item's category alongside the coarse `type`
+        # the grid filters on (so the detail can read "Martial Weapon" / "Wondrous Item").
+        kind = _text(meta.get("kind")) if meta else ""
+        attunement = bool(item.get("requires_attunement") or (meta.get("requires_attunement") if meta else False))
+        # Property chips: the granted item's recorded "attuned" state first, then the catalog's
+        # real per-item properties (weapon simple/improvised, attunement clause). De-duped, no fab.
+        properties = ["Attuned"] if item.get("attuned") else []
+        for chip in (_catalog_property_chips(meta) if meta else []):
+            if chip not in properties:
+                properties.append(chip)
         out.append({
             "id": f"{cid}:{idx}:{name}",
             "owner": cid,
             "name": name,
             "qty": int(qty) if qty is not None else 1,
             "type": _infer_item_type(name, item),
+            "kind": kind,
             "glyph": _text(item.get("glyph"), name.lower()),
             "equipped": bool(item.get("equipped")),
             "weight": f"{weight:g} lb" if weight is not None and weight > 0 else "—",
             "value": f"{cost:g} gp" if cost is not None and cost > 0 else "—",
             "rarity": rarity or "common",
             "desc": _text(item.get("description"), "No description recorded."),
-            "attunement": bool(item.get("requires_attunement")),
+            # Combat stat block (empty string / None when the catalog has no such datum —
+            # the screen hides each row that is blank). damage e.g. "1d8", damageType "slashing",
+            # ac e.g. 18 (base AC for armor / shields).
+            "damage": damage,
+            "damageType": damage_type,
+            "ac": ac,
+            "attunement": attunement,
             "attuned": bool(item.get("attuned")),
-            "properties": [p for p in (["attuned"] if item.get("attuned") else []) ],
+            "properties": properties,
         })
     return out
 
@@ -3621,10 +3807,7 @@ def _inventory_party(snapshot: dict) -> list[dict]:
             "level": level or 1,
             "alignment": _text(ch.get("alignment"), "Unaligned"),
             "currency": _currency_for(ch),
-            "equipped": [
-                {"slot": _text(it.get("slot"), "Worn"), "name": _text(it.get("name")), "glyph": _text(it.get("name"), "item").lower()}
-                for it in (ch.get("inventory") or []) if isinstance(it, dict) and bool(it.get("equipped")) and _text(it.get("name"))
-            ],
+            "equipped": _equipped_items(ch),
             "items": items,
         })
     return out

@@ -381,6 +381,97 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertTrue(any(r["id"] == "second_wind" for r in hero["classResources"]))
         self.assert_no_private_keys(surface)
 
+    def test_character_surface_marks_skill_proficiency_expertise_and_untrained(self):
+        # Inspector-depth (optimizer/veteran): every skill carries explicit proficient/expertise
+        # flags so the Skills tab can mark trained vs untrained — not just a raw modifier.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_marches")
+        hero = {c["id"]: c for c in surface["party"]}["cassian"]
+        skills = {s["name"]: s for s in hero["skills"]}
+        # expertise (persuasion): both flags true, double-proficiency mod
+        self.assertTrue(skills["Persuasion"]["proficient"])
+        self.assertTrue(skills["Persuasion"]["expertise"])
+        # proficient-only (athletics): STR +3 mod + 2 prof = +5, expertise false
+        self.assertTrue(skills["Athletics"]["proficient"])
+        self.assertFalse(skills["Athletics"]["expertise"])
+        self.assertEqual(skills["Athletics"]["mod"], 5)
+        # untrained (stealth): neither flag; DEX +1 mod, no proficiency
+        self.assertFalse(skills["Stealth"]["proficient"])
+        self.assertFalse(skills["Stealth"]["expertise"])
+        self.assertEqual(skills["Stealth"]["mod"], 1)
+
+    def test_character_surface_spell_rules_text_for_a_real_caster(self):
+        # Inspector-depth bug #3: each known/prepared spell carries its REAL srd524 rules block
+        # (level/school/range/duration/concentration/save/damage), and the caster's spell save DC
+        # is computed (8 + prof + casting mod) for save-forcing spells. A Wizard (INT caster).
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["party"].append("elara")
+        snap["characters"]["elara"] = {
+            "id": "elara", "name": "Elara", "kind": "player", "race": "Elf",
+            "classes": [{"name": "Wizard", "level": 5}],
+            "abilities": {"intelligence": 18, "dexterity": 14, "constitution": 12},
+            "proficiency_bonus": 3, "armor_class": 12, "max_hp": 22, "current_hp": 22,
+            "spells_known": ["Fire Bolt", "Magic Missile"], "spells_prepared": ["Fireball"],
+            "spell_slots": {"3": {"maximum": 2, "used": 0}},
+        }
+        self._write("camp_caster", snap)
+        _status, surface = self._get_json("/character-surface?campaign=camp_caster")
+        elara = {c["id"]: c for c in surface["party"]}["elara"]
+        by_name = {sp["name"]: sp for grp in elara["spells"] for sp in grp["list"]}
+        # Fireball: L3 evocation, 150-foot range, DEX save, 8d6, DC = 8 + 3 prof + 4 INT = 15
+        fb = by_name["Fireball"]
+        self.assertEqual(fb["level"], 3)
+        self.assertEqual(fb["school"], "Evocation")
+        self.assertEqual(fb["range"], "150 feet")
+        self.assertEqual(fb["save"], "dexterity")
+        self.assertEqual(fb["saveDc"], 15)
+        self.assertEqual(fb["damage"], "8d6")
+        self.assertIn("fire", fb["damageType"])
+        # Fire Bolt: a cantrip (level 0) with an attack roll, no save -> saveDc omitted (None)
+        fbolt = by_name["Fire Bolt"]
+        self.assertEqual(fbolt["level"], 0)
+        self.assertEqual(fbolt["levelLabel"], "Cantrip")
+        self.assertTrue(fbolt["attack"])
+        self.assertIsNone(fbolt["saveDc"])
+        self.assert_no_private_keys(surface)
+
+    def test_character_surface_omits_spell_dc_for_non_caster_but_keeps_rules(self):
+        # HONEST data: Cassian is a Fighter (no SRD caster class), so no spell save DC is
+        # fabricated — but the spell's own rules text (school/range/duration) still resolves,
+        # since those are class-independent SRD facts. Bless (a buff) forces no save anyway.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_marches")
+        hero = {c["id"]: c for c in surface["party"]}["cassian"]
+        by_name = {sp["name"]: sp for grp in hero["spells"] for sp in grp["list"]}
+        self.assertEqual(by_name["Bless"]["school"], "Enchantment")
+        self.assertEqual(by_name["Bless"]["range"], "30 feet")
+        self.assertTrue(by_name["Bless"]["concentration"])
+        self.assertIsNone(by_name["Bless"]["saveDc"])  # Fighter -> no DC, not fabricated
+        self.assertEqual(by_name["Shield"]["school"], "Abjuration")
+
+    def test_character_surface_unknown_spell_degrades_to_name_only(self):
+        # A spell name the SRD doesn't carry surfaces as just its name (today's behavior) —
+        # the read-model never invents rules text it doesn't have.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["spells_prepared"] = ["Totally Made Up Spell"]
+        self._write("camp_unknown", snap)
+        _status, surface = self._get_json("/character-surface?campaign=camp_unknown")
+        hero = {c["id"]: c for c in surface["party"]}["cassian"]
+        sp = next(s for grp in hero["spells"] for s in grp["list"] if s["name"] == "Totally Made Up Spell")
+        self.assertEqual(sp["school"], "—")
+        self.assertNotIn("range", sp)  # no SRD block was merged in
+
+    def test_character_surface_equipped_carries_real_catalog_stats(self):
+        # Inspector-depth bug #2 backing: the heroes-screen paper-doll gets each equipped item's
+        # real catalog stats (kind / damage / ac) so a slot tooltip can read "1d8 piercing".
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_marches")
+        mira = {c["id"]: c for c in surface["party"]}["mira"]
+        rapier = next(e for e in mira["equipped"] if e["name"] == "Rapier")
+        self.assertEqual(rapier["kind"], "weapon")
+        self.assertEqual(rapier["damage"], "1d8")
+        self.assertEqual(rapier["damageType"], "piercing")
+
     # ── inventory ───────────────────────────────────────────────────────────────
 
     def test_inventory_surface_projects_packs_and_currency(self):
@@ -399,6 +490,49 @@ class ReadModelSurfaceTests(unittest.TestCase):
         # the flat shared-stash view spans every party member's items
         self.assertTrue(len(surface["stash"]) >= len(cassian["items"]))
         self.assert_no_private_keys(surface)
+
+    def test_inventory_surface_surfaces_real_item_stats_from_catalog(self):
+        # Inspector-depth bug #4: an item the SRD catalog resolves carries its real stat block
+        # (damage dice / type for a weapon, base AC for armor). Mira's Rapier resolves to 1d8
+        # piercing; a Plate Armor resolves to AC 18 — straight from the engine's item catalog.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["mira"]["inventory"].append(
+            {"name": "Plate Armor", "quantity": 1, "equipped": False})
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_marches")
+        mira = {m["id"]: m for m in surface["party"]}["mira"]
+        items = {i["name"]: i for i in mira["items"]}
+        self.assertEqual(items["Rapier"]["damage"], "1d8")
+        self.assertEqual(items["Rapier"]["damageType"], "piercing")
+        self.assertEqual(items["Rapier"]["kind"], "weapon")
+        self.assertEqual(items["Plate Armor"]["ac"], 18)
+        self.assertEqual(items["Plate Armor"]["kind"], "armor")
+
+    def test_inventory_surface_unresolved_item_keeps_empty_stats(self):
+        # HONEST data: a free-text item the catalog can't resolve ("Longsword +1", "Healing
+        # Potion") surfaces NO fabricated damage/ac — empty stat fields, exactly today's
+        # behavior. We never invent a number the engine didn't produce.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_marches")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        items = {i["name"]: i for i in cassian["items"]}
+        self.assertEqual(items["Longsword +1"]["damage"], "")
+        self.assertIsNone(items["Longsword +1"]["ac"])
+        self.assertEqual(items["Healing Potion"]["damage"], "")
+        self.assertIsNone(items["Healing Potion"]["ac"])
+
+    def test_inventory_surface_item_properties_include_attunement(self):
+        # An attuned magic item surfaces an "Attuned" property chip; a catalog item that
+        # requires attunement carries the attunement flag for the detail's stat block.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].append(
+            {"name": "Cloak of Protection", "quantity": 1, "requires_attunement": True, "attuned": True})
+        self._write("camp_attune", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_attune")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        cloak = {i["name"]: i for i in cassian["items"]}["Cloak of Protection"]
+        self.assertTrue(cloak["attunement"])
+        self.assertIn("Attuned", cloak["properties"])
 
     # ── relations ───────────────────────────────────────────────────────────────
 

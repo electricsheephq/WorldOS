@@ -218,43 +218,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <Divider />
 
             <div className="eyebrow">Equipped</div>
-            {(!Array.isArray(hero.equipped) || hero.equipped.length === 0) ? (
-              <div style={{
-                marginTop: 8, padding: "12px 14px", textAlign: "center",
-                background: "rgba(176,141,87,0.06)",
-                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
-              }}>
-                <div className="hand muted" style={{ fontSize: 12 }}>No gear equipped.</div>
-                {onNavigate && (
-                  <BrassButton tone="ghost" size="sm" style={{ marginTop: 8 }} onClick={() => onNavigate("inventory")}>
-                    Open the stash
-                  </BrassButton>
-                )}
-              </div>
-            ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-              {hero.equipped.map((it, i) => (
-                <div key={`${it.slot}-${it.name || i}`} style={{
-                  display: "flex", gap: 8, alignItems: "center",
-                  padding: 8,
-                  background: "rgba(176,141,87,0.08)",
-                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
-                }}>
-                  {/* Equipped item art — mirror screen-inventory's `item-<slug(name)>` scope
-                      (the engine keys ingested item icons by a name-slug; the surface emits
-                      it.name on each equipped entry). <Img> falls back to a Placeholder on a
-                      404, so a missing icon degrades gracefully. */}
-                  <Img scope={it.name ? "item-" + (window.slug ? window.slug(it.name) : "") : ""} label={it.name || it.glyph} w={32} h={32} fit="contain" framed />
-                  <div style={{ minWidth: 0 }}>
-                    <div className="eyebrow" style={{ fontSize: 9 }}>{it.slot}</div>
-                    <div style={{ fontFamily: "var(--f-display)", fontSize: 11, color: "var(--ink-900)", letterSpacing: "0.05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {it.name}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            )}
+            <HeroEquipDoll hero={hero} onNavigate={onNavigate} />
           </Panel>
 
           {/* Center tab content */}
@@ -568,6 +532,88 @@ function StatLine({ k, v }) {
   );
 }
 
+// A short stat line for an equipped item's tooltip / slot caption from the read-model's
+// REAL catalog stats — "1d8 slashing" for a weapon, "AC 18" for armor — or "" when the
+// item is a catalog-miss (then we show just its name; never a fabricated stat).
+function equippedStat(it) {
+  if (!it) return "";
+  if (it.damage) return [it.damage, it.damageType].filter(Boolean).join(" ");
+  if (typeof it.ac === "number") return `AC ${it.ac}`;
+  return "";
+}
+
+function HeroEquipDoll({ hero, onNavigate }) {
+  // Slotted paper-doll for the combat column (#271 brought to the hero sheet). Reuses the
+  // SAME canonical slot set + name→slot assignment that the inventory screen's PaperDoll uses
+  // (window.EQUIP_SLOTS / window.assignEquipSlots) so a hero's gear lands in Head/Body/Main-Hand/
+  // etc. instead of a flat "Worn" list. Each filled cell shows the item's real catalog stat
+  // (damage dice / AC) from the read-model; empty cells render an honest labeled slot.
+  const equipped = Array.isArray(hero.equipped) ? hero.equipped : [];
+  const SLOTS = Array.isArray(window.EQUIP_SLOTS) ? window.EQUIP_SLOTS : [];
+  const assign = typeof window.assignEquipSlots === "function" ? window.assignEquipSlots : null;
+  const slug = window.slug || ((n) => (n || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""));
+
+  if (equipped.length === 0) {
+    return (
+      <div style={{
+        marginTop: 8, padding: "12px 14px", textAlign: "center",
+        background: "rgba(176,141,87,0.06)",
+        boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+      }}>
+        <div className="hand muted" style={{ fontSize: 12 }}>No gear equipped.</div>
+        {onNavigate && (
+          <BrassButton tone="ghost" size="sm" style={{ marginTop: 8 }} onClick={() => onNavigate("inventory")}>
+            Open the stash
+          </BrassButton>
+        )}
+      </div>
+    );
+  }
+
+  // Build the {slotId: item} map (preferring the shared inventory helper). If that helper
+  // isn't loaded, fall back to listing each equipped item under its recorded slot — no crash.
+  const assigned = assign ? assign(equipped) : null;
+  const cells = (assigned && SLOTS.length)
+    ? SLOTS.map((s) => ({ slot: s, item: assigned[s.id] })).filter((c) => c.item)
+    : equipped.map((it, i) => ({ slot: { id: `e${i}`, label: it.slot || "Worn" }, item: it }));
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+      {cells.map(({ slot, item }) => {
+        const stat = equippedStat(item);
+        return (
+          <window.Tooltip
+            key={slot.id}
+            content={<window.InfoTooltip kind={slot.label} title={item.name} body={[stat, item.rarity && item.rarity !== "common" ? item.rarity : "", item.attunement ? "Requires attunement" : ""].filter(Boolean).join(" · ") || `Worn in the ${slot.label} slot.`} />}
+            side="top"
+          >
+            <div style={{
+              display: "flex", gap: 8, alignItems: "center",
+              padding: 8,
+              background: "rgba(176,141,87,0.08)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+              cursor: "help",
+            }}>
+              {/* Equipped item art — mirror screen-inventory's `item-<slug(name)>` scope (the
+                  engine keys ingested item icons by a name-slug; the surface emits it.name on
+                  each equipped entry). <Img> falls back to a Placeholder on a 404. */}
+              <Img scope={item.name ? "item-" + slug(item.name) : ""} label={item.name || item.glyph} w={32} h={32} fit="contain" framed />
+              <div style={{ minWidth: 0 }}>
+                <div className="eyebrow" style={{ fontSize: 9 }}>{slot.label}</div>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 11, color: "var(--ink-900)", letterSpacing: "0.05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {item.name}
+                </div>
+                {/* Real stat (damage dice / AC) when the catalog resolved it — never faked. */}
+                {stat && <div className="hand muted" style={{ fontSize: 10, lineHeight: 1.1 }}>{stat}</div>}
+              </div>
+            </div>
+          </window.Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
 function ResourcesStatus({ hero }) {
   // Pull only what the surface actually carries; every value is gated so an absent
   // or zero field renders nothing (no hardcoded fakes).
@@ -704,25 +750,72 @@ function ProficiencyDot({ proficient, expertise }) {
   );
 }
 
+// A small text badge naming a skill's training, paired with the proficiency dots so the
+// marker is unmissable (the bare 7px dot read as decoration to power players). "Expertise"
+// = double proficiency, "Prof" = proficient, nothing for untrained. Values come straight
+// from the read-model's per-skill proficient/expertise flags — never inferred from the mod.
+function ProficiencyBadge({ proficient, expertise }) {
+  if (!proficient && !expertise) return null;
+  const label = expertise ? "Expertise" : "Prof";
+  return (
+    <span className="eyebrow" style={{
+      fontSize: 8, letterSpacing: "0.12em", padding: "1px 5px", flexShrink: 0,
+      color: expertise ? "var(--w-300)" : "var(--ink-800)",
+      background: expertise
+        ? "linear-gradient(180deg, var(--b-300), var(--b-500))"
+        : "rgba(176,141,87,0.22)",
+      boxShadow: expertise
+        ? "inset 0 0 0 1px var(--b-600), 0 0 8px -3px var(--gold-glow)"
+        : "inset 0 0 0 1px rgba(140,100,60,0.45)",
+    }}>{label}</span>
+  );
+}
+
 function SkillsTab({ hero }) {
+  const skills = Array.isArray(hero.skills) ? hero.skills : [];
+  const proficientCount = skills.filter((s) => s.proficient || s.expertise).length;
+  const expertiseCount = skills.filter((s) => s.expertise).length;
   return (
     <div>
-      <SectionTitle ordinal="·">Skills</SectionTitle>
+      <SectionTitle ordinal="·" right={
+        <span className="muted body-sm">
+          {proficientCount} proficient{expertiseCount ? ` · ${expertiseCount} expertise` : ""}
+        </span>
+      }>Skills</SectionTitle>
+      {/* Legend so the marker convention is self-explanatory at a glance. */}
+      <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <ProficiencyDot proficient expertise={false} />
+          <span className="muted" style={{ fontSize: 10 }}>Proficient</span>
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <ProficiencyDot proficient expertise />
+          <span className="muted" style={{ fontSize: 10 }}>Expertise (×2 prof)</span>
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <ProficiencyDot proficient={false} expertise={false} />
+          <span className="muted" style={{ fontSize: 10 }}>Untrained</span>
+        </span>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-        {hero.skills.map((s) => (
-          <div key={s.name} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "baseline",
-            padding: "6px 12px",
-            background: (s.proficient || s.mod > 0) ? "rgba(176,141,87,0.1)" : "transparent",
+        {skills.map((s) => (
+          <div key={s.name} title={s.expertise ? "Expertise — double proficiency bonus" : s.proficient ? "Proficient" : "Not proficient"} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "6px 10px 6px 8px",
+            background: (s.proficient || s.expertise) ? "rgba(176,141,87,0.12)" : "transparent",
+            // A gold left-accent bar on trained skills — the second, unmissable cue.
+            borderLeft: s.expertise ? "3px solid var(--b-400)" : s.proficient ? "3px solid rgba(176,141,87,0.7)" : "3px solid transparent",
             boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.15)",
           }}>
-            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
               {/* Proficiency marker (DNDBeyond/BG3 convention): filled gold dot = proficient,
-                  two dots = expertise (double proficiency), hollow = untrained. */}
+                  two dots = expertise (double proficiency), hollow = untrained — paired with a
+                  text badge so power players don't miss it. */}
               <ProficiencyDot proficient={s.proficient} expertise={s.expertise} />
-              <span className="body-sm" style={{ color: s.proficient ? "var(--ink-900)" : "var(--ink-700)" }}>{s.name}</span>
+              <span className="body-sm" style={{ color: (s.proficient || s.expertise) ? "var(--ink-900)" : "var(--ink-700)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+              <ProficiencyBadge proficient={s.proficient} expertise={s.expertise} />
             </span>
-            <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: s.mod >= 0 ? "var(--ink-900)" : "var(--crimson)" }}>
+            <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: s.mod >= 0 ? "var(--ink-900)" : "var(--crimson)", flexShrink: 0 }}>
               {s.mod >= 0 ? "+" : ""}{s.mod}
             </span>
           </div>
@@ -740,12 +833,80 @@ function spellGroupLabel(level) {
   return (typeof level === "number" || /^\d+$/.test(String(level))) ? `Level ${level}` : String(level);
 }
 
-// Compose a spell's "school · casting-time" subline, dropping any em-dash / blank placeholder
-// the read-model emits when the school isn't projected (the engine stores spell names, not
-// full SRD blocks) — so we never render the bare "— · prepared".
+// Compose a spell's compact subline. Prefer the REAL SRD level/school the read-model now
+// projects ("Cantrip · Evocation" / "Level 3 · Evocation"); fall back to the prepared/known
+// grouping only when the SRD lookup missed. Drops any em-dash / blank placeholder so we never
+// render the bare "— · prepared".
 function spellMeta(sp) {
   const clean = (v) => { const s = String(v ?? "").trim(); return (s && s !== "—" && s !== "-") ? s : ""; };
+  const lvl = clean(sp.levelLabel);
+  const school = clean(sp.school);
+  if (lvl || school) return [lvl, school].filter(Boolean).join(" · ");
   return [clean(sp.school), clean(sp.time)].filter(Boolean).join(" · ");
+}
+
+// True when the read-model resolved this spell's SRD rules block (so we have something richer
+// than the bare name to show). A catalog-miss spell carries only name + grouping.
+function hasSpellRules(sp) {
+  return Boolean(sp && (sp.range || sp.duration || sp.castingTime || sp.damage || sp.save || sp.desc));
+}
+
+// One labeled rules chip ("Range · 150 feet"). Hidden when the value is blank so a spell that
+// carries only some fields (e.g. a self-buff with no save) never shows empty rows.
+function SpellRuleChip({ label, value }) {
+  const v = String(value ?? "").trim();
+  if (!v || v === "—") return null;
+  return (
+    <div style={{
+      padding: "4px 8px",
+      background: "rgba(176,141,87,0.06)",
+      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.2)",
+    }}>
+      <span className="eyebrow" style={{ fontSize: 8 }}>{label}</span>
+      <div style={{ fontFamily: "var(--f-display)", fontSize: 12, color: "var(--ink-900)", marginTop: 1 }}>{v}</div>
+    </div>
+  );
+}
+
+// The per-spell rules block: range / casting time / duration / save (with the caster's DC) /
+// damage / components, plus Concentration / Ritual badges and the upcast + description prose.
+// EVERY field is sourced from the engine's real srd524 record via the read-model — a spell the
+// SRD doesn't carry shows nothing here (just its name above). `compact` trims to the headline
+// stat chips for the in-tab card; the full block (with desc + upcast) shows in the browser.
+function SpellRules({ sp, compact }) {
+  if (!hasSpellRules(sp)) return null;
+  const dc = sp.save && (sp.saveDc !== null && sp.saveDc !== undefined)
+    ? `DC ${sp.saveDc} ${String(sp.save).slice(0, 3).toUpperCase()}`
+    : (sp.save ? `${String(sp.save).slice(0, 3).toUpperCase()} save` : "");
+  const dmg = sp.damage ? [sp.damage, sp.damageType].filter(Boolean).join(" ") + (sp.attack ? " (spell attack)" : "") : "";
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: dc || dmg ? 6 : 0 }}>
+        {sp.concentration && <Pill tone="royal" dot>Concentration</Pill>}
+        {sp.ritual && <Pill tone="emerald">Ritual</Pill>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "1fr 1fr 1fr", gap: 4 }}>
+        <SpellRuleChip label="Range" value={sp.range} />
+        <SpellRuleChip label="Cast" value={sp.castingTime} />
+        <SpellRuleChip label="Duration" value={sp.duration} />
+        {dc && <SpellRuleChip label="Save" value={dc} />}
+        {dmg && <SpellRuleChip label="Effect" value={dmg} />}
+        {!compact && <SpellRuleChip label="Components" value={sp.components} />}
+      </div>
+      {!compact && sp.material && (
+        <div className="hand muted" style={{ fontSize: 11, marginTop: 4 }}>Material: {sp.material}</div>
+      )}
+      {!compact && sp.desc && (
+        <p className="body-sm" style={{ marginTop: 8, marginBottom: 0, color: "var(--ink-700)", lineHeight: 1.45 }}>{sp.desc}</p>
+      )}
+      {!compact && sp.higherLevel && (
+        <p className="body-sm muted" style={{ marginTop: 6, marginBottom: 0, lineHeight: 1.4 }}>
+          <span className="eyebrow" style={{ fontSize: 8 }}>At higher levels</span><br />
+          {sp.higherLevel}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function LineagePanel({ hero }) {
@@ -857,17 +1018,22 @@ function SpellsTab({ hero }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {group.list.map((sp) => (
                 <div key={sp.name} style={{
-                  display: "flex", gap: 10, padding: 10,
+                  padding: 10,
                   background: "rgba(176,141,87,0.08)",
                   boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
                 }}>
-                  <Placeholder label={sp.glyph} w={36} h={36} framed />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
-                      {sp.name}
+                  <div style={{ display: "flex", gap: 10, minWidth: 0 }}>
+                    <Placeholder label={sp.glyph} w={36} h={36} framed />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                        {sp.name}
+                      </div>
+                      <div className="body-sm muted">{spellMeta(sp)}</div>
                     </div>
-                    <div className="body-sm muted">{spellMeta(sp)}</div>
                   </div>
+                  {/* Real SRD rules (range / duration / save DC / damage) from the read-model.
+                      Renders nothing for a spell the SRD doesn't carry — never fabricated. */}
+                  <SpellRules sp={sp} compact />
                 </div>
               ))}
             </div>
@@ -935,20 +1101,25 @@ function SpellbookBrowser({ hero, groups, onClose }) {
                 <SectionTitle right={<span className="muted body-sm">{group.list.length}</span>}>
                   {spellGroupLabel(group.level)}
                 </SectionTitle>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                   {group.list.map((sp) => (
                     <div key={sp.name} style={{
-                      display: "flex", gap: 10, alignItems: "center", padding: 10,
+                      padding: 12,
                       background: "rgba(176,141,87,0.08)",
                       boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
                     }}>
-                      <Placeholder label={sp.glyph} w={36} h={36} framed />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
-                          {sp.name}
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                        <Placeholder label={sp.glyph} w={36} h={36} framed />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                            {sp.name}
+                          </div>
+                          <div className="body-sm muted">{spellMeta(sp)}</div>
                         </div>
-                        <div className="body-sm muted">{spellMeta(sp)}</div>
                       </div>
+                      {/* Full SRD rules block (range / save DC / damage / components / description /
+                          upcast) — all from the engine's real srd524 record via the read-model. */}
+                      <SpellRules sp={sp} />
                     </div>
                   ))}
                 </div>
@@ -992,4 +1163,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, portraitScope, spellMeta });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, portraitScope, spellMeta });

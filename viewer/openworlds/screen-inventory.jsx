@@ -480,14 +480,20 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
         <Img scope={itemScope(item)} label={item.name} w={72} h={72} framed />
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="eyebrow" style={{ color:
             item.type === "rare" ? "var(--royal)" :
             item.type === "quest" ? "var(--crimson)" :
             "var(--ink-600)" }}>
-            {ITEM_TYPES[item.type] || item.type}
+            {/* Prefer the SRD catalog's own classification ("Martial Weapon", "Wondrous") when
+                the read-model resolved it; fall back to the coarse grid type. */}
+            {itemCategory(item)}
           </div>
           <h2 className="h1" style={{ fontSize: 20, lineHeight: 1.1, marginTop: 2 }}>{item.name}</h2>
+          {/* Rarity sits under the name when it is anything beyond the default "common". */}
+          {item.rarity && item.rarity.toLowerCase() !== "common" && (
+            <div className="hand" style={{ fontSize: 13, color: "var(--royal)", marginTop: 2, textTransform: "capitalize" }}>{item.rarity}</div>
+          )}
         </div>
       </div>
 
@@ -497,18 +503,24 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
         {item.desc}
       </p>
 
+      {/* Stat block — Weight/Value always (catalog-backfilled), plus the REAL combat stats the
+          read-model now surfaces from the SRD item catalog: damage dice + type for weapons, base
+          AC for armor/shields. A field absent from the catalog record is simply not rendered —
+          never a fabricated number (e.g. a free-text "Longsword +1" the catalog can't resolve
+          shows weight/value only, exactly today's behavior). */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 14 }}>
         <StatLine k="Weight" v={item.weight || "—"} />
         <StatLine k="Value" v={item.value || "—"} />
-        <StatLine k="Slot" v={item.slot || "—"} />
-        <StatLine k="Origin" v={item.origin || "Unknown"} />
+        {item.damage && <StatLine k="Damage" v={[item.damage, item.damageType].filter(Boolean).join(" ")} />}
+        {typeof item.ac === "number" && <StatLine k="Armor Class" v={`${item.ac}`} />}
+        {item.attunement && <StatLine k="Attunement" v="Required" />}
       </div>
 
-      {item.properties && (
+      {Array.isArray(item.properties) && item.properties.length > 0 && (
         <>
           <Divider />
           <div className="eyebrow">Properties</div>
-          <div className="tag-row" style={{ marginTop: 6 }}>
+          <div className="tag-row" style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
             {item.properties.map((p) => <Pill key={p}>{p}</Pill>)}
           </div>
         </>
@@ -561,6 +573,21 @@ const ITEM_TYPES = {
   common: "Sundry",
 };
 
+// The SRD catalog `kind` slug -> a readable category label for the item header. When the
+// read-model resolved a catalog record we prefer its real classification (so a relic reads
+// "Wondrous Item", a blade "Weapon"); otherwise we fall back to the coarse grid type label.
+const ITEM_KINDS = {
+  weapon: "Weapon", armor: "Armor", shield: "Shield", wondrous: "Wondrous Item",
+  ring: "Ring", rod: "Rod", staff: "Staff", wand: "Wand", scroll: "Scroll",
+  potion: "Potion", gear: "Adventuring Gear", ammunition: "Ammunition",
+};
+
+function itemCategory(item) {
+  const kind = (item && item.kind ? String(item.kind) : "").toLowerCase();
+  if (kind) return ITEM_KINDS[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1));
+  return ITEM_TYPES[item && item.type] || (item && item.type) || "Item";
+}
+
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, toRoman, slug, itemScope });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope });
