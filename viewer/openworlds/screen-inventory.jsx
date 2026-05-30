@@ -129,7 +129,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
   }
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr 320px", gap: 14, padding: 14 }}>
+    <div className="screen stack-on-narrow" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr 320px", gap: 14, padding: 14 }}>
 
       {/* LEFT — Hero & equipped */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
@@ -396,7 +396,7 @@ function PaperDoll({ hero }) {
     <div style={{ marginTop: 16 }}>
       <div className="eyebrow" style={{ marginBottom: 8 }}>Equipped</div>
       {/* doll: left slots | portrait | right slots */}
-      <div style={{ display: "grid", gridTemplateColumns: "52px 1fr 52px", gap: 8, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "52px 280px 52px", gap: 8, alignItems: "start" }}>
         <div style={{ display: "grid", gap: 6 }}>
           {col("left").map((s) => <EquipSlotCell key={s.id} slot={s} item={assigned[s.id]} />)}
         </div>
