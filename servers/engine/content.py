@@ -1612,6 +1612,11 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             connections=reg.get("connections", []),
             notes=" ".join(reg.get("tags", [])),
             hex=reg.get("hex"),
+            # The world's authored regions are KNOWN day-1 — they are the shipped nav
+            # graph the player can already see in the atlas (issue #261). A world MAY
+            # opt a region OUT of day-1 visibility (fog-of-war) by declaring
+            # discovered=False; default True restores the prior all-regions-visible map.
+            discovered=bool(reg.get("discovered", True)),
         )
         if reg.get("id"):
             if reg["id"] in c.locations:
@@ -1654,6 +1659,11 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             region=str(area.get("region", "")),
             notes=" ".join(str(t) for t in (area.get("tags") or []) if str(t).strip()),
             connections=[str(x) for x in (area.get("connections") or []) if str(x).strip()],
+            # Ingested areas are equally part of the world's KNOWN day-1 nav graph, so they
+            # stay visible in the atlas exactly as before (issue #261). Marking them
+            # discovered=True keeps the projected map byte-for-byte today's behavior while
+            # making the engine the explicit writer; an area MAY opt out via discovered=False.
+            discovered=bool(area.get("discovered", True)),
         )
         if aid:
             location.id = aid
