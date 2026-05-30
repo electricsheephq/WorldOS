@@ -1488,6 +1488,13 @@ def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
         item = {"kind": kind, "text": text[:1000]}
         if label:
             item["label"] = label[:120]
+        # Carry the stable session-log line index (`seq`) through to the surface when present, so the
+        # viewer's leading history band (recentEvents) de-dups against the live /events tail by ID,
+        # not by prose. _session_event_tail_from_dir stamps it; an older snapshot/path without it
+        # simply omits the key and the viewer falls back to its text-key dedup for that row.
+        seq = row.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            item["seq"] = seq
         out.append(item)
         if len(out) >= 12:
             break
@@ -1541,13 +1548,29 @@ def _session_event_tail_from_dir(campaign_dir: Path, snapshot: dict, limit: int 
         return []
     if log.parent != sessions_dir or not log.is_file():
         return []
+    # Compute the ABSOLUTE line index of the first tailed line so each row can carry the SAME
+    # stable `seq` key as the /events feed (both index the same session log). The tail returns only
+    # the last `limit` lines, so its base index is (total non-truncated lines − len(tail)). A line's
+    # absolute index is base+offset; this lets the leading history band (recentEvents) and the live
+    # /events tail dedup against ONE id space — a paragraph in both bands matches by seq, never by
+    # its (rewordable) prose. Best-effort: if the count read fails we fall back to no seq (the
+    # client's text-key fallback still de-dups), so this never breaks the surface.
+    tail = _tail_text_lines(log, limit)
+    base = 0
+    try:
+        with log.open("r", encoding="utf-8", errors="replace") as fh:
+            total = sum(1 for _ in fh)
+        base = max(0, total - len(tail))
+    except OSError:
+        base = 0
     out: list[dict] = []
-    for raw in _tail_text_lines(log, limit):
+    for offset, raw in enumerate(tail):
         try:
             row = json.loads(raw)
         except json.JSONDecodeError:
             continue
         if isinstance(row, dict):
+            row.setdefault("seq", base + offset)
             out.append(row)
     return out
 
@@ -5266,9 +5289,20 @@ def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
             consumed += 1
             continue
         try:
-            out.append(json.loads(stripped))
+            row = json.loads(stripped)
         except json.JSONDecodeError:
             break  # half-written trailing line — DON'T advance past it; re-read next poll
+        # Stamp the row with its ABSOLUTE line index in the session log as a STABLE id (`seq`).
+        # The viewer keys narration dedup + chronological order off this — NOT off the prose —
+        # so a beat the DM rewords between its streamed copy and its turn-END /chat reply can't
+        # show twice, and a re-ingest (windowing / cursor-rewind on session rotation) of the same
+        # line collapses to one row. The session log is the engine's sole-writer narration record,
+        # so a line index is a true monotonic per-beat identity. `consumed` is this line's index
+        # (it was incremented for every prior line, blank or not), and the same absolute indexing is
+        # mirrored by _session_recent_events so the leading history band shares the key space.
+        if isinstance(row, dict):
+            row.setdefault("seq", consumed)
+        out.append(row)
         consumed += 1
     return out, consumed
 
