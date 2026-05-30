@@ -3380,7 +3380,19 @@ def _character_sheet(cid: str, ch: dict) -> dict:
 
     conditions = [str(c).replace("_", " ").title() for c in (ch.get("conditions") or []) if str(c)]
     death = ch.get("death_saves") if isinstance(ch.get("death_saves"), dict) else {}
+    # The engine's `features` list holds CLASS/SUBCLASS features only (models.Character.features
+    # is populated from srd_tables.features_through/features_at). Chosen FEATS are recorded
+    # separately as "| feat: <Name>" markers in ch.notes (engine level_up path). Surface those
+    # two distinct sources so the sheet's Feats tab and Class Features list are not identical
+    # duplicates (#286): classFeatures <- features, feats <- notes feat-markers (empty when none).
     features = [_text(f) for f in (ch.get("features") or []) if _text(f)]
+    feat_names: list[str] = []
+    for seg in _text(ch.get("notes")).split("|"):
+        seg = seg.strip()
+        if seg.lower().startswith("feat:"):
+            fname = seg.split(":", 1)[1].strip()
+            if fname and fname not in feat_names:
+                feat_names.append(fname)
     equipped = [
         {"slot": _text(it.get("slot"), "Worn"), "name": _text(it.get("name")), "glyph": _text(it.get("name"), "item").lower()}
         for it in (ch.get("inventory") or []) if isinstance(it, dict) and bool(it.get("equipped")) and _text(it.get("name"))
@@ -3415,7 +3427,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "dead": bool(ch.get("dead")),
         "stable": bool(ch.get("stable")),
         "equipped": equipped,
-        "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in features],
+        "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in feat_names],
         "abilities": [],
         "proficiencies": features,
         "classFeatures": [{"name": f, "detail": ""} for f in features],
@@ -3669,6 +3681,32 @@ def _standing_label(rep: int) -> str:
     return "Welcome"
 
 
+# Leading articles/qualifiers stripped before deriving a faction sigil so
+# "The Flaming Fist" reads as "FF" (not "T") and "Order of the Gauntlet" as "G".
+_FACTION_SIGIL_PREFIXES = ("the ", "order of the ", "order of ", "cult of the ",
+                           "cult of ", "house of ", "house ", "clan ", "guild of ",
+                           "guild ", "company of the ", "company of ")
+
+
+def _faction_sigil(name: str) -> str:
+    """Derive a 1-2 letter sigil for a faction medallion. Strips a leading article/
+    qualifier ("The ", "Order of ", "Cult of ", ...) then takes the initials of the
+    first one or two remaining words, so "The Flaming Fist" -> "FF" and a single-word
+    faction -> its first letter."""
+    base = _text(name).strip()
+    low = base.lower()
+    for pre in _FACTION_SIGIL_PREFIXES:
+        if low.startswith(pre) and len(low) > len(pre):
+            base = base[len(pre):].strip()
+            break
+    words = [w for w in base.replace("-", " ").split() if w]
+    if not words:
+        return "✦"
+    if len(words) == 1:
+        return words[0][:1].upper()
+    return (words[0][:1] + words[1][:1]).upper()
+
+
 def _relations_factions(snapshot: dict) -> list[dict]:
     factions = snapshot.get("factions")
     out: list[dict] = []
@@ -3687,7 +3725,7 @@ def _relations_factions(snapshot: dict) -> list[dict]:
             "short": _text(row.get("description"))[:48] or "a standing power",
             "kind": "Faction",
             "color": _FACTION_COLORS[i % len(_FACTION_COLORS)],
-            "sigil": name[:1].upper() or "✦",
+            "sigil": _faction_sigil(name),
             "motto": tags[0].title() if tags else "",
             "seat": "",
             "rep": _reputation_to_bar(rep),
