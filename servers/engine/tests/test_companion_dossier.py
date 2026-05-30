@@ -154,18 +154,26 @@ def test_load_canon_character_populates_dossier(tmp_path, monkeypatch):
     assert "knowledge" in sheet["companion_dossier"]["values"]
 
 
-def test_load_canon_character_applies_hp_floor_through_the_tool(tmp_path, monkeypatch):
-    # The HP-floor THROUGH THE TOOL: a canon identity stub must NOT load at the model's
-    # placeholder max_hp=1 (a one-hit-kill in combat). server.load_canon_character floors it
-    # to >=10 with current_hp==max_hp (server.py ~1685). Gale ships no canon HP hint, so the
-    # floor is the sole reason his max_hp is 10 — delete the floor and this assert goes red.
+def test_load_canon_character_derives_class_level_hp_through_the_tool(tmp_path, monkeypatch):
+    # DERIVED MAX_HP THROUGH THE TOOL: a canon identity stub must NOT load at the model's
+    # placeholder max_hp=1 (a one-hit-kill in combat). #352 replaced the old arbitrary flat-10
+    # floor with a class+level-derived max_hp: server.load_canon_character runs the shared
+    # `_class_level_hp` helper (hit-die + CON per level) and seats current_hp==max_hp. Gale ships
+    # no canon HP hint and is a Wizard L1 (CON +2 from the #322-derived array), so his max_hp is
+    # d6 + CON = 8 — the sole reason it isn't the placeholder 1. Mirrors test_canon_maxhp.py.
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     res = server.load_canon_character(bg, "Gale")  # fresh load (Gale isn't rostered)
     assert not res.get("already_present")
     sheet = server.get_character(bg, res["id"])
-    assert sheet["max_hp"] >= 10  # floored above the placeholder 1
-    assert sheet["current_hp"] == sheet["max_hp"]  # a fresh stub stands at full (placeholder) health
+    # Derive the expected value from the seated sheet the same way the engine does: hit-die +
+    # CON per level for the char's (single) class + level. AbilityScores.modifier == (score-10)//2.
+    cls = sheet["classes"][0]
+    con = (sheet["abilities"]["constitution"] - 10) // 2
+    expected = server._class_level_hp(cls["name"], cls["level"], con)
+    assert sheet["max_hp"] == expected == 8, (sheet["max_hp"], expected)  # Wizard L1, CON +2 -> d6+2
+    assert sheet["max_hp"] > 1  # NOT the one-hit-kill placeholder the derive replaced
+    assert sheet["current_hp"] == sheet["max_hp"]  # a fresh stub stands at full health
 
 
 def test_coerce_dossier_degrades_on_malformed():
