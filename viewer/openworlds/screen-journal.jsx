@@ -306,27 +306,28 @@ function ScreenJournal({ onNavigate, state, setState }) {
               ))}
             </div>
 
-            {/* "Names mentioned" — the journal-surface does not provide quest.npcs, so this
-                whole section (eyebrow + heading + roster) renders ONLY when the surface
-                actually supplies a non-empty npcs list; otherwise it's hidden (no empty label). */}
-            {Array.isArray(quest.npcs) && quest.npcs.length > 0 && (
-              <>
-                <Divider />
-                <div className="eyebrow" style={{ color: "var(--crimson)" }}>Of note</div>
-                <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>Names mentioned</h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                  {quest.npcs.map((n) => (
-                    <div key={n.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <Img scope={jNpcScope(n)} label={n.name || n.short} w={36} h={44} fit="cover" framed />
-                      <div>
-                        <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{n.name}</div>
-                        <div className="hand muted" style={{ fontSize: 12 }}>{n.role}</div>
-                      </div>
-                    </div>
-                  ))}
+            {/* "Names mentioned" — mirrors the Objectives section above: the eyebrow +
+                heading always render, and we show either the roster or an honest empty-state
+                line (the journal-surface does not yet emit quest.npcs). */}
+            <Divider />
+            <div className="eyebrow" style={{ color: "var(--crimson)" }}>Of note</div>
+            <h2 className="h2" style={{ marginTop: 4, fontSize: 16 }}>Names mentioned</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+              {!(Array.isArray(quest.npcs) && quest.npcs.length) && (
+                <div className="body-sm muted">
+                  No names recorded yet — the chronicle has not noted anyone for this quest.
                 </div>
-              </>
-            )}
+              )}
+              {(Array.isArray(quest.npcs) ? quest.npcs : []).map((n) => (
+                <div key={n.name} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <Img scope={jNpcScope(n)} label={n.name || n.short} w={36} h={44} fit="cover" framed />
+                  <div>
+                    <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{n.name}</div>
+                    <div className="hand muted" style={{ fontSize: 12 }}>{n.role}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             {/* Threads & Callbacks (#120): scheduled quest-evolution echoes — a resolved
                 quest's pending "this thread will return" callback. Display-only. */}
@@ -358,34 +359,17 @@ function ScreenJournal({ onNavigate, state, setState }) {
               </>
             )}
 
-            {/* Wax seal + reward — the reward line shows ONLY when the surface provides
-                quest.reward (truthy); otherwise no fake "750 XP · 120 gp" is stamped. The
-                decorative seal stays as a chrome flourish. */}
-            <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{
-                width: 60, height: 60, borderRadius: "50%",
-                background: `radial-gradient(circle at 30% 30%, #c54040, var(--crimson) 50%, #3a0a0a)`,
-                boxShadow: "inset 0 0 0 1px #2a0606, 0 2px 6px rgba(0,0,0,0.4), inset 0 2px 6px rgba(255,200,200,0.2)",
-                color: "rgba(255, 200, 200, 0.85)",
-                fontFamily: "var(--f-display)",
-                fontSize: 9,
-                letterSpacing: "0.2em",
-                display: "grid", placeItems: "center",
-                textAlign: "center",
-                lineHeight: 1,
-                transform: "rotate(-12deg)",
-              }}>
-                OPEN<br/>WORLDS
-              </div>
-              {quest.reward && (
-                <div>
-                  <div className="eyebrow" style={{ color: "var(--crimson)" }}>Reward</div>
-                  <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>
-                    {quest.reward}
-                  </div>
+            {/* Reward — the reward line shows ONLY when the surface provides quest.reward
+                (truthy); otherwise no fake "750 XP · 120 gp" is stamped. (The purposeless
+                rotated "OPEN WORLDS" wax-seal flourish was removed — #313.) */}
+            {quest.reward && (
+              <div style={{ marginTop: 24 }}>
+                <div className="eyebrow" style={{ color: "var(--crimson)" }}>Reward</div>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)" }}>
+                  {quest.reward}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 6, marginTop: 18, flexWrap: "wrap" }}>
               <BrassButton onClick={() => onNavigate("map")} size="sm">Show on map</BrassButton>
