@@ -129,19 +129,49 @@ function useLiveSession(state) {
   const [log, setLog] = React.useState([]);           // local optimistic player echoes
   const [pending, setPending] = React.useState(null);  // { text, since, stuck? } | null
   const chatCursor = React.useRef(0);
+  const eventsCursor = React.useRef(0);                // #393: per-file cursor for the live /events tail
   const dmBeatCountRef = React.useRef(0);
+  // #393: dedup key set shared across BOTH narration sources. The session log streams a turn's
+  // narration mid-flight via /events; the duo/human runner ALSO appends the SAME prose to /chat at
+  // turn-END. Without a shared seen-set the player would see each streamed paragraph twice (once live,
+  // once when the chat line lands). Keyed by normalized narration text so whichever source surfaces a
+  // given paragraph FIRST wins and the later duplicate is dropped. Player echoes are never deduped.
+  const seenNarration = React.useRef(new Set());
   const recoveryTimer = React.useRef(null);
   const backstopTimer = React.useRef(null);
 
   // sanitizeNarration lives in screen-table.jsx (loaded first); fall back to identity if absent.
   const sanitize = (txt) => (typeof window.sanitizeNarration === "function" ? window.sanitizeNarration(txt) : (txt || ""));
+  // #393: a stable dedup key for a narration paragraph — whitespace-collapsed + lowercased so the
+  // /events copy and the /chat copy of the same prose hash identically. First-seen returns true (show
+  // it + record the key); a repeat returns false (suppress). Empty/blank text is never recorded.
+  const claimNarration = React.useCallback((txt) => {
+    const key = String(txt || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!key) return false;
+    if (seenNarration.current.has(key)) return false;
+    seenNarration.current.add(key);
+    return true;
+  }, []);
 
   const clearTimers = React.useCallback(() => {
     if (recoveryTimer.current) { window.clearTimeout(recoveryTimer.current); recoveryTimer.current = null; }
     if (backstopTimer.current) { window.clearTimeout(backstopTimer.current); backstopTimer.current = null; }
   }, []);
 
-  const clearPending = React.useCallback(() => { clearTimers(); setPending(null); }, [clearTimers]);
+  // #393: a ref mirror of `pending` so a poll callback (whose effect deps deliberately EXCLUDE
+  // `pending`, to avoid re-subscribing the 3s interval every turn) can read the CURRENT turn state
+  // without a stale closure. `setPendingState` is the single writer that keeps the ref in lockstep
+  // with state — every pending change (arm / clear / stuck-flag / progress) goes through it.
+  const pendingRef = React.useRef(null);
+  const setPendingState = React.useCallback((next) => {
+    setPending((p) => {
+      const v = (typeof next === "function") ? next(p) : next;
+      pendingRef.current = v;
+      return v;
+    });
+  }, []);
+
+  const clearPending = React.useCallback(() => { clearTimers(); setPendingState(null); }, [clearTimers, setPendingState]);
 
   // #342 + #348: arm the narrating indicator + a recovery timeout. If a DM beat doesn't arrive within
   // the recovery window the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
@@ -156,12 +186,34 @@ function useLiveSession(state) {
     clearTimers();
     const firstBeat = dmBeatCountRef.current === 0;
     const recoveryMs = recoveryWindowMs(firstBeat);
-    setPending({ text, since: Date.now(), stuck: false, firstBeat });
+    setPendingState({ text, since: Date.now(), stuck: false, firstBeat });
     recoveryTimer.current = window.setTimeout(() => {
-      setPending((p) => (p ? { ...p, stuck: true } : p));
+      setPendingState((p) => (p ? { ...p, stuck: true } : p));
     }, recoveryMs);
-    backstopTimer.current = window.setTimeout(() => setPending(null), PENDING_BACKSTOP_MS);
-  }, [clearTimers]);
+    backstopTimer.current = window.setTimeout(() => setPendingState(null), PENDING_BACKSTOP_MS);
+  }, [clearTimers, setPendingState]);
+
+  // #393: a turn that is STREAMING prose mid-flight (via the /events live tail) is demonstrably
+  // alive — so reset the stall/backstop clocks on each streamed beat instead of letting a long-but-
+  // healthy turn drift toward a false 'stuck'. This deliberately does NOT clear pending: the action
+  // bar stays gated (one move at a time) and the honest "the DM is narrating" indicator stays up
+  // WHILE the scene visibly builds above it — the turn only resolves (clearPending) when its final
+  // text lands on /chat. No-op when no turn is pending (a streamed beat with the bar already idle).
+  const notePendingProgress = React.useCallback(() => {
+    // Read the live turn via the ref (the poll's closure can't see the latest `pending`). Side-
+    // effects (timer re-arm) live OUTSIDE any state updater so they don't double-fire under React
+    // StrictMode's double-invoked updaters.
+    const p = pendingRef.current;
+    if (!p) return;
+    clearTimers();
+    const recoveryMs = recoveryWindowMs(Boolean(p.firstBeat));
+    recoveryTimer.current = window.setTimeout(() => {
+      setPendingState((q) => (q ? { ...q, stuck: true } : q));
+    }, recoveryMs);
+    backstopTimer.current = window.setTimeout(() => setPendingState(null), PENDING_BACKSTOP_MS);
+    // Clear any prior 'stuck' flag — fresh prose just arrived, so the turn is plainly not stuck.
+    if (p.stuck) setPendingState((q) => (q ? { ...q, stuck: false } : q));
+  }, [clearTimers, setPendingState]);
 
   const recordPlayerEcho = React.useCallback((who, text) => {
     setLog((l) => [...l, { kind: "action", who, text, at: nextLogSeq() }]);  // #274: creation-order stamp
@@ -173,7 +225,9 @@ function useLiveSession(state) {
   // another (the cursor is per-file; a new run starts at 0).
   React.useEffect(() => {
     chatCursor.current = 0;
+    eventsCursor.current = 0;          // #393: reset the live /events tail per run
     dmBeatCountRef.current = 0;
+    seenNarration.current = new Set();  // #393: a fresh run shares no dedup keys with the last
     setChatBeats([]);
     setLog([]);
     clearPending();
@@ -197,19 +251,29 @@ function useLiveSession(state) {
         const payload = await resp.json();
         const items = Array.isArray(payload.items) ? payload.items : [];
         if (!cancelled && items.length) {
+          // #393: a DM line on /chat is the turn-RESOLUTION signal regardless of whether its prose
+          // is novel — when the whole beat already streamed live via /events, claimNarration dedups
+          // EVERY paragraph (beats below is empty), but the turn has still ended and the indicator
+          // must clear. So track "a dm-role item arrived" separately from "novel beats to render".
+          let dmLineArrived = false;
           const beats = items
             .map((it) => {
               // #274: stamp each beat with the shared monotonic counter at ingest time so it
               // time-merges correctly against local player echoes (which share the same counter).
               if (it.role === "player") return { kind: "dialog", who: "You", text: it.text, at: nextLogSeq() };
+              dmLineArrived = true;
               const clean = sanitize(it.text);
-              return clean ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
+              // #393: drop a turn-END chat beat whose prose already streamed live via /events this
+              // turn (claimNarration is false on a repeat) so the same paragraph isn't shown twice.
+              return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
             })
             .filter(Boolean);
           if (beats.length) setChatBeats((prev) => [...prev, ...beats]);
-          // A fresh DM narration beat means the turn resolved → clear the narrating indicator
-          // (and its timers). Player echoes / wholly-internal beats don't count.
-          if (beats.some((b) => b.kind === "narration")) {
+          // The arrival of the DM's turn-END line means the turn RESOLVED → clear the narrating
+          // indicator + its timers. This fires even when the prose was wholly deduped (a turn whose
+          // entire beat streamed live via /events), so a fully-streamed turn still re-opens the bar.
+          // Player echoes alone never resolve a turn.
+          if (dmLineArrived) {
             dmBeatCountRef.current += beats.filter((b) => b.kind === "narration").length;
             clearPending();
           }
@@ -225,7 +289,72 @@ function useLiveSession(state) {
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
     return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [campaignId, source, runId, clearPending]);
+  }, [campaignId, source, runId, clearPending, claimNarration]);
+
+  // #393: the LIVE narration stream — the fix for the "blank 90s wait" give-up.
+  // The DM logs each narration/dialogue beat via the engine's log_event DURING its turn, and the
+  // engine appends it to campaigns/<id>/sessions/<sid>.jsonl IMMEDIATELY (store.append_log). The
+  // viewer's /events endpoint tails exactly that log with a line cursor. So polling /events here
+  // surfaces the scene as it is being WRITTEN — a 60-90s blank wait becomes 60-90s of prose
+  // appearing — WITHOUT changing the resolver's blocking turn or the engine's sole-writer semantics
+  // (this is a pure read of state the engine already wrote). The turn-END /chat line carries the
+  // same prose; claimNarration dedups it so each paragraph shows exactly once, from whichever source
+  // reached the player first (live, in practice). Visibility-aware + best-effort, mirroring /chat.
+  React.useEffect(() => {
+    if (!campaignId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const pollOnce = async () => {
+      if (cancelled) return;
+      try {
+        const params = new URLSearchParams();
+        params.set("campaign", campaignId);
+        if (source) params.set("source", source);
+        if (runId) params.set("run", runId);
+        params.set("since", String(eventsCursor.current));
+        const resp = await fetch(`/events?${params.toString()}`, { cache: "no-store" });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const entries = Array.isArray(payload.entries) ? payload.entries : [];
+        if (!cancelled && entries.length) {
+          // Only player-facing prose streams live: narration + dialogue. Roll/system/combat rows are
+          // mechanics the chronicle surfaces elsewhere — folding them in here would read as noise
+          // mid-scene. Each new (un-seen) paragraph becomes a live, time-stamped chronicle beat.
+          const beats = entries
+            .map((e) => {
+              const kind = (e && (e.kind || e.type)) || "narration";
+              if (kind !== "narration" && kind !== "dialogue") return null;
+              const clean = sanitize(e && (e.text || e.detail));
+              return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
+            })
+            .filter(Boolean);
+          if (beats.length) {
+            setChatBeats((prev) => [...prev, ...beats]);
+            // The scene is visibly building → the turn is plainly alive. Count the streamed prose as
+            // real DM beats (so the NEXT turn isn't mis-treated as a cold-open 'firstBeat') and reset
+            // the stall clock so a long-but-healthy streaming turn is never falsely declared 'stuck'.
+            // We deliberately KEEP pending: the action bar stays gated (one move at a time) and the
+            // honest "narrating" indicator stays up WHILE the scene fills in above it — the turn only
+            // RESOLVES when its final text lands on /chat. This is the give-up fix: a blank wait
+            // becomes "I can watch my story arriving," without relaxing the turn-gating semantics.
+            dmBeatCountRef.current += beats.length;
+            notePendingProgress();
+          }
+        }
+        if (!cancelled && typeof payload.next === "number") eventsCursor.current = payload.next;
+      } catch (_e) { /* the live event tail is non-critical; the /chat tail is the backstop */ }
+    };
+    const stop = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    // #393: poll a touch faster than /chat (4s) so streamed prose feels responsive without hammering
+    // the stdlib server — 3s is well within the session log's mid-turn write cadence.
+    const start = () => { if (timer === null) timer = window.setInterval(pollOnce, 3000); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { pollOnce(); start(); } else { stop(); }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
+    return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [campaignId, source, runId, notePendingProgress, claimNarration]);
 
   return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho };
 }

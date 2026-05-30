@@ -242,7 +242,24 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // sequence) and are always the oldest, so they keep their leading position and relative order.
   // Array.prototype.sort is stable (ES2019+); ties are impossible anyway since the counter is unique.
   const mergedTail = [...chatBeats, ...log].sort((a, b) => (a?.at || 0) - (b?.at || 0));
-  const visibleLog = surface ? [...recentEvents, ...mergedTail] : [...demoLog, ...log];
+  // #393: dedup recentEvents against the live tail. recentEvents is the server's trailing window of
+  // the SAME session log that the live narration stream (chatBeats, fed by app.jsx's /events poll)
+  // now reads — so a paragraph that has already streamed into the live band would otherwise ALSO
+  // show in this leading history band (the same prose twice, adjacent). Drop any recentEvents
+  // narration row whose text already appears in the live tail; non-narration history rows and
+  // genuine pre-session prose (not in the live tail) are untouched. Keyed identically to app.jsx's
+  // claimNarration (whitespace-collapsed + lowercased) so the two projections of one paragraph match.
+  const narrationKey = (t) => sanitizeNarration(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const liveNarrationKeys = new Set(
+    mergedTail.filter((b) => b && b.kind === "narration").map((b) => narrationKey(b.text)).filter(Boolean),
+  );
+  const dedupedRecent = recentEvents.filter((row) => {
+    const kind = (row && (row.kind || row.type)) || "narration";
+    if (kind !== "narration" && kind !== "dialogue") return true;  // mechanics rows always kept
+    const key = narrationKey(row && (row.text || row.detail));
+    return !key || !liveNarrationKeys.has(key);
+  });
+  const visibleLog = surface ? [...dedupedRecent, ...mergedTail] : [...demoLog, ...log];
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
 
