@@ -10,6 +10,9 @@
 // `sanitizeNarration(text)` returns a cleaned narration string, or "" when the WHOLE
 // beat was internal (caller drops it). It is line-oriented so a single stray advisory
 // line inside an otherwise-real beat is removed without nuking the prose around it.
+// #347 extends it with a SENTENCE-level pass that strips story-craft scaffolding (dice
+// tallies, plot-structure jargon, "beat complete" stage-directions) embedded mid-line —
+// see the `_isScaffoldingSentence` block below for the HIGH-CONFIDENCE-only patterns.
 const DM_ENGINE_TOOLS = [
   "remember", "recall", "recall_decisions", "log_event", "add_quest",
   "update_decision", "record_decision", "add_consequence", "check_consequences",
@@ -52,10 +55,101 @@ function _isInternalLine(line) {
     || _ADVISORY_DIRECTIVE.test(t)
     || _BARE_TOOL_LINE.test(t);
 }
+
+// #347: the SECOND class of DM-internal leak — the DM agent's STORY-CRAFT scaffolding
+// (its private act/beat plan, dice tallies, and "beat complete" stage-directions)
+// bleeding into player prose. Unlike the #335 advisory/tool leaks (which arrive as their
+// OWN line), scaffolding tends to land as a trailing CLAUSE/SENTENCE inside an otherwise
+// real narration line ("Zevlor held silence after three failed social checks; … the spine
+// hook. Meeting beat of the cold open complete."). So this guard works at two grains:
+//   (a) a dice/check TALLY is excised as a sub-clause IN PLACE — "Zevlor held silence after
+//       three failed social checks" → "Zevlor held silence." — so the real prose survives;
+//   (b) plot-craft JARGON + "beat complete" STAGE-DIRECTIONS drop the whole sentence (these
+//       sentences are scaffolding through-and-through), keeping the prose around them.
+//
+// CRITICAL: HIGH-CONFIDENCE phrasings ONLY — never bare common words. A war-drum's "beat",
+// a tavern "scene", or "the second act of the play" are legitimate fiction and MUST survive.
+// "beat"/"scene"/"act" alone never trigger; they only do inside a fixed scaffolding frame.
+
+// Spelled-out + digit small numbers, for "three failed social checks" / "3 missed saves".
+const _NUM_WORD = "(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)";
+// (1) Dice / CHECK tallies: a count + a result word + a check/roll/save noun. Anchored on
+// the check/roll/save noun so "three failed assaults" / "two broken oaths" (real prose) DON'T match.
+// `_TALLY` (global) is used for in-place clause excision; it eats a leading connective
+// preposition ("after"/"following"/"with"/…) when present so no dangling "after ." is left.
+const _TALLY = new RegExp(
+  "\\s*(?:after|following|despite|past|on|with)?\\s*\\b" + _NUM_WORD +
+  "\\s+(?:failed|successful|missed|botched|passed|blown)\\s+" +
+  "(?:\\w+\\s+){0,2}(?:checks?|rolls?|saves?|saving throws?)\\b",
+  "gi",
+);
+// A non-global twin for boolean detection (a global regex carries lastIndex state).
+const _TALLY_TEST = new RegExp(_TALLY.source, "i");
+// (2) Unambiguous plot-CRAFT terms — multi-word jargon that never occurs in fiction prose.
+const _CRAFT_JARGON = /\b(?:spine[- ]hook|inciting incident|midpoint reversal)\b/i;
+// (3) Stage-directions / status summaries — a meta line stamping the scene's structural state.
+//   - "<word> beat complete", "beat complete", "cold open complete", "Act 2 complete/wraps"
+//   - "meeting beat" / "<word> beat of the cold open" (the verbatim #347 form)
+//   - "connects/connecting … to the spine hook", "this is the <setup|payoff|midpoint> beat"
+//   - "X of the Y complete" where Y is a structural word (beat/act/scene/cold open)
+const _STAGE_DIRECTION = new RegExp(
+  "(?:" +
+    // a structural unit being marked done/wrapped (optional copula: "cold open IS complete")
+    "\\b(?:cold open|(?:\\w+\\s+)?beat|act(?:\\s+(?:one|two|three|\\d+))?|scene\\s+\\d+|sequence)\\s+" +
+      "(?:is\\s+|was\\s+|now\\s+)?(?:complete|completed|done|over|wraps?|wrapped|resolved)\\b|" +
+    // "meeting/arrival/threshold beat" — naming a beat by its craft role
+    "\\b(?:meeting|arrival|threshold|inciting|setup|payoff|climax|midpoint|opening|closing)\\s+beat\\b|" +
+    // explicitly wiring the moment to the arc machinery
+    "\\bconnect(?:s|ing)?\\b[^.]{0,30}\\b(?:spine[- ]hook|the spine|main arc)\\b|" +
+    // labeling THIS moment as a named structural beat
+    "\\bthis (?:is|completes|closes) the\\b[^.]{0,30}\\b(?:setup|payoff|midpoint|reversal|beat|act|cold open)\\b|" +
+    // "<anything> of the <structural-unit> complete" (e.g. "Meeting beat of the cold open complete")
+    "\\bof the\\b[^.]{0,30}\\b(?:cold open|beat|act|scene)\\b[^.]{0,30}\\bcomplete\\b" +
+  ")", "i",
+);
+// True when a WHOLE sentence is plot-craft jargon or a stage-direction (drop the sentence).
+// The tally is handled separately (in-place excision), so it's NOT a whole-sentence-drop trigger.
+function _isScaffoldingSentence(sentence) {
+  const s = (sentence || "").trim();
+  if (!s) return false;
+  return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s);
+}
+function _hasScaffolding(text) {
+  return _TALLY_TEST.test(text) || _CRAFT_JARGON.test(text) || _STAGE_DIRECTION.test(text);
+}
+// Clean scaffolding from one line, preserving the real prose. Two grains:
+//   1. excise dice/check TALLY phrases in place (keeps the rest of their sentence);
+//   2. split into sentences (on . ! ? ;, terminator kept) and DROP any sentence that is
+//      wholly plot-craft jargon / a stage-direction.
+// Returns the cleaned line (possibly "").
+function _stripScaffoldingSentences(line) {
+  if (typeof line !== "string" || !line) return line;
+  // Fast path: nothing scaffolding-shaped here, don't touch the line at all.
+  if (!_hasScaffolding(line)) return line;
+  // (1) In-place tally excision (global; reset lastIndex defensively).
+  _TALLY.lastIndex = 0;
+  let cleaned = line.replace(_TALLY, "");
+  // (2) Whole-sentence drop for jargon / stage-directions.
+  const parts = cleaned.match(/[^.!?;]+[.!?;]+|[^.!?;]+$/g);
+  if (parts) cleaned = parts.filter((p) => !_isScaffoldingSentence(p)).join("");
+  // Tidy punctuation/space the excisions may have left (" ." / "  " / leading "; " /
+  // a clause separator now dangling at the end, e.g. "Zevlor held silence;" → "…silence.").
+  return cleaned
+    .replace(/\s+([.!?;,])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s;,.]+/, "")
+    .replace(/\s*[;,]\s*$/, ".")
+    .trim();
+}
 function sanitizeNarration(text) {
   if (typeof text !== "string" || !text) return "";
   const kept = text
     .split(/\r?\n/)
+    // #347: first excise any scaffolding sentences embedded in a line…
+    .map((line) => _stripScaffoldingSentences(line))
+    // …then drop any line that is wholly a #335 advisory/tool-name internal line (or was
+    // emptied by the scaffolding strip above — _isInternalLine returns false on "", so an
+    // emptied line survives as "" and is harmlessly collapsed by the blank-run join below).
     .filter((line) => !_isInternalLine(line));
   // Collapse the blank-line runs an excised directive may leave behind.
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
