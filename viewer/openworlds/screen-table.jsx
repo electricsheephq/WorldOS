@@ -510,7 +510,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             {visibleLog.length ? visibleLog.map((entry, i) => (
               <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
             )) : <div className="body-sm muted">No moves yet</div>}
-            {pendingActive && <DmNarratingBeat since={pending.since} />}
+            {pendingActive && <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} />}
             {pendingStuck && <DmStuckBeat />}
           </div>
 
@@ -798,7 +798,12 @@ function LogEntry({ entry }) {
 // elapsed counter and the dots are aria-hidden so a screen reader isn't spammed every tick.
 // Reduced-motion: the pulsing dots + shimmer are disabled (CSS below + the global token); the
 // elapsed text and hint remain, so the "is it busy?" question is still answered without motion.
-function DmNarratingBeat({ since }) {
+// #348: `firstBeat` makes the expectation HONEST. The DM beat lands all-at-once (no streaming),
+// and the FIRST beat — the cold-open/Act-opening the engine spends minutes building — legitimately
+// takes several minutes. Telling a first-timer "up to a minute" then re-opening the bar at 90s was
+// the #348 false-stuck trap. For the opening we say "a few minutes"; later beats keep "up to a
+// minute" (they really are ~35–60s). This copy mirrors the adaptive recovery window in app.jsx.
+function DmNarratingBeat({ since, firstBeat }) {
   const start = typeof since === "number" ? since : Date.now();
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -809,6 +814,9 @@ function DmNarratingBeat({ since }) {
   const mm = Math.floor(secs / 60);
   const ss = String(secs % 60).padStart(2, "0");
   const elapsedLabel = `${mm}:${ss}`;
+  const waitHint = firstBeat
+    ? "Setting the opening scene — the first beat of a session can take a few minutes."
+    : "Weaving the next beat — this can take up to a minute.";
   return (
     <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
       <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
@@ -828,7 +836,7 @@ function DmNarratingBeat({ since }) {
           </span>
         </div>
         <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
-          Weaving the next beat — this can take up to a minute.
+          {waitHint}
         </div>
       </div>
     </div>
