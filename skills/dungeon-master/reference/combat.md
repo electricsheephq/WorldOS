@@ -42,7 +42,22 @@ unforgiving, so source every one from the engine:
 
   (All disabled per-campaign by `house_rules.wandering_encounters = False`; combat is never auto-started, so the `start_combat` is always yours to call.)
 
-## SURPRISE / combat-initiation doctrine — ambushes, betrayals, attacks on unready targets
+## WHEN to start combat — the trigger (the most-missed step)
+
+Before the surprise mechanics below: the failure that loses fights isn't *how* you start combat, it's **never starting it.** A whole arc once resolved every confrontation with `skill_check` + narration and made **zero** combat-engine calls. So run this check — **it's a decision rule you cannot skip, not a "consider":**
+
+> **Is combat warranted THIS beat? It is the instant ANY of these is true:**
+> 1. **A player or companion declares OR narrates an attack / hostile spell on a foe** — a structured `[attack]`/`[cast]` move *or* prose intent. "I blast the crossbowman", "I draw my blade and strike him", "Fire Bolt the nearest one", "I rush the half-orc before he can shout" — **prose counts as much as a palette `[attack]`; do not wait for a structured command.** An offensive spell *cast at a hostile* (`[cast] Magic Missile → the enforcer`) is an attack, not a downtime cantrip — route it into the fight, never resolve it as one loose `attack` roll outside an encounter.
+> 2. **Hostile foes confront the party and violence is imminent** — weapons drawn, an ambush sprung, a foe out of words — **OR the player escalates against present hostiles / pushes for the fight** ("we fight our way through", "enough talk — take them").
+
+**When it's warranted, the engine comes FIRST**, in this order — no narrating past it, no `skill_check` stand-in:
+1. **`start_combat([...all combatants...])`** (`surpriser_ids=` for an ambush/first-strike — see the surprise mechanics below).
+2. **`spawn_monster(name)`** for every foe without a stat block — REAL HP/AC/attacks from the bestiary (named villains / stat-blocked NPCs are already combat-ready; fight the existing record, don't duplicate).
+3. **Run the loop** — `attack`/`cast_spell`/`saving_throw`, `next_turn`, zones — and `end_combat` when the field clears. **A single `attack` roll bolted onto prose is NOT combat; a `skill_check` to "shove past the thug" is NOT combat.** Both are the prose-only-combat failure the gate treats as critical (see the first bullet of this file). Narrate vividly — the mechanics go through the engine.
+
+This is **not** "every tense scene is a brawl." A parley, a threat the player *talks down*, a foe who has **not** attacked and isn't being attacked, a stealth/rescue route the player **chooses over** a fight — those stay social/skill/exploration beats. The trigger fires on a **declared/narrated attack** or **present-and-imminent violence the player engages** — but the moment that line is crossed, you `start_combat`.
+
+## SURPRISE / combat-initiation mechanics — ambushes, betrayals, attacks on unready targets
 
 When a player or companion **declares an attack on an unready or non-hostile target** — an ambush opener, a betrayal, an attack on a guard who hasn't drawn — do **NOT** narrate the outcome. Treat it as combat initiation with a surprise edge:
 
