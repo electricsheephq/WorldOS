@@ -661,6 +661,58 @@ class LiveNarrationStreamTests(unittest.TestCase):
             "recentEvents rows sharing a live seq must be dropped (immune to prose); the older un-twinned line is kept, leading, in order (#405)",
         )
 
+    # --- #406 (3): a legitimately-REPEATED /chat-only line on a LATER turn must still render -------
+    # The seq-keyed dedup (#407) is the canonical run-long path; the TEXT-key fallback (used only for
+    # a /chat-only beat: a terse turn, or the human/native path) must be scoped to the TURN, not the
+    # run. A run-long text set permanently suppressed a repeated short line (a catchphrase, a repeated
+    # "Yes." / "The door is locked." across two attempts) on its second genuine occurrence — the turn
+    # resolved but showed no new prose ("the DM said nothing"). seenText now resets when a turn
+    # resolves, so the same line on a later turn renders again.
+    def test_repeated_chat_only_line_renders_on_a_later_turn(self):
+        out = self._run(
+            # Turn 1 (terse, /chat-only): "The door is locked." — rendered.
+            "h.arm('try the door');"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The door is locked.' }], next: 1 });"
+            "await h.tick();"
+            "var afterTurn1 = h.narrationTexts();"
+            # Turn 2 (terse, /chat-only): the SAME line on a fresh attempt — must NOT be suppressed.
+            "h.arm('try the door again');"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The door is locked.' }], next: 2 });"
+            "await h.tick();"
+            "return ({ afterTurn1: afterTurn1, afterTurn2: h.narrationTexts() });"
+        )
+        self.assertEqual(out["afterTurn1"], ["The door is locked."])
+        self.assertEqual(
+            out["afterTurn2"], ["The door is locked.", "The door is locked."],
+            "a legitimately-repeated /chat-only line on a later turn must render again (text-key dedup is per-turn, not per-run — #406)",
+        )
+
+    # --- #406 (4): a STREAMED-but-UNRESOLVED cold-open keeps the generous first-beat window --------
+    # `firstBeat` (the 4-min cold-open recovery window) must key off "has a turn RESOLVED on /chat",
+    # NOT "has a paragraph streamed". The /events poll bumps the per-paragraph counter, so before the
+    # fix a retried cold-open (one paragraph streamed via /events, then the player hits 'Try again'
+    # before the turn resolved) was wrongly treated as a LATER beat → dropped to the 180s window
+    # (the #348 false-stuck trap, re-introduced for the still-opening cold open). It must stay
+    # firstBeat=true until a /chat line actually resolves the opening turn.
+    def test_streamed_but_unresolved_cold_open_keeps_first_beat_window(self):
+        out = self._run(
+            # Cold-open turn 1: a paragraph STREAMS via /events (bumps dmBeatCountRef), but the turn
+            # has NOT resolved on /chat yet.
+            "h.arm('begin');"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'You wake in a cold cell.', seq: 0 }], next: 1 });"
+            "await h.tick();"
+            "var midStream = h.pending();"  # still firstBeat (the opening hasn't resolved)
+            # The player hits 'Try again' (re-arm) before any /chat resolution.
+            "h.arm('begin');"
+            "var retried = h.pending();"
+            "return ({ midStream_firstBeat: !!(midStream && midStream.firstBeat),"
+            "          retried_firstBeat: !!(retried && retried.firstBeat) });"
+        )
+        self.assertTrue(out["midStream_firstBeat"],
+                        "while the cold-open streams but hasn't resolved, it is still the first beat")
+        self.assertTrue(out["retried_firstBeat"],
+                        "a retried cold-open (streamed, never resolved on /chat) must KEEP the 4-min first-beat window, not drop to 180s (#406)")
+
 
 if __name__ == "__main__":
     unittest.main()

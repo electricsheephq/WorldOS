@@ -1097,6 +1097,35 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 
+/* #405: the manual "Enter anyway →" escape, shown after ~15s. Deliberately SECONDARY (a quiet ghost
+   link, not a brass primary) so it reads as "skip if you're impatient", not "the build failed" —
+   but a real, focusable <button> so keyboard + screen-reader users can leave the cover. Fades in so
+   it doesn't jump the layout when it appears. */
+.building-universe .bu-escape {
+  margin-top: 26px;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--b-500);
+  border-radius: 2px;
+  padding: 7px 16px;
+  font-family: var(--f-display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--ink-700);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+  animation: bu-fade-in 420ms ease both;
+}
+.building-universe .bu-escape:hover {
+  background: rgba(120, 90, 50, 0.12);
+  color: var(--ink-900);
+  border-color: var(--b-400);
+}
+.building-universe .bu-escape:focus-visible {
+  outline: 2px solid var(--gold-glow);
+  outline-offset: 2px;
+}
+
 /* The brief "Your story begins…" flourish as the first beat lands and we hand off to the table. */
 .building-universe.is-handoff { animation: bu-fade-in 320ms ease both; }
 .building-universe.is-handoff .bu-headline { color: var(--crimson); }
@@ -1136,6 +1165,7 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
 [data-reduced-motion="on"] .building-universe .bu-candleglow,
 [data-reduced-motion="on"] .building-universe .bu-dots span,
 [data-reduced-motion="on"] .building-universe .bu-sweep-fill,
+[data-reduced-motion="on"] .building-universe .bu-escape,
 [data-reduced-motion="on"] .building-universe.is-handoff,
 [data-reduced-motion="on"] .building-universe {
   animation: none !important;
@@ -1151,6 +1181,7 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   .building-universe .bu-core,
   .building-universe .bu-candleglow,
   .building-universe .bu-dots span,
+  .building-universe .bu-escape,
   .building-universe { animation: none !important; }
   .building-universe .bu-sweep { background: rgba(120, 90, 50, 0.3); }
   .building-universe .bu-sweep-fill { display: none !important; }
