@@ -6,7 +6,9 @@
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
      AS OF:        2026-05-31 post-takeover UX sprint sync
-     ORIGIN TIP:   b15ad3c (PR #465 merged; verified by git fetch on 2026-05-31)
+     MAIN BASELINE:
+                   e4078c7 (PR #468 merged; verified by git fetch on 2026-05-31).
+                   Re-verify current `origin/main` before acting; use this as the doc-sync baseline.
      CANONICAL:    /Users/lume/ClawDnD-val is the private-art/live-app checkout; observed at f5500ac
                    and behind origin/main by 3 commits before takeover. Do not fast-forward it
                    until the owner intentionally chooses to move the private-art checkout.
@@ -160,15 +162,16 @@ verifier; can revert the goal to "fix" anytime.
 
 ## 9. CURRENT STATUS (2026-05-31 — post-#465, NOT a release verdict)
 
-- Repo truth stabilization merged in PR #465. Current `origin/main` is `b15ad3c`; the private-art
-  checkout at `/Users/lume/ClawDnD-val` was observed at `f5500ac` before takeover. Keep it intact until
-  the owner intentionally fast-forwards the live app/private-art checkout.
+- Repo truth stabilization merged in PR #465, and the UX-first doc sync merged in PR #468. The current
+  doc-sync baseline is `e4078c7`; re-verify `origin/main` before acting. The private-art checkout at
+  `/Users/lume/ClawDnD-val` was observed at `f5500ac` before takeover. Keep it intact until the owner
+  intentionally fast-forwards the live app/private-art checkout.
 - The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
   not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
   image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
-- The next evidence step is issue #466: run a clean non-partial five-persona RRI from `b15ad3c` or newer
-  on the 32GB VM for backend/personas, plus the Mac/macOS CI built-app playtest. The expected outcome is
-  either a trustworthy blocker list or a real 11/11 release result.
+- The next evidence step is issue #466: run a clean non-partial five-persona RRI from the post-#465 code
+  baseline (`b15ad3c`) or newer on the 32GB VM for backend/personas, plus the Mac/macOS CI built-app
+  playtest. The expected outcome is either a trustworthy blocker list or a real 11/11 release result.
 - Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
   transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
   session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.

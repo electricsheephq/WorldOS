@@ -13,10 +13,11 @@
 - DM cold-open narration = 4842 chars with **27 paragraph breaks** (the prose IS well-formed).
 ⇒ The fix for "no images / no map / no palette" is **serve/build WITH `_private` art present** (infra), not 3 code PRs. The real *code* bugs are layout prominence + render formatting + the silent companion.
 
-Post-#465 note: `origin/main` is now `b15ad3c`, and RRI release scoring requires a
-disk-backed `palette_live` proof with **≥6 enabled actions** on a `can_act:true` surface. The 5-action
-canonical read above remains useful orientation, but it is not release proof; issue #466 must either prove
-the built app now meets the live palette gate or fail with an actionable artifact path.
+Post-#465/#468 note: the code baseline for the next clean RRI is `b15ad3c` or newer, and the current
+doc-sync baseline is `e4078c7`. RRI release scoring requires a disk-backed `palette_live` proof with
+**≥6 enabled actions** on a `can_act:true` surface. The 5-action canonical read above remains useful
+orientation, but it is not release proof; issue #466 must either prove the built app now meets the live
+palette gate or fail with an actionable artifact path.
 
 ## Phase 0 — infra (DONE)
 - ✅ `launch.json` repointed off the deprecated LEXAR copy → canonical/8799/`/openworlds/`/live state.
