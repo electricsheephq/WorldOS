@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-05-31: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`36d8ac3 == origin/main` after #470) and the default place to build/run/test the GUI and native app.
+> (`5dd1391 == origin/main` after #472) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -25,6 +25,16 @@
   use that as a fallback rather than the default because external-drive file prompts have broken local AI tests.
   The native app has a separate Private art repo path setting, and `script/build_and_run.sh` also writes
   the art root into `Info.plist` as `WorldOSArtRepoRoot` so LaunchServices env loss cannot hide missing art.
+
+## Native provider reality check
+
+- OpenWorlds native-start surfaces now honor the macOS app's selected provider (#472). If the web UI has
+  not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
+- Do not treat that as a Claude-free release proof. The default Codex wrapper
+  (`scripts/play_codex_actor.sh`) is a constrained **player actor** using the player facade; it is not yet
+  a Dungeon Master loop. OpenClaw is also not launchable until a valid provider command is configured.
+- Before running #466, prove first-turn built-app play with a provider that actually mints the world,
+  writes DM narration, and leaves `/session-surface` with `can_act:true` for the live/current campaign.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash

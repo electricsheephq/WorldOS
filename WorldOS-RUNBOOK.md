@@ -12,8 +12,9 @@
 > checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
-> the owner-provided 32GB support VM (`support-vm-1`) after SSH/Codex credentials are installed and
-> verified; connection details are kept outside tracked docs. Mac-only built-app proof remains local/macOS CI.
+> the owner-provided 32GB support VM (`support-vm-1`) after remote access and Codex config are
+> intentionally installed and verified; connection details are kept outside tracked docs. Mac-only
+> built-app proof remains local/macOS CI.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -305,7 +306,8 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 **Historical snapshot, not current authority:** this queue was written around `ea815fc`
 (2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465,
 the UX-first doc sync merged as PR #468, and first-minute click/title chrome proof merged as PR #470.
-The local app/private-art checkout is now synced at `36d8ac3 == origin/main`; the only current gate
+Local routing sync merged as PR #471, and native provider-selection sync merged as PR #472. The local
+app/private-art checkout is now synced at `5dd1391 == origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
 prove first-turn built-app play via #466, then prioritize clickability/chrome, launcher clarity,
@@ -377,14 +379,20 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
 
 **How in-app PLAY works (2026-05-27 cont.26 — the read-only→functional fix):**
 - The OpenWorlds launcher Play buttons call the native bridge
-  `OpenWorldsNative.request("startProviderSession",{provider,world,runId,companions})`
-  (`screen-launcher.jsx`). Swift `RootView.startProviderFromBridge` →
-  `AppProcessService.startProviderSession` shells **`scripts/play.sh`** on a fresh port and
-  returns `{url}`; the JS then `window.location.assign(reply.url)` — drive the reload from
+  `OpenWorldsNative.request("startProviderSession",{provider?,world,runId,companions})`
+  (`screen-launcher.jsx`). `provider` is optional: when the web surface has not loaded app status yet,
+  Swift `RootView.startProviderFromBridge` falls back to the macOS app's `selectedProviderRaw` setting.
+  Swift then asks `AppProcessService.startProviderSession` to launch the selected provider on a fresh
+  port and returns `{url}`; the JS then `window.location.assign(reply.url)` — drive the reload from
   **JS**, not the Swift `webURL` @State (which didn't repoint reliably across the async hop).
-- `play.sh` IS the play loop: it binds a viewer with `CLAWDND_PLAYER_MOVES` +
+- The Claude provider still shells **`scripts/play.sh`** / `scripts/play_party.sh`. `play.sh` IS the play loop:
+  it binds a viewer with `CLAWDND_PLAYER_MOVES` +
   `CLAWDND_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
   move sink. `POST /move` → sink; `/chat?since=` → DM narration the Session tails.
+- The checked-in Codex provider wrapper is **not** a DM substitute yet: `scripts/play_codex_actor.sh`
+  runs Codex as a constrained player actor through `player_server.py`. It can validate the provider
+  environment and move-facade contract, but it does not mint the world or write DM narration. OpenClaw
+  requires an explicit configured command before it can be treated as a startable provider.
 - **`can_act = _live_play() AND is_live_view`**, and `is_live_view` requires
   `cid == self.campaign_id`. The viewer launches with an EMPTY campaign id; `_resolve_campaign`
   lazily sets `self.campaign_id` to the **current** campaign (`_pick_campaign`). So the
