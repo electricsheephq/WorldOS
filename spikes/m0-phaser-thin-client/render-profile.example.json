@@ -1,18 +1,14 @@
 {
-  "_comment": "M0 render-profile CONTRACT — concrete example (the load-bearing artifact this spike exists to validate). LAYERED: a renderer-agnostic `core` every renderer honors + optional per-renderer blocks. Decision: /tmp/decision-worldos-render-contract.md. Engine stays sole writer; this profile is presentation that JOINS to engine state by id.",
+  "$schema": "../../docs/roadmap/contracts/render-profile.schema.json",
   "schema_version": 1,
   "game_id": "bg-absolute-remnants",
   "title": "Baldur's Gate — Absolute Remnants",
-
   "core": {
-    "_comment": "Renderer-agnostic. Every field defaultable so the AI build-loop can emit a partial-but-valid profile. Carries NAMED ZONES, never x,y — each renderer derives its own coordinate space from zones (this is how _combat_row_positions already works server-side).",
     "scene_kind": "tilemap",
     "positioning": "zone",
-    "_positioning_note": "v1 modes = theater | zone ONLY. `grid` (drag-to-move / measured range / AoE templates) is OUT — it needs the engine to own coordinates (future engine epic, capability-flagged). zone mode renders zone BANDS, not VTT cells.",
     "locations": [
       {
         "engine_location_id": "loc-lower-city",
-        "_join": "FK to /atlas-surface known_locations[].id — the engine owns the location; this only declares how to draw it.",
         "art": { "scope_key": "scene-lower-city" },
         "zones": ["the gate approach", "the market row", "the alley mouth"]
       },
@@ -31,23 +27,17 @@
     "ai_disclosure": {
       "generated_by": "worldos-ai-build-loop",
       "model": "example",
-      "date": "2026-05-31",
-      "_note": "EU machine-readable AI-disclosure (2026-08-02) + Steam AI survey are sourced from here."
+      "date": "2026-05-31"
     }
   },
-
   "renderer_profiles": {
-    "_comment": "OPTIONAL per-renderer blocks. A renderer reads core + its OWN block; ignores others. The core-only conformance test asserts every M0 scene renders from core + block.",
     "phaser": {
       "tileset_scope_key": "tileset-bg-stone",
       "tile_size": 32,
       "ui_skin": "16bit",
       "backdrop_layout": null,
-      "walkmask_ref": null,
-      "_note": "T1 tilemap fields. For T2 (scene_kind=backdrop) this block carries backdrop_layout + walkmask_ref + depth_bands + normal_map_ref instead. walkmask is RENDERER-OWNED presentation (engine knows location adjacency, not walkable pixels)."
+      "walkmask_ref": null
     },
-    "rpgmaker": {
-      "_status": "RESERVED / spec-only. BYOL exploration-export tier, deferred post-M2. tilemap-only; never populated for scene_kind=backdrop. Consumes this frozen contract, never shapes it."
-    }
+    "rpgmaker": {}
   }
 }
