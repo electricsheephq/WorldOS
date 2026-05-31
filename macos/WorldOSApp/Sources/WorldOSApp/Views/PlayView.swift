@@ -145,6 +145,9 @@ struct PlayView: View {
         do {
             webViewErrorMessage = nil
             let provider = ProviderKind(rawValue: selectedProviderRaw) ?? .claude
+            guard provider.isLaunchEnabled else {
+                throw ProviderError.configuration("Scripted provider is disabled. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 for dev/test smoke.")
+            }
             let cleanRunID = runID.trimmingCharacters(in: .whitespacesAndNewlines)
             webURL = try processService.startProviderSession(
                 kind: provider,

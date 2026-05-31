@@ -4,6 +4,19 @@ enum ProviderKind: String, CaseIterable, Identifiable {
     case claude
     case codex
     case openclaw
+    case scripted
+
+    static var allCases: [ProviderKind] {
+        var cases: [ProviderKind] = [.claude, .codex, .openclaw]
+        if scriptedProviderEnabled {
+            cases.append(.scripted)
+        }
+        return cases
+    }
+
+    static var scriptedProviderEnabled: Bool {
+        ProcessInfo.processInfo.environment["WORLDOS_ENABLE_SCRIPTED_PROVIDER"] == "1"
+    }
 
     var id: String { rawValue }
 
@@ -12,6 +25,7 @@ enum ProviderKind: String, CaseIterable, Identifiable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .openclaw: "OpenClaw"
+        case .scripted: "Scripted"
         }
     }
 
@@ -20,7 +34,12 @@ enum ProviderKind: String, CaseIterable, Identifiable {
         case .claude: "sparkles"
         case .codex: "terminal"
         case .openclaw: "link"
+        case .scripted: "scroll"
         }
+    }
+
+    var isLaunchEnabled: Bool {
+        self != .scripted || Self.scriptedProviderEnabled
     }
 }
 

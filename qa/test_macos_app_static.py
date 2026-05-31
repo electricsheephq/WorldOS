@@ -71,6 +71,38 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertNotIn('play_party.sh $WORLD $minted_run', harness)
         self.assertNotIn('play.sh $WORLD $minted_run', harness)
 
+    def test_scripted_provider_is_dev_gated_and_model_free(self):
+        models = self.read("macos/WorldOSApp/Sources/WorldOSApp/Models/ProviderModels.swift")
+        providers = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift")
+        root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
+        play_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/PlayView.swift")
+        script = self.read("scripts/play_scripted_dm.sh")
+
+        self.assertIn("case scripted", models)
+        self.assertIn("WORLDOS_ENABLE_SCRIPTED_PROVIDER", models)
+        self.assertIn("static var allCases", models)
+        self.assertIn("cases.append(.scripted)", models)
+        self.assertIn("var isLaunchEnabled", models)
+
+        self.assertIn("struct ScriptedProvider", providers)
+        self.assertIn("ProviderKind.scriptedProviderEnabled", providers)
+        self.assertIn("scripts/play_scripted_dm.sh", providers)
+        self.assertIn(".scripted: ScriptedProvider()", providers)
+        self.assertIn("no Claude, Codex, or OpenClaw required", providers)
+
+        self.assertIn("guard provider.isLaunchEnabled", root_view)
+        self.assertIn("guard provider.isLaunchEnabled", play_view)
+
+        self.assertIn("WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 is required", script)
+        self.assertIn('uv run --directory "$ROOT/servers/engine"', script)
+        self.assertIn("server.start_world", script)
+        self.assertIn("server.load_canon_character", script)
+        self.assertIn("server.log_event", script)
+        self.assertIn("python3 viewer/server.py", script)
+        self.assertIn("WORLDOS_PLAYER_MOVES", script)
+        self.assertNotIn("claude -p", script)
+        self.assertNotIn("codex -p", script)
+
     def test_provider_viewer_stays_attached_during_native_restarts(self):
         root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
         app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")
