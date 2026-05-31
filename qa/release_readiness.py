@@ -189,6 +189,19 @@ def main() -> int:
 
     evidence_gaps = []
     build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
+    missing_build_sha = [p for p in persona_scores if not p.get("run_build_sha")]
+    if not args.build_sha:
+        evidence_gaps.append({
+            "gate": "native_gate",
+            "missing": "--build-sha",
+            "detail": "release verdict requires the measured build SHA",
+        })
+    if missing_build_sha:
+        evidence_gaps.append({
+            "gate": "native_gate",
+            "missing": "per-run build_sha",
+            "detail": "missing run build_sha for: " + ", ".join(str(p.get("persona") or p.get("run")) for p in missing_build_sha),
+        })
     if args.build_sha:
         mismatched = [p for p in persona_scores if p.get("run_build_sha") and p.get("run_build_sha") != args.build_sha]
         if mismatched:
@@ -259,6 +272,8 @@ def main() -> int:
         evidence_gaps.append({"gate": "palette_live", "missing": "--palette-live", "detail": "palette-live result not supplied"})
     elif not args.palette_source:
         evidence_gaps.append({"gate": "palette_live", "missing": "--palette-source", "detail": "palette-live evidence source not supplied"})
+    elif not Path(args.palette_source).exists():
+        evidence_gaps.append({"gate": "palette_live", "missing": args.palette_source, "detail": "palette-live evidence source missing"})
     evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
 
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----

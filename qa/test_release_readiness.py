@@ -651,6 +651,155 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertIn("native_gate", {gap["gate"] for gap in payload["evidence_gaps"]})
             self.assertEqual(payload["signals"]["run_build_shas"], ["badcafe", "deadbee"])
 
+    def test_missing_run_build_sha_blocks_release_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = []
+            for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
+                run = tmp / f"gate-{persona}"
+                player = run / "player"
+                player.mkdir(parents=True)
+                (run / "score.json").write_text(
+                    json.dumps(
+                        {
+                            "run": f"gate-{persona}",
+                            "persona": persona,
+                            "completed_intro_flow": True,
+                            "persona_satisfaction": 9,
+                            "gave_up": False,
+                            "bug_reports_critical": 0,
+                            "console_errors": 0,
+                            "image_404s": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (run / "run.json").write_text(
+                    json.dumps({"part_a": {"result": "PASS"}, "part_b": {"persona_loop": "PASS", "score_pass": True}}),
+                    encoding="utf-8",
+                )
+                (player / "network.ndjson").write_text(
+                    json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
+                    encoding="utf-8",
+                )
+                runs.append(run)
+
+            story = tmp / "story.json"
+            mech = tmp / "mech.json"
+            behavioral = tmp / "behavioral.txt"
+            audit = tmp / "audit.log"
+            palette = tmp / "session_surface.final.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            behavioral.write_text("GREEN\n", encoding="utf-8")
+            audit.write_text("PASS\n", encoding="utf-8")
+            palette.write_text(json.dumps({"can_act": True}), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                "newbie,veteran,adversarial,narrative,optimizer",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn("missing run build_sha", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+
+    def test_missing_palette_source_file_blocks_release_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = []
+            for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
+                run = tmp / f"gate-{persona}"
+                player = run / "player"
+                player.mkdir(parents=True)
+                (run / "score.json").write_text(
+                    json.dumps(
+                        {
+                            "run": f"gate-{persona}",
+                            "persona": persona,
+                            "completed_intro_flow": True,
+                            "persona_satisfaction": 9,
+                            "gave_up": False,
+                            "bug_reports_critical": 0,
+                            "console_errors": 0,
+                            "image_404s": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (run / "run.json").write_text(
+                    json.dumps({"build_sha": "deadbee", "part_a": {"result": "PASS"}, "part_b": {"persona_loop": "PASS", "score_pass": True}}),
+                    encoding="utf-8",
+                )
+                (player / "network.ndjson").write_text(
+                    json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
+                    encoding="utf-8",
+                )
+                runs.append(run)
+
+            story = tmp / "story.json"
+            mech = tmp / "mech.json"
+            behavioral = tmp / "behavioral.txt"
+            audit = tmp / "audit.log"
+            missing_palette = tmp / "missing-session-surface.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            behavioral.write_text("GREEN\n", encoding="utf-8")
+            audit.write_text("PASS\n", encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                "newbie,veteran,adversarial,narrative,optimizer",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(missing_palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("palette_live", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn(str(missing_palette), {gap["missing"] for gap in payload["evidence_gaps"]})
+
 
 if __name__ == "__main__":
     unittest.main()
