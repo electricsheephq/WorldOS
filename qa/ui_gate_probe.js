@@ -1,8 +1,9 @@
 // qa/ui_gate_probe.js
 // Headless Playwright probe behind `qa/ui_audit_health.sh --ui-gate`.
 //
-// Drives one or more OpenWorlds screens at two viewport widths (1366 + 1512 —
-// the "narrow desktop" + "MBP 13-inch" pair the Loop-9 audit measured against)
+// Drives one or more OpenWorlds screens at viewport widths from
+// WORLDOS_UI_GATE_VIEWPORTS (default: 1366 + 1512 — the "narrow desktop" +
+// "MBP 13-inch" pair the Loop-9 audit measured against)
 // and emits a structured JSON line per screen so the shell wrapper can pass/fail
 // per-check.
 //
@@ -19,7 +20,11 @@
 //         "imgsTotal": 0,
 //         "imgsBroken": 0,
 //         "titleNavOverlap": true,         // collision check (#260 / #306)
-//         "launcherCta": { "text": "Resume → play", "disabled": false }
+//         "titleEndOverlap": false,
+//         "titleLineCount": 1,
+//         "titleDayReadable": true,
+//         "launcherCta": { "text": "Resume → play", "disabled": false },
+//         "hitTargets": null               // populated for representative clickability screens
 //       },
 //       "1512": { ... }
 //     }
@@ -57,7 +62,73 @@ if (!screens.length) {
   process.exit(2);
 }
 
-const VIEWPORTS = [1366, 1512];
+const VIEWPORTS = (process.env.WORLDOS_UI_GATE_VIEWPORTS || '1366,1512')
+  .split(',')
+  .map((v) => Number(v.trim()))
+  .filter((v) => Number.isFinite(v) && v > 0);
+
+async function clickButtonPadding(page, selector, label) {
+  const locator = page.locator(selector).filter({ hasText: label }).first();
+  try {
+    await locator.waitFor({ state: 'visible', timeout: 5000 });
+  } catch {
+    return { ok: false, reason: `missing ${selector} ${label}` };
+  }
+  const box = await locator.boundingBox();
+  if (!box) return { ok: false, reason: `no bounding box for ${selector} ${label}` };
+  await page.mouse.click(
+    box.x + Math.min(6, Math.max(2, box.width * 0.12)),
+    box.y + box.height / 2,
+  );
+  return { ok: true };
+}
+
+async function focusButtonAndPress(page, selector, label, key = 'Enter') {
+  const locator = page.locator(selector).filter({ hasText: label }).first();
+  try {
+    await locator.waitFor({ state: 'visible', timeout: 5000 });
+  } catch {
+    return { ok: false, reason: `missing ${selector} ${label}` };
+  }
+  await locator.focus();
+  await page.keyboard.press(key);
+  return { ok: true };
+}
+
+async function activeTabLabel(page) {
+  return await page.evaluate(() => (document.querySelector('.tab-button.active')?.textContent || '').trim());
+}
+
+async function activeNavLabel(page) {
+  return await page.evaluate(() => (document.querySelector('.nav-item.active .tip')?.textContent || '').trim());
+}
+
+async function runHitTargetChecks(page, screen) {
+  if (screen !== 'character') return null;
+  const checks = {};
+
+  const tabClick = await clickButtonPadding(page, '.tab-button', 'Stash');
+  await page.waitForTimeout(250);
+  checks.tabPaddingClickFired = tabClick.ok && await activeTabLabel(page) === 'Stash';
+  if (!tabClick.ok) checks.tabPaddingClickReason = tabClick.reason;
+
+  const tabKeyboard = await focusButtonAndPress(page, '.tab-button', 'Forge');
+  await page.waitForTimeout(250);
+  checks.tabKeyboardFired = tabKeyboard.ok && await activeTabLabel(page) === 'Forge';
+  if (!tabKeyboard.ok) checks.tabKeyboardReason = tabKeyboard.reason;
+
+  const navClick = await clickButtonPadding(page, '.nav-item', 'Map');
+  await page.waitForTimeout(250);
+  checks.navPaddingClickFired = navClick.ok && await activeNavLabel(page) === 'Map';
+  if (!navClick.ok) checks.navPaddingClickReason = navClick.reason;
+
+  const navKeyboard = await focusButtonAndPress(page, '.nav-item', 'Journal');
+  await page.waitForTimeout(250);
+  checks.navKeyboardFired = navKeyboard.ok && await activeNavLabel(page) === 'Journal';
+  if (!navKeyboard.ok) checks.navKeyboardReason = navKeyboard.reason;
+
+  return checks;
+}
 
 async function probeScreen(browser, screen) {
   const out = { screen, viewports: {} };
@@ -96,14 +167,32 @@ async function probeScreen(browser, screen) {
       // BOUNDING RECTS — when title text wraps, its bottom extends down past
       // the nav-rail's top, producing a true visual collision.
       const t = document.querySelector('.title-text');
+      const e = document.querySelector('.title-end');
+      const day = document.querySelector('.title-end > span:last-child');
       const n = document.querySelector('.nav-rail');
       const rect = (el) => (el ? el.getBoundingClientRect() : null);
       const tr = rect(t);
+      const er = rect(e);
+      const dr = rect(day);
       const nr = rect(n);
-      const overlap = tr && nr
+      const navOverlap = tr && nr
         ? (tr.left < nr.right && tr.right > nr.left)
           && (tr.top < nr.bottom && tr.bottom > nr.top)
         : false;
+      const titleEndOverlap = tr && er
+        ? (tr.left < er.right && tr.right > er.left)
+          && (tr.top < er.bottom && tr.bottom > er.top)
+        : false;
+      let titleLineCount = null;
+      if (t) {
+        const range = document.createRange();
+        range.selectNodeContents(t);
+        const tops = Array.from(range.getClientRects())
+          .filter((r) => r.width > 0 && r.height > 0)
+          .map((r) => Math.round(r.top));
+        titleLineCount = new Set(tops).size || 0;
+        range.detach();
+      }
       const placeholders = document.querySelectorAll('.placeholder').length;
       const imgEls = Array.from(document.querySelectorAll('img'));
       const imgsBroken = imgEls.filter((i) => i.complete && i.naturalWidth === 0).length;
@@ -121,8 +210,13 @@ async function probeScreen(browser, screen) {
           : { missing: true };
       }
       return {
-        titleNavOverlap: overlap,
+        titleNavOverlap: navOverlap,
+        titleEndOverlap,
+        titleLineCount,
+        titleDayReadable: dr ? dr.height >= 12 && dr.width >= 24 : null,
         titleRect: tr ? { left: tr.left, right: tr.right, top: tr.top, bottom: tr.bottom } : null,
+        titleEndRect: er ? { left: er.left, right: er.right, top: er.top, bottom: er.bottom } : null,
+        titleDayRect: dr ? { left: dr.left, right: dr.right, top: dr.top, bottom: dr.bottom, height: dr.height } : null,
         navRect: nr ? { left: nr.left, right: nr.right, top: nr.top, bottom: nr.bottom } : null,
         placeholders,
         imgsTotal: imgEls.length,
@@ -143,6 +237,7 @@ async function probeScreen(browser, screen) {
     }
     out.viewports[String(width)] = {
       ...measured,
+      hitTargets: await runHitTargetChecks(page, screen),
       consoleErrors: errs.length,
       consoleErrorSamples: errs.slice(0, 3),
     };

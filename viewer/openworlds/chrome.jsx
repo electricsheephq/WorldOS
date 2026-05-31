@@ -385,6 +385,7 @@ function TabBar({ current, onNavigate }) {
         <button
           type="button"
           key={tab.id}
+          className={`tab-button ${current === tab.id ? "active" : ""}`}
           onClick={() => onNavigate(tab.id)}
           style={{
             position: "relative",
