@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`080497e == origin/main` after #475/#494/#495/#496) and the default place to build/run/test the GUI and native app.
+> (`19c3fd0 == origin/main` after #475/#494/#495/#496/#498) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -42,6 +42,11 @@
   was player-playable, but provider trace noise persisted. Keep #479 open until a later current-main built-app
   run proves the Codex provider path is trace-clean enough for release trust. Release still requires the full
   non-partial RRI gate.
+- The current-main built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-current-main-proof-20260531T234242Z/`, build `19c3fd0`)
+  again proved product wiring: private art present, Codex provider, Alfira active, visible narration, five
+  enabled actions, writable `/move`, one accepted move, chat roles `dm, player, dm`, and `/session-surface`
+  still actionable. The provider trace still had three failed/cancelled engine tool calls, so #479 stays open.
 
 ## Agent-facing app contract
 
@@ -52,7 +57,7 @@
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Agent-grade testing progress as of `080497e`: #481 app-status is closed, #482 deterministic scripted
+- Agent-grade testing progress as of `19c3fd0`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, and #484 stable accessibility/DOM hooks are merged.
   #485 evidence bundle completion and #486 gate-split follow-through remain active. A scripted `:8899`
   harness surface can prove app observability, but it is not built-app release proof unless it came from
@@ -74,6 +79,11 @@ Ad-hoc harness ports such as `8899` are allowed for agent-grade smoke/debugging 
 identifies the build SHA, provider, repo root, art root, move sink, and readiness. Do not confuse a healthy
 `:8899` scripted-provider surface with a current built `.app` proof, and do not assume the port will still
 be alive after the harness tears down.
+
+If the in-app browser is available, point it at the discovered live port from `qa/ui_playtest_app.sh`
+`run.json` or `/app-status.viewer.port` instead of guessing `:8899`. Browser evidence is diagnostic unless
+the port came from the built app launch path and the proof bundle also contains `/app-status`,
+`/session-surface`, move/chat/provider artifacts, and a built-app screenshot.
 
 ## LOOK (verify by curl + screenshot — NEVER a single Read; the channel fabricates)
 The tool channel intermittently returns fabricated/empty/doubled reads (this session it invented a
