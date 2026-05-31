@@ -179,6 +179,15 @@ def test_codex_dm_wrapper_honors_native_selected_hero():
     assert "Native-selected canon hero already seated" in source
 
 
+def test_codex_dm_wrapper_forbids_null_speaker_arguments():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "LOG_EVENT_TOOL_RULE=" in source
+    assert "omit the speaker argument entirely" in source
+    assert "Never pass JSON null for speaker" in source
+    assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
+
+
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

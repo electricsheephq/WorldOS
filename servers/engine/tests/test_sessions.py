@@ -39,6 +39,12 @@ def test_log_event_autostarts_and_tracks_session(cid):
     assert camp.session_ids == [camp.active_session_id]  # tracked in history
 
 
+def test_log_event_accepts_null_speaker_for_narration(cid):
+    out = server.log_event(cid, "narration", "The street goes still.", speaker=None)
+
+    assert out["logged"]["speaker"] is None
+
+
 def test_plain_session_log_entry_parses_without_payload():
     entry = SessionLogEntry.model_validate(
         {"kind": "combat", "text": "They felled the skeleton guardians."}

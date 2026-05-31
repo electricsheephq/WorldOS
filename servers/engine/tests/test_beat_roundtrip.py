@@ -104,6 +104,15 @@ def test_persist_beat_batches_logs_memories_decision_and_time(cid):
     assert (after.day, after.time_of_day) != (before.day, before.time_of_day)
 
 
+def test_persist_beat_accepts_null_speaker(cid):
+    out = server.persist_beat(
+        cid,
+        events=[{"kind": "narration", "text": "The lantern gutters.", "speaker": None}],
+    )
+
+    assert out["logged"][0]["speaker"] is None
+
+
 def test_persist_beat_remember_dedupes_like_remember(cid):
     char = _a_char(cid)
     fact = "Vesper remembers the cold-eyed stranger."

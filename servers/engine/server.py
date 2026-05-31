@@ -137,7 +137,7 @@ def _log_session_entry(
     *,
     kind: str,
     text: str,
-    speaker: str = "",
+    speaker: Optional[str] = "",
     payload: Optional[dict] = None,
 ) -> SessionLogEntry:
     sid = _ensure_session(c)
@@ -6670,7 +6670,13 @@ def list_slots(campaign_id: str) -> dict:
 
 
 @mcp.tool()
-def log_event(campaign_id: str, kind: str, text: str, speaker: str = "", payload: Optional[dict] = None) -> dict:
+def log_event(
+    campaign_id: str,
+    kind: str,
+    text: str,
+    speaker: Optional[str] = "",
+    payload: Optional[dict] = None,
+) -> dict:
     """Record a story beat in the current session log (kind: narration | dialogue
     | roll | system | combat). Auto-starts a session if none is active. Powers
     recaps and post-compaction recovery."""
@@ -8460,7 +8466,7 @@ def persist_beat(
                     c,
                     kind=ev.get("kind", "narration"),
                     text=ev.get("text", ""),
-                    speaker=ev.get("speaker", ""),
+                    speaker=ev.get("speaker") or "",
                     payload=ev.get("payload"),
                 )
                 logged.append(entry.model_dump())

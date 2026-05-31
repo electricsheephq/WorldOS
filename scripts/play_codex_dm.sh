@@ -312,6 +312,8 @@ codex_dm_turn() {
   printf '%s' "$last"
 }
 
+LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
+
 VPID_FILE="$RUN_DIR/.viewer.pid"
 viewer_supervisor() {
   while :; do
@@ -345,6 +347,8 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
+$LOG_EVENT_TOOL_RULE
+
 Native-selected canon hero already seated:
 - campaign_id: "$HERO_CAMP"
 - player: "$HERO_PC_NAME" ($HERO_PC_RACE $HERO_PC_CLASS), id "$HERO_PC_ID"
@@ -362,6 +366,8 @@ else
 You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
 
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
+
+$LOG_EVENT_TOOL_RULE
 
 Start a live solo session:
 - call start_world("$CLAWDND_WORLD");
@@ -391,6 +397,8 @@ while true; do
     [ -z "$PMSG" ] && continue
     chatlog player "$PMSG"
     if ! REPLY="$(codex_dm_turn "You are the Dungeon Master mid-session. Re-ground from the engine state first, then resolve this player move through the engine/rules tools and reply with 2nd-person player-facing narration.
+
+$LOG_EVENT_TOOL_RULE
 
 Player move:
 $PMSG")"; then
