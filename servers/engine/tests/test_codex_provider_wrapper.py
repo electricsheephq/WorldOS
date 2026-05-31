@@ -206,6 +206,26 @@ def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
     assert "only add companions named by CLAWDND_PLAY_COMPANIONS" in source
 
 
+def test_codex_dm_wrapper_constrains_startup_roster_mutation():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "STARTUP_MUTATION_RULE" in source
+    assert "before the first player-facing narration" in source
+    assert "do not call create_character" in source
+    assert "only allowed character/roster mutation during startup is seating the one player" in source
+    assert source.count("$STARTUP_MUTATION_RULE") == 2
+
+
+def test_codex_dm_wrapper_requires_tracked_social_targets():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "SOCIAL_CHECK_TARGET_RULE" in source
+    assert "before calling social_check" in source
+    assert "use scene_context state plus find_npcs or create_character" in source
+    assert 'Use npc_id=\\"\\" with target_name only for a clearly throwaway scene-local extra' in source
+    assert source.count("$SOCIAL_CHECK_TARGET_RULE") == 3
+
+
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

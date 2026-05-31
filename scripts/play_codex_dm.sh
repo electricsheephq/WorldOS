@@ -359,6 +359,8 @@ codex_dm_turn() {
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
+STARTUP_MUTATION_RULE="Startup mutation rule: before the first player-facing narration, do not call create_character, recruit_companion, or load any non-player canon character. The only allowed character/roster mutation during startup is seating the one player when the native app has not already seated one. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
+SOCIAL_CHECK_TARGET_RULE="Social check target rule: before calling social_check, decide whether the target is tracked. For a named, factioned, recurring, or specifically addressed NPC, use scene_context state plus find_npcs or create_character to get a real npc_id, then pass that id. Use npc_id=\"\" with target_name only for a clearly throwaway scene-local extra."
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
@@ -400,6 +402,8 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$STARTUP_MUTATION_RULE
+$SOCIAL_CHECK_TARGET_RULE
 $COMPANION_TOOL_RULE
 
 Native-selected canon hero already seated:
@@ -422,6 +426,8 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$STARTUP_MUTATION_RULE
+$SOCIAL_CHECK_TARGET_RULE
 $COMPANION_TOOL_RULE
 
 Start a live solo session:
@@ -461,6 +467,7 @@ while true; do
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
+$SOCIAL_CHECK_TARGET_RULE
 $COMPANION_TOOL_RULE
 
 Player move:
