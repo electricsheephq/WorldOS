@@ -79,4 +79,4 @@
 
 | Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| (first sweep pending — Phase 3 on b23884c+) | | | | | | | | | | | | | | GUI fixes #410/#411/#412 merged + verified on 8799; sweep next |
+| sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 | (duo) | (duo) | (pend) | (pend) | true | G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified. Next: Wave A latency, Wave B char-sheet depth. |
