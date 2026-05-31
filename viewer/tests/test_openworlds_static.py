@@ -339,17 +339,22 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
 
         for hook in (
             'data-worldos-testid="worldos-launcher"',
-            'data-worldos-testid="chronicle-start"',
+            'data-worldos-testid="chronicle-start-flow"',
+            'testId="chronicle-create-submit"',
             'data-worldos-testid="campaign-row"',
             'data-worldos-testid="error-banner"',
         ):
             self.assertIn(hook, launcher)
         self.assertIn('testId="chronicle-resume"', launcher)
+        self.assertIn('testId="chronicle-resume-detail"', launcher)
+        self.assertEqual(1, launcher.count('testId="chronicle-resume"'))
+        self.assertEqual(1, launcher.count('data-worldos-testid="chronicle-start-flow"'))
+        self.assertEqual(1, launcher.count('testId="chronicle-create-submit"'))
         self.assertIn('role="alert"', launcher)
 
         for hook in (
             'data-worldos-testid="openworlds-root"',
-            'data-worldos-testid="app-status-banner"',
+            'data-worldos-testid="session-surface-status"',
             'data-worldos-testid="narration-log"',
             'data-worldos-testid="active-player"',
             'data-worldos-testid="action-palette"',

@@ -202,7 +202,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                   NewCampaignModal is retained below but no longer the primary new-game entry.) */}
               <button
                 type="button"
-                data-worldos-testid="chronicle-start"
+                data-worldos-testid="chronicle-start-flow"
                 onClick={() => onNavigate("roster")}
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
@@ -358,7 +358,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                         borderTop: "1px solid rgba(140,100,60,0.3)",
                         display: "flex", gap: 8,
                       }}>
-                        <BrassButton onClick={onCta} size="lg" style={{ flex: 1 }} disabled={summoning} testId="chronicle-resume" ariaLabel={label}>
+                        <BrassButton onClick={onCta} size="lg" style={{ flex: 1 }} disabled={summoning} testId="chronicle-resume-detail" ariaLabel={label}>
                           {label}
                         </BrassButton>
                         <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")} testId="chronicle-roster">Roster</BrassButton>
@@ -580,7 +580,7 @@ function NewCampaignModal({ onClose, onCreate }) {
 
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close new campaign modal">Cancel</BrassButton>
-            <BrassButton onClick={create} testId="chronicle-start">Light the lantern</BrassButton>
+            <BrassButton onClick={create} testId="chronicle-create-submit">Light the lantern</BrassButton>
           </div>
         </Panel>
       </div>
