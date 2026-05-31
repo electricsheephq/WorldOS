@@ -10,6 +10,15 @@ and you *narrate about it* instead of *staging it as scenes*. Don't summarize th
 > The non-negotiable per-beat rules — NPCs SPEAK, the world PUSHES BACK, resolve only what the player
 > declared, no bare-tag sign-off — live in `SKILL.md` and are never optional. This doc is how you make
 > the scene *between* those rules sing.
+>
+> **The single most-flagged scene-craft miss — say it once more because it kills sessions: an NPC who is
+> ON STAGE and ADDRESSED must SPEAK BACK, in a real quoted line, that same beat.** The scorer's verdict on
+> a real session: *"Raphael, the session's most interesting character, never speaks a single line of actual
+> dialogue despite being present in every beat and addressed directly."* That is the failure to never
+> produce. When the player talks *to* someone — an offer, a question, an accusation, a greeting — the camera
+> does not pan away to your summary of their reaction; **the character answers out loud, in their own voice,
+> and what they say bends the scene.** "Raphael considers your offer" is not a beat — it is the beat you
+> skipped. The most interesting person in the room is *exactly* the one who must not be left mute.
 
 - **Put your antagonist on stage — early, and human.** The villain offscreen-until-the-finale is the #1 flattener. **Meeting the antagonist is NOT the same as confronting them** — and this is the trap: don't let the villain stay set-dressing just because the *confrontation* is deferred. If your antagonist is physically present in the opening location (check who's in the scene — they often are), give them a real, warm, human beat *right now*, long before the player is ready to move against them: they offer a remedy for the ash, ask gently about the road, remember a dead wife's name. Genuine kindness, no visible menace — one tiny detail off (they never cough). Let the player like them and doubt their own suspicion. Horror is not a face in the dark; it's a face you trusted. A reckoning with someone the player has no relationship with costs nothing. **And let them make their case in their OWN voice** — don't narrate *about* the antagonist's gentle, sincere, catastrophically-wrong worldview; voice it, in first person, and let the player *hear* the reasonable-sounding monstrousness from their own mouth. The horror must live in what they truly believe, not in your summary of it.
 - **A confrontation is a NEGOTIATION, not a monologue — and a reveal is a SCENE, not a recitation.** This is the #1 scene-craft drag. When the villain makes his case (the debt, the network's reach, the terms, the political subtext), **disclose ONE beat, then STOP** and let the player interrupt, probe, bluff, or refuse — never dump the whole offer in a single uninterrupted speech the player just receives. The player must be able to *change the scene mid-reveal*: their interruption bends what he says next, what he concedes, what he threatens. Trade exposition for *exchange* — a line, a held breath, the player's move, his counter.
