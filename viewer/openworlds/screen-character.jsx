@@ -335,7 +335,7 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
       background: "rgba(15, 8, 2, 0.7)",
       display: "grid", placeItems: "center",
       backdropFilter: "blur(2px)",
-    }} onClick={onClose}>
+    }} onClick={onClose} role="dialog" aria-modal="true" aria-label="Rest and prepare" data-worldos-testid="rest-prepare-modal">
       <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>
         <Panel framed>
           {step === "rest" ? (
@@ -388,7 +388,7 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
               )}
 
               <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
-                <BrassButton tone="ghost" onClick={onClose}>Not yet</BrassButton>
+                <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close rest and prepare modal">Not yet</BrassButton>
                 <BrassButton onClick={completeRest} disabled title="Display-only — rest is not saved to the engine">
                   Make camp <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
                 </BrassButton>
@@ -462,7 +462,7 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
                   {Object.values(prepared).reduce((s, l) => s + l.length, 0)} bound to the day.
                 </span>
                 <div style={{ display: "flex", gap: 10 }}>
-                  <BrassButton tone="ghost" onClick={onClose}>Close book</BrassButton>
+                  <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close rest and prepare modal">Close book</BrassButton>
                   <BrassButton onClick={completePrep} disabled title="Display-only — spell preparation is not saved to the engine">
                     Seal the choices <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
                   </BrassButton>
@@ -1123,7 +1123,7 @@ function SpellbookBrowser({ hero, groups, onClose }) {
       background: "rgba(15, 8, 2, 0.7)",
       display: "grid", placeItems: "center",
       backdropFilter: "blur(2px)",
-    }} onClick={onClose}>
+    }} onClick={onClose} role="dialog" aria-modal="true" aria-label="Spellbook" data-worldos-testid="spellbook-modal">
       <div onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>
         <Panel framed>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>The Spellbook</div>
@@ -1172,7 +1172,7 @@ function SpellbookBrowser({ hero, groups, onClose }) {
 
           <Divider />
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <BrassButton tone="ghost" onClick={onClose}>Close book</BrassButton>
+            <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close spellbook modal">Close book</BrassButton>
           </div>
         </Panel>
       </div>

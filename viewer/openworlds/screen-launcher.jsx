@@ -110,7 +110,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
   };
 
   return (
-    <div className="screen" style={{ padding: "32px 40px 48px", minHeight: "100%" }}>
+    <div className="screen" id="worldos-screen-launcher" data-worldos-testid="worldos-launcher" style={{ padding: "32px 40px 48px", minHeight: "100%" }}>
       {/* #326: a can't-miss in-browser play-entry. When a live/resumable session exists, this is
           the FIRST thing the player sees — clicking it drops straight into the live table (no app,
           no bridge needed; the session + DM already exist). This is the affordance the #324 newbie
@@ -174,6 +174,8 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                 <CampaignRow key={c.id} c={c} selected={selected === c.id} onSelect={() => setSelected(c.id)} />
               ))}
               <button
+                type="button"
+                data-worldos-testid="chronicle-create-hero"
                 onClick={() => onNavigate("create")}
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
@@ -199,6 +201,8 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                   never an invented, portrait-less PC, never a BG3 origin. (The freeform
                   NewCampaignModal is retained below but no longer the primary new-game entry.) */}
               <button
+                type="button"
+                data-worldos-testid="chronicle-start-flow"
                 onClick={() => onNavigate("roster")}
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
@@ -354,16 +358,16 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                         borderTop: "1px solid rgba(140,100,60,0.3)",
                         display: "flex", gap: 8,
                       }}>
-                        <BrassButton onClick={onCta} size="lg" style={{ flex: 1 }} disabled={summoning}>
+                        <BrassButton onClick={onCta} size="lg" style={{ flex: 1 }} disabled={summoning} testId="chronicle-resume-detail" ariaLabel={label}>
                           {label}
                         </BrassButton>
-                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")}>Roster</BrassButton>
-                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")}>Journal</BrassButton>
+                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("character")} testId="chronicle-roster">Roster</BrassButton>
+                        <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("journal")} testId="chronicle-journal">Journal</BrassButton>
                       </div>
                     );
                   })()}
                   {summonError && (
-                    <div className="hand" style={{ color: "var(--crimson)", fontSize: 13, marginTop: 10 }}>
+                    <div role="alert" data-worldos-testid="error-banner" className="hand" style={{ color: "var(--crimson)", fontSize: 13, marginTop: 10 }}>
                       {summonError}
                     </div>
                   )}
@@ -393,6 +397,7 @@ function ContinueBanner({ campaign, onEnter }) {
   const region = campaignRegion(campaign);
   return (
     <div
+      data-worldos-testid="continue-banner"
       style={{
         display: "flex", alignItems: "center", gap: 20,
         padding: "18px 24px", marginBottom: 28,
@@ -413,7 +418,7 @@ function ContinueBanner({ campaign, onEnter }) {
           {campaign?.subtitle || region}
         </div>
       </div>
-      <BrassButton onClick={onEnter} size="lg">
+      <BrassButton onClick={onEnter} size="lg" testId="chronicle-resume" ariaLabel={isLive ? "Continue chronicle and play" : "Resume chronicle and play"}>
         {isLive ? "Continue → play" : "Resume → play"}
       </BrassButton>
     </div>
@@ -469,6 +474,10 @@ function CampaignRow({ c, selected, onSelect }) {
   const status = c?.live ? "Live" : (c?.sourceLabel || "Saved");
   return (
     <button
+      type="button"
+      data-worldos-testid="campaign-row"
+      data-worldos-campaign-id={c.id || undefined}
+      aria-pressed={selected ? "true" : "false"}
       onClick={onSelect}
       style={{
         textAlign: "left",
@@ -540,7 +549,7 @@ function NewCampaignModal({ onClose, onCreate }) {
       background: "rgba(15, 8, 2, 0.6)",
       display: "grid", placeItems: "center",
       backdropFilter: "blur(2px)",
-    }} onClick={onClose}>
+    }} onClick={onClose} role="dialog" aria-modal="true" aria-label="Begin a new chronicle" data-worldos-testid="new-campaign-modal">
       <div onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: "90vw" }}>
         <Panel framed>
           <div className="eyebrow" style={{ color: "var(--crimson)" }}>The First Page</div>
@@ -570,8 +579,8 @@ function NewCampaignModal({ onClose, onCreate }) {
           </FormField>
 
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
-            <BrassButton tone="ghost" onClick={onClose}>Cancel</BrassButton>
-            <BrassButton onClick={create}>Light the lantern</BrassButton>
+            <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close new campaign modal">Cancel</BrassButton>
+            <BrassButton onClick={create} testId="chronicle-create-submit">Light the lantern</BrassButton>
           </div>
         </Panel>
       </div>

@@ -559,7 +559,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   };
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, padding: 14 }}>
+    <div className="screen" id="worldos-screen-table" data-worldos-testid="openworlds-root" style={{ height: "100%", display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, padding: 14 }}>
 
       {/* LEFT — Party roster */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
@@ -590,6 +590,23 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
 
       {/* CENTER — Scene + log */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
+        {surfaceStatus !== "ready" && (
+          <div
+            role={surfaceStatus === "loading" ? "status" : "alert"}
+            aria-live={surfaceStatus === "loading" ? "polite" : "assertive"}
+            data-worldos-testid="session-surface-status"
+            data-worldos-status={surfaceStatus}
+            className="body-sm"
+            style={{
+              padding: "8px 12px",
+              color: surfaceStatus === "loading" ? "var(--ink-700)" : "var(--crimson)",
+              background: "rgba(176,141,87,0.08)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+            }}
+          >
+            {surfaceStatus === "loading" ? "Loading session surface." : `Session surface unavailable: ${surfaceStatus}`}
+          </div>
+        )}
         {/* Scene plate */}
         <div style={{ position: "relative", flex: "0 0 auto" }}>
           <Img
@@ -646,6 +663,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             tabIndex={0}
             role="log"
             aria-label="Chronicle — most recent narration at the bottom"
+            data-worldos-testid="narration-log"
             onScroll={onLogScroll}
             style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}
           >
@@ -673,7 +691,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               combat verbs (Attack/Bonus/Reaction) in an "In Combat" group when in combat. Reuses the
               EncounterButton component + invokeAction + ACTION_HINTS — the click path is unchanged.
               flex 0 0 auto so it stays anchored/visible no matter how long the chronicle grows. */}
-          <div style={{ flex: "0 0 auto", marginTop: 14 }}>
+          <div data-worldos-testid="action-palette" style={{ flex: "0 0 auto", marginTop: 14 }}>
             <SectionTitle>Actions</SectionTitle>
             {!actions.length && (
               <div className="body-sm muted" style={{ marginTop: 4 }}>
@@ -689,6 +707,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     label={a.label}
                     detail={a.available ? a.groupLabel : a.disabled_reason}
                     hint={ACTION_HINTS[a.id]}
+                    actionId={a.id}
                     tone={a.available ? "" : "crimson"}
                     disabled={!a.available || pendingActive}
                     onClick={() => invokeAction(a)}
@@ -709,6 +728,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                       label={a.label}
                       detail={a.available ? a.groupLabel : a.disabled_reason}
                       hint={ACTION_HINTS[a.id]}
+                      actionId={a.id}
                       tone={a.available ? "royal" : "crimson"}
                       disabled={!a.available || pendingActive}
                       onClick={() => invokeAction(a)}
@@ -722,18 +742,18 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           {/* DECLARE: free-text action box — the other primary input, paired with the palette above.
               Action bar — #402: flex 0 0 auto so it is ALWAYS anchored at the bottom of the panel and
               never pushed out of view by an ever-growing chronicle above it. */}
-          <div style={{ flex: "0 0 auto", marginTop: 14, padding: 12, background: "rgba(80,50,20,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)" }}>
+          <div data-worldos-testid="move-composer" style={{ flex: "0 0 auto", marginTop: 14, padding: 12, background: "rgba(80,50,20,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
               <span className="eyebrow">Active</span>
-              <strong style={{ fontFamily: "var(--f-display)", color: "var(--ink-900)", letterSpacing: "0.1em" }}>
+              <strong data-worldos-testid="active-player" data-worldos-actor-id={hero.id || undefined} style={{ fontFamily: "var(--f-display)", color: "var(--ink-900)", letterSpacing: "0.1em" }}>
                 {hero.name}
               </strong>
               <div style={{ flex: 1 }} />
               {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
-              <button onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="12" aria-label="Roll d12" onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="8" aria-label="Roll d8" onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="6" aria-label="Roll d6" onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
@@ -742,6 +762,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             <div style={{ display: "flex", gap: 10 }}>
               <input
                 ref={inputRef}
+                aria-label="Describe your move"
+                data-worldos-testid="move-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
@@ -750,7 +772,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -1148,14 +1170,21 @@ Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarrati
 // nothing in the running app reads it off window; DmNarratingBeat closes over the const directly).
 window.DM_COLD_OPEN_FLAVOR = DM_COLD_OPEN_FLAVOR;
 
-function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint }) {
+function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, actionId }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)
     ? <window.OpenWorldsIcon id={icon} size={17} label={label} />
     : icon;
   return (
     // #337: `title` surfaces the one-line affordance on hover (and as a screen-reader
     // description) without changing the visible label that remains the accessible name.
-    <button onClick={onClick} title={hint || undefined} style={{
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint || undefined}
+      aria-label={label}
+      data-worldos-testid="action-button"
+      data-worldos-action-id={actionId || undefined}
+      style={{
       display: "grid", gridTemplateColumns: "24px 1fr", gap: 8, alignItems: "center",
       textAlign: "left",
       padding: "8px 10px",

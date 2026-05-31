@@ -627,7 +627,7 @@ function TalkPanel({ hero, onClose }) {
             With {hero.name.split(" ")[0]}
           </div>
         </div>
-        <button onClick={onClose} className="icon-btn" style={{ width: 22, height: 22, color: "var(--b-200)" }}>×</button>
+        <button type="button" onClick={onClose} className="icon-btn" aria-label="Close camp chat" data-worldos-testid="modal-close" style={{ width: 22, height: 22, color: "var(--b-200)" }}>×</button>
       </div>
 
       <div style={{
