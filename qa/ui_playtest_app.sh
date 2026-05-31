@@ -501,7 +501,9 @@ json.dump({
 PY
   log "[B] scoring + summarizing…"
   python3 "$ROOT/qa/ui_playtest_score.py" "$RUNDIR" "$player_verdict" 2>> "$RUNDIR/score.err"
-  if [ "$player_rc" -eq 0 ] && [ -f "$RUNDIR/score.json" ] && python3 - "$RUNDIR/score.json" <<'PY'
+  if [ "$player_rc" -eq 0 ] && [ -f "$RUNDIR/score.json" ]; then
+    PART_B_RESULT="PASS"
+    if python3 - "$RUNDIR/score.json" <<'PY'
 import json, sys
 try:
     score = json.load(open(sys.argv[1]))
@@ -509,9 +511,11 @@ except Exception:
     sys.exit(1)
 sys.exit(0 if score.get("pass") is True else 1)
 PY
-  then
-    PART_B_RESULT="PASS"
+    then
     PART_B_SCORE_PASS="true"
+    else
+      PART_B_SCORE_PASS="false"
+    fi
   else
     PART_B_RESULT="FAIL"
     PART_B_SCORE_PASS="false"

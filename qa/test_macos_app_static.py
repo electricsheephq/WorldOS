@@ -22,8 +22,21 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('@AppStorage("artRepoPath")', root_view)
         self.assertIn("activeRepoPath", root_view)
         self.assertIn("activeArtRepoPath", root_view)
-        self.assertIn("artRepoPath: $artRepoPath", root_view)
+        self.assertIn("artRepoPath: activeArtRepoPathBinding", root_view)
         self.assertIn('ValidatedTextField("Private art repo path"', settings)
+
+    def test_debug_control_center_honors_launch_root_overrides(self):
+        root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
+
+        self.assertIn("struct DebugControlCenterView", root_view)
+        self.assertGreaterEqual(root_view.count("launchRepoPathOverride"), 2)
+        self.assertGreaterEqual(root_view.count("launchArtRepoPathOverride"), 2)
+        self.assertIn("private var activeRepoPathBinding: Binding<String>", root_view)
+        self.assertIn("private var activeArtRepoPathBinding: Binding<String>", root_view)
+        self.assertIn("StatusStrip(repoPath: activeRepoPath", root_view)
+        self.assertIn("repoPath: activeRepoPathBinding", root_view)
+        self.assertIn("artRepoPath: activeArtRepoPathBinding", root_view)
+        self.assertIn("campaignStore.reload(repoPath: activeRepoPath)", root_view)
 
     def test_native_viewer_and_provider_forward_art_repo_env(self):
         app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")

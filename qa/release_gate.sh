@@ -43,7 +43,34 @@ fail()  { echo "❌ GATE-ABORT: $*" >&2; exit 1; }
 ok()    { echo "✓ $*"; }
 warn()  { echo "⚠ $*" >&2; }
 
-free_port() { lsof -nP -iTCP:"$1" -t 2>/dev/null | xargs kill -9 2>/dev/null || true; }
+port_pids() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null || true; }
+pid_cwd() { lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1; }
+pid_cmd() { ps -p "$1" -o command= 2>/dev/null || true; }
+repo_realpath() { (cd "$ROOT" && pwd -P) 2>/dev/null || printf '%s' "$ROOT"; }
+pid_belongs_to_root() {
+  local pid="$1" root_real cwd cmd
+  root_real="$(repo_realpath)"
+  cwd="$(pid_cwd "$pid")"
+  cmd="$(pid_cmd "$pid")"
+  [ "$cwd" = "$root_real" ] && return 0
+  case "$cmd" in
+    *"$root_real/"*|*"$ROOT/"*) return 0;;
+  esac
+  return 1
+}
+free_port() {
+  local port="$1" pid cmd
+  for pid in $(port_pids "$port"); do
+    if pid_belongs_to_root "$pid"; then
+      cmd="$(pid_cmd "$pid")"
+      warn "port $port occupied by current worktree process pid=$pid (${cmd:-unknown}) — stopping it"
+      kill "$pid" 2>/dev/null || true
+    else
+      cmd="$(pid_cmd "$pid")"
+      fail "port $port is occupied by a non-current process pid=$pid (${cmd:-unknown}); pass --port to use an isolated release-gate range"
+    fi
+  done
+}
 free_port_range() {
   local start="$1" count="${2:-1}" p
   for p in $(seq "$start" $((start + count - 1))); do
@@ -97,8 +124,8 @@ preflight() {
       warn "port $PORT is occupied — preflight-only will not kill it"
       ok "gate port $PORT checked"
     else
-      warn "port $PORT is occupied — freeing it (leftover viewer): lsof -ti:$PORT | xargs kill -9"
-      lsof -nP -iTCP:"$PORT" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+      warn "port $PORT is occupied — stopping only current-worktree listeners"
+      free_port "$PORT"
       sleep 2
       ok "gate port $PORT free"
     fi
@@ -150,11 +177,11 @@ for p in "${PS[@]}"; do
   if [ "$first" = "1" ]; then
     # persona 1 does the FULL build (part A rebuilds the .app + native #356 gate)
     echo "[$p] part A+B (fresh build + native gate + play)…"
-    WOS_APP_PART=AB WOS_APP_PREFERRED_PORT="$PORT" qa/ui_playtest_app.sh "${RUNID}-${p}" baldurs-gate "$p" 40 "$BUDGET" >"$ROOT/qa/ui_playtest_runs/${RUNID}-${p}.log" 2>&1
+    WOS_APP_NO_GLOBAL_KILL=1 WOS_APP_PART=AB WOS_APP_PREFERRED_PORT="$PORT" qa/ui_playtest_app.sh "${RUNID}-${p}" baldurs-gate "$p" 40 "$BUDGET" >"$ROOT/qa/ui_playtest_runs/${RUNID}-${p}.log" 2>&1
     first=0
   else
     echo "[$p] part B (reuse build)…"
-    WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT="$PORT" qa/ui_playtest_app.sh "${RUNID}-${p}" baldurs-gate "$p" 40 "$BUDGET" >"$ROOT/qa/ui_playtest_runs/${RUNID}-${p}.log" 2>&1
+    WOS_APP_NO_GLOBAL_KILL=1 WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT="$PORT" qa/ui_playtest_app.sh "${RUNID}-${p}" baldurs-gate "$p" 40 "$BUDGET" >"$ROOT/qa/ui_playtest_runs/${RUNID}-${p}.log" 2>&1
   fi
   if [ -f "$rd/score.json" ]; then
     sat=$(python3 -c "import json;d=json.load(open('$rd/score.json'));print('sat=%s gave_up=%s crit=%s arc=%s'%(d.get('persona_satisfaction'),d.get('gave_up'),d.get('bug_reports_critical'),d.get('completed_intro_flow')))" 2>/dev/null)
@@ -233,7 +260,7 @@ try:
     d=json.load(open(sys.argv[1]))
     actions = d.get("enabledActions") or d.get("availableActions") or []
     n = sum(1 for a in actions if isinstance(a, dict) and a.get("available", True) is not False)
-    sys.exit(0 if d.get("can_act") and n >= 4 else 1)
+    sys.exit(0 if d.get("can_act") and n >= 6 else 1)
 except Exception:
     sys.exit(1)
 PY

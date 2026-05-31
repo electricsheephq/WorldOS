@@ -355,6 +355,22 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("boundTail([...prev, ...beats], MAX_LIVE_BEATS)", source)
         self.assertIn("MAX_LIVE_ECHOES", source)
 
+    def test_openworlds_app_honors_campaign_deep_link_once(self):
+        # /monitor and /openworlds/campaigns.json cards link to /openworlds/?campaign=<id>.
+        # The app must select that catalog entry before falling back to current/live/first,
+        # otherwise agents can verify the wrong campaign while thinking the deep link worked.
+        status, ctype, body = self._get("/openworlds/app.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("new URLSearchParams(window.location.search || \"\")", source)
+        self.assertIn('params.get("campaign")', source)
+        self.assertIn("requestedCampaignRef", source)
+        self.assertIn("requestedStillExists", source)
+        self.assertLess(source.index("requestedStillExists ? requestedCampaign"), source.index("nextCampaigns.find((c) => c.current)?.id"))
+        self.assertIn("requestedCampaignRef.current = \"\"", source)
+
     def test_openworlds_camp_rest_gives_feedback_when_dm_is_busy(self):
         # #402: the Camp "Begin Resting" CTA must give clear feedback when the DM is mid-turn (the
         # bug was a silent no-op — can_act stays true so the click POSTed a move that just queued).

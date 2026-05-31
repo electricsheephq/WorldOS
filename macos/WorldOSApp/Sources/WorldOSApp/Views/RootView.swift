@@ -480,6 +480,36 @@ struct DebugControlCenterView: View {
 
     @State private var selection: AppSection? = .play
     @State private var webURL: URL?
+    @State private var launchRepoPathOverride: String? = RepositoryLocator.launchRepoPathOverride()
+    @State private var launchArtRepoPathOverride: String? = RepositoryLocator.launchArtRepoPathOverride()
+
+    private var activeRepoPath: String {
+        launchRepoPathOverride ?? repoPath
+    }
+
+    private var activeArtRepoPath: String {
+        launchArtRepoPathOverride ?? artRepoPath
+    }
+
+    private var activeRepoPathBinding: Binding<String> {
+        Binding(
+            get: { activeRepoPath },
+            set: { next in
+                launchRepoPathOverride = nil
+                repoPath = next
+            }
+        )
+    }
+
+    private var activeArtRepoPathBinding: Binding<String> {
+        Binding(
+            get: { activeArtRepoPath },
+            set: { next in
+                launchArtRepoPathOverride = nil
+                artRepoPath = next
+            }
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -489,13 +519,21 @@ struct DebugControlCenterView: View {
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
-                StatusStrip(repoPath: repoPath, stateDir: stateDir)
+                StatusStrip(repoPath: activeRepoPath, stateDir: stateDir)
                     .environmentObject(processService)
             }
         }
         .onAppear(perform: refresh)
-        .onChange(of: repoPath) { _ in refresh() }
-        .onChange(of: artRepoPath) { _ in refresh() }
+        .onChange(of: repoPath) { _ in
+            if launchRepoPathOverride == nil {
+                refresh()
+            }
+        }
+        .onChange(of: artRepoPath) { _ in
+            if launchArtRepoPathOverride == nil {
+                refresh()
+            }
+        }
     }
 
     @ViewBuilder
@@ -503,8 +541,8 @@ struct DebugControlCenterView: View {
         switch selection ?? .play {
         case .play:
             PlayView(
-                repoPath: $repoPath,
-                artRepoPath: $artRepoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 selectedProviderRaw: $selectedProviderRaw,
@@ -518,23 +556,23 @@ struct DebugControlCenterView: View {
             )
         case .campaigns:
             CampaignsView(
-                repoPath: $repoPath,
-                artRepoPath: $artRepoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 webURL: $webURL
             )
         case .monitor:
             MonitorView(
-                repoPath: $repoPath,
-                artRepoPath: $artRepoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 webURL: $webURL
             )
         case .providers:
             ProvidersView(
-                repoPath: $repoPath,
-                artRepoPath: $artRepoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 codexProviderCommand: $codexProviderCommand,
                 openClawProviderCommand: $openClawProviderCommand,
                 budget: $budget,
@@ -543,8 +581,8 @@ struct DebugControlCenterView: View {
             )
         case .settings:
             SettingsView(
-                repoPath: $repoPath,
-                artRepoPath: $artRepoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 selectedProviderRaw: $selectedProviderRaw,
@@ -563,7 +601,7 @@ struct DebugControlCenterView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: repoPath)
+        campaignStore.reload(repoPath: activeRepoPath)
     }
 }
 

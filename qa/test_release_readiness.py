@@ -347,7 +347,10 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertTrue(payload["harness_contaminated"])
             self.assertIn("missing_release_personas", payload["failed_gates"])
             self.assertEqual(payload["missing_release_personas"], ["veteran", "adversarial", "narrative", "optimizer"])
+            for gate in ("cross_persona_sat", "no_give_up", "zero_critical", "image_render"):
+                self.assertIn(gate, payload["failed_gates"])
             self.assertIn("canonical five-persona release set", {gap["missing"] for gap in payload["evidence_gaps"]})
+            self.assertTrue({"cross_persona_sat", "no_give_up", "zero_critical", "image_render"}.issubset({gap["gate"] for gap in payload["evidence_gaps"]}))
             self.assertEqual(payload["signals"]["image_request_denominator"], 2)
 
     def test_complete_five_persona_evidence_can_release_ready(self):
@@ -426,6 +429,85 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertFalse(payload["harness_contaminated"])
             self.assertEqual(payload["missing_release_personas"], [])
             self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["signals"]["image_request_denominator"], 5)
+
+    def test_low_product_score_is_clean_red_not_harness_contaminated(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = []
+            for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
+                run = tmp / f"gate-{persona}"
+                player = run / "player"
+                player.mkdir(parents=True)
+                (run / "score.json").write_text(
+                    json.dumps(
+                        {
+                            "run": f"gate-{persona}",
+                            "persona": persona,
+                            "pass": False,
+                            "completed_intro_flow": True,
+                            "persona_satisfaction": 5,
+                            "gave_up": False,
+                            "bug_reports_critical": 0,
+                            "console_errors": 0,
+                            "image_404s": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (run / "run.json").write_text(
+                    json.dumps({"build_sha": "deadbee", "part_a": {"result": "PASS"}, "part_b": {"persona_loop": "PASS", "score_pass": False}}),
+                    encoding="utf-8",
+                )
+                (player / "network.ndjson").write_text(
+                    json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
+                    encoding="utf-8",
+                )
+                runs.append(run)
+
+            story = tmp / "story.json"
+            mech = tmp / "mech.json"
+            behavioral = tmp / "behavioral.txt"
+            audit = tmp / "audit.log"
+            palette = tmp / "session_surface.final.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            behavioral.write_text("GREEN\n", encoding="utf-8")
+            audit.write_text("PASS\n", encoding="utf-8")
+            palette.write_text(json.dumps({"can_act": True}), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                "newbie,veteran,adversarial,narrative,optimizer",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["partial"])
+            self.assertFalse(payload["harness_contaminated"])
+            self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["failed_gates"], ["cross_persona_sat"])
             self.assertEqual(payload["signals"]["image_request_denominator"], 5)
 
     def test_green_arguments_without_evidence_paths_are_not_release_ready(self):

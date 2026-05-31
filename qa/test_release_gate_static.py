@@ -23,6 +23,23 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn("qa/playwright/node_modules/playwright/package.json", source)
         self.assertIn("all orchestrated tools and command deps present", source)
 
+    def test_release_gate_preserves_non_current_app_and_viewer_processes(self):
+        source = (ROOT / "qa" / "release_gate.sh").read_text(encoding="utf-8")
+
+        self.assertIn("pid_belongs_to_root", source)
+        self.assertIn("port_pids", source)
+        self.assertIn("pass --port to use an isolated release-gate range", source)
+        self.assertIn("WOS_APP_NO_GLOBAL_KILL=1 WOS_APP_PART=AB", source)
+        self.assertIn("WOS_APP_NO_GLOBAL_KILL=1 WOS_APP_PART=B", source)
+        self.assertNotIn("xargs kill", source)
+        self.assertNotIn("kill -9", source)
+
+    def test_palette_live_requires_six_enabled_actions(self):
+        source = (ROOT / "qa" / "release_gate.sh").read_text(encoding="utf-8")
+
+        self.assertIn("n >= 6", source)
+        self.assertNotIn("n >= 4", source)
+
     def test_release_gate_uses_real_duo_prompt_file(self):
         source = (ROOT / "qa" / "release_gate.sh").read_text(encoding="utf-8")
 

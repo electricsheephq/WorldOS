@@ -222,18 +222,20 @@ def main() -> int:
         })
     missing_release_personas = [p for p in REQUIRED_RELEASE_PERSONAS if p not in completed_set]
     if missing_release_personas:
-        evidence_gaps.append({
-            "gate": "cross_persona_sat",
-            "missing": "canonical five-persona release set",
-            "detail": f"missing release persona(s): {', '.join(missing_release_personas)}",
-        })
+        missing_detail = f"missing release persona(s): {', '.join(missing_release_personas)}"
+        for gate in ("cross_persona_sat", "no_give_up", "zero_critical", "image_render"):
+            evidence_gaps.append({
+                "gate": gate,
+                "missing": "canonical five-persona release set",
+                "detail": missing_detail,
+            })
     for h in harness_failures:
         evidence_gaps.append({
             "gate": "cross_persona_sat",
             "missing": f"{h['run']}/score.json",
             "detail": f"persona={h.get('persona') or 'unknown'} part_b={h.get('part_b') or 'n/a'}",
         })
-    failed_part_b = [p for p in persona_scores if p.get("part_b_result") != "PASS" or not p.get("part_b_score_pass")]
+    failed_part_b = [p for p in persona_scores if p.get("part_b_result") != "PASS"]
     for p in failed_part_b:
         evidence_gaps.append({
             "gate": "arc_completed",
@@ -288,8 +290,9 @@ def main() -> int:
                                f"completed_intro_flow on >=1 persona"),
         "cross_persona_sat":  (not missing_release_personas and expected_complete and avg_sat >= 7.0,
                                f"avg={avg_sat:.1f}/10 over {len(sats)}; missing={missing_personas or 'none'}; release_missing={missing_release_personas or 'none'}"),
-        "no_give_up":         (not any_gave_up,             f"any_gave_up={any_gave_up}"),
-        "zero_critical":      (total_critical == 0 and total_console_errors == 0,
+        "no_give_up":         (not any_gave_up and "no_give_up" not in evidence_gap_gates,
+                               f"any_gave_up={any_gave_up}"),
+        "zero_critical":      (total_critical == 0 and total_console_errors == 0 and "zero_critical" not in evidence_gap_gates,
                                f"critical={total_critical}; console_errors={total_console_errors}"),
         "story_craft":        (story_overall >= 4.3 and "story_craft" not in evidence_gap_gates,
                                f"story={story_overall or 'n/a'}"),
@@ -299,7 +302,7 @@ def main() -> int:
                                f"behavioral={args.behavioral or 'n/a'}"),
         "ui_audit":           (args.ui_audit == "PASS" and "ui_audit" not in evidence_gap_gates,
                                f"ui_audit={args.ui_audit or 'n/a'}"),
-        "image_render":       (image_evidence_complete and img_rate >= 0.95,
+        "image_render":       (image_evidence_complete and img_rate >= 0.95 and "image_render" not in evidence_gap_gates,
                                f"rate={img_rate:.2%}; denominator={sum(p['image_total'] for p in img_runs)}"),
         "palette_live":       (args.palette_live == "true" and "palette_live" not in evidence_gap_gates,
                                f"palette_live={args.palette_live or 'n/a'}"),

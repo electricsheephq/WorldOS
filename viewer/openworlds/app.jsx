@@ -53,6 +53,15 @@ window.OpenWorldsA11y = window.OpenWorldsA11y || {
   },
 };
 
+window.openWorldsRequestedCampaignFromLocation = window.openWorldsRequestedCampaignFromLocation || function openWorldsRequestedCampaignFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    return params.get("campaign") || "";
+  } catch (_e) {
+    return "";
+  }
+};
+
 // #342: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into the
 // chronicle. The adversarial run (#324 v2) found that submitting "<script>…</script>", "{{ }}", or
 // "<b>…</b>" sent the raw markup straight to the DM (it stalled 35s+) and rode along in the local
@@ -535,6 +544,7 @@ function App() {
   const [state, setState] = React.useState(window.INITIAL_STATE || {});
   const [screen, setScreen] = React.useState("launcher");
   const [campMode, setCampMode] = React.useState(false);
+  const requestedCampaignRef = React.useRef(window.openWorldsRequestedCampaignFromLocation());
   const [nativeState, setNativeState] = React.useState(() => ({
     bridge: Boolean(window.OpenWorldsNative?.hasBridge?.()),
     appStatus: null,
@@ -592,16 +602,20 @@ function App() {
 
         const nextCampaigns = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
         setState((s) => {
+          const requestedCampaign = requestedCampaignRef.current;
+          const requestedStillExists = requestedCampaign && nextCampaigns.some((c) => c.id === requestedCampaign);
           const activeStillExists = nextCampaigns.some((c) => c.id === s?.activeCampaign);
           const preferred =
+            (requestedStillExists ? requestedCampaign : "") ||
             nextCampaigns.find((c) => c.current)?.id ||
             nextCampaigns.find((c) => c.live)?.id ||
             nextCampaigns[0]?.id ||
             "";
+          if (requestedStillExists) requestedCampaignRef.current = "";
           return {
             ...s,
             campaigns: nextCampaigns,
-            activeCampaign: activeStillExists ? s.activeCampaign : preferred,
+            activeCampaign: requestedStillExists ? requestedCampaign : (activeStillExists ? s.activeCampaign : preferred),
             campaignCatalog: {
               loaded: true,
               total: payload?.total ?? nextCampaigns.length,

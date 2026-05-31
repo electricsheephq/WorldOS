@@ -73,8 +73,8 @@ UI audit, image denominator/source, palette-live evidence, per-run Part B pass s
 SHA evidence.
 The runtime safety gate includes both critical bug reports and raw console/page errors from the
 palette run.
-Append the `--scorecard-row` line to `qa/SCORECARD.md` only when the run is not partial/harness-contaminated
-and has no evidence gaps.
+Append every `--scorecard-row` line to `qa/SCORECARD.md` as diagnostic release evidence. Only a
+non-partial, non-harness-contaminated 10/10 row with no evidence gaps can count as release evidence.
 
 Non-disruptive Mac smoke during takeover:
 ```bash
