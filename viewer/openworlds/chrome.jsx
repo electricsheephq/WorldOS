@@ -266,7 +266,7 @@ function Img({ scope, label, w, h, framed, style, className, fit = "cover" }) {
   );
 }
 
-function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onClick, active, style }) {
+function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onClick, active, style, testId, ...buttonProps }) {
   return (
     <button
       type="button"
@@ -279,6 +279,9 @@ function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onC
         ...(style || {}),
       }}
       title={label}
+      aria-label={buttonProps["aria-label"] || label || undefined}
+      data-worldos-testid={testId || undefined}
+      {...buttonProps}
     >
       {children || (glyph && window.OpenWorldsIcon?.has?.(glyph) ? (
         <window.OpenWorldsIcon id={glyph} size={Math.max(18, size * 0.46)} label={label} />
@@ -289,12 +292,22 @@ function IconPlate({ size = 56, label, framed = true, glyph, tone, children, onC
   );
 }
 
-function BrassButton({ children, onClick, tone, size, disabled, style, type = "button", title }) {
+function BrassButton({ children, onClick, tone, size, disabled, style, type = "button", title, ariaLabel, testId, ...buttonProps }) {
   const cls = ["btn", tone, size, disabled ? "disabled" : ""].filter(Boolean).join(" ");
   // `title` is optional — forwarded so callers can attach a hover/affordance tooltip
   // (e.g. the #337 action-bar hints) without giving every BrassButton one.
   return (
-    <button className={cls} onClick={onClick} disabled={disabled} type={type} style={style} title={title || undefined}>
+    <button
+      className={cls}
+      onClick={onClick}
+      disabled={disabled}
+      type={type}
+      style={style}
+      title={title || undefined}
+      aria-label={ariaLabel || undefined}
+      data-worldos-testid={testId || undefined}
+      {...buttonProps}
+    >
       {children}
     </button>
   );
@@ -324,7 +337,7 @@ function Panel({ children, framed, dark, className, style, ornaments = true }) {
 function NavRail({ current, onNavigate }) {
   const currentGroup = getGroupForScreen(current);
   return (
-    <nav className="nav-rail" aria-label="Codex">
+    <nav className="nav-rail" aria-label="Codex" data-worldos-testid="primary-navigation">
       {NAV_GROUPS.map((g) => (
         <button
           type="button"
@@ -332,6 +345,9 @@ function NavRail({ current, onNavigate }) {
           className={`nav-item ${currentGroup?.id === g.id ? "active" : ""}`}
           onClick={() => onNavigate(getDefaultScreen(g.id))}
           aria-current={currentGroup?.id === g.id ? "page" : undefined}
+          aria-label={g.label}
+          data-worldos-testid="primary-nav-item"
+          data-worldos-nav-id={g.id}
         >
           <span className="glyph"><Glyph kind={g.glyph} /></span>
           <span className="tip">{g.label}</span>
@@ -344,6 +360,9 @@ function NavRail({ current, onNavigate }) {
         className={`nav-item ${currentGroup?.id === NAV_BOTTOM.id ? "active" : ""}`}
         onClick={() => onNavigate(getDefaultScreen(NAV_BOTTOM.id))}
         aria-current={currentGroup?.id === NAV_BOTTOM.id ? "page" : undefined}
+        aria-label={NAV_BOTTOM.label}
+        data-worldos-testid="primary-nav-item"
+        data-worldos-nav-id={NAV_BOTTOM.id}
       >
         <span className="glyph"><Glyph kind={NAV_BOTTOM.glyph} size={20} /></span>
         <span className="tip">{NAV_BOTTOM.label}</span>
@@ -356,7 +375,7 @@ function TabBar({ current, onNavigate }) {
   const group = getGroupForScreen(current);
   if (!group || group.tabs.length < 2) return null;
   return (
-    <div style={{
+    <div role="tablist" aria-label={`${group.label} screens`} data-worldos-testid="screen-tabs" style={{
       display: "flex",
       alignItems: "center",
       gap: 0,
@@ -385,6 +404,10 @@ function TabBar({ current, onNavigate }) {
         <button
           type="button"
           key={tab.id}
+          role="tab"
+          aria-selected={current === tab.id}
+          data-worldos-testid="screen-tab"
+          data-worldos-tab-id={tab.id}
           className={`tab-button ${current === tab.id ? "active" : ""}`}
           onClick={() => onNavigate(tab.id)}
           style={{
