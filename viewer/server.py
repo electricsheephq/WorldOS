@@ -3465,6 +3465,10 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "stats": stats,
         "skills": skills,
         "spells": spells,
+        # Character-level casting summary (Spell Save DC + Spell Attack Bonus) for the top
+        # of the Spells tab. None for a non-caster (Fighter/Rogue) — the screen omits it
+        # rather than show a fake DC. Derived from the PC's casting ability + proficiency.
+        "spellcasting": _character_spellcasting(ch),
         "spellSlots": spell_slots,
         "classResources": class_resources,
         "conditions": conditions,
@@ -3620,25 +3624,64 @@ _CASTING_ABILITY = {
 }
 
 
+def _casting_ability(ch: dict) -> str | None:
+    """The full ability key (e.g. "intelligence") the character casts with, from their
+    FIRST SRD caster class (mirror of engine srd_tables._CASTING_ABILITY). Returns None
+    for a non-caster (Fighter/Rogue/NPC with stray spell names) so callers omit DC/attack
+    rather than fabricate one. Honest: reads only the engine-set `classes` list."""
+    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    for cl in classes:
+        if isinstance(cl, dict):
+            a = _CASTING_ABILITY.get(_text(cl.get("name")).lower())
+            if a:
+                return a
+    return None
+
+
 def _spell_save_dc(ch: dict) -> int | None:
     """A caster's spell save DC = 8 + proficiency + casting-ability modifier, mirroring
     engine ``server.spell_save_dc`` read-only from the snapshot. Returns None when the
     character has no SRD caster class (a Fighter with stray spell names, an NPC) — we then
     omit the DC rather than invent one. Honest: reads only engine-set abilities/prof."""
-    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
-    ability = None
-    for cl in classes:
-        if isinstance(cl, dict):
-            a = _CASTING_ABILITY.get(_text(cl.get("name")).lower())
-            if a:
-                ability = a
-                break
+    ability = _casting_ability(ch)
     if ability is None:
         return None
     abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
     prof = _num(ch.get("proficiency_bonus"))
     prof = int(prof) if prof is not None else 2
     return 8 + prof + _ability_mod(abilities.get(ability))
+
+
+def _spell_attack_bonus(ch: dict) -> int | None:
+    """A caster's spell attack bonus = proficiency + casting-ability modifier, mirroring
+    engine ``server.spell_save_dc``'s `spell_attack_bonus` (server.py: prof + mod). Returns
+    None for a non-caster (no SRD caster class) so the UI omits it rather than show a fake
+    +0. Honest: reads only engine-set abilities/prof."""
+    ability = _casting_ability(ch)
+    if ability is None:
+        return None
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    prof = _num(ch.get("proficiency_bonus"))
+    prof = int(prof) if prof is not None else 2
+    return prof + _ability_mod(abilities.get(ability))
+
+
+def _character_spellcasting(ch: dict) -> dict | None:
+    """Character-level spellcasting summary for the TOP of the Spells tab — the once-at-the-top
+    Spell Save DC + Spell Attack Bonus a caster needs to plan (the way D&D Beyond shows them),
+    derived from the PC's spellcasting ability + proficiency. Returns None for a non-caster
+    (no SRD caster class) so the screen omits the block entirely — an honest Fighter shows
+    nothing, never a fabricated DC 0. Reuses the same #410 formula helpers (no new math)."""
+    ability = _casting_ability(ch)
+    if ability is None:
+        return None
+    return {
+        "ability": ability,
+        # short SRD code (int/wis/cha) for a compact "INT" badge in the UI
+        "abilityShort": ability[:3],
+        "spellSaveDc": _spell_save_dc(ch),
+        "spellAttackBonus": _spell_attack_bonus(ch),
+    }
 
 
 def _spell_card(name: str, time_label: str, save_dc: int | None) -> dict:
