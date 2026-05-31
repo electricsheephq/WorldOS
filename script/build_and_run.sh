@@ -10,6 +10,28 @@ BUNDLE_ID="dev.clawdnd.app"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ART_ROOT="${WORLDOS_ART_REPO_ROOT:-${CLAWDND_ART_REPO_ROOT:-$ROOT_DIR}}"
+PREFER_LAUNCH_ROOTS="${WORLDOS_PREFER_LAUNCH_ROOTS:-1}"
+plist_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "$value"
+}
+plist_bool() {
+  local normalized
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    1|true|yes|on) printf '<true/>' ;;
+    *) printf '<false/>' ;;
+  esac
+}
+ROOT_DIR_PLIST="$(plist_escape "$ROOT_DIR")"
+ART_ROOT_PLIST="$(plist_escape "$ART_ROOT")"
+PREFER_LAUNCH_ROOTS_PLIST="$(plist_bool "$PREFER_LAUNCH_ROOTS")"
 PACKAGE_DIR="$ROOT_DIR/macos/WorldOSApp"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$DISPLAY_NAME.app"
@@ -20,10 +42,47 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 
 usage() {
   echo "usage: $0 [run|--verify|--debug|--logs|--telemetry|--release-check]" >&2
+  echo "env: WORLDOS_NO_STOP_EXISTING=1 skips the global WorldOSApp kill" >&2
 }
 
 stop_existing() {
+  if [ "${WORLDOS_NO_STOP_EXISTING:-0}" = "1" ]; then
+    return 0
+  fi
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  pkill -f "$ROOT_DIR/viewer/server.py" >/dev/null 2>&1 || true
+}
+
+bundle_pid() {
+  local pid cmd
+  for pid in $(pgrep -x "$APP_NAME" 2>/dev/null || true); do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    case "$cmd" in
+      "$APP_BINARY"*) printf '%s\n' "$pid" ;;
+    esac
+  done
+}
+
+pid_in_list() {
+  local needle="$1" haystack="${2:-}"
+  case " $haystack " in
+    *" $needle "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wait_for_bundle_pid() {
+  local existing_pids="${1:-}" pid
+  for _ in $(seq 1 50); do
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      pid_in_list "$pid" "$existing_pids" && continue
+      printf '%s\n' "$pid"
+      return 0
+    done < <(bundle_pid)
+    sleep 0.2
+  done
+  return 1
 }
 
 build_bundle() {
@@ -66,6 +125,12 @@ build_bundle() {
   <string>WorldOS</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
+  <key>WorldOSRepoRoot</key>
+  <string>$ROOT_DIR_PLIST</string>
+  <key>WorldOSArtRepoRoot</key>
+  <string>$ART_ROOT_PLIST</string>
+  <key>WorldOSPreferLaunchRoots</key>
+  $PREFER_LAUNCH_ROOTS_PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSAppTransportSecurity</key>
@@ -98,7 +163,12 @@ PLIST
 open_app() {
   # Set BOTH names so the native app's RepositoryLocator resolves the repo root
   # whether it reads the new WORLDOS_* name or the legacy CLAWDND_* one (#295, W0-E).
-  WORLDOS_REPO_ROOT="$ROOT_DIR" CLAWDND_REPO_ROOT="$ROOT_DIR" /usr/bin/open -n "$APP_BUNDLE"
+  # Keep private art separately overridable: a Lexar worktree can launch app code from
+  # $ROOT_DIR while reading gitignored _private art from the canonical checkout.
+  WORLDOS_REPO_ROOT="$ROOT_DIR" CLAWDND_REPO_ROOT="$ROOT_DIR" \
+  WORLDOS_ART_REPO_ROOT="$ART_ROOT" CLAWDND_ART_REPO_ROOT="$ART_ROOT" \
+  WORLDOS_PREFER_LAUNCH_ROOTS="$PREFER_LAUNCH_ROOTS" \
+    /usr/bin/open -n "$APP_BUNDLE"
 }
 
 release_check() {
@@ -124,10 +194,10 @@ case "$MODE" in
     ;;
   --verify|verify)
     build_bundle
+    existing_pids="$(bundle_pid | tr '\n' ' ')"
     open_app
-    sleep 2
-    pgrep -x "$APP_NAME" >/dev/null
-    echo "$DISPLAY_NAME launched from $APP_BUNDLE"
+    pid="$(wait_for_bundle_pid "$existing_pids")"
+    echo "$DISPLAY_NAME launched from $APP_BUNDLE (pid $pid)"
     ;;
   --debug|debug)
     build_bundle

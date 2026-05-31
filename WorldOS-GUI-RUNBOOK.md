@@ -6,6 +6,10 @@
 > chronicle, phantom companion) sailed past. This runbook makes that impossible to repeat.
 > Companions: `WorldOS-OPERATING-GOAL.md` (the gate), `qa/GUI_WORKBOOK.md` (the live punch-list),
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
+>
+> Takeover note, 2026-05-31: `/Users/lume/ClawDnD-val` is currently the private-art/live-app checkout,
+> not the place for tracked takeover edits. Use Lexar worktrees for changes; intentionally fast-forward
+> canonical only when the owner chooses to move the live app/art checkout.
 
 ## The two surfaces (never confuse them again)
 - **ITERATE — visible, playable, fast:** the OpenWorlds viewer served **from the canonical repo**
@@ -14,13 +18,17 @@
 - **GATE — truth:** the built `dist/WorldOS.app` via `qa/ui_playtest_app.sh` (part A native #356 +
   part B persona loop). Release is judged here. Same viewer code; adds the native shell.
 - **Why both:** identical viewer. 8799-from-canonical skips the build + guarantees art is present, so
-  it's the honest fast loop. The `.app` is the shipped artifact. NEVER iterate on a worktree-served
-  viewer (no `_private` → 100% image 404) or a stale build.
+  it's the honest fast loop. The `.app` is the shipped artifact. A Lexar worktree may serve private art
+  only when `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val` points at the canonical private-art checkout.
+  The native app has a separate Private art repo path setting, and `script/build_and_run.sh` also writes
+  the art root into `Info.plist` as `WorldOSArtRepoRoot` so LaunchServices env loss cannot hide missing art.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
-```
+```bash
 cd /Users/lume/ClawDnD-val
-git checkout main && git pull --ff-only origin main          # current main (has merged fixes)
+# Do not auto-pull during takeover; this checkout holds private art and the live app.
+# Verify intentionally before moving it:
+git rev-parse --short HEAD && git rev-parse --short origin/main
 pkill -f 'viewer/server.py'; pkill -f 'scripts/play.sh'; pkill -f 'play_party.sh'   # NOT node:18789 (Eva gateway)
 CLAWDND_PLAY_PORT=8799 nohup bash scripts/play.sh baldurs-gate preview-$(git rev-parse --short HEAD) 8799 > /tmp/wos-8799.log 2>&1 &
 # play.sh sets CLAWDND_PLAYER_MOVES → can_act:true (the move sink = the palette is live)
@@ -32,7 +40,7 @@ Open `http://127.0.0.1:8799/openworlds/`. The DM cold-open takes ~30–90s; **wa
 The tool channel intermittently returns fabricated/empty/doubled reads (this session it invented a
 `kind=pc` palette-disabled bug and a scene-404 that were both false). **Ground every load-bearing
 claim in ≥2 clean reads + a checksum/HTTP code.**
-```
+```bash
 curl -s http://127.0.0.1:8799/session-surface | python3 -c 'import json,sys;d=json.load(sys.stdin); \
   print("party",[ (p["name"],p.get("kind")) for p in d.get("party",[])]); \
   print("palette",[a["id"] for a in d.get("availableActions",[]) if a.get("available")]); \
@@ -47,7 +55,7 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 1. Confirm the symptom on 8799 with ≥2 clean reads. If it doesn't reproduce, it's a stale/corrupt
    read — do NOT fix it (log to GUI_WORKBOOK "evaporated").
 2. Builder agent in a **worktree off origin/main** (never branch-op canonical):
-   `git -C /Users/lume/ClawDnD-val worktree add -B fix/<slug> /tmp/wos-<uniq> origin/main`
+   `git -C /Users/lume/ClawDnD-val worktree add -B codex/<slug> /Volumes/LEXAR/repos/wos-<slug> origin/main`
 3. PR → CI green (incl. `viewer-tests`) → admin-squash-merge → delete branch → prune worktree.
    **Builder PRs sometimes fail to push silently** (happened twice this session) — always
    `gh pr view <n>` / `git ls-remote origin <branch>` to confirm the branch+PR EXIST before relying
@@ -55,21 +63,28 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 4. `git pull --ff-only` canonical → restart 8799 → LOOK → tick GUI_WORKBOOK with the proof.
 
 ## The gate sweep (Phase 3 — judged on the built .app)
+```bash
+qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12
 ```
-# build + 5 personas, SEQUENTIAL (clean host for honest latency), each its own run dir:
-for p in newbie veteran adversarial narrative optimizer; do
-  WOS_APP_PART=AB qa/ui_playtest_app.sh sweep-$p baldurs-gate $p 40 12.00
-done
-# 3-lens story/mech on a duo transcript: qa/score.sh <md> <state> rubric_tolkien.md score_schema_tolkien.json out.json ; same w/ rubric_angry_dm.md
-# behavioral: python3 qa/assert_behavioral.py <run.jsonl> <state.json>  (exit 0=GREEN)
-# GUI health:  qa/ui_audit_health.sh --port 8799 --quick --axe --ui-gate
-# palette-live: the curl check above (≥6 enabled actions on a can_act surface)
-# roll it up:
-python3 qa/release_readiness.py --runs sweep-newbie,sweep-veteran,sweep-adversarial,sweep-narrative,sweep-optimizer \
-  --story story.json --mech mech.json --behavioral GREEN|RED --ui-audit PASS|FAIL --palette-live true|false \
-  --build-sha $(git rev-parse --short HEAD) --scorecard-row
+RRI 10/10 = all 11 gates hold on ONE build across the canonical five personas
+(`newbie,veteran,adversarial,narrative,optimizer`). The scorer must record
+required/expected/completed/missing personas plus explicit evidence gaps, disk-backed behavioral,
+UI audit, image denominator/source, palette-live evidence, per-run Part B pass status, and same-build
+SHA evidence.
+The runtime safety gate includes both critical bug reports and raw console/page errors from the
+palette run.
+Append every `--scorecard-row` line to `qa/SCORECARD.md` as diagnostic release evidence. Only a
+non-partial, non-harness-contaminated 10/10 row with no evidence gaps can count as release evidence.
+
+Non-disruptive Mac smoke during takeover:
+```bash
+WORLDOS_NO_STOP_EXISTING=1 \
+WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
+WORLDOS_PREFER_LAUNCH_ROOTS=1 \
+script/build_and_run.sh --verify
 ```
-RRI 10/10 = all 11 gates hold on ONE build. Append the `--scorecard-row` line to `qa/SCORECARD.md`.
+This proves the worktree-built bundle launches without killing the canonical app. It is only a smoke:
+release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI sweep.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
@@ -79,10 +94,11 @@ reverts the goal to "fix" and outranks new work.
 
 ## Hard rules (carried from CLAUDE.md + this session's lessons)
 - Engine (`servers/engine`) = SOLE writer of campaign state. Don't touch wire contracts
-  (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.clawdnd.app`); you MAY read `WORLDOS_REPO_ROOT`.
+  (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.clawdnd.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from canonical is how the
-  art is present.
-- 16 GB host: tests on **GitHub CI**, never heavy local suites. Parallel agents are fine.
+  art is present; Lexar worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`.
+- 16 GB host: tests on **GitHub CI / 32GB VM**, never heavy local suites. Parallel read-only agents are
+  fine; do not launch multiple heavyweight persona sweeps locally.
 - **Verify, don't trust:** ≥2 clean reads for any claim; the RRI scorer reads disk, not the live
   channel; confirm builder PRs actually pushed.
 - The product is the **launchable, played .app**. A green score on any other surface is a

@@ -64,19 +64,27 @@
 
 ---
 
-## Releases
+## Historical Releases
 
-- **v1.0.3 — 2026-05-29 (WorldOS rename).** Cut from the rename milestone (main after #300). Project renamed ClawDnD → WorldOS over four CI-green PRs: #296 (plugin/app identity + branding), #299 (code+doc refs — 0 ClawDnD left in `servers/engine`), #300 (non-breaking `WORLDOS_*` env layer with `CLAWDND_*` fallback). MCP ids + `dev.clawdnd.app` bundle deliberately preserved as wire contracts. Engine **1511** + viewer 146 + voice 17 + rules 16 + axe **0/18** + license-check green; SwiftPM clean. Also carries the audit fixes #260/#268/#271/#282 + the canon-NPC reverse-picker. **Quality read (standing, honest):** the latest GREEN PC=Dal-Lightspark canon duos remain **story 4.3 (ow-fixC) / mech 4.0 (ow-fixD)** — this release added no gameplay logic, only the rename + the carried UI fixes, so those stand. **Caelar-invention is killed by CODE** (`load_canon_character(kind="player")` in play.sh/run_duo, commit 02ae6ae) + the **#162 player-in-party invariant**, and verified in the live GUI (owshot+Read shows Dal with portrait) — NOT by a fresh duo score. **NEXT loop iteration (owed):** a post-#162 clean GREEN Dal revalidation duo (the last logged Dal duo, ow-rv1, was RED on the player_in_party half-fix that #162 has since closed) + the ~30 remaining Wave-2-4 audit issues (#244–#290, per Eva Loop-6 #294).
+> These release notes are historical build/change context only. They do not override the current RRI truth in
+> `WorldOS-OPERATING-GOAL.md`. In particular, Dal Lightspark quality reads were superseded by #305 because Dal is
+> canonically dead; use the later living-PC rows for qualitative trend only, and use the RRI ledger below for release
+> decisions.
+
+- **v1.0.3 — 2026-05-29 (WorldOS rename).** Cut from the rename milestone (main after #300). Project renamed ClawDnD → WorldOS over four CI-green PRs: #296 (plugin/app identity + branding), #299 (code+doc refs — 0 ClawDnD left in `servers/engine`), #300 (non-breaking `WORLDOS_*` env layer with `CLAWDND_*` fallback). MCP ids + `dev.clawdnd.app` bundle deliberately preserved as wire contracts. Engine **1511** + viewer 146 + voice 17 + rules 16 + axe **0/18** + license-check green; SwiftPM clean. Also carries the audit fixes #260/#268/#271/#282 + the canon-NPC reverse-picker. **Historical quality context only:** earlier Dal-Lightspark duos are superseded by #305 and must not be cited as the clean canon-PC baseline. **Caelar-invention is killed by CODE** (`load_canon_character(kind="player")` in play.sh/run_duo, commit 02ae6ae) + the **#162 player-in-party invariant**, and verified in the live GUI (owshot+Read shows Dal with portrait) — NOT by a current RRI release gate. **NEXT loop iteration (owed):** a clean non-partial RRI on a built `.app`, plus the remaining Wave-2-4 audit issues (#244–#290, per Eva Loop-6 #294).
 - **v1.0.2 — 2026-05-29 (graphics-release burndown).** Cut from `583b8a5` (tag `v1.0.2`, GitHub release live). Drove the OpenWorlds UI audit (epic #242 Phase 5) into the product: **axe-core 11→0** across 16 screens (#291/#292 + scroll-region focus); the `window.slug` item-art bug fixed (3 screens rendered placeholders despite art existing, #270); title-bar overlap on every screen (#260); Bestiary/Forge demo-leaks (#262/#263/#264); Create art (#265); engine player-in-party invariant + `update_character` skills alias + combat auto-hit doctrine; 4 new QA gates (`no_rejected_tool_calls`/`xp_awarded_on_progression` FATAL, `caster_has_spellbook`/`quest_objectives_progress` WARN). Engine 1435 + viewer 86 + axe 0 + license green; native app builds clean + codesign valid. Combat-sprint 3.0→3.7. **Next (toward v1.0.3): Wave-0 features** — ST-02 save/load+Export (in flight), #263 Bestiary intel-tier (designing), #266 seed write-lane, #265 portrait gateway-gen. Story/mech lens re-measure still blocked by the 16GB host's memory pressure (duos die mid-run; Codex code-index leak — restart Codex to reclaim ~2GB).
 - **v1.0.1 — 2026-05-28** · **v1.0.0 — 2026-05-27** (see CHANGELOG.md).
 
 ---
 
-## Release Sweeps (RRI — `qa/release_readiness.py`, 11 gates, 10/10 = release-ready)
+## Release Sweep Ledger (RRI — `qa/release_readiness.py`, 11 gates, 10/10 = release-ready)
 
-> One row per full gate sweep on a BUILT `.app`. RRI = gates_passed/11 × 10. Release at 10/10.
+> One row per attempted gate sweep on a BUILT `.app`. RRI = gates_passed/11 × 10. Release requires a **non-partial**
+> 10/10 row with all 11 gate denominators and evidence paths. Rows marked partial, pre-hardening, pending, or
+> unmeasured are diagnostic evidence only.
 > See `WorldOS-OPERATING-GOAL.md` §4 for the gates, `WorldOS-GUI-RUNBOOK.md` for the sweep procedure.
 
-| Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
+| Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit/Console | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 | (duo) | (duo) | (pend) | (pend) | true | G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified. Next: Wave A latency, Wave B char-sheet depth. |
+| sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 critical / console unmeasured | (duo) | (duo) | (pend) | (pend) | unmeasured | true | **INCOMPLETE / PRE-HARDENING, not release evidence.** G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified, but behavioral/UI/image/console denominators were incomplete. |
+| gate-f5500ac-partial | 2026-05-31 | f5500ac | 2.7 | PASS | PASS(1 scored) | 4.0 avg / 0 gave-up (newbie only) | 1 | 4.0 | 2.7 | RED | FAIL | 0% | false | **PARTIAL / HARNESS-CONTAMINATED, not a release verdict.** Only `newbie` wrote `score.json`; veteran/adversarial/narrative/optimizer lacked persona score artifacts after port/backend harness failures. Preserve as takeover evidence, but rerun with hardened RRI before judging release. |

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Play ClawDnD in the dashboard WITH AI companions — the human plays in the browser
+# Play WorldOS in OpenWorlds WITH AI companions — the human plays in the browser
 # while a party of AI companion agents adventures alongside, each its own `claude -p`.
 #
-# This is the PARTY counterpart to scripts/play.sh. play.sh launches the dashboard +
+# This is the PARTY counterpart to scripts/play.sh. play.sh launches OpenWorlds +
 # a solo human-vs-DM loop (you act through the palette, the DM responds). This script
 # adds the proven multi-agent ENSEMBLE from qa/run_party.sh on top of that same human
 # play surface: when you name companions, each becomes its OWN agent acting through the
@@ -10,7 +10,7 @@
 # own character via CLAWDND_ACTOR_ID + CLAWDND_ACTOR_ROLE=companion. Every beat the human's
 # dashboard move AND each living companion's structured moves are relayed to the DM, who
 # resolves them all through the engine and narrates the next beat in the chat — so the
-# dashboard shows YOU + your companions + the DM, turn by turn, live.
+# OpenWorlds shows YOU + your companions + the DM, turn by turn, live.
 #
 # TRUST BOUNDARY (lifted from run_party.sh): we relay ONLY each actor's STRUCTURED moves
 # to the DM — NEVER an actor's raw reply text. A companion acts only through the facade
@@ -26,7 +26,7 @@
 # Usage: scripts/play_party.sh [world-id] [run-id] [port] [companion-spec]
 #   world-id   a living world to drop into (default: baldurs-gate). See `/world-list`.
 #   run-id     names this game's save dir under play-state/ (default: a timestamp).
-#   port       the dashboard port (default: 8765 or $CLAWDND_PLAY_PORT).
+#   port       the OpenWorlds port (default: 8765 or $CLAWDND_PLAY_PORT).
 #   companion-spec  COMMA-separated tokens, each  Name:class:persona_file[:spell1|spell2|…]
 #                   (same grammar as run_party.sh). The optional 4th field names a caster's
 #                   known spells (SRD defaults give slots, not spell CHOICE). May also be
@@ -316,16 +316,16 @@ _party_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "
 trap _party_cleanup EXIT
 trap '_party_cleanup; exit 130' INT TERM
 
-# Open the browser once the dashboard is actually serving (after the campaign exists).
+# Open the browser once OpenWorlds is actually serving (after the campaign exists).
 ( for _ in $(seq 1 60); do
     curl -s --max-time 2 "http://127.0.0.1:$PORT/state" >/dev/null 2>&1 && break
     sleep 1
   done
-  (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/dashboard") \
-    || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/dashboard") || true ) &
+  (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/openworlds/") \
+    || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/openworlds/") || true ) &
 
-echo "ClawDnD — playing in the dashboard WITH companions → http://127.0.0.1:$PORT/dashboard"
-echo "  Party: you + $NUM_COMP AI companion(s). The dashboard fills in as the DM opens the scene."
+echo "WorldOS — playing in OpenWorlds WITH companions → http://127.0.0.1:$PORT/openworlds/"
+echo "  Party: you + $NUM_COMP AI companion(s). OpenWorlds fills in as the DM opens the scene."
 echo "  Act via the palette (Say / Do / Continue, dice & combat, click-to-travel). Ctrl-C to stop."
 echo "  Save dir: $STATE_DIR"
 

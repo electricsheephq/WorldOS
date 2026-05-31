@@ -5,6 +5,7 @@ struct CampaignsView: View {
     @EnvironmentObject private var campaignStore: CampaignStore
 
     @Binding var repoPath: String
+    @Binding var artRepoPath: String
     @Binding var preferredPort: Int
     @Binding var webURL: URL?
 
@@ -72,6 +73,7 @@ struct CampaignsView: View {
                 repoPath: repoPath,
                 preferredPort: preferredPort,
                 stateDir: campaign.stateRoot.path,
+                artRepoPath: artRepoPath,
                 campaignID: campaign.id
             )
         } catch {

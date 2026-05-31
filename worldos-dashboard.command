@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WorldOS dashboard — DOUBLE-CLICK this file to open the play/test view in your
+# WorldOS OpenWorlds — DOUBLE-CLICK this file to open the play/test view in your
 # browser (no terminal typing needed). It auto-watches the most recent QA run so you
 # can see tests as they happen. Optional arg: a run id (e.g. `duo1`) to watch a
 # specific run, or `play` to watch your own live ~/.clawdnd game instead.
@@ -30,10 +30,10 @@ else
   fi
 fi
 
-URL="http://127.0.0.1:$PORT/dashboard"
+URL="http://127.0.0.1:$PORT/openworlds/"
 # open the browser shortly after the server comes up (macOS `open`, Linux `xdg-open`)
 ( sleep 1.2; (command -v open >/dev/null 2>&1 && open "$URL") \
             || (command -v xdg-open >/dev/null 2>&1 && xdg-open "$URL") \
             || echo "Open $URL in your browser." ) &
-echo "WorldOS dashboard → $URL   (close this window to stop)"
+echo "WorldOS OpenWorlds → $URL   (close this window to stop)"
 exec python3 viewer/server.py "" "$PORT"

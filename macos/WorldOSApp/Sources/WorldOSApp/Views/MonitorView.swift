@@ -3,6 +3,7 @@ import SwiftUI
 struct MonitorView: View {
     @EnvironmentObject private var processService: AppProcessService
     @Binding var repoPath: String
+    @Binding var artRepoPath: String
     @Binding var preferredPort: Int
     @Binding var stateDir: String
     @Binding var webURL: URL?
@@ -53,7 +54,8 @@ struct MonitorView: View {
             let surface = try processService.startViewer(
                 repoPath: repoPath,
                 preferredPort: preferredPort,
-                stateDir: stateDir
+                stateDir: stateDir,
+                artRepoPath: artRepoPath
             )
             webURL = processService.viewerEndpoint?.monitorURL
                 ?? surface.deletingLastPathComponent().appendingPathComponent("monitor")

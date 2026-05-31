@@ -38,9 +38,10 @@
 #   <budget> = USD cap for the WHOLE run (parts A + B; we stop part B early if A+DM already spent it).
 #
 # Flags (env):
-#   WOS_APP_SKIP_BUILD=1   reuse an already-running .app (skip pkill/rebuild) — for fast inner loop.
-#   WOS_APP_PART=A|B|AB    run only part A, only part B, or both (default AB).
-#   WORLDOS_DM_MODEL       DM model (default sonnet). CLAWDND_PLAY_BUDGET caps each DM turn.
+#   WOS_APP_SKIP_BUILD=1       reuse an already-running .app (skip pkill/rebuild) — for fast inner loop.
+#   WOS_APP_NO_GLOBAL_KILL=1   do not pkill other WorldOSApp processes (used for takeover smoke).
+#   WOS_APP_PART=A|B|AB        run only part A, only part B, or both (default AB).
+#   WORLDOS_DM_MODEL           DM model (default sonnet). CLAWDND_PLAY_BUDGET caps each DM turn.
 #
 # Produces under qa/ui_playtest_runs/<run>/:
 #   native/  before.png after.png transition.json transition.log       (part A)
@@ -127,18 +128,30 @@ run_part_a() {
   # z-order 0, then CGEvent-click the calibrated RESUME → PLAY CTA center. Idempotent — safe to
   # call repeatedly until the bridge mints a session. Writes its steps to $tlog.
   click_play_cta() {
-    python3 - "$tlog" <<'PY' || echo "[A] CGEvent click attempt FAILED" >> "$tlog"
-import sys, time, Quartz
+    python3 - "$tlog" "$APP_BUNDLE" <<'PY' || echo "[A] CGEvent click attempt FAILED" >> "$tlog"
+import os, sys, time, Quartz
 from ApplicationServices import AXIsProcessTrusted
 from AppKit import (NSRunningApplication, NSWorkspace,
                     NSApplicationActivateIgnoringOtherApps, NSApplicationActivateAllWindows)
 tlog = open(sys.argv[1], "a")
+target_bundle = os.path.realpath(sys.argv[2])
 def say(m): print(m); tlog.write(m+"\n"); tlog.flush()
 if not AXIsProcessTrusted():
     say("[A] WARN: AXIsProcessTrusted() False — synthetic clicks may be dropped.")
 def worldos_app():
     apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_("dev.clawdnd.app")
-    if apps: return apps[0]
+    exact = []
+    for app in apps:
+        bundle = app.bundleURL()
+        if bundle is not None and os.path.realpath(bundle.path()) == target_bundle:
+            exact.append(app)
+    if exact:
+        return exact[0]
+    if len(apps) == 1:
+        return apps[0]
+    if apps:
+        say(f"[A] ERROR: {len(apps)} WorldOS apps are running but none matches {target_bundle}")
+        return None
     for a in NSWorkspace.sharedWorkspace().runningApplications():
         if "WorldOS" in (a.localizedName() or ""): return a
     return None
@@ -180,7 +193,11 @@ PY
 
   if [ "${WOS_APP_SKIP_BUILD:-0}" != "1" ]; then
     a_log "[A] pkill WorldOSApp + THIS checkout's stale viewers, rm -rf $APP_BUNDLE, fresh build…"
-    pkill -x WorldOSApp >/dev/null 2>&1 || true
+    if [ "${WOS_APP_NO_GLOBAL_KILL:-0}" = "1" ]; then
+      a_log "[A] WOS_APP_NO_GLOBAL_KILL=1 — preserving other WorldOSApp processes."
+    else
+      pkill -x WorldOSApp >/dev/null 2>&1 || true
+    fi
     # ONLY reap viewers spawned from THIS repo root — NEVER a blanket `pkill -f viewer/server.py`
     # (that would kill unrelated services on this host, e.g. the evaOS desktop-bridge squatting
     # 8765 on the Tailscale iface, or another checkout's viewer). Match the absolute repo path.
@@ -191,7 +208,10 @@ PY
     # WORLDOS_REPO_ROOT=$ROOT so the .app runs THIS checkout's viewer (the fixed JSX is served
     # live as text/babel — no separate ui:build step). open is shimmed: the .app still launches
     # (build_and_run.sh uses /usr/bin/open -n directly, not PATH `open`), but no extra windows.
-    if ! PATH="$PATH_NOOPEN" "$ROOT/script/build_and_run.sh" run >> "$tlog" 2>&1; then
+    if ! PATH="$PATH_NOOPEN" \
+         WORLDOS_NO_STOP_EXISTING="${WOS_APP_NO_GLOBAL_KILL:-0}" \
+         WORLDOS_PREFER_LAUNCH_ROOTS=1 \
+         "$ROOT/script/build_and_run.sh" run >> "$tlog" 2>&1; then
       a_log "[A] BUILD/LAUNCH FAILED — see $tlog"; PART_A_RESULT="build_failed"; return 1
     fi
   else
@@ -213,7 +233,7 @@ PY
     sleep 0.5
   done
   [ "$ready" = "1" ] || { a_log "[A] launcher viewer never came up (discovered port='${launcher_port:-none}')"; PART_A_RESULT="no_launcher"; return 1; }
-  pgrep -x WorldOSApp >/dev/null 2>&1 || { a_log "[A] WorldOSApp is not running"; PART_A_RESULT="app_not_running"; return 1; }
+  app_pid_for_bundle "$APP_BUNDLE" >/dev/null 2>&1 || { a_log "[A] target WorldOSApp bundle is not running"; PART_A_RESULT="app_not_running"; return 1; }
   a_log "[A] launcher viewer ready on $launcher_port; can_act(before)=$(curl -s "http://127.0.0.1:$launcher_port/session-surface" | jq -c '{can_act,is_live_view,live}' 2>/dev/null)"
 
   # BEFORE screenshot + baseline play-state set (so a NEW run dir is detectable post-click).
@@ -328,7 +348,7 @@ PY
 ###############################################################################################
 # PART B — PERSONA LOOP (the .app-faithful backend + the real palette persona)
 ###############################################################################################
-PART_B_RESULT="skipped"; PART_B_PLAYER_COST="0"
+PART_B_RESULT="skipped"; PART_B_PLAYER_COST="0"; PART_B_SCORE_PASS="false"
 run_part_b() {
   log "=== PART B: persona loop on the .app-faithful backend ==="
   [ -f "$PERSONA_FILE" ] || { log "[B] no persona brief at $PERSONA_FILE — skipping"; PART_B_RESULT="no_persona"; return 1; }
@@ -402,7 +422,11 @@ run_part_b() {
       pc="$(_seated_player_count "$b_state")"; pc="${pc:-0}"
       [ "$pc" -ge 1 ] && saw_pc=1
       # opening narration?
-      chat_lines=0; [ -f "$b_state/chat.jsonl" ] && chat_lines="$(grep -c . "$b_state/chat.jsonl" 2>/dev/null || echo 0)"
+      chat_lines=0
+      if [ -f "$b_state/chat.jsonl" ]; then
+        chat_lines="$(grep -c . "$b_state/chat.jsonl" 2>/dev/null || true)"
+        chat_lines="${chat_lines:-0}"
+      fi
       if [ "$saw_canact" = "1" ] && [ "$saw_pc" = "1" ] && [ "${chat_lines:-0}" -ge 1 ]; then
         ready=1; log "[B] player-ready: can_act:true, seated PC ($pc), chat lines=$chat_lines (after $((i*3))s)."; break
       fi
@@ -446,6 +470,15 @@ You have a budget of about $BEATS actions for this whole session. Spend them try
   local player_rc=$?
   log "[B] player agent finished (rc=$player_rc)."
 
+  # Persist the final live surface BEFORE teardown. The release gate reads this disk artifact
+  # for palette-live, rather than probing a port after cleanup and accidentally grading the
+  # harness instead of the product surface.
+  local final_surface="$RUNDIR/session_surface.final.json"
+  if ! curl -s --max-time 4 "http://127.0.0.1:$b_port/session-surface" \
+        | jq . > "$final_surface" 2>/dev/null; then
+    printf '{}\n' > "$final_surface"
+  fi
+
   local player_verdict player_cost
   player_verdict="$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$player_out" 2>/dev/null)"
   player_cost="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$player_out" 2>/dev/null)"
@@ -462,12 +495,31 @@ json.dump({
     "beats_cap": int(beats), "budget_usd": float(budget),
     "player_cost_usd": round(float(cost or 0), 4), "player_rc": int(rc),
     "build_sha": sha, "version": ver, "surface": "built-app-faithful-backend (play_party.sh)",
+    "session_surface_path": "session_surface.final.json",
     "finished_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
 }, open(out, "w"), indent=2)
 PY
   log "[B] scoring + summarizing…"
   python3 "$ROOT/qa/ui_playtest_score.py" "$RUNDIR" "$player_verdict" 2>> "$RUNDIR/score.err"
-  PART_B_RESULT="ran"
+  if [ "$player_rc" -eq 0 ] && [ -f "$RUNDIR/score.json" ]; then
+    PART_B_RESULT="PASS"
+    if python3 - "$RUNDIR/score.json" <<'PY'
+import json, sys
+try:
+    score = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if score.get("pass") is True else 1)
+PY
+    then
+    PART_B_SCORE_PASS="true"
+    else
+      PART_B_SCORE_PASS="false"
+    fi
+  else
+    PART_B_RESULT="FAIL"
+    PART_B_SCORE_PASS="false"
+  fi
   [ -f "$RUNDIR/summary.md" ] && { echo "----- part B summary.md -----"; cat "$RUNDIR/summary.md"; }
 }
 
@@ -513,6 +565,18 @@ launcher_port_of() {
   repo_viewer_ports "$1" | head -1
 }
 
+app_pid_for_bundle() {
+  local bundle="$1" bin pid cmd found=0
+  bin="$bundle/Contents/MacOS/WorldOSApp"
+  for pid in $(pgrep -x WorldOSApp 2>/dev/null || true); do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    case "$cmd" in
+      "$bin"*) printf '%s\n' "$pid"; found=1 ;;
+    esac
+  done
+  [ "$found" = "1" ] || return 1
+}
+
 # Count seated PLAYER characters in a play-state run's campaign snapshot (the DM cold-open seats
 # the human PC via load_canon_character/create_character; until it does, the table shows "no
 # active character"). $1 = play-state run dir. Echoes an integer (0 if no snapshot yet). Read-only.
@@ -542,16 +606,16 @@ FINAL_DM_SPEND="$(dm_spend)"
 TOTAL_SPEND="$(awk -v a="${FINAL_DM_SPEND:-0}" -v b="${PART_B_PLAYER_COST:-0}" 'BEGIN{printf "%.4f", a+b}')"
 python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUILD_SHA" "$VERSION" \
           "$PART" "$PART_A_RESULT" "${PART_A_RUNDIR:-}" "${PART_A_MINTED_PORT:-}" \
-          "$PART_B_RESULT" "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" <<'PY'
+          "$PART_B_RESULT" "$PART_B_SCORE_PASS" "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
- b_res, dm_spend, player_cost, total) = sys.argv[1:17]
+ b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:18]
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
     "part_a": {"gate": "native_transition_356", "result": a_res,
                "minted_run_dir": a_run or None, "minted_port": int(a_port) if a_port else None},
-    "part_b": {"persona_loop": b_res},
+    "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true"},
     "spend_usd": {"dm_and_companions": round(float(dm_spend or 0), 4),
                   "player_agent": round(float(player_cost or 0), 4),
                   "total": round(float(total or 0), 4)},
@@ -564,4 +628,18 @@ log "=== DONE. dir=$RUNDIR ==="
 log "part A (#356 gate): $PART_A_RESULT   part B (persona loop): $PART_B_RESULT"
 log "spend: DM ~\$$FINAL_DM_SPEND + player ~\$$PART_B_PLAYER_COST = ~\$$TOTAL_SPEND (budget \$$BUDGET)"
 [ -f "$RUNDIR/run.json" ] && { echo "----- run.json -----"; cat "$RUNDIR/run.json"; }
-[ "$PART_A_RESULT" = "PASS" ] || [ "$PART_A_RESULT" = "skipped" ]
+
+EXIT_OK=1
+case "$PART" in
+  A)
+    [ "$PART_A_RESULT" = "PASS" ] || EXIT_OK=0
+    ;;
+  B)
+    [ "$PART_B_RESULT" = "PASS" ] && [ "$PART_B_SCORE_PASS" = "true" ] || EXIT_OK=0
+    ;;
+  *)
+    [ "$PART_A_RESULT" = "PASS" ] || EXIT_OK=0
+    [ "$PART_B_RESULT" = "PASS" ] && [ "$PART_B_SCORE_PASS" = "true" ] || EXIT_OK=0
+    ;;
+esac
+[ "$EXIT_OK" = "1" ]

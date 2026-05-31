@@ -4,6 +4,7 @@ struct ProvidersView: View {
     @EnvironmentObject private var processService: AppProcessService
 
     @Binding var repoPath: String
+    @Binding var artRepoPath: String
     @Binding var codexProviderCommand: String
     @Binding var openClawProviderCommand: String
     @Binding var budget: String
@@ -69,6 +70,8 @@ struct ProvidersView: View {
             }
         }
         .onAppear(perform: refresh)
+        .onChange(of: repoPath) { _ in refresh() }
+        .onChange(of: artRepoPath) { _ in refresh() }
         .onChange(of: codexProviderCommand) { _ in refresh() }
         .onChange(of: openClawProviderCommand) { _ in refresh() }
     }
@@ -81,7 +84,8 @@ struct ProvidersView: View {
                 openClawCommand: openClawProviderCommand,
                 budget: budget,
                 sessionBudget: sessionBudget,
-                maxTurns: maxTurns
+                maxTurns: maxTurns,
+                artRepoPath: artRepoPath
             )
         )
     }

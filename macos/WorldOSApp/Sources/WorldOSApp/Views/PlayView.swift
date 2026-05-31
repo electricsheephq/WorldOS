@@ -4,6 +4,7 @@ struct PlayView: View {
     @EnvironmentObject private var processService: AppProcessService
 
     @Binding var repoPath: String
+    @Binding var artRepoPath: String
     @Binding var preferredPort: Int
     @Binding var stateDir: String
     @Binding var selectedProviderRaw: String
@@ -132,7 +133,8 @@ struct PlayView: View {
             webURL = try processService.startViewer(
                 repoPath: repoPath,
                 preferredPort: preferredPort,
-                stateDir: stateDir
+                stateDir: stateDir,
+                artRepoPath: artRepoPath
             )
         } catch {
             alertMessage = error.localizedDescription
@@ -152,6 +154,7 @@ struct PlayView: View {
                 preferredPort: preferredPort,
                 companions: companions,
                 stateDir: stateDir,
+                artRepoPath: artRepoPath,
                 preferences: providerPreferences
             )
         } catch {
@@ -165,7 +168,8 @@ struct PlayView: View {
             openClawCommand: openClawProviderCommand,
             budget: budget,
             sessionBudget: sessionBudget,
-            maxTurns: maxTurns
+            maxTurns: maxTurns,
+            artRepoPath: artRepoPath
         )
     }
 

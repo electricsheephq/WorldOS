@@ -30,8 +30,8 @@ Prototype/demo data requiring rewrite or explicit non-canonical labeling:
   logs, dependency checks, diagnostics, and packaging.
 - `viewer/server.py` serves the exact OpenWorlds web surface under
   `/openworlds/` so the UI and viewer APIs are same-origin.
-- `/dashboard` remains a fallback/debug route until the OpenWorlds surface is
-  stable.
+- `/dashboard` is a legacy/debug route only; player-facing launch paths and
+  agent-facing instructions must point at `/openworlds/`.
 - The browser may read viewer APIs and post player intent to `/move`.
 - The browser must never write `snapshot.json`, `play-state`, `qa/state`,
   inventory, quests, XP, world clocks, companion state, or private notes.

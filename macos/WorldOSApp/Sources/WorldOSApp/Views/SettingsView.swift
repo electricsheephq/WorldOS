@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Binding var repoPath: String
+    @Binding var artRepoPath: String
     @Binding var preferredPort: Int
     @Binding var stateDir: String
     @Binding var selectedProviderRaw: String
@@ -19,6 +20,7 @@ struct SettingsView: View {
         Form {
             Section("Workspace") {
                 ValidatedTextField("Repo path", text: $repoPath, error: repoPathError)
+                ValidatedTextField("Private art repo path", text: $artRepoPath, error: artRepoPathError)
                 TextField("State directory", text: $stateDir)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -91,6 +93,24 @@ struct SettingsView: View {
 
         guard RepositoryLocator.looksLikeRepo(URL(fileURLWithPath: path)) else {
             return "This folder does not look like a WorldOS checkout."
+        }
+
+        return nil
+    }
+
+    private var artRepoPathError: String? {
+        let value = artRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            return nil
+        }
+
+        let expanded = (value as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else {
+            return "Use a full path, for example /Users/you/WorldOS."
+        }
+
+        guard RepositoryLocator.looksLikeArtRepo(URL(fileURLWithPath: expanded)) else {
+            return "This folder does not have content/worlds/_private."
         }
 
         return nil

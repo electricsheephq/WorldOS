@@ -54,6 +54,7 @@ final class AppProcessService: ObservableObject {
         repoPath: String,
         preferredPort: Int,
         stateDir: String,
+        artRepoPath: String = "",
         campaignID: String? = nil
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
@@ -90,6 +91,10 @@ final class AppProcessService: ObservableObject {
         // resolves all of its assets from __file__, so cwd is irrelevant to it.
         env["WORLDOS_REPO_ROOT"] = repoURL.path
         env["CLAWDND_REPO_ROOT"] = repoURL.path
+        if let artRepo = try resolvedArtRepoPath(artRepoPath, repoURL: repoURL) {
+            env["WORLDOS_ART_REPO_ROOT"] = artRepo
+            env["CLAWDND_ART_REPO_ROOT"] = artRepo
+        }
         let serverScript = repoURL.appendingPathComponent("viewer/server.py").path
         let safeCWD = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let args = ["python3", serverScript, campaignID ?? "", String(port)]
@@ -132,6 +137,7 @@ final class AppProcessService: ObservableObject {
         companions: String,
         hero: String = "",
         stateDir: String,
+        artRepoPath: String = "",
         preferences: ProviderPreferences
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
@@ -146,6 +152,21 @@ final class AppProcessService: ObservableObject {
         if providerProcess == nil {
             providerLaunchMetadata = nil
         }
+        let requestedArtRepoPath: String
+        if artRepoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            requestedArtRepoPath = preferences.artRepoPath
+        } else {
+            requestedArtRepoPath = artRepoPath
+        }
+        let resolvedArtRepo = try resolvedArtRepoPath(requestedArtRepoPath, repoURL: repoURL)
+        let launchPreferences = ProviderPreferences(
+            codexCommand: preferences.codexCommand,
+            openClawCommand: preferences.openClawCommand,
+            budget: preferences.budget,
+            sessionBudget: preferences.sessionBudget,
+            maxTurns: preferences.maxTurns,
+            artRepoPath: resolvedArtRepo ?? ""
+        )
         let request: ProviderLaunchRequest
         do {
             request = try adapter.startSession(
@@ -155,7 +176,7 @@ final class AppProcessService: ObservableObject {
                 companions: companions,
                 hero: hero,
                 repoPath: repoURL,
-                preferences: preferences
+                preferences: launchPreferences
             )
         } catch {
             let message = error.localizedDescription
@@ -349,6 +370,19 @@ final class AppProcessService: ObservableObject {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return (trimmed as NSString).expandingTildeInPath
+    }
+
+    private func resolvedArtRepoPath(_ artRepoPath: String, repoURL: URL) throws -> String? {
+        if let expanded = expandedPathIfPresent(artRepoPath) {
+            guard RepositoryLocator.looksLikeArtRepo(URL(fileURLWithPath: expanded)) else {
+                try throwAndRecord("Private art repo path does not contain content/worlds/_private: \(expanded)")
+            }
+            return expanded
+        }
+        if RepositoryLocator.looksLikeArtRepo(repoURL) {
+            return repoURL.path
+        }
+        return RepositoryLocator.defaultArtRepoPath()
     }
 
     private func throwAndRecord(_ message: String) throws -> Never {

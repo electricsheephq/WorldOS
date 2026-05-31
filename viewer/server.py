@@ -62,6 +62,7 @@ _VOICE_DIR = _HERE.parent / "servers" / "voice"
 # portrait through the engine's imagegen layer, mirroring how /speak shells the voice
 # server and play.sh shells the engine. Keeps the viewer a pure reader of engine modules.
 _ENGINE_DIR = _HERE.parent / "servers" / "engine"
+_REPO_ROOT = _HERE.parent
 _OPENWORLDS_DIR = _HERE / "openworlds"
 _OPENWORLDS_ROUTE = "/openworlds"
 _OPENWORLDS_MIME_TYPES = {
@@ -196,8 +197,22 @@ def _images_dir(scope: Optional[str]) -> Path:
     return root / seg if seg else root
 
 
-# W2b: repo root is two levels above viewer/ (repo-root/viewer/server.py).
-_REPO_ROOT = _HERE.parent
+def _art_repo_root() -> Path:
+    """Repo root for gitignored private art.
+
+    The macOS app and Lexar worktrees can run code from one checkout while the
+    gitignored private art lives in the canonical checkout. Prefer the explicit
+    WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT contract when it points at an art
+    checkout. Fall back to WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT for v1.x launchers,
+    then to the server.py parent checkout. Keep `_REPO_ROOT` as the fallback seam because
+    the engine image tests patch it to isolate private-art descriptors.
+    """
+    for raw in (env_var("ART_REPO_ROOT"), env_var("REPO_ROOT")):
+        if raw:
+            candidate = Path(raw).expanduser()
+            if (candidate / "content" / "worlds" / "_private").exists() or (candidate / "content" / "worlds").exists():
+                return candidate
+    return _REPO_ROOT
 
 
 def _ingested_images_root() -> Path:
@@ -206,7 +221,7 @@ def _ingested_images_root() -> Path:
     Returns content/worlds/_private/ inside the repo. This directory is covered by
     /content/worlds/_private/ in .gitignore so its contents are NEVER committed.
     """
-    return _REPO_ROOT / "content" / "worlds" / "_private"
+    return _art_repo_root() / "content" / "worlds" / "_private"
 
 
 _SCOPE_PREFIXES = {"portrait", "scene", "item", "map", "npc", "char", "pc", "loc", "location", "region", "scope", "faction", "creature", "class", "race"}
@@ -4514,7 +4529,8 @@ def build_openworlds_campaign_summary(
         else:
             recap = "This chronicle is ready to continue."
 
-    resume_url = f"/dashboard?campaign={quote(campaign_id)}" if can_resume else ""
+    resume_url = f"/openworlds/?campaign={quote(campaign_id)}" if can_resume else ""
+    legacy_dashboard_url = f"/dashboard?campaign={quote(campaign_id)}" if can_resume else ""
     return {
         "id": f"{source}:{run_id}:{campaign_id}",
         "campaign_id": campaign_id,
@@ -4545,6 +4561,7 @@ def build_openworlds_campaign_summary(
         "readOnly": not bool(can_resume),
         "resumeUrl": resume_url,
         "dashboardUrl": resume_url,
+        "legacyDashboardUrl": legacy_dashboard_url,
         "monitorUrl": "/monitor",
         "recap": recap,
     }

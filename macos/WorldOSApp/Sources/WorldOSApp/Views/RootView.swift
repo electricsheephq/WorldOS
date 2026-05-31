@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var campaignStore: CampaignStore
 
     @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
+    @AppStorage("artRepoPath") private var artRepoPath: String = RepositoryLocator.defaultArtRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
     @AppStorage("stateDir") private var stateDir: String = ""
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
@@ -24,6 +25,16 @@ struct RootView: View {
     @State private var launchError: String?
     @State private var isStarting = false
     @State private var launchTask: Task<Void, Never>?
+    @State private var launchRepoPathOverride: String? = RepositoryLocator.launchRepoPathOverride()
+    @State private var launchArtRepoPathOverride: String? = RepositoryLocator.launchArtRepoPathOverride()
+
+    private var activeRepoPath: String {
+        launchRepoPathOverride ?? repoPath
+    }
+
+    private var activeArtRepoPath: String {
+        launchArtRepoPathOverride ?? artRepoPath
+    }
 
     var body: some View {
         ZStack {
@@ -59,7 +70,14 @@ struct RootView: View {
         }
         .onChange(of: repoPath) { _ in
             refresh()
-            startOpenWorlds()
+            if launchRepoPathOverride == nil {
+                startOpenWorlds()
+            }
+        }
+        .onChange(of: artRepoPath) { _ in
+            if launchArtRepoPathOverride == nil {
+                startOpenWorlds()
+            }
         }
         .onDisappear {
             launchTask?.cancel()
@@ -69,7 +87,7 @@ struct RootView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: repoPath)
+        campaignStore.reload(repoPath: activeRepoPath)
     }
 
     private func startOpenWorlds() {
@@ -82,9 +100,10 @@ struct RootView: View {
             launchMessage = "Starting the local viewer"
             do {
                 let url = try processService.startViewer(
-                    repoPath: repoPath,
+                    repoPath: activeRepoPath,
                     preferredPort: preferredPort,
-                    stateDir: stateDir
+                    stateDir: stateDir,
+                    artRepoPath: activeArtRepoPath
                 )
                 launchMessage = "Waiting for OpenWorlds"
                 try await waitForOpenWorlds(url)
@@ -193,9 +212,10 @@ struct RootView: View {
     private func startViewerFromBridge(_ payload: [String: Any]) async throws -> [String: Any] {
         let campaignID = stringPayload(payload, "campaignID").flatMap { $0.isEmpty ? nil : $0 }
         let url = try processService.startViewer(
-            repoPath: repoPath,
+            repoPath: activeRepoPath,
             preferredPort: preferredPort,
             stateDir: stateDir,
+            artRepoPath: activeArtRepoPath,
             campaignID: campaignID
         )
         try await waitForOpenWorlds(url)
@@ -215,13 +235,14 @@ struct RootView: View {
         let hero = stringPayload(payload, "hero") ?? ""
         let url = try processService.startProviderSession(
             kind: provider,
-            repoPath: repoPath,
+            repoPath: activeRepoPath,
             world: world,
             runId: runId,
             preferredPort: preferredPort,
             companions: companions,
             hero: hero,
             stateDir: stateDir,
+            artRepoPath: activeArtRepoPath,
             preferences: providerPreferences
         )
         try await waitForOpenWorlds(url)
@@ -234,9 +255,10 @@ struct RootView: View {
             return endpoint.dashboardURL
         }
         let url = try processService.startViewer(
-            repoPath: repoPath,
+            repoPath: activeRepoPath,
             preferredPort: preferredPort,
-            stateDir: stateDir
+            stateDir: stateDir,
+            artRepoPath: activeArtRepoPath
         )
         try await waitForOpenWorlds(url)
         webURL = url
@@ -246,6 +268,10 @@ struct RootView: View {
     private func appStatusPayload(extra: [String: Any] = [:]) -> [String: Any] {
         var payload: [String: Any] = [
             "repoPath": repoPath,
+            "activeRepoPath": activeRepoPath,
+            "artRepoPath": artRepoPath,
+            "activeArtRepoPath": activeArtRepoPath,
+            "launchRootOverride": launchRepoPathOverride != nil || launchArtRepoPathOverride != nil,
             "stateDir": stateDir.isEmpty ? "default" : stateDir,
             "preferredPort": preferredPort,
             "defaultWorld": defaultWorld,
@@ -257,6 +283,9 @@ struct RootView: View {
             "lastError": processService.lastError ?? "",
             "preferences": [
                 "repoPath": repoPath,
+                "activeRepoPath": activeRepoPath,
+                "artRepoPath": artRepoPath,
+                "activeArtRepoPath": activeArtRepoPath,
                 "preferredPort": preferredPort,
                 "stateDir": stateDir,
                 "selectedProvider": selectedProviderRaw,
@@ -302,7 +331,7 @@ struct RootView: View {
     }
 
     private func providerStatusesPayload() -> [[String: Any]] {
-        processService.providerStatuses(repoPath: repoPath, preferences: providerPreferences).map {
+        processService.providerStatuses(repoPath: activeRepoPath, preferences: providerPreferences).map {
             [
                 "kind": $0.kind.rawValue,
                 "displayName": $0.kind.displayName,
@@ -320,7 +349,8 @@ struct RootView: View {
             openClawCommand: openClawProviderCommand,
             budget: budget,
             sessionBudget: sessionBudget,
-            maxTurns: maxTurns
+            maxTurns: maxTurns,
+            artRepoPath: activeArtRepoPath
         )
     }
 
@@ -436,6 +466,7 @@ struct DebugControlCenterView: View {
     @EnvironmentObject private var campaignStore: CampaignStore
 
     @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
+    @AppStorage("artRepoPath") private var artRepoPath: String = RepositoryLocator.defaultArtRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
     @AppStorage("stateDir") private var stateDir: String = ""
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
@@ -449,6 +480,36 @@ struct DebugControlCenterView: View {
 
     @State private var selection: AppSection? = .play
     @State private var webURL: URL?
+    @State private var launchRepoPathOverride: String? = RepositoryLocator.launchRepoPathOverride()
+    @State private var launchArtRepoPathOverride: String? = RepositoryLocator.launchArtRepoPathOverride()
+
+    private var activeRepoPath: String {
+        launchRepoPathOverride ?? repoPath
+    }
+
+    private var activeArtRepoPath: String {
+        launchArtRepoPathOverride ?? artRepoPath
+    }
+
+    private var activeRepoPathBinding: Binding<String> {
+        Binding(
+            get: { activeRepoPath },
+            set: { next in
+                launchRepoPathOverride = nil
+                repoPath = next
+            }
+        )
+    }
+
+    private var activeArtRepoPathBinding: Binding<String> {
+        Binding(
+            get: { activeArtRepoPath },
+            set: { next in
+                launchArtRepoPathOverride = nil
+                artRepoPath = next
+            }
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -458,12 +519,21 @@ struct DebugControlCenterView: View {
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
-                StatusStrip(repoPath: repoPath, stateDir: stateDir)
+                StatusStrip(repoPath: activeRepoPath, stateDir: stateDir)
                     .environmentObject(processService)
             }
         }
         .onAppear(perform: refresh)
-        .onChange(of: repoPath) { _ in refresh() }
+        .onChange(of: repoPath) { _ in
+            if launchRepoPathOverride == nil {
+                refresh()
+            }
+        }
+        .onChange(of: artRepoPath) { _ in
+            if launchArtRepoPathOverride == nil {
+                refresh()
+            }
+        }
     }
 
     @ViewBuilder
@@ -471,7 +541,8 @@ struct DebugControlCenterView: View {
         switch selection ?? .play {
         case .play:
             PlayView(
-                repoPath: $repoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 selectedProviderRaw: $selectedProviderRaw,
@@ -485,20 +556,23 @@ struct DebugControlCenterView: View {
             )
         case .campaigns:
             CampaignsView(
-                repoPath: $repoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 webURL: $webURL
             )
         case .monitor:
             MonitorView(
-                repoPath: $repoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 webURL: $webURL
             )
         case .providers:
             ProvidersView(
-                repoPath: $repoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 codexProviderCommand: $codexProviderCommand,
                 openClawProviderCommand: $openClawProviderCommand,
                 budget: $budget,
@@ -507,7 +581,8 @@ struct DebugControlCenterView: View {
             )
         case .settings:
             SettingsView(
-                repoPath: $repoPath,
+                repoPath: activeRepoPathBinding,
+                artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
                 stateDir: $stateDir,
                 selectedProviderRaw: $selectedProviderRaw,
@@ -526,7 +601,7 @@ struct DebugControlCenterView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: repoPath)
+        campaignStore.reload(repoPath: activeRepoPath)
     }
 }
 

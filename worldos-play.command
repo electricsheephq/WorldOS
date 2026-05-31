@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Play WorldOS in the dashboard — DOUBLE-CLICK this file to start a new adventure you
-# play in your browser (no terminal typing needed). It opens the play dashboard and runs
+# Play WorldOS in OpenWorlds — DOUBLE-CLICK this file to start a new adventure you
+# play in your browser (no terminal typing needed). It opens OpenWorlds and runs
 # a live AI Dungeon Master beside it: you act through the action palette (Say / Do /
 # Continue, dice & combat, click-to-travel) and the DM narrates, voices the cast, and
-# resolves your moves live, turn by turn. This is the dashboard counterpart to
+# resolves your moves live, turn by turn. This is the browser counterpart to
 # `/world-play`. Close this window (or Ctrl-C) to stop.
 #
 # Optional args (passed straight through): [world-id] [run-id] [port] [companion-spec]
