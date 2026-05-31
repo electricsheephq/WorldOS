@@ -38,6 +38,20 @@ from pathlib import Path
 
 
 REQUIRED_RELEASE_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
+GATE_SPLIT_CONTRACT = {
+    "deterministic_built_app_smoke": {
+        "scope": "fast built-app wiring proof with deterministic provider",
+        "release_verdict": False,
+    },
+    "short_real_provider_playtest": {
+        "scope": "short built-app proof with a real provider and provider trace evidence",
+        "release_verdict": False,
+    },
+    "full_five_persona_rri": {
+        "scope": "non-partial five-persona release readiness verdict",
+        "release_verdict": True,
+    },
+}
 
 
 def looks_like_path(value: str) -> bool:
@@ -323,6 +337,8 @@ def main() -> int:
     result = {
         "rri": rri,
         "release_ready": release_ready,
+        "release_verdict_gate": "full_five_persona_rri",
+        "gate_split_contract": GATE_SPLIT_CONTRACT,
         "partial": bool(missing_personas or evidence_gaps),
         "harness_contaminated": bool(missing_personas or harness_failures or evidence_gaps),
         "expected_personas": expected_personas,

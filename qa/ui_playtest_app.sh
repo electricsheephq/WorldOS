@@ -90,6 +90,75 @@ log() { printf '[uipt-app] %s\n' "$*"; }
 log "run=$RUN world=$WORLD persona=$PERSONA beats=$BEATS budget=\$$BUDGET part=$PART"
 log "build_sha=$BUILD_SHA version=$VERSION repo=$ROOT"
 
+# Agent-readable failure buckets for built-app smoke. Keep these crisp and stable; the
+# detailed shell/native result still travels separately as original_result.
+APP_FAILURE_BUCKETS_JSON='["no_app","no_launcher","no_provider","no_art","no_actor","no_actions","move_rejected","no_narration","console_error","permission_prompt"]'
+
+bucket_pair() { printf '%s|%s\n' "$1" "$2"; }
+
+classify_native_failure() {  # $1=result $2=can_act $3=surface_json $4=app_status_json
+  python3 - "$1" "$2" "${3:-{}}" "${4:-{}}" <<'PY'
+import json, sys
+result, can_act, surf_raw, status_raw = sys.argv[1:5]
+try: surf = json.loads(surf_raw or "{}")
+except Exception: surf = {}
+try: status = json.loads(status_raw or "{}")
+except Exception: status = {}
+art = status.get("art") if isinstance(status.get("art"), dict) else {}
+live = status.get("live") if isinstance(status.get("live"), dict) else {}
+actor = live.get("actor") if isinstance(live.get("actor"), dict) else {}
+enabled_count = live.get("enabled_action_count")
+chat_lines = (status.get("viewer") or {}).get("chat_lines") if isinstance(status.get("viewer"), dict) else None
+if result in ("build_failed", "app_not_running"):
+    print("no_app|WorldOS.app did not build, launch, or remain running")
+elif result == "no_launcher":
+    print("no_launcher|launcher viewer did not answer /openworlds/")
+elif art.get("private_root_present") is False:
+    print("no_art|private art root was not present in app-status")
+elif can_act != "true":
+    print("no_provider|no minted live provider viewer reported can_act:true")
+elif not actor.get("id") and not actor.get("name"):
+    print("no_actor|app-status did not report an active player actor")
+elif enabled_count == 0:
+    print("no_actions|app-status reported zero enabled player actions")
+elif chat_lines == 0:
+    print("no_narration|app-status reported no chat/narration lines")
+else:
+    print("no_provider|native transition failed without a more specific bucket")
+PY
+}
+
+classify_part_b_readiness_failure() {  # $1=saw_canact $2=saw_pc $3=chat_lines
+  local saw_canact="${1:-0}" saw_pc="${2:-0}" chat_lines="${3:-0}"
+  if [ "$saw_canact" != "1" ]; then bucket_pair "no_provider" "faithful backend never exposed can_act:true"; return 0; fi
+  if [ "$saw_pc" != "1" ]; then bucket_pair "no_actor" "faithful backend never seated a player character"; return 0; fi
+  if [ "${chat_lines:-0}" -le 0 ]; then bucket_pair "no_narration" "faithful backend produced no opening narration"; return 0; fi
+  bucket_pair "no_actions" "faithful backend was not player-ready"
+}
+
+classify_part_b_failure_from_artifacts() {  # $1=run_dir $2=fallback_result
+  local dir="$1" fallback="${2:-FAIL}"
+  if grep -RqiE 'permission|not authorized|accessibility|screen recording|AXIsProcessTrusted' "$dir" 2>/dev/null; then
+    bucket_pair "permission_prompt" "macOS permission prompt or accessibility/screen-recording denial appeared"
+  elif grep -RqiE 'console_error|pageerror|uncaught|exception' "$dir/console.ndjson" "$dir/player/console.ndjson" 2>/dev/null; then
+    bucket_pair "console_error" "browser console/page error recorded during app playtest"
+  elif grep -RqiE 'move_rejected|/move.*(4[0-9][0-9]|5[0-9][0-9])|move not sent|rejected' "$dir/actions.ndjson" "$dir/network.ndjson" "$dir/player/network.ndjson" "$dir/summary.md" 2>/dev/null; then
+    bucket_pair "move_rejected" "player move was rejected or failed to reach /move"
+  else
+    bucket_pair "no_provider" "part B failed: $fallback"
+  fi
+}
+
+set_bucket_pair() {  # $1=A|B $2='bucket|detail'
+  local part="$1" pair="$2" bucket detail
+  bucket="${pair%%|*}"; detail="${pair#*|}"
+  if [ "$part" = "A" ]; then
+    PART_A_FAILURE_BUCKET="$bucket"; PART_A_FAILURE_DETAIL="$detail"
+  else
+    PART_B_FAILURE_BUCKET="$bucket"; PART_B_FAILURE_DETAIL="$detail"
+  fi
+}
+
 # --- never let a play script pop a browser on the owner's screen --------------------------
 # scripts/play*.sh call `open`/`xdg-open` once the dashboard serves. Shim `open` to a no-op so
 # the BACKEND runs but no window is forced onto the owner. (The .app's OWN window in part A is
@@ -128,7 +197,38 @@ dm_spend() {
 ###############################################################################################
 # PART A — NATIVE-TRANSITION GATE (re-verifies #356)
 ###############################################################################################
-PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""; PART_A_KEPT_BACKEND="false"; PART_A_FIRST_TURN_READY="false"
+PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""; PART_A_KEPT_BACKEND="false"; PART_A_FIRST_TURN_READY="false"; PART_A_FAILURE_BUCKET=""; PART_A_FAILURE_DETAIL=""
+write_part_a_transition() {
+  local result="$1" run="${2:-}" port="${3:-}" can_act="${4:-false}" surf="${5:-{}}" kept="${6:-$PART_A_KEPT_BACKEND}" first_turn_ready="${7:-$PART_A_FIRST_TURN_READY}" app_status="${8:-{}}"
+  python3 - "$NATIVE_DIR/transition.json" "$result" "$BUILD_SHA" "$VERSION" \
+            "$run" "$port" "$can_act" "$surf" \
+            "$kept" "$first_turn_ready" "$app_status" "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" <<'PY'
+import json, sys, datetime
+out, result, sha, ver, run, port, can_act, surf, kept, first_turn_ready, app_status, bucket, detail = sys.argv[1:14]
+try: surf_obj = json.loads(surf)
+except Exception: surf_obj = {"raw": surf}
+try: app_status_obj = json.loads(app_status)
+except Exception: app_status_obj = {"raw": app_status}
+json.dump({
+    "gate": "native_transition_356",
+    "result": result,
+    "original_result": result,
+    "failure_bucket": bucket or None,
+    "failure_detail": detail or None,
+    "build_sha": sha, "version": ver,
+    "minted_run_dir": run or None, "minted_port": int(port) if port else None,
+    "kept_backend_alive": kept == "true",
+    "first_turn_ready": first_turn_ready == "true",
+    "can_act_after_click": can_act == "true",
+    "session_surface_after": surf_obj,
+    "app_status_after": app_status_obj,
+    "app_status_launcher_json": "native/app-status.launcher.json",
+    "app_status_minted_json": "native/app-status.minted.json",
+    "before_png": "native/before.png", "after_png": "native/after.png",
+    "at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+}, open(out, "w"), indent=2)
+PY
+}
 run_part_a() {
   log "=== PART A: native-transition gate (re-verifies #356) ==="
   local tlog="$NATIVE_DIR/transition.log"; : > "$tlog"
@@ -222,7 +322,7 @@ PY
          WORLDOS_NO_STOP_EXISTING="${WOS_APP_NO_GLOBAL_KILL:-0}" \
          WORLDOS_PREFER_LAUNCH_ROOTS=1 \
          "$ROOT/script/build_and_run.sh" run >> "$tlog" 2>&1; then
-      a_log "[A] BUILD/LAUNCH FAILED — see $tlog"; PART_A_RESULT="build_failed"; return 1
+      a_log "[A] BUILD/LAUNCH FAILED — see $tlog"; PART_A_RESULT="build_failed"; set_bucket_pair A "$(classify_native_failure "$PART_A_RESULT" false '{}' '{}')"; write_part_a_transition "$PART_A_RESULT"; return 1
     fi
   else
     a_log "[A] WOS_APP_SKIP_BUILD=1 — reusing the running .app (no rebuild)."
@@ -242,8 +342,8 @@ PY
     fi
     sleep 0.5
   done
-  [ "$ready" = "1" ] || { a_log "[A] launcher viewer never came up (discovered port='${launcher_port:-none}')"; PART_A_RESULT="no_launcher"; return 1; }
-  app_pid_for_bundle "$APP_BUNDLE" >/dev/null 2>&1 || { a_log "[A] target WorldOSApp bundle is not running"; PART_A_RESULT="app_not_running"; return 1; }
+  [ "$ready" = "1" ] || { a_log "[A] launcher viewer never came up (discovered port='${launcher_port:-none}')"; PART_A_RESULT="no_launcher"; set_bucket_pair A "$(classify_native_failure "$PART_A_RESULT" false '{}' '{}')"; write_part_a_transition "$PART_A_RESULT"; return 1; }
+  app_pid_for_bundle "$APP_BUNDLE" >/dev/null 2>&1 || { a_log "[A] target WorldOSApp bundle is not running"; PART_A_RESULT="app_not_running"; set_bucket_pair A "$(classify_native_failure "$PART_A_RESULT" false '{}' '{}')"; write_part_a_transition "$PART_A_RESULT"; return 1; }
   a_log "[A] launcher viewer ready on $launcher_port; can_act(before)=$(curl -s "http://127.0.0.1:$launcher_port/session-surface" | jq -c '{can_act,is_live_view,live}' 2>/dev/null)"
   curl -s --max-time 3 "http://127.0.0.1:$launcher_port/app-status" \
     | jq . > "$NATIVE_DIR/app-status.launcher.json" 2>/dev/null || printf '{}\n' > "$NATIVE_DIR/app-status.launcher.json"
@@ -372,36 +472,15 @@ PY
   fi
   if [ "$can_act" = "true" ] && [ -n "$minted_run" ]; then
     PART_A_RESULT="PASS"
+    PART_A_FAILURE_BUCKET=""; PART_A_FAILURE_DETAIL=""
     a_log "[A] RESULT: PASS — #356 banner minted a live DM (can_act:true). surface=$surf_final"
   else
     PART_A_RESULT="FAIL"
+    set_bucket_pair A "$(classify_native_failure "$PART_A_RESULT" "$can_act" "$surf_final" "$app_status_final")"
     a_log "[A] RESULT: FAIL — stuck read-only (no minted can_act:true session). minted_run='${minted_run:-none}' port='${minted_port:-none}' surface=$surf_final"
   fi
 
-  python3 - "$NATIVE_DIR/transition.json" "$PART_A_RESULT" "$BUILD_SHA" "$VERSION" \
-            "${minted_run:-}" "${minted_port:-}" "$can_act" "$surf_final" \
-            "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$app_status_final" <<'PY'
-import json, sys, datetime
-out, result, sha, ver, run, port, can_act, surf, kept, first_turn_ready, app_status = sys.argv[1:12]
-try: surf_obj = json.loads(surf)
-except Exception: surf_obj = {"raw": surf}
-try: app_status_obj = json.loads(app_status)
-except Exception: app_status_obj = {"raw": app_status}
-json.dump({
-    "gate": "native_transition_356",
-    "result": result, "build_sha": sha, "version": ver,
-    "minted_run_dir": run or None, "minted_port": int(port) if port else None,
-    "kept_backend_alive": kept == "true",
-    "first_turn_ready": first_turn_ready == "true",
-    "can_act_after_click": can_act == "true",
-    "session_surface_after": surf_obj,
-    "app_status_after": app_status_obj,
-    "app_status_launcher_json": "native/app-status.launcher.json",
-    "app_status_minted_json": "native/app-status.minted.json",
-    "before_png": "native/before.png", "after_png": "native/after.png",
-    "at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-}, open(out, "w"), indent=2)
-PY
+  write_part_a_transition "$PART_A_RESULT" "${minted_run:-}" "${minted_port:-}" "$can_act" "$surf_final" "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$app_status_final"
   a_log "[A] wrote $NATIVE_DIR/transition.json"
   [ "$PART_A_RESULT" = "PASS" ]
 }
@@ -409,19 +488,19 @@ PY
 ###############################################################################################
 # PART B — PERSONA LOOP (the .app-faithful backend + the real palette persona)
 ###############################################################################################
-PART_B_RESULT="skipped"; PART_B_PLAYER_COST="0"; PART_B_SCORE_PASS="false"
+PART_B_RESULT="skipped"; PART_B_PLAYER_COST="0"; PART_B_SCORE_PASS="false"; PART_B_FAILURE_BUCKET=""; PART_B_FAILURE_DETAIL=""
 run_part_b() {
   log "=== PART B: persona loop on the .app-faithful backend ==="
-  [ -f "$PERSONA_FILE" ] || { log "[B] no persona brief at $PERSONA_FILE — skipping"; PART_B_RESULT="no_persona"; return 1; }
+  [ -f "$PERSONA_FILE" ] || { log "[B] no persona brief at $PERSONA_FILE — skipping"; PART_B_RESULT="no_persona"; set_bucket_pair B "$(bucket_pair no_actor "persona brief missing: $PERSONA_FILE")"; return 1; }
   [ -d "$PW_DIR/node_modules/playwright" ] || {
     log "[B] Playwright not installed at $PW_DIR. Run: (cd qa/playwright && npm install && npx playwright install chromium)"
-    PART_B_RESULT="no_playwright"; return 1; }
+    PART_B_RESULT="no_playwright"; set_bucket_pair B "$(bucket_pair no_provider "Playwright palette dependency is missing")"; return 1; }
 
   # Budget guard: if part A + its DM already spent the run budget, skip B (we never exceed budget).
   local spent; spent="$(dm_spend)"
   if awk -v s="${spent:-0}" -v b="$BUDGET" 'BEGIN{exit !(s+0 >= b+0)}'; then
     log "[B] run budget \$$BUDGET already reached (spent ~\$$spent in part A) — skipping persona loop."
-    PART_B_RESULT="budget_exhausted"; return 1
+    PART_B_RESULT="budget_exhausted"; set_bucket_pair B "$(bucket_pair no_provider "run budget exhausted before provider playtest")"; return 1
   fi
   # The PLAYER agent gets whatever budget remains (it drives /move; the DM cost is the bulk).
   local player_budget; player_budget="$(awk -v s="${spent:-0}" -v b="$BUDGET" 'BEGIN{r=b-s; if(r<0.5)r=0.5; printf "%.2f", r}')"
@@ -431,7 +510,7 @@ run_part_b() {
   # scripts/play.sh, which boots a LIVE viewer (CLAWDND_PLAYER_MOVES set) + a DM cold-open + a
   # DM resolver loop tailing the move sink. We point the palette persona at THAT viewer.
   local b_run="${RUN}-b"
-  local b_port; b_port="$(pick_free_port $((PREFERRED_PORT+20)))" || { log "[B] no free port"; PART_B_RESULT="no_port"; return 1; }
+  local b_port; b_port="$(pick_free_port $((PREFERRED_PORT+20)))" || { log "[B] no free port"; PART_B_RESULT="no_port"; set_bucket_pair B "$(bucket_pair no_provider "no free localhost port for faithful backend")"; return 1; }
   local b_url="http://127.0.0.1:$b_port/openworlds/"
   log "[B] launching faithful backend: scripts/play_party.sh $WORLD $b_run $b_port  (solo → play.sh; DM=$DM_MODEL)"
 
@@ -502,7 +581,7 @@ run_part_b() {
   done
   if [ "$ready" != "1" ]; then
     log "[B] backend never became player-ready (can_act=$saw_canact seatedPC=$saw_pc) — see $RUNDIR/backend.log"
-    PART_B_RESULT="backend_not_ready"; return 1
+    PART_B_RESULT="backend_not_ready"; set_bucket_pair B "$(classify_part_b_readiness_failure "$saw_canact" "$saw_pc" "${chat_lines:-0}")"; return 1
   fi
   log "[B] backend player-ready on $b_port. Pointing the palette persona at it."
 
@@ -580,6 +659,7 @@ PY
   else
     PART_B_RESULT="FAIL"
     PART_B_SCORE_PASS="false"
+    set_bucket_pair B "$(classify_part_b_failure_from_artifacts "$RUNDIR" "$PART_B_RESULT")"
   fi
   [ -f "$RUNDIR/summary.md" ] && { echo "----- part B summary.md -----"; cat "$RUNDIR/summary.md"; }
 }
@@ -668,18 +748,26 @@ TOTAL_SPEND="$(awk -v a="${FINAL_DM_SPEND:-0}" -v b="${PART_B_PLAYER_COST:-0}" '
 python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUILD_SHA" "$VERSION" \
           "$PART" "$PART_A_RESULT" "${PART_A_RUNDIR:-}" "${PART_A_MINTED_PORT:-}" \
           "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$PART_B_RESULT" "$PART_B_SCORE_PASS" \
-          "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" <<'PY'
+          "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" \
+          "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" "$PART_B_FAILURE_BUCKET" "$PART_B_FAILURE_DETAIL" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
  a_kept, a_first_turn_ready, b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:20]
+a_bucket, a_detail, b_bucket, b_detail = sys.argv[20:24]
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
     "part_a": {"gate": "native_transition_356", "result": a_res,
+               "original_result": a_res,
+               "failure_bucket": a_bucket or None,
+               "failure_detail": a_detail or None,
                "minted_run_dir": a_run or None, "minted_port": int(a_port) if a_port else None,
                "kept_backend_alive": a_kept == "true",
                "first_turn_ready": a_first_turn_ready == "true"},
-    "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true"},
+    "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true",
+               "original_result": b_res,
+               "failure_bucket": b_bucket or None,
+               "failure_detail": b_detail or None},
     "spend_usd": {"dm_and_companions": round(float(dm_spend or 0), 4),
                   "player_agent": round(float(player_cost or 0), 4),
                   "total": round(float(total or 0), 4)},
