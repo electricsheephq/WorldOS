@@ -23,6 +23,12 @@ if [ "${WORLDOS_ENABLE_SCRIPTED_PROVIDER:-0}" != "1" ]; then
   printf '[scripted-provider] WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 is required.\n' >&2
   exit 64
 fi
+for cmd in python3 uv; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf '[scripted-provider] %s is required.\n' "$cmd" >&2
+    exit 127
+  fi
+done
 
 WORLD="${CLAWDND_WORLD:-baldurs-gate}"
 RUN="${CLAWDND_RUN_ID:-scripted-smoke-$(date +%H%M%S)}"
@@ -74,22 +80,59 @@ PY
 }
 
 BOOTSTRAP_JSON="$(
-  CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" <<'PY'
+  CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "${CLAWDND_PLAY_HERO:-}" <<'PY'
 import json, sys
 import server
 
-world = sys.argv[1]
+world, hero_raw = sys.argv[1], sys.argv[2]
 campaign_id = server.start_world(world)["campaign_id"]
 server.start_session(campaign_id, title="Scripted smoke")
-available = server.list_canon_characters(campaign_id, playable_only=True).get("available", [])
-name = (available[0] or {}).get("name") if available else "Charming Latham"
-pc = server.load_canon_character(campaign_id, name, kind="player", add_to_party=True)
-if not isinstance(pc, dict) or pc.get("error"):
-    pc = server.load_canon_character(campaign_id, "Charming Latham", kind="player", add_to_party=True)
+
+def default_canon_name() -> str:
+    available = server.list_canon_characters(campaign_id, playable_only=True).get("available", [])
+    return ((available[0] or {}).get("name") if available else "") or "Charming Latham"
+
+spec = {}
+if hero_raw.strip():
+    try:
+        parsed = json.loads(hero_raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"native hero spec is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise SystemExit("native hero spec must be a JSON object")
+    spec = parsed
+
+if spec.get("canon"):
+    name = str(spec.get("name") or "").strip()
+    if not name:
+        raise SystemExit("native roster canon hero spec is missing name")
+    pc = server.load_canon_character(campaign_id, name, kind="player", add_to_party=True)
+elif spec:
+    try:
+        level = int(spec.get("level", 1) or 1)
+    except (TypeError, ValueError):
+        level = 1
+    pc = server.create_character(
+        campaign_id,
+        spec.get("name") or "Unnamed Hero",
+        kind="player",
+        race=spec.get("race", "") or "",
+        class_name=spec.get("class", "") or "",
+        level=level,
+        abilities=spec.get("abilities") or None,
+        background=spec.get("background", "") or "",
+        skills=spec.get("skills") or None,
+        apply_srd_defaults=True,
+    )
+else:
+    name = default_canon_name()
+    pc = server.load_canon_character(campaign_id, name, kind="player", add_to_party=True)
+    if not isinstance(pc, dict) or pc.get("error"):
+        pc = server.load_canon_character(campaign_id, "Charming Latham", kind="player", add_to_party=True)
 if not isinstance(pc, dict) or pc.get("error"):
     raise SystemExit("could not seat a scripted player")
 opening = (
-    f"You are {pc.get('name') or name}, standing under a steady lantern at the edge of the road. "
+    f"You are {pc.get('name') or spec.get('name') or 'Hero'}, standing under a steady lantern at the edge of the road. "
     "The smoke provider is awake, the table is listening, and the next move is yours."
 )
 server.log_event(campaign_id, "narration", opening)
@@ -131,9 +174,10 @@ processed=0
 while :; do
   count="$(grep -c . "$MOVES" 2>/dev/null || true)"
   if [ "${count:-0}" -gt "$processed" ]; then
-    line="$(tail -n 1 "$MOVES")"
-    reply="$(
-      CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$CAMPAIGN_ID" "$line" <<'PY'
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      reply="$(
+        CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$CAMPAIGN_ID" "$line" <<'PY'
 import json, sys
 import server
 
@@ -150,10 +194,12 @@ reply = (
 server.log_event(campaign_id, "narration", reply)
 print(reply)
 PY
-    )"
-    json_append "$CHAT" "player" "$(move_chat_text "$line")"
-    json_append "$CHAT" "dm" "$reply"
-    trace "move_resolved" "$line"
+      )"
+      json_append "$CHAT" "player" "$(move_chat_text "$line")"
+      json_append "$CHAT" "dm" "$reply"
+      trace "move_resolved" "$line"
+      processed=$((processed + 1))
+    done < <(sed -n "$((processed + 1)),${count}p" "$MOVES")
     processed="$count"
   fi
   sleep 1

@@ -276,11 +276,19 @@ struct ScriptedProvider: ProviderAdapter {
                 detectedPath: nil
             )
         }
-        guard Shell.which("python3") != nil || Shell.which("python") != nil else {
+        guard Shell.which("python3") != nil else {
             return ProviderStatus(
                 kind: kind,
                 availability: .missing,
                 detail: "python3 is required for deterministic scripted smoke.",
+                detectedPath: script.path
+            )
+        }
+        guard Shell.which("uv") != nil else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .missing,
+                detail: "uv is required for deterministic scripted smoke.",
                 detectedPath: script.path
             )
         }
@@ -303,6 +311,12 @@ struct ScriptedProvider: ProviderAdapter {
     ) throws -> ProviderLaunchRequest {
         guard ProviderKind.scriptedProviderEnabled else {
             throw ProviderError.configuration("Scripted provider is disabled. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 for dev/test smoke.")
+        }
+        guard Shell.which("python3") != nil else {
+            throw ProviderError.missingDependency("python3 is required for deterministic scripted smoke.")
+        }
+        guard Shell.which("uv") != nil else {
+            throw ProviderError.missingDependency("uv is required for deterministic scripted smoke.")
         }
         let script = repoPath.appendingPathComponent("scripts/play_scripted_dm.sh")
         guard FileManager.default.fileExists(atPath: script.path) else {
