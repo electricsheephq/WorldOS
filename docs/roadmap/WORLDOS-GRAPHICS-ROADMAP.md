@@ -7,9 +7,11 @@
 > second writer. This mirrors WorldOS's core architecture: the engine is the sole
 > authority; everything downstream is a projection.
 >
-> Status: **DRAFT — local, not yet filed.** Confidence on direction ≥95% (first-principles
-> decision 2026-05-31; full record in LEXAR session-notes `worldos-graphics-roadmap/`).
-> Supersedes `roadmap-v2-FINAL.md` by absorbing it into the capability framing below.
+> Status: **FILED** — PR #424; milestones M0–M6 + Future-gated; issues #425–#461. Confidence
+> on direction ≥95% (first-principles decision 2026-05-31). The full decision records
+> (research report, architecture decision, T2-engine addendum) are operator-local
+> session-notes and are intentionally not committed; this document is the in-repo canonical
+> distillation of them.
 
 ---
 
