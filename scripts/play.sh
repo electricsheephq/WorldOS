@@ -52,6 +52,27 @@ MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst ca
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 DM_TURNS=0
 
+# --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
+# The DM turn normally `--resume`s the DM's growing claude -p session every beat, which
+# REPLAYS the whole accumulated transcript (each beat's prompt + the DM's tool calls +
+# narration), so prefill grows ~6–10K tokens/beat and a late-session beat can take minutes
+# (the #1 felt-latency complaint — a narrative persona rated the STORY 9/10 but GAVE UP on
+# the 3–5 min/turn wait). With CLAWDND_LEAN_BEATS=1, beats 2+ instead start a FRESH session
+# (a new --session-id, NO transcript carried) seeded with a re-ground directive: the DM
+# re-grounds from the engine's persisted truth via scene_context (which already bundles
+# state/director/events/companion_arcs + the recent player-facing narration TAIL) rather
+# than from the fat transcript. Beat 1 (the cold open) is ALWAYS full — it establishes and
+# persists the world/scene/PC. DEFAULT 0 ⇒ the resume path below is untouched, so this is
+# fully reversible and a regression can't ship by accident. A/B harness:
+# qa/lib/lean_beats_check.sh.
+CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-0}"
+# Per-beat backend timeout (seconds) + ONE retry, so a wedged DM turn recovers instead of
+# hanging the session. Applies in BOTH modes (it only wraps the existing claude -p call).
+CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-200}"
+# Recent player-facing narration tail the lean re-ground asks scene_context for (generous by
+# default so continuity survives the lean boundary — named NPCs, prior choices, the scene).
+CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+
 # Product play state lives under the repo's play-state/ (git-ignored), one dir per game,
 # so saves, the chat log, and the move sink stay together and out of the QA sandbox.
 STATE_DIR="$ROOT/play-state/$RUN"
@@ -179,15 +200,52 @@ PY
   fi
 fi
 
-# One DM turn (claude -p, full plugin, resumed across the session). Echoes the reply text.
+# One DM turn (claude -p, full plugin). $1=first?(1/0) $2=message $3=campaign_id(optional).
+# Session-threading modes:
+#   * DEFAULT (CLAWDND_LEAN_BEATS=0): --session-id on beat 1, --resume after — the shipped
+#     behavior, byte-for-byte. The DM carries its prior transcript (which is what grows
+#     prefill ~6–10K tok/beat → the late-session slowdown).
+#   * LEAN (CLAWDND_LEAN_BEATS=1): beat 1 is still the full --session-id cold open; beats 2+
+#     start a FRESH --session-id (new uuid, NO transcript) plus an --append-system-prompt
+#     re-ground directive telling the DM it has no prior transcript this turn and MUST
+#     re-ground from the engine (scene_context bundles state/threads/arcs + the recent
+#     narration tail) and honor every established fact/name/voice as canon it already
+#     authored. $3 (campaign_id) lets the directive name the exact id to pass to
+#     scene_context; on beat 1, or when $3 is empty, lean is a no-op (we mint/resume $DSID).
+# A per-beat timeout (CLAWDND_BEAT_TIMEOUT) wraps the claude -p in BOTH modes; ONE retry on
+# timeout/failure, then the caller's #357 fallback recovers any prose the DM streamed live.
+# Echoes the DM's final text.
 dm_turn() {
-  local first="$1" msg="$2" out resume=()
-  [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
+  local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc
+  if [ "$first" != "0" ] && [ "$CLAWDND_LEAN_BEATS" = "1" ] && [ -n "$campaign_id" ]; then
+    # LEAN beat: fresh session, no transcript replay. Re-ground from persisted truth.
+    resume=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
+    extra=(--append-system-prompt "LEAN RE-GROUND (this turn has NO prior conversation transcript — by design, to keep your turn fast). You are mid-campaign, NOT starting over. Your FIRST action this turn MUST be clawdnd-engine scene_context(campaign_id=\"$campaign_id\", recent_narration=$CLAWDND_LEAN_TAIL) — it returns the authoritative current state (scene, party vitals, day/time, quests, combat, pacing), the Director's advisory, any due events, each companion's arc, AND the recent player-facing narration tail (the last several beats' prose). That bundle is your memory for this beat: HONOR every established fact, place, named NPC, ongoing thread, companion relationship, and narrative VOICE in it as canon YOU already authored — do NOT contradict it, re-introduce an already-met character, reset the clock, or forget a prior choice. If the moment reaches back to something specific, pass recall_query=\"…\" to fold in the matching memory. Then resolve the move and narrate, seamlessly continuing the established story.")
+  elif [ "$first" = "0" ]; then
+    resume=(--resume "$DSID")
+  else
+    resume=(--session-id "$DSID")
+  fi
   out="$DM_LOG.$(date +%s%N).jsonl"
-  claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-    --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-    --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
-  cat "$out" >> "$COMBINED"
+  _dm_invoke() {
+    timeout "$CLAWDND_BEAT_TIMEOUT" \
+      claude -p "$msg" "${resume[@]}" "${extra[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+        --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+  }
+  _dm_invoke; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # timeout(1) exits 124 on the deadline; any nonzero gets ONE retry. A retried lean beat
+    # mints a NEW fresh session id (never replay a half-written transcript).
+    echo "[play] DM turn rc=$rc (timeout=${CLAWDND_BEAT_TIMEOUT}s) — retrying once" >&2
+    if [ "$first" != "0" ] && [ "$CLAWDND_LEAN_BEATS" = "1" ] && [ -n "$campaign_id" ]; then
+      resume=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
+    fi
+    out="$DM_LOG.$(date +%s%N).jsonl"
+    _dm_invoke; rc=$?
+    [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2
+  fi
+  cat "$out" >> "$COMBINED" 2>/dev/null
   jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
 }
 
@@ -280,6 +338,24 @@ fi
 DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 chatlog dm "$DMSG"; DM_TURNS=1
 
+# Resolve the campaign id the DM just minted (for the lean re-ground; harmless when
+# CLAWDND_LEAN_BEATS=0). The opening beat called start_world/get_state, which writes the
+# snapshot to $STATE_DIR/campaigns/<id>/snapshot.json — read the id back from that dir.
+# A solo launch uses a brand-new state dir, so there is exactly one campaign here. When a
+# hero was pre-seeded we already know it ($HERO_CAMP). Empty ⇒ lean falls back to the
+# normal --resume path (dm_turn no-ops lean when the id is unknown).
+CAMPAIGN_ID="$HERO_CAMP"
+if [ -z "$CAMPAIGN_ID" ] && [ -d "$STATE_DIR/campaigns" ]; then
+  CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+fi
+if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
+  if [ -n "$CAMPAIGN_ID" ]; then
+    echo "[play] lean-beats ON — beats 2+ re-ground via scene_context (campaign=$CAMPAIGN_ID), no transcript replay"
+  else
+    echo "[play] lean-beats ON but campaign id not found under $STATE_DIR/campaigns — beats use the normal resume path" >&2
+  fi
+fi
+
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn
 # ceiling. total_cost_usd is reported on each turn's result event (accumulated in $COMBINED).
 over_budget() {
@@ -322,7 +398,7 @@ $PMSG
 
 Resolve it through the engine (roll checks, apply casts/attacks, voice the NPCs and companion) and narrate the next beat as a played scene. Hand the moment back to the player. ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it. If a move is tagged [set_seed_param] param=value, that is a World-Seed dial the player changed from the Seed screen — apply it with the engine's set_seed_param(campaign_id, param, value[, force=True]) tool (it returns applied/warning), then briefly acknowledge it in-world rather than treating it as an in-scene action.
 
-$RUNBOOK")"
+$RUNBOOK" "$CAMPAIGN_ID")"
     # #357: if the DM turn ended on a tool call / 3rd-person status line, its final reply text is
     # empty — fall back to the player-facing narration the engine logged this beat so the chat is
     # never blank on a resolved move (engine stays the sole writer; this only READS its log).
