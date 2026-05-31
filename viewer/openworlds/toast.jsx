@@ -21,7 +21,7 @@ function ToastProvider({ children }) {
         display: "flex", flexDirection: "column", gap: 10,
         pointerEvents: "none",
         maxWidth: 360,
-      }}>
+      }} aria-live="polite" aria-label="Notifications" data-worldos-testid="toast-region">
         {toasts.map((t) => <Toast key={t.id} toast={t} />)}
       </div>
     </ToastCtx.Provider>
@@ -38,7 +38,10 @@ function Toast({ toast }) {
     { ribbon: "var(--b-400)", icon: "·" };
 
   return (
-    <div style={{
+    <div
+      role={toast.kind === "danger" ? "alert" : "status"}
+      data-worldos-testid={toast.kind === "danger" ? "error-banner" : "toast"}
+      style={{
       display: "grid",
       gridTemplateColumns: "auto 1fr",
       gap: 0,

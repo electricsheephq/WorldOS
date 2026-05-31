@@ -318,6 +318,65 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('className={`nav-item ${currentGroup?.id === g.id ? "active" : ""}`}', chrome)
         self.assertIn("onClick={() => onNavigate(getDefaultScreen(g.id))}", chrome)
 
+    def test_openworlds_agent_driving_hooks_are_stable(self):
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+        launcher = (server._OPENWORLDS_DIR / "screen-launcher.jsx").read_text(encoding="utf-8")
+        table = (server._OPENWORLDS_DIR / "screen-table.jsx").read_text(encoding="utf-8")
+        settings = (server._OPENWORLDS_DIR / "screen-settings.jsx").read_text(encoding="utf-8")
+        toast = (server._OPENWORLDS_DIR / "toast.jsx").read_text(encoding="utf-8")
+        character = (server._OPENWORLDS_DIR / "screen-character.jsx").read_text(encoding="utf-8")
+        camp = (server._OPENWORLDS_DIR / "camp-sidebar.jsx").read_text(encoding="utf-8")
+
+        for hook in (
+            'data-worldos-testid="primary-navigation"',
+            'data-worldos-testid="screen-tabs"',
+            'data-worldos-testid="screen-tab"',
+        ):
+            self.assertIn(hook, chrome)
+        self.assertIn('role="tablist"', chrome)
+        self.assertIn('role="tab"', chrome)
+        self.assertIn("aria-selected={current === tab.id}", chrome)
+
+        for hook in (
+            'data-worldos-testid="worldos-launcher"',
+            'data-worldos-testid="chronicle-start"',
+            'data-worldos-testid="campaign-row"',
+            'data-worldos-testid="error-banner"',
+        ):
+            self.assertIn(hook, launcher)
+        self.assertIn('testId="chronicle-resume"', launcher)
+        self.assertIn('role="alert"', launcher)
+
+        for hook in (
+            'data-worldos-testid="openworlds-root"',
+            'data-worldos-testid="app-status-banner"',
+            'data-worldos-testid="narration-log"',
+            'data-worldos-testid="active-player"',
+            'data-worldos-testid="action-palette"',
+            'data-worldos-testid="action-button"',
+            'data-worldos-action-id={actionId || undefined}',
+            'data-worldos-testid="move-composer"',
+            'data-worldos-testid="move-input"',
+        ):
+            self.assertIn(hook, table)
+        self.assertIn('testId="move-submit"', table)
+        self.assertIn('aria-label="Describe your move"', table)
+
+        for hook in (
+            'data-worldos-testid="provider-status"',
+            'data-worldos-testid="provider-controls"',
+            'data-worldos-testid="provider-card"',
+        ):
+            self.assertIn(hook, settings)
+        self.assertIn('testId="provider-start"', settings)
+        self.assertIn('role="status"', settings)
+
+        self.assertIn('data-worldos-testid="toast-region"', toast)
+        self.assertIn('role={toast.kind === "danger" ? "alert" : "status"}', toast)
+        self.assertIn('data-worldos-testid={toast.kind === "danger" ? "error-banner" : "toast"}', toast)
+        self.assertIn('testId="modal-close"', launcher + character)
+        self.assertIn('data-worldos-testid="modal-close"', camp)
+
     def test_openworlds_title_bar_keeps_title_and_day_pill_apart(self):
         # #306: long campaign titles must never wrap under the nav rail or collide with the
         # day/capability band. The structural fix is intentionally static so the built-app

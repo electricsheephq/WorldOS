@@ -135,16 +135,16 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
   ];
 
   return (
-    <div className="screen stack-on-narrow" style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, padding: 14 }}>
+    <div className="screen stack-on-narrow" id="worldos-screen-settings" data-worldos-testid="settings-root" style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, padding: 14 }}>
 
       {/* LEFT — section list */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
         <div className="eyebrow" style={{ color: "var(--crimson)" }}>Codex of</div>
         <h2 className="h1" style={{ fontSize: 22 }}>Setting</h2>
         <Divider />
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div role="tablist" aria-label="Settings sections" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {SECTIONS.map((s) => (
-            <button key={s.id} onClick={() => setSection(s.id)} style={{
+            <button key={s.id} type="button" onClick={() => setSection(s.id)} role="tab" aria-selected={section === s.id} data-worldos-testid="settings-tab" data-worldos-tab-id={s.id} style={{
               textAlign: "left",
               padding: "10px 12px",
               fontFamily: "var(--f-display)",
@@ -409,7 +409,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
 
   return (
     <SettingsSection title="WorldOS Native App" eyebrow="Supervisor bridge" ordinal="I.">
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+      <div role="status" aria-live="polite" data-worldos-testid="provider-status" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <Pill tone={bridgeReady ? "emerald" : "crimson"}>{bridgeReady ? "Wired" : "Unavailable"}</Pill>
         <Pill tone={viewer.status === "running" ? "emerald" : "royal"}>Viewer {viewer.status || "stopped"}</Pill>
         {app.runningProvider && <Pill tone="royal">Provider {app.runningProvider}</Pill>}
@@ -427,13 +427,13 @@ function NativeAppSection({ nativeState, refreshNative }) {
 
         <Panel framed style={{ padding: 18 }}>
           <SectionTitle>Native Actions</SectionTitle>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <BrassButton size="sm" title="Start the local viewer process that serves this UI" onClick={() => nativeAction("startViewer")}>Start Viewer</BrassButton>
-            <BrassButton size="sm" tone="ghost" title="Stop the local viewer process serving this UI" onClick={() => nativeAction("stopViewer")}>Stop Viewer</BrassButton>
-            <BrassButton size="sm" title="Launch a provider session for the default world (e.g. Claude)" onClick={startProvider}>Start Provider</BrassButton>
-            <BrassButton size="sm" tone="ghost" title="Stop the running provider session" onClick={() => nativeAction("stopProvider")}>Stop Provider</BrassButton>
-            <BrassButton size="sm" tone="ghost" title="Copy app status and recent diagnostics to the clipboard" onClick={() => nativeAction("copyDiagnostics")}>Copy Diagnostics</BrassButton>
-            <BrassButton size="sm" tone="ghost" title="Open the fallback debug dashboard in your browser" onClick={() => nativeAction("openFallbackDashboard")}>Debug Dashboard</BrassButton>
+          <div data-worldos-testid="provider-controls" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <BrassButton size="sm" title="Start the local viewer process that serves this UI" onClick={() => nativeAction("startViewer")} testId="native-start-viewer">Start Viewer</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Stop the local viewer process serving this UI" onClick={() => nativeAction("stopViewer")} testId="native-stop-viewer">Stop Viewer</BrassButton>
+            <BrassButton size="sm" title="Launch a provider session for the default world (e.g. Claude)" onClick={startProvider} testId="provider-start">Start Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Stop the running provider session" onClick={() => nativeAction("stopProvider")} testId="provider-stop">Stop Provider</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Copy app status and recent diagnostics to the clipboard" onClick={() => nativeAction("copyDiagnostics")} testId="native-copy-diagnostics">Copy Diagnostics</BrassButton>
+            <BrassButton size="sm" tone="ghost" title="Open the fallback debug dashboard in your browser" onClick={() => nativeAction("openFallbackDashboard")} testId="native-debug-dashboard">Debug Dashboard</BrassButton>
           </div>
           <p className="body-sm muted" style={{ marginTop: 12 }}>
             Native actions supervise local processes only. Game intent still travels through the existing engine/player move lane.
@@ -445,10 +445,12 @@ function NativeAppSection({ nativeState, refreshNative }) {
       <SectionTitle>Providers</SectionTitle>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         {providers.map((p) => (
-          <Panel key={p.kind} framed style={{ padding: 16 }}>
+          <Panel key={p.kind} framed style={{ padding: 16 }} className="provider-card">
+            <div data-worldos-testid="provider-card" data-worldos-provider-id={p.kind || undefined}>
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>{p.displayName || p.kind}</div>
             <h3 style={{ margin: "4px 0 8px", fontFamily: "var(--f-display)", letterSpacing: "0.08em" }}>{p.availability}</h3>
             <div className="body-sm muted">{p.detail}</div>
+            </div>
           </Panel>
         ))}
         {!providers.length && (
