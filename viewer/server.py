@@ -6200,7 +6200,12 @@ class _Handler(BaseHTTPRequestHandler):
             limit = max(1, min(500, limit))
             if catalog_ref is not None:
                 cid, raw_snap, _campaign_dir, _root_is_current = catalog_ref
-                world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else None
+                raw_world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else None
+                world_id = (
+                    raw_world_id.strip()
+                    if isinstance(raw_world_id, str) and raw_world_id.strip()
+                    else None
+                )
                 self._json(build_roster_response(cid, race, char_class, level, limit, world_id=world_id))
                 return
             self._json(build_roster_response(cid, race, char_class, level, limit))

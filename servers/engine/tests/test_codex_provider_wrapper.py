@@ -7,6 +7,7 @@ run narrative QA.
 
 import json
 import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -45,16 +46,37 @@ def _run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess:
     )
 
 
-def _run_dm(args: list[str], env: dict[str, str], timeout: float | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["/bin/bash", str(DM_SCRIPT), *args],
+def _run_dm(
+    args: list[str],
+    env: dict[str, str],
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess:
+    command = ["/bin/bash", str(DM_SCRIPT), *args]
+    proc = subprocess.Popen(
+        command,
         cwd=ROOT,
         env=env,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
         text=True,
-        timeout=timeout,
     )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = proc.communicate()
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
 
 
 def test_codex_wrapper_fails_closed_without_required_env(tmp_path):

@@ -208,6 +208,22 @@ class RosterSurfaceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(surface.get("world_id"), "")
 
+    def test_catalog_run_with_empty_world_id_does_not_fall_back_to_default_world(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        qa_campaign = repo_root / "qa" / "state" / "empty-world" / "campaigns" / "camp_qa"
+        qa_campaign.mkdir(parents=True)
+        (qa_campaign / "snapshot.json").write_text(
+            json.dumps({"id": "camp_qa", "world_id": ""}),
+            encoding="utf-8",
+        )
+
+        status, surface = self._get_json("/roster-surface?source=qa&run=empty-world&campaign=camp_qa&limit=1")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(surface.get("world_id"), "")
+
     # ── facets for the filter chips ──────────────────────────────────────────────
 
     def test_facets_present_and_frequency_ordered(self):
