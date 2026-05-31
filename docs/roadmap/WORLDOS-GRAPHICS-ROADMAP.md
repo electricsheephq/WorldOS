@@ -7,7 +7,10 @@
 > second writer. This mirrors WorldOS's core architecture: the engine is the sole
 > authority; everything downstream is a projection.
 >
-> Status: **FILED** — PR #424; milestones M0–M6 + Future-gated; issues #425–#461. Confidence
+> Status: **FILED + PARTIAL M0 CONTRACTS LANDED** — PR #424 filed milestones M0–M6 +
+> Future-gated issues #425–#461. PR #464 landed the parallel-safe M0 contract slice:
+> #425/#426/#427/#431 closed; #428/#430/#433 remain open for fuller renderer/implementation proof;
+> #429/#432 were intentionally held for coordinated `viewer/server.py` edits. Confidence
 > on direction ≥95% (first-principles decision 2026-05-31). The full decision records
 > (research report, architecture decision, T2-engine addendum) are operator-local
 > session-notes and are intentionally not committed; this document is the in-repo canonical

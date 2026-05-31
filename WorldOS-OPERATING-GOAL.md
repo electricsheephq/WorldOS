@@ -5,8 +5,8 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-05-31 takeover stabilization
-     ORIGIN TIP:   82aeaf2 (verified by git fetch on 2026-05-31)
+     AS OF:        2026-05-31 post-takeover UX sprint sync
+     ORIGIN TIP:   b15ad3c (PR #465 merged; verified by git fetch on 2026-05-31)
      CANONICAL:    /Users/lume/ClawDnD-val is the private-art/live-app checkout; observed at f5500ac
                    and behind origin/main by 3 commits before takeover. Do not fast-forward it
                    until the owner intentionally chooses to move the private-art checkout.
@@ -19,8 +19,9 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Stabilize gate truth first → rerun a clean gate on the 32GB VM for backend/personas
-                   plus Mac/macOS CI built-app verification → then fix the trustworthy failure list.
+     NEXT ACTION:  Run the clean post-hardening gate (#466) to get a trustworthy failure list, but
+                   plan the next sprint UX-first (#467): first-turn playability, clickability/chrome, launcher
+                   clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
@@ -157,20 +158,46 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-05-31 — takeover context, NOT a release verdict)
+## 9. CURRENT STATUS (2026-05-31 — post-#465, NOT a release verdict)
 
-- Repo truth is being stabilized from a Lexar worktree at `origin/main` (`82aeaf2`). The private-art
-  checkout at `/Users/lume/ClawDnD-val` was observed at `f5500ac` and behind by 3 commits; keep it
-  intact until the owner chooses to fast-forward it.
+- Repo truth stabilization merged in PR #465. Current `origin/main` is `b15ad3c`; the private-art
+  checkout at `/Users/lume/ClawDnD-val` was observed at `f5500ac` before takeover. Keep it intact until
+  the owner intentionally fast-forwards the live app/private-art checkout.
 - The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
   not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
   image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
-- The stabilization lane is: make docs and RRI output truthful → make the gate fail on missing personas
-  and record exact evidence paths → fix high-confidence playability blockers → run the full backend/persona
-  sweep on the 32GB VM and the Mac-only built-app smoke on this Mac or macOS CI.
-- Known product blockers to verify after harness trust is restored: built app playability, narration
-  stall/disabled-control behavior under real latency, image/private-art root routing, and legacy
-  `/dashboard` references that can mislead agents away from `/openworlds/`.
+- The next evidence step is issue #466: run a clean non-partial five-persona RRI from `b15ad3c` or newer
+  on the 32GB VM for backend/personas, plus the Mac/macOS CI built-app playtest. The expected outcome is
+  either a trustworthy blocker list or a real 11/11 release result.
+- Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
+  transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
+  session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.
+- Highest-confidence UX risks to verify/fix next: first-turn built-app play; global click hit areas (#309);
+  title/chrome truth (#306); launcher clarity/stale campaigns (#358); per-beat latency/live response (#393);
+  portrait/gallery blockers (#379); and CRPG depth on Heroes/Battle/Inventory (#308/#318/#310,
+  with #462/#463 folded into Battle readability as presentation containment).
+
+---
+
+## 10. UX-FIRST SPRINT ORDER (after takeover stabilization)
+
+Use the gate as evidence, not as the roadmap. The next sprint should optimize the felt session:
+
+1. **Prove first-turn play in the built app.** A fresh player can launch, choose/start/resume, reach the
+   Table, submit one `/move`, and see narration resolve without critical console/runtime errors. Evidence:
+   issue #466 artifacts, not a proxy preview.
+2. **Fix the "this is not clickable" feeling.** Close #309 only when clicking any visible tab/button
+   background works with mouse and keyboard. Pair with visual truth for #306 so the title/day/chrome no
+   longer look broken at common widths.
+3. **Make the launcher feel like a real game shelf.** Remove stale/scratch campaign noise (#358), make
+   bridge/no-bridge state honest, and ensure each chronicle looks distinct enough to choose.
+4. **Make slow turns feel alive.** Verify #393/#394-style streaming in a real built-app run; if text does
+   not appear within the first 15-30 seconds of a turn, prioritize streaming/proof-of-life UX over more
+   backend hardening.
+5. **Add CRPG depth where players look for it.** Heroes spellbook/manage-spells (#308), Battle readability
+   (#318, including #462/#463 token containment/alignment as presentation truth), Inventory/paper-doll
+   feel (#310), and portrait/race gallery continuity (#379) beat proxy/security work until the session
+   feels like a game.
 
 ---
 
