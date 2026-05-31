@@ -5,19 +5,19 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-05-31
-     MAIN SHA:     96c0401 (verify: git -C /Users/lume/ClawDnD-val rev-parse --short origin/main)
+     AS OF:        2026-05-31 (late)
+     MAIN SHA:     f5500ac (verify: git -C /Users/lume/ClawDnD-val rev-parse --short origin/main)
      LIVE PLAN:    ~/.claude/plans/twinkly-meandering-pizza.md  (IGNORE all other plans/*.md — esp.
                    yeah-i-m-good-with-floofy-lemon.md = STALE old ClawDnD release-loop, do NOT act on it)
      GATE STATUS:  G1 arc-complete PASS (5/5) · native#356 PASS · palette-live PASS ·
                    G2 char-sheet FIXED #416 · DM-craft FIXED #418 · lean-beats #417 (flag-OFF) — ALL 3 WAVES MERGED, UNVERIFIED ·
                    G3 sat 6.0 (need 7) + narrative gave-up = LATENCY ·
                    G5 story 2.5 / mech 2.5 (NPC silent + combat-not-engaged) · G4 axe + behavioral = UNMEASURED
-     3 LIVE BLOCKERS: (1) latency #417 lean-beats merged, flag-OFF, UNVERIFIED → measure (qa/lib/lean_beats_check.sh) on healthy host
-                      (2) DM-craft #418 MERGED — re-score story/mech on a clean duo (was 2.5/2.5)
-                      (3) ONE clean convergence re-sweep for honest RRI → qa/release_gate.sh (NEW one-command gate)
-     NEXT ACTION:  per phase — BUILD phase: land #418 → rebuild .app → re-sweep (CLAWDND_LEAN_BEATS=1) → RRI → v1.0.4.
-                   SUPPORT phase: build qa/release_gate.sh (one-command gate + preflight) + keep this block current.
+     RESOLVED: #420 play.sh bash-3.2 empty-array crash FIXED (#421, verified 0 unguarded) — play path UNBLOCKED, scores can be produced again.
+     2 LIVE BLOCKERS: (1) run qa/release_gate.sh on f5500ac for the FIRST honest post-fix RRI (latency #417 + DM-craft #418 + char-sheet #416 all merged; was sat 6.0 / story 2.5 / mech 2.5)
+                      (2) off-host QA swarm: support VM 178.104.123.213 ICMP-alive but SSH firewalled from this Mac (needs dispatcher/bastion) OR crabbox.sh OR a fresh test VM — owner decision (the #1 velocity lever)
+     NEXT ACTION:  BUILD phase: qa/release_gate.sh (now fail-fast) on f5500ac → honest RRI → fix failed gates → v1.0.4.
+                   SUPPORT phase: stand up off-host QA swarm (owner picks VM path) so the sweep is parallel+reliable.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
