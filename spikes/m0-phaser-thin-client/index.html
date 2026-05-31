@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorldOS M0 spike — Phaser thin-client</title>
+  <!-- Phaser 3 (MIT) from CDN. The spike is throwaway; a real build would vendor it
+       like the viewer vendors babel-standalone. -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <style>
+    body { margin: 0; background: #0c0a06; color: #cbb890; font-family: -apple-system, system-ui, sans-serif; }
+    #wrap { max-width: 980px; margin: 1.2em auto; padding: 0 1em; }
+    #game { width: 960px; height: 600px; box-shadow: 0 0 0 1px rgba(140,100,60,.4); }
+    h1 { font-size: 1.1em; } .meta { color: #897; font-size: .85em; line-height: 1.5; }
+    code { background: #1c180e; padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>WorldOS M0 spike — renderer-as-thin-client (Phaser 3)</h1>
+    <p class="meta">
+      Proves the architecture decision live: a Phaser renderer that owns <strong>no game state</strong> —
+      it reads <code>/atlas-surface</code>, <code>/combat-surface</code>, <code>/character-surface</code> and writes only an
+      <strong>intent</strong> via <code>POST /move</code>. Tokens are placed by engine <strong>zone</strong> (zone bands, not a VTT grid),
+      re-derived client-side to prove the renderer owns layout. Runs <strong>standalone on bundled fixtures</strong>;
+      add <code>?campaign=&lt;id&gt;</code> (and optional <code>?base=http://127.0.0.1:8765</code>) to point at a live viewer.
+    </p>
+    <div id="game"></div>
+    <p class="meta">
+      Serve locally: <code>python3 -m http.server</code> from this dir, open <code>/index.html</code>.
+      See <code>README.md</code> for what it validates + the <strong>contract gaps</strong> it surfaces.
+    </p>
+  </div>
+  <script src="./surface-client.js"></script>
+  <script src="./spike.js"></script>
+</body>
+</html>

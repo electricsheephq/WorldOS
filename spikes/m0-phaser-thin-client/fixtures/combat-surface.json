@@ -1,0 +1,18 @@
+{
+  "_comment": "Fixture mirroring the REAL /combat-surface (viewer/server.py build_combat_surface + _combat_row_positions). NOTE the `position` x,y are DERIVED from zone (x=0.18+col*0.32, y=0.25+row*0.28) — they are an ephemeral RENDER HINT, never authoritative state. The spike treats `zone` as truth and re-derives x,y itself to prove the 'renderer owns layout' contract.",
+  "active": true,
+  "round": 2,
+  "turn_index": 0,
+  "current_id": "char-aubree",
+  "zones": [
+    { "name": "the market row" },
+    { "name": "the alley mouth" },
+    { "name": "the gate approach" }
+  ],
+  "initiative": [
+    { "id": "char-aubree", "name": "Aubree", "initiative": 18, "is_current": true, "hp_current": 24, "hp_max": 30, "conditions": [], "zone": "the market row", "position": { "x": 0.18, "y": 0.25, "zone": "the market row" } },
+    { "id": "mon-cultist-1", "name": "Cultist", "initiative": 14, "is_current": false, "hp_current": 9, "hp_max": 11, "conditions": [], "zone": "the alley mouth", "position": { "x": 0.5, "y": 0.25, "zone": "the alley mouth" } },
+    { "id": "char-companion-1", "name": "Shadowheart", "initiative": 12, "is_current": false, "hp_current": 18, "hp_max": 22, "conditions": [], "zone": "the market row", "position": { "x": 0.18, "y": 0.25, "zone": "the market row" } },
+    { "id": "mon-cultist-2", "name": "Cultist", "initiative": 7, "is_current": false, "hp_current": 11, "hp_max": 11, "conditions": ["prone"], "zone": "the gate approach", "position": { "x": 0.82, "y": 0.25, "zone": "the gate approach" } }
+  ]
+}

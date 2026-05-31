@@ -1,0 +1,22 @@
+{
+  "_comment": "Fixture mirroring the REAL /atlas-surface shape (derived from viewer/server.py _atlas_known_locations + _atlas_edges + the PR #391 world_graph route_kind work). Lets the spike render standalone (no live game). The spike's SurfaceClient prefers a live ?campaign= endpoint and falls back to this.",
+  "campaign_id": "bg-absolute-remnants",
+  "current_location": { "id": "loc-lower-city", "name": "Baldur's Gate — Lower City" },
+  "current_location_id": "loc-lower-city",
+  "known_locations": [
+    { "id": "loc-lower-city", "name": "Baldur's Gate — Lower City", "tags": ["hub", "city"], "discovered": true, "visited": true },
+    { "id": "loc-upper-city", "name": "Baldur's Gate — Upper City", "tags": ["city", "intrigue"], "discovered": true, "visited": false },
+    { "id": "loc-outer-city", "name": "The Outer City & Rivington", "tags": ["slums", "crime"], "discovered": true, "visited": false },
+    { "id": "loc-wyrms-crossing", "name": "Wyrm's Crossing & the Risen Road", "tags": ["road", "crossroads"], "discovered": true, "visited": false }
+  ],
+  "edges": [
+    { "from": "loc-lower-city", "to": "loc-upper-city", "route_kind": "street", "danger": 1 },
+    { "from": "loc-lower-city", "to": "loc-outer-city", "route_kind": "street", "danger": 2 },
+    { "from": "loc-outer-city", "to": "loc-wyrms-crossing", "route_kind": "bridge", "danger": 2 }
+  ],
+  "travel_options": [
+    { "to": "loc-upper-city", "name": "Baldur's Gate — Upper City", "available": true, "move": { "kind": "travel", "target": "loc-upper-city" } },
+    { "to": "loc-outer-city", "name": "The Outer City & Rivington", "available": true, "move": { "kind": "travel", "target": "loc-outer-city" } }
+  ],
+  "can_act": true
+}

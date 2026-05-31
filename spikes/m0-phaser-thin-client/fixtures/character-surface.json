@@ -1,0 +1,7 @@
+{
+  "_comment": "Fixture mirroring the REAL /character-surface (viewer/server.py build_character_surface). The spike's party panel reads ONLY these fields; zero client-side rules.",
+  "party": [
+    { "id": "char-aubree", "name": "Aubree", "race": "Human", "class": "Ranger", "hp": 24, "hpMax": 30, "stats": { "ac": 15 }, "level": 4 },
+    { "id": "char-companion-1", "name": "Shadowheart", "race": "Half-Elf", "class": "Cleric", "hp": 18, "hpMax": 22, "stats": { "ac": 18 }, "level": 4 }
+  ]
+}
