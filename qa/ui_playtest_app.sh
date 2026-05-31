@@ -245,6 +245,8 @@ PY
   [ "$ready" = "1" ] || { a_log "[A] launcher viewer never came up (discovered port='${launcher_port:-none}')"; PART_A_RESULT="no_launcher"; return 1; }
   app_pid_for_bundle "$APP_BUNDLE" >/dev/null 2>&1 || { a_log "[A] target WorldOSApp bundle is not running"; PART_A_RESULT="app_not_running"; return 1; }
   a_log "[A] launcher viewer ready on $launcher_port; can_act(before)=$(curl -s "http://127.0.0.1:$launcher_port/session-surface" | jq -c '{can_act,is_live_view,live}' 2>/dev/null)"
+  curl -s --max-time 3 "http://127.0.0.1:$launcher_port/app-status" \
+    | jq . > "$NATIVE_DIR/app-status.launcher.json" 2>/dev/null || printf '{}\n' > "$NATIVE_DIR/app-status.launcher.json"
 
   # BEFORE screenshot + baseline play-state set (so a NEW run dir is detectable post-click).
   screenshot "$NATIVE_DIR/before.png" && a_log "[A] before.png captured" || a_log "[A] before.png deferred to orchestrator"
@@ -311,6 +313,17 @@ PY
   PART_A_MINTED_PORT="$minted_port"; PART_A_RUNDIR="$minted_run"
   local surf_final="{}"
   [ -n "$minted_port" ] && surf_final="$(curl -s "http://127.0.0.1:$minted_port/session-surface" 2>/dev/null | jq -c '{can_act,is_live_view,live,campaignId,enabledActions}' 2>/dev/null || echo '{}')"
+  local app_status_final="{}"
+  if [ -n "$minted_port" ]; then
+    if curl -s --max-time 3 "http://127.0.0.1:$minted_port/app-status" \
+        | jq . > "$NATIVE_DIR/app-status.minted.json" 2>/dev/null; then
+      app_status_final="$(jq -c . "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || echo '{}')"
+    else
+      printf '{}\n' > "$NATIVE_DIR/app-status.minted.json"
+    fi
+  else
+    printf '{}\n' > "$NATIVE_DIR/app-status.minted.json"
+  fi
 
   if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ -n "$minted_run" ] && [ -n "$minted_port" ]; then
     a_log "[A] keep-alive proof: waiting for first-turn readiness (actor + enabled actions + narration)…"
@@ -324,6 +337,9 @@ PY
       if [ -n "$actor" ] && [ "${enabled_count:-0}" -gt 0 ] && { [ "${narration_count:-0}" -gt 0 ] || [ "${chat_lines:-0}" -gt 0 ]; }; then
         PART_A_FIRST_TURN_READY="true"
         surf_final="$(printf '%s' "$ready_surf" | jq -c '{can_act,is_live_view,live,campaignId,enabledActions,actor:.actionModel.actor,recentEvents}' 2>/dev/null || printf '%s' "$ready_surf")"
+        curl -s --max-time 3 "http://127.0.0.1:$minted_port/app-status" \
+          | jq . > "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || true
+        app_status_final="$(jq -c . "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || echo '{}')"
         a_log "[A] keep-alive proof ready: actor=$actor enabled=$enabled_count narration_events=${narration_count:-0} chat_lines=${chat_lines:-0}."
         break
       fi
@@ -364,11 +380,13 @@ PY
 
   python3 - "$NATIVE_DIR/transition.json" "$PART_A_RESULT" "$BUILD_SHA" "$VERSION" \
             "${minted_run:-}" "${minted_port:-}" "$can_act" "$surf_final" \
-            "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" <<'PY'
+            "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$app_status_final" <<'PY'
 import json, sys, datetime
-out, result, sha, ver, run, port, can_act, surf, kept, first_turn_ready = sys.argv[1:11]
+out, result, sha, ver, run, port, can_act, surf, kept, first_turn_ready, app_status = sys.argv[1:12]
 try: surf_obj = json.loads(surf)
 except Exception: surf_obj = {"raw": surf}
+try: app_status_obj = json.loads(app_status)
+except Exception: app_status_obj = {"raw": app_status}
 json.dump({
     "gate": "native_transition_356",
     "result": result, "build_sha": sha, "version": ver,
@@ -377,6 +395,9 @@ json.dump({
     "first_turn_ready": first_turn_ready == "true",
     "can_act_after_click": can_act == "true",
     "session_surface_after": surf_obj,
+    "app_status_after": app_status_obj,
+    "app_status_launcher_json": "native/app-status.launcher.json",
+    "app_status_minted_json": "native/app-status.minted.json",
     "before_png": "native/before.png", "after_png": "native/after.png",
     "at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
 }, open(out, "w"), indent=2)

@@ -30,10 +30,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._old_clawdnd_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
         self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
         self._old_clawdnd_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
+        self._old_worldos_player_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
+        self._old_clawdnd_player_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
         os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
         os.environ.pop("WORLDOS_REPO_ROOT", None)
         os.environ.pop("CLAWDND_REPO_ROOT", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
+        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
@@ -69,6 +73,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_REPO_ROOT", None)
         else:
             os.environ["CLAWDND_REPO_ROOT"] = self._old_clawdnd_repo_root
+        if self._old_worldos_player_moves is None:
+            os.environ.pop("WORLDOS_PLAYER_MOVES", None)
+        else:
+            os.environ["WORLDOS_PLAYER_MOVES"] = self._old_worldos_player_moves
+        if self._old_clawdnd_player_moves is None:
+            os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        else:
+            os.environ["CLAWDND_PLAYER_MOVES"] = self._old_clawdnd_player_moves
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -127,8 +139,62 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(config["state_authority"], "engine")
         self.assertEqual(config["write_lane"], "/move")
         self.assertEqual(config["campaign_catalog"], "/openworlds/campaigns.json")
+        self.assertEqual(config["app_status"], "/app-status")
         self.assertFalse(config["demo_data"])
         self.assertTrue(config["demo_data_fallback"])
+
+    def test_app_status_route_exposes_agent_probe_contract(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_live"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_live",
+                "title": "Live Probe Save",
+                "active_session_id": "session_live",
+                "world_id": "baldurs-gate",
+                "party": ["hero"],
+                "characters": {
+                    "hero": {
+                        "id": "hero",
+                        "name": "Probe Hero",
+                        "kind": "player",
+                        "current_hp": 8,
+                        "max_hp": 8,
+                    },
+                },
+            },
+        )
+        moves = self._tmp / "play-123" / "player_moves.jsonl"
+        moves.parent.mkdir()
+        moves.write_text("", encoding="utf-8")
+        chat = self._tmp / "play-123" / "chat.jsonl"
+        chat.write_text('{"role":"dm","text":"Opening."}\n', encoding="utf-8")
+        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        _QuietHandler.campaign_id = "camp_live"
+        _QuietHandler.chat_path = str(chat)
+
+        status, ctype, body = self._get("/app-status?campaign=camp_live")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["schema"], "worldos.app-status.v1")
+        self.assertEqual(payload["state_authority"], "engine")
+        self.assertEqual(payload["write_lane"], "/move")
+        self.assertEqual(payload["viewer"]["port"], self._port)
+        self.assertEqual(payload["viewer"]["chat_lines"], 1)
+        self.assertTrue(payload["art"]["private_root"].endswith("content/worlds/_private"))
+        self.assertEqual(payload["live"]["attached_campaign_id"], "camp_live")
+        self.assertEqual(payload["live"]["campaign_id"], "camp_live")
+        self.assertEqual(payload["live"]["active_session_id"], "session_live")
+        self.assertEqual(payload["live"]["run_id"], "play-123")
+        self.assertEqual(payload["live"]["moves_path"], server._resolved(moves))
+        self.assertTrue(payload["live"]["moves_writable"])
+        self.assertTrue(payload["live"]["is_live_view"])
+        self.assertTrue(payload["live"]["can_act"])
+        self.assertEqual(payload["live"]["actor"]["name"], "Probe Hero")
+        self.assertIn("continue", payload["live"]["enabled_action_ids"])
+        self.assertEqual(payload["endpoints"]["session_surface"], "/session-surface")
 
     def test_openworlds_static_assets_are_same_origin_and_local(self):
         status, ctype, body = self._get("/openworlds/vendor/google-fonts.css")

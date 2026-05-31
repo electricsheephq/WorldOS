@@ -175,8 +175,10 @@ def test_codex_dm_wrapper_honors_native_selected_hero():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "CLAWDND_PLAY_HERO" in source
-    assert 'load_canon_character(camp, canon_name, kind="player", add_to_party=True)' in source
+    assert "CLAWDND_PLAY_CANON_HERO" in source
+    assert 'server.load_canon_character(camp, name, kind="player", add_to_party=True)' in source
     assert "Native-selected canon hero already seated" in source
+    assert "seeded solo player" in source
 
 
 def test_codex_dm_wrapper_forbids_null_speaker_arguments():
@@ -204,6 +206,45 @@ def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
     assert "this is a solo provider launch" in source
     assert 'Do not call load_canon_character with kind=\\"companion\\"' in source
     assert "only add companions named by CLAWDND_PLAY_COMPANIONS" in source
+
+
+def test_codex_dm_wrapper_constrains_startup_roster_mutation():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "STARTUP_MUTATION_RULE" in source
+    assert "the wrapper has already seated the one player" in source
+    assert "Before the first player-facing narration" in source
+    assert "load_canon_character, create_character, or recruit_companion" in source
+    assert "do not call start_world, start_session, start_character, load_canon_character" in source
+    assert source.count("$STARTUP_MUTATION_RULE") == 2
+
+
+def test_codex_dm_wrapper_requires_tracked_social_targets():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "SOCIAL_CHECK_TARGET_RULE" in source
+    assert "call social_check only when scene_context already shows a real tracked npc_id" in source
+    assert "Do not call load_canon_character or create_character solely to manufacture" in source
+    assert "do not use persuasion, deception, intimidation" in source
+    assert "Use a non-attitude skill_check such as investigation or perception" in source
+    assert source.count("$SOCIAL_CHECK_TARGET_RULE") == 3
+
+
+def test_codex_dm_wrapper_avoids_noisy_provider_tool_retries():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "RULES_LOOKUP_RULE" in source
+    assert "do not call lookup_class" in source
+    assert "PARLEY_TOOL_RULE" in source
+    assert "pass an explicit skills array" in source
+    assert "Do not rely on include_alignment" in source
+    assert "PERSIST_BEAT_RULE" in source
+    assert "do not call persist_beat during the opening turn" in source
+    assert "persist only after at least one real player move" in source
+    assert "each memory must be an object with character_id and fact fields" in source
+    assert source.count("$RULES_LOOKUP_RULE") == 3
+    assert source.count("$PARLEY_TOOL_RULE") == 3
+    assert source.count("$PERSIST_BEAT_RULE") == 3
 
 
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
@@ -280,7 +321,7 @@ while [ "$#" -gt 0 ]; do
 	  printf 'Opening narration from fake Codex.' > "$last"
 	  printf '{"type":"result","result":"Opening narration from fake Codex."}\\n'
 	else
-	  printf '%s' "$prompt" | grep -q 'Live campaign_id: "camp_fake"' || {
+	  printf '%s' "$prompt" | grep -q 'Live campaign_id: "camp_' || {
 	    echo "missing live campaign hint" >&2
 	    exit 8
 	  }

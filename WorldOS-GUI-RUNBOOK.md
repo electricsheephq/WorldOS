@@ -32,12 +32,24 @@
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
-- Do not treat the wrapper as release proof by itself. The 2026-06-01T03:40:26+07:00 local built-app proof
-  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-final-20260601T033714/`) shows the Codex-DM
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T04:39:09+07:00 local built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-headproof-20260601T043909/`) shows the Codex-DM
   path can mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled
-  actions, accept and resolve a `/move`, and leave `/session-surface` actionable on exact PR #475 head
-  `500c379`. Release still requires the full non-partial RRI gate, and #479 remains the next provider-noise
-  fix before trusting RRI latency/playability evidence.
+  actions, accept and resolve a `/move`, leave `/session-surface` actionable, and produce a provider trace
+  with zero errors/failed tool calls on PR #475 app-code commit `8bd833f`. Release still requires the full
+  non-partial RRI gate.
+
+## Agent-facing app contract
+
+- `GET /app-status` and `GET /__worldos/app-status.json` are read-only probes for agents and harnesses.
+  They report build/version, viewer port, state root, provider, private-art root presence, live campaign/run,
+  move sink, active actor, enabled actions, and canonical endpoints. They must not mutate campaign state.
+- Use `/app-status` before screenshots when diagnosing the built app. It answers: "am I on the real live
+  campaign, can the player act, where is the move sink, and is private art configured?"
+- `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
+  folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
+- Longer-term agent-grade testing lives under #480-#486: deterministic smoke provider, stable accessibility
+  and DOM hooks, crisp failure buckets, and one exported evidence bundle per app playtest.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash

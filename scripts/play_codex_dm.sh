@@ -252,29 +252,34 @@ HERO_PC_ID=""
 HERO_PC_NAME=""
 HERO_PC_RACE=""
 HERO_PC_CLASS=""
-if [ -n "${CLAWDND_PLAY_HERO:-}" ]; then
-  HERO_SEED_JSON="$(CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" uv run --directory "$ROOT/servers/engine" python - "$CLAWDND_WORLD" "$CLAWDND_PLAY_HERO" <<'PY'
+HERO_SEED_JSON="$(CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" uv run --directory "$ROOT/servers/engine" python - "$CLAWDND_WORLD" "${CLAWDND_PLAY_HERO:-}" "${CLAWDND_PLAY_CANON_HERO:-Alfira}" <<'PY'
 import json
 import sys
 
 import server
 
-world, spec_raw = sys.argv[1], sys.argv[2]
-try:
-    spec = json.loads(spec_raw)
-except json.JSONDecodeError as exc:
-    sys.stderr.write(f"native hero spec is not valid JSON: {exc}\n")
-    sys.exit(1)
-if not isinstance(spec, dict):
-    sys.stderr.write("native hero spec must be a JSON object\n")
-    sys.exit(1)
-if not spec.get("canon"):
-    sys.stderr.write("Codex DM provider currently supports native roster canon hero specs only\n")
-    sys.exit(1)
-canon_name = str(spec.get("name") or "").strip()
-if not canon_name:
-    sys.stderr.write("native roster canon hero spec is missing name\n")
-    sys.exit(1)
+world, spec_raw, fallback_name = sys.argv[1], sys.argv[2], sys.argv[3]
+explicit = False
+canon_name = ""
+if spec_raw.strip():
+    explicit = True
+    try:
+        spec = json.loads(spec_raw)
+    except json.JSONDecodeError as exc:
+        sys.stderr.write(f"native hero spec is not valid JSON: {exc}\n")
+        sys.exit(1)
+    if not isinstance(spec, dict):
+        sys.stderr.write("native hero spec must be a JSON object\n")
+        sys.exit(1)
+    if not spec.get("canon"):
+        sys.stderr.write("Codex DM provider currently supports native roster canon hero specs only\n")
+        sys.exit(1)
+    canon_name = str(spec.get("name") or "").strip()
+    if not canon_name:
+        sys.stderr.write("native roster canon hero spec is missing name\n")
+        sys.exit(1)
+else:
+    canon_name = fallback_name.strip() or "Alfira"
 
 started = server.start_world(world)
 camp = started.get("campaign_id") if isinstance(started, dict) else ""
@@ -282,9 +287,36 @@ if not camp:
     sys.stderr.write("start_world did not return a campaign_id\n")
     sys.exit(1)
 server.start_session(camp, title=f"Codex DM: {canon_name}")
-rec = server.load_canon_character(camp, canon_name, kind="player", add_to_party=True)
+
+names = [canon_name]
+if not explicit:
+    try:
+        roster = server.list_canon_characters(camp, playable_only=True).get("available") or []
+    except Exception:
+        roster = []
+    for row in roster:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+
+rec = {}
+errors = []
+for name in names:
+    try:
+        candidate = server.load_canon_character(camp, name, kind="player", add_to_party=True)
+    except Exception as exc:
+        errors.append(f"{name}: {exc}")
+        continue
+    if isinstance(candidate, dict) and not candidate.get("error") and candidate.get("id"):
+        rec = candidate
+        canon_name = name
+        break
+    errors.append(f"{name}: {(candidate or {}).get('error') if isinstance(candidate, dict) else candidate}")
+
 if not isinstance(rec, dict) or rec.get("error"):
-    sys.stderr.write("canon pickup failed: " + str((rec or {}).get("error") if isinstance(rec, dict) else rec) + "\n")
+    sys.stderr.write("canon pickup failed: " + "; ".join(errors[:5]) + "\n")
     sys.exit(1)
 
 print(json.dumps({
@@ -297,15 +329,14 @@ print(json.dumps({
     },
 }))
 PY
-)" || fail "native-selected hero pre-seed failed"
-  HERO_CAMP="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.campaign_id // ""')"
-  HERO_PC_ID="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.id // ""')"
-  HERO_PC_NAME="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.name // ""')"
-  HERO_PC_RACE="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.race // ""')"
-  HERO_PC_CLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.class // ""')"
-  [ -n "$HERO_CAMP" ] || fail "native-selected hero pre-seed returned no campaign"
-  echo "[codex-dm-provider] seeded native-selected hero: $HERO_PC_NAME ($HERO_PC_RACE $HERO_PC_CLASS) in campaign $HERO_CAMP"
-fi
+)" || fail "solo player pre-seed failed"
+HERO_CAMP="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.campaign_id // ""')"
+HERO_PC_ID="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.id // ""')"
+HERO_PC_NAME="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.name // ""')"
+HERO_PC_RACE="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.race // ""')"
+HERO_PC_CLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.class // ""')"
+[ -n "$HERO_CAMP" ] || fail "solo player pre-seed returned no campaign"
+echo "[codex-dm-provider] seeded solo player: $HERO_PC_NAME ($HERO_PC_RACE $HERO_PC_CLASS) in campaign $HERO_CAMP"
 
 chatlog() {
   python3 - "$CHAT" "$1" "$2" <<'PY'
@@ -359,6 +390,11 @@ codex_dm_turn() {
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
+STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
+SOCIAL_CHECK_TARGET_RULE="Social check target rule: call social_check only when scene_context already shows a real tracked npc_id for the target. Do not call load_canon_character or create_character solely to manufacture a social-check target during the same turn. If the target is not already tracked, do not use persuasion, deception, intimidation, or another attitude-moving social skill. Use a non-attitude skill_check such as investigation or perception for what the player can infer, then narrate the scene-local response; persist a new NPC later only when the player keeps engaging them."
+RULES_LOOKUP_RULE="Rules lookup rule: during the opening turn, do not call lookup_class or other rules lookups just to restate the pre-seated player's class/race; get_state already includes enough player-facing identity for the opener. Use clawdnd-rules only when resolving an actual rule, spell, item, condition, or monster question."
+PARLEY_TOOL_RULE="Parley tool rule: when using generate_parley_options, pass an explicit skills array such as persuasion, insight, performance, intimidation, deception. Do not rely on include_alignment or an implicit 'any' skill."
+PERSIST_BEAT_RULE="Persist beat rule: do not call persist_beat during the opening turn. Opening state is already logged through log_event; persist only after at least one real player move has been resolved. When calling persist_beat with memories, each memory must be an object with character_id and fact fields. Do not pass memory strings."
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
@@ -400,6 +436,11 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$STARTUP_MUTATION_RULE
+$SOCIAL_CHECK_TARGET_RULE
+$RULES_LOOKUP_RULE
+$PARLEY_TOOL_RULE
+$PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Native-selected canon hero already seated:
@@ -422,6 +463,11 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$STARTUP_MUTATION_RULE
+$SOCIAL_CHECK_TARGET_RULE
+$RULES_LOOKUP_RULE
+$PARLEY_TOOL_RULE
+$PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Start a live solo session:
@@ -461,6 +507,10 @@ while true; do
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
+$SOCIAL_CHECK_TARGET_RULE
+$RULES_LOOKUP_RULE
+$PARLEY_TOOL_RULE
+$PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Player move:

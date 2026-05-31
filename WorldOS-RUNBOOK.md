@@ -25,7 +25,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T01:40:00+07:00 (Codex-DM built-app first-turn proof + TCC test-contamination note; release notes below are historical context).
+> Last updated: 2026-06-01T04:39:09+07:00 (trace-clean Codex-DM built-app play proof + `/app-status` agent observability; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -394,6 +394,10 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   Keep `scripts/play_codex_actor.sh` as the constrained player/companion actor helper through
   `player_server.py`; it is not the native provider's DM loop. OpenClaw still requires an explicit
   configured command before it can be treated as a startable provider.
+- Agents and app harnesses should read `GET /app-status` before trying to infer state from pixels or
+  process lists. It is a read-only contract for the live OpenWorlds surface: provider, run/state roots,
+  private-art presence, active campaign/session, move sink, actor, enabled actions, and canonical endpoints.
+  The built-app harness captures launcher and minted-provider app-status JSON as release evidence.
 - **`can_act = _live_play() AND is_live_view`**, and `is_live_view` requires
   `cid == self.campaign_id`. The viewer launches with an EMPTY campaign id; `_resolve_campaign`
   lazily sets `self.campaign_id` to the **current** campaign (`_pick_campaign`). So the

@@ -5329,6 +5329,133 @@ def _viewer_config() -> dict:
     }
 
 
+def _file_line_count(path: str) -> int:
+    if not path:
+        return 0
+    try:
+        return sum(1 for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip())
+    except OSError:
+        return 0
+
+
+def _repo_build_sha() -> str:
+    env = env_var("BUILD_SHA", "")
+    if env and env.strip():
+        return env.strip()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=1,
+        )
+    except Exception:
+        return "unknown"
+    return (proc.stdout or "").strip() or "unknown"
+
+
+def _repo_version() -> str:
+    env = env_var("APP_VERSION", "")
+    if env and env.strip():
+        return env.strip()
+    version_file = _REPO_ROOT / "VERSION"
+    try:
+        if version_file.is_file():
+            return version_file.read_text(encoding="utf-8").strip() or "unknown"
+    except OSError:
+        pass
+    return "unknown"
+
+
+def _move_run_id(dest: Path | None) -> str:
+    if dest is not None and dest.name == "player_moves.jsonl":
+        return dest.parent.name
+    return ""
+
+
+def _app_status_payload(*, port: int, attached_campaign_id: str, viewed_campaign_id: str,
+                        transcript_path: str, chat_path: str) -> dict:
+    """Machine-readable app/test harness truth for agents.
+
+    This is a read-only probe over the same viewer facts the UI already uses. It is intentionally
+    small and stable: harnesses can ask which campaign/run/provider/art root they are actually
+    driving before spending model time or trusting a screenshot.
+    """
+    live = _live_play()
+    moves = _moves_path()
+    raw_snap = _read_snapshot(viewed_campaign_id) if viewed_campaign_id else {}
+    if not isinstance(raw_snap, dict):
+        raw_snap = {}
+    is_live_view = bool(live and viewed_campaign_id and viewed_campaign_id == attached_campaign_id)
+    surface = build_session_surface(
+        raw_snap,
+        campaign_id=viewed_campaign_id,
+        live=live,
+        is_live_view=is_live_view,
+        recent_events=_session_event_tail(viewed_campaign_id) if viewed_campaign_id else [],
+    )
+    enabled_actions = [
+        str(action.get("id") or "")
+        for action in surface.get("enabledActions", [])
+        if isinstance(action, dict) and action.get("id")
+    ]
+    actor = (surface.get("actionModel") or {}).get("actor") or {}
+    art_root = _ingested_images_root()
+    state_root = _state_dir()
+    return {
+        "ok": True,
+        "schema": "worldos.app-status.v1",
+        "surface": "openworlds",
+        "state_authority": "engine",
+        "write_lane": "/move",
+        "build": {
+            "sha": _repo_build_sha(),
+            "version": _repo_version(),
+        },
+        "viewer": {
+            "port": int(port),
+            "repo_root": _resolved(_REPO_ROOT),
+            "state_root": _resolved(state_root),
+            "provider": env_var("PROVIDER", "") or "",
+            "transcript_path": transcript_path,
+            "chat_path": chat_path,
+            "chat_lines": _file_line_count(chat_path),
+        },
+        "art": {
+            "repo_root": _resolved(_art_repo_root()),
+            "private_root": _resolved(art_root),
+            "private_root_present": art_root.is_dir(),
+        },
+        "live": {
+            "attached_campaign_id": attached_campaign_id,
+            "campaign_id": viewed_campaign_id,
+            "active_session_id": str(raw_snap.get("active_session_id") or ""),
+            "run_id": _move_run_id(moves),
+            "moves_path": _resolved(moves) if moves is not None else "",
+            "moves_writable": bool(live),
+            "is_live_view": is_live_view,
+            "can_act": bool(surface.get("can_act")),
+            "actor": {
+                "id": str(actor.get("id") or ""),
+                "name": str(actor.get("name") or ""),
+                "kind": str(actor.get("kind") or ""),
+            },
+            "enabled_action_ids": enabled_actions,
+            "enabled_action_count": len(enabled_actions),
+        },
+        "endpoints": {
+            "app_status": "/app-status",
+            "session_surface": "/session-surface",
+            "campaign_catalog": "/openworlds/campaigns.json",
+            "move": "/move",
+            "chat": "/chat",
+            "activity": "/activity",
+            "image": "/image?scope=<scope>",
+        },
+    }
+
+
 def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     """Return (new story entries after line `since`, new line count). Drops a
     trailing partial line defensively (append-only writes can exceed PIPE_BUF)."""
@@ -5743,6 +5870,7 @@ def _openworlds_config() -> dict:
         "mode": "viewer-read-model",
         "api_base": "",
         "campaign_catalog": "/openworlds/campaigns.json",
+        "app_status": "/app-status",
         "session_surface": "/session-surface",
         "combat_surface": "/combat-surface",
         "atlas_surface": "/atlas-surface",
@@ -6010,6 +6138,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
         elif route == "/openworlds/config.json":
             self._json(_openworlds_config())
+        elif route in ("/app-status", "/__worldos/app-status.json"):
+            qs = parse_qs(parsed.query)
+            viewed = self._view_campaign(qs)
+            self._json(_app_status_payload(
+                port=int(self.server.server_address[1]),
+                attached_campaign_id=self.campaign_id,
+                viewed_campaign_id=viewed,
+                transcript_path=self.transcript_path,
+                chat_path=self.chat_path,
+            ))
         elif route == "/openworlds/campaigns.json":
             self._json(_openworlds_campaigns(self.campaign_id))
         elif route == "/session-surface":

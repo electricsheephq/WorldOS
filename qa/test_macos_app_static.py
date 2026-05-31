@@ -61,6 +61,10 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("PART_A_KEPT_BACKEND", harness)
         self.assertIn("first_turn_ready", harness)
         self.assertIn("waiting for first-turn readiness", harness)
+        self.assertIn("/app-status", harness)
+        self.assertIn("app-status.launcher.json", harness)
+        self.assertIn("app-status.minted.json", harness)
+        self.assertIn("app_status_after", harness)
         self.assertIn('.actionModel.actor.name', harness)
         self.assertIn('play_party.sh .* $minted_run', harness)
         self.assertIn('play.sh .* $minted_run', harness)
@@ -80,7 +84,6 @@ class MacOSAppStaticContractTests(unittest.TestCase):
             r"private func startOpenWorlds\(\) \{\s*if keepActiveProviderViewerAttached\(\)",
         )
         self.assertIn('launchMessage = "Provider session active"', root_view)
-
 
 if __name__ == "__main__":
     unittest.main()
