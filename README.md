@@ -73,21 +73,21 @@ Once installed, drive the game from Claude Code with these commands:
 
 You don't strictly need the commands: the **dungeon-master** skill activates whenever you ask to start or continue a WorldOS adventure. The commands are just the front door.
 
-## Play in the dashboard
+## Play in OpenWorlds
 
 The local viewer can be more than a window onto the game — it can be the surface you *play on*. There are **two ways to play** the same living-world mode:
 
 - **In Claude Code** — type your turns and the DM responds in chat. Use `/world-play [id]` (or just ask).
-- **In the dashboard** — play in your browser: you act through the on-screen **action palette** (**Say** to speak in-scene, **Do** to attempt something, **Continue**, the dice / skill / save / combat buttons, and click-to-travel), and a live AI DM responds beside it, turn by turn.
+- **In OpenWorlds** — play in your browser: you act through the on-screen **action palette** (**Say** to speak in-scene, **Do** to attempt something, **Continue**, the dice / skill / save / combat buttons, and click-to-travel), and a live AI DM responds beside it, turn by turn.
 
-To play in the dashboard, **double-click `worldos-play.command`** (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`), or run it from a terminal:
+To play in OpenWorlds, **double-click `worldos-play.command`** (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`), or run it from a terminal:
 
 ```bash
 ./worldos-play.command            # default living world
 scripts/play.sh sundered-reach    # a specific world — see /world-list
 ```
 
-What to expect: your browser opens to `http://127.0.0.1:8765/dashboard`, the DM opens the world live and hands you a character and an opening scene, and the action palette goes live. You act through it; the DM resolves each move through the deterministic engine, voices the NPCs and your companion, and renders the next beat in the chat — the same generative living-world play as `/world-play`, just driven from the browser. (The companion `/play-dashboard` command explains the same thing inside Claude Code.)
+What to expect: your browser opens to `http://127.0.0.1:8765/openworlds/`, the DM opens the world live and hands you a character and an opening scene, and the action palette goes live. You act through it; the DM resolves each move through the deterministic engine, voices the NPCs and your companion, and renders the next beat in the chat — the same generative living-world play as `/world-play`, just driven from the browser.
 
 The DM loop is **safety-capped** so it can't run away: a per-turn budget, a whole-session budget ceiling, and a hard turn cap — adjust them with `CLAWDND_PLAY_BUDGET`, `CLAWDND_PLAY_SESSION_BUDGET`, and `CLAWDND_PLAY_MAX_TURNS`. Press **Ctrl-C** (or close the window) to stop.
 
@@ -150,7 +150,7 @@ Or start a scripted campaign: `/campaign-new [name]` then `/session-start [id]`.
 /world-play sundered-reach
 ```
 
-**Option B — play in the browser dashboard** (action palette + live DM beside it):
+**Option B — play in OpenWorlds** (action palette + live DM beside it):
 
 ```bash
 # Double-click the desktop shortcut (after scripts/install-desktop-shortcut.sh), or:
@@ -158,7 +158,7 @@ Or start a scripted campaign: `/campaign-new [name]` then `/session-start [id]`.
 scripts/play.sh sundered-reach    # specific world
 ```
 
-Your browser opens to `http://127.0.0.1:8765/dashboard`. Act through **Say**, **Do**,
+Your browser opens to `http://127.0.0.1:8765/openworlds/`. Act through **Say**, **Do**,
 **Continue**, the dice / skill / save / combat buttons, and click-to-travel. The DM
 resolves each move through the engine and narrates the next beat live.
 

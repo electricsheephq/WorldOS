@@ -1,15 +1,18 @@
-# WorldOS — NORTH STAR (READ FIRST, alongside the RUNBOOK)
+# WorldOS — NORTH STAR (long-game ceiling, not release-state authority)
 
 > **This is the optimization target.** The RUNBOOK tells you *how to work* (invariants, dev/QA
 > loops, the file map). This doc tells you *what "great" means* — the thing the whole loop serves.
 > When a decision is ambiguous, when the score and your gut disagree, when you're about to add a
 > feature: come back here. The North Star is **more than a score.** The score is a proxy for it.
 >
-> Read order on resume: `WorldOS-RUNBOOK.md` → this file → `implementation-notes.html` → `qa/SCORECARD.md`.
+> Read order on resume during takeover: `WorldOS-OPERATING-GOAL.md` → `WorldOS-GUI-RUNBOOK.md` →
+> `WorldOS-RUNBOOK.md` → `qa/SCORECARD.md` → this file. The North Star tells you what "great"
+> means; it does not decide whether the current build is releasable.
 >
-> Voice: confident, opinionated, builder's. Last updated 2026-05-28 (post-v1.0.1).
+> Voice: confident, opinionated, builder's. Last north-star content update 2026-05-28;
+> takeover freshness note added 2026-05-31.
 >
-> **State as of v1.0.1:** engine 1385/1385 ✓, viewer 90/90 ✓, all 14 OpenWorlds screens render polished + data-bound + honest, Phase-4 action lanes wired (Merchant + Forge + Create), the seven BG3 origin heroes carry companion dossiers, build script prefers stable Developer ID signing. The "felt prestige-CRPG session" deliverable is the ongoing optimization target on top of this base; the deterministic engine is the foundation that lets us push story-craft toward 4.5/5 without rules drift.
+> **Historical state as of v1.0.1:** engine 1385/1385 ✓, viewer 90/90 ✓, all 14 OpenWorlds screens render polished + data-bound + honest, Phase-4 action lanes wired (Merchant + Forge + Create), the seven BG3 origin heroes carry companion dossiers, build script prefers stable Developer ID signing. This is historical context; for the current SHA, gate source, and release state, use the Operating Goal and Scorecard.
 
 ---
 

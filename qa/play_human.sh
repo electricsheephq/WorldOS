@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Play WorldOS yourself (It.2): YOU are the player — you act through the dashboard's
+# Play WorldOS yourself (It.2): YOU are the player — you act through OpenWorlds'
 # action palette / input, and a DM AGENT (claude -p, full plugin) responds, turn by
 # turn, live in the same window. This is the human-in-the-loop version of the duo
-# harness: the dashboard's /move endpoint appends your moves to $MOVES (exactly the
+# harness: OpenWorlds' /move endpoint appends your moves to $MOVES (exactly the
 # facade's move format), and this loop reads each new move, runs a DM turn, logs it to
-# the chat the dashboard renders, then waits for your next move.
+# the chat OpenWorlds renders, then waits for your next move.
 #
-# Gateway-free (one claude -p DM session + the local viewer). Open the dashboard it
+# Gateway-free (one claude -p DM session + the local viewer). Open the page it
 # launches, pick/confirm a character, and play. Ctrl-C to stop.
 #
 # Usage: qa/play_human.sh [world-id] [run-id] [port]
@@ -44,14 +44,14 @@ dm_turn() {
   jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
 }
 
-# Launch the dashboard pointed at THIS game; the human acts via its palette (/move
+# Launch OpenWorlds pointed at THIS game; the human acts via its palette (/move
 # appends to $MOVES) and watches the chat live.
 CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
   python3 viewer/server.py "" "$PORT" > "$T/$RUN.viewer.log" 2>&1 &
 VIEWER=$!; trap 'kill "$VIEWER" 2>/dev/null' EXIT
-( sleep 1.5; (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/dashboard") \
-            || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/dashboard") || true ) &
-echo "[play] $RUN — open http://127.0.0.1:$PORT/dashboard, act via the palette/input. Ctrl-C to stop."
+( sleep 1.5; (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/openworlds/") \
+            || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/openworlds/") || true ) &
+echo "[play] $RUN — open http://127.0.0.1:$PORT/openworlds/, act via the palette/input. Ctrl-C to stop."
 
 # DM opens the scene + invites the player to make/confirm a character.
 DMSG="$(dm_turn 1 "$DM_BRIEF

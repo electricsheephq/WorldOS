@@ -13,6 +13,7 @@
 /qa/transcripts/
 /qa/runs/
 /qa/*.err
+/qa/RRI.json
 /qa/smoke*.json
 /qa/qa.mcp.json
 # AI playtester (issue #324): run artifacts (screenshots, a11y dumps, bug/console/network

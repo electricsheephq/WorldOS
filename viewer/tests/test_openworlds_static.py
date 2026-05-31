@@ -26,6 +26,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_worldos_art_repo_root = os.environ.get("WORLDOS_ART_REPO_ROOT")
+        self._old_clawdnd_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
+        self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
+        self._old_clawdnd_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
@@ -45,6 +49,22 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_STATE_DIR", None)
         else:
             os.environ["CLAWDND_STATE_DIR"] = self._old_state
+        if self._old_worldos_art_repo_root is None:
+            os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
+        else:
+            os.environ["WORLDOS_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
+        if self._old_clawdnd_art_repo_root is None:
+            os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
+        else:
+            os.environ["CLAWDND_ART_REPO_ROOT"] = self._old_clawdnd_art_repo_root
+        if self._old_worldos_repo_root is None:
+            os.environ.pop("WORLDOS_REPO_ROOT", None)
+        else:
+            os.environ["WORLDOS_REPO_ROOT"] = self._old_worldos_repo_root
+        if self._old_clawdnd_repo_root is None:
+            os.environ.pop("CLAWDND_REPO_ROOT", None)
+        else:
+            os.environ["CLAWDND_REPO_ROOT"] = self._old_clawdnd_repo_root
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -119,6 +139,39 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         rel_src = rel.decode("utf-8")
         self.assertIn("Img scope=", rel_src)
         self.assertIn("portrait-", rel_src)
+
+    def test_character_screen_window_exports_are_defined(self):
+        status, ctype, body = self._get("/openworlds/screen-character.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        export_match = re.search(r"Object\.assign\(window,\s*\{([^}]+)\}\);", source)
+        self.assertIsNotNone(export_match)
+        exported = [name.strip() for name in export_match.group(1).split(",")]
+        definitions = set(re.findall(r"\b(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)", source))
+        missing = [name for name in exported if name not in definitions]
+        self.assertEqual(missing, [])
+
+    def test_ingested_art_root_can_point_at_canonical_private_art_checkout(self):
+        canonical = self._tmp / "canonical"
+        worktree = self._tmp / "worktree"
+        (worktree / "viewer").mkdir(parents=True)
+        image_dir = canonical / "content" / "worlds" / "_private" / "baldurs-gate" / "images" / "portrait-gale"
+        image_dir.mkdir(parents=True)
+        (image_dir / "image.png").write_bytes(b"png")
+        (image_dir / "wiki_ingest.json").write_text(
+            json.dumps({"path": "/old/machine/path/image.png", "scope": "portrait:gale"}),
+            encoding="utf-8",
+        )
+        os.environ["WORLDOS_ART_REPO_ROOT"] = str(canonical)
+        server._HERE = worktree / "viewer"
+
+        self.assertEqual(server._ingested_images_root(), canonical / "content" / "worlds" / "_private")
+        desc = server._ingested_descriptor("portrait-gale")
+
+        self.assertIsNotNone(desc)
+        self.assertEqual(desc["path"], str(image_dir / "image.png"))
 
     def test_openworlds_icon_registry_assets_are_local_and_attributed(self):
         index = (server._OPENWORLDS_DIR / "index.html").read_text(encoding="utf-8")
@@ -396,7 +449,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertTrue(campaign["current"])
         self.assertTrue(campaign["canResume"])
         self.assertFalse(campaign["readOnly"])
-        self.assertEqual(campaign["resumeUrl"], "/dashboard?campaign=camp_live")
+        self.assertEqual(campaign["resumeUrl"], "/openworlds/?campaign=camp_live")
+        self.assertEqual(campaign["dashboardUrl"], "/openworlds/?campaign=camp_live")
+        self.assertEqual(campaign["legacyDashboardUrl"], "/dashboard?campaign=camp_live")
         self.assertEqual([p["name"] for p in campaign["party"]], ["Tav", "Jaheira"])
         self.assertEqual(campaign["recap"], "The party reached the inn and caught its breath.")
         encoded = json.dumps(campaign)
@@ -404,6 +459,12 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("hidden agenda", encoded)
         self.assertNotIn("private canon", encoded)
         self.assert_no_private_keys(json.loads(encoded))
+
+    def test_monitor_play_campaign_links_openworlds_not_legacy_dashboard(self):
+        source = (Path(__file__).resolve().parents[1] / "monitor.html").read_text(encoding="utf-8")
+
+        self.assertIn('href="/openworlds/?campaign=${encodeURIComponent(c.id)}"', source)
+        self.assertNotIn('href="/dashboard?campaign=${encodeURIComponent(c.id)}"', source)
 
     def test_openworlds_campaigns_includes_repo_play_state_and_qa_runs_read_only(self):
         repo_root = self._tmp / "repo"

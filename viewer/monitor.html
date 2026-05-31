@@ -110,12 +110,12 @@ function card(c, now) {
   // The HEADING is the campaign's IDENTITY: a play campaign uses its world/title (the owner's
   // game); a QA run uses its RUN NAME (e.g. "fidelity1") — every QA run shares the same world
   // title, so showing that made the whole grid look like one frozen campaign. Play campaigns open
-  // the dashboard; a FINISHED QA run opens its distilled transcript; a still-playing run isn't yet
+  // the current OpenWorlds surface; a FINISHED QA run opens its distilled transcript; a still-playing run isn't yet
   // linkable. The world title for QA moves to the meta line below.
   const heading = isPlay ? esc(c.name || c.id) : esc(run);
   let title;
   if (isPlay) {
-    title = `<a class="name" href="/dashboard?campaign=${encodeURIComponent(c.id)}" target="_blank">${heading}</a>`;
+    title = `<a class="name" href="/openworlds/?campaign=${encodeURIComponent(c.id)}" target="_blank">${heading}</a>`;
   } else if (c.transcript) {
     title = `<a class="name" href="/transcript?run=${encodeURIComponent(run)}" target="_blank">${heading}</a>`;
   } else {

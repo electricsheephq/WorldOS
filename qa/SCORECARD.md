@@ -77,6 +77,7 @@
 > One row per full gate sweep on a BUILT `.app`. RRI = gates_passed/11 × 10. Release at 10/10.
 > See `WorldOS-OPERATING-GOAL.md` §4 for the gates, `WorldOS-GUI-RUNBOOK.md` for the sweep procedure.
 
-| Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
+| Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit/Console | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 | (duo) | (duo) | (pend) | (pend) | true | G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified. Next: Wave A latency, Wave B char-sheet depth. |
+| sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 critical / console unmeasured | (duo) | (duo) | (pend) | (pend) | unmeasured | true | G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified. Next: Wave A latency, Wave B char-sheet depth. |
+| gate-f5500ac-partial | 2026-05-31 | f5500ac | 2.7 | PASS | PASS(1 scored) | 4.0 avg / 0 gave-up (newbie only) | 1 | 4.0 | 2.7 | RED | FAIL | 0% | false | **PARTIAL / HARNESS-CONTAMINATED, not a release verdict.** Only `newbie` wrote `score.json`; veteran/adversarial/narrative/optimizer lacked persona score artifacts after port/backend harness failures. Preserve as takeover evidence, but rerun with hardened RRI before judging release. |

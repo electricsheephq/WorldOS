@@ -4,6 +4,10 @@
 > The current product UI is OpenWorlds at `/openworlds/`; the root dashboard is
 > legacy. This runbook is the public project map + read order. Machine-specific
 > agent notes such as `CLAUDE.md` are intentionally local-only and gitignored.
+>
+> **Takeover routing, 2026-05-31:** current release/gate state lives in
+> `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, then `qa/SCORECARD.md`.
+> The work queue later in this file is historical unless it agrees with those sources.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -14,7 +18,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-05-28 (post-v1.0.1).
+> Last updated: 2026-05-31 (takeover routing refresh; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -290,8 +294,11 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 
 ## CURRENT STATE + WORK QUEUE
 
-**`main` tip:** `ea815fc` (2026-05-27 cont.3). Full engine suite **1334 green** + viewer 71.
-Branch lane is the disjoint **engine / content / QA** lane.
+**Historical snapshot, not current authority:** this queue was written around `ea815fc`
+(2026-05-27 cont.3). During the 2026-05-31 takeover, `origin/main` was refreshed to `82aeaf2`,
+the canonical private-art checkout was observed at `f5500ac`, and the only current gate truth lives
+in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use this
+section to decide release state.
 
 **LATEST (2026-05-27 cont.3) — the Quest & Arc engine is COMPLETE + WIRED, all combat
 defects closed, and the sibling's draft-PR backlog is fully landed.** Since the queue

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Play ClawDnD in the dashboard — the local viewer IS your play surface.
+# Play WorldOS in OpenWorlds — the local viewer IS your play surface.
 #
-# This launches the play dashboard (the 127.0.0.1 viewer) pointed at a fresh game and
-# runs a live Dungeon Master beside it: YOU act through the dashboard's action palette
+# This launches OpenWorlds (the 127.0.0.1 viewer) pointed at a fresh game and
+# runs a live Dungeon Master beside it: YOU act through OpenWorlds' action palette
 # (Say / Do / Continue, the dice/skill/save/combat buttons, click-to-travel) and the DM
 # — Claude running this full plugin and its own `dungeon-master` skill — narrates the
 # world, voices the NPCs and your companion, resolves your moves through the engine, and
-# logs each beat to the chat the dashboard renders live. Turn by turn, in one window.
+# logs each beat to the chat OpenWorlds renders live. Turn by turn, in one window.
 #
-# It is the dashboard counterpart to `/world-play`: same living-world generative mode,
+# It is the browser counterpart to `/world-play`: same living-world generative mode,
 # but you play it in the browser instead of by typing in Claude Code. No gateway needed
-# (one `claude -p` DM session + the local viewer). Open the dashboard it opens for you,
+# (one `claude -p` DM session + the local viewer). Open the page it opens for you,
 # confirm the character the DM hands you, and play. Ctrl-C to stop.
 #
 # Usage: scripts/play.sh [world-id] [run-id] [port]
 #   world-id   a living world to drop into (default: baldurs-gate). See `/world-list`.
 #   run-id     names this game's save dir under play-state/ (default: a timestamp).
-#   port       the dashboard port (default: 8765 or $CLAWDND_PLAY_PORT).
+#   port       the OpenWorlds port (default: 8765 or $CLAWDND_PLAY_PORT).
 #
 # Safety caps (a runaway DM loop self-stops):
 #   CLAWDND_PLAY_BUDGET           per-turn USD budget for one DM turn   (default 1.50)
@@ -286,7 +286,7 @@ _play_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$
 trap _play_cleanup EXIT
 trap '_play_cleanup; exit 130' INT TERM
 
-# Open the browser once the dashboard is actually serving (after the campaign exists).
+# Open the browser once OpenWorlds is actually serving (after the campaign exists).
 ( for _ in $(seq 1 60); do
     curl -s --max-time 2 "http://127.0.0.1:$PORT/state" >/dev/null 2>&1 && break
     sleep 1

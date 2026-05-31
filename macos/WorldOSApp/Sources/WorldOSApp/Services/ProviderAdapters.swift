@@ -285,6 +285,10 @@ private func budgetEnvironment(_ preferences: ProviderPreferences) -> [String: S
     if !preferences.maxTurns.isEmpty {
         env["CLAWDND_PLAY_MAX_TURNS"] = preferences.maxTurns
     }
+    if !preferences.artRepoPath.isEmpty {
+        env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath
+        env["CLAWDND_ART_REPO_ROOT"] = preferences.artRepoPath
+    }
     return env
 }
 

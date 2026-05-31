@@ -57,6 +57,7 @@ struct ProviderPreferences {
     let budget: String
     let sessionBudget: String
     let maxTurns: String
+    let artRepoPath: String
 }
 
 struct ProviderLaunchRequest {

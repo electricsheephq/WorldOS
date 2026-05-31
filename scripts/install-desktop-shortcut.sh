@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Install a double-click "WorldOS Dashboard" shortcut + a clickable link on the
-# Desktop, so the owner can open the live play/test dashboard without the terminal.
+# Install a double-click "WorldOS OpenWorlds" shortcut + a clickable link on the
+# Desktop, so the owner can open the live play/test surface without the terminal.
 # Re-run any time (e.g. after moving the repo) to refresh the shortcut.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESK="${HOME}/Desktop"
-URL="http://127.0.0.1:8765/dashboard"
-CMD="$DESK/WorldOS Dashboard.command"
+URL="http://127.0.0.1:8765/openworlds/"
+CMD="$DESK/WorldOS OpenWorlds.command"
 
 # The double-clickable shortcut: runs the repo launcher (starts the viewer + opens
-# the browser at /dashboard). REPO is baked in at install time.
+# the browser at /openworlds/). REPO is baked in at install time.
 cat > "$CMD" <<EOF
 #!/usr/bin/env bash
-# WorldOS Dashboard — double-click to open the live play/test view in your browser.
+# WorldOS OpenWorlds — double-click to open the live play/test view in your browser.
 LAUNCH="$REPO/worldos-dashboard.command"
 if [ ! -x "\$LAUNCH" ]; then
-  osascript -e 'display alert "WorldOS Dashboard" message "Could not find the launcher. Is the drive with the repo mounted ($REPO)?"' 2>/dev/null
+  osascript -e 'display alert "WorldOS OpenWorlds" message "Could not find the launcher. Is the drive with the repo mounted ($REPO)?"' 2>/dev/null
   echo "Launcher not found: \$LAUNCH"; read -r -p "Press return to close…" _; exit 1
 fi
 exec "\$LAUNCH" "\$@"
@@ -23,7 +23,7 @@ EOF
 chmod +x "$CMD"
 
 # A clickable internet-shortcut "link" (opens the URL once the server is running).
-cat > "$DESK/WorldOS Dashboard.webloc" <<WEBLOC
+cat > "$DESK/WorldOS OpenWorlds.webloc" <<WEBLOC
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>URL</key><string>$URL</string></dict></plist>

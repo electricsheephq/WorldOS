@@ -5,25 +5,28 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-05-31 (late)
-     MAIN SHA:     f5500ac (verify: git -C /Users/lume/ClawDnD-val rev-parse --short origin/main)
-     LIVE PLAN:    ~/.claude/plans/twinkly-meandering-pizza.md  (IGNORE all other plans/*.md — esp.
-                   yeah-i-m-good-with-floofy-lemon.md = STALE old ClawDnD release-loop, do NOT act on it)
-     GATE STATUS:  G1 arc-complete PASS (5/5) · native#356 PASS · palette-live PASS ·
-                   G2 char-sheet FIXED #416 · DM-craft FIXED #418 · lean-beats #417 (flag-OFF) — ALL 3 WAVES MERGED, UNVERIFIED ·
-                   G3 sat 6.0 (need 7) + narrative gave-up = LATENCY ·
-                   G5 story 2.5 / mech 2.5 (NPC silent + combat-not-engaged) · G4 axe + behavioral = UNMEASURED
-     RESOLVED: #420 play.sh bash-3.2 empty-array crash FIXED (#421, verified 0 unguarded) — play path UNBLOCKED, scores can be produced again.
-     2 LIVE BLOCKERS: (1) run qa/release_gate.sh on f5500ac for the FIRST honest post-fix RRI (latency #417 + DM-craft #418 + char-sheet #416 all merged; was sat 6.0 / story 2.5 / mech 2.5)
-                      (2) off-host QA swarm: support VM 178.104.123.213 ICMP-alive but SSH firewalled from this Mac (needs dispatcher/bastion) OR crabbox.sh OR a fresh test VM — owner decision (the #1 velocity lever)
-     NEXT ACTION:  BUILD phase: qa/release_gate.sh (now fail-fast) on f5500ac → honest RRI → fix failed gates → v1.0.4.
-                   SUPPORT phase: stand up off-host QA swarm (owner picks VM path) so the sweep is parallel+reliable.
+     AS OF:        2026-05-31 takeover stabilization
+     ORIGIN TIP:   82aeaf2 (verified by git fetch on 2026-05-31)
+     CANONICAL:    /Users/lume/ClawDnD-val is the private-art/live-app checkout; observed at f5500ac
+                   and behind origin/main by 3 commits before takeover. Do not fast-forward it
+                   until the owner intentionally chooses to move the private-art checkout.
+     WORKTREE:     tracked takeover edits happen from a Lexar worktree off refreshed origin/main.
+     LAST MEASURED GATE BUILD:
+                   f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
+                   HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
+                   personas failed around port/backend harness setup; behavioral/UI/palette/image
+                   evidence was not a valid five-persona release verdict.
+     LAST VALID RELEASE GATE:
+                   none after the RRI contract hardening. A release verdict requires expected
+                   persona count, disk-backed palette/image/behavioral evidence, and built .app play.
+     NEXT ACTION:  Stabilize gate truth first → rerun a clean gate on the 32GB VM for backend/personas
+                   plus Mac/macOS CI built-app verification → then fix the trustworthy failure list.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
 
-> Read order on resume: the STATE-OF-TRUTH block above → this file → `WorldOS-RUNBOOK.md` →
-> `qa/SCORECARD.md`. (NORTH-STAR is the long-game ceiling, not needed to act.)
+> Read order on resume: the STATE-OF-TRUTH block above → this file → `WorldOS-GUI-RUNBOOK.md` →
+> `WorldOS-RUNBOOK.md` → `qa/SCORECARD.md`. (NORTH-STAR is the long-game ceiling, not needed to act.)
 
 ---
 
@@ -91,7 +94,8 @@ by an average). **RRI 10/10 = every gate holds on one fresh build:**
 3. **Cross-persona satisfaction ≥ 7/10** averaged (newbie/veteran/adversarial/narrative/optimizer).
    *(LATENCY lives here: if impatient personas quit on slow turns, this fails → context-leaning lever.)*
 4. **No persona gives up** (`gave_up = false`).
-5. **Zero critical bugs** across all 5 personas — incl. no wedge / no-escape / dead-end.
+5. **Zero critical runtime/console bugs** across all 5 personas — incl. no JS console/page errors,
+   no wedge / no-escape / dead-end.
 6. **Story-craft ≥ 4.3** (Tolkien lens, `score.sh` + `rubric_tolkien.md`).
 7. **Mechanical ≥ 4.5** (Angry-DM lens, `score.sh` + `rubric_angry_dm.md`).
 8. **Behavioral GREEN** (`qa/assert_behavioral.py`: clock advanced, ≥2 locations, combat fired, no role-bleed).
@@ -102,13 +106,19 @@ by an average). **RRI 10/10 = every gate holds on one fresh build:**
 > Gates 1, 10, 11 were added 2026-05-31 after the GUI reorientation — the prior gate could pass while the
 > player saw no images and no clickable tools. RRI makes the *visible* product part of the gate.
 > The release DECISION is RRI = 10/10 (all gates); RRI < 10 lists exactly which gates failed.
+> The RRI output contract also records `required_release_personas`, `expected_personas`,
+> `completed_personas`, `missing_personas`, `missing_release_personas`, `partial`,
+> `harness_contaminated`, explicit `evidence_gaps`, image source/denominator, behavioral evidence path,
+> UI-audit log, palette-live source, per-run Part B pass status, and per-run build SHA. Smoke-sized
+> persona sets, mixed-build evidence, failed app-persona loops, missing persona scores, or missing
+> artifact denominators can never silently produce a release-ready result.
 
 ---
 
 ## 5. THE ITERATE LOOP (while the gate fails)
 
-`git pull` → `rm -rf dist/WorldOS.app` → build from a **worktree off origin/main** (never branch-op the
-shared checkout) → `qa/ui_playtest_app.sh` × 5 personas against the built `.app` → **score** (5-persona
+`git fetch` → create/update a **Lexar worktree off origin/main** (never branch-op the private-art
+checkout) → `rm -rf dist/WorldOS.app` in the intended app checkout → `qa/ui_playtest_app.sh` × 5 personas against the built `.app` → **score** (5-persona
 satisfaction + 3 lenses + behavioral + axe) → **file GitHub issues** tied to `{build_sha, version_tag}`
 with `file:line` + acceptance criteria → **delegate code to builder subagents** (worktree → PR →
 CI-green incl. `viewer-tests` → squash-merge) → **rebuild → re-playtest.**
@@ -140,29 +150,27 @@ verifier; can revert the goal to "fix" anytime.
 - **Never** claim "100% confidence" / "audit complete." A merged PR is a hypothesis; a non-reproducing
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
-  (`clawdnd-*` / `CLAWDND_*` / `dev.clawdnd.app`). Build from **worktrees off origin/main** (the shared
-  `/Users/lume/ClawDnD-val` checkout is diverged + held by a sibling session). 16GB host → **GitHub CI**
-  for tests, never local heavy workers. `_private/` never committed.
+  (`clawdnd-*` / `CLAWDND_*` / `dev.clawdnd.app`). Build/edit from **Lexar worktrees off origin/main**.
+  Treat `/Users/lume/ClawDnD-val` as the canonical private-art/live-app checkout until intentionally
+  moved. 16GB host → **GitHub CI / 32GB VM** for heavy tests, never local heavy workers. `_private/`
+  never committed.
 
 ---
 
-## 9. CURRENT STATUS (2026-05-31 — context, NOT part of the gate condition)
+## 9. CURRENT STATUS (2026-05-31 — takeover context, NOT a release verdict)
 
-- Fitness-function flaw (proxy surface) **fixed** — the §8.2 `.app` harness is the surface now.
-- Arc-completion driven **0 → 11 turns**. Latency root-caused (turns-2+ are ~98% LLM **prefill** of the
-  fat resumed context; streaming was inadvertently neutered by #395, restored by #401) and **ruled OUT
-  as the arc-completion blocker** (11 turns at ~140s, no give-up) — but still gated by **G3**.
-- **12 PRs merged this session.** The two arc4 blockers — DM never engaged combat (**#404**) and
-  narration duplication (**#407**) — plus the external reviewer's **critical overlay-wedge (#405 → #409**,
-  which also exposed a latent never-auto-dismiss bug) are fixed + merged. Viewer tests now run in CI (#403).
-- **IMMEDIATE NEXT:** `arc5` (part-B) verifies combat fires + dedup + overlay handoff → build the `.app`
-  → native **part-A+B 5-persona sweep + 3-lens duo** = the first full PASS-GATE attempt → **v1.0.4** if it
-  holds.
-- **Context-leaning lever** (lean the cold-open `start_world`/`load_canon_character` tool returns to cut
-  prefill) is **STAGED** (`/tmp/decision-context-leaning-prep.md`) — trigger ONLY if **G3** fails on latency
-  (first-principles decision before implementing; it's a load-bearing tool-contract change).
-- Reviewer-filed open items still tracked: **#393** (latency — keep open until a real playtest confirms
-  no persona gives up), #406 residuals (folded into #409).
+- Repo truth is being stabilized from a Lexar worktree at `origin/main` (`82aeaf2`). The private-art
+  checkout at `/Users/lume/ClawDnD-val` was observed at `f5500ac` and behind by 3 commits; keep it
+  intact until the owner chooses to fast-forward it.
+- The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
+  not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
+  image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
+- The stabilization lane is: make docs and RRI output truthful → make the gate fail on missing personas
+  and record exact evidence paths → fix high-confidence playability blockers → run the full backend/persona
+  sweep on the 32GB VM and the Mac-only built-app smoke on this Mac or macOS CI.
+- Known product blockers to verify after harness trust is restored: built app playability, narration
+  stall/disabled-control behavior under real latency, image/private-art root routing, and legacy
+  `/dashboard` references that can mislead agents away from `/openworlds/`.
 
 ---
 
