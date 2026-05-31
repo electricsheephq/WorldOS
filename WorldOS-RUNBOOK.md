@@ -295,10 +295,11 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 ## CURRENT STATE + WORK QUEUE
 
 **Historical snapshot, not current authority:** this queue was written around `ea815fc`
-(2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465;
-current `origin/main` is `b15ad3c`, the canonical private-art checkout was observed at `f5500ac`, and
-the only current gate truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` +
-`qa/SCORECARD.md`. Do not use this section to decide release state. The next sprint is UX-first (#467):
+(2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465
+and the UX-first doc sync merged as PR #468; the doc-sync baseline is `e4078c7`, the canonical
+private-art checkout was observed at `f5500ac`, and the only current gate truth lives in
+`WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use this section
+to decide release state. The next sprint is UX-first (#467):
 prove first-turn built-app play via #466, then prioritize clickability/chrome, launcher clarity,
 live-response feel, and CRPG depth before more hardening/proxy/security work.
 
