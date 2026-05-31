@@ -41,6 +41,11 @@
 #   WOS_APP_SKIP_BUILD=1       reuse an already-running .app (skip pkill/rebuild) — for fast inner loop.
 #   WOS_APP_NO_GLOBAL_KILL=1   do not pkill other WorldOSApp processes (used for takeover smoke).
 #   WOS_APP_PART=A|B|AB        run only part A, only part B, or both (default AB).
+#   WOS_APP_KEEP_MINTED_BACKEND=1
+#                               part A only: leave the .app-minted provider backend alive so
+#                               an operator can continue a short built-app gameplay playtest.
+#                               Also waits for first-turn readiness: seated actor, enabled actions,
+#                               and visible narration/chat, not merely can_act:true.
 #   WORLDOS_DM_MODEL           DM model (default sonnet). CLAWDND_PLAY_BUDGET caps each DM turn.
 #
 # Produces under qa/ui_playtest_runs/<run>/:
@@ -58,6 +63,11 @@ PERSONA="${3:-newbie}"
 BEATS="${4:-6}"
 BUDGET="${5:-4.00}"
 PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
+KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
+if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
+  printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
+  exit 2
+fi
 
 PW_DIR="$ROOT/qa/playwright"
 APP_BUNDLE="$ROOT/dist/WorldOS.app"
@@ -118,7 +128,7 @@ dm_spend() {
 ###############################################################################################
 # PART A — NATIVE-TRANSITION GATE (re-verifies #356)
 ###############################################################################################
-PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""
+PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""; PART_A_KEPT_BACKEND="false"; PART_A_FIRST_TURN_READY="false"
 run_part_a() {
   log "=== PART A: native-transition gate (re-verifies #356) ==="
   local tlog="$NATIVE_DIR/transition.log"; : > "$tlog"
@@ -235,6 +245,8 @@ PY
   [ "$ready" = "1" ] || { a_log "[A] launcher viewer never came up (discovered port='${launcher_port:-none}')"; PART_A_RESULT="no_launcher"; return 1; }
   app_pid_for_bundle "$APP_BUNDLE" >/dev/null 2>&1 || { a_log "[A] target WorldOSApp bundle is not running"; PART_A_RESULT="app_not_running"; return 1; }
   a_log "[A] launcher viewer ready on $launcher_port; can_act(before)=$(curl -s "http://127.0.0.1:$launcher_port/session-surface" | jq -c '{can_act,is_live_view,live}' 2>/dev/null)"
+  curl -s --max-time 3 "http://127.0.0.1:$launcher_port/app-status" \
+    | jq . > "$NATIVE_DIR/app-status.launcher.json" 2>/dev/null || printf '{}\n' > "$NATIVE_DIR/app-status.launcher.json"
 
   # BEFORE screenshot + baseline play-state set (so a NEW run dir is detectable post-click).
   screenshot "$NATIVE_DIR/before.png" && a_log "[A] before.png captured" || a_log "[A] before.png deferred to orchestrator"
@@ -301,21 +313,62 @@ PY
   PART_A_MINTED_PORT="$minted_port"; PART_A_RUNDIR="$minted_run"
   local surf_final="{}"
   [ -n "$minted_port" ] && surf_final="$(curl -s "http://127.0.0.1:$minted_port/session-surface" 2>/dev/null | jq -c '{can_act,is_live_view,live,campaignId,enabledActions}' 2>/dev/null || echo '{}')"
+  local app_status_final="{}"
+  if [ -n "$minted_port" ]; then
+    if curl -s --max-time 3 "http://127.0.0.1:$minted_port/app-status" \
+        | jq . > "$NATIVE_DIR/app-status.minted.json" 2>/dev/null; then
+      app_status_final="$(jq -c . "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || echo '{}')"
+    else
+      printf '{}\n' > "$NATIVE_DIR/app-status.minted.json"
+    fi
+  else
+    printf '{}\n' > "$NATIVE_DIR/app-status.minted.json"
+  fi
 
-  # Tear down the minted session's BACKEND so its DM loop can't keep spending toward the .app's
-  # own $15 session budget (we only needed the cold-open to prove can_act:true). The .app process
-  # stays up; we kill the play.sh tree it shelled. We match BOTH the state-dir path AND the run-id
-  # POSITIONAL arg (`play[_party].sh <world> <run> <port>`) — the supervisor + DM-loop bash procs
-  # carry the run id positionally, NOT the play-state path, so a path-only pkill leaves the
-  # viewer-respawning supervisor alive. We do NOT touch the launcher viewer.
+  if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ -n "$minted_run" ] && [ -n "$minted_port" ]; then
+    a_log "[A] keep-alive proof: waiting for first-turn readiness (actor + enabled actions + narration)…"
+    local ready_surf actor enabled_count narration_count chat_lines
+    for _ in $(seq 1 80); do
+      ready_surf="$(curl -s --max-time 2 "http://127.0.0.1:$minted_port/session-surface" 2>/dev/null || echo '{}')"
+      actor="$(printf '%s' "$ready_surf" | jq -r '.actionModel.actor.name // ""' 2>/dev/null)"
+      enabled_count="$(printf '%s' "$ready_surf" | jq -r '(.enabledActions // []) | length' 2>/dev/null)"
+      narration_count="$(printf '%s' "$ready_surf" | jq -r '[.recentEvents[]? | select(.kind == "narration" or .kind == "dialogue")] | length' 2>/dev/null)"
+      chat_lines="$(wc -l < "$ROOT/play-state/$minted_run/chat.jsonl" 2>/dev/null | tr -d ' ')"
+      if [ -n "$actor" ] && [ "${enabled_count:-0}" -gt 0 ] && { [ "${narration_count:-0}" -gt 0 ] || [ "${chat_lines:-0}" -gt 0 ]; }; then
+        PART_A_FIRST_TURN_READY="true"
+        surf_final="$(printf '%s' "$ready_surf" | jq -c '{can_act,is_live_view,live,campaignId,enabledActions,actor:.actionModel.actor,recentEvents}' 2>/dev/null || printf '%s' "$ready_surf")"
+        curl -s --max-time 3 "http://127.0.0.1:$minted_port/app-status" \
+          | jq . > "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || true
+        app_status_final="$(jq -c . "$NATIVE_DIR/app-status.minted.json" 2>/dev/null || echo '{}')"
+        a_log "[A] keep-alive proof ready: actor=$actor enabled=$enabled_count narration_events=${narration_count:-0} chat_lines=${chat_lines:-0}."
+        break
+      fi
+      sleep 3
+    done
+    [ "$PART_A_FIRST_TURN_READY" = "true" ] || a_log "[A] keep-alive proof timed out before full first-turn readiness; continuing with native-transition result."
+  fi
+
+  # Tear down the minted session's BACKEND by default so its DM loop can't keep spending toward
+  # the .app's own $15 session budget (we only needed the cold-open to prove can_act:true).
+  # For takeover gameplay proof, WOS_APP_KEEP_MINTED_BACKEND=1 intentionally leaves that exact
+  # app-minted backend alive so the operator can continue a short built-app playtest from the
+  # same session. The .app process stays up either way. When tearing down, we match BOTH the
+  # state-dir path AND the run-id POSITIONAL arg (`play[_party].sh <world> <run> <port>`) — the
+  # supervisor + DM-loop bash procs carry the run id positionally, NOT the play-state path, so a
+  # path-only pkill leaves the viewer-respawning supervisor alive. We do NOT touch the launcher.
   if [ -n "$minted_run" ]; then
-    a_log "[A] tearing down minted backend (run=$minted_run) — cold-open was enough."
-    pkill -f "play-state/$minted_run/" 2>/dev/null || true
-    pkill -f "play_party.sh $WORLD $minted_run" 2>/dev/null || true
-    pkill -f "play.sh $WORLD $minted_run" 2>/dev/null || true
-    pkill -f "$WORLD $minted_run " 2>/dev/null || true
-    [ -n "$minted_port" ] && pkill -f "server.py .* $minted_port\$" 2>/dev/null || true
-    sleep 1
+    if [ "$KEEP_MINTED_BACKEND" = "1" ]; then
+      PART_A_KEPT_BACKEND="true"
+      a_log "[A] WOS_APP_KEEP_MINTED_BACKEND=1 — keeping minted backend alive for gameplay proof (run=$minted_run port=${minted_port:-unknown})."
+    else
+      a_log "[A] tearing down minted backend (run=$minted_run) — cold-open was enough."
+      pkill -f "play-state/$minted_run/" 2>/dev/null || true
+      pkill -f "play_party.sh .* $minted_run" 2>/dev/null || true
+      pkill -f "play.sh .* $minted_run" 2>/dev/null || true
+      pkill -f " $minted_run " 2>/dev/null || true
+      [ -n "$minted_port" ] && pkill -f "server.py .* $minted_port\$" 2>/dev/null || true
+      sleep 1
+    fi
   fi
   if [ "$can_act" = "true" ] && [ -n "$minted_run" ]; then
     PART_A_RESULT="PASS"
@@ -326,17 +379,25 @@ PY
   fi
 
   python3 - "$NATIVE_DIR/transition.json" "$PART_A_RESULT" "$BUILD_SHA" "$VERSION" \
-            "${minted_run:-}" "${minted_port:-}" "$can_act" "$surf_final" <<'PY'
+            "${minted_run:-}" "${minted_port:-}" "$can_act" "$surf_final" \
+            "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$app_status_final" <<'PY'
 import json, sys, datetime
-out, result, sha, ver, run, port, can_act, surf = sys.argv[1:9]
+out, result, sha, ver, run, port, can_act, surf, kept, first_turn_ready, app_status = sys.argv[1:12]
 try: surf_obj = json.loads(surf)
 except Exception: surf_obj = {"raw": surf}
+try: app_status_obj = json.loads(app_status)
+except Exception: app_status_obj = {"raw": app_status}
 json.dump({
     "gate": "native_transition_356",
     "result": result, "build_sha": sha, "version": ver,
     "minted_run_dir": run or None, "minted_port": int(port) if port else None,
+    "kept_backend_alive": kept == "true",
+    "first_turn_ready": first_turn_ready == "true",
     "can_act_after_click": can_act == "true",
     "session_surface_after": surf_obj,
+    "app_status_after": app_status_obj,
+    "app_status_launcher_json": "native/app-status.launcher.json",
+    "app_status_minted_json": "native/app-status.minted.json",
     "before_png": "native/before.png", "after_png": "native/after.png",
     "at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
 }, open(out, "w"), indent=2)
@@ -606,15 +667,18 @@ FINAL_DM_SPEND="$(dm_spend)"
 TOTAL_SPEND="$(awk -v a="${FINAL_DM_SPEND:-0}" -v b="${PART_B_PLAYER_COST:-0}" 'BEGIN{printf "%.4f", a+b}')"
 python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUILD_SHA" "$VERSION" \
           "$PART" "$PART_A_RESULT" "${PART_A_RUNDIR:-}" "${PART_A_MINTED_PORT:-}" \
-          "$PART_B_RESULT" "$PART_B_SCORE_PASS" "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" <<'PY'
+          "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$PART_B_RESULT" "$PART_B_SCORE_PASS" \
+          "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
- b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:18]
+ a_kept, a_first_turn_ready, b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:20]
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
     "part_a": {"gate": "native_transition_356", "result": a_res,
-               "minted_run_dir": a_run or None, "minted_port": int(a_port) if a_port else None},
+               "minted_run_dir": a_run or None, "minted_port": int(a_port) if a_port else None,
+               "kept_backend_alive": a_kept == "true",
+               "first_turn_ready": a_first_turn_ready == "true"},
     "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true"},
     "spend_usd": {"dm_and_companions": round(float(dm_spend or 0), 4),
                   "player_agent": round(float(player_cost or 0), 4),

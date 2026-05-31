@@ -25,7 +25,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-05-31 (takeover routing refresh; release notes below are historical context).
+> Last updated: 2026-06-01T04:39:09+07:00 (trace-clean Codex-DM built-app play proof + `/app-status` agent observability; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -306,8 +306,8 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 **Historical snapshot, not current authority:** this queue was written around `ea815fc`
 (2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465,
 the UX-first doc sync merged as PR #468, and first-minute click/title chrome proof merged as PR #470.
-Local routing sync merged as PR #471, and native provider-selection sync merged as PR #472. The local
-app/private-art checkout is now synced at `5dd1391 == origin/main`; the only current gate
+Local routing sync merged as PR #471, native provider-selection sync merged as PR #472, and takeover
+state docs synced as PR #473. The local app/private-art checkout is now synced at `6e03da4 == origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
 prove first-turn built-app play via #466, then prioritize clickability/chrome, launcher clarity,
@@ -389,10 +389,15 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   it binds a viewer with `CLAWDND_PLAYER_MOVES` +
   `CLAWDND_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
   move sink. `POST /move` → sink; `/chat?since=` → DM narration the Session tails.
-- The checked-in Codex provider wrapper is **not** a DM substitute yet: `scripts/play_codex_actor.sh`
-  runs Codex as a constrained player actor through `player_server.py`. It can validate the provider
-  environment and move-facade contract, but it does not mint the world or write DM narration. OpenClaw
-  requires an explicit configured command before it can be treated as a startable provider.
+- The checked-in Codex provider now defaults to `scripts/play_codex_dm.sh`, a DM wrapper that owns
+  the live viewer, the engine/rules/voice MCP contract, `chat.jsonl`, and `player_moves.jsonl`.
+  Keep `scripts/play_codex_actor.sh` as the constrained player/companion actor helper through
+  `player_server.py`; it is not the native provider's DM loop. OpenClaw still requires an explicit
+  configured command before it can be treated as a startable provider.
+- Agents and app harnesses should read `GET /app-status` before trying to infer state from pixels or
+  process lists. It is a read-only contract for the live OpenWorlds surface: provider, run/state roots,
+  private-art presence, active campaign/session, move sink, actor, enabled actions, and canonical endpoints.
+  The built-app harness captures launcher and minted-provider app-status JSON as release evidence.
 - **`can_act = _live_play() AND is_live_view`**, and `is_live_view` requires
   `cid == self.campaign_id`. The viewer launches with an EMPTY campaign id; `_resolve_campaign`
   lazily sets `self.campaign_id` to the **current** campaign (`_pick_campaign`). So the

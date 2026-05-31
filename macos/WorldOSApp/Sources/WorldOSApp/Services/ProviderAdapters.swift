@@ -95,7 +95,8 @@ struct CodexProvider: ProviderAdapter {
 
     func detect(repoPath: URL, preferences: ProviderPreferences) -> ProviderStatus {
         let cli = Shell.which("codex")
-        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
+        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_dm.sh")
+        let actorHelper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
         let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let cli else {
@@ -107,22 +108,24 @@ struct CodexProvider: ProviderAdapter {
             )
         }
 
-        guard FileManager.default.fileExists(atPath: wrapper.path) else {
-            return ProviderStatus(
-                kind: kind,
-                availability: .error,
-                detail: "Codex CLI found, but scripts/play_codex_actor.sh is missing from this checkout.",
-                detectedPath: cli
-            )
+        if configuredCommand.isEmpty {
+            guard FileManager.default.fileExists(atPath: wrapper.path) else {
+                return ProviderStatus(
+                    kind: kind,
+                    availability: .error,
+                    detail: "Codex CLI found, but scripts/play_codex_dm.sh is missing from this checkout.",
+                    detectedPath: cli
+                )
+            }
         }
 
         return ProviderStatus(
             kind: kind,
             availability: .configured,
             detail: configuredCommand.isEmpty
-                ? "Ready. Launches the checked-in Codex wrapper with the WorldOS provider environment and player-facade-only tool surface."
-                : "Ready. Launches your configured Codex command with the WorldOS provider environment and player-facade-only tool surface.",
-            detectedPath: configuredCommand.isEmpty ? wrapper.path : cli
+                ? "Ready. Launches the checked-in Codex DM wrapper with the WorldOS provider environment. Actor helper: \(actorHelper.path)."
+                : "Ready. Launches your configured Codex command with the WorldOS provider environment.",
+            detectedPath: configuredCommand.isEmpty ? wrapper.path : configuredCommand
         )
     }
 
@@ -135,19 +138,17 @@ struct CodexProvider: ProviderAdapter {
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
-        // hero (authored-PC spec) is only consumed by the Claude play path today; accepted here
-        // to satisfy the protocol and ignored.
-        _ = hero
         guard Shell.which("codex") != nil else {
             throw ProviderError.missingDependency("Codex CLI is missing. Install codex before starting a Codex provider session.")
         }
 
-        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_actor.sh")
-        guard FileManager.default.fileExists(atPath: wrapper.path) else {
-            throw ProviderError.configuration("Codex provider wrapper is missing: scripts/play_codex_actor.sh")
-        }
-
         let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        if configuredCommand.isEmpty {
+            let wrapper = repoPath.appendingPathComponent("scripts/play_codex_dm.sh")
+            guard FileManager.default.fileExists(atPath: wrapper.path) else {
+                throw ProviderError.configuration("Codex provider wrapper is missing: scripts/play_codex_dm.sh")
+            }
+        }
         let command = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
         return ProviderLaunchRequest(
             name: "Codex game",
@@ -159,6 +160,7 @@ struct CodexProvider: ProviderAdapter {
                 runId: runId,
                 port: port,
                 companions: companions,
+                hero: hero,
                 preferences: preferences
             ),
             workingDirectory: repoPath,
@@ -173,7 +175,7 @@ struct CodexProvider: ProviderAdapter {
     }
 
     private var defaultCodexCommand: String {
-        "scripts/play_codex_actor.sh"
+        "scripts/play_codex_dm.sh"
     }
 }
 
@@ -224,9 +226,6 @@ struct OpenClawProvider: ProviderAdapter {
         repoPath: URL,
         preferences: ProviderPreferences
     ) throws -> ProviderLaunchRequest {
-        // hero (authored-PC spec) is only consumed by the Claude play path today; accepted here
-        // to satisfy the protocol and ignored.
-        _ = hero
         let command = preferences.openClawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else {
             throw ProviderError.configuration("OpenClaw provider is not launch-configured. Set an OpenClaw provider command in Settings.")
@@ -241,6 +240,7 @@ struct OpenClawProvider: ProviderAdapter {
                 runId: runId,
                 port: port,
                 companions: companions,
+                hero: hero,
                 preferences: preferences
             ),
             workingDirectory: repoPath,
@@ -298,6 +298,7 @@ private func providerEnvironment(
     runId: String,
     port: Int,
     companions: String,
+    hero: String = "",
     preferences: ProviderPreferences
 ) -> [String: String] {
     var env = budgetEnvironment(preferences)
@@ -306,5 +307,9 @@ private func providerEnvironment(
     env["CLAWDND_RUN_ID"] = runId
     env["CLAWDND_PLAY_PORT"] = String(port)
     env["CLAWDND_PLAY_COMPANIONS"] = companions
+    let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedHero.isEmpty {
+        env["CLAWDND_PLAY_HERO"] = trimmedHero
+    }
     return env
 }

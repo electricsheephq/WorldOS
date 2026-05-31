@@ -17,6 +17,17 @@ final class AppProcessService: ObservableObject {
     private let registry = ProviderRegistry()
     private let maxLogCharacters = 120_000
 
+    var activeProviderOpenWorldsURL: URL? {
+        guard runningProvider != nil,
+              let endpoint = viewerEndpoint,
+              endpoint.name == "Provider viewer",
+              endpoint.status != .stopped
+        else {
+            return nil
+        }
+        return endpoint.openWorldsURL
+    }
+
     var diagnostics: String {
         """
         WorldOS Native App Diagnostics
@@ -227,6 +238,12 @@ final class AppProcessService: ObservableObject {
         viewerEndpoint = endpoint
         append("\(request.message) pid \(managed.pid)", stream: .provider)
         return endpoint.openWorldsURL
+    }
+
+    func markProviderViewerReady() {
+        guard var endpoint = viewerEndpoint, endpoint.name == "Provider viewer" else { return }
+        endpoint.status = .running
+        viewerEndpoint = endpoint
     }
 
     func stopProvider() {

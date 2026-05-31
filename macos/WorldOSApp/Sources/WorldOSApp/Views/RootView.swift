@@ -91,8 +91,15 @@ struct RootView: View {
     }
 
     private func startOpenWorlds() {
+        if keepActiveProviderViewerAttached() {
+            return
+        }
         launchTask?.cancel()
         launchTask = Task { @MainActor in
+            if keepActiveProviderViewerAttached() {
+                isStarting = false
+                return
+            }
             isStarting = true
             launchError = nil
             webViewErrorMessage = nil
@@ -116,6 +123,17 @@ struct RootView: View {
             }
             isStarting = false
         }
+    }
+
+    private func keepActiveProviderViewerAttached() -> Bool {
+        guard let url = processService.activeProviderOpenWorldsURL else { return false }
+        launchTask?.cancel()
+        launchError = nil
+        webViewErrorMessage = nil
+        isStarting = false
+        webURL = url
+        launchMessage = "Provider session active"
+        return true
     }
 
     private func waitForOpenWorlds(_ url: URL) async throws {
@@ -246,6 +264,7 @@ struct RootView: View {
             preferences: providerPreferences
         )
         try await waitForOpenWorlds(url)
+        processService.markProviderViewerReady()
         webURL = url
         return appStatusPayload(extra: ["url": url.absoluteString, "runId": runId])
     }

@@ -150,11 +150,11 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
       if (preferredProvider) payload.provider = preferredProvider;
       const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       // Drive the reload to the live viewer from JS using the URL the bridge returns (same as
-      // screen-launcher) — the live viewer boots fresh and app.jsx auto-routes into the table
-      // once the provider is running.
+      // screen-launcher) — replace the stale standalone viewer history entry so Back cannot
+      // return the player to a read-only table after the provider is attached.
       const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
       if (liveUrl) {
-        window.location.assign(liveUrl);
+        window.location.replace(liveUrl);
         return;
       }
       window.OpenWorldsBuilding?.clear?.();

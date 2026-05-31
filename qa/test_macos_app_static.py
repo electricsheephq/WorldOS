@@ -50,6 +50,40 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
         self.assertIn('env["CLAWDND_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
 
+    def test_built_app_playtest_can_keep_minted_backend_for_manual_gameplay(self):
+        harness = self.read("qa/ui_playtest_app.sh")
+
+        self.assertIn("WOS_APP_KEEP_MINTED_BACKEND=1", harness)
+        self.assertIn("requires WOS_APP_PART=A", harness)
+        self.assertIn('KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"', harness)
+        self.assertIn("keeping minted backend alive for gameplay proof", harness)
+        self.assertIn("kept_backend_alive", harness)
+        self.assertIn("PART_A_KEPT_BACKEND", harness)
+        self.assertIn("first_turn_ready", harness)
+        self.assertIn("waiting for first-turn readiness", harness)
+        self.assertIn("/app-status", harness)
+        self.assertIn("app-status.launcher.json", harness)
+        self.assertIn("app-status.minted.json", harness)
+        self.assertIn("app_status_after", harness)
+        self.assertIn('.actionModel.actor.name', harness)
+        self.assertIn('play_party.sh .* $minted_run', harness)
+        self.assertIn('play.sh .* $minted_run', harness)
+        self.assertNotIn('play_party.sh $WORLD $minted_run', harness)
+        self.assertNotIn('play.sh $WORLD $minted_run', harness)
+
+    def test_provider_viewer_stays_attached_during_native_restarts(self):
+        root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
+        app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")
+
+        self.assertIn("activeProviderOpenWorldsURL", app_process)
+        self.assertIn('endpoint.name == "Provider viewer"', app_process)
+        self.assertIn("markProviderViewerReady()", app_process)
+        self.assertIn("keepActiveProviderViewerAttached()", root_view)
+        self.assertRegex(
+            root_view,
+            r"private func startOpenWorlds\(\) \{\s*if keepActiveProviderViewerAttached\(\)",
+        )
+        self.assertIn('launchMessage = "Provider session active"', root_view)
 
 if __name__ == "__main__":
     unittest.main()

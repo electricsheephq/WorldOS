@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-05-31: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`5dd1391 == origin/main` after #472) and the default place to build/run/test the GUI and native app.
+> (`6e03da4 == origin/main` after #473) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -30,11 +30,26 @@
 
 - OpenWorlds native-start surfaces now honor the macOS app's selected provider (#472). If the web UI has
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
-- Do not treat that as a Claude-free release proof. The default Codex wrapper
-  (`scripts/play_codex_actor.sh`) is a constrained **player actor** using the player facade; it is not yet
-  a Dungeon Master loop. OpenClaw is also not launchable until a valid provider command is configured.
-- Before running #466, prove first-turn built-app play with a provider that actually mints the world,
-  writes DM narration, and leaves `/session-surface` with `can_act:true` for the live/current campaign.
+- The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
+  and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T04:39:09+07:00 local built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-headproof-20260601T043909/`) shows the Codex-DM
+  path can mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled
+  actions, accept and resolve a `/move`, leave `/session-surface` actionable, and produce a provider trace
+  with zero errors/failed tool calls on PR #475 app-code commit `8bd833f`. Release still requires the full
+  non-partial RRI gate.
+
+## Agent-facing app contract
+
+- `GET /app-status` and `GET /__worldos/app-status.json` are read-only probes for agents and harnesses.
+  They report build/version, viewer port, state root, provider, private-art root presence, live campaign/run,
+  move sink, active actor, enabled actions, and canonical endpoints. They must not mutate campaign state.
+- Use `/app-status` before screenshots when diagnosing the built app. It answers: "am I on the real live
+  campaign, can the player act, where is the move sink, and is private art configured?"
+- `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
+  folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
+- Longer-term agent-grade testing lives under #480-#486: deterministic smoke provider, stable accessibility
+  and DOM hooks, crisp failure buckets, and one exported evidence bundle per app playtest.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash
@@ -89,6 +104,23 @@ palette run.
 Append every `--scorecard-row` line to `qa/SCORECARD.md` as diagnostic release evidence. Only a
 non-partial, non-harness-contaminated 10/10 row with no evidence gaps can count as release evidence.
 
+## macOS privacy prompt triage
+
+During local proof runs, a macOS Photos/Music prompt can be a **test-process attribution artifact**:
+TCC may name the frontmost WorldOS app as `responsible` even when the actual `accessing` process is a
+diagnostic command such as `/usr/bin/find` or `codex`. Before filing this as a product blocker, inspect
+the attribution:
+
+```bash
+/usr/bin/log show --style compact --last 10m \
+  --predicate 'eventMessage CONTAINS[c] "dev.clawdnd" OR eventMessage CONTAINS[c] "kTCCServicePhotos" OR eventMessage CONTAINS[c] "kTCCServiceMediaLibrary"'
+```
+
+If `AUTHREQ_ATTRIBUTION` shows `accessing=/usr/bin/find` or `accessing=codex`, classify it as harness
+contamination and rerun proof without broad filesystem scans while the app is frontmost. If it shows
+`WorldOSApp` or a WebKit child process directly accessing a protected Photos/Music path, treat it as a
+release-blocking product bug.
+
 Non-disruptive Mac smoke during takeover:
 ```bash
 WORLDOS_NO_STOP_EXISTING=1 \
@@ -107,6 +139,14 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Use it for heavy backend/persona release sweeps and parallel QA once configured.
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
+- VM preflight before any RRI sweep: record VM identity, repo checkout path, branch/SHA, Codex CLI version,
+  auth/profile status, `uv`, Node/npm/Playwright availability, private-art availability or explicit
+  backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and the artifact
+  return path under `/Volumes/LEXAR/Codex`.
+- RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
+  persona, behavior, image/network, palette-live, and score evidence only when `run.json`, `score.json`,
+  `session_surface.final.json`, `network.ndjson`, and build SHA are present. Missing or mixed-SHA artifacts
+  must remain `partial` / `harness_contaminated`.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
