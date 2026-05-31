@@ -397,12 +397,14 @@ function NativeAppSection({ nativeState, refreshNative }) {
     const prefs = app.preferences || {};
     const now = new Date();
     const stamp = now.toISOString().slice(0, 19).replace(/[-:T]/g, "").replace(/^(\d{8})(\d{6})$/, "$1-$2");
-    nativeAction("startProviderSession", {
-      provider: prefs.selectedProvider || app.selectedProvider || "claude",
+    const payload = {
       world: prefs.defaultWorld || app.defaultWorld || "baldurs-gate",
       runId: `play-${stamp}`,
       companions: "",
-    });
+    };
+    const provider = prefs.selectedProvider || app.selectedProvider || "";
+    if (provider) payload.provider = provider;
+    nativeAction("startProviderSession", payload);
   };
 
   return (

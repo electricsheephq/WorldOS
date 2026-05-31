@@ -65,7 +65,7 @@ function heroPortraitScope(hero) {
   return portraitScope(hero.portrait);
 }
 
-function ScreenCreate({ onNavigate, state, setState }) {
+function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
   const [step, setStep] = React.useState(0);
   const [hero, setHero] = React.useState({
     name: "",
@@ -141,13 +141,14 @@ function ScreenCreate({ onNavigate, state, setState }) {
     window.OpenWorldsBuilding?.begin?.({ world: "baldurs-gate", kind: "forge", title: spec.name });
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
     try {
-      const reply = await window.OpenWorldsNative.request("startProviderSession", {
-        provider: "claude",
+      const payload = {
         world: "baldurs-gate",
         runId: `play-${stamp}`,
         companions: "",
         hero: JSON.stringify(spec),
-      });
+      };
+      if (preferredProvider) payload.provider = preferredProvider;
+      const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       // Drive the reload to the live viewer from JS using the URL the bridge returns (same as
       // screen-launcher) — the live viewer boots fresh and app.jsx auto-routes into the table
       // once the provider is running.

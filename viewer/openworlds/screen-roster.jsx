@@ -135,7 +135,7 @@ function RosterCard({ npc, onPlay, busy }) {
   );
 }
 
-function ScreenRoster({ onNavigate, state, setState }) {
+function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const campaignId = campaigns.some((c) => c.id === state?.activeCampaign)
     ? state.activeCampaign
@@ -235,13 +235,14 @@ function ScreenRoster({ onNavigate, state, setState }) {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
     const world = (campaigns.find((c) => c.id === campaignId)?.world) || surface?.world_id || "baldurs-gate";
     try {
-      const reply = await window.OpenWorldsNative.request("startProviderSession", {
-        provider: "claude",
+      const payload = {
         world,
         runId: `play-${stamp}`,
         companions: "",
         hero: JSON.stringify({ canon: true, name: npc.name }),
-      });
+      };
+      if (preferredProvider) payload.provider = preferredProvider;
+      const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
       if (liveUrl) {
         window.location.assign(liveUrl);
