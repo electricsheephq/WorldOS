@@ -255,11 +255,104 @@ struct OpenClawProvider: ProviderAdapter {
     }
 }
 
+struct ScriptedProvider: ProviderAdapter {
+    let kind: ProviderKind = .scripted
+
+    func detect(repoPath: URL, preferences: ProviderPreferences) -> ProviderStatus {
+        guard ProviderKind.scriptedProviderEnabled else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .missing,
+                detail: "Hidden. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 to expose deterministic smoke.",
+                detectedPath: nil
+            )
+        }
+        let script = repoPath.appendingPathComponent("scripts/play_scripted_dm.sh")
+        guard FileManager.default.fileExists(atPath: script.path) else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .error,
+                detail: "Scripted provider helper is missing: scripts/play_scripted_dm.sh",
+                detectedPath: nil
+            )
+        }
+        guard Shell.which("python3") != nil else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .missing,
+                detail: "python3 is required for deterministic scripted smoke.",
+                detectedPath: script.path
+            )
+        }
+        guard Shell.which("uv") != nil else {
+            return ProviderStatus(
+                kind: kind,
+                availability: .missing,
+                detail: "uv is required for deterministic scripted smoke.",
+                detectedPath: script.path
+            )
+        }
+        return ProviderStatus(
+            kind: kind,
+            availability: .configured,
+            detail: "Ready. Dev/test-only deterministic smoke provider; no Claude, Codex, or OpenClaw required.",
+            detectedPath: script.path
+        )
+    }
+
+    func startSession(
+        world: String,
+        runId: String,
+        port: Int,
+        companions: String,
+        hero: String,
+        repoPath: URL,
+        preferences: ProviderPreferences
+    ) throws -> ProviderLaunchRequest {
+        guard ProviderKind.scriptedProviderEnabled else {
+            throw ProviderError.configuration("Scripted provider is disabled. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 for dev/test smoke.")
+        }
+        guard Shell.which("python3") != nil else {
+            throw ProviderError.missingDependency("python3 is required for deterministic scripted smoke.")
+        }
+        guard Shell.which("uv") != nil else {
+            throw ProviderError.missingDependency("uv is required for deterministic scripted smoke.")
+        }
+        let script = repoPath.appendingPathComponent("scripts/play_scripted_dm.sh")
+        guard FileManager.default.fileExists(atPath: script.path) else {
+            throw ProviderError.configuration("Scripted provider helper is missing: scripts/play_scripted_dm.sh")
+        }
+        return ProviderLaunchRequest(
+            name: "Scripted smoke game",
+            executable: "/bin/zsh",
+            arguments: ["-lc", "scripts/play_scripted_dm.sh"],
+            environment: providerEnvironment(
+                kind: kind,
+                world: world,
+                runId: runId,
+                port: port,
+                companions: companions,
+                hero: hero,
+                preferences: preferences
+            ),
+            workingDirectory: repoPath,
+            message: "Scripted smoke provider launched on port \(port)."
+        )
+    }
+
+    func stop(runId: String) {}
+
+    func tailLogs(runId: String) -> String {
+        "Scripted provider output is captured in play-state/<run-id>/scripted-provider/."
+    }
+}
+
 struct ProviderRegistry {
     private let adapters: [ProviderKind: ProviderAdapter] = [
         .claude: ClaudeProvider(),
         .codex: CodexProvider(),
-        .openclaw: OpenClawProvider()
+        .openclaw: OpenClawProvider(),
+        .scripted: ScriptedProvider()
     ]
 
     func adapter(for kind: ProviderKind) -> ProviderAdapter {
