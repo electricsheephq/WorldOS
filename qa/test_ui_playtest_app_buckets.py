@@ -14,7 +14,10 @@ class UIPlaytestAppBucketFixtureTests(unittest.TestCase):
 set -euo pipefail
 funcs="$(mktemp)"
 trap 'rm -f "$funcs"' EXIT
-sed -e 's#^ROOT=.*#ROOT="$(pwd)"; cd "$ROOT" || exit 1#' -e '/^# DRIVE$/,$d' qa/ui_playtest_app.sh > "$funcs"
+sed -e 's#^ROOT=.*#ROOT="$(pwd)"; cd "$ROOT" || exit 1#' -e '/^# DRIVE$/q' qa/ui_playtest_app.sh > "$funcs"
+grep -qx 'ROOT="$(pwd)"; cd "$ROOT" || exit 1' "$funcs" || {{ echo "missing rewritten ROOT= sentinel" >&2; exit 1; }}
+grep -qx '# DRIVE' "$funcs" || {{ echo "missing # DRIVE sentinel" >&2; exit 1; }}
+grep -q '^classify_part_b_score_failure()' "$funcs" || {{ echo "missing classifier functions before # DRIVE" >&2; exit 1; }}
 source "$funcs" >/dev/null
 {body}
 """
