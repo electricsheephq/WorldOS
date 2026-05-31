@@ -658,21 +658,59 @@ function ResourcesStatus({ hero }) {
   );
 }
 
+// Title-case a class token ("wizard" -> "Wizard") for the honest class-context line.
+function titleCaseWord(s) {
+  return String(s || "").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function AbilitiesTab({ hero }) {
+  // `hero.abilities` is reserved for richly-modeled active-ability CARDS (name + detail);
+  // the engine does not populate those today, so it is empty. But the engine DOES carry the
+  // character's class/subclass features (as NAMES) in `hero.classFeatures` — those were only
+  // ever shown on the Feats tab, so the Abilities tab read "No active abilities recorded" for
+  // a real caster. Surface the class features here too (NAMES only — the engine does not model
+  // feature descriptions, so we never invent body text), with honest class/level context.
   const abilities = Array.isArray(hero.abilities) ? hero.abilities : [];
   const feats = Array.isArray(hero.feats) ? hero.feats : [];
+  const classFeatures = Array.isArray(hero.classFeatures) ? hero.classFeatures : [];
+  const classLine = [
+    hero.level != null ? `Level ${hero.level}` : null,
+    hero.class ? titleCaseWord(hero.class) : null,
+    hero.archetype || null,
+  ].filter(Boolean).join(" · ");
+  const nothing = abilities.length === 0 && classFeatures.length === 0;
   return (
     <div>
       <SectionTitle ordinal="·">Special Abilities</SectionTitle>
-      {abilities.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {abilities.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           {abilities.map((a) => (
             <AbilityCard key={a.name} a={a} />
           ))}
         </div>
-      ) : (
+      )}
+
+      {/* Class & subclass features the engine granted at this level (Arcane Recovery, a
+          School-of-Magic feature, etc.). Names come straight from the engine's `features`
+          list; detail is shown only when the data carries it (the engine models names, not
+          descriptions today — so most show name-only, never fabricated text). */}
+      {classFeatures.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {classLine && <div className="eyebrow" style={{ marginBottom: 2 }}>{classLine}</div>}
+          {classFeatures.map((c) => (
+            <div key={c.name} style={{ padding: 10, background: "rgba(176,141,87,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)" }}>
+              <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.12em", color: "var(--ink-900)" }}>{c.name}</div>
+              {c.detail && <div className="body-sm muted" style={{ marginTop: 2 }}>{c.detail}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {nothing && (
         <p className="body-sm muted" style={{ margin: 0 }}>
-          No active abilities recorded — this hero's edge is in their feats and class features.
+          {classLine
+            ? `No class, subclass, or racial features are recorded for this ${classLine} yet.`
+            : "No active abilities recorded — this hero's edge is in their feats and class features."}
         </p>
       )}
 
@@ -1163,4 +1201,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, portraitScope, spellMeta });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellcastingHeader, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, portraitScope, spellMeta });
