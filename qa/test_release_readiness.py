@@ -74,6 +74,10 @@ class ReleaseReadinessContractTests(unittest.TestCase):
 
             self.assertEqual(rc, 1)
             self.assertFalse(payload["release_ready"])
+            self.assertEqual(payload["release_verdict_gate"], "full_five_persona_rri")
+            self.assertFalse(payload["gate_split_contract"]["deterministic_built_app_smoke"]["release_verdict"])
+            self.assertFalse(payload["gate_split_contract"]["short_real_provider_playtest"]["release_verdict"])
+            self.assertTrue(payload["gate_split_contract"]["full_five_persona_rri"]["release_verdict"])
             self.assertTrue(payload["partial"])
             self.assertTrue(payload["harness_contaminated"])
             self.assertEqual(payload["expected_personas"], ["newbie", "veteran"])

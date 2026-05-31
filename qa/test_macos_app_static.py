@@ -111,6 +111,39 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertNotIn("claude -p", script)
         self.assertNotIn("codex -p", script)
 
+    def test_built_app_playtest_emits_split_failure_buckets(self):
+        harness = self.read("qa/ui_playtest_app.sh")
+
+        for bucket in (
+            "no_app",
+            "no_launcher",
+            "no_provider",
+            "no_art",
+            "no_actor",
+            "no_actions",
+            "move_rejected",
+            "no_narration",
+            "console_error",
+            "permission_prompt",
+            "score_failed",
+        ):
+            self.assertIn(f'"{bucket}"', harness)
+
+        self.assertIn("PART_A_FAILURE_BUCKET", harness)
+        self.assertIn("PART_A_FAILURE_DETAIL", harness)
+        self.assertIn("PART_B_FAILURE_BUCKET", harness)
+        self.assertIn("PART_B_FAILURE_DETAIL", harness)
+        self.assertIn("classify_native_failure", harness)
+        self.assertIn("classify_part_b_readiness_failure", harness)
+        self.assertIn("classify_part_b_failure_from_artifacts", harness)
+        self.assertIn("classify_part_b_score_failure", harness)
+        self.assertIn("failure_bucket", harness)
+        self.assertIn("failure_detail", harness)
+        self.assertIn("original_result", harness)
+        self.assertIn("move_rejected", harness)
+        self.assertIn("console_error", harness)
+        self.assertIn("score_failed", harness)
+
     def test_provider_viewer_stays_attached_during_native_restarts(self):
         root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
         app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")
