@@ -126,7 +126,24 @@ for p in "${PS[@]}"; do
     echo "  [$p] $sat"
     RUN_DIRS="${RUN_DIRS:+$RUN_DIRS,}$rd"
   else
-    warn "[$p] no score.json — run may have failed (see ${RUNID}-${p}.log); continuing"
+    warn "[$p] no score.json — run may have failed (see ${RUNID}-${p}.log)"
+    # FAIL-FAST: persona 1 does the full build + native gate. If IT produced no score,
+    # the build/play path is broken (e.g. #420 play.sh crash, backend_not_ready) — every
+    # subsequent persona will fail identically. Don't burn ~30min on duo+behavioral+axe
+    # against a dead build; abort with the diagnostic. (Lesson: the 2026-05-31 run did
+    # exactly this — 5 dead personas, then a full duo, before anyone noticed.)
+    if [ "$p" = "${PS[0]}" ]; then
+      pa=$(python3 -c "import json;print((json.load(open('$rd/run.json')).get('part_a') or {}).get('result','?'))" 2>/dev/null || echo "?")
+      pb=$(python3 -c "import json;print((json.load(open('$rd/run.json')).get('part_b') or {}).get('persona_loop','?'))" 2>/dev/null || echo "?")
+      echo ""
+      echo "❌ GATE-ABORT: first persona ($p) produced NO score on a FRESH build."
+      echo "   part_a=$pa  part_b=$pb  — the build/play path is broken; the rest of the"
+      echo "   sweep would fail identically. Fix the build/play blocker, then re-run."
+      echo "   Diagnostic tail (backend.log):"
+      tail -3 "$rd/backend.log" 2>/dev/null | sed 's/^/     /'
+      echo "   Full log: qa/ui_playtest_runs/${RUNID}-${p}.log"
+      exit 1
+    fi
   fi
 done
 
