@@ -359,6 +359,11 @@ codex_dm_turn() {
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
+if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
+  COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
+else
+  COMPANION_TOOL_RULE="Companion rule: this is a solo provider launch. Do not call load_canon_character with kind=\"companion\" or add any companion to the party; stage canon NPCs in narration only unless the player later recruits them."
+fi
 
 VPID_FILE="$RUN_DIR/.viewer.pid"
 viewer_supervisor() {
@@ -395,6 +400,7 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$COMPANION_TOOL_RULE
 
 Native-selected canon hero already seated:
 - campaign_id: "$HERO_CAMP"
@@ -416,6 +422,7 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
+$COMPANION_TOOL_RULE
 
 Start a live solo session:
 - call start_world("$CLAWDND_WORLD");
@@ -454,6 +461,7 @@ while true; do
 $LOG_EVENT_TOOL_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
+$COMPANION_TOOL_RULE
 
 Player move:
 $PMSG")"; then

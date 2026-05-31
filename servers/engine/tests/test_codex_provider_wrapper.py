@@ -197,6 +197,15 @@ def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
     assert "CAMPAIGN_TOOL_HINT" in source
 
 
+def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "COMPANION_TOOL_RULE" in source
+    assert "this is a solo provider launch" in source
+    assert 'Do not call load_canon_character with kind=\\"companion\\"' in source
+    assert "only add companions named by CLAWDND_PLAY_COMPANIONS" in source
+
+
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
