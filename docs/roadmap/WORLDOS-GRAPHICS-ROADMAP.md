@@ -128,7 +128,8 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 ## 5. Milestones → Epics → Issues
 
 > Each milestone advances specific capabilities to specific levels for specific game types.
-> Issue bodies are drafted in the companion `roadmap-v2-FINAL.md`; titles below are file-ready.
+> The full, acceptance-criteria issue bodies live in the filed GitHub issues (#425–#461);
+> the titles below are the index into them.
 
 ### M0 — Contract freeze + thin-client spike  *(advances C6 freeze, C1=zone, C8 groundwork; GT-agnostic)*
 - **R0.1 Render-profile contract** (core + per-renderer blocks; zones-not-xy; core-only conformance test in CI)

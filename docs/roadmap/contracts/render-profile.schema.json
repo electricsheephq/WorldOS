@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worldos.dev/contracts/render-profile.schema.json",
+  "title": "WorldOS Render Profile",
+  "description": "The canonical, versioned, LAYERED contract a renderer (Phaser web, future Godot, future RPG Maker adapter) and the AI build-loop consume to draw a WorldOS game. Implements M0 issues #425 (core), #426 (per-renderer blocks), #427 (zones-not-xy / positioning modes). INVARIANT: the Python engine is the sole writer of game state; this profile is PRESENTATION that JOINS to engine state by id. It carries NAMED ZONES, never x,y coordinates — each renderer derives its own coordinate space from zones (this mirrors viewer/server.py:_combat_row_positions, which already derives token positions from engine zones). Every CORE field is defaultable so the AI build-loop can emit a partial-but-valid draft. See docs/roadmap/contracts/render-profile.md.",
+  "type": "object",
+  "required": ["schema_version", "core"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Standard JSON Schema instance keyword — a relative or absolute reference to this schema. Permitted so instances can self-identify."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract major version. Bumping is a breaking change requiring migration of authored UGC profiles. v1 supports positioning theater|zone only."
+    },
+    "game_id": { "type": "string", "description": "Stable id for this game/profile." },
+    "title": { "type": "string", "description": "Human-facing game title." },
+    "core": {
+      "type": "object",
+      "description": "Renderer-AGNOSTIC. Everything in here EVERY renderer must honor. No coordinate/walkmask/sheet-layout data — those live in renderer_profiles. All fields defaultable for partial AI generation.",
+      "required": ["scene_kind", "positioning", "locations", "actors"],
+      "additionalProperties": false,
+      "properties": {
+        "scene_kind": {
+          "type": "string",
+          "enum": ["tilemap", "backdrop"],
+          "description": "A CAPABILITY, not an implementation. tilemap = GT1 SNES pixel; backdrop = GT2 Pillars/BG painted isometric. A renderer maps this to its own technique."
+        },
+        "positioning": {
+          "type": "string",
+          "enum": ["theater", "zone"],
+          "description": "v1 modes ONLY. theater = no positional model (party-left/foes-right). zone = engine named regions (Combatant.zone). 'grid' (authoritative coordinates + measured range/LoS/AoE) is DELIBERATELY EXCLUDED from v1 — it requires the engine to gain coordinate authority (a sole-writer STATE change), tracked as the evidence-gated Future milestone (#461). Zone mode renders zone BANDS, never VTT cells/rulers; AoE shows as a zone highlight + affected-token list."
+        },
+        "locations": {
+          "type": "array",
+          "description": "One entry per renderable location. engine_location_id is a FOREIGN KEY into /atlas-surface known_locations[].id — the engine owns the location; this only declares how to draw it.",
+          "items": {
+            "type": "object",
+            "required": ["engine_location_id"],
+            "additionalProperties": false,
+            "properties": {
+              "engine_location_id": { "type": "string", "description": "FK to /atlas-surface known_locations[].id." },
+              "art": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "scope_key": { "type": "string", "description": "Resolves via the Img-scope -> /image bridge (e.g. 'scene-lower-city')." }
+                }
+              },
+              "zones": {
+                "type": "array",
+                "description": "Named tactical regions for this location, mirroring the engine's Zone vocabulary ('the dais', 'the rafters'). NOT coordinates.",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "actors": {
+          "type": "array",
+          "description": "One entry per renderable actor. engine_actor_id is a FOREIGN KEY to the engine character/monster id (char_<uuid12> / mon_<...>); see the stable-actor-id guarantee (#431).",
+          "items": {
+            "type": "object",
+            "required": ["engine_actor_id"],
+            "additionalProperties": false,
+            "properties": {
+              "engine_actor_id": { "type": "string", "description": "FK to the engine actor id; guaranteed stable across snapshots (#431)." },
+              "art": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "scope_key": { "type": "string", "description": "Resolves via Img-scope -> /image (e.g. 'portrait-aubree', 'creature-cultist')." }
+                }
+              }
+            }
+          }
+        },
+        "ai_disclosure": {
+          "type": "object",
+          "description": "AI-content provenance. Source for EU machine-readable disclosure (effective 2026-08-02) + Steam's AI-content survey (#454). Required on any shippable/UGC profile; optional on internal/first-party drafts.",
+          "additionalProperties": false,
+          "properties": {
+            "generated_by": { "type": "string" },
+            "model": { "type": "string" },
+            "date": { "type": "string" }
+          }
+        }
+      }
+    },
+    "renderer_profiles": {
+      "type": "object",
+      "description": "OPTIONAL per-renderer blocks. A renderer reads CORE + its OWN block and ignores the others. Coordinate/walkmask/sheet-layout-shaped data lives ONLY here (never in core). The core-only conformance test (#428) asserts every M0 scene renders from core + the renderer's own block.",
+      "additionalProperties": false,
+      "properties": {
+        "phaser": {
+          "type": "object",
+          "description": "Phaser 3 (web, both tiers). For scene_kind=tilemap: tileset + tile grid. For scene_kind=backdrop: backdrop layout + walkmask + depth bands + optional normal-map. walkmask is RENDERER-OWNED presentation (the engine knows location adjacency, not walkable pixels); pathfinding destinations still resolve to engine zones/locations.",
+          "additionalProperties": true,
+          "properties": {
+            "tileset_scope_key": { "type": "string" },
+            "tile_size": { "type": "integer" },
+            "ui_skin": { "type": "string" },
+            "backdrop_layout": { "type": ["object", "null"] },
+            "walkmask_ref": { "type": ["string", "null"] },
+            "depth_bands": { "type": ["array", "null"], "items": { "type": "number" } },
+            "normal_map_ref": { "type": ["string", "null"] },
+            "free_positions": { "type": ["object", "null"] }
+          }
+        },
+        "rpgmaker": {
+          "type": "object",
+          "description": "RESERVED / spec-only. BYOL exploration-export tier, deferred post-M2 (#458-460). tilemap-only; never populated for scene_kind=backdrop. A contract-TAKER that consumes this frozen contract, never shapes it.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
