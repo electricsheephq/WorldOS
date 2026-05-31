@@ -30,6 +30,6 @@ cat > "$DESK/WorldOS OpenWorlds.webloc" <<WEBLOC
 WEBLOC
 
 echo "Installed on your Desktop:"
-echo "  • 'WorldOS Dashboard.command'  — double-click: starts the viewer + opens $URL"
-echo "  • 'WorldOS Dashboard.webloc'   — clickable link to $URL (once the server is running)"
+echo "  • 'WorldOS OpenWorlds.command' — double-click: starts the viewer + opens $URL"
+echo "  • 'WorldOS OpenWorlds.webloc'  — clickable link to $URL (once the server is running)"
 echo "(First double-click of the .command: right-click → Open to clear the macOS warning.)"

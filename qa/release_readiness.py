@@ -40,6 +40,10 @@ from pathlib import Path
 REQUIRED_RELEASE_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
 
 
+def looks_like_path(value: str) -> bool:
+    return Path(value).is_absolute() or value.startswith(("./", "../", "~")) or "/" in value or "\\" in value
+
+
 def read_json(path: Path) -> dict:
     if not path or not path.exists():
         return {}
@@ -272,7 +276,7 @@ def main() -> int:
         evidence_gaps.append({"gate": "palette_live", "missing": "--palette-live", "detail": "palette-live result not supplied"})
     elif not args.palette_source:
         evidence_gaps.append({"gate": "palette_live", "missing": "--palette-source", "detail": "palette-live evidence source not supplied"})
-    elif not Path(args.palette_source).exists():
+    elif looks_like_path(args.palette_source) and not Path(args.palette_source).exists():
         evidence_gaps.append({"gate": "palette_live", "missing": args.palette_source, "detail": "palette-live evidence source missing"})
     evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
 

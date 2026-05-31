@@ -81,7 +81,7 @@
   <div class="sub" style="margin-left:auto" id="refresh">↻ live</div>
 </header>
 <div id="grid"></div>
-<div class="empty" id="empty" hidden>No campaigns yet — start one (the play dashboard) or kick off a QA run.</div>
+<div class="empty" id="empty" hidden>No campaigns yet — start one in OpenWorlds or kick off a QA run.</div>
 <script>
 const grid = document.getElementById('grid');
 const summaryEl = document.getElementById('summary');
@@ -174,7 +174,7 @@ async function tick() {
     // Tell the owner when the grid is ONLY QA runs — otherwise a wall of identical QA cards reads
     // as "my game is frozen" when really no play game has been started yet.
     const hint = (campaigns.length > 0 && playN === 0)
-      ? ` <span style="color:var(--qa)">· no play game yet — start one in the dashboard</span>` : '';
+      ? ` <span style="color:var(--qa)">· no play game yet — start one in OpenWorlds</span>` : '';
     summaryEl.innerHTML = `<b>${total ?? campaigns.length}</b> campaigns · <b class="pulse">${liveN}</b> live${more}${hint}`;
     document.getElementById('refresh').textContent = '↻ ' + new Date().toLocaleTimeString();
   } catch (e) {

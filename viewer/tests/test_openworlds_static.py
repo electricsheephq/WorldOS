@@ -30,6 +30,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._old_clawdnd_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
         self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
         self._old_clawdnd_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
+        os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
+        os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
+        os.environ.pop("WORLDOS_REPO_ROOT", None)
+        os.environ.pop("CLAWDND_REPO_ROOT", None)
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
@@ -103,6 +107,15 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn(b"https://unpkg.com", body)
         self.assertNotIn(b"https://fonts.googleapis.com", body)
         self.assertNotIn(b"tweaks-panel.jsx", body)
+
+    def test_setup_clears_host_repo_and_art_root_env_overrides(self):
+        for key in (
+            "WORLDOS_ART_REPO_ROOT",
+            "CLAWDND_ART_REPO_ROOT",
+            "WORLDOS_REPO_ROOT",
+            "CLAWDND_REPO_ROOT",
+        ):
+            self.assertNotIn(key, os.environ)
 
     def test_openworlds_config_is_browser_safe_metadata(self):
         status, ctype, body = self._get("/openworlds/config.json")
@@ -464,7 +477,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "monitor.html").read_text(encoding="utf-8")
 
         self.assertIn('href="/openworlds/?campaign=${encodeURIComponent(c.id)}"', source)
+        self.assertIn("start one in OpenWorlds", source)
         self.assertNotIn('href="/dashboard?campaign=${encodeURIComponent(c.id)}"', source)
+        self.assertNotIn("start one in the dashboard", source)
+        self.assertNotIn("the play dashboard", source)
 
     def test_openworlds_campaigns_includes_repo_play_state_and_qa_runs_read_only(self):
         repo_root = self._tmp / "repo"

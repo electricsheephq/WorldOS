@@ -55,6 +55,9 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn("<key>WorldOSArtRepoRoot</key>", source)
         self.assertIn("<key>WorldOSPreferLaunchRoots</key>", source)
         self.assertIn("wait_for_bundle_pid", source)
+        self.assertIn("pid_in_list", source)
+        self.assertIn('existing_pids="$(bundle_pid | tr', source)
+        self.assertIn('pid="$(wait_for_bundle_pid "$existing_pids")"', source)
         self.assertIn('WORLDOS_NO_STOP_EXISTING', source)
         self.assertIn('pkill -f "$ROOT_DIR/viewer/server.py"', source)
 
@@ -63,6 +66,8 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
 
         self.assertIn("WOS_APP_NO_GLOBAL_KILL", source)
         self.assertIn("app_pid_for_bundle", source)
+        self.assertIn("found=0", source)
+        self.assertIn('[ "$found" = "1" ] || return 1', source)
         self.assertIn("WORLDOS_NO_STOP_EXISTING", source)
         self.assertIn("WORLDOS_PREFER_LAUNCH_ROOTS=1", source)
 

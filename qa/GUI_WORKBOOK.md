@@ -20,6 +20,7 @@
   private art via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`.
 
 ## REAL bugs (verified; the actual punch-list)
+
 | # | Defect | VERIFIED root cause | Fix | Status | Proof |
 |---|---|---|---|---|---|
 | G3 | Palette buried in 280px right-rail; `slice(0,6)` drops bonus-action+reaction; no center palette | screen-table.jsx action list used to live outside the main play column and cap rows | Drop slice; promote all exploration actions to main action column near Declare; group combat verbs separately | Fixed in current branch; needs live look + full gate | Static proof: `viewer/tests/test_openworlds_static.py::test_openworlds_table_renders_all_actions_without_truncation` and `test_openworlds_table_promotes_palette_to_main_column` |

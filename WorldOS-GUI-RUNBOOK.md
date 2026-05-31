@@ -24,7 +24,7 @@
   the art root into `Info.plist` as `WorldOSArtRepoRoot` so LaunchServices env loss cannot hide missing art.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
-```
+```bash
 cd /Users/lume/ClawDnD-val
 # Do not auto-pull during takeover; this checkout holds private art and the live app.
 # Verify intentionally before moving it:
@@ -40,7 +40,7 @@ Open `http://127.0.0.1:8799/openworlds/`. The DM cold-open takes ~30–90s; **wa
 The tool channel intermittently returns fabricated/empty/doubled reads (this session it invented a
 `kind=pc` palette-disabled bug and a scene-404 that were both false). **Ground every load-bearing
 claim in ≥2 clean reads + a checksum/HTTP code.**
-```
+```bash
 curl -s http://127.0.0.1:8799/session-surface | python3 -c 'import json,sys;d=json.load(sys.stdin); \
   print("party",[ (p["name"],p.get("kind")) for p in d.get("party",[])]); \
   print("palette",[a["id"] for a in d.get("availableActions",[]) if a.get("available")]); \
@@ -63,7 +63,7 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 4. `git pull --ff-only` canonical → restart 8799 → LOOK → tick GUI_WORKBOOK with the proof.
 
 ## The gate sweep (Phase 3 — judged on the built .app)
-```
+```bash
 qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12
 ```
 RRI 10/10 = all 11 gates hold on ONE build across the canonical five personas
@@ -77,7 +77,7 @@ Append the `--scorecard-row` line to `qa/SCORECARD.md` only when the run is not 
 and has no evidence gaps.
 
 Non-disruptive Mac smoke during takeover:
-```
+```bash
 WORLDOS_NO_STOP_EXISTING=1 \
 WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
 WORLDOS_PREFER_LAUNCH_ROOTS=1 \

@@ -800,6 +800,75 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertIn("palette_live", {gap["gate"] for gap in payload["evidence_gaps"]})
             self.assertIn(str(missing_palette), {gap["missing"] for gap in payload["evidence_gaps"]})
 
+    def test_palette_source_label_does_not_require_filesystem_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = tmp / "gate-newbie"
+            player = run / "player"
+            player.mkdir(parents=True)
+            (run / "score.json").write_text(
+                json.dumps(
+                    {
+                        "run": "gate-newbie",
+                        "persona": "newbie",
+                        "completed_intro_flow": True,
+                        "persona_satisfaction": 9,
+                        "gave_up": False,
+                        "bug_reports_critical": 0,
+                        "console_errors": 0,
+                        "image_404s": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run / "run.json").write_text(
+                json.dumps({"build_sha": "deadbee", "part_a": {"result": "PASS"}, "part_b": {"persona_loop": "PASS", "score_pass": True}}),
+                encoding="utf-8",
+            )
+            (player / "network.ndjson").write_text(
+                json.dumps({"url": "http://127.0.0.1/image?scope=newbie", "status": 200}),
+                encoding="utf-8",
+            )
+            story = tmp / "story.json"
+            mech = tmp / "mech.json"
+            behavioral = tmp / "behavioral.txt"
+            audit = tmp / "audit.log"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            behavioral.write_text("GREEN\n", encoding="utf-8")
+            audit.write_text("PASS\n", encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                str(run),
+                "--expected-personas",
+                "newbie",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                "session-surface-final",
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertNotIn("palette_live", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertEqual(payload["artifact_sources"]["palette_live"], "session-surface-final")
+
 
 if __name__ == "__main__":
     unittest.main()

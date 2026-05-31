@@ -562,14 +562,15 @@ launcher_port_of() {
 }
 
 app_pid_for_bundle() {
-  local bundle="$1" bin pid cmd
+  local bundle="$1" bin pid cmd found=0
   bin="$bundle/Contents/MacOS/WorldOSApp"
   for pid in $(pgrep -x WorldOSApp 2>/dev/null || true); do
     cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
     case "$cmd" in
-      "$bin"*) printf '%s\n' "$pid" ;;
+      "$bin"*) printf '%s\n' "$pid"; found=1 ;;
     esac
   done
+  [ "$found" = "1" ] || return 1
 }
 
 # Count seated PLAYER characters in a play-state run's campaign snapshot (the DM cold-open seats

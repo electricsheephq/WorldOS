@@ -63,14 +63,23 @@ bundle_pid() {
   done
 }
 
+pid_in_list() {
+  local needle="$1" haystack="${2:-}"
+  case " $haystack " in
+    *" $needle "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 wait_for_bundle_pid() {
-  local pid
+  local existing_pids="${1:-}" pid
   for _ in $(seq 1 50); do
-    pid="$(bundle_pid | head -1)"
-    if [ -n "$pid" ]; then
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      pid_in_list "$pid" "$existing_pids" && continue
       printf '%s\n' "$pid"
       return 0
-    fi
+    done < <(bundle_pid)
     sleep 0.2
   done
   return 1
@@ -185,8 +194,9 @@ case "$MODE" in
     ;;
   --verify|verify)
     build_bundle
+    existing_pids="$(bundle_pid | tr '\n' ' ')"
     open_app
-    pid="$(wait_for_bundle_pid)"
+    pid="$(wait_for_bundle_pid "$existing_pids")"
     echo "$DISPLAY_NAME launched from $APP_BUNDLE (pid $pid)"
     ;;
   --debug|debug)
