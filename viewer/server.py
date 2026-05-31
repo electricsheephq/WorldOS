@@ -62,6 +62,7 @@ _VOICE_DIR = _HERE.parent / "servers" / "voice"
 # portrait through the engine's imagegen layer, mirroring how /speak shells the voice
 # server and play.sh shells the engine. Keeps the viewer a pure reader of engine modules.
 _ENGINE_DIR = _HERE.parent / "servers" / "engine"
+_REPO_ROOT = _HERE.parent
 _OPENWORLDS_DIR = _HERE / "openworlds"
 _OPENWORLDS_ROUTE = "/openworlds"
 _OPENWORLDS_MIME_TYPES = {
@@ -203,14 +204,15 @@ def _art_repo_root() -> Path:
     gitignored private art lives in the canonical checkout. Prefer the explicit
     WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT contract when it points at an art
     checkout. Fall back to WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT for v1.x launchers,
-    then to the server.py parent checkout.
+    then to the server.py parent checkout. Keep `_REPO_ROOT` as the fallback seam because
+    the engine image tests patch it to isolate private-art descriptors.
     """
     for raw in (env_var("ART_REPO_ROOT"), env_var("REPO_ROOT")):
         if raw:
             candidate = Path(raw).expanduser()
             if (candidate / "content" / "worlds" / "_private").exists() or (candidate / "content" / "worlds").exists():
                 return candidate
-    return _HERE.parent
+    return _REPO_ROOT
 
 
 def _ingested_images_root() -> Path:
