@@ -8,6 +8,12 @@
 > **Takeover routing, 2026-05-31:** current release/gate state lives in
 > `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, then `qa/SCORECARD.md`.
 > The work queue later in this file is historical unless it agrees with those sources.
+> **Local/VM routing, 2026-05-31:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
+> checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
+> snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
+> permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
+> the owner-provided 32GB support VM (`support-vm-1`) after SSH/Codex credentials are installed and
+> verified; connection details are kept outside tracked docs. Mac-only built-app proof remains local/macOS CI.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -144,8 +150,10 @@ change must respect them.
 > development, run focused tests first and keep Python test runs single-process unless
 > you have explicitly verified your machine can handle parallel workers.
 
-1. **Branch off main in a fresh worktree** (keeps lanes disjoint from the sibling desktop
-   work). Implement **additively** (honor every invariant above).
+1. **Branch off main in a fresh worktree** (keeps lanes disjoint from the app-testing checkout).
+   For GUI/native-app work, prefer same-disk local worktrees under `/Users/lume/WorldOS-worktrees`
+   so private-art reads stay on the local disk. Lexar worktrees are fine for docs/backend/non-GUI
+   slices that do not launch the app against art. Implement **additively** (honor every invariant above).
 2. **Run focused local tests single-process:**
    ```bash
    uv run --directory servers/engine python -m pytest <relpath> -q -p no:xdist
@@ -295,11 +303,11 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 ## CURRENT STATE + WORK QUEUE
 
 **Historical snapshot, not current authority:** this queue was written around `ea815fc`
-(2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465
-and the UX-first doc sync merged as PR #468; the doc-sync baseline is `e4078c7`, the canonical
-private-art checkout was observed at `f5500ac`, and the only current gate truth lives in
-`WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use this section
-to decide release state. The next sprint is UX-first (#467):
+(2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465,
+the UX-first doc sync merged as PR #468, and first-minute click/title chrome proof merged as PR #470.
+The local app/private-art checkout is now synced at `36d8ac3 == origin/main`; the only current gate
+truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
+this section to decide release state. The next sprint is UX-first (#467):
 prove first-turn built-app play via #466, then prioritize clickability/chrome, launcher clarity,
 live-response feel, and CRPG depth before more hardening/proxy/security work.
 
