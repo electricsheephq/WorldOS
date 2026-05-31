@@ -16,6 +16,13 @@
 >
 > Last updated: 2026-05-28 (post-v1.0.1).
 >
+> **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
+> WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
+> and the capabilities (C1–C10) that mature Branch A → Branch B lives in
+> [`docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`](docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md) —
+> the single source of truth, executed via GitHub Milestones + Issues. Invariant: the
+> renderer is always a thin client; the engine stays the sole writer of state.
+>
 > **v1.0.1 ([Release](https://github.com/electricsheephq/WorldOS/releases/tag/v1.0.1)):** Phase-4 action lanes complete — Merchant BUY and Forge Craft now relay structured `/move` intents during live play (Create was already wired to the bridge). The seven BG3 origin heroes carry full `companion_dossier` blocks (wound / wants / fears / values / approval / banter / camp prompts). Native-app reliability: build script prefers stable Developer ID signing when keychain ACL allows; `script/unblock_native_app.sh` is a one-shot helper for security-scanner re-evaluation hangs. `docs/SPARKLE_SETUP.md` is the 7-step path to auto-update on top of Developer ID. Engine **1385/1385 ✓**, viewer **90/90 ✓**, license-check clean. **Open gap (owner-only):** first-run Keychain "Always Allow" click on a Developer-ID-signed app to end "popup every rebuild" — or run `script/unblock_native_app.sh` once.
 
 ---
