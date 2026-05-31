@@ -45,7 +45,7 @@ def _run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess:
     )
 
 
-def _run_dm(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess:
+def _run_dm(args: list[str], env: dict[str, str], timeout: float | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["/bin/bash", str(DM_SCRIPT), *args],
         cwd=ROOT,
@@ -53,6 +53,7 @@ def _run_dm(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess
         capture_output=True,
         check=False,
         text=True,
+        timeout=timeout,
     )
 
 
@@ -194,7 +195,7 @@ printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
         CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
 
-    result = _run_dm([], env)
+    result = _run_dm([], env, timeout=20)
 
     assert result.returncode == 0, result.stdout + result.stderr
     chat = tmp_path / "fake-codex-run" / "chat.jsonl"
@@ -243,15 +244,7 @@ fi
         CLAWDND_PLAY_MAX_TURNS="2",
     )
 
-    result = subprocess.run(
-        ["/bin/bash", str(DM_SCRIPT)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=20,
-    )
+    result = _run_dm([], env, timeout=20)
 
     assert result.returncode == 0, result.stdout + result.stderr
     chat = (tmp_path / "queued-opening-move" / "chat.jsonl").read_text(encoding="utf-8")
@@ -277,6 +270,15 @@ def test_native_codex_provider_passes_selected_hero_to_wrapper():
 
     assert 'environment["CLAWDND_PLAY_HERO"] = trimmedHero' in source
     assert "hero: hero," in source
+
+
+def test_native_codex_provider_custom_command_does_not_require_default_wrapper():
+    source = (ROOT / "macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift").read_text(
+        encoding="utf-8"
+    )
+
+    assert "if configuredCommand.isEmpty" in source
+    assert "detectedPath: configuredCommand.isEmpty ? wrapper.path : configuredCommand" in source
 
 
 def test_codex_wrappers_match_current_cli_flags():

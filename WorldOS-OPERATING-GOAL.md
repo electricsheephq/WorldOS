@@ -5,9 +5,9 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01 local Codex-DM built-app first-turn proof
+     AS OF:        2026-06-01T01:40:00+07:00 local Codex-DM built-app first-turn proof
      MAIN BASELINE:
-                   6e03da4 (PRs #470, #471, #472, #473 merged; verified in /Users/lume/ClawDnD-val on 2026-06-01).
+                   6e03da4 (PRs #470, #471, #472, #473 merged; verified in /Users/lume/ClawDnD-val on 2026-06-01T01:40:00+07:00).
                    Re-verify current `origin/main` before acting.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
@@ -25,7 +25,7 @@
                    personas failed around port/backend harness setup; behavioral/UI/palette/image
                    evidence was not a valid five-persona release verdict.
      LAST BUILT-APP PLAY PROOF:
-                   2026-06-01 local `dist/WorldOS.app` proof with private BG art, Codex DM
+                   2026-06-01T01:24:10+07:00 local `dist/WorldOS.app` proof with private BG art, Codex DM
                    provider, visible narration, enabled player actions, submitted `/move`, and
                    post-move DM response. Evidence lives under
                    /Volumes/LEXAR/Codex/worldos-built-app-proof/
@@ -176,14 +176,14 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01 — first-turn proof achieved, NOT a release verdict)
+## 9. CURRENT STATUS (2026-06-01T01:40:00+07:00 — first-turn proof achieved, NOT a release verdict)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, and first-minute
   click/title chrome proof merged in PR #470. Local/Lexar/support-VM routing merged in PR #471.
   Native OpenWorlds starts now honor the macOS app's selected provider instead of forcing Claude
   from the web surface in PR #472. PR #473 synced the takeover docs after provider selection.
   The local app/private-art checkout `/Users/lume/ClawDnD-val` is synced to
-  `6e03da4 == origin/main` as of 2026-06-01.
+  `6e03da4 == origin/main` as of 2026-06-01T01:40:00+07:00.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.

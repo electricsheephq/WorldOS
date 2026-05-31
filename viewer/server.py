@@ -765,7 +765,7 @@ def build_roster_response(
     char_class: str = "",
     level: str = "",
     limit: int = 120,
-    world_id: str = "",
+    world_id: Optional[str] = "",
 ) -> dict:
     """GET /roster-surface read model — the canon-NPC PICKER ("reverse character creator").
 
@@ -778,9 +778,12 @@ def build_roster_response(
     the native startProviderSession bridge / load_canon_character, never here. Mirrors
     build_bestiary_response: a graceful empty payload when the engine can't be imported."""
     engine = _load_engine_server()
-    world_id = world_id.strip() if isinstance(world_id, str) else ""
-    if not world_id:
-        world_id = _roster_world_for_campaign(campaign_id)
+    if world_id is None:
+        world_id = ""
+    else:
+        world_id = world_id.strip() if isinstance(world_id, str) else ""
+        if not world_id:
+            world_id = _roster_world_for_campaign(campaign_id)
     if engine is None or not hasattr(engine, "content_mod") or not hasattr(engine.content_mod, "roster_surface"):
         detail = _ENGINE_IMPORT_ERROR or "engine roster projection is unavailable"
         return {
@@ -6197,8 +6200,8 @@ class _Handler(BaseHTTPRequestHandler):
             limit = max(1, min(500, limit))
             if catalog_ref is not None:
                 cid, raw_snap, _campaign_dir, _root_is_current = catalog_ref
-                world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else ""
-                self._json(build_roster_response(cid, race, char_class, level, limit, world_id=world_id or ""))
+                world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else None
+                self._json(build_roster_response(cid, race, char_class, level, limit, world_id=world_id))
                 return
             self._json(build_roster_response(cid, race, char_class, level, limit))
         elif route in ("/monitor", "/monitor.html"):

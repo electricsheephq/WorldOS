@@ -108,13 +108,15 @@ struct CodexProvider: ProviderAdapter {
             )
         }
 
-        guard FileManager.default.fileExists(atPath: wrapper.path) else {
-            return ProviderStatus(
-                kind: kind,
-                availability: .error,
-                detail: "Codex CLI found, but scripts/play_codex_dm.sh is missing from this checkout.",
-                detectedPath: cli
-            )
+        if configuredCommand.isEmpty {
+            guard FileManager.default.fileExists(atPath: wrapper.path) else {
+                return ProviderStatus(
+                    kind: kind,
+                    availability: .error,
+                    detail: "Codex CLI found, but scripts/play_codex_dm.sh is missing from this checkout.",
+                    detectedPath: cli
+                )
+            }
         }
 
         return ProviderStatus(
@@ -123,7 +125,7 @@ struct CodexProvider: ProviderAdapter {
             detail: configuredCommand.isEmpty
                 ? "Ready. Launches the checked-in Codex DM wrapper with the WorldOS provider environment. Actor helper: \(actorHelper.path)."
                 : "Ready. Launches your configured Codex command with the WorldOS provider environment.",
-            detectedPath: configuredCommand.isEmpty ? wrapper.path : cli
+            detectedPath: configuredCommand.isEmpty ? wrapper.path : configuredCommand
         )
     }
 
@@ -140,12 +142,13 @@ struct CodexProvider: ProviderAdapter {
             throw ProviderError.missingDependency("Codex CLI is missing. Install codex before starting a Codex provider session.")
         }
 
-        let wrapper = repoPath.appendingPathComponent("scripts/play_codex_dm.sh")
-        guard FileManager.default.fileExists(atPath: wrapper.path) else {
-            throw ProviderError.configuration("Codex provider wrapper is missing: scripts/play_codex_dm.sh")
-        }
-
         let configuredCommand = preferences.codexCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        if configuredCommand.isEmpty {
+            let wrapper = repoPath.appendingPathComponent("scripts/play_codex_dm.sh")
+            guard FileManager.default.fileExists(atPath: wrapper.path) else {
+                throw ProviderError.configuration("Codex provider wrapper is missing: scripts/play_codex_dm.sh")
+            }
+        }
         let command = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
         return ProviderLaunchRequest(
             name: "Codex game",

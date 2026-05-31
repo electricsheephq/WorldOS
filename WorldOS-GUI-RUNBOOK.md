@@ -32,7 +32,7 @@
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
-- Do not treat the wrapper as release proof by itself. The 2026-06-01 local built-app proof shows
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T01:24:10+07:00 local built-app proof shows
   it can mint the world, write DM narration, submit one player move, and leave `/session-surface`
   with `can_act:true` for the live/current campaign. Release still requires a short built-app playtest
   plus the full non-partial RRI gate.

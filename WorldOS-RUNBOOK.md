@@ -25,7 +25,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01 (Codex-DM built-app first-turn proof + TCC test-contamination note; release notes below are historical context).
+> Last updated: 2026-06-01T01:40:00+07:00 (Codex-DM built-app first-turn proof + TCC test-contamination note; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
