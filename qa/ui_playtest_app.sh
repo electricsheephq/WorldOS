@@ -347,9 +347,9 @@ PY
     else
       a_log "[A] tearing down minted backend (run=$minted_run) — cold-open was enough."
       pkill -f "play-state/$minted_run/" 2>/dev/null || true
-      pkill -f "play_party.sh $WORLD $minted_run" 2>/dev/null || true
-      pkill -f "play.sh $WORLD $minted_run" 2>/dev/null || true
-      pkill -f "$WORLD $minted_run " 2>/dev/null || true
+      pkill -f "play_party.sh .* $minted_run" 2>/dev/null || true
+      pkill -f "play.sh .* $minted_run" 2>/dev/null || true
+      pkill -f " $minted_run " 2>/dev/null || true
       [ -n "$minted_port" ] && pkill -f "server.py .* $minted_port\$" 2>/dev/null || true
       sleep 1
     fi

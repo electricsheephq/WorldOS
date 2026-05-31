@@ -62,6 +62,10 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("first_turn_ready", harness)
         self.assertIn("waiting for first-turn readiness", harness)
         self.assertIn('.actionModel.actor.name', harness)
+        self.assertIn('play_party.sh .* $minted_run', harness)
+        self.assertIn('play.sh .* $minted_run', harness)
+        self.assertNotIn('play_party.sh $WORLD $minted_run', harness)
+        self.assertNotIn('play.sh $WORLD $minted_run', harness)
 
     def test_provider_viewer_stays_attached_during_native_restarts(self):
         root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
