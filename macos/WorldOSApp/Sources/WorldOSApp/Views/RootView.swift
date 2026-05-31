@@ -244,6 +244,9 @@ struct RootView: View {
     private func startProviderFromBridge(_ payload: [String: Any]) async throws -> [String: Any] {
         let providerRaw = stringPayload(payload, "provider") ?? selectedProviderRaw
         let provider = ProviderKind(rawValue: providerRaw) ?? .claude
+        guard provider.isLaunchEnabled else {
+            throw ProviderError.configuration("Scripted provider is disabled. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 for dev/test smoke.")
+        }
         let world = stringPayload(payload, "world") ?? defaultWorld
         let runId = stringPayload(payload, "runId").flatMap { $0.isEmpty ? nil : $0 } ?? Self.newRunID()
         let companions = stringPayload(payload, "companions") ?? ""
