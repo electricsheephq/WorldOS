@@ -5,10 +5,10 @@
 > legacy. This runbook is the public project map + read order. Machine-specific
 > agent notes such as `CLAUDE.md` are intentionally local-only and gitignored.
 >
-> **Takeover routing, 2026-05-31:** current release/gate state lives in
+> **Takeover routing, 2026-06-01:** current release/gate state lives in
 > `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, then `qa/SCORECARD.md`.
 > The work queue later in this file is historical unless it agrees with those sources.
-> **Local/VM routing, 2026-05-31:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
+> **Local/VM routing, 2026-06-01:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
 > checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
@@ -25,7 +25,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T04:39:09+07:00 (trace-clean Codex-DM built-app play proof + `/app-status` agent observability; release notes below are historical context).
+> Last updated: 2026-06-01T06:34:32+07:00 (`main@080497e`; #475/#494/#495/#496 merged; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -306,11 +306,14 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 **Historical snapshot, not current authority:** this queue was written around `ea815fc`
 (2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465,
 the UX-first doc sync merged as PR #468, and first-minute click/title chrome proof merged as PR #470.
-Local routing sync merged as PR #471, native provider-selection sync merged as PR #472, and takeover
-state docs synced as PR #473. The local app/private-art checkout is now synced at `6e03da4 == origin/main`; the only current gate
+Local routing sync merged as PR #471, native provider-selection sync merged as PR #472, takeover
+state docs synced as PR #473, Codex-DM app observability merged as PR #475, scripted smoke provider merged
+as PR #494, stable agent UI hooks merged as PR #495, and failure-bucket/RRI split metadata merged as PR #496.
+The local app/private-art checkout is now synced at `080497e == origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
-prove first-turn built-app play via #466, then prioritize clickability/chrome, launcher clarity,
+prove current-main built-app play, close/narrow #479 with trace-clean evidence, run #466 only after Mac
+built-app proof plus support-VM preflight, then prioritize clickability/chrome, launcher clarity,
 live-response feel, and CRPG depth before more hardening/proxy/security work.
 
 **LATEST (2026-05-27 cont.3) — the Quest & Arc engine is COMPLETE + WIRED, all combat
