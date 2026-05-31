@@ -50,7 +50,7 @@ source "$funcs" >/dev/null
 
             out = self.run_classifier(f'classify_part_b_score_failure "{score}"')
 
-        self.assertEqual(out, "score_failed|score.json failed: satisfaction=5/10")
+        self.assertEqual(out, "no_provider|score.json failed: satisfaction=5/10")
 
     def test_part_b_artifact_classifier_prefers_console_error(self):
         with tempfile.TemporaryDirectory() as td:

@@ -92,92 +92,34 @@ log "build_sha=$BUILD_SHA version=$VERSION repo=$ROOT"
 
 # Agent-readable failure buckets for built-app smoke. Keep these crisp and stable; the
 # detailed shell/native result still travels separately as original_result.
-APP_FAILURE_BUCKETS_JSON='["no_app","no_launcher","no_provider","no_art","no_actor","no_actions","move_rejected","no_narration","console_error","permission_prompt","score_failed"]'
+APP_FAILURE_BUCKETS_JSON='["no_app","no_launcher","no_provider","no_art","no_actor","no_actions","move_rejected","no_narration","console_error","permission_prompt"]'
 
 bucket_pair() { printf '%s|%s\n' "$1" "$2"; }
 
 classify_native_failure() {  # $1=result $2=can_act $3=surface_json $4=app_status_json
-  python3 - "$1" "$2" "${3:-{}}" "${4:-{}}" <<'PY'
-import json, sys
-result, can_act, surf_raw, status_raw = sys.argv[1:5]
-try: surf = json.loads(surf_raw or "{}")
-except Exception: surf = {}
-try: status = json.loads(status_raw or "{}")
-except Exception: status = {}
-art = status.get("art") if isinstance(status.get("art"), dict) else {}
-live = status.get("live") if isinstance(status.get("live"), dict) else {}
-actor = live.get("actor") if isinstance(live.get("actor"), dict) else {}
-enabled_count = live.get("enabled_action_count")
-chat_lines = (status.get("viewer") or {}).get("chat_lines") if isinstance(status.get("viewer"), dict) else None
-if result in ("build_failed", "app_not_running"):
-    print("no_app|WorldOS.app did not build, launch, or remain running")
-elif result == "no_launcher":
-    print("no_launcher|launcher viewer did not answer /openworlds/")
-elif art.get("private_root_present") is False:
-    print("no_art|private art root was not present in app-status")
-elif can_act != "true":
-    print("no_provider|no minted live provider viewer reported can_act:true")
-elif not actor.get("id") and not actor.get("name"):
-    print("no_actor|app-status did not report an active player actor")
-elif enabled_count == 0:
-    print("no_actions|app-status reported zero enabled player actions")
-elif chat_lines == 0:
-    print("no_narration|app-status reported no chat/narration lines")
-else:
-    print("no_provider|native transition failed without a more specific bucket")
-PY
+  python3 "$ROOT/qa/app_failure_buckets.py" native \
+    --result "$1" \
+    --can-act "${2:-false}" \
+    --surface-json "${3:-{}}" \
+    --app-status-json "${4:-{}}"
 }
 
 classify_part_b_readiness_failure() {  # $1=saw_canact $2=saw_pc $3=chat_lines
-  local saw_canact="${1:-0}" saw_pc="${2:-0}" chat_lines="${3:-0}"
-  if [ "$saw_canact" != "1" ]; then bucket_pair "no_provider" "faithful backend never exposed can_act:true"; return 0; fi
-  if [ "$saw_pc" != "1" ]; then bucket_pair "no_actor" "faithful backend never seated a player character"; return 0; fi
-  if [ "${chat_lines:-0}" -le 0 ]; then bucket_pair "no_narration" "faithful backend produced no opening narration"; return 0; fi
-  bucket_pair "no_actions" "faithful backend was not player-ready"
+  python3 "$ROOT/qa/app_failure_buckets.py" part-b-readiness \
+    --saw-canact "${1:-0}" \
+    --saw-pc "${2:-0}" \
+    --chat-lines "${3:-0}"
 }
 
 classify_part_b_failure_from_artifacts() {  # $1=run_dir $2=fallback_result
-  local dir="$1" fallback="${2:-FAIL}"
-  if grep -RqiE 'permission|not authorized|accessibility|screen recording|AXIsProcessTrusted' "$dir" 2>/dev/null; then
-    bucket_pair "permission_prompt" "macOS permission prompt or accessibility/screen-recording denial appeared"
-  elif grep -RqiE 'console_error|pageerror|uncaught|exception' "$dir/console.ndjson" "$dir/player/console.ndjson" 2>/dev/null; then
-    bucket_pair "console_error" "browser console/page error recorded during app playtest"
-  elif grep -RqiE 'move_rejected|/move.*(4[0-9][0-9]|5[0-9][0-9])|move not sent|rejected' "$dir/actions.ndjson" "$dir/network.ndjson" "$dir/player/network.ndjson" "$dir/summary.md" 2>/dev/null; then
-    bucket_pair "move_rejected" "player move was rejected or failed to reach /move"
-  else
-    bucket_pair "no_provider" "part B failed: $fallback"
-  fi
+  python3 "$ROOT/qa/app_failure_buckets.py" part-b-artifacts \
+    --run-dir "$1" \
+    --fallback-result "${2:-FAIL}"
 }
 
 classify_part_b_score_failure() {  # $1=score_json
-  python3 - "${1:-}" <<'PY'
-import json, sys
-path = sys.argv[1]
-try:
-    score = json.load(open(path, encoding="utf-8"))
-except Exception as exc:
-    print(f"score_failed|score.json pass=false and score could not be read: {exc}")
-    raise SystemExit(0)
-console_errors = int(score.get("console_errors") or 0)
-critical = int(score.get("bug_reports_critical") or 0)
-satisfaction = score.get("persona_satisfaction")
-if console_errors > 0:
-    print(f"console_error|score.json failed: console_errors={console_errors}")
-elif critical > 0:
-    print(f"score_failed|score.json failed: critical_bug_reports={critical}")
-elif not score.get("completed_intro_flow"):
-    if score.get("reached_play_screen"):
-        print("no_actions|score.json failed: player reached the table but submitted no in-story turn")
-    else:
-        print("no_actions|score.json failed: player never reached the playable table")
-elif score.get("gave_up"):
-    detail = str(score.get("give_up_reason") or "player gave up").strip()
-    print(f"score_failed|score.json failed: {detail}")
-elif isinstance(satisfaction, (int, float)) and satisfaction < 6:
-    print(f"score_failed|score.json failed: satisfaction={satisfaction}/10")
-else:
-    print("score_failed|score.json pass=false without a more specific signal")
-PY
+  python3 "$ROOT/qa/app_failure_buckets.py" part-b-score \
+    --score-json "${1:-}"
 }
 
 set_bucket_pair() {  # $1=A|B $2='bucket|detail'

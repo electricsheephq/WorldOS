@@ -608,7 +608,12 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                 )
                 part_b = {"persona_loop": "PASS", "score_pass": True}
                 if persona == "veteran":
-                    part_b = {"persona_loop": "FAIL", "score_pass": False}
+                    part_b = {
+                        "persona_loop": "FAIL",
+                        "score_pass": False,
+                        "failure_bucket": "move_rejected",
+                        "failure_detail": "POST /move returned 500",
+                    }
                 (run / "run.json").write_text(
                     json.dumps({"build_sha": "deadbee", "part_a": {"result": "PASS"}, "part_b": part_b}),
                     encoding="utf-8",
@@ -660,6 +665,7 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertFalse(payload["release_ready"])
             self.assertIn("arc_completed", {gap["gate"] for gap in payload["evidence_gaps"]})
             self.assertIn("veteran", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+            self.assertIn("move_rejected", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
 
     def test_mixed_build_sha_blocks_release_ready(self):
         with tempfile.TemporaryDirectory() as td:

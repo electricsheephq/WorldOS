@@ -142,12 +142,19 @@ def main() -> int:
         rj = read_json(rd / "run.json")
         sc = read_json(rd / "score.json")
         if not sc:
-            part_b = (rj.get("part_b") or {}).get("persona_loop")
+            part_a_obj = rj.get("part_a") or {}
+            part_b_obj = rj.get("part_b") or {}
+            part_b = part_b_obj.get("persona_loop")
             harness_failures.append({
                 "run": rd.name,
                 "persona": expected_for_run or infer_persona(rd),
                 "missing": "score.json",
+                "part_a": part_a_obj.get("result") or "n/a",
                 "part_b": part_b or "n/a",
+                "part_a_failure_bucket": part_a_obj.get("failure_bucket") or "",
+                "part_a_failure_detail": part_a_obj.get("failure_detail") or "",
+                "part_b_failure_bucket": part_b_obj.get("failure_bucket") or "",
+                "part_b_failure_detail": part_b_obj.get("failure_detail") or "",
             })
             continue
         rate, ok, total, image_source = image_render_rate(rd, sc)
@@ -169,6 +176,11 @@ def main() -> int:
             "run_build_sha": rj.get("build_sha") or "",
             "part_b_result": (rj.get("part_b") or {}).get("persona_loop") or "n/a",
             "part_b_score_pass": bool((rj.get("part_b") or {}).get("score_pass")),
+            "part_a_result": (rj.get("part_a") or {}).get("result") or "n/a",
+            "part_a_failure_bucket": (rj.get("part_a") or {}).get("failure_bucket") or "",
+            "part_a_failure_detail": (rj.get("part_a") or {}).get("failure_detail") or "",
+            "part_b_failure_bucket": (rj.get("part_b") or {}).get("failure_bucket") or "",
+            "part_b_failure_detail": (rj.get("part_b") or {}).get("failure_detail") or "",
         })
 
     if not expected_personas:
@@ -199,11 +211,16 @@ def main() -> int:
 
     # native gate: read part_a from any run.json present
     native = ""
+    native_detail = ""
     for rd in run_dirs:
         rj = read_json(rd / "run.json")
-        pa = (rj.get("part_a") or {}).get("result")
+        part_a_obj = rj.get("part_a") or {}
+        pa = part_a_obj.get("result")
         if pa:
             native = pa
+            bucket = part_a_obj.get("failure_bucket") or ""
+            detail = part_a_obj.get("failure_detail") or ""
+            native_detail = f" failure_bucket={bucket} failure_detail={detail}".strip() if bucket or detail else ""
             break
 
     evidence_gaps = []
@@ -245,23 +262,38 @@ def main() -> int:
                 "detail": missing_detail,
             })
     for h in harness_failures:
+        buckets = ", ".join(
+            value for value in (
+                f"part_a_bucket={h.get('part_a_failure_bucket')}" if h.get("part_a_failure_bucket") else "",
+                f"part_b_bucket={h.get('part_b_failure_bucket')}" if h.get("part_b_failure_bucket") else "",
+            )
+            if value
+        )
         evidence_gaps.append({
             "gate": "cross_persona_sat",
             "missing": f"{h['run']}/score.json",
-            "detail": f"persona={h.get('persona') or 'unknown'} part_b={h.get('part_b') or 'n/a'}",
+            "detail": f"persona={h.get('persona') or 'unknown'} part_a={h.get('part_a') or 'n/a'} part_b={h.get('part_b') or 'n/a'} {buckets}".strip(),
         })
     failed_part_b = [p for p in persona_scores if p.get("part_b_result") != "PASS"]
     for p in failed_part_b:
+        bucket = p.get("part_b_failure_bucket") or ""
+        detail = p.get("part_b_failure_detail") or ""
         evidence_gaps.append({
             "gate": "arc_completed",
             "missing": f"{p['run']}/run.json part_b PASS",
-            "detail": f"persona={p.get('persona') or 'unknown'} part_b={p.get('part_b_result')} score_pass={p.get('part_b_score_pass')}",
+            "detail": f"persona={p.get('persona') or 'unknown'} part_b={p.get('part_b_result')} score_pass={p.get('part_b_score_pass')} failure_bucket={bucket} failure_detail={detail}".strip(),
         })
     if not native:
         evidence_gaps.append({
             "gate": "native_gate",
             "missing": "run.json part_a.result",
             "detail": "no persona run recorded native built-app transition evidence",
+        })
+    elif native != "PASS":
+        evidence_gaps.append({
+            "gate": "native_gate",
+            "missing": "run.json part_a PASS",
+            "detail": f"part_a={native} {native_detail}".strip(),
         })
     if not args.story:
         evidence_gaps.append({"gate": "story_craft", "missing": "--story", "detail": "story lens path not supplied"})
@@ -300,7 +332,7 @@ def main() -> int:
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
     gates = {
         "native_gate":        (native == "PASS" and "native_gate" not in evidence_gap_gates,
-                               f"part_a={native or 'n/a'}"),
+                               f"part_a={native or 'n/a'} {native_detail}".strip()),
         "arc_completed":      (any_completed and "arc_completed" not in evidence_gap_gates,
                                f"completed_intro_flow on >=1 persona"),
         "cross_persona_sat":  (not missing_release_personas and expected_complete and avg_sat >= 7.0,

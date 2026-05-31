@@ -46,15 +46,17 @@ class ExportAppEvidenceTests(unittest.TestCase):
         thread.start()
         return server, f"http://127.0.0.1:{server.server_port}/app-status?campaign=camp_test"
 
-    def run_exporter(self, out: Path, app_status_url: str) -> tuple[int, str, dict]:
+    def run_exporter(self, out: Path, app_status_url: str = "", extra_args: list[str] | None = None) -> tuple[int, str, dict]:
         cmd = [
             sys.executable,
             str(SCRIPT),
-            "--app-status-url",
-            app_status_url,
             "--out",
             str(out),
         ]
+        if app_status_url:
+            cmd.extend(["--app-status-url", app_status_url])
+        if extra_args:
+            cmd.extend(extra_args)
         proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True, check=False)
         manifest = out / "manifest.json"
         payload = json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else {}
@@ -125,6 +127,46 @@ class ExportAppEvidenceTests(unittest.TestCase):
             gaps = {(gap["source"], gap["kind"]) for gap in payload["evidence_gaps"]}
             self.assertIn(("local_file", "chat"), gaps)
             self.assertIn(("local_file", "moves"), gaps)
+
+    def test_run_dir_mode_copies_allowlisted_artifacts_and_failure_bucket(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = tmp / "smoke-run"
+            (run / "screenshots").mkdir(parents=True)
+            (run / "a11y").mkdir()
+            (run / "scripted-provider").mkdir()
+            (run / "native").mkdir()
+            (run / "smoke.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "worldos.scripted-app-smoke.v1",
+                        "status": "failed",
+                        "failure_bucket": "move_rejected",
+                        "failure_detail": "POST /move returned 500",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run / "screenshots" / "beat-001.png").write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            (run / "a11y" / "beat-001.html").write_text("<main>fixture</main>\n", encoding="utf-8")
+            (run / "actions.ndjson").write_text('{"action":"post_move"}\n', encoding="utf-8")
+            (run / "scripted-provider" / "summary.json").write_text('{"provider":"scripted"}\n', encoding="utf-8")
+            (run / "scripted-provider" / "trace.ndjson").write_text('{"event":"move_resolved"}\n', encoding="utf-8")
+            (run / "native" / "transition.json").write_text('{"failure_bucket":"no_launcher"}\n', encoding="utf-8")
+            out = tmp / "bundle"
+
+            rc, text, payload = self.run_exporter(out, extra_args=["--run-dir", str(run)])
+
+            self.assertEqual(rc, 0, text)
+            self.assertEqual(payload["sources"]["run_dir"]["ok"], True)
+            self.assertEqual(payload["failure"]["failure_bucket"], "move_rejected")
+            copied = {entry["path"] for entry in payload["copied_files"]}
+            self.assertIn("run-dir/screenshots/beat-001.png", copied)
+            self.assertIn("run-dir/a11y/beat-001.html", copied)
+            self.assertIn("run-dir/scripted-provider/summary.json", copied)
+            self.assertIn("run-dir/scripted-provider/trace.ndjson", copied)
+            self.assertIn("run-dir/native/transition.json", copied)
+            self.assertEqual(payload["evidence_gaps"], [])
 
 
 if __name__ == "__main__":

@@ -125,7 +125,6 @@ class MacOSAppStaticContractTests(unittest.TestCase):
             "no_narration",
             "console_error",
             "permission_prompt",
-            "score_failed",
         ):
             self.assertIn(f'"{bucket}"', harness)
 
@@ -142,7 +141,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("original_result", harness)
         self.assertIn("move_rejected", harness)
         self.assertIn("console_error", harness)
-        self.assertIn("score_failed", harness)
+        self.assertNotIn('"score_failed"', harness)
 
     def test_provider_viewer_stays_attached_during_native_restarts(self):
         root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
