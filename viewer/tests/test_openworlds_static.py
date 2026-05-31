@@ -350,6 +350,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(1, launcher.count('testId="chronicle-resume"'))
         self.assertEqual(1, launcher.count('data-worldos-testid="chronicle-start-flow"'))
         self.assertEqual(1, launcher.count('testId="chronicle-create-submit"'))
+        self.assertIn('aria-pressed={selected ? "true" : "false"}', launcher)
         self.assertIn('role="alert"', launcher)
 
         for hook in (
@@ -366,6 +367,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             self.assertIn(hook, table)
         self.assertIn('testId="move-submit"', table)
         self.assertIn('aria-label="Describe your move"', table)
+        self.assertIn('aria-live={surfaceStatus === "loading" ? "polite" : "assertive"}', table)
+        self.assertIn('aria-label={label}', table)
 
         for hook in (
             'data-worldos-testid="provider-status"',

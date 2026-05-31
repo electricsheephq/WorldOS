@@ -477,7 +477,7 @@ function CampaignRow({ c, selected, onSelect }) {
       type="button"
       data-worldos-testid="campaign-row"
       data-worldos-campaign-id={c.id || undefined}
-      aria-pressed={selected}
+      aria-pressed={selected ? "true" : "false"}
       onClick={onSelect}
       style={{
         textAlign: "left",

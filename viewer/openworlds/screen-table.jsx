@@ -593,7 +593,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         {surfaceStatus !== "ready" && (
           <div
             role={surfaceStatus === "loading" ? "status" : "alert"}
-            aria-live="polite"
+            aria-live={surfaceStatus === "loading" ? "polite" : "assertive"}
             data-worldos-testid="session-surface-status"
             data-worldos-status={surfaceStatus}
             className="body-sm"
@@ -1181,7 +1181,7 @@ function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, a
       type="button"
       onClick={onClick}
       title={hint || undefined}
-      aria-label={hint || label}
+      aria-label={label}
       data-worldos-testid="action-button"
       data-worldos-action-id={actionId || undefined}
       style={{
