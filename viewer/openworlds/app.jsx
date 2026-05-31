@@ -917,14 +917,20 @@ function capabilityForScreen(screen, nativeState) {
   return null;
 }
 
+function nativePreferredProvider(nativeState) {
+  const app = nativeState?.appStatus || {};
+  return app?.preferences?.selectedProvider || app?.selectedProvider || "";
+}
+
 function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMode, nativeState, refreshNative, liveSession }) {
+  const preferredProvider = nativePreferredProvider(nativeState);
   switch (screen) {
-    case "launcher":  return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
-    case "roster":    return <ScreenRoster state={state} setState={setState} onNavigate={onNavigate} />;
+    case "launcher":  return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
+    case "roster":    return <ScreenRoster state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
     case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} liveSession={liveSession} />;
     case "combat":    return <ScreenCombat state={state} setState={setState} onNavigate={onNavigate} />;
     case "character": return <ScreenCharacter state={state} setState={setState} onNavigate={onNavigate} />;
-    case "create":    return <ScreenCreate state={state} setState={setState} onNavigate={onNavigate} />;
+    case "create":    return <ScreenCreate state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
     case "forge":     return <ScreenForge state={state} setState={setState} onNavigate={onNavigate} />;
     case "relations": return <ScreenRelations state={state} setState={setState} onNavigate={onNavigate} />;
     case "acts":      return <ScreenActs state={state} setState={setState} onNavigate={onNavigate} />;
@@ -936,7 +942,7 @@ function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMo
     case "merchant":  return <ScreenMerchant state={state} setState={setState} onNavigate={onNavigate} />;
     case "dialogue":  return <ScreenDialogue state={state} setState={setState} onNavigate={onNavigate} />;
     case "settings":  return <ScreenSettings state={state} setState={setState} onNavigate={onNavigate} nativeState={nativeState} refreshNative={refreshNative} />;
-    default:          return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} />;
+    default:          return <ScreenLauncher state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
   }
 }
 

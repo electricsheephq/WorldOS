@@ -538,6 +538,25 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("private canon", encoded)
         self.assert_no_private_keys(json.loads(encoded))
 
+    def test_native_start_surfaces_use_app_selected_provider(self):
+        app = (Path(__file__).resolve().parents[1] / "openworlds" / "app.jsx").read_text(encoding="utf-8")
+        self.assertIn("function nativePreferredProvider(nativeState)", app)
+        self.assertIn('return app?.preferences?.selectedProvider || app?.selectedProvider || "";', app)
+        self.assertIn("const preferredProvider = nativePreferredProvider(nativeState);", app)
+        self.assertIn("preferredProvider={preferredProvider}", app)
+
+        for name in ("screen-launcher.jsx", "screen-create.jsx", "screen-roster.jsx"):
+            source = (Path(__file__).resolve().parents[1] / "openworlds" / name).read_text(encoding="utf-8")
+            self.assertIn('preferredProvider = ""', source, name)
+            self.assertIn("if (preferredProvider) payload.provider = preferredProvider;", source, name)
+            self.assertNotIn('provider: "claude"', source, name)
+            self.assertNotIn('preferredProvider || "claude"', source, name)
+
+        settings = (Path(__file__).resolve().parents[1] / "openworlds" / "screen-settings.jsx").read_text(encoding="utf-8")
+        self.assertIn('const provider = prefs.selectedProvider || app.selectedProvider || "";', settings)
+        self.assertIn("if (provider) payload.provider = provider;", settings)
+        self.assertNotIn('provider: prefs.selectedProvider || app.selectedProvider || "claude"', settings)
+
     def test_monitor_play_campaign_links_openworlds_not_legacy_dashboard(self):
         source = (Path(__file__).resolve().parents[1] / "monitor.html").read_text(encoding="utf-8")
 

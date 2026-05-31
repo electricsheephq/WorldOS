@@ -1,6 +1,6 @@
 /* Screen: Launcher / Worlds — campaign selection + new campaign */
 
-function ScreenLauncher({ onNavigate, state, setState }) {
+function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
@@ -29,9 +29,8 @@ function ScreenLauncher({ onNavigate, state, setState }) {
   }, [campaigns, selected, state?.activeCampaign]);
 
   // Begin a live, playable session. Inside the native WorldOS app this asks the supervisor
-  // to start a provider session (scripts/play.sh: a move-sink-wired viewer + a claude -p
-  // Dungeon Master). The app repoints its WebView at that live viewer on a fresh port, so
-  // the page reloads and app.jsx auto-lands us in the table once a provider is running.
+  // to start the currently selected provider session. The app repoints its WebView at that
+  // live viewer on a fresh port, so the page reloads and app.jsx auto-lands us in the table.
   // Outside the app (a plain 8799 browser preview) there is no DM to attach — fall back to
   // the read-only table so the surface stays reachable.
   const startPlay = async (world) => {
@@ -50,12 +49,13 @@ function ScreenLauncher({ onNavigate, state, setState }) {
     window.OpenWorldsBuilding?.begin?.({ world: world || "baldurs-gate", kind: "play" });
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
     try {
-      const reply = await window.OpenWorldsNative.request("startProviderSession", {
-        provider: "claude",
+      const payload = {
         world: world || "baldurs-gate",
         runId: `play-${stamp}`,
         companions: "",
-      });
+      };
+      if (preferredProvider) payload.provider = preferredProvider;
+      const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       // Drive the reload to the live, sink-wired viewer from JS using the URL the bridge
       // returns — don't rely on the native WebView re-binding its own state across the async
       // hop. The live viewer boots fresh and app.jsx auto-routes into the table once the
