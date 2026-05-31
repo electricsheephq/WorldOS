@@ -229,7 +229,7 @@ dm_turn() {
   out="$DM_LOG.$(date +%s%N).jsonl"
   _dm_invoke() {
     timeout "$CLAWDND_BEAT_TIMEOUT" \
-      claude -p "$msg" "${resume[@]}" "${extra[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
   }
