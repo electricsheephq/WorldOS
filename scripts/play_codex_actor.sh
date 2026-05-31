@@ -138,7 +138,7 @@ out_path.write_text(
                     "my_sheet",
                 ]
             ),
-            'default_tools_approval_mode = "auto"',
+            'default_tools_approval_mode = "approve"',
             "",
         ]
     ),
@@ -196,7 +196,11 @@ if [ "$MODE" != "run" ]; then
   exit 0
 fi
 
-CODEX_MODEL="${CLAWDND_CODEX_MODEL:-gpt-5.1-codex-max}"
+CODEX_MODEL="${CLAWDND_CODEX_MODEL:-}"
+MODEL_ARGS=()
+if [ -n "${CODEX_MODEL//[[:space:]]/}" ]; then
+  MODEL_ARGS=(--model "$CODEX_MODEL")
+fi
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export CLAWDND_PLAYER_MOVES="$MOVES"
 export CLAWDND_ACTOR_ID="${CLAWDND_ACTOR_ID:-}"
@@ -206,15 +210,15 @@ codex exec \
   --ignore-user-config \
   --ignore-rules \
   --sandbox read-only \
-  --ask-for-approval never \
   --json \
-  --model "$CODEX_MODEL" \
+  ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
   --cd "$ROOT" \
   --output-last-message "$LAST_MESSAGE" \
   -c "mcp_servers.clawdnd-player.command=\"uv\"" \
   -c "mcp_servers.clawdnd-player.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"player_server.py\"]" \
   -c "mcp_servers.clawdnd-player.env_vars=[\"CLAWDND_STATE_DIR\",\"CLAWDND_PLAYER_MOVES\",\"CLAWDND_ACTOR_ID\",\"CLAWDND_ACTOR_ROLE\"]" \
   -c "mcp_servers.clawdnd-player.required=true" \
+  -c "mcp_servers.clawdnd-player.default_tools_approval_mode=\"approve\"" \
   -c "mcp_servers.clawdnd-player.enabled_tools=[\"say\",\"do\",\"clarify\",\"request_check\",\"cast_spell\",\"use_item\",\"attack\",\"look\",\"my_sheet\"]" \
   - < "$PROMPT_FILE" \
   > >(tee -a "$STDOUT_LOG") \

@@ -53,6 +53,7 @@ class RosterSurfaceTests(unittest.TestCase):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_here = server._HERE
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -70,6 +71,7 @@ class RosterSurfaceTests(unittest.TestCase):
             os.environ.pop("CLAWDND_STATE_DIR", None)
         else:
             os.environ["CLAWDND_STATE_DIR"] = self._old_state
+        server._HERE = self._old_here
 
     def _get_json(self, path: str) -> tuple[int, dict]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=10)
@@ -173,6 +175,22 @@ class RosterSurfaceTests(unittest.TestCase):
         chars = surface.get("characters", [])
         self.assertTrue(chars)
         self.assertTrue(all(c.get("level") == "5" for c in chars))
+
+    def test_catalog_run_uses_snapshot_world_scope(self):
+        repo_root = self._tmp / "repo"
+        (repo_root / "viewer").mkdir(parents=True)
+        server._HERE = repo_root / "viewer"
+        qa_campaign = repo_root / "qa" / "state" / "wave3-red" / "campaigns" / "camp_qa"
+        qa_campaign.mkdir(parents=True)
+        (qa_campaign / "snapshot.json").write_text(
+            json.dumps({"id": "camp_qa", "world_id": "sundered-reach"}),
+            encoding="utf-8",
+        )
+
+        status, surface = self._get_json("/roster-surface?source=qa&run=wave3-red&campaign=camp_qa&limit=1")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(surface.get("world_id"), "sundered-reach")
 
     # ── facets for the filter chips ──────────────────────────────────────────────
 

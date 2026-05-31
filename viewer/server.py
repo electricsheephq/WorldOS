@@ -765,6 +765,7 @@ def build_roster_response(
     char_class: str = "",
     level: str = "",
     limit: int = 120,
+    world_id: str = "",
 ) -> dict:
     """GET /roster-surface read model — the canon-NPC PICKER ("reverse character creator").
 
@@ -777,7 +778,9 @@ def build_roster_response(
     the native startProviderSession bridge / load_canon_character, never here. Mirrors
     build_bestiary_response: a graceful empty payload when the engine can't be imported."""
     engine = _load_engine_server()
-    world_id = _roster_world_for_campaign(campaign_id)
+    world_id = world_id.strip() if isinstance(world_id, str) else ""
+    if not world_id:
+        world_id = _roster_world_for_campaign(campaign_id)
     if engine is None or not hasattr(engine, "content_mod") or not hasattr(engine.content_mod, "roster_surface"):
         detail = _ENGINE_IMPORT_ERROR or "engine roster projection is unavailable"
         return {
@@ -6181,6 +6184,7 @@ class _Handler(BaseHTTPRequestHandler):
             # bridge / load_canon_character, never here.
             qs = parse_qs(parsed.query)
             cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
+            catalog_ref = _session_surface_catalog_ref(qs)
             race = (qs.get("race") or [""])[0]
             char_class = (qs.get("class") or qs.get("char_class") or [""])[0]
             level = (qs.get("level") or [""])[0]
@@ -6191,6 +6195,11 @@ class _Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 limit = 120
             limit = max(1, min(500, limit))
+            if catalog_ref is not None:
+                cid, raw_snap, _campaign_dir, _root_is_current = catalog_ref
+                world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else ""
+                self._json(build_roster_response(cid, race, char_class, level, limit, world_id=world_id or ""))
+                return
             self._json(build_roster_response(cid, race, char_class, level, limit))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play

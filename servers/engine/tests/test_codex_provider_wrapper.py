@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "play_codex_actor.sh"
+DM_SCRIPT = ROOT / "scripts" / "play_codex_dm.sh"
 
 
 def _env(tmp_path: Path, **overrides: str) -> dict[str, str]:
@@ -36,6 +37,17 @@ def _env(tmp_path: Path, **overrides: str) -> dict[str, str]:
 def _run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["/bin/bash", str(SCRIPT), *args],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+
+def _run_dm(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["/bin/bash", str(DM_SCRIPT), *args],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -78,6 +90,7 @@ def test_codex_wrapper_smoke_generates_player_facade_config_only(tmp_path):
     assert "[mcp_servers.clawdnd-player]" in config
     assert "player_server.py" in config
     assert "CLAWDND_PLAYER_MOVES" in config
+    assert 'default_tools_approval_mode = "approve"' in config
     assert "servers/engine/server.py" not in config
     assert "qa/" not in config
 
@@ -93,3 +106,183 @@ def test_codex_wrapper_dry_run_uses_play_state_layout(tmp_path):
     summary = json.loads(result.stdout[result.stdout.index("{") :])
     assert summary["config"].endswith("/layout-check/codex-provider/codex-player.toml")
     assert summary["moves"].endswith("/layout-check/player_moves.jsonl")
+
+
+def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
+    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_RUN_ID="dm-layout"))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    assert summary["ok"] is True
+    assert summary["mode"] == "dry-run"
+    assert summary["provider"] == "codex"
+    assert summary["role"] == "dm"
+    assert summary["viewer_url"].endswith(":8765/openworlds/")
+    assert summary["config"].endswith("/dm-layout/codex-provider/codex-dm.toml")
+    assert summary["moves"].endswith("/dm-layout/player_moves.jsonl")
+    assert summary["chat"].endswith("/dm-layout/chat.jsonl")
+
+    config = Path(summary["config"]).read_text(encoding="utf-8")
+    assert "[mcp_servers.clawdnd-engine]" in config
+    assert "[mcp_servers.clawdnd-rules]" in config
+    assert "[mcp_servers.clawdnd-voice]" in config
+    assert "/servers/engine" in config
+    assert "/servers/rules" in config
+    assert "/servers/voice" in config
+    assert '"python"' in config
+    assert '"server.py"' in config
+    assert config.count('default_tools_approval_mode = "approve"') == 3
+    assert "player_server.py" not in config
+    assert "CLAWDND_STATE_DIR" in config
+
+    assert Path(summary["moves"]).exists()
+    assert Path(summary["chat"]).exists()
+
+
+def test_codex_dm_wrapper_dry_run_surfaces_native_selected_hero(tmp_path):
+    hero = json.dumps({"canon": True, "name": "Abby"})
+    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_PLAY_HERO=hero))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    assert summary["hero"] == {"canon": True, "name": "Abby"}
+
+
+def test_codex_dm_wrapper_honors_native_selected_hero():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "CLAWDND_PLAY_HERO" in source
+    assert 'load_canon_character(camp, canon_name, kind="player", add_to_party=True)' in source
+    assert "Native-selected canon hero already seated" in source
+
+
+def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      last="$2"
+      shift 2
+      ;;
+    --model)
+      echo "unexpected model arg" >&2
+      exit 7
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat >/dev/null
+printf 'Opening narration from fake Codex.' > "$last"
+printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="fake-codex-run",
+        CLAWDND_PLAY_PORT="8797",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+
+    result = _run_dm([], env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    chat = tmp_path / "fake-codex-run" / "chat.jsonl"
+    assert "Opening narration from fake Codex." in chat.read_text(encoding="utf-8")
+
+
+def test_codex_dm_wrapper_processes_moves_submitted_during_opening(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      last="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat >/dev/null
+marker="$CLAWDND_STATE_DIR/.fake-opening-seen"
+if [ ! -f "$marker" ]; then
+  touch "$marker"
+  printf '{"role":"player","kind":"do","text":"queued during opening"}\\n' >> "$CLAWDND_STATE_DIR/player_moves.jsonl"
+  printf 'Opening narration from fake Codex.' > "$last"
+  printf '{"type":"result","result":"Opening narration from fake Codex."}\\n'
+else
+  printf 'Second turn response from fake Codex.' > "$last"
+  printf '{"type":"result","result":"Second turn response from fake Codex."}\\n'
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="queued-opening-move",
+        CLAWDND_PLAY_PORT="8798",
+        CLAWDND_PLAY_MAX_TURNS="2",
+    )
+
+    result = subprocess.run(
+        ["/bin/bash", str(DM_SCRIPT)],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    chat = (tmp_path / "queued-opening-move" / "chat.jsonl").read_text(encoding="utf-8")
+    assert "Opening narration from fake Codex." in chat
+    assert "[do] queued during opening" in chat
+    assert "Second turn response from fake Codex." in chat
+
+
+def test_native_codex_provider_defaults_to_dm_wrapper():
+    source = (ROOT / "macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift").read_text(
+        encoding="utf-8"
+    )
+
+    assert "scripts/play_codex_dm.sh" in source
+    assert "scripts/play_codex_actor.sh" in source
+    assert source.index("scripts/play_codex_dm.sh") < source.index("scripts/play_codex_actor.sh")
+
+
+def test_native_codex_provider_passes_selected_hero_to_wrapper():
+    source = (ROOT / "macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'environment["CLAWDND_PLAY_HERO"] = trimmedHero' in source
+    assert "hero: hero," in source
+
+
+def test_codex_wrappers_match_current_cli_flags():
+    for script in (SCRIPT, DM_SCRIPT):
+        source = script.read_text(encoding="utf-8")
+        assert "--ask-for-approval" not in source
+        assert "--sandbox read-only" in source
+        assert 'default_tools_approval_mode=\\"approve\\"' in source
+        assert "gpt-5.1-codex-max" not in source

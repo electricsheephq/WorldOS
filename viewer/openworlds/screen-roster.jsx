@@ -140,6 +140,8 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
   const campaignId = campaigns.some((c) => c.id === state?.activeCampaign)
     ? state.activeCampaign
     : (campaigns[0]?.id || "");
+  const activeCampaign = campaigns.find((c) => c.id === campaignId) || campaigns[0] || {};
+  const rosterCampaignId = activeCampaign.campaign_id || campaignId;
   const hasBridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
   // #326: an already-playable session (live + resumable) the browser player can enter directly,
   // mirroring the launcher. Without the desktop bridge a NEW hero bind can't mint a DM session,
@@ -169,7 +171,9 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (campaignId) params.set("campaign", campaignId);
+      if (rosterCampaignId) params.set("campaign", rosterCampaignId);
+      if (activeCampaign.source) params.set("source", activeCampaign.source);
+      if (activeCampaign.runId) params.set("run", activeCampaign.runId);
       if (race) params.set("race", race);
       if (klass) params.set("class", klass);
       if (level) params.set("level", level);
@@ -196,7 +200,7 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
     } finally {
       if (!isCancelled()) setLoading(false);
     }
-  }, [campaignId, race, klass, level]);
+  }, [rosterCampaignId, activeCampaign.source, activeCampaign.runId, race, klass, level]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -245,7 +249,7 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
       const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
       if (liveUrl) {
-        window.location.assign(liveUrl);
+        window.location.replace(liveUrl);
         return;
       }
       setSummoningName("");

@@ -50,6 +50,20 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
         self.assertIn('env["CLAWDND_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
 
+    def test_provider_viewer_stays_attached_during_native_restarts(self):
+        root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
+        app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")
+
+        self.assertIn("activeProviderOpenWorldsURL", app_process)
+        self.assertIn('endpoint.name == "Provider viewer"', app_process)
+        self.assertIn("markProviderViewerReady()", app_process)
+        self.assertIn("keepActiveProviderViewerAttached()", root_view)
+        self.assertRegex(
+            root_view,
+            r"private func startOpenWorlds\(\) \{\s*if keepActiveProviderViewerAttached\(\)",
+        )
+        self.assertIn('launchMessage = "Provider session active"', root_view)
+
 
 if __name__ == "__main__":
     unittest.main()

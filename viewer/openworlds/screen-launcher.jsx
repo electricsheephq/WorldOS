@@ -58,11 +58,11 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
       const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       // Drive the reload to the live, sink-wired viewer from JS using the URL the bridge
       // returns — don't rely on the native WebView re-binding its own state across the async
-      // hop. The live viewer boots fresh and app.jsx auto-routes into the table once the
-      // provider is running. (location.assign re-runs the native bridge user-script there.)
+      // hop. Replace history instead of appending it: the previous standalone viewer is stale
+      // once a provider is attached, and Back must not strand the player on a read-only table.
       const liveUrl = reply && (reply.url || reply.viewer?.openWorldsURL);
       if (liveUrl) {
-        window.location.assign(liveUrl);
+        window.location.replace(liveUrl);
         return;
       }
       window.OpenWorldsBuilding?.clear?.();

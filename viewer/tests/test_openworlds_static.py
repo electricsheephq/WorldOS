@@ -153,6 +153,18 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("Img scope=", rel_src)
         self.assertIn("portrait-", rel_src)
 
+    def test_provider_launch_replaces_stale_standalone_viewer_history(self):
+        # Once a native provider attaches, the previous standalone viewer is stale/read-only.
+        # Replacing history keeps Back/navigation drift from disconnecting the player from /move.
+        for rel in (
+            "screen-launcher.jsx",
+            "screen-create.jsx",
+            "screen-roster.jsx",
+        ):
+            source = (server._OPENWORLDS_DIR / rel).read_text(encoding="utf-8")
+            self.assertIn("window.location.replace(liveUrl)", source, rel)
+            self.assertNotIn("window.location.assign(liveUrl)", source, rel)
+
     def test_character_screen_window_exports_are_defined(self):
         status, ctype, body = self._get("/openworlds/screen-character.jsx")
 
@@ -556,6 +568,15 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('const provider = prefs.selectedProvider || app.selectedProvider || "";', settings)
         self.assertIn("if (provider) payload.provider = provider;", settings)
         self.assertNotIn('provider: prefs.selectedProvider || app.selectedProvider || "claude"', settings)
+
+    def test_roster_screen_uses_catalog_campaign_scope(self):
+        source = (Path(__file__).resolve().parents[1] / "openworlds" / "screen-roster.jsx").read_text(encoding="utf-8")
+
+        self.assertIn("activeCampaign.campaign_id || campaignId", source)
+        self.assertIn('params.set("campaign", rosterCampaignId);', source)
+        self.assertIn('params.set("source", activeCampaign.source);', source)
+        self.assertIn('params.set("run", activeCampaign.runId);', source)
+        self.assertNotIn('params.set("campaign", campaignId);', source)
 
     def test_monitor_play_campaign_links_openworlds_not_legacy_dashboard(self):
         source = (Path(__file__).resolve().parents[1] / "monitor.html").read_text(encoding="utf-8")

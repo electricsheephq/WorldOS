@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-05-31: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`5dd1391 == origin/main` after #472) and the default place to build/run/test the GUI and native app.
+> (`6e03da4 == origin/main` after #473) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -30,11 +30,12 @@
 
 - OpenWorlds native-start surfaces now honor the macOS app's selected provider (#472). If the web UI has
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
-- Do not treat that as a Claude-free release proof. The default Codex wrapper
-  (`scripts/play_codex_actor.sh`) is a constrained **player actor** using the player facade; it is not yet
-  a Dungeon Master loop. OpenClaw is also not launchable until a valid provider command is configured.
-- Before running #466, prove first-turn built-app play with a provider that actually mints the world,
-  writes DM narration, and leaves `/session-surface` with `can_act:true` for the live/current campaign.
+- The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
+  and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
+- Do not treat the wrapper as release proof by itself. The 2026-06-01 local built-app proof shows
+  it can mint the world, write DM narration, submit one player move, and leave `/session-surface`
+  with `can_act:true` for the live/current campaign. Release still requires a short built-app playtest
+  plus the full non-partial RRI gate.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash
@@ -88,6 +89,23 @@ The runtime safety gate includes both critical bug reports and raw console/page 
 palette run.
 Append every `--scorecard-row` line to `qa/SCORECARD.md` as diagnostic release evidence. Only a
 non-partial, non-harness-contaminated 10/10 row with no evidence gaps can count as release evidence.
+
+## macOS privacy prompt triage
+
+During local proof runs, a macOS Photos/Music prompt can be a **test-process attribution artifact**:
+TCC may name the frontmost WorldOS app as `responsible` even when the actual `accessing` process is a
+diagnostic command such as `/usr/bin/find` or `codex`. Before filing this as a product blocker, inspect
+the attribution:
+
+```bash
+/usr/bin/log show --style compact --last 10m \
+  --predicate 'eventMessage CONTAINS[c] "dev.clawdnd" OR eventMessage CONTAINS[c] "kTCCServicePhotos" OR eventMessage CONTAINS[c] "kTCCServiceMediaLibrary"'
+```
+
+If `AUTHREQ_ATTRIBUTION` shows `accessing=/usr/bin/find` or `accessing=codex`, classify it as harness
+contamination and rerun proof without broad filesystem scans while the app is frontmost. If it shows
+`WorldOSApp` or a WebKit child process directly accessing a protected Photos/Music path, treat it as a
+release-blocking product bug.
 
 Non-disruptive Mac smoke during takeover:
 ```bash
