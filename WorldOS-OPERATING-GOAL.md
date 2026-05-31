@@ -5,14 +5,20 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-05-31 post-takeover UX sprint sync
+     AS OF:        2026-05-31 local-checkout sync
      MAIN BASELINE:
-                   e4078c7 (PR #468 merged; verified by git fetch on 2026-05-31).
-                   Re-verify current `origin/main` before acting; use this as the doc-sync baseline.
-     CANONICAL:    /Users/lume/ClawDnD-val is the private-art/live-app checkout; observed at f5500ac
-                   and behind origin/main by 3 commits before takeover. Do not fast-forward it
-                   until the owner intentionally chooses to move the private-art checkout.
-     WORKTREE:     tracked takeover edits happen from a Lexar worktree off refreshed origin/main.
+                   36d8ac3 (PR #470 merged; verified in /Users/lume/ClawDnD-val on 2026-05-31).
+                   Re-verify current `origin/main` before acting.
+     CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
+                   the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
+                   local disk so macOS does not prompt on Lexar-hosted assets.
+     WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
+                   Use /Volumes/LEXAR/Codex for evidence/snapshots and Lexar worktrees only for
+                   non-GUI/doc/backend slices that do not launch the app against private art.
+     SUPPORT VM:   32GB owner-provided support VM (`support-vm-1`). Connection/auth details live
+                   in local operator-only evidence/runbooks, not tracked repo docs. Use it for
+                   heavy backend/persona sweeps only after Codex/config/credentials are intentionally
+                   installed. Mac-built `.app` smoke/play proof stays on this Mac or macOS CI.
      LAST MEASURED GATE BUILD:
                    f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
                    HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
@@ -21,9 +27,10 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Run the clean post-hardening gate (#466) to get a trustworthy failure list, but
-                   plan the next sprint UX-first (#467): first-turn playability, clickability/chrome, launcher
-                   clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
+     NEXT ACTION:  From the synced local checkout, prove first-turn built-app play and run #466 for a
+                   trustworthy clean RRI failure list/result. Keep sprint work UX-first (#467):
+                   first-turn playability, clickability/chrome, launcher clarity, live-response feel,
+                   and CRPG depth before more hardening/proxy/security work.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
@@ -120,8 +127,9 @@ by an average). **RRI 10/10 = every gate holds on one fresh build:**
 
 ## 5. THE ITERATE LOOP (while the gate fails)
 
-`git fetch` → create/update a **Lexar worktree off origin/main** (never branch-op the private-art
-checkout) → `rm -rf dist/WorldOS.app` in the intended app checkout → `qa/ui_playtest_app.sh` × 5 personas against the built `.app` → **score** (5-persona
+`git fetch` → create/update a **same-disk local worktree off origin/main** for tracked edits
+when GUI/app tests need assets (Lexar is evidence/scratch, not the default runtime tree) →
+`rm -rf dist/WorldOS.app` in the local app checkout → `qa/ui_playtest_app.sh` × 5 personas against the built `.app` → **score** (5-persona
 satisfaction + 3 lenses + behavioral + axe) → **file GitHub issues** tied to `{build_sha, version_tag}`
 with `file:line` + acceptance criteria → **delegate code to builder subagents** (worktree → PR →
 CI-green incl. `viewer-tests` → squash-merge) → **rebuild → re-playtest.**
@@ -153,32 +161,35 @@ verifier; can revert the goal to "fix" anytime.
 - **Never** claim "100% confidence" / "audit complete." A merged PR is a hypothesis; a non-reproducing
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
-  (`clawdnd-*` / `CLAWDND_*` / `dev.clawdnd.app`). Build/edit from **Lexar worktrees off origin/main**.
-  Treat `/Users/lume/ClawDnD-val` as the canonical private-art/live-app checkout until intentionally
-  moved. 16GB host → **GitHub CI / 32GB VM** for heavy tests, never local heavy workers. `_private/`
-  never committed.
+  (`clawdnd-*` / `CLAWDND_*` / `dev.clawdnd.app`). Build/run/test the Mac app from
+  `/Users/lume/ClawDnD-val` so private art stays on the local disk and macOS does not prompt on Lexar
+  files. Use **same-disk local worktrees** for GUI-affecting tracked edits, Lexar for evidence/snapshots,
+  and the 32GB support VM / GitHub CI for heavy tests. `_private/` never committed.
 
 ---
 
-## 9. CURRENT STATUS (2026-05-31 — post-#465, NOT a release verdict)
+## 9. CURRENT STATUS (2026-05-31 — local checkout synced, NOT a release verdict)
 
-- Repo truth stabilization merged in PR #465, and the UX-first doc sync merged in PR #468. The current
-  doc-sync baseline is `e4078c7`; re-verify `origin/main` before acting. The private-art checkout at
-  `/Users/lume/ClawDnD-val` was observed at `f5500ac` before takeover. Keep it intact until the owner
-  intentionally fast-forwards the live app/private-art checkout.
+- Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, and first-minute
+  click/title chrome proof merged in PR #470. The local app/private-art checkout
+  `/Users/lume/ClawDnD-val` is synced to `36d8ac3 == origin/main` as of 2026-05-31.
+- The stale local pre-sync artifacts were preserved before the fast-forward at
+  `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
+  (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
 - The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
   not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
   image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
-- The next evidence step is issue #466: run a clean non-partial five-persona RRI from the post-#465 code
-  baseline (`b15ad3c`) or newer on the 32GB VM for backend/personas, plus the Mac/macOS CI built-app
-  playtest. The expected outcome is either a trustworthy blocker list or a real 11/11 release result.
+- The next evidence step is issue #466: run a clean non-partial five-persona RRI from `36d8ac3` or newer.
+  Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once
+  auth/config are intentionally installed there; connection details are kept outside tracked docs.
+  Mac-only built-app launch/play proof stays on this Mac or macOS CI.
 - Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
   transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
   session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.
-- Highest-confidence UX risks to verify/fix next: first-turn built-app play; global click hit areas (#309);
-  title/chrome truth (#306); launcher clarity/stale campaigns (#358); per-beat latency/live response (#393);
-  portrait/gallery blockers (#379); and CRPG depth on Heroes/Battle/Inventory (#308/#318/#310,
-  with #462/#463 folded into Battle readability as presentation containment).
+- Highest-confidence UX risks to verify/fix next: first-turn built-app play; broader click hit areas (#309)
+  after #470's shared-chrome proof; built-app title/chrome truth (#306); launcher clarity/stale campaigns
+  (#358); per-beat latency/live response (#393); portrait/gallery blockers (#379); and CRPG depth on
+  Heroes/Battle/Inventory (#308/#318/#310, with #462/#463 folded into Battle readability as presentation containment).
 
 ---
 
