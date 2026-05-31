@@ -188,6 +188,15 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
 
 
+def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "discover_active_campaign_id()" in source
+    assert "Live campaign_id:" in source
+    assert "Do not use shell commands, rg, find" in source
+    assert "CAMPAIGN_TOOL_HINT" in source
+
+
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -250,19 +259,29 @@ while [ "$#" -gt 0 ]; do
     *)
       shift
       ;;
-  esac
-done
-cat >/dev/null
-marker="$CLAWDND_STATE_DIR/.fake-opening-seen"
-if [ ! -f "$marker" ]; then
-  touch "$marker"
-  printf '{"role":"player","kind":"do","text":"queued during opening"}\\n' >> "$CLAWDND_STATE_DIR/player_moves.jsonl"
-  printf 'Opening narration from fake Codex.' > "$last"
-  printf '{"type":"result","result":"Opening narration from fake Codex."}\\n'
-else
-  printf 'Second turn response from fake Codex.' > "$last"
-  printf '{"type":"result","result":"Second turn response from fake Codex."}\\n'
-fi
+	  esac
+	done
+	prompt="$(cat)"
+	marker="$CLAWDND_STATE_DIR/.fake-opening-seen"
+	if [ ! -f "$marker" ]; then
+	  touch "$marker"
+	  mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
+	  printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
+	  printf '{"role":"player","kind":"do","text":"queued during opening"}\\n' >> "$CLAWDND_STATE_DIR/player_moves.jsonl"
+	  printf 'Opening narration from fake Codex.' > "$last"
+	  printf '{"type":"result","result":"Opening narration from fake Codex."}\\n'
+	else
+	  printf '%s' "$prompt" | grep -q 'Live campaign_id: "camp_fake"' || {
+	    echo "missing live campaign hint" >&2
+	    exit 8
+	  }
+	  printf '%s' "$prompt" | grep -q 'Do not use shell commands, rg, find' || {
+	    echo "missing no-shell state discovery rule" >&2
+	    exit 9
+	  }
+	  printf 'Second turn response from fake Codex.' > "$last"
+	  printf '{"type":"result","result":"Second turn response from fake Codex."}\\n'
+	fi
 """,
         encoding="utf-8",
     )

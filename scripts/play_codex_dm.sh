@@ -182,6 +182,51 @@ print(json.dumps({
 PY
 }
 
+discover_active_campaign_id() {
+  python3 - "$RUN_DIR" "${HERO_CAMP:-}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+preferred = sys.argv[2].strip()
+if preferred:
+    print(preferred)
+    raise SystemExit(0)
+
+candidates = []
+for snap in (run_dir / "campaigns").glob("*/snapshot.json"):
+    try:
+        data = json.loads(snap.read_text(encoding="utf-8"))
+    except Exception:
+        continue
+    cid = str(data.get("id") or snap.parent.name).strip()
+    if not cid:
+        continue
+    chars = data.get("characters") or {}
+    has_player = any(isinstance(ch, dict) and ch.get("kind") == "player" for ch in chars.values())
+    active = bool(data.get("active_session_id"))
+    try:
+        mtime = snap.stat().st_mtime
+    except OSError:
+        mtime = 0
+    candidates.append((active, has_player, mtime, cid))
+
+if candidates:
+    candidates.sort()
+    print(candidates[-1][3])
+PY
+}
+
+campaign_tool_hint() {
+  local cid="${1:-}"
+  if [ -n "${cid//[[:space:]]/}" ]; then
+    printf 'Live campaign_id: "%s". Call scene_context("%s") first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid"
+  else
+    printf 'If the live campaign_id is unknown, call list_campaigns once, then scene_context for the active campaign. Do not discover campaign state with shell commands, rg, find, or filesystem reads.\n'
+  fi
+}
+
 echo "[codex-dm-provider] run=$CLAWDND_RUN_ID world=$CLAWDND_WORLD port=$CLAWDND_PLAY_PORT mode=$MODE"
 echo "[codex-dm-provider] config=$CONFIG"
 echo "[codex-dm-provider] moves=$MOVES"
@@ -313,6 +358,7 @@ codex_dm_turn() {
 }
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
+STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 
 VPID_FILE="$RUN_DIR/.viewer.pid"
 viewer_supervisor() {
@@ -348,6 +394,7 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
+$STATE_DISCOVERY_RULE
 
 Native-selected canon hero already seated:
 - campaign_id: "$HERO_CAMP"
@@ -368,6 +415,7 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
+$STATE_DISCOVERY_RULE
 
 Start a live solo session:
 - call start_world("$CLAWDND_WORLD");
@@ -385,6 +433,9 @@ if ! OPENING="$(codex_dm_turn "$OPENING_PROMPT")"; then
 fi
 chatlog dm "$OPENING"
 
+ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
+CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
+
 DM_TURNS=1
 while true; do
   [ "$DM_TURNS" -ge "$CLAWDND_PLAY_MAX_TURNS" ] && break
@@ -396,9 +447,13 @@ while true; do
     PMSG="$(printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text // .name // "")") | join("  ")' 2>/dev/null)"
     [ -z "$PMSG" ] && continue
     chatlog player "$PMSG"
+    ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
+    CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
     if ! REPLY="$(codex_dm_turn "You are the Dungeon Master mid-session. Re-ground from the engine state first, then resolve this player move through the engine/rules tools and reply with 2nd-person player-facing narration.
 
 $LOG_EVENT_TOOL_RULE
+$STATE_DISCOVERY_RULE
+$CAMPAIGN_TOOL_HINT
 
 Player move:
 $PMSG")"; then
