@@ -5,9 +5,9 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-05-31 local-checkout sync
+     AS OF:        2026-05-31 post-PR #472 local provider-selection sync
      MAIN BASELINE:
-                   36d8ac3 (PR #470 merged; verified in /Users/lume/ClawDnD-val on 2026-05-31).
+                   5dd1391 (PRs #470, #471, #472 merged; verified in /Users/lume/ClawDnD-val on 2026-05-31).
                    Re-verify current `origin/main` before acting.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
@@ -27,10 +27,10 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  From the synced local checkout, prove first-turn built-app play and run #466 for a
-                   trustworthy clean RRI failure list/result. Keep sprint work UX-first (#467):
-                   first-turn playability, clickability/chrome, launcher clarity, live-response feel,
-                   and CRPG depth before more hardening/proxy/security work.
+     NEXT ACTION:  From the synced local checkout, prove first-turn built-app play with an actual
+                   DM-capable provider, then run #466 for a trustworthy clean RRI failure list/result.
+                   Keep sprint work UX-first (#467): first-turn playability, clickability/chrome,
+                   launcher clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
@@ -171,18 +171,25 @@ verifier; can revert the goal to "fix" anytime.
 ## 9. CURRENT STATUS (2026-05-31 — local checkout synced, NOT a release verdict)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, and first-minute
-  click/title chrome proof merged in PR #470. The local app/private-art checkout
-  `/Users/lume/ClawDnD-val` is synced to `36d8ac3 == origin/main` as of 2026-05-31.
+  click/title chrome proof merged in PR #470. Local/Lexar/support-VM routing merged in PR #471.
+  Native OpenWorlds starts now honor the macOS app's selected provider instead of forcing Claude
+  from the web surface in PR #472. The local app/private-art checkout `/Users/lume/ClawDnD-val`
+  is synced to `5dd1391 == origin/main` as of 2026-05-31.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
 - The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
   not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
   image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
-- The next evidence step is issue #466: run a clean non-partial five-persona RRI from `36d8ac3` or newer.
-  Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once
-  auth/config are intentionally installed there; connection details are kept outside tracked docs.
-  Mac-only built-app launch/play proof stays on this Mac or macOS CI.
+- Built-app launch smoke on `cad2e00` rendered OpenWorlds with private art, but the first Resume/Play
+  click still forced Claude and failed on Claude auth. PR #472 fixed that web/native selection bug.
+  It does **not** prove a Claude-free release path yet: the checked-in Codex wrapper is a constrained
+  player actor/move-facade, and OpenClaw requires an intentionally configured provider command.
+- The next evidence step is issue #466 after the first-turn provider path is DM-capable: run a clean
+  non-partial five-persona RRI from `5dd1391` or newer. Heavy backend/persona sweeps belong on the
+  owner-provided 32GB support VM (`support-vm-1`) once auth/config are intentionally installed there;
+  connection details are kept outside tracked docs. Mac-only built-app launch/play proof stays on this
+  Mac or macOS CI.
 - Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
   transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
   session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.
