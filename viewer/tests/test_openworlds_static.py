@@ -216,6 +216,55 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("image/svg+xml", ctype)
         self.assertIn(b"<svg", body)
 
+    def test_openworlds_shared_buttons_own_their_visible_hit_targets(self):
+        # #309: first-minute playability depends on the visible button chrome being clickable,
+        # not only the letters/icons inside it. The shared chrome keeps handlers on outer
+        # buttons, gives the TabBar button a real flex box, and makes decorative children
+        # transparent to pointer targeting so clicks land on the button.
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+        styles = (server._OPENWORLDS_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertRegex(
+            chrome,
+            r"<button\s+[^>]*type=\"button\"[^>]*key=\{tab\.id\}[^>]*className=\{`tab-button",
+        )
+        self.assertIn("onClick={() => onNavigate(tab.id)}", chrome)
+        self.assertIn(".tab-button", styles)
+        tab_button_rule = re.search(r"\.tab-button\s*\{([^}]+)\}", styles, re.S)
+        self.assertIsNotNone(tab_button_rule)
+        self.assertIn("display: inline-flex", tab_button_rule.group(1))
+        self.assertIn("min-height: 34px", tab_button_rule.group(1))
+        self.assertIn("button > :where(span, svg, img, .ow-icon, .ow-icon-fallback)", styles)
+        self.assertIn("pointer-events: none", styles)
+
+        self.assertIn('className={`nav-item ${currentGroup?.id === g.id ? "active" : ""}`}', chrome)
+        self.assertIn("onClick={() => onNavigate(getDefaultScreen(g.id))}", chrome)
+
+    def test_openworlds_title_bar_keeps_title_and_day_pill_apart(self):
+        # #306: long campaign titles must never wrap under the nav rail or collide with the
+        # day/capability band. The structural fix is intentionally static so the built-app
+        # visual proof can focus on real rendering instead of rediscovering this regression.
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+        styles = (server._OPENWORLDS_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("grid-template-columns: 1fr 240px", styles)
+        self.assertIn("paddingLeft: nativeStatus?.bridge ? 76 : 78", chrome)
+        self.assertNotIn("paddingLeft: nativeStatus?.bridge ? 76 : 0", chrome)
+
+        title_text_rule = re.search(r"\.title-text\s*\{([^}]+)\}", styles, re.S)
+        self.assertIsNotNone(title_text_rule)
+        title_text_css = title_text_rule.group(1)
+        self.assertIn("white-space: nowrap", title_text_css)
+        self.assertIn("overflow: hidden", title_text_css)
+        self.assertIn("text-overflow: ellipsis", title_text_css)
+        self.assertIn("max-width: calc(100% - 240px)", title_text_css)
+
+        title_end_rule = re.search(r"\.title-end\s*\{([^}]+)\}", styles, re.S)
+        self.assertIsNotNone(title_end_rule)
+        title_end_css = title_end_rule.group(1)
+        self.assertIn("font-size: 13px", title_end_css)
+        self.assertIn("min-width: 240px", title_end_css)
+
     def test_openworlds_combat_screen_binds_viewer_combat_surface(self):
         status, ctype, body = self._get("/openworlds/screen-combat.jsx")
 

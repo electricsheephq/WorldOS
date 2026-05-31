@@ -372,13 +372,22 @@ with open(sys.argv[1]) as f:
                 emit("FAIL", f"ui-gate art_present {s} @ {vp}: " + "; ".join(why))
                 total_fail += 1
             # 13c. title_bar_clearance — #260 / #306
-            if not v.get("titleNavOverlap", False):
-                emit("PASS", f"ui-gate title_bar_clearance {s} @ {vp}: no title/nav-rail collision")
+            title_ok = (
+                not v.get("titleNavOverlap", False)
+                and not v.get("titleEndOverlap", False)
+                and (v.get("titleLineCount") in (None, 0, 1))
+                and (v.get("titleDayReadable") in (None, True))
+            )
+            if title_ok:
+                emit("PASS",
+                    f"ui-gate title_bar_clearance {s} @ {vp}: title one-line, no nav/day collision, day readable")
             else:
-                tr = v.get("titleRect"); nr = v.get("navRect")
+                tr = v.get("titleRect"); nr = v.get("navRect"); er = v.get("titleEndRect"); dr = v.get("titleDayRect")
                 emit("FAIL",
-                    f"ui-gate title_bar_clearance {s} @ {vp}: title-text rect overlaps nav-rail "
-                    f"(title={tr} nav={nr}) — #260 regression")
+                    f"ui-gate title_bar_clearance {s} @ {vp}: navOverlap={v.get('titleNavOverlap')} "
+                    f"endOverlap={v.get('titleEndOverlap')} lines={v.get('titleLineCount')} "
+                    f"dayReadable={v.get('titleDayReadable')} "
+                    f"(title={tr} nav={nr} end={er} day={dr}) — #306 regression")
                 total_fail += 1
             # 13d. play_reachable (launcher only)
             cta = v.get("launcherCta")
@@ -392,6 +401,23 @@ with open(sys.argv[1]) as f:
                 total_fail += 1
             else:
                 emit("PASS", f"ui-gate play_reachable {s} @ {vp}: '{cta.get('text')}' enabled")
+            # 13e. representative hit-target proof — #309
+            hit = v.get("hitTargets")
+            if hit is not None:
+                missing = [
+                    key for key in (
+                        "tabPaddingClickFired",
+                        "tabKeyboardFired",
+                        "navPaddingClickFired",
+                        "navKeyboardFired",
+                    )
+                    if not hit.get(key)
+                ]
+                if not missing:
+                    emit("PASS", f"ui-gate hit_targets {s} @ {vp}: tab/nav padding clicks + keyboard activation work")
+                else:
+                    emit("FAIL", f"ui-gate hit_targets {s} @ {vp}: failed {missing} details={hit}")
+                    total_fail += 1
 print(f"__TOTAL_FAIL__:{total_fail}")
 PY
       # Replay the python report through pass/fail/warn so the overall summary

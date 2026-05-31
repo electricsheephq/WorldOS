@@ -121,8 +121,22 @@ body {
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
-button { background: none; border: 0; padding: 0; cursor: pointer; }
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+  touch-action: manipulation;
+}
 a { color: inherit; text-decoration: none; cursor: pointer; }
+
+/* #309: buttons own the whole visible hit target. Decorative text/icon wrappers
+   should not become the click target or leave only the letters feeling live. */
+button > :where(span, svg, img, .ow-icon, .ow-icon-fallback),
+button > :where(span, svg, img, .ow-icon, .ow-icon-fallback) * {
+  pointer-events: none;
+}
 
 .ow-icon,
 .ow-icon-fallback {
@@ -405,6 +419,14 @@ a { color: inherit; text-decoration: none; cursor: pointer; }
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--b-500), transparent);
   margin: 4px 0;
+}
+
+.tab-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  box-sizing: border-box;
 }
 
 /* ===== Stage ===== */
