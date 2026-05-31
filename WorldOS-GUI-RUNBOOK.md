@@ -32,11 +32,12 @@
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
-- Do not treat the wrapper as release proof by itself. The 2026-06-01T02:38:00+07:00 local built-app playtest
-  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/`) shows the Codex-DM
-  path can mint a live native session, load private BG art, seat Arka, show narration, expose five enabled
-  actions, accept two `/move`s, produce two DM responses, and leave `/session-surface` actionable. Release
-  still requires the full non-partial RRI gate.
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T03:40:26+07:00 local built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-final-20260601T033714/`) shows the Codex-DM
+  path can mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled
+  actions, accept and resolve a `/move`, and leave `/session-surface` actionable on exact PR #475 head
+  `500c379`. Release still requires the full non-partial RRI gate, and #479 remains the next provider-noise
+  fix before trusting RRI latency/playability evidence.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash

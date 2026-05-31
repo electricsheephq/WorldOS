@@ -12,6 +12,7 @@
 
 | Run | Date | app/code SHA | Surface | Provider | Evidence | Result / notes |
 |---|---|---|---|---|---|---|
+| codex-app-final-20260601T033714 | 2026-06-01 | 500c379 | `dist/WorldOS.app` local Mac | Codex DM | `/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-final-20260601T033714/` | **PASS diagnostic exact-head first-turn + one-move play proof.** Private BG art visible; Alfira seated; `/session-surface` live/actionable with five enabled actions; one `/move` accepted and resolved; chat roles `dm, player, dm`; no rejected `log_event(speaker:null)` calls; mid-session state discovery used `scene_context(campaign_id=...)` with no broad `rg`/`find` state scans. Not an RRI verdict. Remaining provider/tool-contract noise tracked as #479: safety-cancelled setup/social calls still add latency. |
 | codex-app-short-20260601T022114 | 2026-06-01 | c3dfee6 | `dist/WorldOS.app` local Mac | Codex DM | `/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/` | **PASS diagnostic short playtest.** Private BG art visible; Arka seated; `/session-surface` live/actionable with five enabled actions; two `/move` submissions accepted; chat roles `dm, player, dm, player, dm`; final snapshot set `fist_checkpoint_exposed`. Not an RRI verdict. Finding filed as #476: one recovered `log_event(speaker:null)` validation error added latency/noise on move 2. |
 
 | Run | Date | World | Persona | Model | Beats | Gate | Story | Mech | AngryDM | Change under test / notes |
