@@ -32,10 +32,11 @@
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
-- Do not treat the wrapper as release proof by itself. The 2026-06-01T01:24:10+07:00 local built-app proof shows
-  it can mint the world, write DM narration, submit one player move, and leave `/session-surface`
-  with `can_act:true` for the live/current campaign. Release still requires a short built-app playtest
-  plus the full non-partial RRI gate.
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T02:38:00+07:00 local built-app playtest
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/`) shows the Codex-DM
+  path can mint a live native session, load private BG art, seat Arka, show narration, expose five enabled
+  actions, accept two `/move`s, produce two DM responses, and leave `/session-surface` actionable. Release
+  still requires the full non-partial RRI gate.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash
@@ -125,6 +126,14 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Use it for heavy backend/persona release sweeps and parallel QA once configured.
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
+- VM preflight before any RRI sweep: record VM identity, repo checkout path, branch/SHA, Codex CLI version,
+  auth/profile status, `uv`, Node/npm/Playwright availability, private-art availability or explicit
+  backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and the artifact
+  return path under `/Volumes/LEXAR/Codex`.
+- RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
+  persona, behavior, image/network, palette-live, and score evidence only when `run.json`, `score.json`,
+  `session_surface.final.json`, `network.ndjson`, and build SHA are present. Missing or mixed-SHA artifacts
+  must remain `partial` / `harness_contaminated`.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:

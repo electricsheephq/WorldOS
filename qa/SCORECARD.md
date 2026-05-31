@@ -5,6 +5,15 @@
 > `*` = RED-capped (gate failed → scores forced ≤ 2.5; not a real quality reading).
 > Scorer: claude `score.sh` unless noted `[oc]` (gpt-5.4, grades ~1.5 harsher).
 
+## Built-app gameplay proof ledger
+
+> Diagnostic product evidence from the shipped Mac surface. These rows prove built-app behavior but do not
+> replace the RRI release sweep below.
+
+| Run | Date | app/code SHA | Surface | Provider | Evidence | Result / notes |
+|---|---|---|---|---|---|---|
+| codex-app-short-20260601T022114 | 2026-06-01 | c3dfee6 | `dist/WorldOS.app` local Mac | Codex DM | `/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/` | **PASS diagnostic short playtest.** Private BG art visible; Arka seated; `/session-surface` live/actionable with five enabled actions; two `/move` submissions accepted; chat roles `dm, player, dm, player, dm`; final snapshot set `fist_checkpoint_exposed`. Not an RRI verdict. Finding filed as #476: one recovered `log_event(speaker:null)` validation error added latency/noise on move 2. |
+
 | Run | Date | World | Persona | Model | Beats | Gate | Story | Mech | AngryDM | Change under test / notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | sprint-cs3 | 2026-05-27 | combat-sprint seed | angry-dm | sonnet | combat | **GREEN** | — | — | **4.2** | **Combat fidelity RESOLVED.** angry-dm 4.2 (was the 2.8–3.3 residual) — tool_fidelity 5, action_economy 5; the #159/#173/#180 surfacing+multiattack work paid off (DM now reads `_combat_numbers` + runs Multiattack). 4 defects all MED/LOW theater-of-mind edge cases (ranged-from-melee disadvantage, frightened-adjacency, unused Parry [wouldn't have flipped], dead Hold Person concentration) — the 4.2→4.5 stretch, tied to the no-positional-model limit. NOTE: scorer claude-p is slow → use timeout ≥1200 for combat-sprints (cs1/cs2 timed out mid-scoring). |

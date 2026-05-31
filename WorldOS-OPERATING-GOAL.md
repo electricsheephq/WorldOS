@@ -5,7 +5,7 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T01:40:00+07:00 local Codex-DM built-app first-turn proof
+     AS OF:        2026-06-01T02:40:00+07:00 local Codex-DM built-app short playtest proof
      MAIN BASELINE:
                    6e03da4 (PRs #470, #471, #472, #473 merged; verified in /Users/lume/ClawDnD-val on 2026-06-01T01:40:00+07:00).
                    Re-verify current `origin/main` before acting.
@@ -25,18 +25,21 @@
                    personas failed around port/backend harness setup; behavioral/UI/palette/image
                    evidence was not a valid five-persona release verdict.
      LAST BUILT-APP PLAY PROOF:
-                   2026-06-01T01:24:10+07:00 local `dist/WorldOS.app` proof with private BG art, Codex DM
-                   provider, visible narration, enabled player actions, submitted `/move`, and
-                   post-move DM response. Evidence lives under
-                   /Volumes/LEXAR/Codex/worldos-built-app-proof/
-                   (`session-surface-racefix-after-dm-response-20260601T012410.json` and
-                   `worldos-racefix-dm-response-dismissed-permission-20260601T012516.png`).
+                   2026-06-01T02:38:00+07:00 local `dist/WorldOS.app` short playtest on the
+                   PR #475 Codex-DM path (`c3dfee6` app code): private BG art loaded, Codex
+                   provider minted the live session, Arka seated, visible DM narration, five
+                   enabled player actions, two `/move` submissions, two DM responses, and
+                   `/session-surface` still actionable. Evidence:
+                   /Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/
+                   (`02-first-turn-ready.png`, `04-after-move-1-dm-response.png`,
+                   `06-after-move-2-dm-response.png`, `06-session-surface-after-move-2.json`).
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Run a short built-app gameplay playtest from the proven Codex-DM path, file/fix
-                   the user-facing blockers it exposes, then run #466 for a trustworthy clean RRI
-                   failure list/result on the 32GB support VM plus Mac-only built-app smoke.
+     NEXT ACTION:  File/fix any user-facing blockers exposed by the short playtest, then run #466
+                   for a trustworthy clean RRI failure list/result: Mac/local or macOS CI supplies
+                   built `.app` proof, while the 32GB support VM runs heavy backend/persona sweeps
+                   after explicit VM preflight/auth setup.
                    Keep sprint work UX-first (#467): first-turn playability, clickability/chrome,
                    launcher clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
@@ -176,7 +179,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T01:40:00+07:00 — first-turn proof achieved, NOT a release verdict)
+## 9. CURRENT STATUS (2026-06-01T02:40:00+07:00 — short built-app playtest achieved, NOT a release verdict)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, and first-minute
   click/title chrome proof merged in PR #470. Local/Lexar/support-VM routing merged in PR #471.
@@ -205,11 +208,21 @@ verifier; can revert the goal to "fix" anytime.
   macOS TCC attribution contamination: `responsible=dev.clawdnd.app`, but the actual accessor was
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
-- The next evidence step is a short built-app gameplay playtest from this proven provider path, followed
-  by issue #466: a clean non-partial five-persona RRI from `6e03da4` or newer. Heavy backend/persona
-  sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config are intentionally
-  installed there; connection details are kept outside tracked docs. Mac-only built-app launch/play proof
-  stays on this Mac or macOS CI.
+- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from `6e03da4` or newer.
+  Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
+  are intentionally installed there; connection details are kept outside tracked docs. Mac-only built-app
+  launch/play proof stays on this Mac or macOS CI.
+- Short built-app playtest proof now exists on the PR #475 Codex-DM path (`c3dfee6` app code) at
+  `/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-short-20260601T022114/`. The built app
+  minted a live Codex session on port 8766, showed private art, seated Arka as the active player, exposed
+  five enabled actions (`continue`, `say`, `do`, `check`, `save`), accepted two player `/move`s, produced
+  two DM responses, and left `/session-surface` with `can_act:true`. The final snapshot includes
+  `fist_checkpoint_exposed`, Nimra Ash-Tail, Sergeant Marrek Vale, and Trooper Elian Voss. This is
+  product progress and replaces "run a short built-app gameplay playtest" as the immediate objective.
+  It is still not RRI/release evidence because the five-persona gate has not run.
+- Playtest finding filed as #476: the second Codex turn initially called `log_event` with `speaker: null`, causing a
+  validation error before the model retried without `speaker` and recovered. The player saw the final
+  narration, but this is a latency/noise risk to track if it repeats in #466.
 - Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
   transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
   session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.
@@ -224,7 +237,9 @@ verifier; can revert the goal to "fix" anytime.
 
 Use the gate as evidence, not as the roadmap. The next sprint should optimize the felt session:
 
-1. **Stretch first-turn proof into a short built-app playtest.** A fresh player can launch,
+1. **Stretch first-turn proof into a short built-app playtest.** DONE diagnostically on PR #475
+   (`c3dfee6` app code) in `codex-app-short-20260601T022114`; repeat after provider branch merge.
+   A fresh player can launch,
    choose/start/resume, reach the Table, submit multiple `/move`s, and see narration resolve without
    critical console/runtime errors. Evidence: built-app screenshots plus `/session-surface` and move/chat
    artifacts, not a proxy preview.
