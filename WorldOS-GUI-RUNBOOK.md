@@ -7,8 +7,8 @@
 > Companions: `WorldOS-OPERATING-GOAL.md` (the gate), `qa/GUI_WORKBOOK.md` (the live punch-list),
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
-> Takeover routing, 2026-05-31: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`6e03da4 == origin/main` after #473) and the default place to build/run/test the GUI and native app.
+> Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
+> (`080497e == origin/main` after #475/#494/#495/#496) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -32,11 +32,15 @@
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
-- Do not treat the wrapper as release proof by itself. The 2026-06-01T04:39:09+07:00 local built-app proof
-  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-headproof-20260601T043909/`) shows the Codex-DM
-  path can mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled
+- Do not treat the wrapper as release proof by itself. The 2026-06-01T04:39:09+07:00 pre-merge built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-headproof-20260601T043909/`) showed the Codex-DM
+  path could mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled
   actions, accept and resolve a `/move`, leave `/session-surface` actionable, and produce a provider trace
-  with zero errors/failed tool calls on PR #475 app-code commit `8bd833f`. Release still requires the full
+  with zero errors/failed tool calls on PR #475 app-code commit `8bd833f`.
+- The post-#475 merged-main built-app proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/post475-main-app-proof-20260601T051230/`, build `32ca561`)
+  was player-playable, but provider trace noise persisted. Keep #479 open until a later current-main built-app
+  run proves the Codex provider path is trace-clean enough for release trust. Release still requires the full
   non-partial RRI gate.
 
 ## Agent-facing app contract
@@ -48,8 +52,11 @@
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Longer-term agent-grade testing lives under #480-#486: deterministic smoke provider, stable accessibility
-  and DOM hooks, crisp failure buckets, and one exported evidence bundle per app playtest.
+- Agent-grade testing progress as of `080497e`: #481 app-status is closed, #482 deterministic scripted
+  provider is merged, #483 failure buckets are merged, and #484 stable accessibility/DOM hooks are merged.
+  #485 evidence bundle completion and #486 gate-split follow-through remain active. A scripted `:8899`
+  harness surface can prove app observability, but it is not built-app release proof unless it came from
+  `dist/WorldOS.app` / `qa/ui_playtest_app.sh`.
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash
@@ -62,6 +69,11 @@ CLAWDND_PLAY_PORT=8799 nohup bash scripts/play.sh baldurs-gate preview-$(git rev
 ```
 Open `http://127.0.0.1:8799/openworlds/`. The DM cold-open takes ~30–90s; **wait for a SEATED PC**
 (party non-empty), not just `can_act:true` — `can_act` can flip true before the PC is seated.
+
+Ad-hoc harness ports such as `8899` are allowed for agent-grade smoke/debugging only when `/app-status`
+identifies the build SHA, provider, repo root, art root, move sink, and readiness. Do not confuse a healthy
+`:8899` scripted-provider surface with a current built `.app` proof, and do not assume the port will still
+be alive after the harness tears down.
 
 ## LOOK (verify by curl + screenshot — NEVER a single Read; the channel fabricates)
 The tool channel intermittently returns fabricated/empty/doubled reads (this session it invented a
@@ -92,7 +104,8 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 
 ## The gate sweep (Phase 3 — judged on the built .app)
 ```bash
-qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12
+WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
+qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12 --port 8785
 ```
 RRI 10/10 = all 11 gates hold on ONE build across the canonical five personas
 (`newbie,veteran,adversarial,narrative,optimizer`). The scorer must record
