@@ -209,8 +209,10 @@ const CHRONICLE_RENDER_CAP = 50;
 //     windowing re-mount); fall back to a normalized TEXT key only for rows lacking a seq (legacy
 //     server / a chat-only beat), keyed identically to app.jsx's text fallback. Non-narration
 //     history rows (rolls/system/combat) are always kept.
-// recentEvents stay the leading (oldest) band: they are the session log's trailing lines, all at or
-// before the live tail's lines, and the dedup guarantees no overlap — so a plain concat is in order.
+// recentEvents are usually the leading history band, but a player row replayed from /chat can sit
+// BETWEEN two engine-owned recentEvents rows (opening narration → player move → DM reply). When rows
+// carry eventAt, sort the combined de-duped chronicle by that real event time; legacy rows without a
+// timestamp keep the old stable fallback order.
 function buildChronicleLog(recentEvents, chatBeats, log) {
   const recent = Array.isArray(recentEvents) ? recentEvents : [];
   const beats = Array.isArray(chatBeats) ? chatBeats : [];
@@ -218,11 +220,21 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   const sanitize = (t) => (typeof window !== "undefined" && typeof window.sanitizeNarration === "function")
     ? window.sanitizeNarration(t || "") : (t || "");
   const narrationKey = (t) => sanitize(t || "").replace(/\s+/g, " ").trim().toLowerCase();
-  const orderOf = (e) => (e && typeof e.orderSeq === "number") ? e.orderSeq : null;
-  const mergedTail = [...beats, ...echoes].sort((a, b) => {
+  const orderOf = (e) => {
+    if (e && typeof e.orderSeq === "number") return e.orderSeq;
+    if (e && typeof e.seq === "number") return e.seq;
+    return null;
+  };
+  const timeOf = (e) => (e && typeof e.eventAt === "number") ? e.eventAt : null;
+  const compareChronicle = (a, b) => {
+    const ta = timeOf(a), tb = timeOf(b);
+    if (ta !== null && tb !== null && ta !== tb) return ta - tb;
     const sa = orderOf(a), sb = orderOf(b);
-    if (sa !== null && sb !== null) return sa - sb;   // both from the session log → true beat order
-    return (a?.at || 0) - (b?.at || 0);               // else fall back to client ingest order
+    if (sa !== null && sb !== null && sa !== sb) return sa - sb;
+    return (a?.at || 0) - (b?.at || 0);
+  };
+  const mergedTail = [...beats, ...echoes].sort((a, b) => {
+    return compareChronicle(a, b);
   });
   const liveSeqs = new Set(
     mergedTail.filter((b) => b && b.kind === "narration" && typeof b.orderSeq === "number").map((b) => b.orderSeq),
@@ -238,7 +250,7 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     const key = narrationKey(row && (row.text || row.detail));
     return !key || !liveNarrationKeys.has(key);
   });
-  return [...dedupedRecent, ...mergedTail];
+  return [...dedupedRecent, ...mergedTail].sort(compareChronicle);
 }
 // Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
 if (typeof window !== "undefined") window.buildChronicleLog = buildChronicleLog;
@@ -706,7 +718,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     key={`${a.group}:${a.id}`}
                     icon={a.available ? (a.icon || "quest.scroll") : "inventory.locked"}
                     label={a.label}
-                    detail={a.available ? a.groupLabel : a.disabled_reason}
+                    detail={a.available ? (a.detail || a.groupLabel) : a.disabled_reason}
                     hint={ACTION_HINTS[a.id]}
                     actionId={a.id}
                     tone={a.available ? "" : "crimson"}
@@ -727,7 +739,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                       key={`${a.group}:${a.id}`}
                       icon={a.available ? (a.icon || "combat.attack") : "inventory.locked"}
                       label={a.label}
-                      detail={a.available ? a.groupLabel : a.disabled_reason}
+                      detail={a.available ? (a.detail || a.groupLabel) : a.disabled_reason}
                       hint={ACTION_HINTS[a.id]}
                       actionId={a.id}
                       tone={a.available ? "royal" : "crimson"}

@@ -341,7 +341,7 @@ function useLiveSession(state) {
       }
       // #402: bound the echo tail so a long session doesn't grow `log` (and the rendered DOM /
       // a11y tree) without limit. Keep the most-recent MAX_LIVE_ECHOES.
-      return boundTail([...l, { kind: "action", who, text, at: nextLogSeq() }], MAX_LIVE_ECHOES);  // #274: creation-order stamp
+      return boundTail([...l, { kind: "action", who, text, at: nextLogSeq(), eventAt: Date.now() / 1000 }], MAX_LIVE_ECHOES);  // #274: creation-order stamp
     });
   }, []);
 
@@ -393,7 +393,7 @@ function useLiveSession(state) {
               // classification, and /chat replays it verbatim. Strip the tag for DISPLAY so the
               // replayed dialog row shows the player's words, not "[do] …" (matches the optimistic
               // echo above, which already strips via the same helper).
-              if (it.role === "player") return { kind: "dialog", who: "You", text: window.stripRoutingTag(it.text), at: nextLogSeq() };
+              if (it.role === "player") return { kind: "dialog", who: "You", text: window.stripRoutingTag(it.text), at: nextLogSeq(), eventAt: it.at };
               dmLineArrived = true;
               // #405: a /chat DM line is the turn-RESOLUTION signal (it clears the pending indicator
               // below). It is NOT a second narration row when this run is streaming its prose via the
@@ -408,7 +408,7 @@ function useLiveSession(state) {
               if (it.engine_logged === true) return null;
               if (eventsStreamedThisTurnRef.current) return null;
               const clean = sanitize(it.text);
-              return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
+              return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq(), eventAt: it.at } : null;
             })
             .filter(Boolean);
           if (beats.length) setChatBeats((prev) => boundTail([...prev, ...beats], MAX_LIVE_BEATS));  // #402: cap the live tail
@@ -496,7 +496,7 @@ function useLiveSession(state) {
               const fresh = (seq !== null) ? claimNarrationSeq(seq) : claimNarration(clean);
               if (!fresh) return null;
               eventsStreamedThisTurnRef.current = true;  // the current turn HAS streamed live narration
-              return { kind: "narration", text: clean, at: nextLogSeq(), orderSeq: seq };
+              return { kind: "narration", text: clean, at: nextLogSeq(), orderSeq: seq, eventAt: e && e.t };
             })
             .filter(Boolean);
           if (beats.length) {

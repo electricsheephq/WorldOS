@@ -108,7 +108,7 @@ class SessionSurfaceTests(unittest.TestCase):
             campaign_id="camp_safe",
             live=False,
             is_live_view=False,
-            recent_events=[{"kind": "narration", "detail": "A bell rings once beyond the gate."}],
+            recent_events=[{"kind": "narration", "detail": "A bell rings once beyond the gate.", "t": 123.5}],
         )
 
         self.assertEqual(surface["campaign_id"], "camp_safe")
@@ -133,6 +133,7 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["activeQuests"][0]["objective"], "Speak to Harper Tull")
         self.assertEqual([i["name"] for i in surface["quickInventory"]], ["Torch", "Potion of Healing"])
         self.assertEqual(surface["recentEvents"][0]["text"], "A bell rings once beyond the gate.")
+        self.assertEqual(surface["recentEvents"][0]["eventAt"], 123.5)
 
         encoded = json.dumps(surface)
         for forbidden in (
@@ -166,8 +167,13 @@ class SessionSurfaceTests(unittest.TestCase):
         say_action = _find_action(surface, "say")
         self.assertTrue(continue_action["available"])
         self.assertEqual(continue_action["move"], {"kind": "do", "text": "continue"})
+        self.assertEqual(continue_action["detail"], "Press onward")
         self.assertTrue(say_action["available"])
+        self.assertEqual(say_action["detail"], "Speak aloud")
         self.assertEqual(say_action["ui"], "focus-say")
+        self.assertEqual(_find_action(surface, "do")["detail"], "Act in world")
+        self.assertEqual(_find_action(surface, "check")["detail"], "Roll a skill")
+        self.assertEqual(_find_action(surface, "save")["detail"], "Resist danger")
         self.assertNotIn("snapshot", json.dumps(surface))
 
     def test_session_surface_projects_calendar_display_without_state_authority(self):

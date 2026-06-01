@@ -661,6 +661,34 @@ class LiveNarrationStreamTests(unittest.TestCase):
             "recentEvents rows sharing a live seq must be dropped (immune to prose); the older un-twinned line is kept, leading, in order (#405)",
         )
 
+    # --- #503: a player row replayed from /chat belongs BETWEEN recentEvents rows by event time ---
+    # After a reload/surface poll, the engine-owned history band can already contain opening
+    # narration + the DM reply, while the player's move is replayed from /chat. A plain
+    # recentEvents-before-tail concat rendered reply → YOU. eventAt restores the actual turn order.
+    def test_chat_player_row_interleaves_between_recent_events_by_event_time(self):
+        out = self._run(
+            "h.enqueue('/chat', { items: ["
+            "  { role: 'player', text: '[do] Ask what changed tonight.', at: 20 }"
+            "], next: 1 });"
+            "await h.tick();"
+            "var recent = ["
+            "  { kind: 'system', text: 'Session began.', seq: 0, eventAt: 5 },"
+            "  { kind: 'narration', text: 'The lantern steadies.', seq: 1, eventAt: 10 },"
+            "  { kind: 'narration', text: 'A nearby voice answers.', seq: 2, eventAt: 30 }"
+            "];"
+            "return ({ chronicle: h.chronicle(recent) });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [
+                {"kind": "system", "text": "Session began."},
+                {"kind": "narration", "text": "The lantern steadies."},
+                {"kind": "dialog", "text": "Ask what changed tonight.", "who": "You"},
+                {"kind": "narration", "text": "A nearby voice answers."},
+            ],
+            "the player move must render before the DM reply when /chat timestamps place it there (#503)",
+        )
+
     # --- #479: provider wrappers may write the final DM reply to /chat only as a turn-resolution
     # signal after also recording the same prose through the engine. That /chat row is marked
     # engine_logged and must clear pending without adding a duplicate chronicle row, even if /chat
