@@ -643,6 +643,13 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
     exit_code = 0
     created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    def clear_http_gap(source: str) -> None:
+        gaps[:] = [
+            gap
+            for gap in gaps
+            if not (gap.get("source") == source and gap.get("kind") == "http_json")
+        ]
+
     if args.app_status_url:
         try:
             app_status, meta = fetch_json(args.app_status_url)
@@ -704,10 +711,17 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
         app_status, app_status_snapshot = first_bundle_json(bundle, ("app-status.final.json", "app-status*.json"))
         if app_status_snapshot:
             sources["app_status_snapshot"] = {"path": app_status_snapshot, "ok": True}
-    if "session_surface" not in sources:
+            if isinstance(sources.get("app_status"), dict):
+                sources["app_status"]["recovered_by"] = "app_status_snapshot"
+            clear_http_gap("app_status")
+            exit_code = 0
+    if not (sources.get("session_surface") or {}).get("ok"):
         _surface, session_surface_snapshot = first_bundle_json(bundle, ("session-surface.final.json", "session-surface*.json"))
         if session_surface_snapshot:
             sources["session_surface_snapshot"] = {"path": session_surface_snapshot, "ok": True}
+            if isinstance(sources.get("session_surface"), dict):
+                sources["session_surface"]["recovered_by"] = "session_surface_snapshot"
+            clear_http_gap("session_surface")
 
     live = app_status.get("live") if isinstance(app_status.get("live"), dict) else {}
     failure = {

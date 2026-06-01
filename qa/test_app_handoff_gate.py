@@ -1,9 +1,11 @@
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from qa import app_handoff_gate as gate
 
@@ -111,6 +113,41 @@ class AppHandoffGateTests(unittest.TestCase):
             summary = gate.provider_trace_summary(root, "codex")
 
         self.assertEqual(summary["failed_or_error_count"], 0)
+        self.assertEqual(summary["trace_exists"], True)
+
+    def test_codex_provider_trace_missing_is_explicit(self):
+        with tempfile.TemporaryDirectory() as td:
+            summary = gate.provider_trace_summary(Path(td), "codex")
+
+        self.assertEqual(summary["provider"], "codex")
+        self.assertEqual(summary["trace_exists"], False)
+        self.assertEqual(summary["failed_or_error_count"], 0)
+
+    def test_export_evidence_persists_failure_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            gate_dir = root / "gate"
+            with mock.patch.object(gate, "repo_sha", return_value="abc1234"):
+                with mock.patch.object(
+                    gate.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess(args=[], returncode=17, stdout="", stderr="export broke"),
+                ):
+                    manifest_path, payload = gate.export_evidence(
+                        gate_dir=gate_dir,
+                        run_dir=gate_dir,
+                        app_status_url="",
+                        transition_file=None,
+                        command=["fixture"],
+                        gate_kind="fixture_gate",
+                        provider="scripted",
+                    )
+
+            persisted = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["failure"]["failure_bucket"], "no_provider")
+        self.assertIn("export_app_evidence exited 17", payload["failure"]["failure_detail"])
+        self.assertEqual(persisted, payload)
 
     def test_hook_probe_summary_reports_exact_missing_controls(self):
         with tempfile.TemporaryDirectory() as td:

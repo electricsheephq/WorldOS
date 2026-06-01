@@ -393,41 +393,28 @@ def export_evidence(
     if transition_file and transition_file.exists():
         cmd.extend(["--transition-file", str(transition_file)])
     manifest_path = out / "manifest.json"
+
+    def persist_failure(reason: str) -> tuple[str, dict[str, Any]]:
+        payload = {
+            "schema": "worldos.app-evidence.v1",
+            "evidence_gaps": [{"source": "export_app_evidence", "kind": "manifest", "path": str(manifest_path), "reason": reason}],
+            "failure": {"failure_bucket": "no_provider", "failure_detail": reason},
+            "handoff_gate": {"ok": False, "blocking_reasons": [reason]},
+        }
+        json_dump(manifest_path, payload)
+        return str(manifest_path), payload
+
     try:
         proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True, check=False, timeout=60)
     except subprocess.TimeoutExpired as exc:
-        reason = f"export_app_evidence timed out after {exc.timeout}s"
-        return str(manifest_path), {
-            "schema": "worldos.app-evidence.v1",
-            "evidence_gaps": [{"source": "export_app_evidence", "kind": "manifest", "path": str(manifest_path), "reason": reason}],
-            "failure": {"failure_bucket": "no_provider", "failure_detail": reason},
-            "handoff_gate": {"ok": False, "blocking_reasons": [reason]},
-        }
+        return persist_failure(f"export_app_evidence timed out after {exc.timeout}s")
     if proc.returncode != 0:
-        reason = f"export_app_evidence exited {proc.returncode}: {(proc.stderr or proc.stdout)[-1000:]}"
-        return str(manifest_path), {
-            "schema": "worldos.app-evidence.v1",
-            "evidence_gaps": [{"source": "export_app_evidence", "kind": "manifest", "path": str(manifest_path), "reason": reason}],
-            "failure": {"failure_bucket": "no_provider", "failure_detail": reason},
-            "handoff_gate": {"ok": False, "blocking_reasons": [reason]},
-        }
+        return persist_failure(f"export_app_evidence exited {proc.returncode}: {(proc.stderr or proc.stdout)[-1000:]}")
     if not manifest_path.exists():
-        reason = "export_app_evidence did not write manifest.json"
-        return str(manifest_path), {
-            "schema": "worldos.app-evidence.v1",
-            "evidence_gaps": [{"source": "export_app_evidence", "kind": "manifest", "path": str(manifest_path), "reason": reason}],
-            "failure": {"failure_bucket": "no_provider", "failure_detail": reason},
-            "handoff_gate": {"ok": False, "blocking_reasons": [reason]},
-        }
+        return persist_failure("export_app_evidence did not write manifest.json")
     manifest = read_json(manifest_path)
     if not manifest:
-        reason = "export_app_evidence wrote invalid or empty manifest.json"
-        return str(manifest_path), {
-            "schema": "worldos.app-evidence.v1",
-            "evidence_gaps": [{"source": "export_app_evidence", "kind": "manifest", "path": str(manifest_path), "reason": reason}],
-            "failure": {"failure_bucket": "no_provider", "failure_detail": reason},
-            "handoff_gate": {"ok": False, "blocking_reasons": [reason]},
-        }
+        return persist_failure("export_app_evidence wrote invalid or empty manifest.json")
     return str(manifest_path), manifest
 
 
@@ -555,8 +542,8 @@ def drive_moves(
     smoke.copy_play_state(run_id, gate_dir)
     trace = provider_trace_summary(ROOT / "play-state" / run_id, provider)
     json_dump(gate_dir / "provider-trace-summary.json", trace)
-    if provider == "codex" and int(trace.get("failed_or_error_count") or 0) > 0:
-        return False, "no_provider", "Codex provider trace reported failed/error/cancellation events", {"screenshots": screenshots, "evidence_gaps": gaps, "provider_trace": trace}
+    if provider == "codex" and (not trace.get("trace_exists") or int(trace.get("failed_or_error_count") or 0) > 0):
+        return False, "no_provider", "Codex provider trace missing or reported failed/error/cancellation events", {"screenshots": screenshots, "evidence_gaps": gaps, "provider_trace": trace}
     if gaps:
         return False, "no_provider", "required evidence capture has gaps", {"screenshots": screenshots, "evidence_gaps": gaps, "provider_trace": trace}
     return True, "", "", {"screenshots": screenshots, "evidence_gaps": gaps, "provider_trace": trace}

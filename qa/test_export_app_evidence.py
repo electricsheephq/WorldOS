@@ -240,6 +240,47 @@ class ExportAppEvidenceTests(unittest.TestCase):
             self.assertEqual(payload["handoff_gate"]["failure_bucket"], "move_rejected")
             self.assertIn("failure bucket: move_rejected", payload["handoff_gate"]["blocking_reasons"])
 
+    def test_run_dir_snapshots_recover_dead_app_status_url(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = tmp / "smoke-run"
+            run.mkdir()
+            (run / "moves.ndjson").write_text('{"text":"Continue."}\n', encoding="utf-8")
+            (run / "app-status.final.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "worldos.app-status.v1",
+                        "build": {"sha": "abc1234", "version": "v1-test"},
+                        "art": {"private_root_present": True},
+                        "live": {
+                            "campaign_id": "camp_test",
+                            "run_id": "run_test",
+                            "can_act": True,
+                            "enabled_action_count": 3,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run / "session-surface.final.json").write_text(
+                json.dumps({"schema": "worldos.session-surface.v1", "campaign_id": "camp_test"}),
+                encoding="utf-8",
+            )
+            out = tmp / "bundle"
+
+            rc, text, payload = self.run_exporter(
+                out,
+                "http://127.0.0.1:1/app-status",
+                ["--run-dir", str(run), "--gate-kind", "built_app_scripted_smoke", "--provider", "scripted"],
+            )
+
+            self.assertEqual(rc, 0, text)
+            self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["sources"]["app_status"]["recovered_by"], "app_status_snapshot")
+            self.assertEqual(payload["sources"]["app_status_snapshot"]["ok"], True)
+            self.assertEqual(payload["sources"]["session_surface_snapshot"]["ok"], True)
+            self.assertEqual(payload["handoff_gate"]["ok"], True)
+
 
 if __name__ == "__main__":
     unittest.main()
