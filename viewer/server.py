@@ -4504,6 +4504,7 @@ def build_openworlds_campaign_summary(
     last_played: float,
     current: bool,
     can_resume: bool,
+    move_sink_live: bool = False,
     now: float,
 ) -> dict:
     """Browser-safe OpenWorlds launcher row for one campaign.
@@ -4514,7 +4515,7 @@ def build_openworlds_campaign_summary(
     need more data.
     """
     snapshot = snapshot if isinstance(snapshot, dict) else {}
-    live = (now - last_played) < 90
+    live = bool(current and can_resume and move_sink_live) or (now - last_played) < 90
     location = _display_location(snapshot)
     loc_id = _text(snapshot.get("current_location_id"))
     world = _text(snapshot.get("world_id"), "unknown")
@@ -4611,7 +4612,12 @@ def _openworlds_catalog_index(
     return tuple(sig_entries), snapshots
 
 
-def _refresh_openworlds_campaign_times(cards: list[dict], *, now: float) -> list[dict]:
+def _refresh_openworlds_campaign_times(
+    cards: list[dict],
+    *,
+    now: float,
+    move_sink_live: bool = False,
+) -> list[dict]:
     refreshed: list[dict] = []
     for card in cards:
         c = dict(card)
@@ -4621,7 +4627,7 @@ def _refresh_openworlds_campaign_times(cards: list[dict], *, now: float) -> list
             if isinstance(last_played, (int, float)) and not isinstance(last_played, bool)
             else 0
         )
-        live = (now - last_played) < 90
+        live = bool(move_sink_live and c.get("current") and c.get("canResume")) or (now - last_played) < 90
         c["live"] = live
         c["liveStatus"] = "live" if live else "stale"
         c["lastPlayed"] = _relative_time_label(last_played, now=now)
@@ -4637,14 +4643,18 @@ def _refresh_openworlds_campaign_times(cards: list[dict], *, now: float) -> list
     return refreshed
 
 
-def _openworlds_campaigns(attached_campaign: str = "") -> dict:
+def _openworlds_campaigns(attached_campaign: str = "", *, move_sink_live: bool = False) -> dict:
     global _openworlds_catalog_cache
     now = time.time()
     roots = _campaign_catalog_roots()
     current_campaigns_dir = _resolved(_campaigns_dir())
     signature, snapshots = _openworlds_catalog_index(roots, attached_campaign)
     if _openworlds_catalog_cache and _openworlds_catalog_cache[0] == signature:
-        out = _refresh_openworlds_campaign_times(_openworlds_catalog_cache[1], now=now)
+        out = _refresh_openworlds_campaign_times(
+            _openworlds_catalog_cache[1],
+            now=now,
+            move_sink_live=move_sink_live,
+        )
     else:
         built: list[dict] = []
         for root, snap, recency in snapshots:
@@ -4668,13 +4678,18 @@ def _openworlds_campaigns(attached_campaign: str = "") -> dict:
                     last_played=recency,
                     current=root_is_current and campaign_id == attached_campaign,
                     can_resume=root_is_current,
+                    move_sink_live=move_sink_live,
                     now=now,
                 )
             except (OSError, TypeError, ValueError):
                 continue
             built.append(summary)
         _openworlds_catalog_cache = (signature, built)
-        out = _refresh_openworlds_campaign_times(built, now=now)
+        out = _refresh_openworlds_campaign_times(
+            built,
+            now=now,
+            move_sink_live=move_sink_live,
+        )
     return {
         "campaigns": out[:80],
         "total": len(out),
@@ -6289,7 +6304,7 @@ class _Handler(BaseHTTPRequestHandler):
                 chat_path=self.chat_path,
             ))
         elif route == "/openworlds/campaigns.json":
-            self._json(_openworlds_campaigns(self.campaign_id))
+            self._json(_openworlds_campaigns(self.campaign_id, move_sink_live=_live_play()))
         elif route == "/session-surface":
             qs = parse_qs(parsed.query)
             live = _live_play()

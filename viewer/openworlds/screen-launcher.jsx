@@ -316,11 +316,11 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
 
                   {/* Party row */}
                   <SectionTitle>The Party</SectionTitle>
-                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(party.length, 1)}, 1fr)`, gap: 8 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                     {party.map((p, i) => (
-                      <div key={i} style={{ textAlign: "center" }}>
-                        <Img scope={p.id ? "portrait-" + p.id : ""} label={p.name || p.short || "portrait"} w="100%" h={70} framed fit="cover" />
-                        <div className="hand" style={{ fontSize: 12, marginTop: 4, color: "var(--ink-700)" }}>{p.name}</div>
+                      <div key={i} style={{ width: 86, textAlign: "center" }}>
+                        <Img scope={p.id ? "portrait-" + p.id : ""} label={p.name || p.short || "portrait"} w={86} h={104} framed fit="cover" />
+                        <div className="hand" style={{ fontSize: 12, marginTop: 4, color: "var(--ink-700)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                       </div>
                     ))}
                     {party.length === 0 && (
