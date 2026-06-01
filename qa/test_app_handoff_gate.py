@@ -115,6 +115,22 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(summary["failed_or_error_count"], 0)
         self.assertEqual(summary["trace_exists"], True)
 
+    def test_codex_provider_trace_classifies_safety_monitor_500_as_infra_warning(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            provider = root / "codex-provider"
+            provider.mkdir()
+            (provider / "codex-dm.stderr.log").write_text(
+                '2026-06-01T13:39:07.247084Z  WARN codex_core::arc_monitor: safety monitor returned non-success status status=500 Internal Server Error url=https://chatgpt.com/backend-api/codex/safety/arc response_text="{\\"detail\\":\\"safety_monitor_failed\\"}"\n',
+                encoding="utf-8",
+            )
+
+            summary = gate.provider_trace_summary(root, "codex")
+
+        self.assertEqual(summary["failed_or_error_count"], 0)
+        self.assertEqual(summary["provider_infra_warning_count"], 1)
+        self.assertIn("safety monitor returned non-success", summary["provider_infra_samples"][0])
+
     def test_codex_provider_trace_missing_is_explicit(self):
         with tempfile.TemporaryDirectory() as td:
             summary = gate.provider_trace_summary(Path(td), "codex")
