@@ -5,13 +5,13 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T17:07:00+07:00 #508 support-VM preflight merged; current handoff build is 9545383
+     AS OF:        2026-06-01T17:24:00+07:00 docs wording pass; latest handoff build remains 9545383
      MAIN BASELINE:
-                   Current `origin/main` / canonical checkout is `9545383` (PR #508 merged the
-                   repo-owned support-VM preflight artifact gate). Product behavior was reproved on
-                   this exact SHA by the app handoff gate below. Earlier product-code baseline
-                   `fd9dba5` remains preserved as historical proof, but is no longer the latest
-                   same-SHA target for #466.
+                   Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
+                   support-VM preflight artifact gate, and the app handoff gate was rerun on that
+                   exact SHA). Current `origin/main` may contain docs-only commits above that proof;
+                   do not treat docs-only tips as new product proof. Earlier product-code baseline
+                   `fd9dba5` remains preserved as historical proof.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
@@ -227,7 +227,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T17:07:00+07:00 — #508 preflight merged; latest app proof is 9545383)
+## 9. CURRENT STATUS (2026-06-01T17:24:00+07:00 — latest same-SHA app proof is 9545383)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
@@ -301,7 +301,7 @@ verifier; can revert the goal to "fix" anytime.
   gaps across all three manifests, and Codex trace `failed_or_error_count=0` with `line_count=177`.
   `qa.release_readiness.validate_handoff_json(..., "fd9dba5")` returned `valid=True` and `gaps=0`.
 - The post-#508 handoff gate `handoff-20260601T100304Z-9545383` then reproved the same fast GUI
-  velocity loop on current `main`: web-scripted smoke 5 moves, built-app scripted smoke 5 moves,
+  velocity loop on product build `9545383`: web-scripted smoke 5 moves, built-app scripted smoke 5 moves,
   built-app Codex playtest 1 move, private art present, active player, five enabled actions, zero evidence
   gaps across all three manifests, and Codex trace `failed_or_error_count=0` with `line_count=80`.
   `qa.release_readiness.validate_handoff_json(..., "9545383")` returned `valid=True` and `gaps=0`.

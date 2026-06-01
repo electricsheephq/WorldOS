@@ -10,8 +10,8 @@
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
 > and the default place to build/run/test the GUI and native app. The latest same-SHA app proof is
-> `9545383` after #508; the app handoff gate was rerun on current `main` and passed 100/100.
-> Verify `origin/main` before acting.
+> `9545383` after #508; later docs-only commits may sit above that proof without becoming new product
+> proof. Verify `origin/main` before acting, and rerun the handoff gate before pairing newer persona artifacts.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
