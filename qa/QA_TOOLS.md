@@ -49,9 +49,12 @@ Stable app failure buckets are:
 |---|---|---|---|
 | `qa/release_readiness.py` | The Release Readiness Index rollup and only release verdict | Complete same-SHA app/persona evidence, including optional `--handoff-json` Mac proof | You only need fast GUI wiring confidence |
 | `qa/release_gate.sh` | Orchestrate the release sweep over the canonical persona set | Built app, persona runs, behavior/UI/image/palette evidence | The support VM or Mac proof preflight is incomplete |
+| `qa/support_vm_preflight.py` | Read-only readiness artifact before a support-VM persona sweep | VM identity, repo SHA, `origin/main` queryability, tool/auth/art status, return path, teardown plan | You are trying to fix or sync the VM; get operator approval first |
 
 RRI requires a non-partial five-persona result on one build SHA. A handoff gate can feed the native
-app proof through `--handoff-json`, but it cannot fill in missing persona artifacts.
+app proof through `--handoff-json`, but it cannot fill in missing persona artifacts. The support-VM
+preflight must pass before a VM sweep can count toward #466; if `origin/main` is not queryable from
+the VM, fix the VM repo credentials/sync lane before running personas.
 
 ## Browser And Persona Diagnostics
 
