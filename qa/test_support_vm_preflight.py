@@ -249,6 +249,29 @@ class SupportVMPreflightTests(unittest.TestCase):
             markdown = preflight.markdown_report(report)
             self.assertIn("- Required tools: `git,python3,uv,node,npm,npx,jq,curl,lsof,timeout,pkill,pgrep,ps,codex`", markdown)
 
+    def test_report_includes_redacted_readiness_summary_for_agent_routing(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=fake_which, env={})
+
+            readiness = report["readiness"]
+            self.assertTrue(readiness["safe_to_run_personas"])
+            self.assertTrue(readiness["same_sha_ready"])
+            self.assertTrue(readiness["provider_auth_ready"])
+            self.assertTrue(readiness["player_agent_auth_ready"])
+            self.assertTrue(readiness["required_tools_ready"])
+            self.assertTrue(readiness["persona_briefs_ready"])
+            self.assertTrue(readiness["private_art_ready"])
+            self.assertTrue(readiness["artifact_return_ready"])
+            self.assertTrue(readiness["mac_handoff_required"])
+            self.assertFalse(readiness["release_verdict"])
+            self.assertEqual(readiness["blocking_categories"], [])
+
+            readiness_blob = json.dumps(readiness)
+            self.assertNotIn(str(config.repo), readiness_blob)
+            self.assertNotIn(str(config.art_root), readiness_blob)
+            self.assertNotIn(config.artifact_return_target, readiness_blob)
+
     def test_report_flags_dirty_repo_and_expected_sha_mismatch(self):
         with tempfile.TemporaryDirectory() as td:
             config = make_config(Path(td), expected_sha="1234567")
@@ -360,6 +383,19 @@ class SupportVMPreflightTests(unittest.TestCase):
             plan_blob = json.dumps(report["rri_plan"])
             self.assertIn("WOS_APP_SELECTED_PROVIDER=claude", plan_blob)
             self.assertIn("WOS_APP_PLAYER_AGENT=claude", plan_blob)
+
+    def test_explicit_claude_lane_does_not_report_auth_ready_without_probe(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            config.provider = "claude"
+            config.player_agent = "claude"
+
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=fake_which, env={})
+
+            self.assertFalse(report["ready_for_rri"])
+            self.assertFalse(report["readiness"]["provider_auth_ready"])
+            self.assertFalse(report["readiness"]["player_agent_auth_ready"])
+            self.assertIn("Claude CLI auth/profile status is not proven", "\n".join(report["blockers"]))
 
     def test_missing_playwright_chromium_blocks_readiness(self):
         with tempfile.TemporaryDirectory() as td:
