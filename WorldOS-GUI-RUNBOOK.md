@@ -195,9 +195,21 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
 - VM preflight before any RRI sweep: record VM identity, repo checkout path, branch/SHA, Codex CLI version,
-  auth/profile status, `uv`, Node/npm/Playwright availability, private-art availability or explicit
+  auth/profile status, `uv`, Node/npm/Playwright/Chromium availability, private-art availability or explicit
   backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and the artifact
-  return path under `/Volumes/LEXAR/Codex`.
+  return path under `/Volumes/LEXAR/Codex`. Use the repo-owned preflight artifact writer before #466:
+  ```bash
+  python3 qa/support_vm_preflight.py \
+    --repo /root/worldos-qa/WorldOS \
+    --expected-sha fd9dba5 \
+    --art-root /root/worldos-qa/WorldOS \
+    --private-art-mode required \
+    --artifact-dir /tmp/worldos-support-vm-preflight-fd9dba5 \
+    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/fd9dba5-preflight
+  ```
+  The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
+  `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/tool/auth/private-art blockers
+  would make the RRI sweep untrustworthy.
 - Current preflight status (2026-06-01): this local Codex Desktop session can parse an SSH alias for
   `support-vm-1`, but `ssh -o BatchMode=yes support-vm-1 ...` failed DNS resolution (`nodename nor servname
   provided`). Do not start #466 there until operator routing is restored and the preflight fields above are
