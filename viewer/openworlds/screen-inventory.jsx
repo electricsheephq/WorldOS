@@ -17,6 +17,7 @@ function slug(name) {
    The engine item.id is a composite "{character_id}:{idx}:{name}" which normalises to a unique
    per-instance key that never matches the shared art, so it must NOT be used for the scope. */
 function itemScope(item) {
+  if (window.itemArtScope) return window.itemArtScope(item);
   const s = slug(item && item.name);
   return s ? "item-" + s : "";
 }

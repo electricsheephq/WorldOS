@@ -104,6 +104,22 @@ class ItemIconTests(unittest.TestCase):
         # ItemSlot now renders Img, not only a glyph span.
         self.assertIn("scope={itemScope(item)}", src)
 
+    def test_shared_item_art_alias_helper_exists(self):
+        """Shared itemArtScope aliases table-qualified item names to reusable art."""
+        _status, _ctype, body = self._get("/openworlds/chrome.jsx")
+        src = body.decode("utf-8")
+        self.assertIn("window.itemArtScope", src)
+        self.assertIn('"travel-rations": "rations"', src)
+        self.assertIn('"iron-lantern": "lantern"', src)
+        self.assertIn('"wax-candle-6": "candle"', src)
+
+    def test_merchant_uses_shared_item_art_scope(self):
+        """Merchant item icons must use the shared alias helper before falling back."""
+        _status, _ctype, body = self._get("/openworlds/screen-merchant.jsx")
+        src = body.decode("utf-8")
+        self.assertIn("window.itemArtScope", src)
+        self.assertIn("return window.itemArtScope(item)", src)
+
 
 if __name__ == "__main__":
     unittest.main()
