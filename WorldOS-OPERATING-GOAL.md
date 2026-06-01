@@ -5,7 +5,7 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T18:10:00+07:00 support-VM origin-readiness pass; latest handoff build remains 9545383
+     AS OF:        2026-06-01T17:49:00+07:00 support-VM origin-readiness pass; latest handoff build remains 9545383
      MAIN BASELINE:
                    Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
                    support-VM preflight artifact gate, and the app handoff gate was rerun on that
@@ -228,7 +228,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T18:10:00+07:00 — latest same-SHA app proof is 9545383)
+## 9. CURRENT STATUS (2026-06-01T17:49:00+07:00 — latest same-SHA app proof is 9545383)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
