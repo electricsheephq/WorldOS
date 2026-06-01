@@ -1,5 +1,10 @@
 # WorldOS 1.0.0 — Release Checklist
 
+> Historical checklist. Do not execute this as the current release path. Current release truth requires
+> the hardened non-partial RRI in `qa/release_readiness.py`, with same-SHA built-app proof and complete
+> persona evidence recorded in `qa/SCORECARD.md`. Start from `WorldOS-OPERATING-GOAL.md`,
+> `WorldOS-GUI-RUNBOOK.md`, and `qa/QA_TOOLS.md`.
+
 **Scope:** local/personal 1.0 build. The bundled `baldurs-gate` world ships as-is for
 personal use (Wizards Fan Content Policy). Public distribution and notarization are
 deferred to 1.0.1 (see `macos/WorldOSApp/RELEASE_CHECKLIST.md` for the signing state).

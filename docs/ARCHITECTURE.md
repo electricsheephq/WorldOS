@@ -1,5 +1,8 @@
 # WorldOS — Architecture
 
+> Architecture map only. For current agent routing, GUI/native app proof, and QA commands, start with
+> `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, and `qa/QA_TOOLS.md`.
+
 WorldOS is a Claude Code plugin: an **AI Dungeon Master + voiced AI companion** that
 plays D&D 5e. Its center of gravity is a **living-world engine** — the DM *generates*
 an epic, mature story live inside a persistent, canon-anchored world, with deterministic

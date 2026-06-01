@@ -10,6 +10,9 @@ not change the game architecture: the engine remains the sole writer, the native
 app/OpenWorlds viewer remains a thin reader plus `/move` intent submitter, and
 the built app remains release truth.
 
+Current command routing lives in `qa/QA_TOOLS.md` and `WorldOS-GUI-RUNBOOK.md`. This file defines
+the contract those tools must satisfy.
+
 ## Related Work
 
 - [#324](https://github.com/electricsheephq/WorldOS/issues/324): AI playtester harness with five personas.
@@ -239,6 +242,21 @@ score.
 `qa/app_handoff_gate.py` is the fast hybrid gate for Codex-led GUI work. It is
 the command a main implementation agent should run before spending budget on
 longer exploratory/persona playtests.
+
+Default local invocation:
+
+```bash
+cd /Users/lume/ClawDnD-val
+python3 qa/app_handoff_gate.py \
+  --web-beats 5 \
+  --built-beats 5 \
+  --codex-moves 1 \
+  --art-root /Users/lume/ClawDnD-val \
+  --scripted-budget 1.00 \
+  --codex-budget 3.00 \
+  --timeout 90 \
+  --codex-timeout 240
+```
 
 The handoff gate writes
 `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/handoff.json`

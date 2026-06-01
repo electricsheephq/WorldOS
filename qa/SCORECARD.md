@@ -5,6 +5,16 @@
 > `*` = RED-capped (gate failed → scores forced ≤ 2.5; not a real quality reading).
 > Scorer: claude `score.sh` unless noted `[oc]` (gpt-5.4, grades ~1.5 harsher).
 
+## Current Evidence Index
+
+| Question | Current answer |
+|---|---|
+| Latest fast GUI handoff proof | `handoff-20260601T085319Z-fd9dba5` under `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/` |
+| Latest release verdict | None after RRI hardening |
+| Latest RRI attempt | `gate-f5500ac-partial` is partial / harness-contaminated, not release evidence |
+| Fast GUI gate command | `python3 qa/app_handoff_gate.py --web-beats 5 --built-beats 5 --codex-moves 1 --art-root /Users/lume/ClawDnD-val --scripted-budget 1.00 --codex-budget 3.00 --timeout 90 --codex-timeout 240` |
+| Next release action | #466 clean non-partial RRI on one SHA, pairing same-SHA Mac handoff proof with complete persona/backend artifacts |
+
 ## Built-app gameplay proof ledger
 
 > Diagnostic product evidence from the shipped Mac surface. These rows prove built-app behavior but do not

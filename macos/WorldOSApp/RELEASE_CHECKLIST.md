@@ -1,5 +1,9 @@
 # WorldOS Native macOS Release Checklist
 
+> Native packaging checklist only. For current GUI/native app proof, use
+> `WorldOS-GUI-RUNBOOK.md` and `qa/QA_TOOLS.md`; for release truth, use the non-partial RRI path in
+> `WorldOS-OPERATING-GOAL.md` and `qa/release_readiness.py`.
+
 The v0.3 macOS lane starts with a locally signed development app. Notarization is
 release-trust work after the local shell, provider bridge, and dashboard hosting
 are stable.

@@ -1,10 +1,14 @@
-# WorldOS GUI Workbook — the living punch-list (verified on the REAL surface)
+# WorldOS GUI Workbook — historical GUI punch-list (verified findings)
 
-> Single source of truth for the GUI test→fix→look loop. Each row: defect, VERIFIED root cause
-> (file:line), fix, status, proof. "Verified" = observed on the live playable surface
-> (8799 from CANONICAL — has _private art) or read from canonical source. NOT a proxy guess.
-> Iteration surface: `http://127.0.0.1:8799/openworlds/` (`scripts/play.sh` from canonical).
-> Gate surface: built `dist/WorldOS.app` via `qa/ui_playtest_app.sh`. See `WorldOS-GUI-RUNBOOK.md`.
+> This file preserves verified GUI findings and punch-list rows. Current operating truth lives in
+> `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
+> Historical rows may mention old SHAs or pre-handoff routing. Use them for context, not for deciding
+> current release state. "Verified" means observed on the live playable surface or read from canonical
+> source at the time recorded, not a proxy guess.
+>
+> Current routing: iteration surface `http://127.0.0.1:8799/openworlds/` from `/Users/lume/ClawDnD-val`;
+> gate surface built `dist/WorldOS.app`; fast handoff command `qa/app_handoff_gate.py`; release verdict
+> `qa/release_readiness.py`.
 
 ## ★ HEADLINE (historical canonical f5500ac, verified 2026-05-31, 3 clean reads on live canonical 8799)
 **Most of what the owner saw broken was a STALE-BUILD / WORKTREE-WITHOUT-ART artifact, not broken canonical code.** Served correctly from canonical:
@@ -13,11 +17,12 @@
 - DM cold-open narration = 4842 chars with **27 paragraph breaks** (the prose IS well-formed).
 ⇒ The fix for "no images / no map / no palette" is **serve/build WITH `_private` art present** (infra), not 3 code PRs. The real *code* bugs are layout prominence + render formatting + the silent companion.
 
-Post-#465/#468 note: the code baseline for the next clean RRI is `b15ad3c` or newer, and the current
-doc-sync baseline is `e4078c7`. RRI release scoring requires a disk-backed `palette_live` proof with
-**≥6 enabled actions** on a `can_act:true` surface. The 5-action canonical read above remains useful
-orientation, but it is not release proof; issue #466 must either prove the built app now meets the live
-palette gate or fail with an actionable artifact path.
+Post-#504/#505 note: the latest product-code fast handoff proof is `fd9dba5`
+(`handoff-20260601T085319Z-fd9dba5`), which passed web-scripted smoke, built-app scripted smoke, and a
+short built-app Codex-provider playtest with zero evidence gaps. That 5-action handoff is an
+implementation-velocity gate, not release proof. RRI release scoring still requires a disk-backed
+`palette_live` proof with **>=6 enabled actions** on a `can_act:true` surface plus complete same-SHA
+persona evidence. Issue #466 must either produce that clean RRI or fail with actionable artifact paths.
 
 ## Phase 0 — infra (DONE)
 - ✅ `launch.json` repointed off the deprecated LEXAR copy → canonical/8799/`/openworlds/`/live state.

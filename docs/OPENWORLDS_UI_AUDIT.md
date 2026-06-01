@@ -1,5 +1,10 @@
 # OpenWorlds App — Page-by-Page UI/UX Audit (2026-05-27)
 
+> Historical snapshot. This audit predates the built-app `/move` wiring, app-status/handoff harness,
+> scripted provider, and stable agent hooks. It is still useful as UX backlog context, but current app
+> proof and release routing live in `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`,
+> `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
+
 **Method:** live walkthrough of every screen via the preview server (`127.0.0.1:8799/openworlds/`).
 **This is the same UI the desktop app ("WorldOS") shows** — the app launches `viewer/server.py` and loads `/openworlds/`. (`/dashboard` is the *old* `dashboard.html`, the `play.sh` surface — not this UI.) So fixes here land in the app on rebuild/restart.
 **Scope of this doc:** audit + scored backlog ONLY. No product code changed. We prioritize/sequence together before fixing.

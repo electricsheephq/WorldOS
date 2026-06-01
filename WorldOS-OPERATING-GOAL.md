@@ -73,6 +73,28 @@
 > Read order on resume: the STATE-OF-TRUTH block above → this file → `WorldOS-GUI-RUNBOOK.md` →
 > `WorldOS-RUNBOOK.md` → `qa/SCORECARD.md`. (NORTH-STAR is the long-game ceiling, not needed to act.)
 
+## Agent Navigation / Current TOC
+
+Use this map before opening older audit docs. It is meant for a fresh agent that needs to know
+which file answers which question.
+
+| Need | Read / run |
+|---|---|
+| Current release truth, last proof, next action | This file, especially the state block above |
+| Fast GUI/native app loop | `WorldOS-GUI-RUNBOOK.md` |
+| Repo architecture, invariants, broader dev loop | `WorldOS-RUNBOOK.md` and `docs/ARCHITECTURE.md` |
+| QA command index | `qa/QA_TOOLS.md` |
+| App-status, handoff, evidence contract | `docs/AGENT_GRADE_APP_TESTABILITY.md` |
+| Evidence ledger | `qa/SCORECARD.md` |
+| Historical GUI punch-list | `qa/GUI_WORKBOOK.md` |
+| Blind browser persona harness | `qa/UI_PLAYTEST.md` |
+| Old page-by-page audits and native roadmaps | `docs/OPENWORLDS_UI_AUDIT.md`, `docs/OPENWORLDS_NATIVE_APP_ROADMAP.md`, `docs/ui-audit/` |
+
+Incoming-agent rule: if the goal is to catch broken wiring, stale browser tabs, dead controls,
+missing art, missing actor/actions, failed moves, console/network errors, or evidence gaps before
+spending budget on long playtests, start with `qa/app_handoff_gate.py` from the GUI runbook. It is
+the handoff/velocity gate only. Full non-partial RRI remains the release verdict.
+
 ---
 
 ## 0. FIRST PRINCIPLES — what are we actually trying to do?
