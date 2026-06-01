@@ -346,7 +346,13 @@ import sys
 path, role, text, extra_json = sys.argv[1:]
 row = {"role": role, "text": text}
 if extra_json:
-    row.update(json.loads(extra_json))
+    try:
+        extra = json.loads(extra_json)
+    except ValueError as exc:
+        raise SystemExit(f"invalid chatlog extra_json: {exc}") from exc
+    if not isinstance(extra, dict):
+        raise SystemExit(f"invalid chatlog extra_json: expected object, got {type(extra).__name__}")
+    row.update(extra)
 with open(path, "a", encoding="utf-8") as handle:
     handle.write(json.dumps(row) + "\n")
 PY

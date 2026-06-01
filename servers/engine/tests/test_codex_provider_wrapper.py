@@ -196,6 +196,7 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     assert source.count("$WRAPPER_NARRATION_LOG_RULE") == 3
     assert 'log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"' in source
     assert '"engine_logged":true' in source
+    assert "invalid chatlog extra_json" in source
 
 
 def test_codex_dm_wrapper_records_engine_narration_before_chat_tail():
