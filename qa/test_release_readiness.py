@@ -1157,6 +1157,14 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertEqual(payload["signals"]["native_gate_source"], str(handoff))
             self.assertEqual(payload["artifact_sources"]["handoff_json"], str(handoff))
             self.assertTrue(payload["signals"]["handoff_proof"]["valid"])
+            self.assertEqual(payload["handoff_evidence"]["path"], str(handoff))
+            self.assertTrue(payload["handoff_evidence"]["valid"])
+            self.assertEqual(payload["handoff_evidence"]["evidence_gaps"], [])
+            self.assertEqual(
+                sorted(payload["handoff_evidence"]["gates"]),
+                ["built_app_codex_playtest", "built_app_scripted_smoke", "web_scripted_smoke"],
+            )
+            self.assertEqual(payload["handoff_evidence"]["gates"]["built_app_codex_playtest"]["manifest_verdict"], "passed")
             self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
 
     def test_handoff_json_must_prove_engine_state_authority(self):
