@@ -447,6 +447,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("{campaigns.map((c) =>", launcher)
         self.assertIn("playerChronicles.find((c) => c.live && c.canResume)", launcher)
         self.assertIn("playerChronicles.find((c) => c.canResume)", launcher)
+        self.assertIn('display: "flex", flexWrap: "wrap", gap: 10', launcher)
+        self.assertIn('style={{ width: 86, textAlign: "center" }}', launcher)
+        self.assertIn('w={86} h={104}', launcher)
         self.assertIn("function openWorldsPlayerChronicle(c)", app)
         self.assertIn("const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);", app)
         self.assertIn("const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);", app)
@@ -752,6 +755,42 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("hidden agenda", encoded)
         self.assertNotIn("private canon", encoded)
         self.assert_no_private_keys(json.loads(encoded))
+
+    def test_openworlds_campaigns_keeps_current_move_sink_run_live_after_recency_window(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_live"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_live",
+                "title": "Road After Moonrise",
+                "ruleset": "SRD 5.2",
+                "world_id": "baldurs-gate",
+                "day": 12,
+                "current_location_id": "last-light",
+                "locations": {"last-light": {"name": "Last Light Inn"}},
+                "party": ["hero"],
+                "characters": {
+                    "hero": {"name": "Tav", "kind": "player", "current_hp": 22, "max_hp": 30},
+                },
+            },
+        )
+        stale = 1_700_000_000
+        os.utime(campaign_dir / "snapshot.json", (stale, stale))
+        moves = self._tmp / "player_moves.jsonl"
+        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        _QuietHandler.campaign_id = "camp_live"
+        server._HERE = self._tmp / "viewer"
+        server._openworlds_catalog_cache = None
+
+        status, _ctype, body = self._get("/openworlds/campaigns.json")
+
+        self.assertEqual(status, 200)
+        campaign = json.loads(body.decode("utf-8"))["campaigns"][0]
+        self.assertTrue(campaign["current"])
+        self.assertTrue(campaign["canResume"])
+        self.assertFalse(campaign["readOnly"])
+        self.assertTrue(campaign["live"])
+        self.assertEqual(campaign["liveStatus"], "live")
 
     def test_native_start_surfaces_use_app_selected_provider(self):
         app = (Path(__file__).resolve().parents[1] / "openworlds" / "app.jsx").read_text(encoding="utf-8")
