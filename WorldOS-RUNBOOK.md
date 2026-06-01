@@ -16,7 +16,7 @@
 > the owner-provided 32GB support VM (`support-vm-1`) after remote access and Codex config are
 > intentionally installed and verified; connection details are kept outside tracked docs. A read-only
 > scout reached the operator endpoint and found `evaos-support` suitable but stale (`4524b3e`, behind
-> the `fd9dba5` proof baseline) with Codex auth/config unproven. Mac-only built-app proof remains local/macOS CI.
+> the `9545383` proof baseline) with Codex auth/config unproven. Mac-only built-app proof remains local/macOS CI.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -27,7 +27,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T16:18:00+07:00 (`fd9dba5` remains the latest product-code app-proof build; #506 merged docs-only above it; release notes below are historical context).
+> Last updated: 2026-06-01T17:07:00+07:00 (`9545383` is the latest same-SHA app-proof build; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -314,12 +314,12 @@ as PR #494, stable agent UI hooks merged as PR #495, failure-bucket/RRI split me
 and takeover truth sync merged as PR #498, followed by PR #499 recording current-main built-app proof
 PR #500 fixing Codex-DM provider trace cancellations, PR #501 recording that proof in docs, and
 PR #504 adding the 100/100 hybrid app handoff gate, PR #505 adding the RRI `--handoff-json`
-bridge for Mac app proof, and PR #506 syncing docs to that proof. Docs-only commits may sit above
-the latest product-proof SHA on `origin/main`.
+bridge for Mac app proof, PR #506 syncing docs to that proof, and PR #508 adding the support-VM
+preflight artifact gate.
 The local app/private-art checkout should stay fast-forwarded to `origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
-product-code fast handoff play is proven diagnostically on `fd9dba5`, including private art, Codex DM, an active player,
+fast handoff play is proven diagnostically on `9545383`, including private art, Codex DM, an active player,
 five enabled actions, one accepted/resolved `/move`, no evidence-manifest gaps, zero failed/error provider
 trace events, and a post-merge `handoff_score=100`. With #479 proven and #504/#505 merged, run #466 only after
 support-VM routing/auth/config preflight is explicit; this session's read-only check found the local
