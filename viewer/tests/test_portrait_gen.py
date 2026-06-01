@@ -132,6 +132,16 @@ class PortraitGenRouteTests(unittest.TestCase):
         self.assertIn("heroPortraitScope", src)
         self.assertIn("portraitGenScope", src)
 
+    def test_screen_create_keeps_portraits_available_for_unrepresented_lineages(self):
+        src = self._get_source("/openworlds/screen-create.jsx")
+        # Several selectable lineages do not yet have curated canon faces. The Face step must
+        # fall back to the full living gallery instead of rendering an empty grid.
+        self.assertIn("function portraitChoicesForRace", src)
+        self.assertIn("lineageChoices.length ? lineageChoices : livingChoices", src)
+        self.assertIn('data-worldos-testid="portrait-gallery-fallback"', src)
+        self.assertIn("No curated portrait exists for", src)
+        self.assertIn("galleryChoices.map", src)
+
 
 class PortraitGenEngineTests(unittest.TestCase):
     """Exercise the _portrait_gen plumbing with a STUBBED engine subprocess so no uv is

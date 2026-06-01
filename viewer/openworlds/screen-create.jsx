@@ -65,6 +65,15 @@ function heroPortraitScope(hero) {
   return portraitScope(hero.portrait);
 }
 
+function portraitChoicesForRace(race) {
+  const livingChoices = PORTRAIT_GALLERY.filter((p) => p.alive !== false);
+  const lineageChoices = livingChoices.filter((p) => !race || p.race === race);
+  return {
+    choices: lineageChoices.length ? lineageChoices : livingChoices,
+    usingFallback: !!race && lineageChoices.length === 0,
+  };
+}
+
 function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
   const [step, setStep] = React.useState(0);
   const [hero, setHero] = React.useState({
@@ -506,6 +515,10 @@ function StepPortrait({ hero, setHero }) {
   const [genState, setGenState] = React.useState(hero.portraitMode === "gen" ? "done" : "idle");
   const toast = window.useToast ? window.useToast() : (() => {});
   const genMode = hero.portraitMode === "gen" && !!hero.portraitGenScope;
+  const portraitChoiceState = portraitChoicesForRace(hero.race);
+  const galleryChoices = portraitChoiceState.choices;
+  const usingGalleryFallback = portraitChoiceState.usingFallback;
+  const raceName = RACES[hero.race]?.name || "this lineage";
 
   // Picking a gallery face always returns to gallery mode (so the gallery selection wins back).
   const pickGallery = (i) => setHero({ ...hero, portrait: i, portraitMode: "gallery" });
@@ -555,10 +568,32 @@ function StepPortrait({ hero, setHero }) {
       <h1 className="h1">What will the chronicle remember of you?</h1>
       <Divider />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
-        {/* #315: only canon faces of the hero's lineage, and never a dead figure. The original
+      {usingGalleryFallback && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-worldos-testid="portrait-gallery-fallback"
+          className="body-sm"
+          style={{
+            marginBottom: 12,
+            padding: "10px 12px",
+            color: "var(--ink-800)",
+            background: "rgba(249, 238, 211, 0.58)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.28)",
+            lineHeight: 1.4,
+          }}
+        >
+          No curated portrait exists for {raceName} yet. Choose any living gallery face below,
+          or summon a unique portrait.
+        </div>
+      )}
+
+      <div data-worldos-testid="portrait-gallery" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+        {/* #315: prefer canon faces of the hero's lineage, and never a dead figure. #379/#390:
+            if a selectable lineage has no curated faces yet, keep character creation playable
+            by showing the full living gallery instead of an empty grid. The original
             gallery index drives selection + scope, so map filtered entries back to it. */}
-        {PORTRAIT_GALLERY.filter(p => (!hero.race || p.race === hero.race) && p.alive !== false).map((p) => {
+        {galleryChoices.map((p) => {
           const i = PORTRAIT_GALLERY.indexOf(p);
           return (
           <button key={p.slug} onClick={() => pickGallery(i)} title={p.name} style={{
@@ -1057,4 +1092,4 @@ const BACKGROUNDS = {
   spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
-Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, PORTRAIT_GALLERY });
+Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, portraitChoicesForRace, PORTRAIT_GALLERY });
