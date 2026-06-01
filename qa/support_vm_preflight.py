@@ -462,7 +462,8 @@ def inspect_tools(
         )
     if codex_path:
         codex["auth_status"] = "not_proven"
-        result = runner([codex_path, "auth", "status"], repo, 10)
+        codex["auth_probe_command"] = "codex login status"
+        result = runner([codex_path, "login", "status"], repo, 10)
         combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".strip()
         lower = combined.lower()
         codex.update(
