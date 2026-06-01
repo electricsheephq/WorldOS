@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`4a0efe1 == origin/main` after #475/#494/#495/#496/#498/#499/#500/#501/#504) and the default place to build/run/test the GUI and native app.
+> (`fd9dba5 == origin/main` after #475/#494/#495/#496/#498/#499/#500/#501/#504/#505) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -64,14 +64,16 @@
   accessibility review showed the chronicle with one opening narration row and one follow-up narration row,
   not duplicate chat/event prose. This closes the #479 diagnostic blocker, but release still requires #466's
   full non-partial RRI gate.
-- The post-#504 merged-main handoff gate
-  (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T081016Z-4a0efe1/`, build
-  `4a0efe1`) is the current fastest GUI trust proof. It scored `handoff_score=100` with web scripted smoke
+- The post-#505 current-main handoff gate
+  (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T085319Z-fd9dba5/`, build
+  `fd9dba5`) is the current fastest GUI trust proof. It scored `handoff_score=100` with web-scripted smoke
   5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built `dist/WorldOS.app` Codex-provider
   playtest 1 move. All three evidence manifests passed with zero gaps, private art present, screenshots,
   app-status/session-surface snapshots, move logs, provider trace, console/network/action logs, and failure
-  bucket fields. The Codex trace summary reported `trace_exists=true`, `line_count=175`, and
-  `failed_or_error_count=0`. This is the fast GUI velocity gate, not the release verdict.
+  bucket fields. The Codex trace summary reported `trace_exists=true`, `line_count=177`, and
+  `failed_or_error_count=0`. `validate_handoff_json(..., "fd9dba5")` returned `valid=True`, `gaps=0`.
+  This supersedes the `4a0efe1` handoff as current proof. It is the fast GUI velocity gate, not the
+  release verdict.
 
 ## Agent-facing app contract
 
@@ -82,9 +84,10 @@
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Agent-grade testing progress as of `4a0efe1`: #481 app-status is closed, #482 deterministic scripted
+- Agent-grade testing progress as of `fd9dba5`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, #484 stable accessibility/DOM hooks are merged,
-  and #504's hybrid handoff gate is merged and green on `main`. #485 evidence bundle completion and
+  #504's hybrid handoff gate is merged and green on `main`, and #505's RRI handoff bridge is merged.
+  #485 evidence bundle completion and
   #486 gate-split follow-through remain active. A scripted `:8899` harness surface can prove app
   observability, but it is not built-app release proof unless it came from `dist/WorldOS.app` /
   `qa/ui_playtest_app.sh`.
@@ -199,8 +202,8 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private
-  art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e`, 19 commits behind
-  current `main@4a0efe1`; Codex auth/config is not proven; `/Volumes/LEXAR/Codex` does not exist on the VM.
+  art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e` and behind
+  current `main@fd9dba5`; Codex auth/config is not proven; `/Volumes/LEXAR/Codex` does not exist on the VM.
   Before #466, approve/sync the VM checkout, prove Codex auth, set a remote staging path, and copy artifacts
   back to local Lexar.
 - RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
@@ -208,7 +211,7 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   `session_surface.final.json`, `network.ndjson`, and build SHA are present. Missing or mixed-SHA artifacts
   must remain `partial` / `harness_contaminated`.
 - Split Mac/VM rollup command shape: pass the Mac proof into RRI as
-  `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<handoff>/handoff.json`
+  `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T085319Z-fd9dba5/handoff.json`
   alongside the VM persona run dirs. RRI should then satisfy the native gate from the Mac handoff bundle
   only if all required handoff gates and manifests are same-SHA, clean, private-art-present, and gap-free.
 
