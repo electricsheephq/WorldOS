@@ -5,7 +5,7 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T17:49:00+07:00 support-VM origin-readiness pass; latest handoff build remains 9545383
+     AS OF:        2026-06-01T18:02:45+07:00 repo Codex persona-lane patch; latest handoff build remains 9545383
      MAIN BASELINE:
                    Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
                    support-VM preflight artifact gate, and the app handoff gate was rerun on that
@@ -21,7 +21,9 @@
      SUPPORT VM:   32GB owner-provided support VM (`support-vm-1`). Connection/auth details live
                    in local operator-only evidence/runbooks, not tracked repo docs. Use it for
                    heavy backend/persona sweeps only after Codex/config/credentials are intentionally
-                   installed. Mac-built `.app` smoke/play proof stays on this Mac or macOS CI.
+                   installed. The default VM persona lane is Codex DM plus Codex UI player and requires
+                   Codex CLI `>=0.120.0`; Claude is only required when deliberately selected. Mac-built
+                   `.app` smoke/play proof stays on this Mac or macOS CI.
                    Current local preflight note: a read-only operator-endpoint scout reached
                    `evaos-support` (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`,
                    but that checkout was stale (`4524b3e`) and behind the `9545383` app-proof baseline.
@@ -57,7 +59,8 @@
                    Mac handoff proof through `--handoff-json`.
                    Do not claim release. Run #466 for a trustworthy clean RRI failure list/result.
                    For same-SHA RRI, sync the support VM checkout to `9545383`, run
-                   `python3 qa/support_vm_preflight.py --expected-sha 9545383 ...`, and pair
+                   `python3 qa/support_vm_preflight.py --expected-sha 9545383 --provider codex --player-agent codex ...`,
+                   and pair
                    the VM persona artifacts with the `9545383` Mac handoff JSON above. If a
                    newer release-candidate SHA is used instead, rerun the Mac handoff on that
                    same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps

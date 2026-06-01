@@ -55,6 +55,9 @@ class MacOSAppStaticContractTests(unittest.TestCase):
 
         self.assertIn("WOS_APP_KEEP_MINTED_BACKEND=1", harness)
         self.assertIn("WOS_APP_SELECTED_PROVIDER=codex|scripted|claude|openclaw", harness)
+        self.assertIn("WOS_APP_PLAYER_AGENT=claude|codex", harness)
+        self.assertIn('PLAYER_AGENT="${WOS_APP_PLAYER_AGENT:-claude}"', harness)
+        self.assertIn('PART_B_PROVIDER="${SELECTED_PROVIDER:-claude}"', harness)
         self.assertIn('defaults write dev.clawdnd.app selectedProvider "$SELECTED_PROVIDER"', harness)
         self.assertIn("requires WOS_APP_PART=A", harness)
         self.assertIn('KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"', harness)
@@ -72,6 +75,19 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('play.sh .* $minted_run', harness)
         self.assertNotIn('play_party.sh $WORLD $minted_run', harness)
         self.assertNotIn('play.sh $WORLD $minted_run', harness)
+
+    def test_built_app_part_b_supports_codex_provider_and_player_agent(self):
+        harness = self.read("qa/ui_playtest_app.sh")
+
+        self.assertIn("scripts/play_codex_dm.sh", harness)
+        self.assertIn("CLAWDND_PROVIDER=codex", harness)
+        self.assertIn("codex exec", harness)
+        self.assertIn("codex_supports_mcp_override_config", harness)
+        self.assertIn("Codex CLI >= 0.120.0", harness)
+        self.assertIn("mcp_servers.clawdnd-uiplayer.command", harness)
+        self.assertIn("palette_server.js", harness)
+        self.assertIn("player_agent", harness)
+        self.assertIn("provider", harness)
 
     def test_scripted_provider_is_dev_gated_and_model_free(self):
         models = self.read("macos/WorldOSApp/Sources/WorldOSApp/Models/ProviderModels.swift")
