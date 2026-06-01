@@ -135,9 +135,9 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
 - Agent-grade testing progress as of `9545383`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, #484 stable accessibility/DOM hooks are merged,
   #504's hybrid handoff gate is merged and green on `main`, #505's RRI handoff bridge is merged, and
-  #508's support-VM preflight artifact gate is merged.
-  #485 evidence bundle completion and
-  #486 gate-split follow-through remain active. A scripted `:8899` harness surface can prove app
+  #508's support-VM preflight artifact gate is merged. #485 evidence bundle completion and #486 gate-split
+  follow-through are closed in GitHub; #466 remains the release gate and #467 remains the UX-first sprint.
+  A scripted `:8899` harness surface can prove app
   observability, but it is not built-app release proof unless it came from `dist/WorldOS.app` /
   `qa/ui_playtest_app.sh`.
 

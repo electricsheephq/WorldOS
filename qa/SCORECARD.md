@@ -9,7 +9,7 @@
 
 | Question | Current answer |
 |---|---|
-| Latest fast GUI handoff proof | `handoff-20260601T085319Z-fd9dba5` under `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/` |
+| Latest fast GUI handoff proof | `handoff-20260601T100304Z-9545383` under `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/` |
 | Latest release verdict | None after RRI hardening |
 | Latest RRI attempt | `gate-f5500ac-partial` is partial / harness-contaminated, not release evidence |
 | Fast GUI gate command | `python3 qa/app_handoff_gate.py --web-beats 5 --built-beats 5 --codex-moves 1 --art-root /Users/lume/ClawDnD-val --scripted-budget 1.00 --codex-budget 3.00 --timeout 90 --codex-timeout 240` |
