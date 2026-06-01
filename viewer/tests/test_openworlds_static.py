@@ -936,6 +936,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(surface["write_lane"], "/move")
         self.assertEqual(surface["title"], "Table Save")
         self.assertEqual(surface["location"]["name"], "Lower City")
+        self.assertEqual(surface["actor"], {"id": "hero", "name": "Tav", "kind": "player"})
         self.assertEqual(surface["party"][0]["name"], "Tav")
         encoded = json.dumps(surface)
         self.assertNotIn("private route", encoded)

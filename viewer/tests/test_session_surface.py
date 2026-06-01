@@ -121,6 +121,7 @@ class SessionSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["location"]["name"], "Lower City")
         self.assertEqual(surface["location"]["region"], "Baldur's Gate")
         self.assertEqual(surface["scene"]["summary"], "The party studies the sealed gate as dusk gathers.")
+        self.assertEqual(surface["actor"], {"id": "tav", "name": "Tav", "kind": "player"})
         self.assertEqual([p["name"] for p in surface["party"]], ["Tav", "Jaheira"])
         self.assertEqual(surface["party"][0]["class"], "Fighter")
         self.assertEqual(surface["party"][0]["level"], 5)
@@ -162,6 +163,7 @@ class SessionSurfaceTests(unittest.TestCase):
         surface = server.build_session_surface(snapshot, campaign_id="camp_live", live=True, is_live_view=True)
 
         self.assertTrue(surface["can_act"])
+        self.assertEqual(surface["actor"], {"id": "pc", "name": "Vela", "kind": "player"})
         self.assertEqual(surface["write_lane"], "/move")
         continue_action = _find_action(surface, "continue")
         look_action = _find_action(surface, "look")
