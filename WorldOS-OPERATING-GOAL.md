@@ -1,82 +1,33 @@
-# WorldOS — OPERATING GOAL (v1 — re-authored from first principles 2026-05-31)
+# WorldOS — OPERATING GOAL (v1 — re-authored from first principles 2026-05-31; consolidated 2026-06-02)
 
 <!-- ════════════════════════════════════════════════════════════════════════════
      ★ STATE OF TRUTH — READ THIS FIRST, ACT ON THIS ONLY (update every session)
-     Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
-     state from scattered docs or old plans; trust this, verify the sha, then act.
+     Post-compaction agents: this block is ground truth. Do NOT reconstruct state
+     from scattered docs or old plans; trust this, verify the SHA, then act. Keep
+     it to ~10 lines — the PR-narrative lives in docs/archive/OPERATING-GOAL-PR-LOG.md.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T18:02:45+07:00 repo Codex persona-lane patch; latest handoff build remains 9545383
-     MAIN BASELINE:
-                   Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
-                   support-VM preflight artifact gate, and the app handoff gate was rerun on that
-                   exact SHA). Current `origin/main` may contain docs-only commits above that proof;
-                   do not treat docs-only tips as new product proof. Earlier product-code baseline
-                   `fd9dba5` remains preserved as historical proof.
-     CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
-                   the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
-                   local disk so macOS does not prompt on Lexar-hosted assets.
-     WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
-                   Use /Volumes/LEXAR/Codex for evidence/snapshots and Lexar worktrees only for
-                   non-GUI/doc/backend slices that do not launch the app against private art.
-     SUPPORT VM:   32GB owner-provided support VM (`support-vm-1`). Connection/auth details live
-                   in local operator-only evidence/runbooks, not tracked repo docs. Use it for
-                   heavy backend/persona sweeps only after Codex/config/credentials are intentionally
-                   installed. The default VM persona lane is Codex DM plus Codex UI player and requires
-                   Codex CLI `>=0.120.0`; Claude is only required when deliberately selected. Mac-built
-                   `.app` smoke/play proof stays on this Mac or macOS CI.
-                   Current local preflight note: a read-only operator-endpoint scout reached
-                   `evaos-support` (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`,
-                   but that checkout was stale (`4524b3e`) and behind the `9545383` app-proof baseline.
-                   GitHub origin query/sync failed in batch mode (`could not read Username for
-                   'https://github.com'`), Codex auth/config was not proven, and artifact return needs
-                   remote staging plus copy-back to Lexar. Do not run #466 there until an operator
-                   approves repo sync/auth setup and the preflight passes.
-     LAST MEASURED GATE BUILD:
-                   f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
-                   HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
-                   personas failed around port/backend harness setup; behavioral/UI/palette/image
-                   evidence was not a valid five-persona release verdict.
-     LAST BUILT-APP PLAY PROOF:
-                   Last built-app handoff proof is `9545383`
-                   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T100304Z-9545383/`):
-                   `qa/app_handoff_gate.py` scored `handoff_score=100` with web-scripted smoke
-                   5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built
-                   `dist/WorldOS.app` Codex-provider playtest 1 move. Private BG art was present,
-                   visible narration and five enabled actions were present, `/move` resolved, all
-                   three manifests had zero evidence gaps, and the Codex provider trace reported
-                   `trace_exists=true`, `line_count=80`, and
-                   `failed_or_error_count=0`.
-                   The prior `fd9dba5` and `4a0efe1` 100/100 handoffs remain preserved but are
-                   superseded as latest merged-main app proof by this `9545383` post-#508 run.
-                   Prior trace-clean real-provider built-app proof on merged main is `f7ab6d7`
-                   (`codex-main-f7ab6d7-proof-20260601T010058Z`); it remains useful diagnostic
-                   #479 evidence but is superseded as the latest merged-main app proof by the
-                   `9545383` handoff gate.
-     LAST VALID RELEASE GATE:
-                   none after the RRI contract hardening. A release verdict requires expected
-                   persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  #479 is closed; #504 gives a fast GUI velocity gate; #505 lets RRI consume
-                   Mac handoff proof through `--handoff-json`.
-                   Do not claim release. Run #466 for a trustworthy clean RRI failure list/result.
-                   For same-SHA RRI, sync the support VM checkout to `9545383`, run
-                   `python3 qa/support_vm_preflight.py --expected-sha 9545383 --provider codex --player-agent codex ...`,
-                   and pair
-                   the VM persona artifacts with the `9545383` Mac handoff JSON above. If a
-                   newer release-candidate SHA is used instead, rerun the Mac handoff on that
-                   same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps
-                   only after the preflight writes a redacted ready-for-RRI artifact, including a
-                   successful `origin/main` query from the VM.
-                   If the VM route is still unavailable, record that as the blocker and
-                   file/fix repo-side RRI harness gaps only if found. #481/#482/#483/#484/#485/#486
-                   are closed; #466 remains the release-gate issue and #467 remains the UX-first sprint.
-                   Keep sprint work UX-first (#467): first-turn playability, clickability/chrome,
-                   launcher clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
-     DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
-                   never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
+     CURRENT SHA:   <TODO: fill from the measured A/B run — `git -C /Users/lume/ClawDnD-val rev-parse --short origin/main`>
+                    Note (verified 2026-06-02): commits ABOVE the old `9545383` app-proof are NOT all
+                    docs-only — they include product/QA code (#528 viewer screen-create, the RRI scorer
+                    qa/release_readiness.py, ui_playtest_app.sh). So re-prove the app on the CURRENT SHA;
+                    do not carry `9545383` forward as if main were docs-only on top of it.
+     LAST REAL SCORE: <TODO: fill from the A/B + ledger — the last NON-partial, non-contaminated RRI row,
+                    with its build SHA. As of consolidation there is NONE; see qa/SCORECARD.md "RRI
+                    reconciliation" for why the 1.8 / ~6.0 / 2.7 numbers are all partial/unmeasured.>
+     CANONICAL:     /Users/lume/ClawDnD-val is the synced local app/private-art checkout — build/run/test
+                    the Mac app here so macOS does not prompt on Lexar-hosted assets.
+     NEXT ACTION:   Do not claim release. Run #466 for a trustworthy clean five-persona RRI on ONE explicit
+                    SHA. Pair a same-SHA Mac handoff (`qa/app_handoff_gate.py` → `--handoff-json`) with
+                    support-VM persona artifacts, gated by `qa/support_vm_preflight.py` (operator must
+                    approve VM repo-sync/auth first; the scouted VM checkout was stale + auth unproven).
+                    Keep sprint work UX-first (#467) — see docs/archive/OPERATING-GOAL-PR-LOG.md §10.
+     DISCIPLINE:    ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p
+                    stream; never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
 
-> Read order on resume: the STATE-OF-TRUTH block above → this file → `WorldOS-GUI-RUNBOOK.md` →
-> `WorldOS-RUNBOOK.md` → `qa/SCORECARD.md`. (NORTH-STAR is the long-game ceiling, not needed to act.)
+> Read order on resume: the STATE-OF-TRUTH block above → this file → `WorldOS-RUNBOOK.md` (the merged
+> HOW-TO + GUI loop) → `qa/SCORECARD.md` (the human score ledger). (NORTH-STAR is the long-game ceiling,
+> not needed to act.) Historical PR-narrative + sprint order: `docs/archive/OPERATING-GOAL-PR-LOG.md`.
 
 ## Agent Navigation / Current TOC
 
@@ -86,12 +37,12 @@ which file answers which question.
 | Need | Read / run |
 |---|---|
 | Current release truth, last proof, next action | This file, especially the state block above |
-| Fast GUI/native app loop | `WorldOS-GUI-RUNBOOK.md` |
-| Repo architecture, invariants, broader dev loop | `WorldOS-RUNBOOK.md` and `docs/ARCHITECTURE.md` |
+| Fast GUI/native app loop + repo architecture, invariants, dev loop | `WorldOS-RUNBOOK.md` (GUI runbook merged in) and `docs/ARCHITECTURE.md` |
 | QA command index | `qa/QA_TOOLS.md` |
 | App-status, handoff, evidence contract | `docs/AGENT_GRADE_APP_TESTABILITY.md` |
-| Evidence ledger | `qa/SCORECARD.md` |
-| Historical GUI punch-list | `qa/GUI_WORKBOOK.md` |
+| Score ledger (human narrative) | `qa/SCORECARD.md` (points at the machine-readable `qa/scores.db` once it lands) |
+| Historical GUI punch-list | `docs/archive/GUI_WORKBOOK.md` |
+| Historical PR-narrative + UX sprint order | `docs/archive/OPERATING-GOAL-PR-LOG.md` |
 | Blind browser persona harness | `qa/UI_PLAYTEST.md` |
 | Old page-by-page audits and native roadmaps | `docs/OPENWORLDS_UI_AUDIT.md`, `docs/OPENWORLDS_NATIVE_APP_ROADMAP.md`, `docs/ui-audit/` |
 
@@ -231,132 +182,13 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T17:49:00+07:00 — latest same-SHA app proof is 9545383)
+## 9. CURRENT STATUS + UX-FIRST SPRINT ORDER
 
-- Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
-  click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
-  native provider selection merged in PR #472, and takeover docs synced in PR #473.
-  The takeover foundation then merged: PR #475 added the Codex-DM built-app provider path,
-  `/app-status`, evidence export baseline, and docs; PR #494 added the dev-gated scripted provider;
-  PR #495 added stable OpenWorlds accessibility / `data-worldos-testid` hooks; PR #496 added app
-  playtest failure buckets plus RRI gate-split metadata. PR #498 synced takeover docs after those
-  merges. PR #499 then recorded the current-main built-app proof, PR #500 fixed the Codex-DM
-  provider trace cancellations, PR #501 recorded that proof in the runbooks/scorecard, and PR #504
-  added the hybrid 100/100 app handoff gate. PR #505 then hardened the RRI bridge so Mac handoff
-  evidence can be supplied with `--handoff-json` while support-VM persona artifacts supply the heavy
-  sweep. PR #506 then synced these docs to the `fd9dba5` proof without changing product code. PR #508 added the
-  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/ClawDnD-val` was
-  fast-forwarded to `9545383`, and the Mac app handoff was rerun on that exact SHA.
-- The stale local pre-sync artifacts were preserved before the fast-forward at
-  `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
-  (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
-- The `f5500ac` RRI (`2.7/10`) is preserved as partial evidence only. It proves the gate/harness was
-  not trustworthy enough for release scoring: one persona completed, others lacked `score.json`, and
-  image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
-- Built-app launch smoke on `cad2e00` rendered OpenWorlds with private art, but the first Resume/Play
-  click still forced Claude and failed on Claude auth. PR #472 fixed that web/native selection bug.
-  PR #475 then added a separate Codex DM wrapper and points the native Codex adapter at it,
-  while keeping the older Codex actor wrapper as a constrained player/move-facade helper.
-- Early Codex-DM local built-app evidence is preserved: private BG art loaded,
-  Alfira seated as `player`, visible DM narration, enabled actions, a real player move appended to
-  `player_moves.jsonl`, and a post-move DM response with `can_act:true` in `/session-surface`.
-  Evidence is in `/Volumes/LEXAR/Codex/worldos-built-app-proof/`:
-  `session-surface-racefix-after-dm-response-20260601T012410.json`,
-  `worldos-racefix-first-turn-20260601T012110.png`, and
-  `worldos-racefix-dm-response-dismissed-permission-20260601T012516.png`.
-- A Photos/Music permission prompt seen during this proof was traced through unified logs to
-  macOS TCC attribution contamination: `responsible=dev.clawdnd.app`, but the actual accessor was
-  `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
-  contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
-- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from one explicit SHA.
-  The easiest current path is a support-VM sweep pinned to `9545383`, gated first by
-  `qa/support_vm_preflight.py --expected-sha 9545383`, and paired with the `9545383` handoff JSON. If the
-  sweep runs on a newer `origin/main` tip, rerun the Mac handoff on that same SHA first.
-  Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
-  are intentionally installed there; connection details are kept outside tracked docs. In this Codex Desktop
-  session a read-only operator-endpoint scout reached the VM and confirmed `evaos-support` has ~32 GB RAM,
-  16 CPUs, `git`, `python3`, `uv`, Node/npm, Codex CLI, Playwright, and private art, but its WorldOS checkout
-  is `4524b3e` and behind the `9545383` proof baseline; GitHub origin query/sync failed in batch mode; Codex
-  auth/config was not proven. Get operator approval for VM repo sync/auth setup, verify `origin/main` is
-  queryable from the VM, and define artifact return before the heavy sweep. Mac-only built-app launch/play
-  proof stays on this Mac or macOS CI.
-- Built-app diagnostic evidence exists, but release truth is still absent. The PR #475 pre-merge app-code
-  proof `8bd833f` (`codex-app-headproof-20260601T043909`) was trace-clean. The post-merge main proof
-  `32ca561` (`post475-main-app-proof-20260601T051230`) was playable with private art, Alfira, five enabled
-  actions, and a resolved `/move`, but provider trace noise persisted. The current-main `19c3fd0` proof
-  (`codex-current-main-proof-20260531T234242Z`) repeated the product pass on the actual built app:
-  private art root present, Codex provider, live campaign/run, writable `/move`, Alfira active, five enabled
-  actions, visible narration, one accepted player move, chat roles `dm, player, dm`, and
-  `/session-surface` still live/actionable. Its provider trace still recorded 3 failed/cancelled tool calls
-  (`log_event`, `log_event`, `persist_beat`). The follow-up #479 branch proof `b081092`
-  (`codex-479-traceclean-nodup-proof-20260601T003002Z`) reran the built `WorldOS.app` with private art,
-  accepted and resolved a real `/move`, kept `/session-surface` live/actionable, exported
-  `app-evidence/manifest.json` with no gaps, and produced a provider trace summary with zero parse errors
-  and zero failed/error tool calls. Native accessibility review also showed the chronicle rendered the opening
-  and follow-up once each after suppressing engine-logged `/chat` duplicates. PR #500 merged that fix, and the
-  merged-main proof `f7ab6d7` (`codex-main-f7ab6d7-proof-20260601T010058Z`) repeated the built-app run:
-  private BG art present, Codex provider, Alfira active, five enabled actions, writable `/move`, one accepted
-  player move, chat roles `dm, player, dm`, `/session-surface` still live/actionable, native after-move
-  screenshot archived, `app-evidence/manifest.json` with no gaps, and `provider-errors.after-move.json`
-  reporting zero parse errors plus zero failed/error tool calls. This is sufficient to close #479 as a
-  merged-main diagnostic; it is still not an RRI release verdict.
-- The post-#505 product-code handoff gate `handoff-20260601T085319Z-fd9dba5` then reproved the fast GUI
-  velocity loop: web-scripted smoke 5 moves, built-app scripted smoke 5 moves,
-  built-app Codex playtest 1 move, private art present, active player, five enabled actions, zero evidence
-  gaps across all three manifests, and Codex trace `failed_or_error_count=0` with `line_count=177`.
-  `qa.release_readiness.validate_handoff_json(..., "fd9dba5")` returned `valid=True` and `gaps=0`.
-- The post-#508 handoff gate `handoff-20260601T100304Z-9545383` then reproved the same fast GUI
-  velocity loop on product build `9545383`: web-scripted smoke 5 moves, built-app scripted smoke 5 moves,
-  built-app Codex playtest 1 move, private art present, active player, five enabled actions, zero evidence
-  gaps across all three manifests, and Codex trace `failed_or_error_count=0` with `line_count=80`.
-  `qa.release_readiness.validate_handoff_json(..., "9545383")` returned `valid=True` and `gaps=0`.
-  This supersedes the `fd9dba5` handoff as current app-wiring proof. It remains diagnostic and cannot
-  replace the full five-persona RRI.
-- The agent-grade testability layer now has real code merged: `GET /app-status` exposes the live run,
-  campaign, provider, private-art presence, move sink, actor, enabled actions, readiness, and failure buckets
-  without mutating state; the scripted provider can prove wiring behind a dev/test gate; and stable a11y/DOM
-  hooks make the UI more driveable. A current-session `:8899` probe briefly showed `080497e`, scripted
-  provider, private art root at `/Users/lume/ClawDnD-val`, `can_act:true`, five enabled actions,
-  `ready_for_smoke:true`, and no reported console/network failures; a later read found the port already
-  down. Browser-based checks should use the live port discovered from `run.json` or `/app-status`, and if
-  a browser session cannot reach local URLs, fall back to `/app-status`, `/session-surface`, app screenshots,
-  and exported evidence. Treat fixed ad-hoc ports as transient harness/observability evidence only, never
-  built `.app` proof.
-- Product direction is now UX-first (#467). Do not turn the next sprint into more gate hardening, proxy adapters,
-  transport/security work, UGC/legal, or renderer branches unless #466 proves they block the player-facing
-  session. The game must feel launchable, clickable, responsive, and deep before it needs more machinery.
-- Highest-confidence UX risks to verify/fix next: broader click hit areas (#309) after #470's
-  shared-chrome proof; built-app title/chrome truth (#306); launcher clarity/stale campaigns (#358);
-  per-beat latency/live response (#393); portrait/gallery blockers (#379); and CRPG depth on
-  Heroes/Battle/Inventory (#308/#318/#310, with #462/#463 folded into Battle readability as presentation containment).
+> Moved out of this file during the 2026-06-02 consolidation to keep the operating goal short.
+> The live state is the STATE-OF-TRUTH block at the top of this file; the running score ledger is
+> `qa/SCORECARD.md`. The historical PR-by-PR narrative (former §9) and the UX-first sprint order
+> (former §10) now live in **`docs/archive/OPERATING-GOAL-PR-LOG.md`** for provenance.
 
----
-
-## 10. UX-FIRST SPRINT ORDER (after takeover stabilization)
-
-Use the gate as evidence, not as the roadmap. The next sprint should optimize the felt session:
-
-1. **Stretch first-turn proof into a short built-app playtest.** PARTIAL. PR #475, #500, and follow-up proofs show
-   a fresh player can launch,
-   choose/start/resume, reach the Table, submit multiple `/move`s, and see narration resolve without
-   critical console/runtime errors. Current main now has trace-clean real-provider evidence for #479.
-   Evidence must be built-app
-   screenshots plus `/app-status`,
-   `/session-surface`, move/chat/provider artifacts, not a proxy preview.
-2. **Fix the "this is not clickable" feeling.** Close #309 only when clicking any visible tab/button
-   background works with mouse and keyboard. Pair with visual truth for #306 so the title/day/chrome no
-   longer look broken at common widths.
-3. **Make the launcher feel like a real game shelf.** Remove stale/scratch campaign noise (#358), make
-   bridge/no-bridge state honest, and ensure each chronicle looks distinct enough to choose.
-4. **Make slow turns feel alive.** Verify #393/#394-style streaming in a real built-app run; if text does
-   not appear within the first 15-30 seconds of a turn, prioritize streaming/proof-of-life UX over more
-   backend hardening.
-5. **Add CRPG depth where players look for it.** Heroes spellbook/manage-spells (#308), Battle readability
-   (#318, including #462/#463 token containment/alignment as presentation truth), Inventory/paper-doll
-   feel (#310), and portrait/race gallery continuity (#379) beat proxy/security work until the session
-   feels like a game.
-
----
 
 *The mechanics are the floor. The launchable, playable, felt prestige session in the built app is the
 product. Build toward the North-Star ceiling; use THIS loop to keep the floor under the user's feet

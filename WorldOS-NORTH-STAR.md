@@ -5,9 +5,13 @@
 > When a decision is ambiguous, when the score and your gut disagree, when you're about to add a
 > feature: come back here. The North Star is **more than a score.** The score is a proxy for it.
 >
-> Read order on resume during takeover: `WorldOS-OPERATING-GOAL.md` → `WorldOS-GUI-RUNBOOK.md` →
-> `WorldOS-RUNBOOK.md` → `qa/SCORECARD.md` → this file. The North Star tells you what "great"
-> means; it does not decide whether the current build is releasable.
+> Read order on resume: `WorldOS-OPERATING-GOAL.md` → `WorldOS-RUNBOOK.md` (the merged HOW-TO + GUI
+> loop) → `qa/SCORECARD.md` → this file. The North Star tells you what "great" means; it does not decide
+> whether the current build is releasable.
+>
+> The long-game graphics/game-types ceiling is the committed roadmap
+> [`docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`](docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md) — the single
+> source of truth (GT0 narrative → GT1 SNES pixel → GT2 isometric; capabilities C1–C10).
 >
 > Voice: confident, opinionated, builder's. Last north-star content update 2026-05-28;
 > takeover freshness note added 2026-05-31.

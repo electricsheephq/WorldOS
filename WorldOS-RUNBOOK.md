@@ -5,10 +5,12 @@
 > legacy. This runbook is the public project map + read order. Machine-specific
 > agent notes such as `CLAUDE.md` are intentionally local-only and gitignored.
 >
-> **Takeover routing, 2026-06-01:** current release/gate state lives in
-> `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and
-> `qa/SCORECARD.md`. The work queue later in this file is historical unless it agrees with those
-> sources.
+> **Routing (consolidated 2026-06-02):** current release/gate state lives in
+> `WorldOS-OPERATING-GOAL.md` first (its STATE-OF-TRUTH block), then this file, `qa/QA_TOOLS.md`, and
+> `qa/SCORECARD.md` (the human score ledger). The former `WorldOS-GUI-RUNBOOK.md` is now merged into
+> this file (see "THE GUI / NATIVE-APP LOOP" below); the original is preserved at
+> `docs/archive/WorldOS-GUI-RUNBOOK.md`. The detailed historical work-queue that used to live at the
+> bottom of this file is now at `docs/archive/RUNBOOK-WORK-QUEUE.md`.
 > **Local/VM routing, 2026-06-01:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
 > checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
@@ -27,7 +29,9 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T17:24:00+07:00 (`9545383` is the latest same-SHA app-proof build; docs-only tips may sit above it, and release notes below are historical context).
+> Last updated: 2026-06-02 (consolidation). The last fast handoff proof was on `9545383`, but **code/QA
+> commits have since landed above it on `origin/main`** (verified 2026-06-02 — NOT docs-only), so that SHA
+> is stale as a "current" baseline; re-prove on the current SHA. Release notes are historical context.
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -242,6 +246,160 @@ critical/high** adversarial defects.
 
 ---
 
+## THE GUI / NATIVE-APP LOOP (merged from the former GUI runbook)
+
+> How to test→fix→LOOK the WorldOS GUI on the REAL surface and drive it to a 10/10 release. Born from
+> the 2026-05-31 reorientation: the prior loop scored a HEADLESS PROXY served from worktrees WITH NO ART,
+> so every visible defect (no palette, no images, no map, unformatted chronicle, phantom companion)
+> sailed past. This loop makes that impossible to repeat. The product is the **launchable, played `.app`**;
+> a green score on any other surface is a measurement bug, not progress.
+
+### The two surfaces (never confuse them)
+- **ITERATE — visible, playable, fast:** the OpenWorlds viewer served **from the local canonical repo**
+  `/Users/lume/ClawDnD-val` (which HAS the ~2.9 GB `content/worlds/_private` art) as a LIVE PLAYABLE
+  session on **fixed port 8799**. Fix one thing at a time and LOOK here.
+- **GATE — truth:** the built `dist/WorldOS.app` via `qa/ui_playtest_app.sh` (part A native #356 +
+  part B persona loop). Release is judged here. Same viewer code; adds the native shell. A non-local
+  worktree may serve art only via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`, but prefer the local
+  checkout because external-drive file prompts have broken local AI tests.
+
+### Fresh-GUI-agent quick start — the hybrid handoff gate
+Before spending budget on long persona runs, run the handoff gate on the current commit. It catches
+stale tabs, dead launchers, missing private art, missing actor/actions, failed `/move`, no narration,
+console/network errors, provider trace failures, and evidence gaps.
+```bash
+cd /Users/lume/ClawDnD-val
+python3 qa/app_handoff_gate.py --web-beats 5 --built-beats 5 --codex-moves 1 \
+  --art-root /Users/lume/ClawDnD-val --scripted-budget 1.00 --codex-budget 3.00 \
+  --timeout 90 --codex-timeout 240
+```
+Writes `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/`. Review `handoff.json`
+first, then each gate's `app-evidence/manifest.json`, `app-status.*.json`, `session-surface.*.json`,
+screenshots, moves, console/network/action logs, provider trace. `handoff_score=100` means the GUI
+wiring loop is trustworthy **for implementation velocity** — it is NOT release-ready evidence by itself.
+
+| Command | Use it for | Do not treat it as |
+|---|---|---|
+| `scripts/play.sh ... 8799` | Fast local LOOK loop on canonical repo with private art | Built-app proof |
+| `qa/app_handoff_gate.py` | Fast web + built-app scripted smoke + short Codex playtest | Full release verdict |
+| `qa/ui_playtest_app.sh` | Native app harness, native Part A+B evidence, failure buckets | Five-persona sweep by itself |
+| `qa/ui_playtest.sh` | Blind browser persona diagnostics (#324) | Built-app product proof |
+| `qa/release_readiness.py --handoff-json ...` | RRI rollup + verdict when paired with complete persona evidence | A substitute for missing persona artifacts |
+
+Ports: `8799 /openworlds/` = canonical fast-iteration; `8899` = scripted/dev harness (valid only when
+same-port `/app-status` is live); native app uses a dynamic port — read `run.json` or
+`/app-status.viewer.port`, never guess. The handoff gate accepts five enabled actions; the RRI
+palette-live gate is stricter (≥6 enabled actions on a `can_act:true`, disk-backed surface).
+
+### Stand up the iteration surface (8799, playable, from canonical)
+```bash
+cd /Users/lume/ClawDnD-val
+git rev-parse --short HEAD && git rev-parse --short origin/main   # confirm synced
+pkill -f 'viewer/server.py'; pkill -f 'scripts/play.sh'; pkill -f 'play_party.sh'   # NOT the Eva gateway
+CLAWDND_PLAY_PORT=8799 nohup bash scripts/play.sh baldurs-gate preview-$(git rev-parse --short HEAD) 8799 > /tmp/wos-8799.log 2>&1 &
+```
+Open `http://127.0.0.1:8799/openworlds/`. The DM cold-open takes ~30–90s; **wait for a SEATED PC**
+(party non-empty), not just `can_act:true` — `can_act` can flip true before the PC is seated.
+
+### LOOK (verify by curl + screenshot — NEVER a single Read; the channel fabricates)
+The tool channel intermittently returns fabricated/empty/doubled reads (it has invented a palette-disabled
+bug and a scene-404 that were both false). **Ground every load-bearing claim in ≥2 clean reads + an HTTP
+code/checksum.**
+```bash
+curl -s http://127.0.0.1:8799/session-surface | python3 -c 'import json,sys;d=json.load(sys.stdin); \
+  print("party",[(p["name"],p.get("kind")) for p in d.get("party",[])]); \
+  print("palette",[a["id"] for a in d.get("availableActions",[]) if a.get("available")]); \
+  print("can_act",d.get("can_act"))'
+# images: curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8799/image?scope=location:loc-lower-city"
+```
+Per-fix visual checklist: palette buttons present + enabled in the MAIN column · a click resolves a turn ·
+portraits/scene/map images 200 · a multi-paragraph DM beat renders as paragraphs · prose streams mid-turn
+(`/events` count climbs) · a SOLO session has the PC alone.
+
+### Fix one thing → PR → merge → rebuild → LOOK
+1. Confirm the symptom on 8799 with ≥2 clean reads. If it doesn't reproduce, it's a stale/corrupt read —
+   do NOT fix it.
+2. Builder agent in a **same-disk local worktree off origin/main** when GUI/app tests need art:
+   `git -C /Users/lume/ClawDnD-val worktree add -B codex/<slug> /Users/lume/WorldOS-worktrees/wos-<slug> origin/main`.
+   Lexar worktrees remain fine for docs/backend/non-GUI slices that do not launch the viewer/app.
+3. PR → CI green (incl. `viewer-tests`) → admin-squash-merge → delete branch → prune worktree.
+   **Builder PRs sometimes fail to push silently** — always `gh pr view <n>` / `git ls-remote origin <branch>`
+   to confirm the branch+PR EXIST before relying on them.
+4. `git pull --ff-only` local canonical → restart 8799 → LOOK → record the proof in `qa/SCORECARD.md`.
+
+### Agent-facing app contract
+- `GET /app-status` and `GET /__worldos/app-status.json` are **read-only** probes for agents/harnesses:
+  build/version, viewer port, state root, provider, private-art-root presence, live campaign/run, move
+  sink, active actor, enabled actions, canonical endpoints. They must not mutate state.
+- Use `/app-status` before screenshots when diagnosing the built app. A built-app proof that cannot
+  produce this status object is a harness/observability failure. `qa/ui_playtest_app.sh` captures launcher
+  and minted-provider `app-status` JSON into the native evidence folder. See
+  `docs/AGENT_GRADE_APP_TESTABILITY.md` for the full contract.
+- Native provider reality check: OpenWorlds native-start honors the macOS app's selected provider (#472);
+  if the web UI hasn't loaded app-status it omits `provider` and Swift's `selectedProviderRaw` decides.
+  The Codex path has two wrappers — `scripts/play_codex_dm.sh` (the selected provider's DM loop) and
+  `scripts/play_codex_actor.sh` (constrained player/companion actor). Do not swap them. A wrapper run is
+  not release proof by itself.
+
+### The gate sweep (judged on the built `.app`)
+```bash
+WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
+qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12 --port 8785
+```
+RRI 10/10 = all 11 gates (OPERATING-GOAL §4) hold on ONE build across the five canonical personas. The
+scorer must record required/expected/completed/missing personas + explicit evidence gaps, disk-backed
+behavioral, UI-audit, image denominator/source, palette-live evidence, per-run Part B pass status, and
+same-build SHA. Append every `--scorecard-row` to `qa/SCORECARD.md`. Only a non-partial,
+non-harness-contaminated 10/10 row with no evidence gaps counts as release evidence.
+
+### Support VM lane (heavy sweeps, not Mac-only app truth)
+- Target: owner-provided **32GB support VM** (`support-vm-1`); connection/auth details live in local
+  operator-only runbooks/evidence, **not** tracked repo docs. Do not assume it is ready for Codex runs
+  until credentials/config are intentionally installed and verified.
+- Default VM persona lane is Codex DM + Codex UI player (Claude only when explicitly selected). The Codex
+  lane needs Codex CLI `>=0.120.0` (per-invocation `codex exec -c mcp_servers.*` overrides).
+- Do **not** use it as proof for Mac-only surfaces (`WorldOS.app` build/launch, native #356, built-app UI
+  play). Those stay on this Mac or macOS CI.
+- VM preflight before any RRI sweep, via the repo-owned writer:
+  ```bash
+  python3 qa/support_vm_preflight.py --repo /root/worldos-qa/WorldOS --expected-sha <SHA> \
+    --provider codex --player-agent codex --art-root /root/worldos-qa/WorldOS \
+    --private-art-mode required --artifact-dir /tmp/worldos-support-vm-preflight-<SHA> \
+    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/<SHA>-preflight
+  ```
+  It is read-only w.r.t. WorldOS state, writes `support_vm_preflight.{json,md}`, redacts secrets, and
+  exits non-zero if same-SHA/origin/tool/auth/private-art blockers would make the sweep untrustworthy.
+  [UNVERIFIED, carried from the prior runbook] A read-only scout reached `evaos-support` (~32 GB RAM, 16
+  CPUs, `uv`/Node/`codex-cli 0.120.0`/Playwright/private art) but its checkout was stale (`4524b3e`),
+  batch-mode `git` could not query the HTTPS origin, Codex auth was unproven, and `/Volumes/LEXAR/Codex`
+  did not exist on the VM. Approve/sync the VM, prove Codex auth, make `origin/main` queryable, and define
+  artifact return before #466.
+- Split Mac/VM rollup: pass the Mac proof as
+  `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<handoff>/handoff.json`
+  alongside VM persona dirs from the **same** SHA. RRI satisfies the native gate from the Mac handoff only
+  if all required gates+manifests are same-SHA, clean, private-art-present, gap-free. Mixed-SHA/missing
+  artifacts stay `partial` / `harness_contaminated`.
+
+### macOS privacy-prompt triage
+A macOS Photos/Music prompt during local proof can be a **test-process attribution artifact**: TCC may
+name the frontmost WorldOS app as `responsible` while the actual `accessing` process is a diagnostic
+command (`/usr/bin/find`, `codex`). Before filing as a product blocker, inspect:
+```bash
+/usr/bin/log show --style compact --last 10m \
+  --predicate 'eventMessage CONTAINS[c] "dev.clawdnd" OR eventMessage CONTAINS[c] "kTCCServicePhotos" OR eventMessage CONTAINS[c] "kTCCServiceMediaLibrary"'
+```
+If `AUTHREQ_ATTRIBUTION` shows `accessing=/usr/bin/find` or `=codex`, classify as harness contamination
+and rerun without broad filesystem scans while the app is frontmost. If `WorldOSApp`/a WebKit child
+directly accesses a protected path, treat it as a release-blocking bug.
+
+### Release (when RRI = 10/10 on a fresh `.app` build)
+Bump `.claude-plugin/plugin.json` (current `1.0.3` → `1.0.4`), tag `v1.0.4`, GitHub release + CHANGELOG.
+Then MAINTAIN: every PR touching `viewer/ | macos/ | skills/ | servers/engine/` → rebuild + RRI sweep +
+SCORECARD row; any regression (a critical bug, a sub-7 persona, sub-threshold score, image <95%, dead
+palette) reverts the goal to "fix" and outranks new work.
+
+---
+
 ## AGENT DELEGATION
 
 Orchestrate via subagents; verify from the top.
@@ -305,131 +463,11 @@ out freely. Only **`claude -p` QA is host-heavy** (the duo/sprint spin up engine
 
 ## CURRENT STATE + WORK QUEUE
 
-**Historical snapshot, not current authority:** this queue was written around `ea815fc`
-(2026-05-27 cont.3). During the 2026-05-31 takeover, the gate-truth stabilization merged as PR #465,
-the UX-first doc sync merged as PR #468, and first-minute click/title chrome proof merged as PR #470.
-Local routing sync merged as PR #471, native provider-selection sync merged as PR #472, takeover
-state docs synced as PR #473, Codex-DM app observability merged as PR #475, scripted smoke provider merged
-as PR #494, stable agent UI hooks merged as PR #495, failure-bucket/RRI split metadata merged as PR #496,
-and takeover truth sync merged as PR #498, followed by PR #499 recording current-main built-app proof
-PR #500 fixing Codex-DM provider trace cancellations, PR #501 recording that proof in docs, and
-PR #504 adding the 100/100 hybrid app handoff gate, PR #505 adding the RRI `--handoff-json`
-bridge for Mac app proof, PR #506 syncing docs to that proof, and PR #508 adding the support-VM
-preflight artifact gate.
-The local app/private-art checkout should stay fast-forwarded to `origin/main`; the only current gate
-truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
-this section to decide release state. The next sprint is UX-first (#467):
-fast handoff play is proven diagnostically on `9545383` rather than automatically on later docs-only tips,
-including private art, Codex DM, an active player,
-five enabled actions, one accepted/resolved `/move`, no evidence-manifest gaps, zero failed/error provider
-trace events, and a post-merge `handoff_score=100`. With #479 proven and #504/#505 merged, run #466 only after
-support-VM routing/auth/config preflight is explicit; this session's read-only check found the local
-`support-vm-1` SSH alias did not resolve and the operator-endpoint VM checkout was stale at `4524b3e`.
-Then prioritize clickability/chrome, launcher clarity,
-live-response feel, and CRPG depth before more hardening/proxy/security work.
-
-**LATEST (2026-05-27 cont.3) — the Quest & Arc engine is COMPLETE + WIRED, all combat
-defects closed, and the sibling's draft-PR backlog is fully landed.** Since the queue
-below was written: L3 events (#196), faction arcs (#205), the DM-wiring (#203), the North
-Star doc (#206), the full combat-fidelity wave (#207/#209/#210/#211/#213→**#215** maneuver
-die — all 6 flagged combat defects CLOSED), canon content-fill (**#216** — 4 stumble-into
-Events + 2 faction arcs + 2 decision-gated agendas), and **all 10 sibling roadmap-squeeze
-PRs** (#190/#192/#199/#191/#197 engine + #204/#201/#202/#198/#187 viewer) merged after a
-2-agent read-only triage. **Combat-sprint at a new high: angry-dm 3.7** (combat core "clean
-— every number traces to a tool call"); residual is DM adherence (monster reactions #218)
-+ narration nits (#219), not engine. distill now surfaces auto-fired repeat-saves +
-maneuver damage (#217). IN FLIGHT: a post-content-fill story-lift duo (does story clear
-4.3?) + the **2nd-seed generativity spike** (the North Star deliverable-B gate — a thin
-ORIGINAL non-BG world, zero engine changes; branch `spike/second-seed-generativity`).
-The detailed queue below is now mostly HISTORICAL — read `implementation-notes.html` +
-`qa/SCORECARD.md` for the live state.
-
-### Quest & Arc engine (the living-story skeleton — `decision-quest-arc-engine.md`)
-- **L1 — rule-of-three** (`Quest.evolves_to` + `callback_in_days`; `complete_quest`
-  schedules the follow-on via `consequences.schedule`) — **MERGED #185**.
-- **L2 — decision-gated flips** (`CompanionAgenda.decision_flag` adds +0.30 to the
-  attitude-gated betrayal roll; the breaking-point guard is checked FIRST so it never fires
-  above threshold; warning bands telegraph) — **MERGED #189**.
-- **L3 — Event / ParleyOption / Outcome** (the first-class Kingmaker decisional; thin
-  wrapper over `_apply_structured_effect`; converges with the parley research; an Event
-  Outcome sets a decision_flag → the L2↔L3 seam) — **BUILDING** (design in flight).
-- **BUILD-NEXT — faction-growth arcs** (the Skyrim/Kingmaker join→grow→lead): additive
-  `Faction` fields (`rank`, `standing`, `joined`, `questline_arc_id`) + generalize the
-  companion stage-machine into a faction-owned `Arc` gated on `Faction.reputation`.
-  **QUEUED.** (Closes the "rep is tracked but reads nothing" gap.)
-- **DM-skill WIRING + canon content-fill** (author Raphael / Flaming-Fist into agendas +
-  quest `evolves_to` chains) — **QUEUED**, per wave.
-- **DEFER** — kingdom/guild-building continuation (tick the inert `RegionControl`/
-  `FactionAsset` primitives). Far-future.
-
-### Other engine / QA threads
-- **Campaign Director (#72)** — `director.py` + `scene_debt.py` + 3 advisory tools.
-  **MERGED + integrated** (DM consults `get_campaign_director` each beat → `add_quest` gap
-  closed in play). #71 (path-compiler) + #73 (predicates) deferred until a world authors an
-  `adventure_path`.
-- **Combat-fidelity fixes** — Multiattack economy (#181), Round-1 turn-skip ENGINE block
-  (#183), Guiding-Bolt-on-hit (#188) all **MERGED**. Residual: broader DM-adherence /
-  class-feature coverage (issue **#166**) — push via the reach-for pattern + a richer sprint
-  seed, not engine force.
-- **Observability (#184)** — snapshot version-stamp (`schema_version` + `engine_sha`) +
-  centralized QA findings collector (`qa/collect_findings.py`) — **MERGED**. Possible next
-  slice: a real-play event log.
-- **#143 variant matrices** — foundation ~90% shipped; remaining = (a) doc the weight
-  convention in `content/worlds/README.md` (common 11 / uncommon 6 / rare 2 / very_rare 1
-  on a ~20 base), (b) author canon variant CONTENT (free-rollable slots first), (c) ONE
-  engine bit: generalize the companion agenda-roll to rare non-companion NPC flips (cap
-  ~0.07, 3–7%/scene). **GATED on an owner glance** at the quest-idea boundary before a big
-  content push.
-- **#141 Parley → AI-player relay** — reopened; the relay was never built. Pairs with
-  L3 / the social encounter type.
-- **Party-ensemble betrayal validation** — `run_party.sh` not exercised since L2 shipped;
-  restore it to validate the decision-flip in play.
-
-### NATIVE DESKTOP APP — the play path (IN SCOPE; was the sibling lane)
-The macOS/OpenWorlds Swift shell is now part of this lane (the old "another agent owns it,
-stay out" note is retired; those PRs #150/#182/#187/#190-192 are merged). The app
-(`macos/WorldOSApp/`, built by `script/build_and_run.sh run` → `dist/WorldOS.app`) is a
-WKWebView loading the **live worktree** viewer at `/openworlds/` — so a **viewer/JS change
-lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op).
-
-**How in-app PLAY works (2026-05-27 cont.26 — the read-only→functional fix):**
-- The OpenWorlds launcher Play buttons call the native bridge
-  `OpenWorldsNative.request("startProviderSession",{provider?,world,runId,companions})`
-  (`screen-launcher.jsx`). `provider` is optional: when the web surface has not loaded app status yet,
-  Swift `RootView.startProviderFromBridge` falls back to the macOS app's `selectedProviderRaw` setting.
-  Swift then asks `AppProcessService.startProviderSession` to launch the selected provider on a fresh
-  port and returns `{url}`; the JS then `window.location.assign(reply.url)` — drive the reload from
-  **JS**, not the Swift `webURL` @State (which didn't repoint reliably across the async hop).
-- The Claude provider still shells **`scripts/play.sh`** / `scripts/play_party.sh`. `play.sh` IS the play loop:
-  it binds a viewer with `CLAWDND_PLAYER_MOVES` +
-  `CLAWDND_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
-  move sink. `POST /move` → sink; `/chat?since=` → DM narration the Session tails.
-- The checked-in Codex provider now defaults to `scripts/play_codex_dm.sh`, a DM wrapper that owns
-  the live viewer, the engine/rules/voice MCP contract, `chat.jsonl`, and `player_moves.jsonl`.
-  Keep `scripts/play_codex_actor.sh` as the constrained player/companion actor helper through
-  `player_server.py`; it is not the native provider's DM loop. OpenClaw still requires an explicit
-  configured command before it can be treated as a startable provider.
-- Agents and app harnesses should read `GET /app-status` before trying to infer state from pixels or
-  process lists. It is a read-only contract for the live OpenWorlds surface: provider, run/state roots,
-  private-art presence, active campaign/session, move sink, actor, enabled actions, and canonical endpoints.
-  The built-app harness captures launcher and minted-provider app-status JSON as release evidence.
-- **`can_act = _live_play() AND is_live_view`**, and `is_live_view` requires
-  `cid == self.campaign_id`. The viewer launches with an EMPTY campaign id; `_resolve_campaign`
-  lazily sets `self.campaign_id` to the **current** campaign (`_pick_campaign`). So the
-  ★gotcha★: the SPA must VIEW the live/current campaign — `app.jsx` auto-routes launcher→table
-  when `runningProvider` is set, **re-polls `campaigns.json` (4s), and auto-follows the
-  `current` campaign** so the surface binds to the DM-minted run, not a stale save the
-  one-shot catalog pick had selected. Verify playable: `curl /session-surface` → `can_act:true`.
-- **Footguns (all fixed cont.26, watch for regressions):** (1) a Finder/Dock GUI launch gets
-  launchd's minimal PATH → `claude`/`uv` not found; `launch_common.sh:clawdnd_augment_path`
-  prepends `~/.local/bin`+Homebrew. (2) `play.sh`/`play_party.sh` traps must SEPARATE EXIT
-  (cleanup) from INT/TERM (cleanup+`exit`) or SIGTERM resumes the loop (wedged orphan). (3)
-  `AppProcessService` does NOT kill its viewer child on app SIGTERM → orphaned viewers accrue
-  across relaunches (still open — terminate-on-quit TODO). (4) `play.sh` always starts a
-  FRESH campaign (true resume-by-id is a later enhancement).
-- **Critical files:** `RootView.swift` (startProviderSession bridge), `ProviderAdapters.swift`
-  (shells play.sh, ClaudeProvider.detect), `AppProcessService.swift` (PortFinder), `WebView.swift`
-  (bridge user-script `window.ClawDnDNative`), `screen-launcher.jsx` + `app.jsx`, `scripts/play.sh`.
+> Moved to `docs/archive/RUNBOOK-WORK-QUEUE.md` during the 2026-06-02 consolidation (it was already
+> self-labeled "Historical snapshot, not current authority"). For the live release state read the
+> STATE-OF-TRUTH block in `WorldOS-OPERATING-GOAL.md`; for the running score ledger read
+> `qa/SCORECARD.md`; for open GitHub work run `gh issue list` / `gh pr list`. Most Quest-Arc and
+> combat-fidelity items in that archive are MERGED and closed — it is kept for provenance only.
 
 ---
 

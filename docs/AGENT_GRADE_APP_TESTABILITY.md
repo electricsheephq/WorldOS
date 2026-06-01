@@ -10,7 +10,7 @@ not change the game architecture: the engine remains the sole writer, the native
 app/OpenWorlds viewer remains a thin reader plus `/move` intent submitter, and
 the built app remains release truth.
 
-Current command routing lives in `qa/QA_TOOLS.md` and `WorldOS-GUI-RUNBOOK.md`. This file defines
+Current command routing lives in `qa/QA_TOOLS.md` and `WorldOS-RUNBOOK.md`. This file defines
 the contract those tools must satisfy.
 
 ## Related Work

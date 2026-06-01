@@ -1,5 +1,11 @@
 # WorldOS GUI Runbook — the look-and-wire release loop
 
+> **ARCHIVED / SUPERSEDED 2026-06-02** — this runbook was merged into `WorldOS-RUNBOOK.md` (section
+> "THE GUI / NATIVE-APP LOOP") during the canonical-doc consolidation (two runbooks were the sprawl
+> being fought). This copy is kept for provenance only; act on `WorldOS-RUNBOOK.md`. Some proof
+> narrative below cites SHA `9545383` as "latest app proof" — that is stale: code/QA commits have since
+> landed above it on `origin/main` (re-prove on the current SHA).
+>
 > How to test→fix→LOOK the WorldOS GUI on the REAL surface and drive it to a 10/10 release.
 > Born from the 2026-05-31 reorientation: the prior loop scored a HEADLESS PROXY served from
 > WORKTREES WITH NO ART, so every visible defect (no palette, no images, no map, unformatted

@@ -2,7 +2,7 @@
 
 > Historical index for the page-by-page UI/UX audit landed under `docs/ui-audit/`.
 > Use this for backlog context only. Current GUI/native app proof and QA routing live in
-> `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
+> `WorldOS-OPERATING-GOAL.md`, `WorldOS-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
 > Mirror of `#242` Phase 5 status.
 >
 > **Audit method:** live walkthrough of every screen at `127.0.0.1:8799/openworlds/`, viewports

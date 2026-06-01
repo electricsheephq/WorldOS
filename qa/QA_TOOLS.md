@@ -1,7 +1,7 @@
 # WorldOS QA Tools Index
 
 This is the command map for agents. It does not replace the release truth in
-`WorldOS-OPERATING-GOAL.md`, the GUI loop in `WorldOS-GUI-RUNBOOK.md`, or the evidence ledger in
+`WorldOS-OPERATING-GOAL.md`, the GUI loop in `WorldOS-RUNBOOK.md`, or the evidence ledger in
 `qa/SCORECARD.md`.
 
 Default local paths:

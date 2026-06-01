@@ -1,7 +1,12 @@
 # WorldOS GUI Workbook — historical GUI punch-list (verified findings)
 
+> **ARCHIVED 2026-06-02** — moved from `qa/GUI_WORKBOOK.md` to `docs/archive/` during the canonical-doc
+> consolidation. Historical reference only. For current operating truth see
+> `WorldOS-OPERATING-GOAL.md`; for the human score ledger see `qa/SCORECARD.md`. The GUI runbook was
+> merged into `WorldOS-RUNBOOK.md`.
+>
 > This file preserves verified GUI findings and punch-list rows. Current operating truth lives in
-> `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
+> `WorldOS-OPERATING-GOAL.md`, `WorldOS-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
 > Historical rows may mention old SHAs or pre-handoff routing. Use them for context, not for deciding
 > current release state. "Verified" means observed on the live playable surface or read from canonical
 > source at the time recorded, not a proxy guess.

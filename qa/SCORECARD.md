@@ -127,7 +127,29 @@
 > One row per attempted gate sweep on a BUILT `.app`. RRI = gates_passed/11 × 10. Release requires a **non-partial**
 > 10/10 row with all 11 gate denominators and evidence paths. Rows marked partial, pre-hardening, pending, or
 > unmeasured are diagnostic evidence only.
-> See `WorldOS-OPERATING-GOAL.md` §4 for the gates, `WorldOS-GUI-RUNBOOK.md` for the sweep procedure.
+> See `WorldOS-OPERATING-GOAL.md` §4 for the gates, `WorldOS-RUNBOOK.md` ("THE GUI / NATIVE-APP LOOP") for the sweep procedure.
+>
+> **This SCORECARD is the SOLE home for per-run score rows** (the operating goal and runbook no longer
+> duplicate them). It is the **human narrative ledger**. A sibling lane is building `qa/scores.db` (the
+> machine-readable ledger) + `qa/scores_ledger.md`; once those land, this file cross-links to them and
+> does not duplicate their rows. [UNVERIFIED 2026-06-02: `qa/scores.db` / `qa/scores_ledger.md` do not
+> exist in the repo yet — this is a forward cross-link, not a present file.]
+
+### ★ RRI reconciliation — why the number whiplashed (1.8 → ~6.0 → 2.7 → none)
+
+A resuming agent will see several different "RRI" figures across old notes. They are NOT a regressing
+score — they are **different partial measurements on different builds, none a valid release verdict**:
+
+| Figure | Where it came from | Build | Why it is not a verdict |
+|---|---|---|---|
+| **1.8/10** | LEXAR session-notes (archived) `…/session-notes/2026-05-31/_archive/worldos-gate-status-HANDOFF.md` / `worldos-VELOCITY-DIAGNOSIS.md` | provisional | "Provisional" — behavioral/axe/image-render were UNMEASURED inputs counted as fails. |
+| **~6.0** | `sweep1` row below | `c6480a3` | INCOMPLETE / pre-hardening: behavioral/UI/image/console denominators incomplete; 1 persona gave up. |
+| **2.7** | `gate-f5500ac-partial` row below + (gitignored) `qa/RRI.json` | `f5500ac` | PARTIAL / harness-contaminated: only `newbie` wrote `score.json`; other personas failed at harness setup. |
+| **none** | current "LAST VALID RELEASE GATE" | — | Correct: no clean, non-partial five-persona sweep has ever completed. The RRI contract was later hardened so partial/mixed-SHA evidence can never silently produce a release-ready result. |
+
+**Bottom line: there is no valid RRI yet.** The next real number comes from #466 — one clean,
+non-partial five-persona sweep on a single explicit SHA. Until then, treat every figure above as
+diagnostic only.
 
 | Sweep | Date | build_sha | RRI | Native | Arc | Sat (avg/no-giveup) | Crit/Console | Story | Mech | Behav | Axe | Img% | Palette | Failed gates / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
