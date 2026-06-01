@@ -13,6 +13,8 @@ Pure reader of on-disk artifacts (never the live HTTP channel, which can corrupt
   - --ui-audit PASS|FAIL      (ui_audit_health.sh exit)
   - --palette-live true|false (a clean /session-surface read done by the CALLER, not here)
   - --handoff-json handoff.json (optional Mac-built app proof from qa/app_handoff_gate.py)
+  - --support-preflight-json support_vm_preflight.json (required when VM persona evidence
+    relies on --handoff-json for Mac-built app proof)
 
 The two NEW signals the plan calls for — image-render-rate and palette-live — are computed
 here (image rate from score.json/network.ndjson) and passed in (palette-live), so this stays
@@ -23,6 +25,7 @@ Usage:
       [--story story.json] [--mech mech.json] \
       [--behavioral GREEN|RED] [--ui-audit PASS|FAIL] [--palette-live true|false] \
       [--build-sha SHA] [--expected-personas newbie,veteran,...] [--handoff-json handoff.json]
+      [--support-preflight-json support_vm_preflight.json]
       [--out qa/RRI.json] [--scorecard-row]
 
 Targets for 10/10 (each dimension is a gate; all must hold on ONE build):
@@ -187,6 +190,105 @@ def handoff_gap(missing: str, detail: str) -> dict:
     return {"gate": "native_gate", "missing": missing, "detail": detail}
 
 
+def support_preflight_gap(missing: str, detail: str) -> dict:
+    return {"gate": "support_preflight", "missing": missing, "detail": detail}
+
+
+def validate_support_preflight_json(preflight_json: str, expected_sha: str) -> tuple[dict, list[dict]]:
+    proof = {
+        "path": preflight_json or "",
+        "valid": False,
+        "schema": "",
+        "verdict": "",
+        "ready_for_rri": False,
+        "release_verdict": False,
+        "readiness": {},
+    }
+    if not preflight_json:
+        return proof, []
+
+    preflight_path = Path(preflight_json)
+    payload, error = read_json_with_error(preflight_path)
+    if error:
+        return proof, [support_preflight_gap(preflight_json, f"support preflight JSON {error}")]
+
+    readiness = payload.get("readiness") if isinstance(payload.get("readiness"), dict) else {}
+    repo = payload.get("repo") if isinstance(payload.get("repo"), dict) else {}
+    gaps: list[dict] = []
+    proof.update(
+        {
+            "schema": payload.get("schema") or "",
+            "verdict": payload.get("verdict") or "",
+            "ready_for_rri": payload.get("ready_for_rri") is True,
+            "release_verdict": bool(payload.get("release_verdict")),
+            "readiness": {
+                "safe_to_run_personas": readiness.get("safe_to_run_personas") is True,
+                "same_sha_ready": readiness.get("same_sha_ready") is True,
+                "provider": readiness.get("provider") or "",
+                "player_agent": readiness.get("player_agent") or "",
+                "provider_auth_ready": readiness.get("provider_auth_ready") is True,
+                "player_agent_auth_ready": readiness.get("player_agent_auth_ready") is True,
+                "required_tools_ready": readiness.get("required_tools_ready") is True,
+                "persona_briefs_ready": readiness.get("persona_briefs_ready") is True,
+                "private_art_ready": readiness.get("private_art_ready") is True,
+                "artifact_return_ready": readiness.get("artifact_return_ready") is True,
+                "host_capacity_ready": readiness.get("host_capacity_ready") is True,
+                "mac_handoff_required": readiness.get("mac_handoff_required") is True,
+                "blocking_categories": readiness.get("blocking_categories") if isinstance(readiness.get("blocking_categories"), list) else [],
+                "expected_sha": readiness.get("expected_sha") or "",
+                "repo_head_short": readiness.get("repo_head_short") or repo.get("head_short") or "",
+                "min_memory_gb": readiness.get("min_memory_gb"),
+            },
+        }
+    )
+    if payload.get("schema") != "worldos.support-vm-preflight.v1":
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight schema is missing or wrong"))
+    if payload.get("verdict") != "passed":
+        gaps.append(support_preflight_gap(str(preflight_path), f"support preflight verdict is {payload.get('verdict') or 'missing'}"))
+    if payload.get("ready_for_rri") is not True:
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight ready_for_rri was not true"))
+    if payload.get("release_verdict") is not False:
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight must not claim a release verdict"))
+    if repo.get("dirty") is not False:
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight repo was dirty or unproven clean"))
+    if repo.get("expected_sha_match") is not True:
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight repo expected_sha_match was not true"))
+    origin_main_query = repo.get("origin_main_query") if isinstance(repo.get("origin_main_query"), dict) else {}
+    if origin_main_query.get("ok") is not True:
+        gaps.append(support_preflight_gap(str(preflight_path), "support preflight origin/main query was not proven"))
+    if expected_sha:
+        preflight_sha = str(readiness.get("expected_sha") or repo.get("expected_sha") or repo.get("head_short") or "")
+        repo_head = str(readiness.get("repo_head_short") or repo.get("head_short") or "")
+        if not build_sha_matches(preflight_sha, expected_sha):
+            gaps.append(support_preflight_gap(str(preflight_path), f"support preflight expected_sha {preflight_sha or 'missing'} does not match --build-sha {expected_sha}"))
+        if not build_sha_matches(repo_head, expected_sha):
+            gaps.append(support_preflight_gap(str(preflight_path), f"support preflight repo_head {repo_head or 'missing'} does not match --build-sha {expected_sha}"))
+    required_readiness = [
+        "safe_to_run_personas",
+        "same_sha_ready",
+        "provider_auth_ready",
+        "player_agent_auth_ready",
+        "required_tools_ready",
+        "persona_briefs_ready",
+        "private_art_ready",
+        "artifact_return_ready",
+        "host_capacity_ready",
+        "mac_handoff_required",
+    ]
+    for field in required_readiness:
+        if readiness.get(field) is not True:
+            gaps.append(support_preflight_gap(str(preflight_path), f"support preflight readiness.{field} was not true"))
+    if readiness.get("blocking_categories"):
+        gaps.append(
+            support_preflight_gap(
+                str(preflight_path),
+                "support preflight blocking_categories is not empty: " + ", ".join(str(v) for v in readiness.get("blocking_categories")),
+            )
+        )
+    proof["valid"] = not gaps
+    return proof, gaps
+
+
 def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, list[dict]]:
     proof = {
         "path": handoff_json or "",
@@ -349,6 +451,7 @@ def main() -> int:
     ap.add_argument("--ui-audit-log", default="", help="path to the UI audit evidence source")
     ap.add_argument("--palette-source", default="", help="path or label for the palette-live evidence source")
     ap.add_argument("--handoff-json", default="", help="Mac app handoff gate JSON proving built-app smoke/play evidence")
+    ap.add_argument("--support-preflight-json", default="", help="Support VM preflight JSON proving same-SHA heavy-lane readiness")
     ap.add_argument("--build-sha", dest="build_sha", default="")
     ap.add_argument("--out", default="qa/RRI.json")
     ap.add_argument("--scorecard-row", action="store_true")
@@ -357,6 +460,7 @@ def main() -> int:
     run_dirs = [Path(p) for p in split_csv(args.runs)]
     expected_personas = split_csv(args.expected_personas)
     handoff_proof, handoff_evidence_gaps = validate_handoff_json(args.handoff_json, args.build_sha)
+    support_preflight_proof, support_preflight_gaps = validate_support_preflight_json(args.support_preflight_json, args.build_sha)
     persona_scores = []
     harness_failures = []
     completed_personas: list[str] = []
@@ -482,6 +586,7 @@ def main() -> int:
         native = "PASS"
         native_source = args.handoff_json
         native_detail = f"handoff_json={args.handoff_json} gates={','.join(REQUIRED_HANDOFF_GATES)}"
+    split_vm_handoff_evidence = bool(persona_scores and native_source == args.handoff_json and args.handoff_json)
 
     evidence_gaps = []
     build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
@@ -544,6 +649,15 @@ def main() -> int:
             "detail": f"persona={p.get('persona') or 'unknown'} part_b={p.get('part_b_result')} score_pass={p.get('part_b_score_pass')} failure_bucket={bucket} failure_detail={detail}".strip(),
         })
     evidence_gaps.extend(handoff_evidence_gaps)
+    if split_vm_handoff_evidence:
+        if not args.support_preflight_json:
+            evidence_gaps.append({
+                "gate": "support_preflight",
+                "missing": "--support-preflight-json",
+                "detail": "VM/persona artifacts that rely on --handoff-json for Mac proof require a same-SHA support preflight artifact",
+            })
+        else:
+            evidence_gaps.extend(support_preflight_gaps)
     for failure in part_a_failures:
         evidence_gaps.append({
             "gate": "native_gate",
@@ -595,11 +709,14 @@ def main() -> int:
     elif looks_like_path(args.palette_source) and not Path(args.palette_source).exists():
         evidence_gaps.append({"gate": "palette_live", "missing": args.palette_source, "detail": "palette-live evidence source missing"})
     evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
+    native_evidence_gap_gates = {"native_gate"}
+    if split_vm_handoff_evidence:
+        native_evidence_gap_gates.add("support_preflight")
     native_gate_detail = f"source={native_source or 'n/a'} {native_detail or 'part_a=' + (native or 'n/a')}".strip()
 
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
     gates = {
-        "native_gate":        (native == "PASS" and "native_gate" not in evidence_gap_gates,
+        "native_gate":        (native == "PASS" and not (evidence_gap_gates & native_evidence_gap_gates),
                                native_gate_detail),
         "arc_completed":      (any_completed and "arc_completed" not in evidence_gap_gates,
                                f"completed_intro_flow on >=1 persona"),
@@ -653,6 +770,10 @@ def main() -> int:
             **handoff_proof,
             "evidence_gaps": handoff_evidence_gaps,
         },
+        "support_preflight_evidence": {
+            **support_preflight_proof,
+            "evidence_gaps": support_preflight_gaps,
+        },
         "gates_passed": passed,
         "gates_total": total_gates,
         "failed_gates": failed,
@@ -664,6 +785,7 @@ def main() -> int:
             "story": args.story or "",
             "mechanical": args.mech or "",
             "handoff_json": args.handoff_json or "",
+            "support_preflight_json": args.support_preflight_json or "",
             "runs": [str(p) for p in run_dirs],
             "images": sorted({p["image_source"] for p in persona_scores if p.get("image_source")}),
         },
@@ -671,6 +793,7 @@ def main() -> int:
             "native_gate": native,
             "native_gate_source": native_source,
             "handoff_proof": handoff_proof,
+            "support_preflight": support_preflight_proof,
             "arc_completed": any_completed,
             "cross_persona_satisfaction": round(avg_sat, 1),
             "score_pass_failed_personas": score_pass_failed_personas,

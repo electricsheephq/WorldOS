@@ -128,6 +128,56 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         )
         return handoff
 
+    def write_support_preflight(
+        self,
+        tmp: Path,
+        *,
+        sha: str = "deadbee",
+        ready: bool = True,
+        blocking_categories: list[str] | None = None,
+    ) -> Path:
+        preflight = tmp / "support_vm_preflight.json"
+        blocking_categories = blocking_categories or []
+        preflight.write_text(
+            json.dumps(
+                {
+                    "schema": "worldos.support-vm-preflight.v1",
+                    "verdict": "passed" if ready else "blocked",
+                    "ready_for_rri": ready,
+                    "release_verdict": False,
+                    "blockers": [] if ready else ["host memory below required capacity"],
+                    "repo": {
+                        "head_short": sha,
+                        "expected_sha": sha,
+                        "expected_sha_match": True,
+                        "dirty": False,
+                        "origin_main_query": {"ok": True, "head_short": sha},
+                    },
+                    "readiness": {
+                        "safe_to_run_personas": ready,
+                        "release_verdict": False,
+                        "expected_sha": sha,
+                        "repo_head_short": sha,
+                        "same_sha_ready": ready,
+                        "provider": "codex",
+                        "player_agent": "codex",
+                        "provider_auth_ready": ready,
+                        "player_agent_auth_ready": ready,
+                        "required_tools_ready": ready,
+                        "persona_briefs_ready": ready,
+                        "private_art_ready": ready,
+                        "artifact_return_ready": ready,
+                        "host_capacity_ready": ready,
+                        "min_memory_gb": 24,
+                        "mac_handoff_required": True,
+                        "blocking_categories": blocking_categories,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return preflight
+
     def write_release_inputs(self, tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
         story = tmp / "story.json"
         mech = tmp / "mech.json"
@@ -1122,6 +1172,65 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
             story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
             handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertEqual(payload["signals"]["native_gate"], "PASS")
+            self.assertEqual(payload["signals"]["native_gate_source"], str(handoff))
+            self.assertEqual(payload["artifact_sources"]["handoff_json"], str(handoff))
+            self.assertTrue(payload["signals"]["handoff_proof"]["valid"])
+            self.assertEqual(payload["artifact_sources"]["support_preflight_json"], str(support_preflight))
+            self.assertTrue(payload["signals"]["support_preflight"]["valid"])
+            self.assertTrue(payload["support_preflight_evidence"]["valid"])
+            self.assertEqual(payload["support_preflight_evidence"]["evidence_gaps"], [])
+            self.assertEqual(payload["handoff_evidence"]["path"], str(handoff))
+            self.assertTrue(payload["handoff_evidence"]["valid"])
+            self.assertEqual(payload["handoff_evidence"]["evidence_gaps"], [])
+            self.assertEqual(
+                sorted(payload["handoff_evidence"]["gates"]),
+                ["built_app_codex_playtest", "built_app_scripted_smoke", "web_scripted_smoke"],
+            )
+            self.assertEqual(payload["handoff_evidence"]["gates"]["built_app_codex_playtest"]["manifest_verdict"], "passed")
+            self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
+
+    def test_split_vm_persona_evidence_requires_support_preflight(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
 
             rc, _text, payload = self.run_rri(
                 tmp,
@@ -1151,21 +1260,194 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                 "deadbee",
             )
 
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn("--support-preflight-json", {gap["missing"] for gap in payload["evidence_gaps"]})
+
+    def test_blocked_support_preflight_blocks_split_vm_release_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp, ready=False, blocking_categories=["host_capacity"])
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+            self.assertIn("host_capacity", payload["support_preflight_evidence"]["readiness"]["blocking_categories"])
+            self.assertIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+
+    def test_stale_support_preflight_blocks_split_vm_release_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp, sha="badcafe")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+            support_gaps = [gap for gap in payload["evidence_gaps"] if gap["gate"] == "support_preflight"]
+            self.assertTrue(support_gaps)
+            self.assertIn("badcafe", " ".join(gap["detail"] for gap in support_gaps))
+
+    def test_direct_native_evidence_ignores_optional_stale_support_preflight(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            support_preflight = self.write_support_preflight(tmp, sha="badcafe")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
             self.assertEqual(rc, 0)
             self.assertTrue(payload["release_ready"])
-            self.assertEqual(payload["signals"]["native_gate"], "PASS")
-            self.assertEqual(payload["signals"]["native_gate_source"], str(handoff))
-            self.assertEqual(payload["artifact_sources"]["handoff_json"], str(handoff))
-            self.assertTrue(payload["signals"]["handoff_proof"]["valid"])
-            self.assertEqual(payload["handoff_evidence"]["path"], str(handoff))
-            self.assertTrue(payload["handoff_evidence"]["valid"])
-            self.assertEqual(payload["handoff_evidence"]["evidence_gaps"], [])
-            self.assertEqual(
-                sorted(payload["handoff_evidence"]["gates"]),
-                ["built_app_codex_playtest", "built_app_scripted_smoke", "web_scripted_smoke"],
+            self.assertNotIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertNotIn("native_gate", payload["failed_gates"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+
+    def test_support_preflight_origin_main_query_must_be_object(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp)
+            payload = json.loads(support_preflight.read_text(encoding="utf-8"))
+            payload["repo"]["origin_main_query"] = "not-a-dict"
+            support_preflight.write_text(json.dumps(payload), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
             )
-            self.assertEqual(payload["handoff_evidence"]["gates"]["built_app_codex_playtest"]["manifest_verdict"], "passed")
-            self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+            self.assertIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn("origin/main query", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
 
     def test_handoff_json_must_prove_engine_state_authority(self):
         with tempfile.TemporaryDirectory() as td:
