@@ -358,8 +358,17 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("WOS_APP_PART=B", plan_blob)
             self.assertIn("WOS_APP_SELECTED_PROVIDER=codex", plan_blob)
             self.assertIn("WOS_APP_PLAYER_AGENT=codex", plan_blob)
+            self.assertIn("--support-preflight-json", plan_blob)
+            self.assertIn("--behavioral-path", plan_blob)
+            self.assertIn("--ui-audit-log", plan_blob)
+            self.assertIn("--palette-source", plan_blob)
+            self.assertIn("support_vm_preflight.json", report["rri_plan"]["support_preflight_json"])
+            self.assertTrue(report["rri_plan"]["support_preflight_required_for_split_rollup"])
             self.assertNotIn("qa/release_gate.sh --personas", plan_blob)
             self.assertTrue(report["rri_plan"]["mac_handoff_required"])
+            markdown = preflight.markdown_report(report)
+            self.assertIn("Split rollup requires support preflight JSON: `true`", markdown)
+            self.assertIn("--support-preflight-json", markdown)
 
     def test_default_codex_lane_does_not_require_claude(self):
         with tempfile.TemporaryDirectory() as td:
