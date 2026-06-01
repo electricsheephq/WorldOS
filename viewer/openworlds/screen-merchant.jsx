@@ -5,6 +5,7 @@
    the same key. Build the scope from a slug of the item NAME so wiki icons resolve, with a
    graceful 404 → <Placeholder> fallback inside <Img>. */
 function mItemScope(item) {
+  if (window.itemArtScope) return window.itemArtScope(item);
   const s = (window.slug ? window.slug(item && item.name) : "");
   return s ? "item-" + s : "";
 }

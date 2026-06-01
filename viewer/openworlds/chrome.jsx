@@ -9,6 +9,26 @@ window.slug = function slug(name) {
   return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 };
 
+// Shared item art aliases. Player-facing item names often carry table qualifiers
+// ("Travel rations", "Iron lantern", "Wax candle (x6)") while the ingested art cache
+// stores the reusable base prop ("item-rations", "item-lantern", "item-candle").
+// Keep this in the viewer read layer so engine item identity stays unchanged.
+const ITEM_ART_ALIASES = {
+  "travel-ration": "rations",
+  "travel-rations": "rations",
+  "iron-lantern": "lantern",
+  "wax-candle-6": "candle",
+  "wax-candles-6": "candle",
+  "candles": "candle",
+};
+
+window.itemArtScope = function itemArtScope(itemOrName) {
+  const name = typeof itemOrName === "string" ? itemOrName : itemOrName?.name;
+  const s = window.slug(name);
+  const aliased = ITEM_ART_ALIASES[s] || s;
+  return aliased ? "item-" + aliased : "";
+};
+
 const NAV_GROUPS = [
   {
     id: "g_table", label: "Table", glyph: "dice",
