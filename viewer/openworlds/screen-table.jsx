@@ -203,12 +203,15 @@ const CHRONICLE_RENDER_CAP = 50;
 //     live tail can never interleave out of chronological order; fall back to the client-side ingest
 //     counter `.at` for rows with no seq (player echoes, a chat-only beat). Array.prototype.sort is
 //     stable (ES2019+), so equal-key rows keep insertion order.
+//   • FILTER engine `system` bookkeeping rows out of the player-facing Chronicle. Roll/combat rows
+//     stay visible because they are gameplay facts; session-start/internal system rows belong in
+//     evidence/logs, not the fresh player's story scroll.
 //   • DEDUP recentEvents (the server's trailing window of the SAME session log the live /events
 //     stream reads) against the live tail so a paragraph never shows in BOTH bands. Prefer the
 //     stable `seq` (a row in both bands shares it → the match is immune to the prose AND to a
 //     windowing re-mount); fall back to a normalized TEXT key only for rows lacking a seq (legacy
 //     server / a chat-only beat), keyed identically to app.jsx's text fallback. Non-narration
-//     history rows (rolls/system/combat) are always kept.
+//     gameplay rows (rolls/combat) are always kept.
 // recentEvents are usually the leading history band, but a player row replayed from /chat can sit
 // BETWEEN two engine-owned recentEvents rows (opening narration → player move → DM reply). When rows
 // carry eventAt, sort the combined de-duped chronicle by that real event time; legacy rows without a
@@ -244,7 +247,8 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   );
   const dedupedRecent = recent.filter((row) => {
     const kind = (row && (row.kind || row.type)) || "narration";
-    if (kind !== "narration" && kind !== "dialogue") return true;  // mechanics rows always kept
+    if (kind === "system") return false; // engine bookkeeping; never player-facing
+    if (kind !== "narration" && kind !== "dialogue") return true;  // gameplay mechanic rows kept
     const seq = row && row.seq;
     if (typeof seq === "number") return !liveSeqs.has(seq);  // stable-id match (prose-independent)
     const key = narrationKey(row && (row.text || row.detail));
@@ -770,7 +774,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
-              Type freely and press <strong>Declare</strong>, or use the <strong>Actions</strong> above (hover each for what it does).
+              Choose an <strong>Action</strong>, or write your own move and press <strong>Declare</strong>.
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input

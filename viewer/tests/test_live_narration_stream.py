@@ -662,6 +662,8 @@ class LiveNarrationStreamTests(unittest.TestCase):
         )
 
     # --- #503: a player row replayed from /chat belongs BETWEEN recentEvents rows by event time ---
+    # System bookkeeping can share the same recentEvents band; it must not leak into the player-facing
+    # Chronicle while the player/DM ordering still holds.
     # After a reload/surface poll, the engine-owned history band can already contain opening
     # narration + the DM reply, while the player's move is replayed from /chat. A plain
     # recentEvents-before-tail concat rendered reply → YOU. eventAt restores the actual turn order.
@@ -681,12 +683,11 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertEqual(
             out["chronicle"],
             [
-                {"kind": "system", "text": "Session began."},
                 {"kind": "narration", "text": "The lantern steadies."},
                 {"kind": "dialog", "text": "Ask what changed tonight.", "who": "You"},
                 {"kind": "narration", "text": "A nearby voice answers."},
             ],
-            "the player move must render before the DM reply when /chat timestamps place it there (#503)",
+            "system bookkeeping stays hidden and the player move renders before the DM reply when /chat timestamps place it there (#503)",
         )
 
     # --- #479: provider wrappers may write the final DM reply to /chat only as a turn-resolution
