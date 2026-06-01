@@ -196,7 +196,7 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     assert '[ -n "${text//[[:space:]]/}" ] || return 1' in source
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
     assert source.count("$WRAPPER_NARRATION_LOG_RULE") == 3
-    assert 'log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"' in source
+    assert 'record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"' in source
     assert '"engine_logged":true' in source
     assert "invalid chatlog extra_json" in source
 
@@ -204,17 +204,21 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
 def test_codex_dm_wrapper_records_engine_narration_before_chat_tail():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
+    helper_start = source.index("record_dm_reply() {")
+    helper_end = source.index("codex_dm_turn() {", helper_start)
+    helper_block = source[helper_start:helper_end]
+    assert helper_block.index('log_engine_narration "$campaign_id" "$text"') < helper_block.index('chatlog dm "$text"')
+    assert 'chatlog dm "$text" \'{"engine_logged":true}\'' in helper_block
+
     opening_start = source.index('if ! OPENING="$(codex_dm_turn "$OPENING_PROMPT")"')
     opening_end = source.index('CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"', opening_start)
     opening_block = source[opening_start:opening_end]
-    assert opening_block.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$OPENING"') < opening_block.index('chatlog dm "$OPENING"')
-    assert 'chatlog dm "$OPENING" \'{"engine_logged":true}\'' in opening_block
+    assert 'record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$OPENING" "opening"' in opening_block
 
     move_start = source.index('if ! REPLY="$(codex_dm_turn')
     move_end = source.index('DM_TURNS=$((DM_TURNS + 1))', move_start)
     move_block = source[move_start:move_end]
-    assert move_block.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"') < move_block.index('chatlog dm "$REPLY"')
-    assert 'chatlog dm "$REPLY" \'{"engine_logged":true}\'' in move_block
+    assert 'record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"' in move_block
 
 
 def test_codex_dm_wrapper_prompts_use_engine_state_discovery():

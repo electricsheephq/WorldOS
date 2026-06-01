@@ -373,6 +373,16 @@ server.log_event(campaign_id, "narration", text)
 PY
 }
 
+record_dm_reply() {
+  local campaign_id="$1" text="$2" phase="$3"
+  if log_engine_narration "$campaign_id" "$text"; then
+    chatlog dm "$text" '{"engine_logged":true}'
+  else
+    echo "[codex-dm-provider] warning: could not record ${phase} narration through engine" >&2
+    chatlog dm "$text"
+  fi
+}
+
 codex_dm_turn() {
   local prompt="$1"
   printf '%s\n' "$prompt" > "$PROMPT_FILE"
@@ -520,17 +530,7 @@ if ! OPENING="$(codex_dm_turn "$OPENING_PROMPT")"; then
 fi
 
 ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
-ENGINE_LOGGED=0
-if log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$OPENING"; then
-  ENGINE_LOGGED=1
-else
-  echo "[codex-dm-provider] warning: could not record opening narration through engine" >&2
-fi
-if [ "$ENGINE_LOGGED" -eq 1 ]; then
-  chatlog dm "$OPENING" '{"engine_logged":true}'
-else
-  chatlog dm "$OPENING"
-fi
+record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$OPENING" "opening"
 CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
 
 DM_TURNS=1
@@ -563,17 +563,7 @@ Player move:
 $PMSG")"; then
       fail "Codex DM move turn failed; see $STDERR_LOG"
     fi
-    ENGINE_LOGGED=0
-    if log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"; then
-      ENGINE_LOGGED=1
-    else
-      echo "[codex-dm-provider] warning: could not record move narration through engine" >&2
-    fi
-    if [ "$ENGINE_LOGGED" -eq 1 ]; then
-      chatlog dm "$REPLY" '{"engine_logged":true}'
-    else
-      chatlog dm "$REPLY"
-    fi
+    record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"
     DM_TURNS=$((DM_TURNS + 1))
   else
     sleep 2
