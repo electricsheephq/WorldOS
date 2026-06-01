@@ -471,7 +471,15 @@ def inspect_tools(
                 "auth_probe_timed_out": bool(result.get("timed_out")),
             }
         )
-        negative_auth = ("not authenticated", "unauthenticated", "not logged in", "signed out", "inactive")
+        negative_auth = (
+            "not authenticated",
+            "unauthenticated",
+            "not logged in",
+            "not signed in",
+            "not signed",
+            "signed out",
+            "inactive",
+        )
         positive_auth = ("authenticated", "logged in", "signed in")
         if has_auth_marker(lower, negative_auth):
             codex["auth_status"] = "not_proven"
@@ -727,6 +735,7 @@ def markdown_report(report: dict) -> str:
             f"- Port: `{report['rri_plan']['port']}`",
             f"- Provider: `{report['rri_plan']['provider']}`",
             f"- Player agent: `{report['rri_plan']['player_agent']}`",
+            f"- Required tools: `{','.join(report['rri_plan'].get('required_tools', []))}`",
             f"- Support VM scope: `{report['rri_plan']['support_vm_scope']}`",
             f"- Do not run on support VM: `{report['rri_plan']['do_not_run_on_support_vm']}`",
             f"- First persona command: `{(report['rri_plan'].get('vm_persona_sweep_commands') or [''])[0]}`",

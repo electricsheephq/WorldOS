@@ -244,6 +244,8 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("codex", report["rri_plan"]["required_tools"])
             self.assertNotIn("claude", report["rri_plan"]["required_tools"])
             self.assertEqual(report["blockers"], [])
+            markdown = preflight.markdown_report(report)
+            self.assertIn("- Required tools: `git,python3,uv,node,npm,npx,jq,curl,lsof,timeout,pkill,pgrep,ps,codex`", markdown)
 
     def test_report_flags_dirty_repo_and_expected_sha_mismatch(self):
         with tempfile.TemporaryDirectory() as td:
@@ -392,6 +394,19 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("Codex CLI auth/profile status is not proven", report["blockers"])
             self.assertNotIn("auth_probe_excerpt", report["tools"]["codex_auth"])
             self.assertNotIn("user@example.com", json.dumps(report))
+
+    def test_codex_not_signed_in_output_does_not_false_green(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(config.repo, codex_auth_output="Not signed in"),
+                which=fake_which,
+                env={},
+            )
+            self.assertFalse(report["ready_for_rri"])
+            self.assertEqual(report["tools"]["codex_auth"]["auth_status"], "not_proven")
+            self.assertIn("Codex CLI auth/profile status is not proven", report["blockers"])
 
     def test_codex_auth_classifier_uses_word_boundaries(self):
         self.assertFalse(preflight.has_auth_marker("inactive", ("active",)))
