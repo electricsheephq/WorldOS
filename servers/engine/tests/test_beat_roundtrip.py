@@ -116,6 +116,50 @@ def test_scene_context_recent_narration_capped_by_available(cid):
     assert [e["text"] for e in rn] == ["One.", "Two."]
 
 
+def test_scene_context_recent_narration_spans_multiple_sessions(cid):
+    """DEFECT 2 — the lean case: under fast-turn play each beat opens a FRESH
+    session, so prose lives across several session logs. recent_narration must read
+    the campaign WIDE and return the last N player-facing beats regardless of which
+    session wrote them — the prior pre-fix single-session read returned [] here
+    (the current session's log was empty).
+    """
+    # Session 1: a couple of player-facing beats.
+    server.log_event(cid, kind="narration", text="The market wakes at dawn.")
+    server.log_event(cid, kind="dialogue", text="Coin first.", speaker="Sael")
+
+    # Roll over to a FRESH session (this is what lean/fast-turn does each beat).
+    server.start_session(cid, title="next beat")
+    c = store.load_campaign(cid)
+    assert len(c.session_ids) >= 2  # we are genuinely on a new session now
+
+    # Session 2: more beats (plus bookkeeping that must be dropped).
+    server.log_event(cid, kind="roll", text="Insight 12")  # dropped
+    server.log_event(cid, kind="narration", text="A cloaked figure watches.")
+    server.log_event(cid, kind="dialogue", text="You're being followed.", speaker="Sael")
+
+    sc = server.scene_context(cid, recent_narration=3)
+    rn = sc["recent_narration"]
+    # Last 3 player-facing beats, in chronological order, SPANNING both sessions:
+    # the tail crosses the session boundary (one from session 1, two from session 2).
+    assert [e["text"] for e in rn] == [
+        "Coin first.",
+        "A cloaked figure watches.",
+        "You're being followed.",
+    ]
+    assert rn[0]["speaker"] == "Sael"  # speaker preserved across the session boundary
+    assert "speaker" not in rn[1]  # narration has no speaker
+
+    # And a wide-enough window returns ALL player-facing beats from both sessions
+    # in order (the system/roll rows from start_session + the explicit roll dropped).
+    wide = server.scene_context(cid, recent_narration=99)["recent_narration"]
+    assert [e["text"] for e in wide] == [
+        "The market wakes at dawn.",
+        "Coin first.",
+        "A cloaked figure watches.",
+        "You're being followed.",
+    ]
+
+
 # ── scene_context: the pinned durable continuity threads ─────────────────────
 
 
@@ -172,6 +216,57 @@ def test_scene_context_durable_open_quests_drops_completed_and_objectives(cid):
     server.complete_quest(cid, qid, status="completed")
     dur2 = server.scene_context(cid)["durable"]
     assert qid not in {x["id"] for x in dur2["open_quests"]}
+
+
+class _BareCharacter:
+    """A stand-in 'character' that is MISSING every durable-block attribute
+    (relationships, attitude_value, attitude, kind, met, arc, ...).
+
+    Reproduces the #compact-scene-context crash class: the durable block read
+    ``ch.relationships`` (a field the real Character never even had), so any
+    object lacking an expected attribute threw AttributeError and took the whole
+    scene_context tool down. The hardened block must getattr-default every read
+    and degrade gracefully — never raise — on such an object.
+    """
+
+
+def test_scene_durable_threads_never_throws_on_missing_attrs(cid):
+    """DEFECT 1 — scene_context must NOT throw when a character object lacks the
+    attributes the durable block expects; it degrades (omits/empties) instead.
+
+    We splice a bare object (no relationships / attitude_value / kind / met / arc)
+    into the in-memory roster and derive the durable threads directly. Pre-fix this
+    raised ``AttributeError: 'Character' object has no attribute 'relationships'``;
+    post-fix it returns normally and simply contributes nothing for that object.
+    """
+    c = store.load_campaign(cid)
+    baseline = server._scene_durable_threads(c)
+
+    c.characters["bare-1"] = _BareCharacter()  # validate_assignment is off — fine in-mem
+    dur = server._scene_durable_threads(c)  # must NOT raise
+
+    # The bare object has no kind/met/arc → it joins no durable list; the real
+    # threads are unchanged from the baseline (graceful degradation, not a crash).
+    assert set(dur) == {"open_quests", "npc_relationships", "companions", "factions", "flags"}
+    assert dur == baseline
+
+
+def test_scene_context_met_npc_without_relationships_attr(cid):
+    """DEFECT 1 (end-to-end) — a MET npc surfaces in durable.npc_relationships and
+    scene_context returns cleanly even though Character has no ``relationships``
+    attribute at all (the exact field whose non-defensive read threw). The row
+    carries the attitude that IS set and simply omits the absent relationships.
+    """
+    pc = server.create_character(cid, "Probe", kind="player", abilities={"charisma": 16})["id"]
+    npc = server.create_character(cid, "Sael", kind="npc")["id"]
+    # A successful social check flips `met` True (first-contact) and sets attitude.
+    server.social_check(cid, pc, npc, "persuasion", dc=1)
+
+    sc = server.scene_context(cid)  # must NOT raise
+    row = next(n for n in sc["durable"]["npc_relationships"] if n["id"] == npc)
+    assert row["name"] == "Sael"
+    assert "relationships" not in row  # Character has no such attribute → omitted, not a crash
+    assert "attitude" in row  # the set free-text disposition is still surfaced
 
 
 def test_scene_context_does_not_deadlock(cid):
