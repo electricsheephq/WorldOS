@@ -93,7 +93,7 @@ _AB3_TO_FULL = {
 # Reverse: accept either the 3-letter code (the Ability enum value) or the full word
 # (how the SRD records spell saving_throw_ability, e.g. "wisdom") and resolve to an Ability.
 _FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
-from store import append_log, campaign_lock, campaigns_for_world
+from store import append_log, campaign_lock, campaigns_for_world, read_log
 from store import list_campaigns as _list_campaigns
 from store import list_slots as _list_slots
 from store import load_campaign, save_campaign
@@ -8354,16 +8354,153 @@ def set_seed_param(campaign_id: str, param: str, value, force: bool = False) -> 
 # byte-identical to before (an unused combined tool ships nothing).
 
 
+def _scene_durable_threads(c: Campaign) -> dict:
+    """Derive the compact, continuity-CRITICAL durable threads a transcript-free
+    re-ground must not lose (#compact-scene-context).
+
+    READ-ONLY + pure derivation — never mutates state (scene_context's sole-writer
+    invariant). These are the *standing* threads (not this-beat deltas) that the
+    bundle's other sections under-surface:
+
+      - ``open_quests``        — every non-completed/non-failed Quest with its OPEN
+                                 objectives. get_state's ``active_quests`` carries
+                                 only ``{id,title}``; the unresolved objectives are
+                                 the actual continuity (what the party still OWES).
+      - ``npc_relationships``  — each NPC the party has actually MET, with its
+                                 approval gauge (``attitude_value``) + free-text
+                                 ``attitude`` + any authored ``relationships`` tags.
+                                 get_state surfaces only ``npc_count``; who the party
+                                 stands with (and how) is otherwise transcript-only.
+      - ``companions``         — each companion's STANDING bond state: approval
+                                 gauge, whether an arc / a sealed betrayal agenda is
+                                 attached. (``companion_arcs`` reports only what just
+                                 *turned* this beat; this is the durable baseline.)
+      - ``factions``           — each faction's ``reputation`` (bidirectional trust)
+                                 + ``standing`` (monotonic membership) — the engine-
+                                 mutated gauges that gate faction events.
+      - ``flags``              — the set world-state flags (gates already armed).
+
+    Everything is a thin projection; empty collections == today's behavior. The
+    DM's `recall`/`get_character`/`get_faction` reach the full record on demand —
+    this is the always-pinned spine, not the whole world.
+    """
+    chars = list(c.characters.values())
+
+    # OPEN quests (status not completed/failed) with their still-open objectives.
+    open_quests = [
+        {
+            "id": q.id,
+            "title": q.title,
+            "status": q.status,
+            "open_objectives": [
+                o for o in q.objectives if o not in q.completed_objectives
+            ],
+        }
+        for q in c.quests.values()
+        if q.status not in ("completed", "failed")
+    ]
+
+    # NPC relationships the party has a standing with: only NPCs actually met
+    # (a world seed pre-populates strangers; `met` gates them out — same rule the
+    # dashboard's Relationships view uses).
+    npc_relationships = [
+        {
+            "id": ch.id,
+            "name": ch.name,
+            "attitude_value": ch.attitude_value,
+            **({"attitude": ch.attitude} if ch.attitude else {}),
+            **({"relationships": ch.relationships} if ch.relationships else {}),
+        }
+        for ch in chars
+        if ch.kind == "npc" and ch.met
+    ]
+
+    # Companions' STANDING bond state (loyalty gauge + whether a sealed
+    # betrayal agenda is attached) — the durable baseline check_companion_arc's
+    # delta report assumes you already know.
+    companions = [
+        {
+            "id": ch.id,
+            "name": ch.name,
+            "attitude_value": ch.attitude_value,
+            "has_arc": ch.arc is not None,
+            "has_betrayal_agenda": bool(
+                ch.arc is not None
+                and ch.arc.agenda is not None
+                and ch.arc.agenda.trigger == "attitude_below"
+            ),
+        }
+        for ch in chars
+        if ch.kind == "companion"
+    ]
+
+    # Faction gauges (engine-mutated; these gate events — invariant #3).
+    factions = [
+        {
+            "id": f.id,
+            "name": f.name,
+            "reputation": f.reputation,
+            "standing": f.standing,
+        }
+        for f in c.factions.values()
+    ]
+
+    return {
+        "open_quests": open_quests,
+        "npc_relationships": npc_relationships,
+        "companions": companions,
+        "factions": factions,
+        "flags": sorted(k for k, v in c.flags.items() if v),
+    }
+
+
+def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
+    """The last ``limit`` PLAYER-FACING beats (kind in narration|dialogue) from the
+    current session log, in CHRONOLOGICAL order — the prose tail a transcript-free
+    (lean) beat needs as its short-term memory of the story so far.
+
+    READ-ONLY: reads the session jsonl via read_log (never writes). Resolves
+    the current session the same way session_recap does (active, else the most
+    recent). Rolls / system / combat-log rows are bookkeeping noise and are
+    dropped (mirrors recap's _STORY_KINDS, minus combat: this is the spoken story).
+    """
+    if limit <= 0:
+        return []
+    sid = c.active_session_id or (c.session_ids[-1] if c.session_ids else None)
+    if not sid:
+        return []
+    entries = read_log(c.id, sid)
+    facing = [e for e in entries if e.kind in ("narration", "dialogue")]
+    return [
+        {"text": e.text, **({"speaker": e.speaker} if e.speaker else {})}
+        for e in facing[-limit:]
+    ]
+
+
 @mcp.tool()
-def scene_context(campaign_id: str, recall_query: str = "", recall_limit: int = 6) -> dict:
+def scene_context(
+    campaign_id: str,
+    recall_query: str = "",
+    recall_limit: int = 6,
+    recent_narration: int = 0,
+) -> dict:
     """ONE-CALL beat re-ground — the whole start-of-beat read cluster in a single
     round-trip (latency collapse; additive — the individual tools all still exist).
 
     Returns, in one payload, exactly what the DM reads at the top of every beat
-    (SKILL.md step 1) so it makes 1 call instead of 3–4:
+    (SKILL.md step 1) so it makes 1 call instead of 3–4. Field ordering is STABLE
+    and durable-first (the threads that persist across the campaign come before the
+    volatile clock/HP in ``state``) so a re-grounding DM — and prompt caches — see
+    the unchanging spine first:
 
-      - ``state``     — get_state(campaign_id): scene, party vitals, day/time,
-                        active quests, combat status, pacing_mode, seed_params.
+      - ``durable``   — the continuity-CRITICAL standing threads pinned so a
+                        transcript-free (lean) re-ground loses NOTHING: every
+                        ``open_quests`` (+ its still-open objectives),
+                        ``npc_relationships`` the party has MET (approval +
+                        relationship tags), each companion's standing bond
+                        (``companions``: approval / arc / sealed betrayal agenda),
+                        ``factions`` (reputation + standing gauges), and the set
+                        ``flags``. Always present; empty collections == today.
       - ``director``  — get_campaign_director(campaign_id): the top structural
                         debts the campaign OWES right now (advisory, read-only).
       - ``events``    — present_events(campaign_id): stumble-into decisionals whose
@@ -8372,31 +8509,51 @@ def scene_context(campaign_id: str, recall_query: str = "", recall_limit: int = 
                         turned / a ``betrayal_warning`` to foreshadow. (This is the
                         one sub-call that persists arc progress — same effect as
                         calling the tool directly; idempotent across beats.)
+      - ``recent_narration`` — present ONLY when ``recent_narration`` (the param)
+                        is > 0: the last N player-facing beats (narration/dialogue)
+                        from the current session log, chronological, each
+                        ``{text, speaker?}``. This is the lean-beat memory: in
+                        fast-turn mode the beat runs with NO prior transcript, so
+                        this prose tail (plus ``durable``) IS the story-so-far.
+                        Default 0 = omitted (no log read, today's behavior).
       - ``recall``    — present ONLY when ``recall_query`` is non-empty: the same
                         fuzzy memory search recall(query, limit) returns. Pass it
                         when the moment touches the past ("have we met this NPC?",
                         "what did we decide about the cult?"); leave it blank
                         otherwise and no recall is run (no wasted work).
+      - ``state``     — get_state(campaign_id): scene, party vitals, day/time,
+                        active quests, combat status, pacing_mode, seed_params.
+                        LAST because it carries the volatile values (clock, HP).
 
     Read-mostly: it runs the SAME code paths as the individual tools (so behavior
     and side effects are identical — including check_companion_arc's arc-progress
-    save), just bundled. Use this every beat in place of the separate
-    get_state / get_campaign_director / present_events / check_companion_arc
-    calls. For a returning NPC you still want recall_npc(npc_id) / get_scene on
-    arrival — those stay their own calls (situational, not every beat).
+    save), just bundled. ``durable`` + ``recent_narration`` are pure READS/derivations
+    over committed state — scene_context NEVER writes campaign state itself. Use this
+    every beat in place of the separate get_state / get_campaign_director /
+    present_events / check_companion_arc calls. For a returning NPC you still want
+    recall_npc(npc_id) / get_scene on arrival — those stay their own calls.
     """
     # Each delegate takes (and fully releases) the per-campaign flock before the
     # next runs — sequential, never nested — so this is deadlock-free even though
     # check_companion_arc acquires the lock. (Nesting campaign_lock in one process
-    # WOULD deadlock: flock is not reentrant across fds.)
-    out = {
-        "state": get_state(campaign_id),
+    # WOULD deadlock: flock is not reentrant across fds.) The durable/recent reads
+    # are lock-free snapshot reads via _require / read_log.
+    #
+    # Built durable-first so the dict preserves the stable, cache-friendly order
+    # (durable threads → advisory → this-beat deltas → … → volatile state last).
+    out: dict = {
+        "durable": _scene_durable_threads(_require(campaign_id)),
         "director": get_campaign_director(campaign_id),
         "events": present_events(campaign_id),
         "companion_arcs": check_companion_arc(campaign_id),
     }
+    if recent_narration and recent_narration > 0:
+        out["recent_narration"] = _scene_recent_narration(
+            _require(campaign_id), recent_narration
+        )
     if recall_query and recall_query.strip():
         out["recall"] = recall(campaign_id, recall_query.strip(), limit=recall_limit)
+    out["state"] = get_state(campaign_id)
     return out
 
 
