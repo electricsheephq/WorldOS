@@ -611,6 +611,11 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       return;
     }
     if (action.move) {
+      // Immediate quick actions (Continue/Travel/etc.) are not the free-text composer.
+      // Reset any stale Say/Check/Save draft mode so the active composer reflects the
+      // next declarable free-form action after the move resolves.
+      setComposerModeId("do");
+      setInput("");
       postMove(action.move, action.label, action.id);
     }
   };
