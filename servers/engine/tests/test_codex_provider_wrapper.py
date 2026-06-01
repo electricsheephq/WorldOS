@@ -185,9 +185,33 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "LOG_EVENT_TOOL_RULE=" in source
+    assert "WRAPPER_NARRATION_LOG_RULE=" in source
+    assert "OPENING_LOG_EVENT_RULE=" in source
     assert "omit the speaker argument entirely" in source
     assert "Never pass JSON null for speaker" in source
+    assert "Do not call log_event for player-facing narration or dialogue in this provider wrapper" in source
+    assert "do not call log_event for the full opening narration" in source
+    assert "log_engine_narration" in source
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
+    assert source.count("$WRAPPER_NARRATION_LOG_RULE") == 3
+    assert 'log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"' in source
+    assert '"engine_logged":true' in source
+
+
+def test_codex_dm_wrapper_records_engine_narration_before_chat_tail():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    opening_start = source.index('if ! OPENING="$(codex_dm_turn "$OPENING_PROMPT")"')
+    opening_end = source.index('CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"', opening_start)
+    opening_block = source[opening_start:opening_end]
+    assert opening_block.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$OPENING"') < opening_block.index('chatlog dm "$OPENING"')
+    assert 'chatlog dm "$OPENING" \'{"engine_logged":true}\'' in opening_block
+
+    move_start = source.index('if ! REPLY="$(codex_dm_turn')
+    move_end = source.index('DM_TURNS=$((DM_TURNS + 1))', move_start)
+    move_block = source[move_start:move_end]
+    assert move_block.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"') < move_block.index('chatlog dm "$REPLY"')
+    assert 'chatlog dm "$REPLY" \'{"engine_logged":true}\'' in move_block
 
 
 def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
@@ -238,13 +262,28 @@ def test_codex_dm_wrapper_avoids_noisy_provider_tool_retries():
     assert "PARLEY_TOOL_RULE" in source
     assert "pass an explicit skills array" in source
     assert "Do not rely on include_alignment" in source
-    assert "PERSIST_BEAT_RULE" in source
+    assert "OPENING_PERSIST_BEAT_RULE" in source
+    assert "MOVE_PERSIST_BEAT_RULE" in source
+    assert "REWARD_MUTATION_RULE" in source
+    assert "Do not call award_xp" in source
     assert "do not call persist_beat during the opening turn" in source
-    assert "persist only after at least one real player move" in source
+    assert "This is a post-move turn: at least one real player move has been accepted" in source
     assert "each memory must be an object with character_id and fact fields" in source
     assert source.count("$RULES_LOOKUP_RULE") == 3
     assert source.count("$PARLEY_TOOL_RULE") == 3
-    assert source.count("$PERSIST_BEAT_RULE") == 3
+    assert source.count("$REWARD_MUTATION_RULE") == 3
+    assert source.count("$OPENING_PERSIST_BEAT_RULE") == 2
+    assert source.count("$MOVE_PERSIST_BEAT_RULE") == 1
+
+
+def test_codex_dm_wrapper_move_prompt_does_not_restate_opening_persist_ban():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    start = source.index("You are the Dungeon Master mid-session")
+    move_prompt = source[start : source.index("Player move:", start)]
+    assert "$MOVE_PERSIST_BEAT_RULE" in move_prompt
+    assert "$OPENING_PERSIST_BEAT_RULE" not in move_prompt
+    assert "do not call persist_beat during the opening turn" not in move_prompt
 
 
 def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):

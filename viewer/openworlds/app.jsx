@@ -403,6 +403,7 @@ function useLiveSession(state) {
               // no narration, or the human/native path where /chat is the sole source) — text-keyed,
               // since a chat-only beat has no session-log seq, and there is no /events stream to
               // collide with in that case.
+              if (it.engine_logged === true) return null;
               if (eventsStreamedThisTurnRef.current) return null;
               const clean = sanitize(it.text);
               return clean && claimNarration(clean) ? { kind: "narration", text: clean, at: nextLogSeq() } : null;
