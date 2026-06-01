@@ -649,6 +649,10 @@ def main() -> int:
         "missing_release_personas": missing_release_personas,
         "harness_failures": harness_failures,
         "evidence_gaps": evidence_gaps,
+        "handoff_evidence": {
+            **handoff_proof,
+            "evidence_gaps": handoff_evidence_gaps,
+        },
         "gates_passed": passed,
         "gates_total": total_gates,
         "failed_gates": failed,
