@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`ff84444 == origin/main` after #475/#494/#495/#496/#498/#499) and the default place to build/run/test the GUI and native app.
+> (`f7ab6d7 == origin/main` after #475/#494/#495/#496/#498/#499/#500) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -39,14 +39,14 @@
   with zero errors/failed tool calls on PR #475 app-code commit `8bd833f`.
 - The post-#475 merged-main built-app proof
   (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/post475-main-app-proof-20260601T051230/`, build `32ca561`)
-  was player-playable, but provider trace noise persisted. Keep #479 open until a later current-main built-app
-  run proves the Codex provider path is trace-clean enough for release trust. Release still requires the full
-  non-partial RRI gate.
+  was player-playable, but provider trace noise persisted. It is historical playable evidence, superseded for
+  #479 closure by the `f7ab6d7` merged-main proof below. Release still requires the full non-partial RRI gate.
 - The current-main built-app proof
   (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-current-main-proof-20260531T234242Z/`, build `19c3fd0`)
   again proved product wiring: private art present, Codex provider, Alfira active, visible narration, five
   enabled actions, writable `/move`, one accepted move, chat roles `dm, player, dm`, and `/session-surface`
-  still actionable. The provider trace still had three failed/cancelled engine tool calls, so #479 stays open.
+  still actionable. The provider trace still had three failed/cancelled engine tool calls, so it is historical
+  non-clean evidence, superseded for #479 closure by the `f7ab6d7` proof below.
 - The #479 trace-clean branch proof
   (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-479-traceclean-nodup-proof-20260601T003002Z/`, app-code
   `b081092`) reran the built app with private art, Codex provider, Alfira active, five enabled actions,
@@ -54,8 +54,16 @@
   still actionable. `app-evidence/manifest.json` had no gaps and `provider-errors.after-move.json` reported
   zero parse errors plus zero failed/error tool calls. Native accessibility review showed exactly one opening
   narration row and one follow-up narration row, confirming engine-logged `/chat` rows resolve turns without
-  duplicating visible prose. Treat this as branch diagnostic evidence until merged and, if required, rerun on
-  main before closing #479.
+  duplicating visible prose.
+- The merged-main #479 proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-main-f7ab6d7-proof-20260601T010058Z/`, build
+  `f7ab6d7`) repeated the proof on `main`: private art present, Codex provider, Alfira active, five enabled
+  actions, writable `/move`, one accepted/resolved player move, chat roles `dm, player, dm`, and
+  `/session-surface` still actionable. `app-evidence/manifest.json` had no gaps and
+  `provider-errors.after-move.json` reported zero parse errors plus zero failed/error tool calls. Native
+  accessibility review showed the chronicle with one opening narration row and one follow-up narration row,
+  not duplicate chat/event prose. This closes the #479 diagnostic blocker, but release still requires #466's
+  full non-partial RRI gate.
 
 ## Agent-facing app contract
 
@@ -66,7 +74,7 @@
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Agent-grade testing progress as of `ff84444`: #481 app-status is closed, #482 deterministic scripted
+- Agent-grade testing progress as of `f7ab6d7`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, and #484 stable accessibility/DOM hooks are merged.
   #485 evidence bundle completion and #486 gate-split follow-through remain active. A scripted `:8899`
   harness surface can prove app observability, but it is not built-app release proof unless it came from
