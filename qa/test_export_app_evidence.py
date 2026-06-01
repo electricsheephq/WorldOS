@@ -69,11 +69,21 @@ class ExportAppEvidenceTests(unittest.TestCase):
             moves = tmp / "player_moves.jsonl"
             chat.write_text('{"role":"dm","text":"Opening."}\n', encoding="utf-8")
             moves.write_text('{"text":"Continue."}\n', encoding="utf-8")
+            run = tmp / "smoke-run"
+            (run / "screenshots").mkdir(parents=True)
+            (run / "scripted-provider").mkdir()
+            (run / "screenshots" / "beat-001.png").write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            (run / "app-status.final.json").write_text(json.dumps({"schema": "worldos.app-status.v1"}), encoding="utf-8")
+            (run / "session-surface.final.json").write_text(json.dumps({"schema": "worldos.session-surface.v1"}), encoding="utf-8")
+            (run / "console.ndjson").write_text("", encoding="utf-8")
+            (run / "network.ndjson").write_text('{"status":200}\n', encoding="utf-8")
+            (run / "actions.ndjson").write_text('{"action":"post_move"}\n', encoding="utf-8")
+            (run / "scripted-provider" / "summary.json").write_text('{"provider":"scripted"}\n', encoding="utf-8")
             app_status = {
                 "schema": "worldos.app-status.v1",
                 "build": {"sha": "abc1234", "version": "v1-test"},
                 "viewer": {"chat_path": str(chat), "transcript_path": ""},
-                "live": {"moves_path": str(moves), "campaign_id": "camp_test"},
+                "live": {"moves_path": str(moves), "campaign_id": "camp_test", "run_id": "run_test", "can_act": True, "enabled_action_count": 5},
                 "art": {"private_root": str(tmp / "art"), "private_root_present": True},
                 "endpoints": {"session_surface": "/session-surface"},
             }
@@ -85,7 +95,24 @@ class ExportAppEvidenceTests(unittest.TestCase):
             server, url = self.serve(app_status, session_surface)
             out = tmp / "bundle"
             try:
-                rc, text, payload = self.run_exporter(out, url)
+                rc, text, payload = self.run_exporter(
+                    out,
+                    url,
+                    [
+                        "--run-dir",
+                        str(run),
+                        "--gate-kind",
+                        "web_scripted_smoke",
+                        "--provider",
+                        "scripted",
+                        "--command-json",
+                        json.dumps(["python3", "qa/app_smoke_scripted.py", "--beats", "5"]),
+                        "--started-at",
+                        "2026-06-01T00:00:00Z",
+                        "--verdict",
+                        "passed",
+                    ],
+                )
             finally:
                 server.shutdown()
 
@@ -96,10 +123,48 @@ class ExportAppEvidenceTests(unittest.TestCase):
             self.assertEqual(payload["sources"]["app_status"]["path"], "app-status.json")
             self.assertEqual(payload["sources"]["session_surface"]["path"], "session-surface.json")
             copied = {entry["kind"]: entry for entry in payload["copied_files"]}
-            self.assertEqual(set(copied), {"chat", "moves"})
+            self.assertIn("chat", copied)
+            self.assertIn("moves", copied)
             self.assertEqual((out / copied["chat"]["path"]).read_text(encoding="utf-8"), chat.read_text(encoding="utf-8"))
             self.assertEqual((out / copied["moves"]["path"]).read_text(encoding="utf-8"), moves.read_text(encoding="utf-8"))
             self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["handoff_gate"]["schema"], "worldos.app-evidence-handoff.v1")
+            self.assertEqual(payload["handoff_gate"]["ok"], True)
+            self.assertEqual(payload["handoff_gate"]["build_sha"], "abc1234")
+            self.assertEqual(payload["handoff_gate"]["private_art_present"], True)
+            self.assertEqual(payload["handoff_gate"]["campaign_id"], "camp_test")
+            self.assertEqual(payload["handoff_gate"]["can_act"], True)
+            self.assertEqual(payload["handoff_gate"]["run_id"], "run_test")
+            self.assertEqual(payload["handoff_gate"]["enabled_action_count"], 5)
+            self.assertEqual(payload["handoff_gate"]["move_sink_present"], True)
+            self.assertEqual(payload["handoff_gate"]["evidence_gap_count"], 0)
+            self.assertEqual(payload["command"], ["python3", "qa/app_smoke_scripted.py", "--beats", "5"])
+            self.assertEqual(payload["gate_kind"], "web_scripted_smoke")
+            self.assertEqual(payload["provider"], "scripted")
+            self.assertEqual(payload["run_id"], "run_test")
+            self.assertEqual(payload["app_build_sha"], "abc1234")
+            self.assertEqual(payload["verdict"], "passed")
+            self.assertEqual(payload["started_at"], "2026-06-01T00:00:00Z")
+            review = payload["review_entrypoint"]
+            self.assertEqual(review["schema"], "worldos.app-evidence-review-entrypoint.v1")
+            self.assertEqual(review["failure_bucket"], "")
+            for category in (
+                "screenshots",
+                "app_status_snapshots",
+                "session_surface_snapshots",
+                "moves",
+                "provider_trace",
+                "network_logs",
+                "action_logs",
+            ):
+                self.assertIn(category, review["files"])
+            self.assertIn("run-dir/screenshots/beat-001.png", review["files"]["screenshots"])
+            self.assertIn("app-status.json", review["files"]["app_status_snapshots"])
+            self.assertIn("session-surface.json", review["files"]["session_surface_snapshots"])
+            self.assertIn("local-files/moves.jsonl", review["files"]["moves"])
+            self.assertIn("run-dir/scripted-provider/summary.json", review["files"]["provider_trace"])
+            self.assertIn("run-dir/network.ndjson", review["files"]["network_logs"])
+            self.assertIn("run-dir/actions.ndjson", review["files"]["action_logs"])
 
     def test_missing_optional_local_files_are_recorded_as_evidence_gaps(self):
         with tempfile.TemporaryDirectory() as td:
@@ -127,6 +192,10 @@ class ExportAppEvidenceTests(unittest.TestCase):
             gaps = {(gap["source"], gap["kind"]) for gap in payload["evidence_gaps"]}
             self.assertIn(("local_file", "chat"), gaps)
             self.assertIn(("local_file", "moves"), gaps)
+            self.assertEqual(payload["handoff_gate"]["ok"], False)
+            self.assertEqual(payload["handoff_gate"]["evidence_gap_count"], len(payload["evidence_gaps"]))
+            self.assertIn("private art not proven present", payload["handoff_gate"]["blocking_reasons"])
+            self.assertIn(f"evidence gaps: {len(payload['evidence_gaps'])}", payload["handoff_gate"]["blocking_reasons"])
 
     def test_run_dir_mode_copies_allowlisted_artifacts_and_failure_bucket(self):
         with tempfile.TemporaryDirectory() as td:
@@ -167,6 +236,9 @@ class ExportAppEvidenceTests(unittest.TestCase):
             self.assertIn("run-dir/scripted-provider/trace.ndjson", copied)
             self.assertIn("run-dir/native/transition.json", copied)
             self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["handoff_gate"]["ok"], False)
+            self.assertEqual(payload["handoff_gate"]["failure_bucket"], "move_rejected")
+            self.assertIn("failure bucket: move_rejected", payload["handoff_gate"]["blocking_reasons"])
 
 
 if __name__ == "__main__":

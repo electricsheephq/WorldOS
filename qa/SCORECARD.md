@@ -9,6 +9,10 @@
 
 > Diagnostic product evidence from the shipped Mac surface. These rows prove built-app behavior but do not
 > replace the RRI release sweep below.
+> The hybrid handoff gate (`qa/app_handoff_gate.py`) is an implementation-velocity gate: it can score
+> `handoff_score: 100` only when web deterministic smoke, built-app deterministic smoke, and a short
+> built-app Codex playtest all pass on the same clean SHA. That still is not a release verdict; the
+> Release Sweep Ledger remains the RRI source of truth.
 
 | Run | Date | app/code SHA | Surface | Provider | Evidence | Result / notes |
 |---|---|---|---|---|---|---|
