@@ -610,6 +610,71 @@ def build_vm_persona_commands(config: PreflightConfig) -> list[str]:
     return commands
 
 
+def lane_auth_ready(agent: str, tools: dict) -> bool:
+    if agent == "codex":
+        codex = tools.get("codex_auth", {})
+        return codex.get("auth_status") == "proven" and bool(codex.get("mcp_override_supported"))
+    if agent == "claude":
+        return bool(tools.get("claude", {}).get("available"))
+    return False
+
+
+def readiness_summary(
+    config: PreflightConfig,
+    *,
+    ready: bool,
+    repo: dict,
+    tools: dict,
+    private_art: dict,
+    repo_files: dict,
+    required_tools: Sequence[str],
+) -> dict:
+    """Compact path-free readiness object for agent routing."""
+    same_sha_ready = (
+        bool(config.expected_sha)
+        and repo.get("expected_sha_match") is True
+        and repo.get("dirty") is False
+        and bool(repo.get("origin_main_query", {}).get("ok"))
+    )
+    required_tools_ready = all(bool(tools.get(tool, {}).get("available")) for tool in required_tools) and bool(
+        tools.get("playwright_node_module", {}).get("available")
+    ) and bool(tools.get("playwright_chromium", {}).get("available"))
+    persona_briefs_ready = all(
+        bool(item.get("present")) for item in repo_files.get("required_files", {}).values()
+    )
+    private_art_ready = config.private_art_mode == "required" and bool(private_art.get("private_root_present"))
+    artifact_return_ready = bool(config.artifact_return_target.strip())
+    provider_auth_ready = lane_auth_ready(config.provider, tools)
+    player_agent_auth_ready = lane_auth_ready(config.player_agent, tools)
+
+    checks = {
+        "repo_state": same_sha_ready,
+        "required_tools": required_tools_ready,
+        "provider_auth": provider_auth_ready,
+        "player_agent_auth": player_agent_auth_ready,
+        "persona_briefs": persona_briefs_ready,
+        "private_art": private_art_ready,
+        "artifact_return": artifact_return_ready,
+    }
+    return {
+        "safe_to_run_personas": bool(ready),
+        "release_verdict": False,
+        "expected_sha": config.expected_sha,
+        "repo_head_short": repo.get("head_short") or "",
+        "same_sha_ready": same_sha_ready,
+        "provider": config.provider,
+        "player_agent": config.player_agent,
+        "provider_auth_ready": provider_auth_ready,
+        "player_agent_auth_ready": player_agent_auth_ready,
+        "required_tools_ready": required_tools_ready,
+        "persona_briefs_ready": persona_briefs_ready,
+        "private_art_ready": private_art_ready,
+        "artifact_return_ready": artifact_return_ready,
+        "mac_handoff_required": True,
+        "blocking_categories": [name for name, passed in checks.items() if not passed],
+    }
+
+
 def build_report(
     config: PreflightConfig,
     *,
@@ -660,6 +725,15 @@ def build_report(
         "tools": tools,
         "repo_files": repo_files,
         "private_art": art,
+        "readiness": readiness_summary(
+            config,
+            ready=ready,
+            repo=repo,
+            tools=tools,
+            private_art=art,
+            repo_files=repo_files,
+            required_tools=required_tools,
+        ),
         "environment": env_snapshot(env or dict(os.environ)),
         "rri_plan": {
             "expected_personas": config.personas,
@@ -717,6 +791,11 @@ def markdown_report(report: dict) -> str:
         f"- Dirty: `{report['repo'].get('dirty')}`",
         f"- Origin/main query: `{str(report['repo'].get('origin_main_query', {}).get('ok')).lower()}`",
         f"- Queried origin/main: `{report['repo'].get('origin_main_query', {}).get('head_short') or 'unknown'}`",
+        "",
+        "## Readiness",
+        "",
+        f"- Safe to run personas: `{str(report.get('readiness', {}).get('safe_to_run_personas')).lower()}`",
+        f"- Blocking categories: `{','.join(report.get('readiness', {}).get('blocking_categories') or []) or 'none'}`",
         "",
         "## Blockers",
         "",
