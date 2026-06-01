@@ -143,6 +143,7 @@ def make_config(tmp: Path, *, expected_sha: str = "deadbee") -> preflight.Prefli
         budget="12.00",
         concurrency=1,
         port=8785,
+        min_memory_gb=0,
     )
 
 
@@ -189,6 +190,7 @@ class SupportVMPreflightTests(unittest.TestCase):
         self.assertEqual(args.private_art_mode, "required")
         self.assertEqual(args.provider, "codex")
         self.assertEqual(args.player_agent, "codex")
+        self.assertEqual(args.min_memory_gb, 24)
 
     def test_env_snapshot_redacts_secret_values_but_keeps_safe_paths(self):
         snapshot = preflight.env_snapshot(
@@ -263,6 +265,7 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertTrue(readiness["persona_briefs_ready"])
             self.assertTrue(readiness["private_art_ready"])
             self.assertTrue(readiness["artifact_return_ready"])
+            self.assertTrue(readiness["host_capacity_ready"])
             self.assertTrue(readiness["mac_handoff_required"])
             self.assertFalse(readiness["release_verdict"])
             self.assertEqual(readiness["blocking_categories"], [])
@@ -271,6 +274,18 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertNotIn(str(config.repo), readiness_blob)
             self.assertNotIn(str(config.art_root), readiness_blob)
             self.assertNotIn(config.artifact_return_target, readiness_blob)
+
+    def test_report_blocks_when_host_memory_is_below_required_capacity(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            config.min_memory_gb = 999
+
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=fake_which, env={})
+
+            self.assertFalse(report["ready_for_rri"])
+            self.assertFalse(report["readiness"]["host_capacity_ready"])
+            self.assertIn("host memory", "\n".join(report["blockers"]))
+            self.assertIn("host_capacity", report["readiness"]["blocking_categories"])
 
     def test_report_flags_dirty_repo_and_expected_sha_mismatch(self):
         with tempfile.TemporaryDirectory() as td:

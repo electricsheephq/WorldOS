@@ -72,6 +72,7 @@ class PreflightConfig:
     budget: str
     concurrency: int
     port: int
+    min_memory_gb: int = 24
     provider: str = "codex"
     player_agent: str = "codex"
 
@@ -349,6 +350,21 @@ def inspect_host(repo: Path, artifact_dir: Path) -> dict:
         "repo_disk": disk_summary(repo),
         "artifact_disk": disk_summary(artifact_dir),
     }
+
+
+def host_capacity_blockers(host: dict, min_memory_gb: int) -> tuple[list[str], list[str]]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if min_memory_gb <= 0:
+        return blockers, warnings
+    memory_total_gb = host.get("memory_total_gb")
+    if memory_total_gb is None:
+        blockers.append(f"host memory could not be determined; require at least {min_memory_gb} GB for VM RRI readiness")
+    elif memory_total_gb < min_memory_gb:
+        blockers.append(
+            f"host memory {memory_total_gb} GB is below required {min_memory_gb} GB for VM RRI readiness"
+        )
+    return blockers, warnings
 
 
 def inspect_tool(
@@ -637,6 +653,7 @@ def readiness_summary(
     tools: dict,
     private_art: dict,
     repo_files: dict,
+    host: dict,
     required_tools: Sequence[str],
 ) -> dict:
     """Compact path-free readiness object for agent routing."""
@@ -656,6 +673,10 @@ def readiness_summary(
     artifact_return_ready = bool(config.artifact_return_target.strip())
     provider_auth_ready = lane_auth_ready(config.provider, tools)
     player_agent_auth_ready = lane_auth_ready(config.player_agent, tools)
+    host_memory = host.get("memory_total_gb")
+    host_capacity_ready = config.min_memory_gb <= 0 or (
+        host_memory is not None and host_memory >= config.min_memory_gb
+    )
 
     checks = {
         "repo_state": same_sha_ready,
@@ -665,6 +686,7 @@ def readiness_summary(
         "persona_briefs": persona_briefs_ready,
         "private_art": private_art_ready,
         "artifact_return": artifact_return_ready,
+        "host_capacity": host_capacity_ready,
     }
     return {
         "safe_to_run_personas": bool(ready),
@@ -680,6 +702,8 @@ def readiness_summary(
         "persona_briefs_ready": persona_briefs_ready,
         "private_art_ready": private_art_ready,
         "artifact_return_ready": artifact_return_ready,
+        "host_capacity_ready": host_capacity_ready,
+        "min_memory_gb": config.min_memory_gb,
         "mac_handoff_required": True,
         "blocking_categories": [name for name, passed in checks.items() if not passed],
     }
@@ -710,8 +734,10 @@ def build_report(
         config.provider,
         config.player_agent,
     )
-    blockers.extend(repo_blockers + tool_blockers + art_blockers + file_blockers)
-    warnings.extend(repo_warnings + tool_warnings + art_warnings + file_warnings)
+    host = inspect_host(config.repo, config.artifact_dir)
+    capacity_blockers, capacity_warnings = host_capacity_blockers(host, config.min_memory_gb)
+    blockers.extend(repo_blockers + tool_blockers + art_blockers + file_blockers + capacity_blockers)
+    warnings.extend(repo_warnings + tool_warnings + art_warnings + file_warnings + capacity_warnings)
 
     # #466 release-RRI readiness needs private art evidence; optional/no-art modes
     # are allowed for diagnostics but must not produce a green readiness artifact.
@@ -730,7 +756,7 @@ def build_report(
         "release_verdict": False,
         "blockers": blockers,
         "warnings": warnings,
-        "host": inspect_host(config.repo, config.artifact_dir),
+        "host": host,
         "repo": repo,
         "tools": tools,
         "repo_files": repo_files,
@@ -742,6 +768,7 @@ def build_report(
             tools=tools,
             private_art=art,
             repo_files=repo_files,
+            host=host,
             required_tools=required_tools,
         ),
         "environment": env_snapshot(env or dict(os.environ)),
@@ -802,6 +829,11 @@ def markdown_report(report: dict) -> str:
         f"- Origin/main query: `{str(report['repo'].get('origin_main_query', {}).get('ok')).lower()}`",
         f"- Queried origin/main: `{report['repo'].get('origin_main_query', {}).get('head_short') or 'unknown'}`",
         "",
+        "## Host Capacity",
+        "",
+        f"- Memory: `{report['host'].get('memory_total_gb')}` GB",
+        f"- Minimum memory: `{report.get('readiness', {}).get('min_memory_gb')}` GB",
+        "",
         "## Readiness",
         "",
         f"- Safe to run personas: `{str(report.get('readiness', {}).get('safe_to_run_personas')).lower()}`",
@@ -856,6 +888,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--budget", default="12.00")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--port", type=int, default=8785)
+    parser.add_argument("--min-memory-gb", type=int, default=24, help="Minimum host memory required for VM RRI readiness")
     parser.add_argument("--provider", choices=PERSONA_PROVIDERS, default="codex")
     parser.add_argument("--player-agent", choices=PLAYER_AGENTS, default="codex")
     parser.add_argument("--no-fail", action="store_true", help="Write the report and exit 0 even if blockers exist")
@@ -876,6 +909,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         budget=args.budget,
         concurrency=args.concurrency,
         port=args.port,
+        min_memory_gb=args.min_memory_gb,
         provider=args.provider,
         player_agent=args.player_agent,
     )
