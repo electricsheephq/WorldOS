@@ -78,7 +78,12 @@ if m:
 " 2>/dev/null)"
 
   if [ -z "$STRIPPED" ]; then
-    echo "[score_openclaw] attempt $attempt: empty reply for $(basename "$OUT") (transient gateway/rate?); retrying…" >&2
+    # GUARD: an empty reply is NOT automatically a rate blip. The gateway may have
+    # rejected the call outright (e.g. the ~100-200KB prompt + a fat environment
+    # crossing the execve ARG_MAX budget when passed via --message, or an auth
+    # failure). Surface the real stderr tail instead of silently calling it transient.
+    echo "[score_openclaw] attempt $attempt: EMPTY reply for $(basename "$OUT") — gateway returned no payload text. This may be E2BIG (prompt too large for --message argv), auth, or rate. stderr tail:" >&2
+    tail -n 20 "${OUT%.json}.oc.err" >&2 2>/dev/null || echo "[score_openclaw]   (no stderr captured at ${OUT%.json}.oc.err)" >&2
     sleep 5
     continue
   fi
@@ -94,5 +99,6 @@ if m:
   sleep 5
 done
 
-echo "[score_openclaw] FAILED after $attempt attempts: $OUT" >&2
+echo "[score_openclaw] FAILED after $attempt attempts: $OUT — last stderr tail:" >&2
+tail -n 20 "${OUT%.json}.oc.err" >&2 2>/dev/null || echo "[score_openclaw]   (no stderr captured at ${OUT%.json}.oc.err)" >&2
 exit 1
