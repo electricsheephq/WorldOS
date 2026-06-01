@@ -589,6 +589,22 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("composerMode.placeholder", source)
         self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive}", source)
 
+    def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
+        # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
+        # posted the Continue move but left the composer saying Active Abby / Say. Immediate
+        # quick actions now reset the free-text composer to its default mode before posting.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        action_move = source.index("if (action.move)")
+        reset_mode = source.index('setComposerModeId("do");', action_move)
+        clear_input = source.index('setInput("");', action_move)
+        post_move = source.index("postMove(action.move, action.label, action.id);", action_move)
+        self.assertLess(reset_mode, post_move)
+        self.assertLess(clear_input, post_move)
+
     def test_openworlds_table_renders_all_actions_without_truncation(self):
         # #G3: the palette must not silently cap the action list. The read model emits up to 8
         # verbs (exploration: say/do/check/continue/cast/use + combat: attack/bonus/reaction);
