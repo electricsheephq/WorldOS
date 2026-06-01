@@ -360,8 +360,8 @@ PY
 
 log_engine_narration() {
   local campaign_id="$1" text="$2"
-  [ -n "${campaign_id//[[:space:]]/}" ] || return 0
-  [ -n "${text//[[:space:]]/}" ] || return 0
+  [ -n "${campaign_id//[[:space:]]/}" ] || return 1
+  [ -n "${text//[[:space:]]/}" ] || return 1
   CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" \
     uv run --directory "$ROOT/servers/engine" python - "$campaign_id" "$text" <<'PY'
 import sys

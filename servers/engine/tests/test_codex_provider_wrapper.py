@@ -192,6 +192,8 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     assert "Do not call log_event for player-facing narration or dialogue in this provider wrapper" in source
     assert "do not call log_event for the full opening narration" in source
     assert "log_engine_narration" in source
+    assert '[ -n "${campaign_id//[[:space:]]/}" ] || return 1' in source
+    assert '[ -n "${text//[[:space:]]/}" ] || return 1' in source
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
     assert source.count("$WRAPPER_NARRATION_LOG_RULE") == 3
     assert 'log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$REPLY"' in source
