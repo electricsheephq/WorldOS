@@ -158,11 +158,15 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
         if payload:
             payload.setdefault("provider", provider)
             payload.setdefault("failed_or_error_count", 0)
+            payload.setdefault("provider_infra_warning_count", 0)
+            payload.setdefault("provider_infra_samples", [])
             return payload
 
     failed = 0
+    infra_warnings = 0
     parsed = 0
     samples: list[str] = []
+    infra_samples: list[str] = []
     patterns = ("*stdout*.jsonl", "*stderr*.log", "*.ndjson", "*.jsonl", "*.log", "*.txt")
     seen: set[Path] = set()
     for pattern in patterns:
@@ -198,6 +202,12 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
                             samples.append(line[:300])
                     continue
                 lower = line.lower()
+                is_infra_warning = "codex_core::arc_monitor" in lower and "safety monitor returned non-success status" in lower
+                if is_infra_warning:
+                    infra_warnings += 1
+                    if len(infra_samples) < 5:
+                        infra_samples.append(line[:300])
+                    continue
                 is_bad = any(marker in lower for marker in (
                     '"is_error":true',
                     "extra_forbidden",
@@ -219,7 +229,9 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
         "trace_exists": provider_dir.is_dir(),
         "line_count": parsed,
         "failed_or_error_count": failed,
+        "provider_infra_warning_count": infra_warnings,
         "samples": samples,
+        "provider_infra_samples": infra_samples,
     }
 
 
