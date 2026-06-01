@@ -10,7 +10,7 @@
    A loaded PC/companion, however, carries a random instance id ("char_40c15af4c9fc") that
    matches no art — so we derive the scope from slug(name), which resolves real faces for
    canon heroes and degrades to the silhouette (via Img's onError) for portrait-less ones. */
-function portraitScope(p) {
+function characterPortraitScope(p) {
   const s = (p && p.name && window.slug) ? window.slug(p.name) : "";
   if (s) return "portrait-" + s;
   return (p && p.id) ? "portrait-" + p.id : "";
@@ -93,7 +93,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
               : "inset 0 0 0 1px rgba(140,100,60,0.2)",
             textAlign: "left",
           }}>
-            <Img scope={portraitScope(p)} label={p.name} w={36} h={44} framed />
+            <Img scope={characterPortraitScope(p)} label={p.name} w={36} h={44} framed />
             <div>
               <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
                 {p.name}
@@ -131,7 +131,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         {/* Hero header card */}
         <Panel framed style={{ padding: 22 }}>
           <div style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 22, alignItems: "start" }}>
-            <Img scope={portraitScope(hero)} label={`${hero.name} · portrait`} w={140} h={170} framed />
+            <Img scope={characterPortraitScope(hero)} label={`${hero.name} · portrait`} w={140} h={170} framed />
             <div>
               <div className="eyebrow" style={{ color: "var(--crimson)" }}>{hero.alignment}</div>
               <h1 className="h1" style={{ marginTop: 2 }}>{hero.name}</h1>
@@ -1201,4 +1201,4 @@ function FeatsTab({ hero }) {
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, portraitScope, spellMeta });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, characterPortraitScope, spellMeta });

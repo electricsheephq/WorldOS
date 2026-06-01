@@ -70,6 +70,20 @@ class PortraitArtRouteTests(unittest.TestCase):
         self.assertIn("Img scope=", source)
         self.assertIn("portrait-", source)
 
+    def test_screen_character_portrait_scope_does_not_collide_with_create_gallery_scope(self):
+        # screen-create.jsx owns a gallery helper named portraitScope(index). The character
+        # sheet must not use the same global helper name for party members, or the later-loaded
+        # create screen overwrites it and Heroes falls back to portrait placeholders.
+        status, ctype, body = self._get("/openworlds/screen-character.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("function characterPortraitScope(p)", source)
+        self.assertIn("scope={characterPortraitScope(p)}", source)
+        self.assertIn("scope={characterPortraitScope(hero)}", source)
+        self.assertNotIn("function portraitScope(p)", source)
+
     def test_screen_table_uses_img_render_bridge_for_party_portraits(self):
         # screen-table.jsx must use <Img scope="portrait-…"> in the PartyRow component
         # for each PC in the party list / turn order panel.
