@@ -30,11 +30,13 @@ class FakeRunner:
         self.remote_query_ok = remote_query_ok
         self.remote_query_head = remote_query_head or head
         self.remote_query_stderr = remote_query_stderr
+        self.commands = []
         if create_chromium:
             self.chromium_path.parent.mkdir(parents=True, exist_ok=True)
             self.chromium_path.write_text("fake browser", encoding="utf-8")
 
     def __call__(self, cmd, cwd=None, timeout=8):
+        self.commands.append(tuple(cmd))
         base = Path(cmd[0]).name
         args = tuple(cmd[1:])
         if base == "git":
@@ -80,7 +82,7 @@ class FakeRunner:
             return ok(str(self.chromium_path))
         if base == "node" and args[:1] == ("-e",):
             return ok("/fake/node_modules/playwright/index.js")
-        if base == "codex" and args == ("auth", "status"):
+        if base == "codex" and args == ("login", "status"):
             return ok(self.codex_auth_output)
         return fail("unexpected command")
 
@@ -407,6 +409,16 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertFalse(report["ready_for_rri"])
             self.assertEqual(report["tools"]["codex_auth"]["auth_status"], "not_proven")
             self.assertIn("Codex CLI auth/profile status is not proven", report["blockers"])
+
+    def test_codex_auth_probe_uses_supported_login_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            runner = FakeRunner(config.repo)
+            report = preflight.build_report(config, runner=runner, which=fake_which, env={})
+            self.assertTrue(report["ready_for_rri"])
+            self.assertEqual(report["tools"]["codex_auth"]["auth_probe_command"], "codex login status")
+            self.assertTrue(any(tuple(command[1:]) == ("login", "status") for command in runner.commands))
+            self.assertFalse(any(tuple(command[1:]) == ("auth", "status") for command in runner.commands))
 
     def test_codex_auth_classifier_uses_word_boundaries(self):
         self.assertFalse(preflight.has_auth_marker("inactive", ("active",)))
