@@ -57,7 +57,9 @@ preflight must pass before a VM sweep can count toward #466; if `origin/main` is
 the VM, fix the VM repo credentials/sync lane before running personas.
 The default VM lane is Codex DM plus Codex UI player; Claude is only a readiness dependency when
 `--provider claude` or `--player-agent claude` is selected. The Codex lane requires Codex CLI
-`>=0.120.0` for per-invocation MCP server overrides.
+`>=0.120.0` for per-invocation MCP server overrides. Codex auth readiness is probed with
+`codex login status`; a recognized `Not logged in` response still blocks the VM sweep until auth/config is
+intentionally installed or verified.
 
 ## Browser And Persona Diagnostics
 

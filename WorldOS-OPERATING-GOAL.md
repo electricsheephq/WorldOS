@@ -5,12 +5,13 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T18:02:45+07:00 repo Codex persona-lane patch; latest handoff build remains 9545383
+     AS OF:        2026-06-01T19:21:00+07:00 post-#517 support-VM preflight fix; latest handoff build remains 9545383
      MAIN BASELINE:
                    Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
                    support-VM preflight artifact gate, and the app handoff gate was rerun on that
-                   exact SHA). Current `origin/main` may contain docs-only commits above that proof;
-                   do not treat docs-only tips as new product proof. Earlier product-code baseline
+                   exact SHA). Current `origin/main` may contain non-product docs/QA-tooling commits
+                   above that proof, including #516/#517; do not treat a newer tip as new app proof
+                   until the Mac handoff gate reruns on that same SHA. Earlier product-code baseline
                    `fd9dba5` remains preserved as historical proof.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
@@ -26,11 +27,12 @@
                    `.app` smoke/play proof stays on this Mac or macOS CI.
                    Current local preflight note: a read-only operator-endpoint scout reached
                    `evaos-support` (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`,
-                   but that checkout was stale (`4524b3e`) and behind the `9545383` app-proof baseline.
-                   GitHub origin query/sync failed in batch mode (`could not read Username for
-                   'https://github.com'`), Codex auth/config was not proven, and artifact return needs
-                   remote staging plus copy-back to Lexar. Do not run #466 there until an operator
-                   approves repo sync/auth setup and the preflight passes.
+                   but that checkout remains stale (`4524b3e`). Post-#517 read-only probe confirmed
+                   the VM can query GitHub origin (`origin/main=9140cc4...`), but no VM sync was run.
+                   Codex CLI `0.120.0` recognizes `codex login status` and reports `Not logged in`;
+                   Codex auth/config is still not proven, and artifact return needs remote staging
+                   plus copy-back to Lexar. Do not run #466 there until an operator approves repo
+                   sync/auth setup and the preflight passes.
      LAST MEASURED GATE BUILD:
                    f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
                    HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
@@ -58,12 +60,12 @@
      NEXT ACTION:  #479 is closed; #504 gives a fast GUI velocity gate; #505 lets RRI consume
                    Mac handoff proof through `--handoff-json`.
                    Do not claim release. Run #466 for a trustworthy clean RRI failure list/result.
-                   For same-SHA RRI, sync the support VM checkout to `9545383`, run
-                   `python3 qa/support_vm_preflight.py --expected-sha 9545383 --provider codex --player-agent codex ...`,
-                   and pair
-                   the VM persona artifacts with the `9545383` Mac handoff JSON above. If a
-                   newer release-candidate SHA is used instead, rerun the Mac handoff on that
-                   same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps
+                   Cleanest current candidate is `9140cc4` because it includes the working
+                   `codex login status` preflight probe: sync the VM checkout to `9140cc4`, run
+                   `python3 qa/support_vm_preflight.py --expected-sha 9140cc4 --provider codex --player-agent codex ...`,
+                   and rerun the Mac handoff gate on `9140cc4` before RRI rollup. If deliberately
+                   pinning persona artifacts to older `9545383`, keep the tooling/proof split explicit.
+                   The 32GB support VM runs heavy backend/persona sweeps
                    only after the preflight writes a redacted ready-for-RRI artifact, including a
                    successful `origin/main` query from the VM.
                    If the VM route is still unavailable, record that as the blocker and
@@ -231,7 +233,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T17:49:00+07:00 — latest same-SHA app proof is 9545383)
+## 9. CURRENT STATUS (2026-06-01T19:21:00+07:00 — latest same-SHA app proof is 9545383)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
@@ -245,8 +247,10 @@ verifier; can revert the goal to "fix" anytime.
   added the hybrid 100/100 app handoff gate. PR #505 then hardened the RRI bridge so Mac handoff
   evidence can be supplied with `--handoff-json` while support-VM persona artifacts supply the heavy
   sweep. PR #506 then synced these docs to the `fd9dba5` proof without changing product code. PR #508 added the
-  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/ClawDnD-val` was
-  fast-forwarded to `9545383`, and the Mac app handoff was rerun on that exact SHA.
+  support-VM preflight artifact gate. PR #516 added the Codex/Codex support-VM persona lane, and PR #517
+  fixed that preflight's Codex auth probe to use `codex login status`. The local app/private-art checkout
+  `/Users/lume/ClawDnD-val` was fast-forwarded to `9140cc4`, but the latest same-SHA Mac handoff proof
+  remains `9545383`.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
@@ -269,17 +273,19 @@ verifier; can revert the goal to "fix" anytime.
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
 - The next gate evidence step is issue #466: a clean non-partial five-persona RRI from one explicit SHA.
-  The easiest current path is a support-VM sweep pinned to `9545383`, gated first by
-  `qa/support_vm_preflight.py --expected-sha 9545383`, and paired with the `9545383` handoff JSON. If the
-  sweep runs on a newer `origin/main` tip, rerun the Mac handoff on that same SHA first.
+  The cleanest current path is a support-VM sweep pinned to `9140cc4`, gated first by
+  `qa/support_vm_preflight.py --expected-sha 9140cc4`, and paired with a fresh Mac handoff JSON from
+  that same `9140cc4` SHA. If the sweep is deliberately pinned to older `9545383`, document the tooling/proof
+  split explicitly because #517's working Codex auth probe lives above that proof SHA.
   Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. In this Codex Desktop
   session a read-only operator-endpoint scout reached the VM and confirmed `evaos-support` has ~32 GB RAM,
   16 CPUs, `git`, `python3`, `uv`, Node/npm, Codex CLI, Playwright, and private art, but its WorldOS checkout
-  is `4524b3e` and behind the `9545383` proof baseline; GitHub origin query/sync failed in batch mode; Codex
-  auth/config was not proven. Get operator approval for VM repo sync/auth setup, verify `origin/main` is
-  queryable from the VM, and define artifact return before the heavy sweep. Mac-only built-app launch/play
-  proof stays on this Mac or macOS CI.
+  is still stale at `4524b3e`. Post-#517 read-only probing confirmed GitHub origin query now succeeds from
+  the checkout and reports `origin/main=9140cc4...`, but the VM was not synced. Codex CLI `0.120.0`
+  recognizes `codex login status` and reports `Not logged in`, so Codex auth/config is still not proven.
+  Get operator approval for VM repo sync/auth setup and define artifact return before the heavy sweep.
+  Mac-only built-app launch/play proof stays on this Mac or macOS CI.
 - Built-app diagnostic evidence exists, but release truth is still absent. The PR #475 pre-merge app-code
   proof `8bd833f` (`codex-app-headproof-20260601T043909`) was trace-clean. The post-merge main proof
   `32ca561` (`post475-main-app-proof-20260601T051230`) was playable with private art, Alfira, five enabled

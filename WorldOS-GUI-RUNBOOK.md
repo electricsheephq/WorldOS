@@ -10,8 +10,9 @@
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
 > and the default place to build/run/test the GUI and native app. The latest same-SHA app proof is
-> `9545383` after #508; later docs-only commits may sit above that proof without becoming new product
-> proof. Verify `origin/main` before acting, and rerun the handoff gate before pairing newer persona artifacts.
+> `9545383` after #508; later non-product docs/QA-tooling commits may sit above that proof without becoming
+> new product proof. Current `main@9140cc4` includes #517's working `codex login status` preflight probe;
+> rerun the handoff gate before pairing newer persona artifacts.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -252,13 +253,13 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   ```bash
   python3 qa/support_vm_preflight.py \
     --repo /root/worldos-qa/WorldOS \
-    --expected-sha 9545383 \
+    --expected-sha 9140cc4 \
     --provider codex \
     --player-agent codex \
     --art-root /root/worldos-qa/WorldOS \
     --private-art-mode required \
-    --artifact-dir /tmp/worldos-support-vm-preflight-9545383 \
-    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/9545383-preflight
+    --artifact-dir /tmp/worldos-support-vm-preflight-9140cc4 \
+    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/9140cc4-preflight
   ```
   The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
   `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/origin/tool/auth/private-art
@@ -268,10 +269,11 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private
-  art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e` and behind
-  the `9545383` proof baseline; `git` cannot query/sync the HTTPS origin in batch mode; Codex auth/config is
-  not proven; `/Volumes/LEXAR/Codex` does not exist on the VM. Before #466, approve/sync the VM checkout, prove
-  Codex auth, make `origin/main` queryable from the VM, set a remote staging path, and copy artifacts back to
+  art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e`; post-#517
+  read-only probing confirmed `git ls-remote origin refs/heads/main` now succeeds and reports
+  `9140cc4...`, but no sync was run. `codex login status` is recognized and reports `Not logged in`, so
+  Codex auth/config is not proven. `/Volumes/LEXAR/Codex` does not exist on the VM. Before #466,
+  approve/sync the VM checkout, prove Codex auth, set a remote staging path, and copy artifacts back to
   local Lexar.
 - RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
   persona, behavior, image/network, palette-live, and score evidence only when `run.json`, `score.json`,
@@ -279,10 +281,11 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   must remain `partial` / `harness_contaminated`.
 - Split Mac/VM rollup command shape: pass the Mac proof into RRI as
   `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T100304Z-9545383/handoff.json`
-  alongside VM persona run dirs from the same `9545383` SHA. RRI should satisfy the native gate from the
-  Mac handoff bundle only if all required handoff gates and manifests are same-SHA, clean,
-  private-art-present, and gap-free. If the VM runs a newer SHA, rerun `qa/app_handoff_gate.py` on that
-  newer SHA first.
+  only when VM persona run dirs are also from `9545383`. For current `main@9140cc4`, rerun
+  `qa/app_handoff_gate.py` on this Mac and pass that newer same-SHA handoff JSON instead. RRI should
+  satisfy the native gate from the Mac handoff bundle only if all required handoff gates and manifests are
+  same-SHA, clean, private-art-present, and gap-free. If the VM runs a newer SHA, rerun
+  `qa/app_handoff_gate.py` on that newer SHA first.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
