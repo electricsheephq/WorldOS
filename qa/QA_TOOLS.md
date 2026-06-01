@@ -55,6 +55,10 @@ RRI requires a non-partial five-persona result on one build SHA. A handoff gate 
 app proof through `--handoff-json`, but it cannot fill in missing persona artifacts. The support-VM
 preflight must pass before a VM sweep can count toward #466; if `origin/main` is not queryable from
 the VM, fix the VM repo credentials/sync lane before running personas.
+When a sweep uses remote/persona artifacts plus Mac handoff proof, pass both evidence files into
+the RRI rollup path: `qa/release_gate.sh --handoff-json <handoff.json> --support-preflight-json
+<support_vm_preflight.json> ...`. Missing or stale support-preflight evidence must stay a failed
+release gate, not a warning.
 The default VM lane is Codex DM plus Codex UI player; Claude is only a readiness dependency when
 `--provider claude` or `--player-agent claude` is selected. The Codex lane requires Codex CLI
 `>=0.120.0` for per-invocation MCP server overrides.

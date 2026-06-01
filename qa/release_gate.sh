@@ -18,6 +18,7 @@
 #
 # Usage:
 #   qa/release_gate.sh [--personas a,b,c] [--lean] [--port 8765] [--budget 12]
+#                      [--handoff-json path] [--support-preflight-json path]
 #   qa/release_gate.sh --preflight-only      # just run the integrity checks, no sweep
 #
 # Host discipline: runs ONE heavy claude -p stream at a time (the host is 16GB; two
@@ -29,12 +30,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
 PERSONAS="newbie,veteran,adversarial,narrative,optimizer"
 LEAN=0; PORT="${WOS_APP_PREFERRED_PORT:-8765}"; BUDGET="12.00"; PREFLIGHT_ONLY=0
+HANDOFF_JSON=""; SUPPORT_PREFLIGHT_JSON=""
 RUNID="gate-$(git rev-parse --short HEAD 2>/dev/null || echo nohead)"
 while [ $# -gt 0 ]; do case "$1" in
   --personas) PERSONAS="$2"; shift 2;;
   --lean) LEAN=1; shift;;
   --port) PORT="$2"; shift 2;;
   --budget) BUDGET="$2"; shift 2;;
+  --handoff-json) HANDOFF_JSON="$2"; shift 2;;
+  --support-preflight-json) SUPPORT_PREFLIGHT_JSON="$2"; shift 2;;
   --preflight-only) PREFLIGHT_ONLY=1; shift;;
   *) echo "unknown arg: $1"; exit 2;;
 esac; done
@@ -157,6 +161,15 @@ preflight() {
   [ -f "$ROOT/qa/playwright/node_modules/playwright/package.json" ] \
     || fail "Playwright not installed at qa/playwright/node_modules/playwright. Run: (cd qa/playwright && npm install && npx playwright install chromium)"
   ok "all orchestrated tools and command deps present"
+
+  if [ -n "$HANDOFF_JSON" ]; then
+    [ -s "$HANDOFF_JSON" ] || fail "--handoff-json does not point to a readable file"
+    ok "handoff evidence file present"
+  fi
+  if [ -n "$SUPPORT_PREFLIGHT_JSON" ]; then
+    [ -s "$SUPPORT_PREFLIGHT_JSON" ] || fail "--support-preflight-json does not point to a readable file"
+    ok "support preflight evidence file present"
+  fi
   echo "── preflight OK ──────────────────────────────────────────────────"
 }
 
@@ -266,17 +279,26 @@ except Exception:
 PY
 then PALETTE="true"; fi
 
+RRI_ARGS=(
+  --runs "$RUN_DIRS"
+  --expected-personas "$PERSONAS"
+  --behavioral "$BEHAV"
+  --ui-audit "$AUDIT"
+  --palette-live "$PALETTE"
+  --ui-audit-log "$UI_AUDIT_LOG"
+  --build-sha "$(git rev-parse --short HEAD 2>/dev/null)"
+  --out "$ROOT/qa/RRI.json"
+  --scorecard-row
+)
+[ -n "$STORY" ] && RRI_ARGS+=(--story "$STORY")
+[ -n "$MECH" ] && RRI_ARGS+=(--mech "$MECH")
+[ -n "$BEHAV_PATH" ] && RRI_ARGS+=(--behavioral-path "$BEHAV_PATH")
+[ -n "$PALETTE_SOURCE" ] && RRI_ARGS+=(--palette-source "$PALETTE_SOURCE")
+[ -n "$HANDOFF_JSON" ] && RRI_ARGS+=(--handoff-json "$HANDOFF_JSON")
+[ -n "$SUPPORT_PREFLIGHT_JSON" ] && RRI_ARGS+=(--support-preflight-json "$SUPPORT_PREFLIGHT_JSON")
+
 set +e
-python3 qa/release_readiness.py \
-  --runs "$RUN_DIRS" \
-  --expected-personas "$PERSONAS" \
-  ${STORY:+--story "$STORY"} ${MECH:+--mech "$MECH"} \
-  --behavioral "$BEHAV" --ui-audit "$AUDIT" --palette-live "$PALETTE" \
-  ${BEHAV_PATH:+--behavioral-path "$BEHAV_PATH"} \
-  --ui-audit-log "$UI_AUDIT_LOG" \
-  ${PALETTE_SOURCE:+--palette-source "$PALETTE_SOURCE"} \
-  --build-sha "$(git rev-parse --short HEAD 2>/dev/null)" \
-  --out "$ROOT/qa/RRI.json" --scorecard-row | tee "$ROOT/qa/ui_playtest_runs/${RUNID}-RRI.txt"
+python3 qa/release_readiness.py "${RRI_ARGS[@]}" | tee "$ROOT/qa/ui_playtest_runs/${RUNID}-RRI.txt"
 RRI_RC="${PIPESTATUS[0]}"
 set -e
 
