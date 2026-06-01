@@ -184,7 +184,7 @@ if not isinstance(pc, dict) or pc.get("error"):
     raise SystemExit("could not seat a scripted player")
 opening = (
     f"You are {pc.get('name') or spec.get('name') or 'Hero'}, standing under a steady lantern at the edge of the road. "
-    "The smoke provider is awake, the table is listening, and the next move is yours."
+    "The lantern flame steadies, the street hushes, and the next move is yours."
 )
 server.log_event(campaign_id, "narration", opening)
 print(json.dumps({"campaign_id": campaign_id, "player": pc, "opening": opening}))
@@ -231,6 +231,8 @@ while :; do
   if [ "${count:-0}" -gt "$processed" ]; then
     while IFS= read -r line; do
       [ -n "$line" ] || continue
+      beat=$((processed + 1))
+      json_append "$CHAT" "player" "$(move_chat_text "$line")"
       reply="$(
         CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$CAMPAIGN_ID" "$line" <<'PY'
 import json, sys
@@ -242,16 +244,15 @@ try:
 except json.JSONDecodeError:
     move = {"text": raw}
 text = str(move.get("text") or move.get("label") or move.get("name") or "continue").strip()
+suffix = "" if text.endswith((".", "!", "?")) else "."
 reply = (
-    f"The table accepts your move: {text}. "
-    "The lantern brightens once, confirming the scripted smoke loop handled /move deterministically."
+    f"Your choice lands: {text}{suffix} "
+    "The lantern brightens once, and a nearby voice answers from the edge of the crowd."
 )
 server.log_event(campaign_id, "narration", reply)
 print(reply)
 PY
       )"
-      beat=$((processed + 1))
-      json_append "$CHAT" "player" "$(move_chat_text "$line")"
       json_append "$CHAT" "dm" "$reply" '{"engine_logged":true}'
       trace_json "move_resolved" "$beat" "$line"
       processed=$((processed + 1))

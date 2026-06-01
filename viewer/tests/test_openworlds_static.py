@@ -587,6 +587,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("actionsInCombat", source)
         self.assertIn("explorationActions.map", source)
         self.assertIn("combatActions.map", source)
+        self.assertIn("a.detail || a.groupLabel", source)
         # The grouping keys off the engine-mutated combat gauge (encounter.active / a combat verb
         # being available), never off fiction — keeping the gates/triggers invariant.
         self.assertIn("surface?.encounter?.active", source)

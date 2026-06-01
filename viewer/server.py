@@ -1396,6 +1396,7 @@ def _session_available_actions(action_model: dict) -> list[dict]:
             item = {
                 "id": _text(action.get("id")),
                 "label": _text(action.get("label")),
+                "detail": _text(action.get("detail")),
                 "group": group_id,
                 "groupLabel": group_label,
                 "available": bool(action.get("available")),
@@ -1516,6 +1517,9 @@ def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
         seq = row.get("seq")
         if isinstance(seq, int) and not isinstance(seq, bool):
             item["seq"] = seq
+        event_at = row.get("t")
+        if isinstance(event_at, (int, float)) and not isinstance(event_at, bool):
+            item["eventAt"] = event_at
         out.append(item)
         if len(out) >= 12:
             break
@@ -5189,6 +5193,7 @@ def _action_item(
     kind: str | None = None,
     name: str | None = None,
     text: str | None = None,
+    detail: str | None = None,
     disabled_reason: str | None = None,
     ui: str | None = None,
 ) -> dict:
@@ -5207,6 +5212,8 @@ def _action_item(
         move["text"] = text
     if move:
         item["move"] = move
+    if detail:
+        item["detail"] = detail
     if ui:
         item["ui"] = ui
     return item
@@ -5302,20 +5309,20 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
                 "id": "exploration",
                 "label": "Explore",
                 "actions": [
-                    _action_item("continue", "Continue", kind="do", text="continue", disabled_reason=base_reason),
-                    _action_item("say", "Say", disabled_reason=base_reason, ui="focus-say"),
-                    _action_item("do", "Do", disabled_reason=base_reason, ui="focus-do"),
-                    _action_item("check", "Check", disabled_reason=base_reason, ui="palette-skills"),
-                    _action_item("save", "Save", disabled_reason=base_reason, ui="palette-saves"),
+                    _action_item("continue", "Continue", kind="do", text="continue", detail="Press onward", disabled_reason=base_reason),
+                    _action_item("say", "Say", detail="Speak aloud", disabled_reason=base_reason, ui="focus-say"),
+                    _action_item("do", "Do", detail="Act in world", disabled_reason=base_reason, ui="focus-do"),
+                    _action_item("check", "Check", detail="Roll a skill", disabled_reason=base_reason, ui="palette-skills"),
+                    _action_item("save", "Save", detail="Resist danger", disabled_reason=base_reason, ui="palette-saves"),
                 ],
             },
             {
                 "id": "combat",
                 "label": "Combat",
                 "actions": [
-                    _action_item("attack", "Attack", kind="attack", name="Attack", disabled_reason=turn_action_reason("action")),
-                    _action_item("bonus-action", "Bonus", kind="combat", name="Bonus Action", disabled_reason=turn_action_reason("bonus")),
-                    _action_item("reaction", "Reaction", kind="combat", name="Reaction", disabled_reason=reaction_reason()),
+                    _action_item("attack", "Attack", kind="attack", name="Attack", detail="Strike a foe", disabled_reason=turn_action_reason("action")),
+                    _action_item("bonus-action", "Bonus", kind="combat", name="Bonus Action", detail="Quick extra move", disabled_reason=turn_action_reason("bonus")),
+                    _action_item("reaction", "Reaction", kind="combat", name="Reaction", detail="Respond fast", disabled_reason=reaction_reason()),
                 ],
             },
         ],
