@@ -13,8 +13,9 @@
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
 > the owner-provided 32GB support VM (`support-vm-1`) after remote access and Codex config are
-> intentionally installed and verified; connection details are kept outside tracked docs. Mac-only
-> built-app proof remains local/macOS CI.
+> intentionally installed and verified; connection details are kept outside tracked docs. A read-only
+> scout reached the operator endpoint and found `evaos-support` suitable but stale (`4524b3e`, 19 commits
+> behind `4a0efe1`) with Codex auth/config unproven. Mac-only built-app proof remains local/macOS CI.
 
 > **This is the compaction-resilience doc.** If you are an agent resuming this project
 > after a context reset, read this top-to-bottom before doing anything. It captures the
@@ -25,7 +26,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T08:05:48+07:00 (`main@f7ab6d7`; #475/#494/#495/#496/#498/#499/#500 merged; #479 trace-clean merged-main proof archived; release notes below are historical context).
+> Last updated: 2026-06-01T15:35:00+07:00 (`main@4a0efe1`; #475/#494/#495/#496/#498/#499/#500/#501/#504 merged; #504 100/100 handoff gate passed post-merge; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -310,16 +311,18 @@ Local routing sync merged as PR #471, native provider-selection sync merged as P
 state docs synced as PR #473, Codex-DM app observability merged as PR #475, scripted smoke provider merged
 as PR #494, stable agent UI hooks merged as PR #495, failure-bucket/RRI split metadata merged as PR #496,
 and takeover truth sync merged as PR #498, followed by PR #499 recording current-main built-app proof
-and PR #500 fixing Codex-DM provider trace cancellations.
+PR #500 fixing Codex-DM provider trace cancellations, PR #501 recording that proof in docs, and
+PR #504 adding the 100/100 hybrid app handoff gate.
 The local app/private-art checkout is now synced at
-`f7ab6d7 == origin/main`; the only current gate
+`4a0efe1 == origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
-current-main built-app play is proven diagnostically on `f7ab6d7`, including private art, Codex DM, Alfira,
-five enabled actions, one accepted/resolved `/move`, no app-evidence gaps, zero failed/error provider tool
-calls, and no visible chronicle duplication in native accessibility review. With #479 proven on merged main,
-run #466 only after Mac built-app proof plus support-VM preflight,
-then prioritize clickability/chrome, launcher clarity,
+current-main fast handoff play is proven diagnostically on `4a0efe1`, including private art, Codex DM, Alfira,
+five enabled actions, one accepted/resolved `/move`, no evidence-manifest gaps, zero failed/error provider
+trace events, and a post-merge `handoff_score=100`. With #479 proven and #504 merged, run #466 only after
+support-VM routing/auth/config preflight is explicit; this session's read-only check found the local
+`support-vm-1` SSH alias did not resolve and the operator-endpoint VM checkout was stale at `4524b3e`.
+Then prioritize clickability/chrome, launcher clarity,
 live-response feel, and CRPG depth before more hardening/proxy/security work.
 
 **LATEST (2026-05-27 cont.3) — the Quest & Arc engine is COMPLETE + WIRED, all combat
