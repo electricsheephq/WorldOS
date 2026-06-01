@@ -636,6 +636,45 @@ def build_vm_persona_commands(config: PreflightConfig) -> list[str]:
     return commands
 
 
+def build_rri_rollup_command_template(config: PreflightConfig) -> str:
+    """Template for the post-sweep RRI command; placeholders are intentional."""
+    return " ".join(
+        [
+            "python3",
+            "qa/release_readiness.py",
+            "--runs",
+            "VM_PERSONA_RUN_DIRS_CSV",
+            "--expected-personas",
+            q(",".join(config.personas)),
+            "--handoff-json",
+            "SAME_SHA_MAC_HANDOFF_JSON",
+            "--support-preflight-json",
+            q(config.artifact_dir / "support_vm_preflight.json"),
+            "--build-sha",
+            q(config.expected_sha),
+            "--story",
+            "STORY_SCORER_JSON",
+            "--mech",
+            "MECHANICAL_SCORER_JSON",
+            "--behavioral",
+            "GREEN_OR_RED",
+            "--behavioral-path",
+            "BEHAVIORAL_OUTPUT_TXT",
+            "--ui-audit",
+            "PASS_OR_FAIL",
+            "--ui-audit-log",
+            "UI_AUDIT_LOG",
+            "--palette-live",
+            "TRUE_OR_FALSE",
+            "--palette-source",
+            "PALETTE_SESSION_SURFACE_JSON",
+            "--out",
+            "qa/RRI.json",
+            "--scorecard-row",
+        ]
+    )
+
+
 def lane_auth_ready(agent: str, tools: dict) -> bool:
     if agent == "codex":
         codex = tools.get("codex_auth", {})
@@ -786,11 +825,14 @@ def build_report(
             "support_vm_scope": "backend/persona artifacts only; Mac built-app/native handoff evidence is supplied separately",
             "do_not_run_on_support_vm": "qa/release_gate.sh includes Mac built-app/native proof and is not the support-VM sweep command",
             "vm_persona_sweep_commands": build_vm_persona_commands(config),
+            "support_preflight_json": str(config.artifact_dir / "support_vm_preflight.json"),
+            "support_preflight_required_for_split_rollup": True,
+            "rri_rollup_command_template": build_rri_rollup_command_template(config),
             "rollup_requires": [
                 "VM persona run dirs with run.json, score.json, network/image evidence, session_surface.final.json, and matching build_sha",
                 "VM story/mechanical scorer JSON, behavioral output, UI audit log, palette-live source, and image denominator evidence",
                 "Mac qa/app_handoff_gate.py handoff.json from the same SHA",
-                "qa/release_readiness.py rollup with --handoff-json and --build-sha",
+                "qa/release_readiness.py rollup with --handoff-json, --support-preflight-json, and --build-sha",
             ],
             "mac_handoff_required": True,
             "notes": [
@@ -860,7 +902,10 @@ def markdown_report(report: dict) -> str:
             f"- Required tools: `{','.join(report['rri_plan'].get('required_tools', []))}`",
             f"- Support VM scope: `{report['rri_plan']['support_vm_scope']}`",
             f"- Do not run on support VM: `{report['rri_plan']['do_not_run_on_support_vm']}`",
+            f"- Support preflight JSON: `{report['rri_plan'].get('support_preflight_json', '')}`",
+            f"- Split rollup requires support preflight JSON: `{str(report['rri_plan'].get('support_preflight_required_for_split_rollup')).lower()}`",
             f"- First persona command: `{(report['rri_plan'].get('vm_persona_sweep_commands') or [''])[0]}`",
+            f"- RRI rollup command template: `{report['rri_plan'].get('rri_rollup_command_template', '')}`",
             "",
             "## Teardown",
             "",
