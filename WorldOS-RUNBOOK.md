@@ -25,7 +25,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T06:50:47+07:00 (`main@19c3fd0`; #475/#494/#495/#496/#498 merged; release notes below are historical context).
+> Last updated: 2026-06-01T07:34:57+07:00 (`main@ff84444`; #475/#494/#495/#496/#498/#499 merged; #479 trace-clean branch proof at `b081092`; release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -309,13 +309,15 @@ the UX-first doc sync merged as PR #468, and first-minute click/title chrome pro
 Local routing sync merged as PR #471, native provider-selection sync merged as PR #472, takeover
 state docs synced as PR #473, Codex-DM app observability merged as PR #475, scripted smoke provider merged
 as PR #494, stable agent UI hooks merged as PR #495, failure-bucket/RRI split metadata merged as PR #496,
-and takeover truth sync merged as PR #498. The local app/private-art checkout is now synced at
-`19c3fd0 == origin/main`; the only current gate
+and takeover truth sync merged as PR #498, followed by PR #499 recording current-main built-app proof.
+The local app/private-art checkout is now synced at
+`ff84444 == origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
-current-main built-app play is proven diagnostically on `19c3fd0`, but #479 remains open because the
-provider trace still failed/cancelled engine tool calls. Close/narrow #479 with trace-clean evidence or a
-formal deterministic-vs-provider gate split, run #466 only after Mac built-app proof plus support-VM preflight,
+current-main built-app play is proven diagnostically on `19c3fd0`, and the #479 branch proof at `b081092`
+is trace-clean with zero failed/error provider tool calls and no visible chronicle duplication in native
+accessibility review. Land that branch and rerun/confirm on main if required, then run #466 only after
+Mac built-app proof plus support-VM preflight,
 then prioritize clickability/chrome, launcher clarity,
 live-response feel, and CRPG depth before more hardening/proxy/security work.
 

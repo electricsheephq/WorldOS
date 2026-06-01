@@ -8,7 +8,7 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`19c3fd0 == origin/main` after #475/#494/#495/#496/#498) and the default place to build/run/test the GUI and native app.
+> (`ff84444 == origin/main` after #475/#494/#495/#496/#498/#499) and the default place to build/run/test the GUI and native app.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -47,6 +47,15 @@
   again proved product wiring: private art present, Codex provider, Alfira active, visible narration, five
   enabled actions, writable `/move`, one accepted move, chat roles `dm, player, dm`, and `/session-surface`
   still actionable. The provider trace still had three failed/cancelled engine tool calls, so #479 stays open.
+- The #479 trace-clean branch proof
+  (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-479-traceclean-nodup-proof-20260601T003002Z/`, app-code
+  `b081092`) reran the built app with private art, Codex provider, Alfira active, five enabled actions,
+  a writable `/move`, one accepted/resolved player move, chat roles `dm, player, dm`, and `/session-surface`
+  still actionable. `app-evidence/manifest.json` had no gaps and `provider-errors.after-move.json` reported
+  zero parse errors plus zero failed/error tool calls. Native accessibility review showed exactly one opening
+  narration row and one follow-up narration row, confirming engine-logged `/chat` rows resolve turns without
+  duplicating visible prose. Treat this as branch diagnostic evidence until merged and, if required, rerun on
+  main before closing #479.
 
 ## Agent-facing app contract
 
@@ -57,7 +66,7 @@
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Agent-grade testing progress as of `19c3fd0`: #481 app-status is closed, #482 deterministic scripted
+- Agent-grade testing progress as of `ff84444`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, and #484 stable accessibility/DOM hooks are merged.
   #485 evidence bundle completion and #486 gate-split follow-through remain active. A scripted `:8899`
   harness surface can prove app observability, but it is not built-app release proof unless it came from

@@ -5,10 +5,10 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T06:50:47+07:00 current-main built-app proof archived after PR #498
+     AS OF:        2026-06-01T07:34:57+07:00 #479 trace-clean branch proof archived
      MAIN BASELINE:
-                   19c3fd0 (PRs #475, #494, #495, #496, #498 merged; verified
-                   `HEAD == origin/main` in /Users/lume/ClawDnD-val on 2026-06-01T06:50:47+07:00).
+                   ff84444 (PRs #475, #494, #495, #496, #498, #499 merged; verified
+                   `/Users/lume/ClawDnD-val` was fast-forwarded after #499).
                    Re-verify current `origin/main` before acting.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
@@ -32,6 +32,13 @@
                    narration, five enabled actions, and one `/move` resolved. It is
                    PLAYABLE diagnostic evidence, but NOT trace-clean: #479 remains open
                    because provider trace contained 3 failed/safety-cancelled tool calls.
+                   Latest trace-clean #479 branch proof is app/code `b081092`
+                   (`codex-479-traceclean-nodup-proof-20260601T003002Z`): same built-app
+                   playability proof, no app-evidence gaps, and provider trace summary
+                   records 0 parse errors and 0 failed/error tool calls; native accessibility
+                   review showed one opening narration row and one post-move narration row, not
+                   duplicate chat/event prose. This is branch diagnostic evidence until merged
+                   and, if required, rerun on main.
                    Latest deterministic built-app smoke proof is PR #495 app-code
                    `698ed65` (`ui-hooks-app-proof-20260601T054934`): scripted provider,
                    private art, Abby seated, five enabled actions, writable `/move`, one
@@ -41,8 +48,8 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Close or narrow #479 with a trace-clean current-main built-app run or
-                   deterministic-provider release split, then run #466 for a trustworthy
+     NEXT ACTION:  Open/land the #479 trace-clean branch, rerun/confirm on merged main if
+                   needed for closure, then run #466 for a trustworthy
                    clean RRI failure list/result: Mac/local or macOS CI supplies built
                    `.app` proof, while the 32GB support VM runs heavy backend/persona
                    sweeps after explicit VM preflight/auth setup. Continue #485/#486 for
@@ -186,7 +193,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T06:50:47+07:00 — current-main built-app proof archived, provider trace still noisy)
+## 9. CURRENT STATUS (2026-06-01T07:34:57+07:00 — #479 trace-clean branch proof archived)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
@@ -195,8 +202,9 @@ verifier; can revert the goal to "fix" anytime.
   `/app-status`, evidence export baseline, and docs; PR #494 added the dev-gated scripted provider;
   PR #495 added stable OpenWorlds accessibility / `data-worldos-testid` hooks; PR #496 added app
   playtest failure buckets plus RRI gate-split metadata. PR #498 synced takeover docs after those
-  merges. The local app/private-art checkout `/Users/lume/ClawDnD-val` is synced to
-  `19c3fd0 == origin/main` as of 2026-06-01T06:50:47+07:00.
+  merges. PR #499 then recorded the current-main built-app proof. The local app/private-art
+  checkout `/Users/lume/ClawDnD-val` was fast-forwarded to `ff84444 == origin/main`
+  after #499.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
@@ -205,9 +213,9 @@ verifier; can revert the goal to "fix" anytime.
   image/palette/behavioral/UI audit sources were either missing or harness-contaminated.
 - Built-app launch smoke on `cad2e00` rendered OpenWorlds with private art, but the first Resume/Play
   click still forced Claude and failed on Claude auth. PR #472 fixed that web/native selection bug.
-  The current #474 slice adds a separate Codex DM wrapper and points the native Codex adapter at it,
+  PR #475 then added a separate Codex DM wrapper and points the native Codex adapter at it,
   while keeping the older Codex actor wrapper as a constrained player/move-facade helper.
-- The new Codex-DM path has now produced local built-app first-turn evidence: private BG art loaded,
+- Early Codex-DM local built-app evidence is preserved: private BG art loaded,
   Alfira seated as `player`, visible DM narration, enabled actions, a real player move appended to
   `player_moves.jsonl`, and a post-move DM response with `can_act:true` in `/session-surface`.
   Evidence is in `/Volumes/LEXAR/Codex/worldos-built-app-proof/`:
@@ -218,7 +226,7 @@ verifier; can revert the goal to "fix" anytime.
   macOS TCC attribution contamination: `responsible=dev.clawdnd.app`, but the actual accessor was
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
-- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from `19c3fd0` or newer.
+- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from `ff84444` or newer.
   Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. Mac-only built-app
   launch/play proof stays on this Mac or macOS CI.
@@ -230,8 +238,13 @@ verifier; can revert the goal to "fix" anytime.
   private art root present, Codex provider, live campaign/run, writable `/move`, Alfira active, five enabled
   actions, visible narration, one accepted player move, chat roles `dm, player, dm`, and
   `/session-surface` still live/actionable. Its provider trace still recorded 3 failed/cancelled tool calls
-  (`log_event`, `log_event`, `persist_beat`), so #479 remains open until a later built-app run proves
-  non-reproduction or the release gate formally separates deterministic wiring proof from real-provider quality.
+  (`log_event`, `log_event`, `persist_beat`). The follow-up #479 branch proof `b081092`
+  (`codex-479-traceclean-nodup-proof-20260601T003002Z`) reran the built `WorldOS.app` with private art,
+  accepted and resolved a real `/move`, kept `/session-surface` live/actionable, exported
+  `app-evidence/manifest.json` with no gaps, and produced a provider trace summary with zero parse errors
+  and zero failed/error tool calls. Native accessibility review also showed the chronicle rendered the opening
+  and follow-up once each after suppressing engine-logged `/chat` duplicates. Treat that as branch diagnostic
+  evidence until the fix lands on main and, if release closure requires it, is rerun on merged main.
 - The agent-grade testability layer now has real code merged: `GET /app-status` exposes the live run,
   campaign, provider, private-art presence, move sink, actor, enabled actions, readiness, and failure buckets
   without mutating state; the scripted provider can prove wiring behind a dev/test gate; and stable a11y/DOM
@@ -259,8 +272,9 @@ Use the gate as evidence, not as the roadmap. The next sprint should optimize th
 1. **Stretch first-turn proof into a short built-app playtest.** PARTIAL. PR #475 and follow-up proofs show
    a fresh player can launch,
    choose/start/resume, reach the Table, submit multiple `/move`s, and see narration resolve without
-   critical console/runtime errors. Current `19c3fd0` has a fresh built-app proof, but #479 remains open on
-   real-provider trace cleanliness. Evidence must be built-app screenshots plus `/app-status`,
+   critical console/runtime errors. Current main has fresh built-app proof, and the #479 branch now has
+   trace-clean real-provider evidence that still needs merge/main confirmation. Evidence must be built-app
+   screenshots plus `/app-status`,
    `/session-surface`, move/chat/provider artifacts, not a proxy preview.
 2. **Fix the "this is not clickable" feeling.** Close #309 only when clicking any visible tab/button
    background works with mouse and keyboard. Pair with visual truth for #306 so the title/day/chrome no

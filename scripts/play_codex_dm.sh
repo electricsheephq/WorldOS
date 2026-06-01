@@ -339,14 +339,48 @@ HERO_PC_CLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.class // ""')"
 echo "[codex-dm-provider] seeded solo player: $HERO_PC_NAME ($HERO_PC_RACE $HERO_PC_CLASS) in campaign $HERO_CAMP"
 
 chatlog() {
-  python3 - "$CHAT" "$1" "$2" <<'PY'
+  python3 - "$CHAT" "$1" "$2" "${3:-}" <<'PY'
 import json
 import sys
 
-path, role, text = sys.argv[1:]
+path, role, text, extra_json = sys.argv[1:]
+row = {"role": role, "text": text}
+if extra_json:
+    try:
+        extra = json.loads(extra_json)
+    except ValueError as exc:
+        raise SystemExit(f"invalid chatlog extra_json: {exc}") from exc
+    if not isinstance(extra, dict):
+        raise SystemExit(f"invalid chatlog extra_json: expected object, got {type(extra).__name__}")
+    row.update(extra)
 with open(path, "a", encoding="utf-8") as handle:
-    handle.write(json.dumps({"role": role, "text": text}) + "\n")
+    handle.write(json.dumps(row) + "\n")
 PY
+}
+
+log_engine_narration() {
+  local campaign_id="$1" text="$2"
+  [ -n "${campaign_id//[[:space:]]/}" ] || return 1
+  [ -n "${text//[[:space:]]/}" ] || return 1
+  CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" \
+    uv run --directory "$ROOT/servers/engine" python - "$campaign_id" "$text" <<'PY'
+import sys
+
+import server
+
+campaign_id, text = sys.argv[1], sys.argv[2]
+server.log_event(campaign_id, "narration", text)
+PY
+}
+
+record_dm_reply() {
+  local campaign_id="$1" text="$2" phase="$3"
+  if log_engine_narration "$campaign_id" "$text"; then
+    chatlog dm "$text" '{"engine_logged":true}'
+  else
+    echo "[codex-dm-provider] warning: could not record ${phase} narration through engine" >&2
+    chatlog dm "$text"
+  fi
 }
 
 codex_dm_turn() {
@@ -389,12 +423,16 @@ codex_dm_turn() {
 }
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
+WRAPPER_NARRATION_LOG_RULE="Wrapper narration log rule: Do not call log_event for player-facing narration or dialogue in this provider wrapper. Put visible prose and dialogue in your final reply; the wrapper writes that reply to chat and records it through the engine after the turn. Use log_event only if a later explicit instruction requires a short non-duplicate system/roll row."
+OPENING_LOG_EVENT_RULE="Opening log rule: do not call log_event for the full opening narration. Put the player-facing opening prose in your final reply; the wrapper will record that final reply through the engine after the turn. Only call log_event during the opening if you need one short non-duplicate system/roll row."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
 SOCIAL_CHECK_TARGET_RULE="Social check target rule: call social_check only when scene_context already shows a real tracked npc_id for the target. Do not call load_canon_character or create_character solely to manufacture a social-check target during the same turn. If the target is not already tracked, do not use persuasion, deception, intimidation, or another attitude-moving social skill. Use a non-attitude skill_check such as investigation or perception for what the player can infer, then narrate the scene-local response; persist a new NPC later only when the player keeps engaging them."
 RULES_LOOKUP_RULE="Rules lookup rule: during the opening turn, do not call lookup_class or other rules lookups just to restate the pre-seated player's class/race; get_state already includes enough player-facing identity for the opener. Use clawdnd-rules only when resolving an actual rule, spell, item, condition, or monster question."
 PARLEY_TOOL_RULE="Parley tool rule: when using generate_parley_options, pass an explicit skills array such as persuasion, insight, performance, intimidation, deception. Do not rely on include_alignment or an implicit 'any' skill."
-PERSIST_BEAT_RULE="Persist beat rule: do not call persist_beat during the opening turn. Opening state is already logged through log_event; persist only after at least one real player move has been resolved. When calling persist_beat with memories, each memory must be an object with character_id and fact fields. Do not pass memory strings."
+REWARD_MUTATION_RULE="Reward mutation rule: Do not call award_xp, grant_xp, level_up, or reward-granting mutation tools in this built-app provider proof path. If a moment deserves reward accounting, mention the fictional consequence in final narration and persist only memory/decision context with persist_beat."
+OPENING_PERSIST_BEAT_RULE="Opening persist rule: do not call persist_beat during the opening turn. Opening state is recorded by the wrapper after your final reply; persist only on later turns after an actual player move has been resolved."
+MOVE_PERSIST_BEAT_RULE="Move persist rule: This is a post-move turn: at least one real player move has been accepted and relayed below. If this beat produced durable memory, decision, or time changes, call persist_beat only after you have resolved the move. Do not put player-facing prose into persist_beat events; the wrapper records your final reply through the engine. When calling persist_beat with memories, each memory must be an object with character_id and fact fields. Do not pass memory strings."
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
@@ -435,12 +473,15 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
+$WRAPPER_NARRATION_LOG_RULE
+$OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
 $SOCIAL_CHECK_TARGET_RULE
 $RULES_LOOKUP_RULE
 $PARLEY_TOOL_RULE
-$PERSIST_BEAT_RULE
+$REWARD_MUTATION_RULE
+$OPENING_PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Native-selected canon hero already seated:
@@ -462,12 +503,15 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
+$WRAPPER_NARRATION_LOG_RULE
+$OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
 $SOCIAL_CHECK_TARGET_RULE
 $RULES_LOOKUP_RULE
 $PARLEY_TOOL_RULE
-$PERSIST_BEAT_RULE
+$REWARD_MUTATION_RULE
+$OPENING_PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Start a live solo session:
@@ -484,9 +528,9 @@ fi
 if ! OPENING="$(codex_dm_turn "$OPENING_PROMPT")"; then
   fail "Codex DM opening turn failed; see $STDERR_LOG"
 fi
-chatlog dm "$OPENING"
 
 ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
+record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$OPENING" "opening"
 CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
 
 DM_TURNS=1
@@ -505,19 +549,21 @@ while true; do
     if ! REPLY="$(codex_dm_turn "You are the Dungeon Master mid-session. Re-ground from the engine state first, then resolve this player move through the engine/rules tools and reply with 2nd-person player-facing narration.
 
 $LOG_EVENT_TOOL_RULE
+$WRAPPER_NARRATION_LOG_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
 $SOCIAL_CHECK_TARGET_RULE
 $RULES_LOOKUP_RULE
 $PARLEY_TOOL_RULE
-$PERSIST_BEAT_RULE
+$REWARD_MUTATION_RULE
+$MOVE_PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Player move:
 $PMSG")"; then
       fail "Codex DM move turn failed; see $STDERR_LOG"
     fi
-    chatlog dm "$REPLY"
+    record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"
     DM_TURNS=$((DM_TURNS + 1))
   else
     sleep 2

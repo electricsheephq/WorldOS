@@ -661,6 +661,25 @@ class LiveNarrationStreamTests(unittest.TestCase):
             "recentEvents rows sharing a live seq must be dropped (immune to prose); the older un-twinned line is kept, leading, in order (#405)",
         )
 
+    # --- #479: provider wrappers may write the final DM reply to /chat only as a turn-resolution
+    # signal after also recording the same prose through the engine. That /chat row is marked
+    # engine_logged and must clear pending without adding a duplicate chronicle row, even if /chat
+    # arrives before the /events poll catches up. ---------------------------------------------------
+    def test_engine_logged_chat_reply_resolves_without_rendering_duplicate(self):
+        out = self._run(
+            "h.arm('ask the sergeant');"
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The sergeant refuses to name the captain.', engine_logged: true }], next: 1 });"
+            "await h.tick();"
+            "var afterChat = h.narrationTexts();"
+            "var pendingAfterChat = h.pending();"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'The sergeant refuses to name the captain.', seq: 7 }], next: 8 });"
+            "await h.tick();"
+            "return ({ afterChat, pendingAfterChat, chronicle: h.chronicleNarration() });"
+        )
+        self.assertEqual(out["afterChat"], [], "engine-logged /chat rows are resolution signals, not visible duplicate prose")
+        self.assertIsNone(out["pendingAfterChat"], "engine-logged /chat rows still resolve the pending turn")
+        self.assertEqual(out["chronicle"], ["The sergeant refuses to name the captain."])
+
     # --- #406 (3): a legitimately-REPEATED /chat-only line on a LATER turn must still render -------
     # The seq-keyed dedup (#407) is the canonical run-long path; the TEXT-key fallback (used only for
     # a /chat-only beat: a terse turn, or the human/native path) must be scoped to the TURN, not the
