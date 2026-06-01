@@ -570,6 +570,25 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("DECLARE: free-text action box", source)
         self.assertLess(source.index(">Actions<"), source.index("DECLARE: free-text action box"))
 
+    def test_openworlds_table_action_buttons_select_declare_mode(self):
+        # Fresh-player blocker: Say/Do/Check/Save looked clickable but only focused the text box.
+        # They now select a visible composer mode, update the placeholder/helper, and Declare posts
+        # the selected player-intent kind through the existing /move lane.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("COMPOSER_MODES", source)
+        self.assertIn('"palette-skills": "check"', source)
+        self.assertIn('"palette-saves": "save"', source)
+        self.assertIn("setComposerModeId(nextMode)", source)
+        self.assertIn('data-worldos-testid="move-mode"', source)
+        self.assertIn("data-worldos-selected", source)
+        self.assertIn("kind: composerMode.kind", source)
+        self.assertIn("composerMode.placeholder", source)
+        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive}", source)
+
     def test_openworlds_table_renders_all_actions_without_truncation(self):
         # #G3: the palette must not silently cap the action list. The read model emits up to 8
         # verbs (exploration: say/do/check/continue/cast/use + combat: attack/bonus/reaction);

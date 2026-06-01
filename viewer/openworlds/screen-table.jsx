@@ -187,6 +187,42 @@ const ACTION_HINTS = {
 };
 const DICE_HINT = (sides) => `Roll a d${sides} — ask the Dungeon Master to resolve a d${sides} check.`;
 const DECLARE_HINT = "Type what your hero does in your own words, then Declare to take the turn.";
+const COMPOSER_MODES = {
+  do: {
+    actionId: "do",
+    kind: "do",
+    label: "Do",
+    helper: "Write what your hero attempts.",
+    placeholder: "Describe what your hero does...",
+  },
+  say: {
+    actionId: "say",
+    kind: "say",
+    label: "Say",
+    helper: "Speak in character.",
+    placeholder: "What do you say?",
+  },
+  check: {
+    actionId: "check",
+    kind: "check",
+    label: "Check",
+    helper: "Ask the DM for a skill or ability check.",
+    placeholder: "What are you checking, and how?",
+  },
+  save: {
+    actionId: "save",
+    kind: "save",
+    label: "Save",
+    helper: "Resist a danger or effect.",
+    placeholder: "What danger are you resisting?",
+  },
+};
+const COMPOSER_MODE_BY_UI = {
+  "focus-do": "do",
+  "focus-say": "say",
+  "palette-skills": "check",
+  "palette-saves": "save",
+};
 
 // #402: the maximum number of chronicle rows MOUNTED at once (the live tail + the leading history
 // band, merged). Keeps the DOM + the accessibility tree bounded so the newest DM beat and the
@@ -270,6 +306,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   const demoLog = [];
   const [input, setInput] = React.useState("");
+  const [composerModeId, setComposerModeId] = React.useState("do");
   // #340: the in-flight-turn state (the /chat tail + accumulated beats, the local player echo, and
   // the "DM is narrating…" pending indicator) is owned by the APP (useLiveSession) so it survives
   // screen navigation — a DM beat that lands while the player is on another screen still gets
@@ -339,6 +376,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const renderedLog = hiddenLogCount > 0 ? visibleLog.slice(visibleLog.length - CHRONICLE_RENDER_CAP) : visibleLog;
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
+  const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const params = new URLSearchParams();
@@ -511,12 +549,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     if (pendingActive) return;
     const text = input.trim();
     if (!text) return;
-    const action = actionById("do");
+    const action = actionById(composerMode.actionId);
     if (!action?.available) {
-      toast({ kind: "danger", title: "Declare is unavailable", body: action?.disabled_reason || readOnlyReason });
+      toast({ kind: "danger", title: `${composerMode.label} is unavailable`, body: action?.disabled_reason || readOnlyReason });
       return;
     }
-    await postMove({ kind: "do", text }, text, "do");
+    const echoText = composerModeId === "do" ? text : `${composerMode.label}: ${text}`;
+    await postMove({ kind: composerMode.kind, text }, echoText, composerMode.actionId);
     setInput("");
   };
 
@@ -566,6 +605,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       return;
     }
     if (action.ui) {
+      const nextMode = COMPOSER_MODE_BY_UI[action.ui];
+      if (nextMode) setComposerModeId(nextMode);
       inputRef.current?.focus();
       return;
     }
@@ -725,6 +766,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     detail={a.available ? (a.detail || a.groupLabel) : a.disabled_reason}
                     hint={ACTION_HINTS[a.id]}
                     actionId={a.id}
+                    selected={COMPOSER_MODE_BY_UI[a.ui] === composerModeId}
                     tone={a.available ? "" : "crimson"}
                     disabled={!a.available || pendingActive}
                     onClick={() => invokeAction(a)}
@@ -765,6 +807,14 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               <strong data-worldos-testid="active-player" data-worldos-actor-id={hero.id || undefined} style={{ fontFamily: "var(--f-display)", color: "var(--ink-900)", letterSpacing: "0.1em" }}>
                 {hero.name}
               </strong>
+              <span
+                data-worldos-testid="move-mode"
+                data-worldos-mode-id={composerModeId}
+                className="eyebrow"
+                style={{ color: "var(--royal)", letterSpacing: "0.12em" }}
+              >
+                {composerMode.label}
+              </span>
               <div style={{ flex: 1 }} />
               {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
               <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
@@ -774,7 +824,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
-              Choose an <strong>Action</strong>, or write your own move and press <strong>Declare</strong>.
+              <strong>{composerMode.label}</strong>: {composerMode.helper} Press <strong>Declare</strong> when ready.
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <input
@@ -786,10 +836,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
                 disabled={pendingActive}
                 title={DECLARE_HINT}
-                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? "Describe what your hero does..." : `Read-only: ${readOnlyReason}`)}
+                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById("do")?.available || pendingActive} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById(composerMode.actionId)?.available || pendingActive} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -1187,7 +1237,7 @@ Object.assign(window, { ScreenTable, PartyRow, ConditionRow, LogEntry, DmNarrati
 // nothing in the running app reads it off window; DmNarratingBeat closes over the const directly).
 window.DM_COLD_OPEN_FLAVOR = DM_COLD_OPEN_FLAVOR;
 
-function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, actionId }) {
+function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, actionId, selected }) {
   const iconNode = window.OpenWorldsIcon?.has?.(icon)
     ? <window.OpenWorldsIcon id={icon} size={17} label={label} />
     : icon;
@@ -1199,14 +1249,16 @@ function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, a
       onClick={onClick}
       title={hint || undefined}
       aria-label={label}
+      aria-pressed={selected ? "true" : "false"}
       data-worldos-testid="action-button"
       data-worldos-action-id={actionId || undefined}
+      data-worldos-selected={selected ? "true" : undefined}
       style={{
       display: "grid", gridTemplateColumns: "24px 1fr", gap: 8, alignItems: "center",
       textAlign: "left",
       padding: "8px 10px",
-      background: "rgba(176,141,87,0.08)",
-      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+      background: selected ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.08)",
+      boxShadow: selected ? "inset 0 0 0 1px var(--b-500), 0 0 16px -8px var(--gold-glow)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
       cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.62 : 1,
       transition: "all 140ms",
@@ -1219,8 +1271,8 @@ function EncounterButton({ icon, label, detail, tone, onClick, disabled, hint, a
     }}
     onMouseLeave={(e) => {
       if (disabled) return;
-      e.currentTarget.style.background = "rgba(176,141,87,0.08)";
-      e.currentTarget.style.boxShadow = "inset 0 0 0 1px rgba(140,100,60,0.3)";
+      e.currentTarget.style.background = selected ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.08)";
+      e.currentTarget.style.boxShadow = selected ? "inset 0 0 0 1px var(--b-500), 0 0 16px -8px var(--gold-glow)" : "inset 0 0 0 1px rgba(140,100,60,0.3)";
     }}>
       <span style={{ color: tone === "crimson" ? "var(--crimson)" : tone === "royal" ? "var(--royal)" : "var(--b-500)", fontSize: 16 }}>{iconNode}</span>
       <div>
