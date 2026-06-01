@@ -2,6 +2,8 @@
 
 > Source of truth for HOW we measure a playtest. Current as of 2026-05-26.
 > The running results ledger is `qa/SCORECARD.md`.
+> For the current app/native handoff tools and RRI routing, start with `qa/QA_TOOLS.md` and
+> `WorldOS-GUI-RUNBOOK.md`; this file describes the story/mechanical scoring model.
 
 The fitness function = **1 hard behavioral gate** (deterministic pass/fail) + **3 LLM
 lenses** (each 1–5). The gate is the honest floor; the lenses grade quality above it.

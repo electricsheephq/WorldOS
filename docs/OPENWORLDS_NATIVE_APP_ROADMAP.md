@@ -1,5 +1,10 @@
 # OpenWorlds Native App Roadmap
 
+> Historical roadmap. Use this for architecture intent and old sprint context, not as the current
+> validation path. Current GUI/native app proof starts from `/Users/lume/ClawDnD-val`, uses
+> `qa/app_handoff_gate.py` or `qa/ui_playtest_app.sh` for app evidence, and uses
+> `qa/release_readiness.py` for release verdicts. See `WorldOS-GUI-RUNBOOK.md` and `qa/QA_TOOLS.md`.
+
 Date: 2026-05-26
 
 ## Correction

@@ -1,5 +1,10 @@
 # AI Playtester harness (issue #324)
 
+> Current routing note: this is the blind browser persona diagnostic harness. It is valuable for
+> empirical UX friction, but it is not the built-app product gate. For the fast built-app handoff
+> gate run `qa/app_handoff_gate.py`; for lower-level native app evidence use `qa/ui_playtest_app.sh`;
+> for release truth use the non-partial RRI path in `qa/release_readiness.py`.
+
 A **blind UI/UX test**: an AI "player" drives the real `/openworlds/` browser UI with no
 source-code access and reports every bug + UX gap it hits. Different signal from the
 code-reading audit — this finds bugs by *trying to play*.

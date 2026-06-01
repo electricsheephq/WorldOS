@@ -6,8 +6,9 @@
 > agent notes such as `CLAUDE.md` are intentionally local-only and gitignored.
 >
 > **Takeover routing, 2026-06-01:** current release/gate state lives in
-> `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, then `qa/SCORECARD.md`.
-> The work queue later in this file is historical unless it agrees with those sources.
+> `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and
+> `qa/SCORECARD.md`. The work queue later in this file is historical unless it agrees with those
+> sources.
 > **Local/VM routing, 2026-06-01:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
 > checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive

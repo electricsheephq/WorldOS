@@ -1,7 +1,9 @@
 # OpenWorlds UI/UX — Master Tracker (Phase 5 deep audit, 2026-05-29)
 
-> **Source-of-truth index** for the page-by-page UI/UX audit landed under `docs/ui-audit/`.
-> Updated by the implementation agent as issues land. Mirror of `#242` Phase 5 status.
+> Historical index for the page-by-page UI/UX audit landed under `docs/ui-audit/`.
+> Use this for backlog context only. Current GUI/native app proof and QA routing live in
+> `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and `qa/SCORECARD.md`.
+> Mirror of `#242` Phase 5 status.
 >
 > **Audit method:** live walkthrough of every screen at `127.0.0.1:8799/openworlds/`, viewports
 > 1440×900 and 1512×982; sources read for every `viewer/openworlds/screen-*.jsx`; findings anchored
@@ -265,7 +267,7 @@ The Wave-1 cross-cutting items are partially done; Wave 2-4 per-screen criticals
 
 ### Wave 4 — per-screen minors + trivials
 
-18. Implementation agent files individual tickets per per-screen audit doc Minor/Trivial rows as work is picked up. The audit docs hold the source of truth — don't pre-file 60+ Minor tickets.
+18. Implementation agent files individual tickets per per-screen audit doc Minor/Trivial rows as work is picked up. The audit docs hold historical finding detail; current routing and gate truth live in the top-level runbooks.
 
 ### Wave 5 — Camp (Loop 2 lane)
 

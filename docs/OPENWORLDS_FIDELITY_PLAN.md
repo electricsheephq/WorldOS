@@ -1,5 +1,9 @@
 # OpenWorlds Fidelity Rollout Plan
 
+> Historical rollout plan for the OpenWorlds integration. Current agent routing, app proof commands,
+> and release gating live in `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`,
+> and `qa/SCORECARD.md`.
+
 This document supersedes the SwiftUI repaint direction explored in PR #123.
 OpenWorlds should be integrated as an exact web surface first, then wired to
 WorldOS read models screen by screen.

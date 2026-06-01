@@ -4,8 +4,9 @@
 > Born from the 2026-05-31 reorientation: the prior loop scored a HEADLESS PROXY served from
 > WORKTREES WITH NO ART, so every visible defect (no palette, no images, no map, unformatted
 > chronicle, phantom companion) sailed past. This runbook makes that impossible to repeat.
-> Companions: `WorldOS-OPERATING-GOAL.md` (the gate), `qa/GUI_WORKBOOK.md` (the live punch-list),
-> `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
+> Companions: `WorldOS-OPERATING-GOAL.md` (current truth), `qa/QA_TOOLS.md` (QA command index),
+> `docs/AGENT_GRADE_APP_TESTABILITY.md` (app-status/evidence contract), `qa/GUI_WORKBOOK.md`
+> (historical punch-list), `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
 > and the default place to build/run/test the GUI and native app. The latest product-code app proof is
@@ -14,6 +15,50 @@
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
+
+## Fresh GUI Agent Quick Start
+
+Before a main implementation agent spends time on long persona runs, run the hybrid handoff gate on
+the current commit. It catches stale tabs, dead launchers, missing private art, missing actor/actions,
+failed `/move`, no narration, console/network errors, provider trace failures, and evidence gaps.
+
+```bash
+cd /Users/lume/ClawDnD-val
+python3 qa/app_handoff_gate.py \
+  --web-beats 5 \
+  --built-beats 5 \
+  --codex-moves 1 \
+  --art-root /Users/lume/ClawDnD-val \
+  --scripted-budget 1.00 \
+  --codex-budget 3.00 \
+  --timeout 90 \
+  --codex-timeout 240
+```
+
+The run writes `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/`. Review
+`handoff.json` first, then each gate's `app-evidence/manifest.json`, `app-status.*.json`,
+`session-surface.*.json`, screenshots, moves, console/network/action logs, and provider trace summary.
+`handoff_score=100` means the GUI wiring loop is trustworthy for implementation velocity. It is not
+release-ready evidence by itself.
+
+| Command | Use it for | Do not treat it as |
+|---|---|---|
+| `scripts/play.sh ... 8799` | Fast local LOOK loop on the canonical repo with private art | Built-app proof |
+| `qa/app_handoff_gate.py` | Fast web + built-app scripted smoke + short built-app Codex provider playtest | Full release verdict |
+| `qa/ui_playtest_app.sh` | Lower-level native app harness, native Part A+B evidence, failure buckets | Complete five-persona sweep by itself |
+| `qa/ui_playtest.sh` | Blind browser persona diagnostics for #324 | Built-app product proof |
+| `qa/release_readiness.py --handoff-json ...` | RRI rollup and release verdict when paired with complete persona evidence | A substitute for missing persona artifacts |
+
+| Port / route | Meaning | Guardrail |
+|---|---|---|
+| `8799 /openworlds/` | Canonical fast iteration surface from `/Users/lume/ClawDnD-val` | Use for LOOK, then rebuild/prove the app |
+| `8899 /openworlds/` | Scripted/dev harness default | Valid only when same-port `/app-status` is live |
+| `8765` or dynamic app ports | Native app spawned viewer | Read `run.json` or `/app-status.viewer.port`; do not guess |
+| `8990-8999` | Browser persona harness range | Diagnostic browser evidence unless paired with app proof |
+
+Handoff requires five enabled actions today because scripted/Codex smoke proves the main play loop.
+Release RRI's palette-live gate is stricter: it still requires at least six enabled actions on a
+`can_act:true` surface with disk-backed evidence.
 
 ## The two surfaces (never confuse them again)
 - **ITERATE — visible, playable, fast:** the OpenWorlds viewer served **from the local canonical repo**
