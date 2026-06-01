@@ -5,10 +5,10 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T15:35:00+07:00 #504 handoff gate merged + post-merge fast gate passed
+     AS OF:        2026-06-01T16:00:00+07:00 #505 RRI bridge merged + current-SHA handoff gate passed
      MAIN BASELINE:
-                   4a0efe1 (PRs #475, #494, #495, #496, #498, #499, #500, #501, #504
-                   merged; verified `/Users/lume/ClawDnD-val` was fast-forwarded after #504).
+                   fd9dba5 (PRs #475, #494, #495, #496, #498, #499, #500, #501, #504,
+                   and #505 merged; verified `/Users/lume/ClawDnD-val` was fast-forwarded after #505).
                    Re-verify current `origin/main` before acting.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
@@ -24,7 +24,7 @@
                    `ssh -o BatchMode=yes support-vm-1 ...` could not resolve the hostname in this
                    Codex Desktop session. A read-only operator-endpoint scout reached `evaos-support`
                    (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`, but that checkout
-                   was stale (`4524b3e`, 19 commits behind `4a0efe1`) and Codex auth/config was not
+                   was stale (`4524b3e`) and now behind `fd9dba5`; Codex auth/config was not
                    proven. Restore/verify operator routing, fast-forward the VM repo, verify Codex auth,
                    and define artifact return before running #466 there.
      LAST MEASURED GATE BUILD:
@@ -33,25 +33,28 @@
                    personas failed around port/backend harness setup; behavioral/UI/palette/image
                    evidence was not a valid five-persona release verdict.
      LAST BUILT-APP PLAY PROOF:
-                   Last merged-main handoff proof is `4a0efe1`
-                   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T081016Z-4a0efe1/`):
-                   `qa/app_handoff_gate.py` scored `handoff_score=100` with web scripted smoke
+                   Last merged-main handoff proof is `fd9dba5`
+                   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T085319Z-fd9dba5/`):
+                   `qa/app_handoff_gate.py` scored `handoff_score=100` with web-scripted smoke
                    5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built
                    `dist/WorldOS.app` Codex-provider playtest 1 move. Private BG art was present,
-                   Alfira was seated, visible narration and five enabled actions were present,
-                   `/move` resolved, all three manifests had zero evidence gaps, and the Codex
-                   provider trace reported `trace_exists=true`, `line_count=175`, and
+                   visible narration and five enabled actions were present, `/move` resolved, all
+                   three manifests had zero evidence gaps, and the Codex provider trace reported
+                   `trace_exists=true`, `line_count=177`, and
                    `failed_or_error_count=0`.
+                   The prior `4a0efe1` 100/100 handoff remains preserved but is superseded as the
+                   latest merged-main app proof by this `fd9dba5` post-#505 run.
                    Prior trace-clean real-provider built-app proof on merged main is `f7ab6d7`
                    (`codex-main-f7ab6d7-proof-20260601T010058Z`); it remains useful diagnostic
                    #479 evidence but is superseded as the latest merged-main app proof by the
-                   `4a0efe1` handoff gate.
+                   `fd9dba5` handoff gate.
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  #479 is closed and #504 gives a 100/100 merged-main fast GUI velocity gate.
+     NEXT ACTION:  #479 is closed; #504 gives a fast GUI velocity gate; #505 lets RRI consume
+                   Mac handoff proof through `--handoff-json`.
                    Do not claim release. Run #466 for a trustworthy clean RRI failure list/result:
-                   Mac/local or macOS CI supplies built `.app` proof, while the 32GB support VM
+                   use the `fd9dba5` handoff JSON for Mac/local built `.app` proof while the 32GB support VM
                    runs heavy backend/persona sweeps after explicit VM routing/auth/config
                    preflight. If the VM route is still unavailable, record that as the blocker and
                    file/fix repo-side RRI harness gaps only if found. Continue #485/#486 for
@@ -196,7 +199,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T15:35:00+07:00 — #504 handoff gate passed post-merge)
+## 9. CURRENT STATUS (2026-06-01T16:00:00+07:00 — #505 RRI bridge merged + current-SHA handoff gate passed)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
@@ -207,8 +210,10 @@ verifier; can revert the goal to "fix" anytime.
   playtest failure buckets plus RRI gate-split metadata. PR #498 synced takeover docs after those
   merges. PR #499 then recorded the current-main built-app proof, PR #500 fixed the Codex-DM
   provider trace cancellations, PR #501 recorded that proof in the runbooks/scorecard, and PR #504
-  added the hybrid 100/100 app handoff gate. The local app/private-art checkout
-  `/Users/lume/ClawDnD-val` was fast-forwarded to `4a0efe1 == origin/main` after #504.
+  added the hybrid 100/100 app handoff gate. PR #505 then hardened the RRI bridge so Mac handoff
+  evidence can be supplied with `--handoff-json` while support-VM persona artifacts supply the heavy
+  sweep. The local app/private-art checkout `/Users/lume/ClawDnD-val` was fast-forwarded to
+  `fd9dba5 == origin/main` after #505.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
@@ -230,12 +235,12 @@ verifier; can revert the goal to "fix" anytime.
   macOS TCC attribution contamination: `responsible=dev.clawdnd.app`, but the actual accessor was
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
-- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from `4a0efe1` or newer.
+- The next gate evidence step is issue #466: a clean non-partial five-persona RRI from `fd9dba5` or newer.
   Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. In this Codex Desktop
   session the local SSH alias for `support-vm-1` did not resolve; a read-only operator-endpoint scout reached
   the VM and confirmed `evaos-support` has ~32 GB RAM, 16 CPUs, `git`, `python3`, `uv`, Node/npm, Codex CLI,
-  Playwright, and private art, but its WorldOS checkout is `4524b3e` (19 commits behind `4a0efe1`) and Codex
+  Playwright, and private art, but its WorldOS checkout is `4524b3e` and now behind `fd9dba5`; Codex
   auth/config was not proven. Restore/verify VM routing, fast-forward the VM checkout, verify auth, and define
   artifact return before the heavy sweep. Mac-only built-app launch/play proof stays on this Mac or macOS CI.
 - Built-app diagnostic evidence exists, but release truth is still absent. The PR #475 pre-merge app-code
@@ -258,11 +263,13 @@ verifier; can revert the goal to "fix" anytime.
   screenshot archived, `app-evidence/manifest.json` with no gaps, and `provider-errors.after-move.json`
   reporting zero parse errors plus zero failed/error tool calls. This is sufficient to close #479 as a
   merged-main diagnostic; it is still not an RRI release verdict.
-- The post-#504 merged-main handoff gate `handoff-20260601T081016Z-4a0efe1` then proved the fast GUI
-  velocity loop on the current `main`: web scripted smoke 5 moves, built-app scripted smoke 5 moves,
-  built-app Codex playtest 1 move, private art present, Alfira active, five enabled actions, zero evidence
-  gaps across all three manifests, and Codex trace `failed_or_error_count=0`. This is the current best
-  app-wiring proof, but it remains diagnostic and cannot replace the full five-persona RRI.
+- The post-#505 current-main handoff gate `handoff-20260601T085319Z-fd9dba5` then reproved the fast GUI
+  velocity loop on the current `main`: web-scripted smoke 5 moves, built-app scripted smoke 5 moves,
+  built-app Codex playtest 1 move, private art present, active player, five enabled actions, zero evidence
+  gaps across all three manifests, and Codex trace `failed_or_error_count=0` with `line_count=177`.
+  `qa.release_readiness.validate_handoff_json(..., "fd9dba5")` returned `valid=True` and `gaps=0`.
+  This supersedes the `4a0efe1` handoff as current app-wiring proof, but it remains diagnostic and cannot
+  replace the full five-persona RRI.
 - The agent-grade testability layer now has real code merged: `GET /app-status` exposes the live run,
   campaign, provider, private-art presence, move sink, actor, enabled actions, readiness, and failure buckets
   without mutating state; the scripted provider can prove wiring behind a dev/test gate; and stable a11y/DOM
