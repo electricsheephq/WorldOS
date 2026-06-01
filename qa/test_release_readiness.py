@@ -1359,6 +1359,96 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertTrue(support_gaps)
             self.assertIn("badcafe", " ".join(gap["detail"] for gap in support_gaps))
 
+    def test_direct_native_evidence_ignores_optional_stale_support_preflight(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            support_preflight = self.write_support_preflight(tmp, sha="badcafe")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertNotIn("native_gate", payload["failed_gates"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+
+    def test_support_preflight_origin_main_query_must_be_object(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp)
+            payload = json.loads(support_preflight.read_text(encoding="utf-8"))
+            payload["repo"]["origin_main_query"] = "not-a-dict"
+            support_preflight.write_text(json.dumps(payload), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+            self.assertIn("support_preflight", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn("origin/main query", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+
     def test_handoff_json_must_prove_engine_state_authority(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

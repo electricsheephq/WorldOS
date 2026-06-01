@@ -253,7 +253,8 @@ def validate_support_preflight_json(preflight_json: str, expected_sha: str) -> t
         gaps.append(support_preflight_gap(str(preflight_path), "support preflight repo was dirty or unproven clean"))
     if repo.get("expected_sha_match") is not True:
         gaps.append(support_preflight_gap(str(preflight_path), "support preflight repo expected_sha_match was not true"))
-    if not (repo.get("origin_main_query") or {}).get("ok"):
+    origin_main_query = repo.get("origin_main_query") if isinstance(repo.get("origin_main_query"), dict) else {}
+    if origin_main_query.get("ok") is not True:
         gaps.append(support_preflight_gap(str(preflight_path), "support preflight origin/main query was not proven"))
     if expected_sha:
         preflight_sha = str(readiness.get("expected_sha") or repo.get("expected_sha") or repo.get("head_short") or "")
@@ -657,8 +658,6 @@ def main() -> int:
             })
         else:
             evidence_gaps.extend(support_preflight_gaps)
-    elif args.support_preflight_json:
-        evidence_gaps.extend(support_preflight_gaps)
     for failure in part_a_failures:
         evidence_gaps.append({
             "gate": "native_gate",
@@ -710,7 +709,9 @@ def main() -> int:
     elif looks_like_path(args.palette_source) and not Path(args.palette_source).exists():
         evidence_gaps.append({"gate": "palette_live", "missing": args.palette_source, "detail": "palette-live evidence source missing"})
     evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
-    native_evidence_gap_gates = {"native_gate", "support_preflight"}
+    native_evidence_gap_gates = {"native_gate"}
+    if split_vm_handoff_evidence:
+        native_evidence_gap_gates.add("support_preflight")
     native_gate_detail = f"source={native_source or 'n/a'} {native_detail or 'part_a=' + (native or 'n/a')}".strip()
 
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
