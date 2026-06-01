@@ -27,7 +27,7 @@
 > If an operator hands you local session notes or decision records, treat them as
 > private working artifacts unless they are intentionally promoted into tracked docs.
 >
-> Last updated: 2026-06-01T17:07:00+07:00 (`9545383` is the latest same-SHA app-proof build; release notes below are historical context).
+> Last updated: 2026-06-01T17:24:00+07:00 (`9545383` is the latest same-SHA app-proof build; docs-only tips may sit above it, and release notes below are historical context).
 >
 > **Graphics & game-types roadmap (canonical):** the long-term plan for the kinds of games
 > WorldOS can produce (GT0 narrative dashboard → GT1 SNES pixel → GT2 Pillars/BG isometric)
@@ -319,7 +319,8 @@ preflight artifact gate.
 The local app/private-art checkout should stay fast-forwarded to `origin/main`; the only current gate
 truth lives in `WorldOS-OPERATING-GOAL.md` + `WorldOS-GUI-RUNBOOK.md` + `qa/SCORECARD.md`. Do not use
 this section to decide release state. The next sprint is UX-first (#467):
-fast handoff play is proven diagnostically on `9545383`, including private art, Codex DM, an active player,
+fast handoff play is proven diagnostically on `9545383` rather than automatically on later docs-only tips,
+including private art, Codex DM, an active player,
 five enabled actions, one accepted/resolved `/move`, no evidence-manifest gaps, zero failed/error provider
 trace events, and a post-merge `handoff_score=100`. With #479 proven and #504/#505 merged, run #466 only after
 support-VM routing/auth/config preflight is explicit; this session's read-only check found the local
