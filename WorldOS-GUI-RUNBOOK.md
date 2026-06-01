@@ -8,7 +8,9 @@
 > `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
-> (`fd9dba5 == origin/main` after #475/#494/#495/#496/#498/#499/#500/#501/#504/#505) and the default place to build/run/test the GUI and native app.
+> and the default place to build/run/test the GUI and native app. The latest product-code app proof is
+> `fd9dba5` after #475/#494/#495/#496/#498/#499/#500/#501/#504/#505; #506 and later doc-only commits may sit
+> above that SHA on `origin/main` without invalidating the proof. Verify `origin/main` before acting.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -64,7 +66,7 @@
   accessibility review showed the chronicle with one opening narration row and one follow-up narration row,
   not duplicate chat/event prose. This closes the #479 diagnostic blocker, but release still requires #466's
   full non-partial RRI gate.
-- The post-#505 current-main handoff gate
+- The post-#505 product-code handoff gate
   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T085319Z-fd9dba5/`, build
   `fd9dba5`) is the current fastest GUI trust proof. It scored `handoff_score=100` with web-scripted smoke
   5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built `dist/WorldOS.app` Codex-provider
@@ -72,8 +74,9 @@
   app-status/session-surface snapshots, move logs, provider trace, console/network/action logs, and failure
   bucket fields. The Codex trace summary reported `trace_exists=true`, `line_count=177`, and
   `failed_or_error_count=0`. `validate_handoff_json(..., "fd9dba5")` returned `valid=True`, `gaps=0`.
-  This supersedes the `4a0efe1` handoff as current proof. It is the fast GUI velocity gate, not the
-  release verdict.
+  This supersedes the `4a0efe1` handoff as current proof. Docs-only commits may sit above this SHA; if #466
+  persona artifacts are produced from a newer SHA, rerun the Mac handoff on that same SHA before RRI rollup.
+  It is the fast GUI velocity gate, not the release verdict.
 
 ## Agent-facing app contract
 
@@ -203,7 +206,7 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private
   art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e` and behind
-  current `main@fd9dba5`; Codex auth/config is not proven; `/Volumes/LEXAR/Codex` does not exist on the VM.
+  the `fd9dba5` proof baseline; Codex auth/config is not proven; `/Volumes/LEXAR/Codex` does not exist on the VM.
   Before #466, approve/sync the VM checkout, prove Codex auth, set a remote staging path, and copy artifacts
   back to local Lexar.
 - RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
@@ -212,8 +215,10 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   must remain `partial` / `harness_contaminated`.
 - Split Mac/VM rollup command shape: pass the Mac proof into RRI as
   `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T085319Z-fd9dba5/handoff.json`
-  alongside the VM persona run dirs. RRI should then satisfy the native gate from the Mac handoff bundle
-  only if all required handoff gates and manifests are same-SHA, clean, private-art-present, and gap-free.
+  alongside VM persona run dirs from the same `fd9dba5` SHA. RRI should satisfy the native gate from the
+  Mac handoff bundle only if all required handoff gates and manifests are same-SHA, clean,
+  private-art-present, and gap-free. If the VM runs a newer SHA, rerun `qa/app_handoff_gate.py` on that
+  newer SHA first.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
