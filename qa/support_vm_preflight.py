@@ -495,6 +495,16 @@ def inspect_tools(
         elif codex_required:
             blockers.append("Codex CLI auth/profile status is not proven")
     tools["codex_auth"] = codex
+
+    claude_required = "claude" in required_tools
+    claude = {"available": bool(tools.get("claude", {}).get("available")), "auth_status": "not_required"}
+    if tools.get("claude", {}).get("available"):
+        claude["auth_status"] = "not_proven"
+        claude["auth_probe_command"] = "none"
+        claude["auth_probe_note"] = "repo-owned preflight does not have an approved Claude auth probe"
+        if claude_required:
+            blockers.append("Claude CLI auth/profile status is not proven by repo-owned preflight")
+    tools["claude_auth"] = claude
     return tools, blockers, warnings
 
 
@@ -615,7 +625,7 @@ def lane_auth_ready(agent: str, tools: dict) -> bool:
         codex = tools.get("codex_auth", {})
         return codex.get("auth_status") == "proven" and bool(codex.get("mcp_override_supported"))
     if agent == "claude":
-        return bool(tools.get("claude", {}).get("available"))
+        return tools.get("claude_auth", {}).get("auth_status") == "proven"
     return False
 
 

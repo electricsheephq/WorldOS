@@ -384,6 +384,19 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("WOS_APP_SELECTED_PROVIDER=claude", plan_blob)
             self.assertIn("WOS_APP_PLAYER_AGENT=claude", plan_blob)
 
+    def test_explicit_claude_lane_does_not_report_auth_ready_without_probe(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            config.provider = "claude"
+            config.player_agent = "claude"
+
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=fake_which, env={})
+
+            self.assertFalse(report["ready_for_rri"])
+            self.assertFalse(report["readiness"]["provider_auth_ready"])
+            self.assertFalse(report["readiness"]["player_agent_auth_ready"])
+            self.assertIn("Claude CLI auth/profile status is not proven", "\n".join(report["blockers"]))
+
     def test_missing_playwright_chromium_blocks_readiness(self):
         with tempfile.TemporaryDirectory() as td:
             config = make_config(Path(td))
