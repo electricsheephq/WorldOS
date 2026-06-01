@@ -26,6 +26,11 @@ the contract those tools must satisfy.
 - [#485](https://github.com/electricsheephq/WorldOS/issues/485): one evidence bundle per app playtest.
 - [#486](https://github.com/electricsheephq/WorldOS/issues/486): split smoke, provider playtest, and RRI gates.
 
+As of the `9545383` handoff-proof baseline, #481 through #486 are closed in
+GitHub and implemented in the fast app-testability lane. #466 remains open for
+the clean non-partial five-persona RRI, and #467 remains open for UX-first
+release-readiness polish.
+
 ## App-Status v1
 
 `app-status` v1 is a read-only behavior contract for the live OpenWorlds

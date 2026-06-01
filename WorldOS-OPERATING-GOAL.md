@@ -63,8 +63,8 @@
                    same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps
                    only after the preflight writes a redacted ready-for-RRI artifact.
                    If the VM route is still unavailable, record that as the blocker and
-                   file/fix repo-side RRI harness gaps only if found. Continue #485/#486 for
-                   evidence export and gate split follow-through; #481/#482/#483/#484 are closed.
+                   file/fix repo-side RRI harness gaps only if found. #481/#482/#483/#484/#485/#486
+                   are closed; #466 remains the release-gate issue and #467 remains the UX-first sprint.
                    Keep sprint work UX-first (#467): first-turn playability, clickability/chrome,
                    launcher clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
