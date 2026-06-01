@@ -594,7 +594,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
           <div
             role={surfaceStatus === "loading" ? "status" : "alert"}
             aria-live={surfaceStatus === "loading" ? "polite" : "assertive"}
-            data-worldos-testid="session-surface-status"
+            data-worldos-testid="app-status-banner"
+            data-worldos-status-scope="session-surface"
             data-worldos-status={surfaceStatus}
             className="body-sm"
             style={{

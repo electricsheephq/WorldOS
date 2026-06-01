@@ -80,31 +80,26 @@ Current v1 minimum, implemented first so agents can stop guessing:
 }
 ```
 
-Target expansion for #481/#483:
+V2 readiness/health expansion for #481/#483:
 
 ```json
 {
-  "status": "booting|ready|degraded|blocked",
-  "ready_for_smoke": false,
-  "ready_for_play": false,
-  "build": {"app_sha": "string", "bundle_id": "dev.clawdnd.app"},
-  "surface_detail": {
-    "kind": "built_app|dev_viewer",
-    "route": "/openworlds/",
-    "viewer_url": "http://127.0.0.1:<port>/openworlds/",
-    "native_window_ready": false
-  },
-  "provider_detail": {
-    "id": "deterministic-smoke|codex|claude|...",
-    "mode": "deterministic|real",
-    "ready": false,
-    "dev_test_provider_enabled": false
+  "readiness": {
+    "status": "ready|degraded",
+    "ready_for_smoke": false,
+    "ready_for_play": false,
+    "failure_bucket": "none|no_app|no_launcher|no_provider|no_art|no_actor|no_actions|move_rejected|no_narration|console_error|permission_prompt",
+    "failure_detail": "string"
   },
   "health": {
+    "same_port_alive": true,
+    "route_loaded": true,
     "console_errors": 0,
     "network_failures": 0,
-    "last_error": "string|null",
-    "failure_bucket": "none|app_not_running|viewer_unreachable|openworlds_not_loaded|provider_unavailable|test_provider_disabled|session_missing|player_not_seated|palette_disabled|move_sink_missing|private_art_missing|image_probe_failed|console_error|network_error|timeout|unknown"
+    "provider_ready": false,
+    "image_probe_ok": false,
+    "failure_bucket": "none|no_app|no_launcher|no_provider|no_art|no_actor|no_actions|move_rejected|no_narration|console_error|permission_prompt",
+    "failure_detail": "string"
   }
 }
 ```
@@ -119,7 +114,8 @@ Behavioral rules:
   real provider or an explicitly enabled deterministic test provider, and it must
   report no blocking console/network failures.
 - `degraded` means the app is observable but not fully playable; include a
-  failure bucket. `blocked` means the harness cannot continue safely.
+  failure bucket. Harnesses that cannot continue safely should stop with the
+  appropriate stable failure bucket rather than inventing another status value.
 - Status must never expose private art file contents, secrets, model keys, or
   operator-only VM details. Paths may be omitted or redacted when not needed for
   diagnosis.
@@ -132,26 +128,26 @@ real providers.
 
 Contract:
 
-- Provider id: `deterministic-smoke`.
+- Provider id: `scripted`.
 - No network calls, model calls, randomness without a recorded seed, or external
   auth.
 - Enabled only when an explicit dev/test gate is set, for example
-  `WORLDOS_ENABLE_TEST_PROVIDERS=1`. If requested without the gate, app-status
-  reports `failure_bucket: "test_provider_disabled"` and the app refuses to run
-  it.
+  `WORLDOS_ENABLE_SCRIPTED_PROVIDER=1`. If requested without the gate, the app
+  refuses to launch it.
 - Uses the normal engine/player architecture. It may script the DM response, but
   campaign state is still written only by the engine and player input still
   enters as `/move`.
 - Seats a living canon player, emits visible DM narration, exposes enabled
-  actions, accepts one representative `/move`, resolves a deterministic follow-up
-  turn, and leaves `/session-surface` actionable.
+  actions, accepts representative `/move` intents, resolves deterministic
+  follow-up turns, writes `scripted-provider/summary.json`, and leaves
+  `/session-surface` actionable.
 - Is never release proof by itself. It is a wiring smoke for #482/#483/#486.
 
 ## Accessibility and Driving Hooks
 
 Agents should prefer semantic accessibility over implementation-specific DOM
-shape. `data-testid` is allowed when role/name is ambiguous or when copy changes
-would make tests brittle.
+shape. `data-worldos-testid` is allowed when role/name is ambiguous or when copy
+changes would make tests brittle.
 
 Policy:
 
@@ -160,11 +156,12 @@ Policy:
 - Important regions expose stable landmarks or labels: launcher, campaign shelf,
   OpenWorlds root, narration log, active-player panel, action palette, move
   composer, provider/status banner, modal/dialog layer.
-- `data-testid` values are stable public test hooks, not CSS hooks. Do not rename
-  or remove one without updating the harness in the same change.
+- `data-worldos-testid` values are stable public test hooks, not CSS hooks. Do
+  not rename or remove one without updating the harness in the same change.
 - Prefer generic test ids plus state attributes for repeated controls, for
-  example `data-testid="action-button"` with `data-action-id="say"` rather than
-  embedding volatile label text in the test id.
+  example `data-worldos-testid="action-button"` with
+  `data-worldos-action-id="say"` rather than embedding volatile label text in
+  the test id.
 - Narration/progress surfaces use `aria-live` or an equivalent observable update
   marker so an agent can tell whether a turn advanced.
 - Hooks must not reveal private art paths, secrets, or internal provider prompts.
@@ -176,11 +173,14 @@ Minimum hook set for #484:
 - `chronicle-resume`
 - `openworlds-root`
 - `app-status-banner`
+- `error-banner`
+- `provider-status`
 - `narration-log`
 - `active-player`
 - `action-palette`
 - `action-button` plus `data-action-id`
-- `move-composer`
+- `move-input`
+- `move-submit`
 - `turn-progress`
 
 ## Evidence Bundle
@@ -213,6 +213,10 @@ Required contents for #485:
 - Gate-specific score output: `smoke.json`, `provider_playtest.json`, or
   `RRI.json`.
 
+`qa/export_app_evidence.py --run-dir <dir> --out <bundle>` copies a completed
+smoke/playtest run into this bundle shape. `--app-status-url <url>` remains
+supported for live read-only export from a running app.
+
 Bundles are evidence, not source. Do not commit them. Screenshots may contain
 private art and must remain in `/Volumes/LEXAR/Codex` unless the owner explicitly
 chooses to publish a redacted excerpt.
@@ -226,18 +230,17 @@ score.
 
 Purpose: fast, repeatable app wiring proof.
 
-Surface: rebuilt `dist/WorldOS.app`, deterministic smoke provider, app-status
-v1, stable hooks, one `/move`.
+Surface: rebuilt `dist/WorldOS.app`, deterministic scripted provider,
+app-status v1, stable hooks, five to eight `/move` beats.
 
 Pass requires:
 
 - Native app launches and serves `/openworlds/`.
-- Current v1: `app-status.live.can_act` is true, `moves_writable` is true, an
-  actor is seated, enabled actions are non-empty, and private art is present.
-  Future expansion: `app-status` reaches `ready_for_smoke: true`.
+- `app-status.readiness.ready_for_smoke` is true on the same port that serves
+  `/openworlds/`.
 - Private art probe succeeds without committing art.
-- A living player is seated, narration is visible, actions are enabled, and one
-  `/move` is accepted and resolved.
+- A living player is seated, narration is visible, actions are enabled, and
+  every scripted `/move` beat is accepted and advances narration.
 - Evidence bundle exists with no missing required files.
 
 This gate catches wiring failures early. It does not prove provider quality,

@@ -106,6 +106,24 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(headers.get("Location"), "/openworlds/")
         self.assertEqual(body, b"")
 
+    def test_root_and_legacy_routes_redirect_to_openworlds(self):
+        for route in ("/", "/index.html", "/legacy", "/legacy.html"):
+            with self.subTest(route=route):
+                status, headers, body = self._get_with_headers(route)
+
+                self.assertEqual(status, 302)
+                self.assertEqual(headers.get("Location"), "/openworlds/")
+                self.assertEqual(body, b"")
+
+    def test_deprecated_static_index_redirects_to_openworlds(self):
+        source = (server._HERE / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("Deprecated viewer entry", source)
+        self.assertIn("url=/openworlds/", source)
+        self.assertIn('window.location.replace("/openworlds/")', source)
+        self.assertNotIn('id="grid"', source)
+        self.assertNotIn('fetch("/state")', source)
+
     def test_openworlds_index_uses_local_runtime_assets(self):
         status, ctype, body = self._get("/openworlds/")
 
@@ -194,7 +212,38 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertTrue(payload["live"]["can_act"])
         self.assertEqual(payload["live"]["actor"]["name"], "Probe Hero")
         self.assertIn("continue", payload["live"]["enabled_action_ids"])
+        self.assertIn("readiness", payload)
+        self.assertIn("health", payload)
+        self.assertIn(payload["readiness"]["status"], ("ready", "degraded"))
+        self.assertIn("ready_for_smoke", payload["readiness"])
+        self.assertIn("ready_for_play", payload["readiness"])
+        self.assertTrue(payload["health"]["same_port_alive"])
+        self.assertTrue(payload["health"]["route_loaded"])
+        self.assertIn("provider_ready", payload["health"])
+        self.assertIn("image_probe_ok", payload["health"])
+        self.assertIn("failure_bucket", payload["health"])
         self.assertEqual(payload["endpoints"]["session_surface"], "/session-surface")
+
+    def test_app_status_browser_health_counts_console_and_network_logs(self):
+        console = self._tmp / "console.ndjson"
+        network = self._tmp / "network.ndjson"
+        console.write_text(
+            "\n".join([
+                json.dumps({"type": "warning", "text": "benign"}),
+                json.dumps({"type": "pageerror", "text": "Uncaught ReferenceError"}),
+            ]) + "\n",
+            encoding="utf-8",
+        )
+        network.write_text(
+            "\n".join([
+                json.dumps({"status": 200, "url": "/app-status"}),
+                json.dumps({"status": 500, "url": "/move"}),
+                json.dumps({"error": "requestfailed", "url": "/chat"}),
+            ]) + "\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(server._browser_health_counts(str(console), str(network)), (1, 2))
 
     def test_openworlds_static_assets_are_same_origin_and_local(self):
         status, ctype, body = self._get("/openworlds/vendor/google-fonts.css")
@@ -355,7 +404,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
 
         for hook in (
             'data-worldos-testid="openworlds-root"',
-            'data-worldos-testid="session-surface-status"',
+            'data-worldos-testid="app-status-banner"',
+            'data-worldos-status-scope="session-surface"',
             'data-worldos-testid="narration-log"',
             'data-worldos-testid="active-player"',
             'data-worldos-testid="action-palette"',

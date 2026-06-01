@@ -23,6 +23,42 @@ from typing import Any
 DEFAULT_OUTPUT_ROOT = Path("/Volumes/LEXAR/Codex")
 MAX_HTTP_BYTES = 8 * 1024 * 1024
 MAX_LOCAL_FILE_BYTES = 64 * 1024 * 1024
+RUN_DIR_PATTERNS = (
+    "run.json",
+    "smoke.json",
+    "provider_playtest.json",
+    "RRI.json",
+    "score.json",
+    "summary.md",
+    "run.log",
+    "backend.log",
+    "viewer.log",
+    "console.ndjson",
+    "network.ndjson",
+    "actions.ndjson",
+    "bugs.ndjson",
+    "moves.ndjson",
+    "app-status*.json",
+    "session-surface*.json",
+    "screenshots/*.png",
+    "screenshots/*.jpg",
+    "a11y/*",
+    "player/console.ndjson",
+    "player/network.ndjson",
+    "player/actions.ndjson",
+    "player/bugs.ndjson",
+    "player/summary.md",
+    "player/score.json",
+    "player/screenshots/*.png",
+    "player/screenshots/*.jpg",
+    "player/a11y/*",
+    "native/*.png",
+    "native/*.json",
+    "native/*.log",
+    "scripted-provider/*.json",
+    "scripted-provider/*.ndjson",
+    "scripted-provider/*.log",
+)
 
 
 def utc_stamp() -> str:
@@ -194,6 +230,75 @@ def copy_local_file(kind: str, value: Any, bundle: Path, gaps: list[dict[str, st
     }
 
 
+def copy_evidence_file(kind: str, source: Path, dest: Path, bundle: Path, gaps: list[dict[str, str]]) -> dict[str, Any] | None:
+    try:
+        resolved = source.resolve(strict=True)
+    except FileNotFoundError:
+        gaps.append({"source": "run_dir", "kind": kind, "path": str(source), "reason": "missing"})
+        return None
+    except OSError as exc:
+        gaps.append({"source": "run_dir", "kind": kind, "path": str(source), "reason": f"unreadable_path: {exc}"})
+        return None
+    try:
+        stat = resolved.stat()
+    except OSError as exc:
+        gaps.append({"source": "run_dir", "kind": kind, "path": str(resolved), "reason": f"stat_failed: {exc}"})
+        return None
+    if not resolved.is_file():
+        return None
+    if stat.st_size > MAX_LOCAL_FILE_BYTES:
+        gaps.append({"source": "run_dir", "kind": kind, "path": str(resolved), "reason": f"too_large: {stat.st_size} bytes"})
+        return None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(resolved, dest)
+    return {
+        "kind": kind,
+        "source": str(resolved),
+        "path": source_display(dest, bundle),
+        "bytes": stat.st_size,
+    }
+
+
+def copy_run_dir_evidence(run_dir_value: str, bundle: Path, gaps: list[dict[str, str]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not run_dir_value:
+        return {}, []
+    run_dir = Path(run_dir_value).expanduser()
+    try:
+        resolved = run_dir.resolve(strict=True)
+    except FileNotFoundError:
+        gaps.append({"source": "run_dir", "kind": "directory", "path": str(run_dir), "reason": "missing"})
+        return {"path": str(run_dir), "ok": False}, []
+    except OSError as exc:
+        gaps.append({"source": "run_dir", "kind": "directory", "path": str(run_dir), "reason": f"unreadable_path: {exc}"})
+        return {"path": str(run_dir), "ok": False}, []
+    if not resolved.is_dir():
+        gaps.append({"source": "run_dir", "kind": "directory", "path": str(resolved), "reason": "not_a_directory"})
+        return {"path": str(resolved), "ok": False}, []
+
+    copied: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for pattern in RUN_DIR_PATTERNS:
+        for source in resolved.glob(pattern):
+            try:
+                rel = source.relative_to(resolved)
+            except ValueError:
+                continue
+            if source in seen:
+                continue
+            seen.add(source)
+            kind = rel.as_posix().replace("/", "__")
+            dest = bundle / "run-dir" / rel
+            entry = copy_evidence_file(kind, source, dest, bundle, gaps)
+            if entry is not None:
+                copied.append(entry)
+    return {
+        "path": str(resolved),
+        "ok": True,
+        "copied_count": len(copied),
+        "patterns": list(RUN_DIR_PATTERNS),
+    }, copied
+
+
 def local_file_candidates(app_status: dict[str, Any]) -> list[tuple[str, Any]]:
     viewer = app_status.get("viewer") if isinstance(app_status.get("viewer"), dict) else {}
     live = app_status.get("live") if isinstance(app_status.get("live"), dict) else {}
@@ -272,6 +377,27 @@ def read_transition_file(path_value: str, bundle: Path, gaps: list[dict[str, str
     }
 
 
+def run_dir_failure(bundle: Path) -> dict[str, str]:
+    candidates = (
+        bundle / "run-dir" / "smoke.json",
+        bundle / "run-dir" / "native" / "transition.json",
+        bundle / "run-dir" / "transition.json",
+        bundle / "run-dir" / "run.json",
+    )
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        bucket = find_first_string(payload, ("failure_bucket", "failureBucket", "bucket"))
+        detail = find_first_string(payload, ("failure_detail", "failureDetail", "detail", "error"))
+        if bucket or detail:
+            return {"failure_bucket": bucket, "failure_detail": detail, "source": source_display(path, bundle)}
+    return {"failure_bucket": "", "failure_detail": "", "source": ""}
+
+
 def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str, Any], int]:
     gaps: list[dict[str, str]] = []
     sources: dict[str, Any] = {}
@@ -279,26 +405,27 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
     app_status: dict[str, Any] = {}
     exit_code = 0
 
-    try:
-        app_status, meta = fetch_json(args.app_status_url)
-        json_dump(bundle / "app-status.json", app_status)
-        sources["app_status"] = {
-            **meta,
-            "path": "app-status.json",
-            "ok": True,
-        }
-    except (OSError, urllib.error.URLError, ValueError) as exc:
-        gaps.append({
-            "source": "app_status",
-            "kind": "http_json",
-            "path": args.app_status_url,
-            "reason": str(exc),
-        })
-        sources["app_status"] = {
-            "url": args.app_status_url,
-            "ok": False,
-        }
-        exit_code = 1
+    if args.app_status_url:
+        try:
+            app_status, meta = fetch_json(args.app_status_url)
+            json_dump(bundle / "app-status.json", app_status)
+            sources["app_status"] = {
+                **meta,
+                "path": "app-status.json",
+                "ok": True,
+            }
+        except (OSError, urllib.error.URLError, ValueError) as exc:
+            gaps.append({
+                "source": "app_status",
+                "kind": "http_json",
+                "path": args.app_status_url,
+                "reason": str(exc),
+            })
+            sources["app_status"] = {
+                "url": args.app_status_url,
+                "ok": False,
+            }
+            exit_code = 1
 
     if app_status:
         surface_url = session_surface_url(args.app_status_url, app_status)
@@ -331,11 +458,29 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
     if transition:
         sources["transition"] = transition
 
+    run_source, run_copied = copy_run_dir_evidence(args.run_dir, bundle, gaps)
+    if run_source:
+        sources["run_dir"] = run_source
+        copied_files.extend(run_copied)
+
     live = app_status.get("live") if isinstance(app_status.get("live"), dict) else {}
+    failure = {
+        "failure_bucket": "",
+        "failure_detail": "",
+        "source": "",
+    }
+    if transition:
+        failure = {
+            "failure_bucket": str(transition.get("failure_bucket") or ""),
+            "failure_detail": str(transition.get("failure_detail") or ""),
+            "source": str(transition.get("path") or ""),
+        }
+    if not failure["failure_bucket"] and run_source:
+        failure = run_dir_failure(bundle)
     manifest = {
         "schema": "worldos.app-evidence.v1",
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "app_status_url": args.app_status_url,
+        "app_status_url": args.app_status_url or "",
         "bundle_dir": str(bundle),
         "build": build_info(app_status),
         "art": art_status(app_status),
@@ -346,6 +491,7 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
             "can_act": bool(live.get("can_act")) if "can_act" in live else None,
             "enabled_action_count": live.get("enabled_action_count"),
         },
+        "failure": failure,
         "sources": sources,
         "copied_files": copied_files,
         "evidence_gaps": gaps,
@@ -355,9 +501,10 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export a read-only WorldOS app evidence bundle.")
-    parser.add_argument("--app-status-url", required=True, help="URL for the app /app-status endpoint")
+    parser.add_argument("--app-status-url", default="", help="URL for the app /app-status endpoint")
     parser.add_argument("--out", default="", help="Evidence bundle directory (default: /Volumes/LEXAR/Codex/worldos-app-evidence/<timestamp>)")
     parser.add_argument("--transition-file", default="", help="Optional local JSON file with failure bucket/detail")
+    parser.add_argument("--run-dir", default="", help="Optional app playtest run directory to copy into the evidence bundle")
     return parser.parse_args(argv)
 
 

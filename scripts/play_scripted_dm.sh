@@ -39,6 +39,7 @@ MOVES="$STATE_DIR/player_moves.jsonl"
 CHAT="$STATE_DIR/chat.jsonl"
 VIEWER_LOG="$STATE_DIR/viewer.log"
 TRACE="$TRACE_DIR/trace.ndjson"
+SUMMARY="$TRACE_DIR/summary.json"
 VPID_FILE="$STATE_DIR/.viewer.pid"
 
 mkdir -p "$TRACE_DIR"
@@ -61,6 +62,47 @@ import json, sys, time
 path, event, detail = sys.argv[1:4]
 with open(path, "a", encoding="utf-8") as fh:
     fh.write(json.dumps({"event": event, "detail": detail, "at": time.time()}) + "\n")
+PY
+}
+
+trace_json() {
+  python3 - "$TRACE" "$1" "$2" "$3" <<'PY'
+import json, sys, time
+path, event, beat, detail = sys.argv[1:5]
+try:
+    parsed_detail = json.loads(detail)
+except json.JSONDecodeError:
+    parsed_detail = detail
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({
+        "event": event,
+        "beat": int(beat),
+        "detail": parsed_detail,
+        "at": time.time(),
+    }) + "\n")
+PY
+}
+
+write_summary() {
+  python3 - "$SUMMARY" "$CAMPAIGN_ID" "$PLAYER_NAME" "$WORLD" "$RUN" "$PORT" "$processed" <<'PY'
+import json, sys, time
+path, campaign_id, player_name, world, run_id, port, processed = sys.argv[1:8]
+payload = {
+    "schema": "worldos.scripted-provider-summary.v1",
+    "provider": "scripted",
+    "deterministic": True,
+    "model_free": True,
+    "world": world,
+    "run_id": run_id,
+    "campaign_id": campaign_id,
+    "player": player_name,
+    "port": int(port),
+    "resolved_move_count": int(processed),
+    "updated_at": time.time(),
+}
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, indent=2, sort_keys=True)
+    fh.write("\n")
 PY
 }
 
@@ -145,12 +187,17 @@ OPENING="$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["openi
 PLAYER_NAME="$(python3 -c 'import json,sys;print((json.loads(sys.stdin.read())["player"].get("name") or "Hero"))' <<<"$BOOTSTRAP_JSON")"
 json_append "$CHAT" "dm" "$OPENING"
 trace "bootstrap" "campaign=$CAMPAIGN_ID player=$PLAYER_NAME"
+processed=0
+write_summary
 
 viewer_supervisor() {
   while :; do
     WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
     WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
     WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
+    WORLDOS_PROVIDER=scripted CLAWDND_PROVIDER=scripted \
+    WORLDOS_BROWSER_CONSOLE_LOG="${WORLDOS_BROWSER_CONSOLE_LOG:-}" \
+    WORLDOS_BROWSER_NETWORK_LOG="${WORLDOS_BROWSER_NETWORK_LOG:-}" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!
     echo "$vp" > "$VPID_FILE"
@@ -169,7 +216,6 @@ trap cleanup EXIT
 trap 'cleanup; exit 0' INT TERM
 
 trace "viewer_started" "port=$PORT"
-processed=0
 
 while :; do
   count="$(grep -c . "$MOVES" 2>/dev/null || true)"
@@ -195,10 +241,12 @@ server.log_event(campaign_id, "narration", reply)
 print(reply)
 PY
       )"
+      beat=$((processed + 1))
       json_append "$CHAT" "player" "$(move_chat_text "$line")"
       json_append "$CHAT" "dm" "$reply"
-      trace "move_resolved" "$line"
+      trace_json "move_resolved" "$beat" "$line"
       processed=$((processed + 1))
+      write_summary
     done < <(sed -n "$((processed + 1)),${count}p" "$MOVES")
     processed="$count"
   fi
