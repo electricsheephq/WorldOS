@@ -77,6 +77,62 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(bucket, "no_launcher")
         self.assertIn("expected same port 8899", detail)
 
+    def test_app_status_accepts_live_recent_event_narration_when_chat_has_not_landed(self):
+        status = {
+            "schema": "worldos.app-status.v1",
+            "build": {"sha": "abc1234"},
+            "viewer": {"port": 8899, "chat_lines": 0},
+            "art": {"private_root_present": True},
+            "live": {
+                "can_act": True,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 5,
+            },
+            "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
+            "health": {"failure_bucket": "none"},
+        }
+        surface = {
+            "recentEvents": [
+                {"kind": "system", "text": "Session began"},
+                {"kind": "narration", "text": "The Lower City resolves around you."},
+            ]
+        }
+
+        bucket, detail = gate.validate_app_status(
+            status,
+            expected_port=8899,
+            expected_sha="abc1234",
+            session_surface=surface,
+        )
+
+        self.assertEqual(bucket, "")
+        self.assertEqual(detail, "")
+
+    def test_app_status_still_requires_chat_or_live_event_narration(self):
+        status = {
+            "schema": "worldos.app-status.v1",
+            "build": {"sha": "abc1234"},
+            "viewer": {"port": 8899, "chat_lines": 0},
+            "art": {"private_root_present": True},
+            "live": {
+                "can_act": True,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 5,
+            },
+            "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
+            "health": {"failure_bucket": "none"},
+        }
+
+        bucket, detail = gate.validate_app_status(
+            status,
+            expected_port=8899,
+            expected_sha="abc1234",
+            session_surface={"recentEvents": [{"kind": "system", "text": "Session began"}]},
+        )
+
+        self.assertEqual(bucket, "no_narration")
+        self.assertIn("session-surface", detail)
+
     def test_codex_provider_trace_cancellations_fail_summary(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

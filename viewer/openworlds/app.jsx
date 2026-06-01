@@ -103,15 +103,15 @@ window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(r
 //
 // The poll is best-effort and a no-op unless a LIVE campaign is bound (mirrors the server's
 // /chat gating: empty items when no chat is configured / the view isn't the live run).
-// #348: the recovery 'stuck' timeout is ADAPTIVE by turn position, because the DM beat lands
-// all-at-once (the /chat tail carries NO streaming/partial/heartbeat signal — the duo+human
-// runners append ONE {"role":"dm",...} line only after the whole turn's `result` is in, so the
-// poll sees zero new items for the entire turn then the complete beat). #393 added a live /events
-// tail, BUT every shipped DM path persists a turn's narration in ONE batched write at turn-END
-// (SKILL.md step 7 → persist_beat) — so the /events stream ALSO surfaces a beat only at turn-end
-// today, and notePendingProgress() has nothing to reset on MID-turn. So a wall-clock from submit
-// is still the operative lever for later beats, and at 90s it PRE-EMPTED both the legit Act-opening
-// (#348) AND a content-rich beat 2–4 that legitimately ran 90–120s (#399 — the playtester's give-up).
+// #348: the recovery 'stuck' timeout is ADAPTIVE by turn position, because some DM paths can still
+// land the main beat all-at-once (the /chat tail carries no streaming/partial signal; it appends one
+// {"role":"dm",...} line when the turn's `result` is in). #393 added a live /events tail, and the
+// Codex DM wrapper now writes an immediate wrapper-authored engine progress row, then asks the
+// provider to write one short engine-owned progress narration through log_event early in the turn.
+// The timer remains the backstop for providers or turns that do not produce mid-turn events. So a
+// wall-clock from submit is still the operative fallback, and at 90s it PRE-EMPTED both the legit
+// Act-opening (#348) AND a content-rich beat 2–4 that legitimately ran 90–120s (#399 — the
+// playtester's give-up).
 //   • FIRST beat of a session (the cold-open / Act-opening) gets a generous window — the engine
 //     is building the world + setting the scene; a blind newbie run saw this take 5–8 min.
 //   • LATER beats: #399 raises the window 90s → 180s to cover the worst-case ~120s turn with
@@ -119,15 +119,13 @@ window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(r
 // The 12-min hard backstop is UNCHANGED — a turn that blows even the first-beat window still
 // gets force-cleared. "first beat?" = no DM narration has arrived this session yet (the hook's
 // dmBeatCountRef, reset to 0 on every run change).
-// #399: later-beat stall window raised 90s → 180s. The duo/human/native DM paths ALL persist a
-// turn's narration in ONE batched write at turn-END (SKILL.md step 7 → persist_beat), so NOTHING is
-// written to the session log mid-turn — meaning the #393 /events stream surfaces a beat only at
-// turn-end and notePendingProgress() can't reset this clock DURING the turn. With no mid-turn reset
-// to lean on, the 90s window (tuned for the ~35–60s norm) pre-empted a content-rich beat 2–4 that
-// legitimately ran 90–120s → a false 'stuck' on a working turn (the give-up the playtester filed).
-// 180s covers the worst-case ~120s turn with margin while still recovering a GENUINE mid-session
-// stall within ~3 min. (The adaptive reset below is KEPT — it's correct and starts helping the day a
-// DM path does log beats incrementally; today it just rarely has anything to reset on mid-turn.)
+// #399: later-beat stall window raised 90s → 180s. Some provider paths still batch the full turn at
+// turn-end, and even live-progress providers can hit a turn where no early narration is available.
+// With no mid-turn reset to lean on, the 90s window (tuned for the ~35–60s norm) pre-empted a
+// content-rich beat 2–4 that legitimately ran 90–120s → a false 'stuck' on a working turn (the
+// give-up the playtester filed). 180s covers the worst-case ~120s turn with margin while still
+// recovering a GENUINE mid-session stall within ~3 min. The adaptive reset below is still useful:
+// when /events progress arrives, it keeps a healthy turn alive without re-enabling actions early.
 const PENDING_RECOVERY_MS = 180 * 1000;           // #399: later-beat stall window (worst-case DM turns run ~90–120s; was 90s/#342).
 const PENDING_RECOVERY_FIRST_MS = 4 * 60 * 1000;  // #348: first-beat (Act-opening) window — fits the multi-minute cold open.
 const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard backstop as a final net.

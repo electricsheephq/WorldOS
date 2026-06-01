@@ -106,12 +106,29 @@ def build_matches(reported: str, expected: str) -> bool:
     return reported == expected or expected.startswith(reported) or reported.startswith(expected)
 
 
+def session_surface_has_narration(surface: dict[str, Any] | None) -> bool:
+    if not isinstance(surface, dict):
+        return False
+    events = surface.get("recentEvents")
+    if not isinstance(events, list):
+        return False
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("kind") or "").strip().lower()
+        text = str(event.get("text") or "").strip()
+        if kind in {"narration", "dialogue"} and text:
+            return True
+    return False
+
+
 def validate_app_status(
     status: dict[str, Any],
     *,
     expected_port: int | None,
     expected_sha: str,
     require_ready_for_play: bool = True,
+    session_surface: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     if not status:
         return failure("no_launcher", "app-status JSON is missing")
@@ -145,8 +162,8 @@ def validate_app_status(
         return failure("no_actor", "app-status did not report an active player actor")
     if int(live.get("enabled_action_count") or 0) <= 0:
         return failure("no_actions", "app-status reported no enabled player actions")
-    if int(viewer.get("chat_lines") or 0) <= 0:
-        return failure("no_narration", "app-status reported no chat/narration")
+    if int(viewer.get("chat_lines") or 0) <= 0 and not session_surface_has_narration(session_surface):
+        return failure("no_narration", "app-status/session-surface reported no chat/narration")
     return "", ""
 
 
@@ -484,18 +501,17 @@ def drive_moves(
     json_dump(gate_dir / "app-status.initial.json", status)
     smoke.write_text_snapshot(gate_dir / "a11y" / "initial.html", smoke.html_text(base_url))
     smoke.capture_openworlds_screenshot(base_url=base_url, out=gate_dir, port=expected_port, label="initial", gaps=gaps, screenshots=screenshots)
-    bucket, detail = validate_app_status(status, expected_port=expected_port, expected_sha=expected_sha)
-    if bucket:
-        return False, bucket, detail, {"screenshots": screenshots, "evidence_gaps": gaps}
-    hook_ok, hook_detail, hook_payload = run_hook_probe(base_url, gate_dir)
-    if not hook_ok:
-        return False, "no_actions", hook_detail, {"screenshots": screenshots, "evidence_gaps": gaps, "hook_probe": hook_payload}
-
     try:
         surface, _ = smoke.fetch_json(smoke.surface_url(base_url, status))
         json_dump(gate_dir / "session-surface.initial.json", surface)
     except Exception as exc:  # noqa: BLE001
         return False, "no_provider", f"initial session-surface fetch failed: {exc}", {"screenshots": screenshots, "evidence_gaps": gaps}
+    bucket, detail = validate_app_status(status, expected_port=expected_port, expected_sha=expected_sha, session_surface=surface)
+    if bucket:
+        return False, bucket, detail, {"screenshots": screenshots, "evidence_gaps": gaps}
+    hook_ok, hook_detail, hook_payload = run_hook_probe(base_url, gate_dir)
+    if not hook_ok:
+        return False, "no_actions", hook_detail, {"screenshots": screenshots, "evidence_gaps": gaps, "hook_probe": hook_payload}
 
     last_chat_lines = int(((status.get("viewer") or {}).get("chat_lines") or 0) if isinstance(status.get("viewer"), dict) else 0)
     move_url = urllib.parse.urljoin(base_url, "/move")
