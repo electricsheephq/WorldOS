@@ -59,7 +59,8 @@
                    For same-SHA RRI, either run the support-VM persona sweep pinned to `fd9dba5`
                    and pair it with the `fd9dba5` handoff JSON, or rerun the Mac handoff on a newer
                    release-candidate SHA before rollup. The 32GB support VM runs heavy
-                   backend/persona sweeps only after explicit VM routing/auth/config preflight.
+                   backend/persona sweeps only after `python3 qa/support_vm_preflight.py`
+                   writes a redacted ready-for-RRI artifact for that VM checkout/SHA.
                    If the VM route is still unavailable, record that as the blocker and
                    file/fix repo-side RRI harness gaps only if found. Continue #485/#486 for
                    evidence export and gate split follow-through; #481/#482/#483/#484 are closed.

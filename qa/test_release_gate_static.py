@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -92,7 +93,10 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         source = (ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
 
         self.assertIn('PART_B_SCORE_PASS="false"', source)
-        self.assertIn('"part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true"}', source)
+        self.assertRegex(
+            source,
+            re.compile(r'"part_b": \{"persona_loop": b_res,\s+"score_pass": b_score_pass == "true"', re.MULTILINE),
+        )
         self.assertIn('[ "$player_rc" -eq 0 ] && [ -f "$RUNDIR/score.json" ]', source)
         self.assertIn('case "$PART" in', source)
         self.assertIn('[ "$PART_A_RESULT" = "PASS" ] || EXIT_OK=0', source)

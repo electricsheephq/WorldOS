@@ -311,6 +311,15 @@ Pass requires #466 conditions:
   session-surface evidence.
 - RRI returns non-partial release-ready status.
 
+Before using the 32GB support VM for this gate, run
+`python3 qa/support_vm_preflight.py` on that VM checkout with the exact target
+SHA. The preflight artifact must prove the VM repo SHA, Codex CLI/auth status,
+`uv`, Node/npm/Playwright/Chromium availability, private-art classification,
+env-var redaction, budget/concurrency cap, teardown commands, and artifact return path.
+It is a readiness check, not release evidence; the release verdict still comes
+only from `qa/release_readiness.py` over complete same-SHA artifacts plus the
+Mac built-app handoff proof.
+
 This is the only release gate. The UX-first roadmap in #467 should use its
 failures as product evidence, not as a reason to build more proxy machinery.
 
