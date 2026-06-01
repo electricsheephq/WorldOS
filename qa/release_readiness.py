@@ -214,6 +214,7 @@ def validate_support_preflight_json(preflight_json: str, expected_sha: str) -> t
 
     readiness = payload.get("readiness") if isinstance(payload.get("readiness"), dict) else {}
     repo = payload.get("repo") if isinstance(payload.get("repo"), dict) else {}
+    rri_plan = payload.get("rri_plan") if isinstance(payload.get("rri_plan"), dict) else {}
     gaps: list[dict] = []
     proof.update(
         {
@@ -238,6 +239,11 @@ def validate_support_preflight_json(preflight_json: str, expected_sha: str) -> t
                 "expected_sha": readiness.get("expected_sha") or "",
                 "repo_head_short": readiness.get("repo_head_short") or repo.get("head_short") or "",
                 "min_memory_gb": readiness.get("min_memory_gb"),
+            },
+            "rri_plan": {
+                "support_preflight_json": rri_plan.get("support_preflight_json") or "",
+                "support_preflight_required_for_split_rollup": rri_plan.get("support_preflight_required_for_split_rollup") is True,
+                "rri_rollup_command_template": rri_plan.get("rri_rollup_command_template") or "",
             },
         }
     )
@@ -283,6 +289,21 @@ def validate_support_preflight_json(preflight_json: str, expected_sha: str) -> t
             support_preflight_gap(
                 str(preflight_path),
                 "support preflight blocking_categories is not empty: " + ", ".join(str(v) for v in readiness.get("blocking_categories")),
+            )
+        )
+    if rri_plan.get("support_preflight_required_for_split_rollup") is not True:
+        gaps.append(
+            support_preflight_gap(
+                str(preflight_path),
+                "support preflight rri_plan.support_preflight_required_for_split_rollup was not true",
+            )
+        )
+    rollup_template = str(rri_plan.get("rri_rollup_command_template") or "")
+    if "--support-preflight-json" not in rollup_template:
+        gaps.append(
+            support_preflight_gap(
+                str(preflight_path),
+                "support preflight rri_plan.rri_rollup_command_template did not include --support-preflight-json",
             )
         )
     proof["valid"] = not gaps
