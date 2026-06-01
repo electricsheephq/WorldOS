@@ -18,6 +18,143 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         payload = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
         return proc.returncode, proc.stdout + proc.stderr, payload
 
+    def write_handoff_bundle(
+        self,
+        tmp: Path,
+        *,
+        sha: str = "deadbee",
+        manifest_sha: str | None = None,
+        reuse_manifest: bool = False,
+    ) -> Path:
+        handoff_root = tmp / "handoff"
+        handoff_root.mkdir()
+        gates = []
+        first_manifest_path: Path | None = None
+        for gate_name in ("web_scripted_smoke", "built_app_scripted_smoke", "built_app_codex_playtest"):
+            evidence_dir = handoff_root / gate_name
+            manifest_path = first_manifest_path if reuse_manifest and first_manifest_path else evidence_dir / "app-evidence" / "manifest.json"
+            first_manifest_path = first_manifest_path or manifest_path
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            if not manifest_path.exists():
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "schema": "worldos.app-evidence.v1",
+                            "verdict": "passed",
+                            "dirty": False,
+                            "app_build_sha": manifest_sha or sha,
+                            "evidence_gaps": [],
+                            "failure_bucket": "",
+                            "failure_detail": "",
+                            "failure": {"failure_bucket": "", "failure_detail": ""},
+                            "gate_kind": gate_name,
+                            "art": {"private_root_present": True},
+                            "live": {"can_act": True, "enabled_action_count": 5},
+                            "handoff_gate": {
+                                "ok": True,
+                                "app_status_ok": True,
+                                "session_surface_ok": True,
+                                "move_sink_present": True,
+                                "private_art_present": True,
+                                "can_act": True,
+                                "enabled_action_count": 5,
+                                "evidence_gap_count": 0,
+                            },
+                            "evidence_files": {
+                                "screenshots": ["screenshots/final.png"],
+                                "app_status_snapshots": ["app-status.final.json"],
+                                "session_surface_snapshots": ["session-surface.final.json"],
+                                "moves": ["moves.ndjson"],
+                                "provider_trace": ["provider-trace-summary.json"],
+                                "console_logs": ["console.ndjson"],
+                                "network_logs": ["network.ndjson"],
+                                "action_logs": ["actions.ndjson"],
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            for evidence_file in (
+                "screenshots/final.png",
+                "app-status.final.json",
+                "session-surface.final.json",
+                "moves.ndjson",
+                "provider-trace-summary.json",
+                "console.ndjson",
+                "network.ndjson",
+                "actions.ndjson",
+            ):
+                path = manifest_path.parent / evidence_file
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("ok\n", encoding="utf-8")
+            gates.append(
+                {
+                    "name": gate_name,
+                    "status": "passed",
+                    "build_sha": sha,
+                    "evidence_gaps": [],
+                    "evidence_manifest": str(manifest_path),
+                }
+            )
+        handoff = handoff_root / "handoff.json"
+        handoff.write_text(
+            json.dumps(
+                {
+                    "schema": "worldos.app-handoff.v1",
+                    "status": "passed",
+                    "handoff_score": 100,
+                    "dirty": False,
+                    "commit_sha": sha,
+                    "release_verdict": False,
+                    "gates": gates,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return handoff
+
+    def write_release_inputs(self, tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
+        story = tmp / "story.json"
+        mech = tmp / "mech.json"
+        behavioral = tmp / "behavioral.txt"
+        audit = tmp / "audit.log"
+        palette = tmp / "session_surface.final.json"
+        story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+        mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+        behavioral.write_text("GREEN\n", encoding="utf-8")
+        audit.write_text("PASS\n", encoding="utf-8")
+        palette.write_text(json.dumps({"can_act": True}), encoding="utf-8")
+        return story, mech, behavioral, audit, palette
+
+    def write_persona_run(self, tmp: Path, persona: str, *, sha: str = "deadbee", include_part_a: bool = True) -> Path:
+        run = tmp / f"gate-{persona}"
+        player = run / "player"
+        player.mkdir(parents=True)
+        (run / "score.json").write_text(
+            json.dumps(
+                {
+                    "run": f"gate-{persona}",
+                    "persona": persona,
+                    "completed_intro_flow": True,
+                    "persona_satisfaction": 9,
+                    "gave_up": False,
+                    "bug_reports_critical": 0,
+                    "console_errors": 0,
+                    "image_404s": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+        payload = {"build_sha": sha, "part_b": {"persona_loop": "PASS", "score_pass": True}}
+        if include_part_a:
+            payload["part_a"] = {"result": "PASS"}
+        (run / "run.json").write_text(json.dumps(payload), encoding="utf-8")
+        (player / "network.ndjson").write_text(
+            json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
+            encoding="utf-8",
+        )
+        return run
+
     def test_missing_expected_persona_score_marks_partial_and_fails_release(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -34,6 +171,7 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                         "persona_satisfaction": 9,
                         "gave_up": False,
                         "bug_reports_critical": 0,
+                        "console_errors": 0,
                         "image_404s": 0,
                     }
                 ),
@@ -102,6 +240,7 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                         "persona_satisfaction": 9,
                         "gave_up": False,
                         "bug_reports_critical": 0,
+                        "console_errors": 0,
                         "image_404s": 0,
                     }
                 ),
@@ -960,6 +1099,338 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertFalse(payload["release_ready"])
             self.assertNotIn("palette_live", {gap["gate"] for gap in payload["evidence_gaps"]})
             self.assertEqual(payload["artifact_sources"]["palette_live"], "session-surface-final")
+
+    def test_split_vm_persona_evidence_uses_handoff_json_for_native_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertEqual(payload["signals"]["native_gate"], "PASS")
+            self.assertEqual(payload["signals"]["native_gate_source"], str(handoff))
+            self.assertEqual(payload["artifact_sources"]["handoff_json"], str(handoff))
+            self.assertTrue(payload["signals"]["handoff_proof"]["valid"])
+            self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
+
+    def test_missing_handoff_json_blocks_native_gate_when_persona_runs_have_no_part_a(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertIn("run.json part_a.result or --handoff-json", {gap["missing"] for gap in payload["evidence_gaps"]})
+
+    def test_handoff_sha_mismatch_blocks_native_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, sha="badcafe")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertIn("handoff commit_sha badcafe does not match --build-sha deadbee", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+            self.assertFalse(payload["signals"]["handoff_proof"]["valid"])
+
+    def test_short_build_sha_prefix_cannot_mix_stale_vm_and_mac_handoff_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, sha="4524b3e", include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, sha="4a0efe1")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "4",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertTrue(payload["evidence_gaps"])
+
+    def test_handoff_manifest_must_match_gate_and_not_be_reused(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, reuse_manifest=True)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            details = " ".join(gap["detail"] for gap in payload["evidence_gaps"])
+            self.assertIn("reuses another gate's manifest", details)
+            self.assertIn("manifest gate_kind web_scripted_smoke does not match built_app_scripted_smoke", details)
+
+    def test_part_b_score_pass_false_blocks_release_even_with_high_scores(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona) for persona in personas]
+            run_json = json.loads((runs[2] / "run.json").read_text(encoding="utf-8"))
+            run_json["part_b"]["score_pass"] = False
+            (runs[2] / "run.json").write_text(json.dumps(run_json), encoding="utf-8")
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["partial"])
+            self.assertFalse(payload["harness_contaminated"])
+            self.assertEqual(payload["failed_gates"], ["cross_persona_sat"])
+            self.assertEqual(payload["signals"]["score_pass_failed_personas"], ["adversarial"])
+
+    def test_malformed_score_json_is_harness_contaminated_and_incomplete(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona) for persona in personas]
+            (runs[1] / "score.json").write_text("{not json", encoding="utf-8")
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertTrue(payload["partial"])
+            self.assertTrue(payload["harness_contaminated"])
+            self.assertIn("veteran", payload["missing_personas"])
+            self.assertEqual(payload["harness_failures"][0]["missing"], "score.json invalid")
+            self.assertIn("invalid JSON", payload["harness_failures"][0]["detail"])
+
+    def test_score_missing_console_errors_is_harness_contaminated(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = self.write_persona_run(tmp, "newbie")
+            score = json.loads((run / "score.json").read_text(encoding="utf-8"))
+            score.pop("console_errors")
+            (run / "score.json").write_text(json.dumps(score), encoding="utf-8")
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                str(run),
+                "--expected-personas",
+                "newbie",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertTrue(payload["harness_contaminated"])
+            self.assertEqual(payload["completed_personas"], [])
+            self.assertEqual(payload["harness_failures"][0]["missing"], "score.json required fields")
+            self.assertIn("console_errors must be integer", payload["harness_failures"][0]["detail"])
 
 
 if __name__ == "__main__":

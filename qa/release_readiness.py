@@ -12,6 +12,7 @@ Pure reader of on-disk artifacts (never the live HTTP channel, which can corrupt
   - --behavioral GREEN|RED    (assert_behavioral.py exit)
   - --ui-audit PASS|FAIL      (ui_audit_health.sh exit)
   - --palette-live true|false (a clean /session-surface read done by the CALLER, not here)
+  - --handoff-json handoff.json (optional Mac-built app proof from qa/app_handoff_gate.py)
 
 The two NEW signals the plan calls for — image-render-rate and palette-live — are computed
 here (image rate from score.json/network.ndjson) and passed in (palette-live), so this stays
@@ -21,7 +22,7 @@ Usage:
   release_readiness.py --runs <run-dir>[,<run-dir>...] \
       [--story story.json] [--mech mech.json] \
       [--behavioral GREEN|RED] [--ui-audit PASS|FAIL] [--palette-live true|false] \
-      [--build-sha SHA] [--expected-personas newbie,veteran,...]
+      [--build-sha SHA] [--expected-personas newbie,veteran,...] [--handoff-json handoff.json]
       [--out qa/RRI.json] [--scorecard-row]
 
 Targets for 10/10 (each dimension is a gate; all must hold on ONE build):
@@ -39,6 +40,26 @@ from pathlib import Path
 
 REQUIRED_RELEASE_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
 RELEASE_VERDICT_GATE = "full_five_persona_rri"
+REQUIRED_HANDOFF_GATES = ["web_scripted_smoke", "built_app_scripted_smoke", "built_app_codex_playtest"]
+REQUIRED_HANDOFF_EVIDENCE_KINDS = [
+    "screenshots",
+    "app_status_snapshots",
+    "session_surface_snapshots",
+    "moves",
+    "provider_trace",
+    "console_logs",
+    "network_logs",
+    "action_logs",
+]
+REQUIRED_SCORE_FIELDS = {
+    "persona": "nonempty string",
+    "completed_intro_flow": "boolean",
+    "persona_satisfaction": "number",
+    "gave_up": "boolean",
+    "bug_reports_critical": "integer",
+    "console_errors": "integer",
+}
+MIN_BUILD_SHA_MATCH_CHARS = 7
 GATE_SPLIT_CONTRACT = {
     "deterministic_built_app_smoke": {
         "scope": "fast built-app wiring proof with deterministic provider",
@@ -66,6 +87,20 @@ def read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def read_json_with_error(path: Path) -> tuple[dict, str]:
+    if not path or not path.exists():
+        return {}, "missing"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, f"invalid JSON: {exc.msg}"
+    except OSError as exc:
+        return {}, f"read failed: {exc}"
+    if not isinstance(payload, dict):
+        return {}, "JSON root is not an object"
+    return payload, ""
 
 
 def read_ndjson(path: Path) -> list[dict]:
@@ -107,6 +142,177 @@ def split_csv(value: str) -> list[str]:
     return [p.strip() for p in value.split(",") if p.strip()]
 
 
+def build_sha_matches(reported: str, expected: str) -> bool:
+    reported = (reported or "").strip()
+    expected = (expected or "").strip()
+    if len(reported) < MIN_BUILD_SHA_MATCH_CHARS or len(expected) < MIN_BUILD_SHA_MATCH_CHARS:
+        return False
+    return reported == expected or reported.startswith(expected) or expected.startswith(reported)
+
+
+def score_schema_errors(score: dict) -> list[str]:
+    errors: list[str] = []
+    persona = score.get("persona")
+    if not isinstance(persona, str) or not persona.strip():
+        errors.append("persona must be a nonempty string")
+    if not isinstance(score.get("completed_intro_flow"), bool):
+        errors.append("completed_intro_flow must be boolean")
+    sat = score.get("persona_satisfaction")
+    if not isinstance(sat, (int, float)) or isinstance(sat, bool):
+        errors.append("persona_satisfaction must be numeric")
+    if not isinstance(score.get("gave_up"), bool):
+        errors.append("gave_up must be boolean")
+    for field in ("bug_reports_critical", "console_errors"):
+        value = score.get(field)
+        if not isinstance(value, int) or isinstance(value, bool):
+            errors.append(f"{field} must be integer")
+    return errors
+
+
+def resolve_manifest_path(handoff_path: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return handoff_path.parent / path
+
+
+def resolve_evidence_file(manifest_path: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return manifest_path.parent / path
+
+
+def handoff_gap(missing: str, detail: str) -> dict:
+    return {"gate": "native_gate", "missing": missing, "detail": detail}
+
+
+def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, list[dict]]:
+    proof = {
+        "path": handoff_json or "",
+        "valid": False,
+        "status": "",
+        "handoff_score": 0,
+        "commit_sha": "",
+        "gates": {},
+    }
+    if not handoff_json:
+        return proof, []
+
+    handoff_path = Path(handoff_json)
+    payload, error = read_json_with_error(handoff_path)
+    if error:
+        return proof, [handoff_gap(handoff_json, f"handoff JSON {error}")]
+
+    gaps: list[dict] = []
+    proof.update({
+        "status": payload.get("status") or "",
+        "handoff_score": payload.get("handoff_score") or 0,
+        "commit_sha": payload.get("commit_sha") or "",
+        "release_verdict": bool(payload.get("release_verdict")),
+    })
+    if payload.get("schema") != "worldos.app-handoff.v1":
+        gaps.append(handoff_gap(str(handoff_path), "handoff schema is missing or wrong"))
+    if payload.get("status") != "passed":
+        gaps.append(handoff_gap(str(handoff_path), f"handoff status is {payload.get('status') or 'missing'}"))
+    if payload.get("handoff_score") != 100:
+        gaps.append(handoff_gap(str(handoff_path), f"handoff_score is {payload.get('handoff_score')!r}, expected 100"))
+    if payload.get("dirty") is not False:
+        gaps.append(handoff_gap(str(handoff_path), "handoff evidence was recorded from a dirty worktree"))
+    if expected_sha and not build_sha_matches(str(payload.get("commit_sha") or ""), expected_sha):
+        gaps.append(handoff_gap(str(handoff_path), f"handoff commit_sha {payload.get('commit_sha') or 'missing'} does not match --build-sha {expected_sha}"))
+
+    gates = payload.get("gates")
+    if not isinstance(gates, list):
+        gates = []
+        gaps.append(handoff_gap(str(handoff_path), "handoff gates list is missing"))
+    by_name = {str(g.get("name") or ""): g for g in gates if isinstance(g, dict)}
+    proof["gates"] = {}
+    manifest_paths_seen: set[Path] = set()
+    for gate_name in REQUIRED_HANDOFF_GATES:
+        gate = by_name.get(gate_name)
+        if not gate:
+            gaps.append(handoff_gap(str(handoff_path), f"handoff missing required gate {gate_name}"))
+            continue
+        manifest_value = str(gate.get("evidence_manifest") or "")
+        manifest_path = resolve_manifest_path(handoff_path, manifest_value) if manifest_value else Path()
+        if manifest_path in manifest_paths_seen:
+            gaps.append(handoff_gap(gate_name, f"evidence_manifest reuses another gate's manifest: {manifest_path}"))
+        manifest_paths_seen.add(manifest_path)
+        gate_proof = {
+            "status": gate.get("status") or "",
+            "build_sha": gate.get("build_sha") or "",
+            "evidence_manifest": str(manifest_path) if manifest_value else "",
+        }
+        proof["gates"][gate_name] = gate_proof
+        if gate.get("status") != "passed":
+            gaps.append(handoff_gap(gate_name, f"handoff gate status is {gate.get('status') or 'missing'}"))
+        if gate.get("evidence_gaps"):
+            gaps.append(handoff_gap(gate_name, "handoff gate reported evidence_gaps"))
+        if expected_sha and not build_sha_matches(str(gate.get("build_sha") or ""), expected_sha):
+            gaps.append(handoff_gap(gate_name, f"gate build_sha {gate.get('build_sha') or 'missing'} does not match --build-sha {expected_sha}"))
+        if not manifest_value:
+            gaps.append(handoff_gap(gate_name, "evidence_manifest path is missing"))
+            continue
+        manifest, manifest_error = read_json_with_error(manifest_path)
+        if manifest_error:
+            gaps.append(handoff_gap(str(manifest_path), f"evidence manifest {manifest_error}"))
+            continue
+        gate_proof["manifest_verdict"] = manifest.get("verdict") or ""
+        if manifest.get("schema") != "worldos.app-evidence.v1":
+            gaps.append(handoff_gap(str(manifest_path), "manifest schema is missing or wrong"))
+        if manifest.get("gate_kind") != gate_name:
+            gaps.append(handoff_gap(str(manifest_path), f"manifest gate_kind {manifest.get('gate_kind') or 'missing'} does not match {gate_name}"))
+        if manifest.get("verdict") != "passed":
+            gaps.append(handoff_gap(str(manifest_path), f"manifest verdict is {manifest.get('verdict') or 'missing'}"))
+        if manifest.get("dirty") is not False:
+            gaps.append(handoff_gap(str(manifest_path), "manifest was recorded from a dirty worktree"))
+        if manifest.get("evidence_gaps"):
+            gaps.append(handoff_gap(str(manifest_path), "manifest evidence_gaps is not empty"))
+        manifest_failure = manifest.get("failure") if isinstance(manifest.get("failure"), dict) else {}
+        has_failure_fields = (
+            ("failure_bucket" in manifest and "failure_detail" in manifest)
+            or ("failure_bucket" in manifest_failure and "failure_detail" in manifest_failure)
+        )
+        if not has_failure_fields:
+            gaps.append(handoff_gap(str(manifest_path), "manifest missing failure bucket/detail fields"))
+        if expected_sha and not build_sha_matches(str(manifest.get("app_build_sha") or ""), expected_sha):
+            gaps.append(handoff_gap(str(manifest_path), f"manifest app_build_sha {manifest.get('app_build_sha') or 'missing'} does not match --build-sha {expected_sha}"))
+
+        handoff_gate = manifest.get("handoff_gate") if isinstance(manifest.get("handoff_gate"), dict) else {}
+        art = manifest.get("art") if isinstance(manifest.get("art"), dict) else {}
+        live = manifest.get("live") if isinstance(manifest.get("live"), dict) else {}
+        evidence_files = manifest.get("evidence_files") if isinstance(manifest.get("evidence_files"), dict) else {}
+        checks = {
+            "handoff_gate.ok": handoff_gate.get("ok") is True,
+            "handoff_gate.app_status_ok": handoff_gate.get("app_status_ok") is True,
+            "handoff_gate.session_surface_ok": handoff_gate.get("session_surface_ok") is True,
+            "handoff_gate.move_sink_present": handoff_gate.get("move_sink_present") is True,
+            "handoff_gate.private_art_present": handoff_gate.get("private_art_present") is True,
+            "handoff_gate.can_act": handoff_gate.get("can_act") is True,
+            "art.private_root_present": art.get("private_root_present") is True,
+            "live.can_act": live.get("can_act") is True,
+        }
+        for check, ok in checks.items():
+            if not ok:
+                gaps.append(handoff_gap(str(manifest_path), f"{check} was not true"))
+        if int(handoff_gate.get("enabled_action_count") or 0) <= 0 or int(live.get("enabled_action_count") or 0) <= 0:
+            gaps.append(handoff_gap(str(manifest_path), "manifest did not prove enabled player actions"))
+        if int(handoff_gate.get("evidence_gap_count") or 0) != 0:
+            gaps.append(handoff_gap(str(manifest_path), "handoff_gate evidence_gap_count was not zero"))
+        for evidence_kind in REQUIRED_HANDOFF_EVIDENCE_KINDS:
+            values = evidence_files.get(evidence_kind)
+            if not isinstance(values, list) or not values:
+                gaps.append(handoff_gap(str(manifest_path), f"manifest missing evidence_files.{evidence_kind}"))
+                continue
+            for value in values:
+                evidence_file = resolve_evidence_file(manifest_path, str(value))
+                if not evidence_file.exists():
+                    gaps.append(handoff_gap(str(manifest_path), f"manifest evidence_files.{evidence_kind} entry missing on disk: {value}"))
+    proof["valid"] = not gaps
+    return proof, gaps
+
+
 def infer_persona(run_dir: Path) -> str:
     name = run_dir.name
     for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
@@ -127,6 +333,7 @@ def main() -> int:
     ap.add_argument("--behavioral-path", default="", help="path to the behavioral evidence source")
     ap.add_argument("--ui-audit-log", default="", help="path to the UI audit evidence source")
     ap.add_argument("--palette-source", default="", help="path or label for the palette-live evidence source")
+    ap.add_argument("--handoff-json", default="", help="Mac app handoff gate JSON proving built-app smoke/play evidence")
     ap.add_argument("--build-sha", dest="build_sha", default="")
     ap.add_argument("--out", default="qa/RRI.json")
     ap.add_argument("--scorecard-row", action="store_true")
@@ -134,23 +341,43 @@ def main() -> int:
 
     run_dirs = [Path(p) for p in split_csv(args.runs)]
     expected_personas = split_csv(args.expected_personas)
+    handoff_proof, handoff_evidence_gaps = validate_handoff_json(args.handoff_json, args.build_sha)
     persona_scores = []
     harness_failures = []
     completed_personas: list[str] = []
     for idx, rd in enumerate(run_dirs):
         expected_for_run = expected_personas[idx] if idx < len(expected_personas) else ""
         rj = read_json(rd / "run.json")
-        sc = read_json(rd / "score.json")
-        if not sc:
+        sc, score_error = read_json_with_error(rd / "score.json")
+        if score_error:
             part_a_obj = rj.get("part_a") or {}
             part_b_obj = rj.get("part_b") or {}
             part_b = part_b_obj.get("persona_loop")
             harness_failures.append({
                 "run": rd.name,
                 "persona": expected_for_run or infer_persona(rd),
-                "missing": "score.json",
+                "missing": "score.json" if score_error == "missing" else "score.json invalid",
+                "detail": score_error,
                 "part_a": part_a_obj.get("result") or "n/a",
                 "part_b": part_b or "n/a",
+                "part_a_failure_bucket": part_a_obj.get("failure_bucket") or "",
+                "part_a_failure_detail": part_a_obj.get("failure_detail") or "",
+                "part_b_failure_bucket": part_b_obj.get("failure_bucket") or "",
+                "part_b_failure_detail": part_b_obj.get("failure_detail") or "",
+            })
+            continue
+        schema_errors = score_schema_errors(sc)
+        if schema_errors:
+            part_a_obj = rj.get("part_a") or {}
+            part_b_obj = rj.get("part_b") or {}
+            harness_failures.append({
+                "run": rd.name,
+                "persona": expected_for_run or sc.get("persona") or infer_persona(rd),
+                "missing": "score.json required fields",
+                "detail": "; ".join(schema_errors),
+                "required_fields": REQUIRED_SCORE_FIELDS,
+                "part_a": part_a_obj.get("result") or "n/a",
+                "part_b": part_b_obj.get("persona_loop") or "n/a",
                 "part_a_failure_bucket": part_a_obj.get("failure_bucket") or "",
                 "part_a_failure_detail": part_a_obj.get("failure_detail") or "",
                 "part_b_failure_bucket": part_b_obj.get("failure_bucket") or "",
@@ -194,6 +421,8 @@ def main() -> int:
     avg_sat = sum(sats) / len(sats) if sats else 0.0
     any_gave_up = any(p["gave_up"] for p in persona_scores)
     any_completed = any(p["completed_intro_flow"] for p in persona_scores)
+    score_pass_failed_personas = [str(p["persona"]) for p in persona_scores if not p.get("part_b_score_pass")]
+    score_pass_complete = bool(persona_scores) and not score_pass_failed_personas
     total_critical = sum(p["critical"] for p in persona_scores)
     total_console_errors = sum(p["console_errors"] for p in persona_scores)
     # weighted image rate across personas that recorded image traffic. A release
@@ -209,19 +438,35 @@ def main() -> int:
     story_overall = float(story.get("overall", 0) or 0)
     mech_overall = float(mech.get("overall", 0) or 0)
 
-    # native gate: read part_a from any run.json present
+    # native gate: read part_a from persona run.json, or accept an explicit
+    # Mac-built app handoff proof when persona artifacts come from a VM/backend
+    # sweep and therefore cannot prove dist/WorldOS.app directly.
     native = ""
     native_detail = ""
+    native_source = ""
+    part_a_failures = []
     for rd in run_dirs:
         rj = read_json(rd / "run.json")
         part_a_obj = rj.get("part_a") or {}
         pa = part_a_obj.get("result")
         if pa:
-            native = pa
             bucket = part_a_obj.get("failure_bucket") or ""
             detail = part_a_obj.get("failure_detail") or ""
-            native_detail = f" failure_bucket={bucket} failure_detail={detail}".strip() if bucket or detail else ""
-            break
+            if pa == "PASS" and not native:
+                native = pa
+                native_source = f"{rd}/run.json"
+                native_detail = f"part_a={pa}"
+            elif pa != "PASS":
+                part_a_failures.append({
+                    "run": rd.name,
+                    "part_a": pa,
+                    "failure_bucket": bucket,
+                    "failure_detail": detail,
+                })
+    if not native and handoff_proof.get("valid"):
+        native = "PASS"
+        native_source = args.handoff_json
+        native_detail = f"handoff_json={args.handoff_json} gates={','.join(REQUIRED_HANDOFF_GATES)}"
 
     evidence_gaps = []
     build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
@@ -239,7 +484,7 @@ def main() -> int:
             "detail": "missing run build_sha for: " + ", ".join(str(p.get("persona") or p.get("run")) for p in missing_build_sha),
         })
     if args.build_sha:
-        mismatched = [p for p in persona_scores if p.get("run_build_sha") and p.get("run_build_sha") != args.build_sha]
+        mismatched = [p for p in persona_scores if p.get("run_build_sha") and not build_sha_matches(str(p.get("run_build_sha")), args.build_sha)]
         if mismatched:
             evidence_gaps.append({
                 "gate": "native_gate",
@@ -271,8 +516,8 @@ def main() -> int:
         )
         evidence_gaps.append({
             "gate": "cross_persona_sat",
-            "missing": f"{h['run']}/score.json",
-            "detail": f"persona={h.get('persona') or 'unknown'} part_a={h.get('part_a') or 'n/a'} part_b={h.get('part_b') or 'n/a'} {buckets}".strip(),
+            "missing": f"{h['run']}/{h.get('missing') or 'score.json'}",
+            "detail": f"persona={h.get('persona') or 'unknown'} detail={h.get('detail') or ''} part_a={h.get('part_a') or 'n/a'} part_b={h.get('part_b') or 'n/a'} {buckets}".strip(),
         })
     failed_part_b = [p for p in persona_scores if p.get("part_b_result") != "PASS"]
     for p in failed_part_b:
@@ -283,11 +528,18 @@ def main() -> int:
             "missing": f"{p['run']}/run.json part_b PASS",
             "detail": f"persona={p.get('persona') or 'unknown'} part_b={p.get('part_b_result')} score_pass={p.get('part_b_score_pass')} failure_bucket={bucket} failure_detail={detail}".strip(),
         })
+    evidence_gaps.extend(handoff_evidence_gaps)
+    for failure in part_a_failures:
+        evidence_gaps.append({
+            "gate": "native_gate",
+            "missing": f"{failure['run']}/run.json part_a PASS",
+            "detail": f"part_a={failure.get('part_a')} failure_bucket={failure.get('failure_bucket') or ''} failure_detail={failure.get('failure_detail') or ''}".strip(),
+        })
     if not native:
         evidence_gaps.append({
             "gate": "native_gate",
-            "missing": "run.json part_a.result",
-            "detail": "no persona run recorded native built-app transition evidence",
+            "missing": "run.json part_a.result or --handoff-json",
+            "detail": "no persona run or Mac handoff bundle recorded native built-app transition evidence",
         })
     elif native != "PASS":
         evidence_gaps.append({
@@ -328,15 +580,16 @@ def main() -> int:
     elif looks_like_path(args.palette_source) and not Path(args.palette_source).exists():
         evidence_gaps.append({"gate": "palette_live", "missing": args.palette_source, "detail": "palette-live evidence source missing"})
     evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
+    native_gate_detail = f"source={native_source or 'n/a'} {native_detail or 'part_a=' + (native or 'n/a')}".strip()
 
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
     gates = {
         "native_gate":        (native == "PASS" and "native_gate" not in evidence_gap_gates,
-                               f"part_a={native or 'n/a'} {native_detail}".strip()),
+                               native_gate_detail),
         "arc_completed":      (any_completed and "arc_completed" not in evidence_gap_gates,
                                f"completed_intro_flow on >=1 persona"),
-        "cross_persona_sat":  (not missing_release_personas and expected_complete and avg_sat >= 7.0,
-                               f"avg={avg_sat:.1f}/10 over {len(sats)}; missing={missing_personas or 'none'}; release_missing={missing_release_personas or 'none'}"),
+        "cross_persona_sat":  (not missing_release_personas and expected_complete and avg_sat >= 7.0 and score_pass_complete,
+                               f"avg={avg_sat:.1f}/10 over {len(sats)}; score_pass_failed={score_pass_failed_personas or 'none'}; missing={missing_personas or 'none'}; release_missing={missing_release_personas or 'none'}"),
         "no_give_up":         (not any_gave_up and "no_give_up" not in evidence_gap_gates,
                                f"any_gave_up={any_gave_up}"),
         "zero_critical":      (total_critical == 0 and total_console_errors == 0 and "zero_critical" not in evidence_gap_gates,
@@ -391,13 +644,17 @@ def main() -> int:
             "palette_live": args.palette_source or "argument",
             "story": args.story or "",
             "mechanical": args.mech or "",
+            "handoff_json": args.handoff_json or "",
             "runs": [str(p) for p in run_dirs],
             "images": sorted({p["image_source"] for p in persona_scores if p.get("image_source")}),
         },
         "signals": {
             "native_gate": native,
+            "native_gate_source": native_source,
+            "handoff_proof": handoff_proof,
             "arc_completed": any_completed,
             "cross_persona_satisfaction": round(avg_sat, 1),
+            "score_pass_failed_personas": score_pass_failed_personas,
             "any_gave_up": any_gave_up,
             "total_critical_bugs": total_critical,
             "total_console_errors": total_console_errors,
