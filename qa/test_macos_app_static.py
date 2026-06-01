@@ -54,6 +54,8 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         harness = self.read("qa/ui_playtest_app.sh")
 
         self.assertIn("WOS_APP_KEEP_MINTED_BACKEND=1", harness)
+        self.assertIn("WOS_APP_SELECTED_PROVIDER=codex|scripted|claude|openclaw", harness)
+        self.assertIn('defaults write dev.clawdnd.app selectedProvider "$SELECTED_PROVIDER"', harness)
         self.assertIn("requires WOS_APP_PART=A", harness)
         self.assertIn('KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"', harness)
         self.assertIn("keeping minted backend alive for gameplay proof", harness)

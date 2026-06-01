@@ -41,6 +41,8 @@
 #   WOS_APP_SKIP_BUILD=1       reuse an already-running .app (skip pkill/rebuild) — for fast inner loop.
 #   WOS_APP_NO_GLOBAL_KILL=1   do not pkill other WorldOSApp processes (used for takeover smoke).
 #   WOS_APP_PART=A|B|AB        run only part A, only part B, or both (default AB).
+#   WOS_APP_SELECTED_PROVIDER=codex|scripted|claude|openclaw
+#                               set the native app's provider preference before minting a session.
 #   WOS_APP_KEEP_MINTED_BACKEND=1
 #                               part A only: leave the .app-minted provider backend alive so
 #                               an operator can continue a short built-app gameplay playtest.
@@ -64,6 +66,7 @@ BEATS="${4:-6}"
 BUDGET="${5:-4.00}"
 PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
 KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
+SELECTED_PROVIDER="${WOS_APP_SELECTED_PROVIDER:-}"
 if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
   printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
   exit 2
@@ -89,6 +92,18 @@ VERSION="$( ([ -f "$ROOT/VERSION" ] && cat "$ROOT/VERSION") \
 log() { printf '[uipt-app] %s\n' "$*"; }
 log "run=$RUN world=$WORLD persona=$PERSONA beats=$BEATS budget=\$$BUDGET part=$PART"
 log "build_sha=$BUILD_SHA version=$VERSION repo=$ROOT"
+if [ -n "$SELECTED_PROVIDER" ]; then
+  case "$SELECTED_PROVIDER" in
+    claude|codex|openclaw|scripted)
+      defaults write dev.clawdnd.app selectedProvider "$SELECTED_PROVIDER" >/dev/null 2>&1 || true
+      log "selected provider preference set to $SELECTED_PROVIDER"
+      ;;
+    *)
+      printf '[uipt-app] WOS_APP_SELECTED_PROVIDER must be claude, codex, openclaw, or scripted (got %s)\n' "$SELECTED_PROVIDER" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 # Agent-readable failure buckets for built-app smoke. Keep these crisp and stable; the
 # detailed shell/native result still travels separately as original_result.

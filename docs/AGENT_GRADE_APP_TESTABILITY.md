@@ -217,6 +217,14 @@ Required contents for #485:
 smoke/playtest run into this bundle shape. `--app-status-url <url>` remains
 supported for live read-only export from a running app.
 
+Each exported `manifest.json` also carries a normalized
+`review_entrypoint` object. That object is the first file a reviewing agent
+should open: it repeats the command, repo, branch, commit SHA, dirty state, app
+build SHA, provider, gate kind, run id, timestamps, verdict, failure bucket,
+art status, and indexed pointers for screenshots, app-status snapshots,
+session-surface snapshots, moves, provider trace, console logs, network logs,
+and action logs.
+
 Bundles are evidence, not source. Do not commit them. Screenshots may contain
 private art and must remain in `/Volumes/LEXAR/Codex` unless the owner explicitly
 chooses to publish a redacted excerpt.
@@ -225,6 +233,28 @@ chooses to publish a redacted excerpt.
 
 Issue #486 defines three distinct gates. They must not be collapsed into one
 score.
+
+## 100/100 Handoff Gate
+
+`qa/app_handoff_gate.py` is the fast hybrid gate for Codex-led GUI work. It is
+the command a main implementation agent should run before spending budget on
+longer exploratory/persona playtests.
+
+The handoff gate writes
+`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/handoff.json`
+with `schema: worldos.app-handoff.v1`. `handoff_score` is `100` only when every
+mandatory gate passes on the same clean commit SHA:
+
+- web deterministic scripted smoke.
+- built `dist/WorldOS.app` deterministic scripted smoke.
+- built `dist/WorldOS.app` short Codex-provider playtest.
+- bounded hook probe for launcher/resume, table actions, free-text move,
+  settings provider status, modal/error/status hook presence.
+- evidence manifests with no blocking gaps.
+
+This score means the GUI implementation agent has a trustworthy fast loop for
+app wiring and core controls. It does not mean the product is release-ready.
+Full non-partial five-persona RRI remains the release verdict.
 
 ### 1. Deterministic Built-App Smoke
 

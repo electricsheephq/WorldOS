@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -21,6 +22,7 @@ from typing import Any
 
 
 DEFAULT_OUTPUT_ROOT = Path("/Volumes/LEXAR/Codex")
+ROOT = Path(__file__).resolve().parents[1]
 MAX_HTTP_BYTES = 8 * 1024 * 1024
 MAX_LOCAL_FILE_BYTES = 64 * 1024 * 1024
 RUN_DIR_PATTERNS = (
@@ -55,9 +57,26 @@ RUN_DIR_PATTERNS = (
     "native/*.png",
     "native/*.json",
     "native/*.log",
+    "hook-probe.json",
+    "provider-trace-summary.json",
+    "handoff-command.log",
+    "ui_playtest_app.log",
     "scripted-provider/*.json",
     "scripted-provider/*.ndjson",
     "scripted-provider/*.log",
+    "codex-provider/*.json",
+    "codex-provider/*.jsonl",
+    "codex-provider/*.ndjson",
+    "codex-provider/*.log",
+    "codex-provider/*.txt",
+    "play-state/*.jsonl",
+    "play-state/scripted-provider/*.json",
+    "play-state/scripted-provider/*.ndjson",
+    "play-state/codex-provider/*.json",
+    "play-state/codex-provider/*.jsonl",
+    "play-state/codex-provider/*.ndjson",
+    "play-state/codex-provider/*.log",
+    "play-state/codex-provider/*.txt",
 )
 
 
@@ -398,12 +417,238 @@ def run_dir_failure(bundle: Path) -> dict[str, str]:
     return {"failure_bucket": "", "failure_detail": "", "source": ""}
 
 
+def copied_kinds(copied_files: list[dict[str, Any]]) -> list[str]:
+    values: set[str] = set()
+    for entry in copied_files:
+        kind = str(entry.get("kind") or "")
+        path = str(entry.get("path") or "")
+        if kind:
+            values.add(kind)
+        if path:
+            values.add(path)
+    return sorted(values)
+
+
+def git_text(args: list[str]) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(ROOT), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    return (proc.stdout or "").strip()
+
+
+def repo_snapshot() -> dict[str, Any]:
+    status = git_text(["status", "--porcelain"])
+    return {
+        "path": str(ROOT),
+        "branch": git_text(["branch", "--show-current"]),
+        "commit_sha": git_text(["rev-parse", "HEAD"]),
+        "dirty": bool(status),
+    }
+
+
+def command_from_arg(value: str) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    if isinstance(parsed, list):
+        return [str(item) for item in parsed]
+    return [str(parsed)]
+
+
+def copied_paths(copied_files: list[dict[str, Any]]) -> list[str]:
+    paths = []
+    for entry in copied_files:
+        path = str(entry.get("path") or "")
+        if path:
+            paths.append(path)
+    return sorted(paths)
+
+
+def evidence_index(copied_files: list[dict[str, Any]], sources: dict[str, Any]) -> dict[str, list[str]]:
+    paths = copied_paths(copied_files)
+
+    def matching(*needles: str) -> list[str]:
+        lowered = tuple(needle.lower() for needle in needles)
+        return sorted(path for path in paths if any(needle in path.lower() for needle in lowered))
+
+    app_status = matching("app-status")
+    session_surface = matching("session-surface")
+    for key in ("app_status", "app_status_snapshot"):
+        if (sources.get(key) or {}).get("path"):
+            app_status.insert(0, str((sources.get(key) or {}).get("path")))
+    for key in ("session_surface", "session_surface_snapshot"):
+        if (sources.get(key) or {}).get("path"):
+            session_surface.insert(0, str((sources.get(key) or {}).get("path")))
+    return {
+        "screenshots": sorted(path for path in paths if "/screenshots/" in f"/{path}" or path.lower().endswith((".png", ".jpg", ".jpeg"))),
+        "app_status_snapshots": sorted(dict.fromkeys(app_status)),
+        "session_surface_snapshots": sorted(dict.fromkeys(session_surface)),
+        "moves": matching("moves", "player_moves"),
+        "provider_trace": matching("provider-trace", "scripted-provider", "codex-provider"),
+        "console_logs": matching("console.ndjson", "console.log", "console"),
+        "network_logs": matching("network.ndjson", "network.log", "network"),
+        "action_logs": matching("actions.ndjson", "actions.log", "actions"),
+        "all_copied": paths,
+    }
+
+
+def first_bundle_json(bundle: Path, patterns: tuple[str, ...]) -> tuple[dict[str, Any], str]:
+    for pattern in patterns:
+        for path in sorted((bundle / "run-dir").glob(pattern)):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                return payload, source_display(path, bundle)
+    return {}, ""
+
+
+def review_verdict(handoff_gate: dict[str, Any], failure: dict[str, str], gaps: list[dict[str, str]]) -> str:
+    if failure.get("failure_bucket"):
+        return "failed"
+    if handoff_gate.get("ok") is True:
+        return "passed"
+    if gaps:
+        return "failed"
+    return "incomplete"
+
+
+def build_review_entrypoint(
+    *,
+    args: argparse.Namespace,
+    created_at: str,
+    build: dict[str, str],
+    art: dict[str, Any],
+    live: dict[str, Any],
+    failure: dict[str, str],
+    sources: dict[str, Any],
+    copied_files: list[dict[str, Any]],
+    gaps: list[dict[str, str]],
+    handoff_gate: dict[str, Any],
+) -> dict[str, Any]:
+    repo = repo_snapshot()
+    index = evidence_index(copied_files, sources)
+    provider = args.provider or str(live.get("provider") or "")
+    verdict = args.verdict or review_verdict(handoff_gate, failure, gaps)
+    return {
+        "schema": "worldos.app-evidence-review-entrypoint.v1",
+        "command": command_from_arg(args.command_json),
+        "repo": repo["path"],
+        "branch": repo["branch"],
+        "commit_sha": args.commit_sha or repo["commit_sha"],
+        "dirty": repo["dirty"],
+        "app_build_sha": build.get("sha") or "",
+        "provider": provider,
+        "gate_kind": args.gate_kind or "",
+        "run_id": str(live.get("run_id") or ""),
+        "started_at": args.started_at or "",
+        "ended_at": args.ended_at or created_at,
+        "verdict": verdict,
+        "failure_bucket": str(failure.get("failure_bucket") or ""),
+        "failure_detail": str(failure.get("failure_detail") or ""),
+        "art_status": art,
+        "handoff_gate_ok": bool(handoff_gate.get("ok")),
+        "evidence_gaps": gaps,
+        "files": index,
+    }
+
+
+def build_handoff_gate(
+    *,
+    build: dict[str, str],
+    art: dict[str, Any],
+    live: dict[str, Any],
+    failure: dict[str, str],
+    sources: dict[str, Any],
+    copied_files: list[dict[str, Any]],
+    gaps: list[dict[str, str]],
+) -> dict[str, Any]:
+    copied = copied_kinds(copied_files)
+    app_status_ok = bool((sources.get("app_status") or {}).get("ok") or (sources.get("app_status_snapshot") or {}).get("ok"))
+    session_surface_ok = bool((sources.get("session_surface") or {}).get("ok") or (sources.get("session_surface_snapshot") or {}).get("ok"))
+    run_dir_source = sources.get("run_dir") if isinstance(sources.get("run_dir"), dict) else None
+    run_dir_ok = None if run_dir_source is None else bool(run_dir_source.get("ok"))
+    private_art_present = art.get("private_root_present")
+    can_act = live.get("can_act")
+    enabled_action_count = live.get("enabled_action_count")
+    try:
+        enabled_count_int = int(enabled_action_count or 0)
+    except (TypeError, ValueError):
+        enabled_count_int = 0
+    move_sink_present = any(
+        "moves" in item or item.endswith("moves.ndjson") or item.endswith("player_moves.jsonl")
+        for item in copied
+    )
+    bucket = str(failure.get("failure_bucket") or "")
+    detail = str(failure.get("failure_detail") or "")
+
+    blocking: list[str] = []
+    if not build.get("sha"):
+        blocking.append("missing build SHA")
+    if (sources.get("app_status") is not None or sources.get("app_status_snapshot") is not None) and not app_status_ok:
+        blocking.append("app-status fetch failed")
+    if (sources.get("session_surface") is not None or sources.get("session_surface_snapshot") is not None) and not session_surface_ok:
+        blocking.append("session-surface fetch failed")
+    if run_dir_source is not None and not run_dir_ok:
+        blocking.append("run-dir copy failed")
+    if private_art_present is not True:
+        blocking.append("private art not proven present")
+    if not live.get("campaign_id"):
+        blocking.append("campaign id missing")
+    if can_act is not True:
+        blocking.append("can_act not true")
+    if enabled_count_int < 1:
+        blocking.append("no enabled actions")
+    if not move_sink_present:
+        blocking.append("move sink evidence missing")
+    if bucket:
+        blocking.append(f"failure bucket: {bucket}")
+    if gaps:
+        blocking.append(f"evidence gaps: {len(gaps)}")
+
+    return {
+        "schema": "worldos.app-evidence-handoff.v1",
+        "ok": len(blocking) == 0,
+        "build_sha": str(build.get("sha") or ""),
+        "app_status_ok": app_status_ok,
+        "session_surface_ok": session_surface_ok,
+        "run_dir_ok": run_dir_ok,
+        "private_art_present": private_art_present if isinstance(private_art_present, bool) else None,
+        "campaign_id": str(live.get("campaign_id") or ""),
+        "run_id": str(live.get("run_id") or ""),
+        "can_act": can_act if isinstance(can_act, bool) else None,
+        "enabled_action_count": enabled_action_count,
+        "move_sink_present": move_sink_present,
+        "copied_kinds": copied,
+        "failure_bucket": bucket,
+        "failure_detail": detail,
+        "evidence_gap_count": len(gaps),
+        "blocking_reasons": blocking,
+    }
+
+
 def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str, Any], int]:
     gaps: list[dict[str, str]] = []
     sources: dict[str, Any] = {}
     copied_files: list[dict[str, Any]] = []
     app_status: dict[str, Any] = {}
     exit_code = 0
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def clear_http_gap(source: str) -> None:
+        gaps[:] = [
+            gap
+            for gap in gaps
+            if not (gap.get("source") == source and gap.get("kind") == "http_json")
+        ]
 
     if args.app_status_url:
         try:
@@ -462,6 +707,21 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
     if run_source:
         sources["run_dir"] = run_source
         copied_files.extend(run_copied)
+    if not app_status:
+        app_status, app_status_snapshot = first_bundle_json(bundle, ("app-status.final.json", "app-status*.json"))
+        if app_status_snapshot:
+            sources["app_status_snapshot"] = {"path": app_status_snapshot, "ok": True}
+            if isinstance(sources.get("app_status"), dict):
+                sources["app_status"]["recovered_by"] = "app_status_snapshot"
+            clear_http_gap("app_status")
+            exit_code = 0
+    if not (sources.get("session_surface") or {}).get("ok"):
+        _surface, session_surface_snapshot = first_bundle_json(bundle, ("session-surface.final.json", "session-surface*.json"))
+        if session_surface_snapshot:
+            sources["session_surface_snapshot"] = {"path": session_surface_snapshot, "ok": True}
+            if isinstance(sources.get("session_surface"), dict):
+                sources["session_surface"]["recovered_by"] = "session_surface_snapshot"
+            clear_http_gap("session_surface")
 
     live = app_status.get("live") if isinstance(app_status.get("live"), dict) else {}
     failure = {
@@ -477,24 +737,64 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
         }
     if not failure["failure_bucket"] and run_source:
         failure = run_dir_failure(bundle)
+    build = build_info(app_status)
+    art = art_status(app_status)
+    live_summary = {
+        "campaign_id": str(live.get("campaign_id") or ""),
+        "attached_campaign_id": str(live.get("attached_campaign_id") or ""),
+        "run_id": str(live.get("run_id") or ""),
+        "can_act": bool(live.get("can_act")) if "can_act" in live else None,
+        "enabled_action_count": live.get("enabled_action_count"),
+    }
+    handoff_gate = build_handoff_gate(
+        build=build,
+        art=art,
+        live=live_summary,
+        failure=failure,
+        sources=sources,
+        copied_files=copied_files,
+        gaps=gaps,
+    )
+    review_entrypoint = build_review_entrypoint(
+        args=args,
+        created_at=created_at,
+        build=build,
+        art=art,
+        live=live_summary,
+        failure=failure,
+        sources=sources,
+        copied_files=copied_files,
+        gaps=gaps,
+        handoff_gate=handoff_gate,
+    )
     manifest = {
         "schema": "worldos.app-evidence.v1",
-        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "created_at": created_at,
         "app_status_url": args.app_status_url or "",
         "bundle_dir": str(bundle),
-        "build": build_info(app_status),
-        "art": art_status(app_status),
-        "live": {
-            "campaign_id": str(live.get("campaign_id") or ""),
-            "attached_campaign_id": str(live.get("attached_campaign_id") or ""),
-            "run_id": str(live.get("run_id") or ""),
-            "can_act": bool(live.get("can_act")) if "can_act" in live else None,
-            "enabled_action_count": live.get("enabled_action_count"),
-        },
+        "command": review_entrypoint["command"],
+        "repo": review_entrypoint["repo"],
+        "branch": review_entrypoint["branch"],
+        "commit_sha": review_entrypoint["commit_sha"],
+        "dirty": review_entrypoint["dirty"],
+        "app_build_sha": review_entrypoint["app_build_sha"],
+        "provider": review_entrypoint["provider"],
+        "gate_kind": review_entrypoint["gate_kind"],
+        "run_id": review_entrypoint["run_id"],
+        "started_at": review_entrypoint["started_at"],
+        "ended_at": review_entrypoint["ended_at"],
+        "verdict": review_entrypoint["verdict"],
+        "failure_bucket": review_entrypoint["failure_bucket"],
+        "build": build,
+        "art": art,
+        "live": live_summary,
         "failure": failure,
         "sources": sources,
         "copied_files": copied_files,
         "evidence_gaps": gaps,
+        "review_entrypoint": review_entrypoint,
+        "evidence_files": review_entrypoint["files"],
+        "handoff_gate": handoff_gate,
     }
     return manifest, exit_code
 
@@ -505,6 +805,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--out", default="", help="Evidence bundle directory (default: /Volumes/LEXAR/Codex/worldos-app-evidence/<timestamp>)")
     parser.add_argument("--transition-file", default="", help="Optional local JSON file with failure bucket/detail")
     parser.add_argument("--run-dir", default="", help="Optional app playtest run directory to copy into the evidence bundle")
+    parser.add_argument("--command-json", default="", help="JSON command argv that produced this evidence")
+    parser.add_argument("--gate-kind", default="", help="Gate kind such as web_scripted_smoke or built_app_codex_playtest")
+    parser.add_argument("--provider", default="", help="Provider under test")
+    parser.add_argument("--started-at", default="", help="Gate start timestamp")
+    parser.add_argument("--ended-at", default="", help="Gate end timestamp (defaults to manifest creation time)")
+    parser.add_argument("--verdict", default="", help="Optional explicit gate verdict")
+    parser.add_argument("--commit-sha", default="", help="Optional repo commit SHA override")
     return parser.parse_args(argv)
 
 
