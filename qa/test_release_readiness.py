@@ -25,6 +25,7 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         sha: str = "deadbee",
         manifest_sha: str | None = None,
         reuse_manifest: bool = False,
+        app_status_overrides: dict | None = None,
     ) -> Path:
         handoff_root = tmp / "handoff"
         handoff_root.mkdir()
@@ -76,7 +77,6 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                 )
             for evidence_file in (
                 "screenshots/final.png",
-                "app-status.final.json",
                 "session-surface.final.json",
                 "moves.ndjson",
                 "provider-trace-summary.json",
@@ -87,6 +87,21 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                 path = manifest_path.parent / evidence_file
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("ok\n", encoding="utf-8")
+            app_status = {
+                "schema": "worldos.app-status.v1",
+                "state_authority": "engine",
+                "write_lane": "/move",
+                "build": {"sha": manifest_sha or sha},
+                "live": {
+                    "campaign_id": "camp_test",
+                    "can_act": True,
+                    "enabled_action_count": 5,
+                    "moves_writable": True,
+                },
+            }
+            if app_status_overrides:
+                app_status.update(app_status_overrides)
+            (manifest_path.parent / "app-status.final.json").write_text(json.dumps(app_status), encoding="utf-8")
             gates.append(
                 {
                     "name": gate_name,
@@ -1143,6 +1158,129 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertEqual(payload["artifact_sources"]["handoff_json"], str(handoff))
             self.assertTrue(payload["signals"]["handoff_proof"]["valid"])
             self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
+
+    def test_handoff_json_must_prove_engine_state_authority(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, app_status_overrides={"state_authority": "viewer"})
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["signals"]["handoff_proof"]["valid"])
+            self.assertIn("app-status state_authority viewer does not prove engine authority", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+
+    def test_handoff_json_must_prove_move_write_lane(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, app_status_overrides={"write_lane": "/snapshot"})
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["signals"]["handoff_proof"]["valid"])
+            self.assertIn("app-status write_lane /snapshot does not prove /move intent writes", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
+
+    def test_handoff_json_must_prove_app_status_build_sha(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp, app_status_overrides={"build": {"sha": "badcafe"}})
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertFalse(payload["signals"]["handoff_proof"]["valid"])
+            self.assertIn("app-status build.sha badcafe does not match --build-sha deadbee", " ".join(gap["detail"] for gap in payload["evidence_gaps"]))
 
     def test_missing_handoff_json_blocks_native_gate_when_persona_runs_have_no_part_a(self):
         with tempfile.TemporaryDirectory() as td:

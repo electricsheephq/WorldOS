@@ -309,6 +309,21 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
                 evidence_file = resolve_evidence_file(manifest_path, str(value))
                 if not evidence_file.exists():
                     gaps.append(handoff_gap(str(manifest_path), f"manifest evidence_files.{evidence_kind} entry missing on disk: {value}"))
+                    continue
+                if evidence_kind == "app_status_snapshots":
+                    app_status, app_status_error = read_json_with_error(evidence_file)
+                    if app_status_error:
+                        gaps.append(handoff_gap(str(evidence_file), f"app-status snapshot {app_status_error}"))
+                        continue
+                    if app_status.get("schema") != "worldos.app-status.v1":
+                        gaps.append(handoff_gap(str(evidence_file), "app-status schema is missing or wrong"))
+                    if app_status.get("state_authority") != "engine":
+                        gaps.append(handoff_gap(str(evidence_file), f"app-status state_authority {app_status.get('state_authority') or 'missing'} does not prove engine authority"))
+                    if app_status.get("write_lane") != "/move":
+                        gaps.append(handoff_gap(str(evidence_file), f"app-status write_lane {app_status.get('write_lane') or 'missing'} does not prove /move intent writes"))
+                    app_status_build = app_status.get("build") if isinstance(app_status.get("build"), dict) else {}
+                    if expected_sha and not build_sha_matches(str(app_status_build.get("sha") or ""), expected_sha):
+                        gaps.append(handoff_gap(str(evidence_file), f"app-status build.sha {app_status_build.get('sha') or 'missing'} does not match --build-sha {expected_sha}"))
     proof["valid"] = not gaps
     return proof, gaps
 
