@@ -14,6 +14,7 @@ class FakeRunner:
         head: str = "deadbeefcafebabe1234567890abcdef12345678",
         status: str = "",
         codex_auth_output: str = "Authenticated as codex-test",
+        codex_version: str = "codex-cli 0.120.0",
         chromium_path: Path | None = None,
         create_chromium: bool = True,
         remote_query_ok: bool = True,
@@ -24,6 +25,7 @@ class FakeRunner:
         self.head = head
         self.status = status
         self.codex_auth_output = codex_auth_output
+        self.codex_version = codex_version
         self.chromium_path = chromium_path or repo / ".fake-chromium"
         self.remote_query_ok = remote_query_ok
         self.remote_query_head = remote_query_head or head
@@ -63,7 +65,7 @@ class FakeRunner:
                 "node": "v22.22.1",
                 "npm": "10.9.4",
                 "npx": "10.9.4",
-                "codex": "codex-cli 0.120.0",
+                "codex": self.codex_version,
                 "claude": "claude 0.0.0-test",
                 "jq": "jq-1.7",
                 "curl": "curl 8.0.0",
@@ -117,6 +119,7 @@ def make_config(tmp: Path, *, expected_sha: str = "deadbee") -> preflight.Prefli
         "qa/playwright/palette_server.js",
         "scripts/play.sh",
         "scripts/play_party.sh",
+        "scripts/play_codex_dm.sh",
         "qa/play_player_browser_newbie.txt",
         "qa/play_player_browser_veteran.txt",
         "qa/play_player_browser_adversarial.txt",
@@ -182,6 +185,8 @@ class SupportVMPreflightTests(unittest.TestCase):
     def test_cli_defaults_require_private_art(self):
         args = preflight.parse_args([])
         self.assertEqual(args.private_art_mode, "required")
+        self.assertEqual(args.provider, "codex")
+        self.assertEqual(args.player_agent, "codex")
 
     def test_env_snapshot_redacts_secret_values_but_keeps_safe_paths(self):
         snapshot = preflight.env_snapshot(
@@ -234,6 +239,10 @@ class SupportVMPreflightTests(unittest.TestCase):
             ):
                 self.assertIn(section, report)
             self.assertEqual(report["rri_plan"]["expected_personas"], preflight.CANONICAL_PERSONAS)
+            self.assertEqual(report["rri_plan"]["provider"], "codex")
+            self.assertEqual(report["rri_plan"]["player_agent"], "codex")
+            self.assertIn("codex", report["rri_plan"]["required_tools"])
+            self.assertNotIn("claude", report["rri_plan"]["required_tools"])
             self.assertEqual(report["blockers"], [])
 
     def test_report_flags_dirty_repo_and_expected_sha_mismatch(self):
@@ -305,10 +314,12 @@ class SupportVMPreflightTests(unittest.TestCase):
             plan_blob = json.dumps(report["rri_plan"])
             self.assertIn("qa/ui_playtest_app.sh", plan_blob)
             self.assertIn("WOS_APP_PART=B", plan_blob)
+            self.assertIn("WOS_APP_SELECTED_PROVIDER=codex", plan_blob)
+            self.assertIn("WOS_APP_PLAYER_AGENT=codex", plan_blob)
             self.assertNotIn("qa/release_gate.sh --personas", plan_blob)
             self.assertTrue(report["rri_plan"]["mac_handoff_required"])
 
-    def test_missing_persona_lane_tool_blocks_readiness(self):
+    def test_default_codex_lane_does_not_require_claude(self):
         with tempfile.TemporaryDirectory() as td:
             config = make_config(Path(td))
 
@@ -316,8 +327,35 @@ class SupportVMPreflightTests(unittest.TestCase):
                 return None if name == "claude" else f"/fake/{name}"
 
             report = preflight.build_report(config, runner=FakeRunner(config.repo), which=which_without_claude, env={})
+            self.assertTrue(report["ready_for_rri"])
+            self.assertNotIn("required VM tool missing: claude", report["blockers"])
+
+    def test_codex_lane_blocks_when_codex_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+
+            def which_without_codex(name: str) -> str | None:
+                return None if name == "codex" else f"/fake/{name}"
+
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=which_without_codex, env={})
+            self.assertFalse(report["ready_for_rri"])
+            self.assertIn("required VM tool missing: codex", report["blockers"])
+
+    def test_explicit_claude_lane_requires_claude_and_marks_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            config.provider = "claude"
+            config.player_agent = "claude"
+
+            def which_without_claude(name: str) -> str | None:
+                return None if name == "claude" else f"/fake/{name}"
+
+            report = preflight.build_report(config, runner=FakeRunner(config.repo), which=which_without_claude, env={})
             self.assertFalse(report["ready_for_rri"])
             self.assertIn("required VM tool missing: claude", report["blockers"])
+            plan_blob = json.dumps(report["rri_plan"])
+            self.assertIn("WOS_APP_SELECTED_PROVIDER=claude", plan_blob)
+            self.assertIn("WOS_APP_PLAYER_AGENT=claude", plan_blob)
 
     def test_missing_playwright_chromium_blocks_readiness(self):
         with tempfile.TemporaryDirectory() as td:
@@ -359,6 +397,26 @@ class SupportVMPreflightTests(unittest.TestCase):
         self.assertFalse(preflight.has_auth_marker("inactive", ("active",)))
         self.assertFalse(preflight.has_auth_marker("notauthenticated", ("authenticated",)))
         self.assertTrue(preflight.has_auth_marker("authenticated as codex", ("authenticated",)))
+
+    def test_codex_mcp_override_version_gate(self):
+        self.assertTrue(preflight.supports_codex_mcp_overrides("codex-cli 0.120.0"))
+        self.assertTrue(preflight.supports_codex_mcp_overrides("codex-cli 1.0.0"))
+        self.assertFalse(preflight.supports_codex_mcp_overrides("codex-cli 0.119.9"))
+        self.assertFalse(preflight.supports_codex_mcp_overrides("codex-cli unknown"))
+
+    def test_old_codex_version_blocks_codex_lane(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(config.repo, codex_version="codex-cli 0.119.9"),
+                which=fake_which,
+                env={},
+            )
+            self.assertFalse(report["ready_for_rri"])
+            blocker_text = "\n".join(report["blockers"])
+            self.assertIn("codex exec -c mcp_servers.* overrides", blocker_text)
+            self.assertFalse(report["tools"]["codex_auth"]["mcp_override_supported"])
 
     def test_codex_active_alone_does_not_prove_auth(self):
         with tempfile.TemporaryDirectory() as td:

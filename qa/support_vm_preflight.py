@@ -28,15 +28,14 @@ from typing import Callable, Sequence
 SCHEMA = "worldos.support-vm-preflight.v1"
 CANONICAL_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
 MIN_SHA_MATCH_CHARS = 7
-REQUIRED_TOOLS = [
+MIN_CODEX_MCP_OVERRIDE_VERSION = (0, 120, 0)
+BASE_REQUIRED_TOOLS = [
     "git",
     "python3",
     "uv",
     "node",
     "npm",
     "npx",
-    "codex",
-    "claude",
     "jq",
     "curl",
     "lsof",
@@ -45,6 +44,8 @@ REQUIRED_TOOLS = [
     "pgrep",
     "ps",
 ]
+PERSONA_PROVIDERS = ("codex", "claude")
+PLAYER_AGENTS = ("codex", "claude")
 INTERESTING_ENV_PREFIXES = ("WORLDOS_", "CLAWDND_", "CODEX_", "OPENAI_", "ANTHROPIC_")
 SAFE_PATH_ENV_NAMES = {
     "WORLDOS_ART_REPO_ROOT",
@@ -71,6 +72,17 @@ class PreflightConfig:
     budget: str
     concurrency: int
     port: int
+    provider: str = "codex"
+    player_agent: str = "codex"
+
+
+def required_tools_for(config: PreflightConfig) -> list[str]:
+    tools = list(BASE_REQUIRED_TOOLS)
+    if config.provider == "codex" or config.player_agent == "codex":
+        tools.append("codex")
+    if config.provider == "claude" or config.player_agent == "claude":
+        tools.append("claude")
+    return tools
 
 
 def utc_timestamp() -> str:
@@ -142,6 +154,18 @@ def build_sha_matches(reported: str, expected: str) -> bool:
 
 def has_auth_marker(text: str, markers: Sequence[str]) -> bool:
     return any(re.search(rf"\b{re.escape(marker)}\b", text) for marker in markers)
+
+
+def parse_semver(text: str) -> tuple[int, int, int] | None:
+    match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", text or "")
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def supports_codex_mcp_overrides(version_text: str) -> bool:
+    version = parse_semver(version_text)
+    return bool(version and version >= MIN_CODEX_MCP_OVERRIDE_VERSION)
 
 
 def run_command(cmd: Sequence[str], cwd: Path | None = None, timeout: int = 8) -> dict:
@@ -350,7 +374,12 @@ def inspect_tool(
     return info
 
 
-def inspect_tools(repo: Path, runner: CommandRunner, which: WhichFn) -> tuple[dict, list[str], list[str]]:
+def inspect_tools(
+    repo: Path,
+    runner: CommandRunner,
+    which: WhichFn,
+    required_tools: Sequence[str],
+) -> tuple[dict, list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
     tool_specs = {
@@ -371,7 +400,7 @@ def inspect_tools(repo: Path, runner: CommandRunner, which: WhichFn) -> tuple[di
         "ps": ("ps", ["--version"]),
     }
     tools = {name: inspect_tool(name, exe, args, repo, runner, which) for name, (exe, args) in tool_specs.items()}
-    for name in REQUIRED_TOOLS:
+    for name in required_tools:
         if not tools.get(name, {}).get("available"):
             blockers.append(f"required VM tool missing: {name}")
 
@@ -421,9 +450,18 @@ def inspect_tools(repo: Path, runner: CommandRunner, which: WhichFn) -> tuple[di
         blockers.append("Playwright Chromium executable is not installed; run (cd qa/playwright && npx playwright install chromium)")
     tools["playwright_chromium"] = chromium
 
-    codex = {"available": bool(tools.get("codex", {}).get("available")), "auth_status": "not_proven"}
+    codex_required = "codex" in required_tools
+    codex = {"available": bool(tools.get("codex", {}).get("available")), "auth_status": "not_required"}
     codex_path = tools.get("codex", {}).get("path")
+    codex_version = tools.get("codex", {}).get("version") or ""
+    codex["mcp_override_min_version"] = ".".join(str(part) for part in MIN_CODEX_MCP_OVERRIDE_VERSION)
+    codex["mcp_override_supported"] = supports_codex_mcp_overrides(codex_version) if codex_path else False
+    if codex_required and codex_path and not codex["mcp_override_supported"]:
+        blockers.append(
+            "Codex CLI version does not prove support for codex exec -c mcp_servers.* overrides; require >= 0.120.0"
+        )
     if codex_path:
+        codex["auth_status"] = "not_proven"
         result = runner([codex_path, "auth", "status"], repo, 10)
         combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".strip()
         lower = combined.lower()
@@ -437,13 +475,15 @@ def inspect_tools(repo: Path, runner: CommandRunner, which: WhichFn) -> tuple[di
         positive_auth = ("authenticated", "logged in", "signed in")
         if has_auth_marker(lower, negative_auth):
             codex["auth_status"] = "not_proven"
-            blockers.append("Codex CLI auth/profile status is not proven")
+            if codex_required:
+                blockers.append("Codex CLI auth/profile status is not proven")
         elif result.get("ok") and has_auth_marker(lower, positive_auth):
             codex["auth_status"] = "proven"
         elif result.get("ok"):
             codex["auth_status"] = "command_ok_unclassified"
-            blockers.append("Codex CLI auth/profile status is not proven")
-        else:
+            if codex_required:
+                blockers.append("Codex CLI auth/profile status is not proven")
+        elif codex_required:
             blockers.append("Codex CLI auth/profile status is not proven")
     tools["codex_auth"] = codex
     return tools, blockers, warnings
@@ -481,7 +521,12 @@ def inspect_private_art(art_root: Path, mode: str) -> tuple[dict, list[str], lis
     return info, blockers, warnings
 
 
-def inspect_required_repo_files(repo: Path, personas: list[str]) -> tuple[dict, list[str], list[str]]:
+def inspect_required_repo_files(
+    repo: Path,
+    personas: list[str],
+    provider: str,
+    _player_agent: str,
+) -> tuple[dict, list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
     required = [
@@ -492,9 +537,11 @@ def inspect_required_repo_files(repo: Path, personas: list[str]) -> tuple[dict, 
         "qa/release_readiness.py",
         "qa/play_player_duo.txt",
         "qa/playwright/palette_server.js",
-        "scripts/play.sh",
-        "scripts/play_party.sh",
     ]
+    if provider == "codex":
+        required.append("scripts/play_codex_dm.sh")
+    elif provider == "claude":
+        required.extend(["scripts/play.sh", "scripts/play_party.sh"])
     required.extend(f"qa/play_player_browser_{persona}.txt" for persona in personas)
     files = {}
     for rel in required:
@@ -539,6 +586,8 @@ def build_vm_persona_commands(config: PreflightConfig) -> list[str]:
                     "WOS_APP_PART=B",
                     "WOS_APP_SKIP_BUILD=1",
                     "WOS_APP_NO_GLOBAL_KILL=1",
+                    f"WOS_APP_SELECTED_PROVIDER={q(config.provider)}",
+                    f"WOS_APP_PLAYER_AGENT={q(config.player_agent)}",
                     f"WOS_APP_PREFERRED_PORT={q(config.port)}",
                     "qa/ui_playtest_app.sh",
                     q(f"{run_prefix}-{persona}"),
@@ -562,11 +611,21 @@ def build_report(
     blockers: list[str] = []
     warnings: list[str] = []
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
+    if config.provider not in PERSONA_PROVIDERS:
+        blockers.append(f"unsupported support-VM persona provider: {config.provider}")
+    if config.player_agent not in PLAYER_AGENTS:
+        blockers.append(f"unsupported support-VM player agent: {config.player_agent}")
 
+    required_tools = required_tools_for(config)
     repo, repo_blockers, repo_warnings = inspect_repo(config.repo, config.expected_sha, runner)
-    tools, tool_blockers, tool_warnings = inspect_tools(config.repo, runner, which)
+    tools, tool_blockers, tool_warnings = inspect_tools(config.repo, runner, which, required_tools)
     art, art_blockers, art_warnings = inspect_private_art(config.art_root, config.private_art_mode)
-    repo_files, file_blockers, file_warnings = inspect_required_repo_files(config.repo, config.personas)
+    repo_files, file_blockers, file_warnings = inspect_required_repo_files(
+        config.repo,
+        config.personas,
+        config.provider,
+        config.player_agent,
+    )
     blockers.extend(repo_blockers + tool_blockers + art_blockers + file_blockers)
     warnings.extend(repo_warnings + tool_warnings + art_warnings + file_warnings)
 
@@ -599,6 +658,9 @@ def build_report(
             "budget": config.budget,
             "concurrency_cap": config.concurrency,
             "port": config.port,
+            "provider": config.provider,
+            "player_agent": config.player_agent,
+            "required_tools": required_tools,
             "same_sha_required": True,
             "expected_sha": config.expected_sha,
             "support_vm_scope": "backend/persona artifacts only; Mac built-app/native handoff evidence is supplied separately",
@@ -663,6 +725,8 @@ def markdown_report(report: dict) -> str:
             f"- Personas: `{','.join(report['rri_plan']['expected_personas'])}`",
             f"- Budget: `{report['rri_plan']['budget']}`",
             f"- Port: `{report['rri_plan']['port']}`",
+            f"- Provider: `{report['rri_plan']['provider']}`",
+            f"- Player agent: `{report['rri_plan']['player_agent']}`",
             f"- Support VM scope: `{report['rri_plan']['support_vm_scope']}`",
             f"- Do not run on support VM: `{report['rri_plan']['do_not_run_on_support_vm']}`",
             f"- First persona command: `{(report['rri_plan'].get('vm_persona_sweep_commands') or [''])[0]}`",
@@ -693,6 +757,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--budget", default="12.00")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--port", type=int, default=8785)
+    parser.add_argument("--provider", choices=PERSONA_PROVIDERS, default="codex")
+    parser.add_argument("--player-agent", choices=PLAYER_AGENTS, default="codex")
     parser.add_argument("--no-fail", action="store_true", help="Write the report and exit 0 even if blockers exist")
     return parser.parse_args(argv)
 
@@ -711,6 +777,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         budget=args.budget,
         concurrency=args.concurrency,
         port=args.port,
+        provider=args.provider,
+        player_agent=args.player_agent,
     )
     report = build_report(config)
     json_path = config.artifact_dir / "support_vm_preflight.json"

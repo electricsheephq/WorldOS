@@ -237,6 +237,10 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Target: owner-provided **32GB support VM** (`support-vm-1`); connection/auth details live in local
   operator-only runbooks/evidence, not tracked repo docs.
 - Do not assume it is ready for Codex runs until credentials/config are intentionally installed and verified.
+  The default support-VM persona lane is Codex DM plus Codex UI player; Claude is only required when
+  the preflight is run with `--provider claude` or `--player-agent claude`. The Codex lane requires
+  Codex CLI `>=0.120.0` because it uses per-invocation `codex exec -c mcp_servers.*` overrides rather
+  than mutating `CODEX_HOME` with `codex mcp add`.
 - Use it for heavy backend/persona release sweeps and parallel QA once configured.
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
@@ -249,6 +253,8 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   python3 qa/support_vm_preflight.py \
     --repo /root/worldos-qa/WorldOS \
     --expected-sha 9545383 \
+    --provider codex \
+    --player-agent codex \
     --art-root /root/worldos-qa/WorldOS \
     --private-art-mode required \
     --artifact-dir /tmp/worldos-support-vm-preflight-9545383 \
@@ -256,7 +262,9 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   ```
   The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
   `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/origin/tool/auth/private-art
-  blockers would make the RRI sweep untrustworthy.
+  blockers would make the RRI sweep untrustworthy. Its generated persona commands must include both
+  `WOS_APP_SELECTED_PROVIDER` and `WOS_APP_PLAYER_AGENT`; otherwise the VM sweep lane is not defined
+  tightly enough to count toward #466.
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private

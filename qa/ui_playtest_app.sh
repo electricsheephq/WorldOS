@@ -43,6 +43,8 @@
 #   WOS_APP_PART=A|B|AB        run only part A, only part B, or both (default AB).
 #   WOS_APP_SELECTED_PROVIDER=codex|scripted|claude|openclaw
 #                               set the native app's provider preference before minting a session.
+#   WOS_APP_PLAYER_AGENT=claude|codex
+#                               part B UI-driving agent (default: claude for legacy compatibility).
 #   WOS_APP_KEEP_MINTED_BACKEND=1
 #                               part A only: leave the .app-minted provider backend alive so
 #                               an operator can continue a short built-app gameplay playtest.
@@ -67,6 +69,7 @@ BUDGET="${5:-4.00}"
 PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
 KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
 SELECTED_PROVIDER="${WOS_APP_SELECTED_PROVIDER:-}"
+PLAYER_AGENT="${WOS_APP_PLAYER_AGENT:-claude}"
 if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
   printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
   exit 2
@@ -90,7 +93,14 @@ VERSION="$( ([ -f "$ROOT/VERSION" ] && cat "$ROOT/VERSION") \
             || git -C "$ROOT" describe --tags --always 2>/dev/null \
             || echo "unknown")"
 log() { printf '[uipt-app] %s\n' "$*"; }
-log "run=$RUN world=$WORLD persona=$PERSONA beats=$BEATS budget=\$$BUDGET part=$PART"
+case "$PLAYER_AGENT" in
+  claude|codex) ;;
+  *)
+    printf '[uipt-app] WOS_APP_PLAYER_AGENT must be claude or codex (got %s)\n' "$PLAYER_AGENT" >&2
+    exit 2
+    ;;
+esac
+log "run=$RUN world=$WORLD persona=$PERSONA beats=$BEATS budget=\$$BUDGET part=$PART player_agent=$PLAYER_AGENT"
 log "build_sha=$BUILD_SHA version=$VERSION repo=$ROOT"
 if [ -n "$SELECTED_PROVIDER" ]; then
   case "$SELECTED_PROVIDER" in
@@ -104,6 +114,19 @@ if [ -n "$SELECTED_PROVIDER" ]; then
       ;;
   esac
 fi
+PART_B_PROVIDER="${SELECTED_PROVIDER:-claude}"
+case "$PART_B_PROVIDER" in
+  claude|codex) ;;
+  scripted|openclaw)
+    case "$PART" in
+      A) ;;
+      *)
+        printf '[uipt-app] Part B supports WOS_APP_SELECTED_PROVIDER=claude|codex only (got %s)\n' "$PART_B_PROVIDER" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+esac
 
 # Agent-readable failure buckets for built-app smoke. Keep these crisp and stable; the
 # detailed shell/native result still travels separately as original_result.
@@ -145,6 +168,20 @@ set_bucket_pair() {  # $1=A|B $2='bucket|detail'
   else
     PART_B_FAILURE_BUCKET="$bucket"; PART_B_FAILURE_DETAIL="$detail"
   fi
+}
+
+codex_supports_mcp_override_config() {
+  local raw major minor patch
+  raw="$(codex --version 2>/dev/null | head -1 || true)"
+  if [[ "$raw" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+    major="${BASH_REMATCH[1]}"
+    minor="${BASH_REMATCH[2]}"
+    patch="${BASH_REMATCH[3]}"
+    [ "$major" -gt 0 ] && return 0
+    [ "$minor" -gt 120 ] && return 0
+    [ "$minor" -eq 120 ] && [ "$patch" -ge 0 ] && return 0
+  fi
+  return 1
 }
 
 # --- never let a play script pop a browser on the owner's screen --------------------------
@@ -493,34 +530,55 @@ run_part_b() {
   # The PLAYER agent gets whatever budget remains (it drives /move; the DM cost is the bulk).
   local player_budget; player_budget="$(awk -v s="${spent:-0}" -v b="$BUDGET" 'BEGIN{r=b-s; if(r<0.5)r=0.5; printf "%.2f", r}')"
 
-  # Faithful backend: a SEPARATE play-state run (so it never collides with part A's mint). This
-  # is the EXACT command the native bridge shells (ProviderAdapters.swift:62). Solo → execs
-  # scripts/play.sh, which boots a LIVE viewer (CLAWDND_PLAYER_MOVES set) + a DM cold-open + a
-  # DM resolver loop tailing the move sink. We point the palette persona at THAT viewer.
+  # Faithful backend: a SEPARATE play-state run (so it never collides with part A's mint). The
+  # Claude lane still uses the native bridge's legacy play_party.sh/play.sh path; the Codex lane
+  # uses the Codex DM provider wrapper that owns the same live viewer + /move sink contract.
+  # We point the palette persona at THAT viewer.
   local b_run="${RUN}-b"
   local b_port; b_port="$(pick_free_port $((PREFERRED_PORT+20)))" || { log "[B] no free port"; PART_B_RESULT="no_port"; set_bucket_pair B "$(bucket_pair no_provider "no free localhost port for faithful backend")"; return 1; }
   local b_url="http://127.0.0.1:$b_port/openworlds/"
-  log "[B] launching faithful backend: scripts/play_party.sh $WORLD $b_run $b_port  (solo → play.sh; DM=$DM_MODEL)"
+  log "[B] launching faithful backend: provider=$PART_B_PROVIDER run=$b_run port=$b_port DM=$DM_MODEL"
 
   # Cap the backend so it can never overshoot the run budget. CLAWDND_PLAY_SESSION_BUDGET is the
   # aggregate DM ceiling; CLAWDND_PLAY_MAX_TURNS bounds turns; per-turn cap keeps each beat small.
   local sess_cap; sess_cap="$(awk -v r="$player_budget" 'BEGIN{c=r-0.20; if(c<0.50)c=0.50; printf "%.2f", c}')"
-  (
-    export PATH="$PATH_NOOPEN"
-    export WORLDOS_DM_MODEL="$DM_MODEL" CLAWDND_DM_MODEL="$DM_MODEL"
-    export CLAWDND_PLAY_PORT="$b_port"
-    export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
-    export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
-    export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-    export CLAWDND_PLAY_MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-600}"
-    "$ROOT/scripts/play_party.sh" "$WORLD" "$b_run" "$b_port" >> "$RUNDIR/backend.log" 2>&1
-  ) &
+  local codex_default_model
+  codex_default_model="${CLAWDND_CODEX_MODEL:-}"
+  case "$PART_B_PROVIDER" in
+    claude)
+      (
+        export PATH="$PATH_NOOPEN"
+        export WORLDOS_DM_MODEL="$DM_MODEL" CLAWDND_DM_MODEL="$DM_MODEL"
+        export CLAWDND_PLAY_PORT="$b_port"
+        export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
+        export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
+        export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+        export CLAWDND_PLAY_MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-600}"
+        exec "$ROOT/scripts/play_party.sh" "$WORLD" "$b_run" "$b_port" >> "$RUNDIR/backend.log" 2>&1
+      ) &
+      ;;
+    codex)
+      (
+        export PATH="$PATH_NOOPEN"
+        export CLAWDND_PROVIDER=codex
+        export CLAWDND_WORLD="$WORLD"
+        export CLAWDND_RUN_ID="$b_run"
+        export CLAWDND_PLAY_PORT="$b_port"
+        export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
+        export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
+        export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+        export CLAWDND_CODEX_MODEL="${WOS_APP_CODEX_DM_MODEL:-$codex_default_model}"
+        exec "$ROOT/scripts/play_codex_dm.sh" >> "$RUNDIR/backend.log" 2>&1
+      ) &
+      ;;
+  esac
   B_BACKEND=$!
   # Clean teardown: kill the backend subshell, THEN the play.sh supervisor + DM-loop bash procs
   # (matched by the run-id positional — they don't carry the play-state path, and the supervisor
   # respawns the viewer, so a path-only kill leaves it alive), then the viewer + state dir, belt
   # and suspenders. The launcher and other runs are untouched (unique run id `${RUN}-b`).
   b_cleanup() {
+    pkill -TERM -P "$B_BACKEND" 2>/dev/null || true
     kill "$B_BACKEND" 2>/dev/null || true
     pkill -f "play_party.sh $WORLD $b_run" 2>/dev/null || true
     pkill -f "play.sh $WORLD $b_run" 2>/dev/null || true
@@ -588,13 +646,60 @@ PY
   local persona_brief; persona_brief="$(cat "$PERSONA_FILE")"
   local psid; psid="$(python3 -c 'import uuid;print(uuid.uuid4())')"
   local player_out="$PLAYERDIR/player.jsonl"
-  log "[B] player agent starting (persona=$PERSONA, ~$BEATS actions, budget \$$player_budget)…"
-  claude -p "$persona_brief
+  local player_prompt="$PLAYERDIR/player.prompt.md"
+  local player_last="$PLAYERDIR/player.last.txt"
+  cat > "$player_prompt" <<EOF
+$persona_brief
 
-You have a budget of about $BEATS actions for this whole session. Spend them trying to start and play the story, reporting friction as you go. When you have either (a) genuinely gotten stuck after reporting it, or (b) played a few real turns and seen enough to judge the experience, you may stop — give a final 1-2 sentence verdict and, if you got stuck, call give_up. Start now." \
-    --session-id "$psid" --mcp-config "$player_cfg" --strict-mcp-config \
-    --model "$PLAYER_MODEL" --permission-mode bypassPermissions --max-budget-usd "$player_budget" \
-    --output-format stream-json --verbose > "$player_out" 2>> "$PLAYERDIR/player.err"
+You have a budget of about $BEATS actions for this whole session. Spend them trying to start and play the story, reporting friction as you go. When you have either (a) genuinely gotten stuck after reporting it, or (b) played a few real turns and seen enough to judge the experience, you may stop — give a final 1-2 sentence verdict and, if you got stuck, call give_up. Start now.
+EOF
+  log "[B] player agent starting (agent=$PLAYER_AGENT persona=$PERSONA, ~$BEATS actions, budget \$$player_budget)…"
+  case "$PLAYER_AGENT" in
+    claude)
+      claude -p "$(cat "$player_prompt")" \
+        --session-id "$psid" --mcp-config "$player_cfg" --strict-mcp-config \
+        --model "$PLAYER_MODEL" --permission-mode bypassPermissions --max-budget-usd "$player_budget" \
+        --output-format stream-json --verbose > "$player_out" 2>> "$PLAYERDIR/player.err"
+      ;;
+    codex)
+      : > "$player_last"
+      export CLAWDND_UIPT_URL="$b_url"
+      export CLAWDND_UIPT_RUNDIR="$RUNDIR"
+      local uipt_channel
+      uipt_channel="$(worldos_env UIPT_CHANNEL "")"
+      export CLAWDND_UIPT_CHANNEL="$uipt_channel"
+      export CLAWDND_UIPT_PERSONA="$PERSONA"
+      local codex_player_model
+      codex_player_model="${WOS_APP_CODEX_PLAYER_MODEL:-$codex_default_model}"
+      local codex_player_model_args=()
+      if [ -n "${codex_player_model//[[:space:]]/}" ]; then
+        codex_player_model_args=(--model "$codex_player_model")
+      fi
+      # Keep this lane self-contained: support-VM evidence must not mutate CODEX_HOME
+      # with `codex mcp add`. Codex CLI 0.120.0 supports the same per-invocation
+      # TOML dot-notation overrides used by scripts/play_codex_dm.sh and
+      # scripts/play_codex_actor.sh.
+      if ! codex_supports_mcp_override_config; then
+        printf '[uipt-app] WOS_APP_PLAYER_AGENT=codex requires Codex CLI >= 0.120.0 for codex exec -c mcp_servers.* overrides; upgrade Codex CLI or use WOS_APP_PLAYER_AGENT=claude.\n' >&2
+        return 1
+      fi
+      codex exec \
+        --ignore-user-config \
+        --ignore-rules \
+        --sandbox read-only \
+        --json \
+        ${codex_player_model_args[@]+"${codex_player_model_args[@]}"} \
+        --cd "$ROOT" \
+        --output-last-message "$player_last" \
+        -c "mcp_servers.clawdnd-uiplayer.command=\"node\"" \
+        -c "mcp_servers.clawdnd-uiplayer.args=[\"$PW_DIR/palette_server.js\"]" \
+        -c "mcp_servers.clawdnd-uiplayer.env_vars=[\"CLAWDND_UIPT_URL\",\"CLAWDND_UIPT_RUNDIR\",\"CLAWDND_UIPT_CHANNEL\",\"CLAWDND_UIPT_PERSONA\"]" \
+        -c "mcp_servers.clawdnd-uiplayer.required=true" \
+        -c "mcp_servers.clawdnd-uiplayer.default_tools_approval_mode=\"approve\"" \
+        -c "mcp_servers.clawdnd-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\"]" \
+        - < "$player_prompt" > "$player_out" 2>> "$PLAYERDIR/player.err"
+      ;;
+  esac
   local player_rc=$?
   log "[B] player agent finished (rc=$player_rc)."
 
@@ -608,21 +713,27 @@ You have a budget of about $BEATS actions for this whole session. Spend them try
   fi
 
   local player_verdict player_cost
-  player_verdict="$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$player_out" 2>/dev/null)"
+  if [ "$PLAYER_AGENT" = "codex" ]; then
+    player_verdict="$(cat "$player_last" 2>/dev/null || true)"
+  else
+    player_verdict="$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$player_out" 2>/dev/null)"
+  fi
   player_cost="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$player_out" 2>/dev/null)"
   PART_B_PLAYER_COST="${player_cost:-0}"
 
   b_cleanup; trap - RETURN
 
   # meta.json (the scorer reads it) + score + summary via the EXISTING scorer (unchanged).
-  python3 - "$RUNDIR/meta.json" "$RUN" "$WORLD" "$PERSONA" "$b_port" "$BEATS" "$BUDGET" "$player_cost" "$player_rc" "$BUILD_SHA" "$VERSION" <<'PY'
+  python3 - "$RUNDIR/meta.json" "$RUN" "$WORLD" "$PERSONA" "$b_port" "$BEATS" "$BUDGET" "$player_cost" "$player_rc" "$BUILD_SHA" "$VERSION" "$PART_B_PROVIDER" "$PLAYER_AGENT" <<'PY'
 import json, sys, datetime
-out, run, world, persona, port, beats, budget, cost, rc, sha, ver = sys.argv[1:12]
+out, run, world, persona, port, beats, budget, cost, rc, sha, ver, provider, player_agent = sys.argv[1:14]
 json.dump({
     "run": run, "world": world, "persona": persona, "port": int(port),
     "beats_cap": int(beats), "budget_usd": float(budget),
     "player_cost_usd": round(float(cost or 0), 4), "player_rc": int(rc),
-    "build_sha": sha, "version": ver, "surface": "built-app-faithful-backend (play_party.sh)",
+    "build_sha": sha, "version": ver,
+    "provider": provider, "player_agent": player_agent,
+    "surface": f"built-app-faithful-backend ({provider} provider, {player_agent} player)",
     "session_surface_path": "session_surface.final.json",
     "finished_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
 }, open(out, "w"), indent=2)
@@ -738,11 +849,13 @@ python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUI
           "$PART" "$PART_A_RESULT" "${PART_A_RUNDIR:-}" "${PART_A_MINTED_PORT:-}" \
           "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$PART_B_RESULT" "$PART_B_SCORE_PASS" \
           "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" \
-          "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" "$PART_B_FAILURE_BUCKET" "$PART_B_FAILURE_DETAIL" <<'PY'
+          "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" "$PART_B_FAILURE_BUCKET" "$PART_B_FAILURE_DETAIL" \
+          "$PART_B_PROVIDER" "$PLAYER_AGENT" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
  a_kept, a_first_turn_ready, b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:20]
 a_bucket, a_detail, b_bucket, b_detail = sys.argv[20:24]
+provider, player_agent = sys.argv[24:26]
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
@@ -754,13 +867,14 @@ json.dump({
                "kept_backend_alive": a_kept == "true",
                "first_turn_ready": a_first_turn_ready == "true"},
     "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true",
+               "provider": provider, "player_agent": player_agent,
                "original_result": b_res,
                "failure_bucket": b_bucket or None,
                "failure_detail": b_detail or None},
     "spend_usd": {"dm_and_companions": round(float(dm_spend or 0), 4),
                   "player_agent": round(float(player_cost or 0), 4),
                   "total": round(float(total or 0), 4)},
-    "surface": "BUILT dist/WorldOS.app (part A) + byte-identical play_party.sh backend (part B)",
+    "surface": f"BUILT dist/WorldOS.app (part A) + {provider} provider/{player_agent} player backend (part B)",
     "at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
 }, open(out, "w"), indent=2)
 PY
