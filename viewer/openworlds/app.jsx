@@ -62,6 +62,10 @@ window.openWorldsRequestedCampaignFromLocation = window.openWorldsRequestedCampa
   }
 };
 
+function openWorldsPlayerChronicle(c) {
+  return Boolean(c?.canResume || c?.current);
+}
+
 // #342: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into the
 // chronicle. The adversarial run (#324 v2) found that submitting "<script>…</script>", "{{ }}", or
 // "<b>…</b>" sent the raw markup straight to the DM (it stalled 35s+) and rode along in the local
@@ -605,12 +609,13 @@ function App() {
         setState((s) => {
           const requestedCampaign = requestedCampaignRef.current;
           const requestedStillExists = requestedCampaign && nextCampaigns.some((c) => c.id === requestedCampaign);
-          const activeStillExists = nextCampaigns.some((c) => c.id === s?.activeCampaign);
+          const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);
+          const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);
           const preferred =
             (requestedStillExists ? requestedCampaign : "") ||
-            nextCampaigns.find((c) => c.current)?.id ||
-            nextCampaigns.find((c) => c.live)?.id ||
-            nextCampaigns[0]?.id ||
+            playerCampaigns.find((c) => c.current)?.id ||
+            playerCampaigns.find((c) => c.live && c.canResume)?.id ||
+            playerCampaigns.find((c) => c.canResume)?.id ||
             "";
           if (requestedStillExists) requestedCampaignRef.current = "";
           return {
@@ -794,9 +799,10 @@ function App() {
   };
 
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
+  const playerChronicles = campaigns.filter(openWorldsPlayerChronicle);
   const current =
-    campaigns.find((c) => c.id === state?.activeCampaign) ||
-    campaigns[0] ||
+    playerChronicles.find((c) => c.id === state?.activeCampaign) ||
+    playerChronicles[0] ||
     { title: "Open Worlds", day: "" };
 
   return (

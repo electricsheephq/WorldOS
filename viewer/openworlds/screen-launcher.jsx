@@ -2,12 +2,13 @@
 
 function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
-  const [selected, setSelected] = React.useState(state?.activeCampaign || campaigns[0]?.id || "");
+  const playerChronicles = campaigns.filter(isPlayerChronicle);
+  const [selected, setSelected] = React.useState(state?.activeCampaign || playerChronicles[0]?.id || "");
   const [showNew, setShowNew] = React.useState(false);
   const [summoning, setSummoning] = React.useState(false);
   const [summonError, setSummonError] = React.useState("");
   const toast = window.useToast ? window.useToast() : (() => {});
-  const active = campaigns.find((c) => c.id === selected) || campaigns[0] || null;
+  const active = playerChronicles.find((c) => c.id === selected) || playerChronicles[0] || null;
   const hasBridge = Boolean(window.OpenWorldsNative?.hasBridge?.());
   // #326: the in-browser play-entry. The catalog marks a session the engine can take moves for as
   // `live` (its move sink is writable) and `canResume` (it is the attached, current run). When such
@@ -16,17 +17,17 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
   // carries it from there. We surface that as an unmistakable primary so a newbie is never left
   // hunting (the old launcher led with "Begin a new chronicle", which dead-ends without the app).
   const playableCampaign =
-    campaigns.find((c) => c.live && c.canResume) ||
-    campaigns.find((c) => c.canResume) ||
+    playerChronicles.find((c) => c.live && c.canResume) ||
+    playerChronicles.find((c) => c.canResume) ||
     null;
 
   React.useEffect(() => {
-    if (campaigns.some((c) => c.id === selected)) return;
-    const fallback = campaigns.some((c) => c.id === state?.activeCampaign)
+    if (playerChronicles.some((c) => c.id === selected)) return;
+    const fallback = playerChronicles.some((c) => c.id === state?.activeCampaign)
       ? state.activeCampaign
-      : campaigns[0]?.id || "";
+      : playerChronicles[0]?.id || "";
     setSelected(fallback);
-  }, [campaigns, selected, state?.activeCampaign]);
+  }, [playerChronicles, selected, state?.activeCampaign]);
 
   // Begin a live, playable session. Inside the native WorldOS app this asks the supervisor
   // to start the currently selected provider session. The app repoints its WebView at that
@@ -83,9 +84,9 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
   };
 
   const onResume = () => {
-    const nextCampaign = campaigns.some((c) => c.id === selected) ? selected : campaigns[0]?.id;
+    const nextCampaign = playerChronicles.some((c) => c.id === selected) ? selected : playerChronicles[0]?.id;
     if (!nextCampaign) return;
-    const c = campaigns.find((x) => x.id === nextCampaign);
+    const c = playerChronicles.find((x) => x.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
     startPlay(c?.world);
   };
@@ -154,7 +155,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
           <div style={{ marginTop: 56 }}>
             <SectionTitle ordinal="I.">Chronicles</SectionTitle>
             <div style={{ display: "grid", gap: 12 }}>
-              {campaigns.length === 0 && (
+              {playerChronicles.length === 0 && (
                 <div style={{
                   padding: "28px 22px",
                   textAlign: "center",
@@ -170,7 +171,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                   </div>
                 </div>
               )}
-              {campaigns.map((c) => (
+              {playerChronicles.map((c) => (
                 <CampaignRow key={c.id} c={c} selected={selected === c.id} onSelect={() => setSelected(c.id)} />
               ))}
               <button
@@ -243,7 +244,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
         {/* RIGHT: Selected detail */}
         <Panel framed style={{ padding: 0, overflow: "hidden" }}>
           {(() => {
-            const c = campaigns.find((x) => x.id === selected) || campaigns[0];
+            const c = playerChronicles.find((x) => x.id === selected) || playerChronicles[0];
             if (!c) {
               return (
                 <div style={{ padding: 28 }}>
@@ -385,6 +386,10 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
       }} />}
     </div>
   );
+}
+
+function isPlayerChronicle(c) {
+  return Boolean(c?.canResume || c?.current);
 }
 
 // #326: the unmistakable in-browser "Continue / Resume → play" primary. Shown at the very top of
@@ -638,4 +643,4 @@ function SegRadio({ value, onChange, options }) {
   );
 }
 
-Object.assign(window, { ScreenLauncher, ContinueBanner, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });
+Object.assign(window, { ScreenLauncher, isPlayerChronicle, ContinueBanner, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });
