@@ -185,17 +185,17 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "LOG_EVENT_TOOL_RULE=" in source
-    assert "WRAPPER_NARRATION_LOG_RULE=" in source
+    assert "LIVE_PROGRESS_LOG_RULE=" in source
     assert "OPENING_LOG_EVENT_RULE=" in source
     assert "omit the speaker argument entirely" in source
     assert "Never pass JSON null for speaker" in source
-    assert "Do not call log_event for player-facing narration or dialogue in this provider wrapper" in source
-    assert "do not call log_event for the full opening narration" in source
+    assert "visible story progress while your turn is still running" in source
+    assert "Do not log the full opening this way" in source
     assert "log_engine_narration" in source
     assert '[ -n "${campaign_id//[[:space:]]/}" ] || return 1' in source
     assert '[ -n "${text//[[:space:]]/}" ] || return 1' in source
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
-    assert source.count("$WRAPPER_NARRATION_LOG_RULE") == 3
+    assert source.count("$LIVE_PROGRESS_LOG_RULE") == 3
     assert 'record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"' in source
     assert '"engine_logged":true' in source
     assert "invalid chatlog extra_json" in source

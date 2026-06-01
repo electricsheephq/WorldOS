@@ -423,8 +423,8 @@ codex_dm_turn() {
 }
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
-WRAPPER_NARRATION_LOG_RULE="Wrapper narration log rule: Do not call log_event for player-facing narration or dialogue in this provider wrapper. Put visible prose and dialogue in your final reply; the wrapper writes that reply to chat and records it through the engine after the turn. Use log_event only if a later explicit instruction requires a short non-duplicate system/roll row."
-OPENING_LOG_EVENT_RULE="Opening log rule: do not call log_event for the full opening narration. Put the player-facing opening prose in your final reply; the wrapper will record that final reply through the engine after the turn. Only call log_event during the opening if you need one short non-duplicate system/roll row."
+LIVE_PROGRESS_LOG_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") once with a short, non-duplicate, player-facing progress beat before any longer resolution work. This is how /events shows visible story progress while your turn is still running. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+OPENING_LOG_EVENT_RULE="Opening progress rule: during the opening, after get_state establishes the already-seated player and live scene, write one short sensory progress beat through log_event(kind=\"narration\", text=\"...\") before deeper setup or rules work. Do not log the full opening this way; your final reply must still be non-empty opening narration for the player."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
 SOCIAL_CHECK_TARGET_RULE="Social check target rule: call social_check only when scene_context already shows a real tracked npc_id for the target. Do not call load_canon_character or create_character solely to manufacture a social-check target during the same turn. If the target is not already tracked, do not use persuasion, deception, intimidation, or another attitude-moving social skill. Use a non-attitude skill_check such as investigation or perception for what the player can infer, then narrate the scene-local response; persist a new NPC later only when the player keeps engaging them."
@@ -433,6 +433,20 @@ PARLEY_TOOL_RULE="Parley tool rule: when using generate_parley_options, pass an 
 REWARD_MUTATION_RULE="Reward mutation rule: Do not call award_xp, grant_xp, level_up, or reward-granting mutation tools in this built-app provider proof path. If a moment deserves reward accounting, mention the fictional consequence in final narration and persist only memory/decision context with persist_beat."
 OPENING_PERSIST_BEAT_RULE="Opening persist rule: do not call persist_beat during the opening turn. Opening state is recorded by the wrapper after your final reply; persist only on later turns after an actual player move has been resolved."
 MOVE_PERSIST_BEAT_RULE="Move persist rule: This is a post-move turn: at least one real player move has been accepted and relayed below. If this beat produced durable memory, decision, or time changes, call persist_beat only after you have resolved the move. Do not put player-facing prose into persist_beat events; the wrapper records your final reply through the engine. When calling persist_beat with memories, each memory must be an object with character_id and fact fields. Do not pass memory strings."
+OPENING_PROGRESS_TEXT="The first scene gathers around you; voices, risks, and choices come into focus."
+MOVE_PROGRESS_TEXTS=(
+  "Your choice takes hold; nearby voices, risks, and consequences begin to answer."
+  "The world turns with your action; the scene shifts toward its answer."
+  "Your move lands; attention gathers around what changes next."
+  "Momentum carries through the scene; consequences are beginning to surface."
+)
+
+choose_move_progress_text() {
+  local idx="${1:-0}"
+  [[ "$idx" =~ ^[0-9]+$ ]] || idx=0
+  local count="${#MOVE_PROGRESS_TEXTS[@]}"
+  printf '%s\n' "${MOVE_PROGRESS_TEXTS[$((idx % count))]}"
+}
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
@@ -466,6 +480,11 @@ echo "  Save dir: $RUN_DIR"
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"
 MCURSOR="${MCURSOR:-0}"
 
+if [ -n "${HERO_CAMP//[[:space:]]/}" ]; then
+  log_engine_narration "$HERO_CAMP" "$OPENING_PROGRESS_TEXT" \
+    || echo "[codex-dm-provider] warning: could not record immediate opening progress narration" >&2
+fi
+
 if [ -n "$HERO_CAMP" ]; then
   OPENING_PROMPT="$(cat <<EOF
 You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
@@ -473,7 +492,7 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
-$WRAPPER_NARRATION_LOG_RULE
+$LIVE_PROGRESS_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -503,7 +522,7 @@ You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLA
 Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
 
 $LOG_EVENT_TOOL_RULE
-$WRAPPER_NARRATION_LOG_RULE
+$LIVE_PROGRESS_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -546,10 +565,13 @@ while true; do
     chatlog player "$PMSG"
     ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
     CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
+    MOVE_PROGRESS_TEXT="$(choose_move_progress_text "$DM_TURNS")"
+    log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$MOVE_PROGRESS_TEXT" \
+      || echo "[codex-dm-provider] warning: could not record immediate move progress narration" >&2
     if ! REPLY="$(codex_dm_turn "You are the Dungeon Master mid-session. Re-ground from the engine state first, then resolve this player move through the engine/rules tools and reply with 2nd-person player-facing narration.
 
 $LOG_EVENT_TOOL_RULE
-$WRAPPER_NARRATION_LOG_RULE
+$LIVE_PROGRESS_LOG_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
 $SOCIAL_CHECK_TARGET_RULE

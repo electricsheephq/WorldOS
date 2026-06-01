@@ -89,6 +89,46 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("player_agent", harness)
         self.assertIn("provider", harness)
 
+    def test_codex_dm_provider_feeds_live_progress_events(self):
+        script = self.read("scripts/play_codex_dm.sh")
+        app = self.read("viewer/openworlds/app.jsx")
+
+        self.assertIn("LIVE_PROGRESS_LOG_RULE", script)
+        self.assertIn("visible story progress while your turn is still running", script)
+        self.assertIn("log_event(kind=\\\"narration\\\", text=\\\"...\\\")", script)
+        self.assertIn("the wrapper records the final reply through the engine after the turn", script)
+        self.assertIn("OPENING_PROGRESS_TEXT=", script)
+        self.assertIn("MOVE_PROGRESS_TEXTS=(", script)
+        self.assertIn("choose_move_progress_text() {", script)
+        self.assertNotIn("The Lower City resolves around you", script)
+        self.assertIn('log_engine_narration "$HERO_CAMP" "$OPENING_PROGRESS_TEXT"', script)
+        self.assertIn('MOVE_PROGRESS_TEXT="$(choose_move_progress_text "$DM_TURNS")"', script)
+        self.assertIn('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$MOVE_PROGRESS_TEXT"', script)
+        self.assertLess(
+            script.index('log_engine_narration "$HERO_CAMP" "$OPENING_PROGRESS_TEXT"'),
+            script.index('if [ -n "$HERO_CAMP" ]'),
+        )
+        self.assertLess(
+            script.index('MOVE_PROGRESS_TEXT="$(choose_move_progress_text "$DM_TURNS")"'),
+            script.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$MOVE_PROGRESS_TEXT"'),
+        )
+        self.assertLess(
+            script.index('log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$MOVE_PROGRESS_TEXT"'),
+            script.index('codex_dm_turn "You are the Dungeon Master mid-session.'),
+        )
+        self.assertGreaterEqual(script.count("$LIVE_PROGRESS_LOG_RULE"), 3)
+        self.assertNotIn(
+            "Do not call log_event for player-facing narration or dialogue in this provider wrapper",
+            script,
+        )
+        self.assertNotIn(
+            "Only call log_event during the opening if you need one short non-duplicate system/roll row",
+            script,
+        )
+        self.assertIn("Codex DM wrapper now writes an immediate wrapper-authored engine progress row", app)
+        self.assertIn("provider to write one short engine-owned progress narration", app)
+        self.assertIn("when /events progress arrives, it keeps a healthy turn alive", app)
+
     def test_scripted_provider_is_dev_gated_and_model_free(self):
         models = self.read("macos/WorldOSApp/Sources/WorldOSApp/Models/ProviderModels.swift")
         providers = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift")
