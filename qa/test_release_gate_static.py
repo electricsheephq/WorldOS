@@ -11,9 +11,19 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         source = (ROOT / "qa" / "release_gate.sh").read_text(encoding="utf-8")
 
         self.assertIn('--expected-personas "$PERSONAS"', source)
+        self.assertIn('--handoff-json) HANDOFF_JSON="$2"; shift 2;;', source)
+        self.assertIn('--support-preflight-json) SUPPORT_PREFLIGHT_JSON="$2"; shift 2;;', source)
+        self.assertIn("[ -s \"$HANDOFF_JSON\" ] || fail", source)
+        self.assertIn("[ -s \"$SUPPORT_PREFLIGHT_JSON\" ] || fail", source)
+        self.assertIn("RRI_ARGS=(", source)
+        self.assertIn('[ -n "$HANDOFF_JSON" ] && RRI_ARGS+=(--handoff-json "$HANDOFF_JSON")', source)
+        self.assertIn(
+            '[ -n "$SUPPORT_PREFLIGHT_JSON" ] && RRI_ARGS+=(--support-preflight-json "$SUPPORT_PREFLIGHT_JSON")',
+            source,
+        )
         self.assertIn("MISSING_SCORES", source)
         self.assertIn("missing persona score", source)
-        self.assertIn("set +e\npython3 qa/release_readiness.py", source)
+        self.assertIn('set +e\npython3 qa/release_readiness.py "${RRI_ARGS[@]}"', source)
         self.assertIn('RRI_RC="${PIPESTATUS[0]}"', source)
         self.assertIn('set -e\n\necho ""', source)
         self.assertIn('exit "$RRI_RC"', source)
