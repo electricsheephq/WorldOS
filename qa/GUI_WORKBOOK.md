@@ -18,7 +18,7 @@
 ⇒ The fix for "no images / no map / no palette" is **serve/build WITH `_private` art present** (infra), not 3 code PRs. The real *code* bugs are layout prominence + render formatting + the silent companion.
 
 Post-#504/#505 note: the latest product-code fast handoff proof is `fd9dba5`
-(`handoff-20260601T085319Z-fd9dba5`), which passed web scripted smoke, built-app scripted smoke, and a
+(`handoff-20260601T085319Z-fd9dba5`), which passed web-scripted smoke, built-app scripted smoke, and a
 short built-app Codex-provider playtest with zero evidence gaps. That 5-action handoff is an
 implementation-velocity gate, not release proof. RRI release scoring still requires a disk-backed
 `palette_live` proof with **>=6 enabled actions** on a `can_act:true` surface plus complete same-SHA
