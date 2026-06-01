@@ -364,6 +364,10 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("--palette-source", plan_blob)
             self.assertIn("support_vm_preflight.json", report["rri_plan"]["support_preflight_json"])
             self.assertTrue(report["rri_plan"]["support_preflight_required_for_split_rollup"])
+            command_template = report["rri_plan"]["rri_rollup_command_template"]
+            self.assertNotIn("<", command_template)
+            self.assertIn("VM_PERSONA_RUN_DIRS_CSV", command_template)
+            self.assertIn("SAME_SHA_MAC_HANDOFF_JSON", command_template)
             self.assertNotIn("qa/release_gate.sh --personas", plan_blob)
             self.assertTrue(report["rri_plan"]["mac_handoff_required"])
             markdown = preflight.markdown_report(report)
