@@ -114,7 +114,8 @@ Behavioral rules:
   real provider or an explicitly enabled deterministic test provider, and it must
   report no blocking console/network failures.
 - `degraded` means the app is observable but not fully playable; include a
-  failure bucket. `blocked` means the harness cannot continue safely.
+  failure bucket. Harnesses that cannot continue safely should stop with the
+  appropriate stable failure bucket rather than inventing another status value.
 - Status must never expose private art file contents, secrets, model keys, or
   operator-only VM details. Paths may be omitted or redacted when not needed for
   diagnosis.

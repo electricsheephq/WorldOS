@@ -224,6 +224,27 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("failure_bucket", payload["health"])
         self.assertEqual(payload["endpoints"]["session_surface"], "/session-surface")
 
+    def test_app_status_browser_health_counts_console_and_network_logs(self):
+        console = self._tmp / "console.ndjson"
+        network = self._tmp / "network.ndjson"
+        console.write_text(
+            "\n".join([
+                json.dumps({"type": "warning", "text": "benign"}),
+                json.dumps({"type": "pageerror", "text": "Uncaught ReferenceError"}),
+            ]) + "\n",
+            encoding="utf-8",
+        )
+        network.write_text(
+            "\n".join([
+                json.dumps({"status": 200, "url": "/app-status"}),
+                json.dumps({"status": 500, "url": "/move"}),
+                json.dumps({"error": "requestfailed", "url": "/chat"}),
+            ]) + "\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(server._browser_health_counts(str(console), str(network)), (1, 2))
+
     def test_openworlds_static_assets_are_same_origin_and_local(self):
         status, ctype, body = self._get("/openworlds/vendor/google-fonts.css")
 

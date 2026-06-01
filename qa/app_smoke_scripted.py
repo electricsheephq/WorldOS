@@ -316,25 +316,30 @@ def run_smoke(args: argparse.Namespace) -> int:
     }
     evidence_gaps: list[dict[str, str]] = verdict["evidence_gaps"]
     screenshots: list[str] = verdict["screenshots"]
+
+    def fail(bucket: str, detail: str) -> int:
+        verdict.update({"failure_bucket": bucket, "failure_detail": detail})
+        json_dump(out / "smoke.json", verdict)
+        return 1
+
     try:
         try:
             status = wait_for_status(base_url, out, timeout=args.timeout)
         except Exception as exc:  # noqa: BLE001
             stale = classify_browser_probe(tab_url=f"{base_url}/openworlds/", status_url=f"{base_url}/app-status", app_status_ok=False)
-            verdict.update({"failure_bucket": stale.bucket if stale else "no_launcher", "failure_detail": str(exc)})
-            json_dump(out / "smoke.json", verdict)
-            return 1
+            return fail(stale.bucket if stale else "no_launcher", str(exc))
 
         json_dump(out / "app-status.initial.json", status)
         write_text_snapshot(out / "a11y" / "initial.html", html_text(base_url))
         capture_openworlds_screenshot(base_url=base_url, out=out, port=int(args.port), label="initial", gaps=evidence_gaps, screenshots=screenshots)
-        surface, _ = fetch_json(surface_url(base_url, status))
+        try:
+            surface, _ = fetch_json(surface_url(base_url, status))
+        except (OSError, urllib.error.URLError, ValueError) as exc:
+            return fail("no_provider", f"initial session-surface fetch failed: {exc}")
         json_dump(out / "session-surface.initial.json", surface)
         bucket, detail = classify_status(status)
         if bucket:
-            verdict.update({"failure_bucket": bucket, "failure_detail": detail})
-            json_dump(out / "smoke.json", verdict)
-            return 1
+            return fail(bucket, detail)
 
         last_chat_lines = int(((status.get("viewer") or {}).get("chat_lines") or 0) if isinstance(status.get("viewer"), dict) else 0)
         move_url = urllib.parse.urljoin(base_url, "/move")
@@ -357,7 +362,10 @@ def run_smoke(args: argparse.Namespace) -> int:
             deadline = time.time() + args.timeout
             advanced = False
             while time.time() < deadline:
-                status = wait_for_status(base_url, out, timeout=3)
+                try:
+                    status = wait_for_status(base_url, out, timeout=3)
+                except Exception as exc:  # noqa: BLE001
+                    return fail("no_launcher", f"app-status dropped during beat {beat}: {exc}")
                 chat_lines = int(((status.get("viewer") or {}).get("chat_lines") or 0) if isinstance(status.get("viewer"), dict) else 0)
                 summary = provider_summary(ROOT / "play-state" / run_id)
                 if chat_lines > last_chat_lines and int(summary.get("resolved_move_count") or summary.get("move_resolved_count") or 0) >= beat:
@@ -366,17 +374,24 @@ def run_smoke(args: argparse.Namespace) -> int:
                     break
                 time.sleep(0.5)
             json_dump(out / f"app-status.beat-{beat}.json", status)
-            surface, _ = fetch_json(surface_url(base_url, status))
+            try:
+                surface, _ = fetch_json(surface_url(base_url, status))
+            except (OSError, urllib.error.URLError, ValueError) as exc:
+                return fail("no_provider", f"session-surface fetch failed after beat {beat}: {exc}")
             json_dump(out / f"session-surface.beat-{beat}.json", surface)
             write_text_snapshot(out / "a11y" / f"beat-{beat}.html", html_text(base_url))
             capture_openworlds_screenshot(base_url=base_url, out=out, port=int(args.port), label=f"beat-{beat:03d}", gaps=evidence_gaps, screenshots=screenshots)
             if not advanced:
-                verdict.update({"failure_bucket": "no_narration", "failure_detail": f"narration did not advance after beat {beat}"})
-                json_dump(out / "smoke.json", verdict)
-                return 1
+                return fail("no_narration", f"narration did not advance after beat {beat}")
 
-        final_status = wait_for_status(base_url, out, timeout=5)
-        final_surface, _ = fetch_json(surface_url(base_url, final_status))
+        try:
+            final_status = wait_for_status(base_url, out, timeout=5)
+        except Exception as exc:  # noqa: BLE001
+            return fail("no_launcher", f"final app-status fetch failed: {exc}")
+        try:
+            final_surface, _ = fetch_json(surface_url(base_url, final_status))
+        except (OSError, urllib.error.URLError, ValueError) as exc:
+            return fail("no_provider", f"final session-surface fetch failed: {exc}")
         json_dump(out / "app-status.final.json", final_status)
         json_dump(out / "session-surface.final.json", final_surface)
         write_text_snapshot(out / "a11y" / "final.html", html_text(base_url))
