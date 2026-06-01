@@ -294,3 +294,52 @@ def read_log(campaign_id: str, session_id: str) -> list[SessionLogEntry]:
         if line:
             entries.append(SessionLogEntry.model_validate_json(line))
     return entries
+
+
+def read_log_all(
+    campaign_id: str, session_ids: Optional[list[str]] = None
+) -> list[SessionLogEntry]:
+    """Read EVERY session log of a campaign, concatenated in chronological order.
+
+    READ-ONLY (the sole-writer invariant): only ever opens and parses the
+    ``campaigns/<id>/sessions/*.jsonl`` files; never writes.
+
+    Under lean / fast-turn play each beat starts a FRESH session id, so the
+    CURRENT session's log can be empty even though the story-so-far lives in
+    earlier session files — a per-session ``read_log`` would miss it. This walks
+    them all so a campaign-wide tail (e.g. scene_context's ``recent_narration``)
+    sees the last beats regardless of which session wrote them.
+
+    Ordering is canonical-chronological:
+      * sessions in the order the campaign opened them (``session_ids``, which the
+        model documents as "play sessions in order") come first, in that order;
+      * any *.jsonl on disk NOT named in ``session_ids`` (defensive: an orphaned
+        or externally-added file) is appended afterwards, ordered by file mtime;
+      * within each session, entries keep their on-disk (append) order.
+    A final stable sort by each entry's timestamp ``t`` smooths any cross-file
+    interleave while preserving append order for equal/zero timestamps.
+    """
+    sessions_dir = _campaign_dir(campaign_id) / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    on_disk = {p.stem: p for p in sessions_dir.glob("*.jsonl") if p.is_file()}
+
+    ordered_ids: list[str] = []
+    seen: set[str] = set()
+    for sid in session_ids or []:
+        if sid in on_disk and sid not in seen:
+            ordered_ids.append(sid)
+            seen.add(sid)
+    # Defensive tail: files present on disk but not listed in session_ids.
+    leftover = [sid for sid in on_disk if sid not in seen]
+    leftover.sort(key=lambda sid: on_disk[sid].stat().st_mtime)
+    ordered_ids.extend(leftover)
+
+    entries: list[SessionLogEntry] = []
+    for sid in ordered_ids:
+        entries.extend(read_log(campaign_id, sid))
+    # Stable sort: keeps within-file append order for equal timestamps and orders
+    # across files by wall-clock when timestamps are present.
+    entries.sort(key=lambda e: e.t)
+    return entries

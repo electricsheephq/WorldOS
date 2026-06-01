@@ -11,7 +11,7 @@ import logging
 import pytest
 
 import store
-from models import Campaign
+from models import Campaign, SessionLogEntry
 
 
 # ---------------------------------------------------------------------------
@@ -179,3 +179,65 @@ def test_load_old_snapshot_without_version_fields(tmp_path, monkeypatch):
     # Defaults applied for the absent fields.
     assert result.schema_version == 1
     assert result.engine_sha == ""
+
+
+# ---------------------------------------------------------------------------
+# (f) read_log_all: campaign-wide narration reader (the lean-beat fix, #compact-
+#     scene-context defect 2). Each lean beat opens a fresh session, so a tail of
+#     the story must concatenate ALL session logs in chronological order.
+# ---------------------------------------------------------------------------
+
+def test_read_log_all_concatenates_sessions_in_order(tmp_path, monkeypatch):
+    """read_log_all walks EVERY sessions/*.jsonl and returns them in canonical
+    session order (session_ids first), within-file append order preserved — the
+    cross-session continuity a single read_log misses under lean play."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-wide"
+
+    store.append_log(cid, "s1", SessionLogEntry(t=1.0, kind="narration", text="a"))
+    store.append_log(cid, "s1", SessionLogEntry(t=2.0, kind="dialogue", text="b"))
+    store.append_log(cid, "s2", SessionLogEntry(t=3.0, kind="narration", text="c"))
+    store.append_log(cid, "s2", SessionLogEntry(t=4.0, kind="narration", text="d"))
+
+    # Per-session reads only see their own file (this is the lean trap: s2 read in
+    # isolation never shows s1's prose).
+    assert [e.text for e in store.read_log(cid, "s1")] == ["a", "b"]
+    assert [e.text for e in store.read_log(cid, "s2")] == ["c", "d"]
+
+    # Campaign-wide read stitches them in canonical chronological order.
+    allg = store.read_log_all(cid, ["s1", "s2"])
+    assert [e.text for e in allg] == ["a", "b", "c", "d"]
+
+
+def test_read_log_all_empty_when_no_sessions(tmp_path, monkeypatch):
+    """No sessions dir / no files → [] (never raises), so an early lean beat with
+    nothing logged yet degrades to an empty tail."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    assert store.read_log_all("no-such-campaign", None) == []
+    assert store.read_log_all("no-such-campaign", ["s1"]) == []
+
+
+def test_read_log_all_includes_files_not_in_session_ids(tmp_path, monkeypatch):
+    """A *.jsonl on disk not named in session_ids (orphan/external) is still read
+    (defensive tail), so no committed prose is silently lost."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-orphan"
+    store.append_log(cid, "listed", SessionLogEntry(t=1.0, kind="narration", text="listed"))
+    store.append_log(cid, "orphan", SessionLogEntry(t=2.0, kind="narration", text="orphan"))
+
+    texts = [e.text for e in store.read_log_all(cid, ["listed"])]
+    assert "listed" in texts and "orphan" in texts
+
+
+def test_read_log_all_is_read_only(tmp_path, monkeypatch):
+    """Sole-writer invariant: read_log_all must not create or modify any file."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-ro"
+    store.append_log(cid, "s1", SessionLogEntry(t=1.0, kind="narration", text="x"))
+    sessions_dir = tmp_path / "campaigns" / cid / "sessions"
+    before = {p.name: p.stat().st_mtime_ns for p in sessions_dir.glob("*.jsonl")}
+
+    store.read_log_all(cid, ["s1"])
+
+    after = {p.name: p.stat().st_mtime_ns for p in sessions_dir.glob("*.jsonl")}
+    assert before == after  # no writes, no new files

@@ -93,7 +93,7 @@ _AB3_TO_FULL = {
 # Reverse: accept either the 3-letter code (the Ability enum value) or the full word
 # (how the SRD records spell saving_throw_ability, e.g. "wisdom") and resolve to an Ability.
 _FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
-from store import append_log, campaign_lock, campaigns_for_world, read_log
+from store import append_log, campaign_lock, campaigns_for_world, read_log_all
 from store import list_campaigns as _list_campaigns
 from store import list_slots as _list_slots
 from store import load_campaign, save_campaign
@@ -8386,90 +8386,112 @@ def _scene_durable_threads(c: Campaign) -> dict:
     """
     chars = list(c.characters.values())
 
+    # EVERY attribute read below is defensive (``getattr`` with a safe default) so
+    # scene_context — the DM's primary re-ground tool — NEVER raises an
+    # ``AttributeError`` because some object is missing a field the durable block
+    # expects (e.g. a partially-built Character, an older/variant model, or a field
+    # the schema never grew). A missing attribute degrades to omit/empty for that
+    # sub-field; it must never throw the whole tool. (#compact-scene-context: the
+    # `relationships` read here threw for any Character lacking that attribute.)
+
     # OPEN quests (status not completed/failed) with their still-open objectives.
-    open_quests = [
-        {
-            "id": q.id,
-            "title": q.title,
-            "status": q.status,
-            "open_objectives": [
-                o for o in q.objectives if o not in q.completed_objectives
-            ],
-        }
-        for q in c.quests.values()
-        if q.status not in ("completed", "failed")
-    ]
+    open_quests = []
+    for q in c.quests.values():
+        status = getattr(q, "status", "active")
+        if status in ("completed", "failed"):
+            continue
+        objectives = getattr(q, "objectives", None) or []
+        completed = getattr(q, "completed_objectives", None) or []
+        open_quests.append(
+            {
+                "id": getattr(q, "id", None),
+                "title": getattr(q, "title", None),
+                "status": status,
+                "open_objectives": [o for o in objectives if o not in completed],
+            }
+        )
 
     # NPC relationships the party has a standing with: only NPCs actually met
     # (a world seed pre-populates strangers; `met` gates them out — same rule the
     # dashboard's Relationships view uses).
-    npc_relationships = [
-        {
-            "id": ch.id,
-            "name": ch.name,
-            "attitude_value": ch.attitude_value,
-            **({"attitude": ch.attitude} if ch.attitude else {}),
-            **({"relationships": ch.relationships} if ch.relationships else {}),
-        }
-        for ch in chars
-        if ch.kind == "npc" and ch.met
-    ]
+    npc_relationships = []
+    for ch in chars:
+        if getattr(ch, "kind", None) != "npc" or not getattr(ch, "met", False):
+            continue
+        attitude = getattr(ch, "attitude", None)
+        relationships = getattr(ch, "relationships", None)
+        npc_relationships.append(
+            {
+                "id": getattr(ch, "id", None),
+                "name": getattr(ch, "name", None),
+                "attitude_value": getattr(ch, "attitude_value", None),
+                **({"attitude": attitude} if attitude else {}),
+                **({"relationships": relationships} if relationships else {}),
+            }
+        )
 
     # Companions' STANDING bond state (loyalty gauge + whether a sealed
     # betrayal agenda is attached) — the durable baseline check_companion_arc's
     # delta report assumes you already know.
-    companions = [
-        {
-            "id": ch.id,
-            "name": ch.name,
-            "attitude_value": ch.attitude_value,
-            "has_arc": ch.arc is not None,
-            "has_betrayal_agenda": bool(
-                ch.arc is not None
-                and ch.arc.agenda is not None
-                and ch.arc.agenda.trigger == "attitude_below"
-            ),
-        }
-        for ch in chars
-        if ch.kind == "companion"
-    ]
+    companions = []
+    for ch in chars:
+        if getattr(ch, "kind", None) != "companion":
+            continue
+        arc = getattr(ch, "arc", None)
+        agenda = getattr(arc, "agenda", None) if arc is not None else None
+        companions.append(
+            {
+                "id": getattr(ch, "id", None),
+                "name": getattr(ch, "name", None),
+                "attitude_value": getattr(ch, "attitude_value", None),
+                "has_arc": arc is not None,
+                "has_betrayal_agenda": bool(
+                    agenda is not None
+                    and getattr(agenda, "trigger", None) == "attitude_below"
+                ),
+            }
+        )
 
     # Faction gauges (engine-mutated; these gate events — invariant #3).
     factions = [
         {
-            "id": f.id,
-            "name": f.name,
-            "reputation": f.reputation,
-            "standing": f.standing,
+            "id": getattr(f, "id", None),
+            "name": getattr(f, "name", None),
+            "reputation": getattr(f, "reputation", None),
+            "standing": getattr(f, "standing", None),
         }
         for f in c.factions.values()
     ]
 
+    flags = getattr(c, "flags", None) or {}
     return {
         "open_quests": open_quests,
         "npc_relationships": npc_relationships,
         "companions": companions,
         "factions": factions,
-        "flags": sorted(k for k, v in c.flags.items() if v),
+        "flags": sorted(k for k, v in flags.items() if v),
     }
 
 
 def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
-    """The last ``limit`` PLAYER-FACING beats (kind in narration|dialogue) from the
-    current session log, in CHRONOLOGICAL order — the prose tail a transcript-free
-    (lean) beat needs as its short-term memory of the story so far.
+    """The last ``limit`` PLAYER-FACING beats (kind in narration|dialogue) across
+    the WHOLE campaign's session logs, in CHRONOLOGICAL order — the prose tail a
+    transcript-free (lean) beat needs as its short-term memory of the story so far.
 
-    READ-ONLY: reads the session jsonl via read_log (never writes). Resolves
-    the current session the same way session_recap does (active, else the most
-    recent). Rolls / system / combat-log rows are bookkeeping noise and are
-    dropped (mirrors recap's _STORY_KINDS, minus combat: this is the spoken story).
+    READ-ONLY: reads the session jsonl files via store.read_log_all (never writes).
+    Reads CAMPAIGN-WIDE, not just the current session: under lean / fast-turn play
+    EACH beat starts a fresh session id, so the current session log is typically
+    empty and a single-session read would deliver nothing — the prose-tail would
+    silently never arrive. read_log_all walks every ``sessions/*.jsonl`` (canonical
+    session_ids order, defensive disk tail, stable by timestamp) so the last N
+    beats surface regardless of which session wrote them.
+
+    Rolls / system / combat-log rows are bookkeeping noise and are dropped (mirrors
+    recap's _STORY_KINDS, minus combat: this is the spoken story).
     """
     if limit <= 0:
         return []
-    sid = c.active_session_id or (c.session_ids[-1] if c.session_ids else None)
-    if not sid:
-        return []
-    entries = read_log(c.id, sid)
+    entries = read_log_all(c.id, getattr(c, "session_ids", None))
     facing = [e for e in entries if e.kind in ("narration", "dialogue")]
     return [
         {"text": e.text, **({"speaker": e.speaker} if e.speaker else {})}
@@ -8511,10 +8533,12 @@ def scene_context(
                         calling the tool directly; idempotent across beats.)
       - ``recent_narration`` — present ONLY when ``recent_narration`` (the param)
                         is > 0: the last N player-facing beats (narration/dialogue)
-                        from the current session log, chronological, each
-                        ``{text, speaker?}``. This is the lean-beat memory: in
-                        fast-turn mode the beat runs with NO prior transcript, so
-                        this prose tail (plus ``durable``) IS the story-so-far.
+                        across ALL of the campaign's session logs, chronological,
+                        each ``{text, speaker?}``. This is the lean-beat memory: in
+                        fast-turn mode the beat runs with NO prior transcript AND
+                        each beat opens a fresh session, so reading campaign-wide
+                        (not just the current session) is what makes this prose
+                        tail (plus ``durable``) the actual story-so-far.
                         Default 0 = omitted (no log read, today's behavior).
       - ``recall``    — present ONLY when ``recall_query`` is non-empty: the same
                         fuzzy memory search recall(query, limit) returns. Pass it
@@ -8537,7 +8561,7 @@ def scene_context(
     # next runs — sequential, never nested — so this is deadlock-free even though
     # check_companion_arc acquires the lock. (Nesting campaign_lock in one process
     # WOULD deadlock: flock is not reentrant across fds.) The durable/recent reads
-    # are lock-free snapshot reads via _require / read_log.
+    # are lock-free snapshot reads via _require / read_log_all.
     #
     # Built durable-first so the dict preserves the stable, cache-friendly order
     # (durable threads → advisory → this-beat deltas → … → volatile state last).
