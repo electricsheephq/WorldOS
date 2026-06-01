@@ -161,6 +161,58 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertFalse(config["demo_data"])
         self.assertTrue(config["demo_data_fallback"])
 
+    def test_openworlds_camp_deep_link_opens_map_camp_mode(self):
+        status, ctype, body = self._get("/openworlds/app.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('camp: "map"', source)
+        self.assertIn('rest: "map"', source)
+        self.assertIn('raw === "camp" || raw === "rest" ? true', source)
+        self.assertIn('id === "map" ? false', source)
+        self.assertIn('setCampMode(route.campMode)', source)
+        self.assertIn('location={screen === "map" && campMode ? "Camp"', source)
+
+    def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
+        status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('React.useState("old-troutman")', source)
+        self.assertIn('id: "old-troutman"', source)
+        self.assertIn('waresName: "Old Troutman"', source)
+        self.assertIn('location: "Baldur\'s Gate — Lower City"', source)
+        self.assertIn('id: "talli"', source)
+
+    def test_merchant_waits_for_live_action_lane_before_purchase(self):
+        status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('React.useState("loading")', source)
+        self.assertIn('setSurfaceStatus("loading")', source)
+        self.assertIn('const surfaceLoading = surfaceStatus === "loading"', source)
+        self.assertIn("if (surfaceLoading) return;", source)
+        self.assertIn("disabled={cart.length === 0 || surfaceLoading", source)
+        self.assertIn("Checking the counter", source)
+        self.assertIn("if (!response.ok) throw new Error", source)
+
+    def test_journal_detail_matches_selected_tab_not_first_rumor(self):
+        status, ctype, body = self._get("/openworlds/screen-journal.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("function journalQuestInTab(q, tab)", source)
+        self.assertIn("const visibleQuests = React.useMemo", source)
+        self.assertIn("visibleQuests.find((q) => q.id === activeQuest)", source)
+        self.assertIn("visibleQuests[0] || emptyQuest", source)
+        self.assertIn("title: \"No active quests\"", source)
+        self.assertNotIn("|| quests[0] ||", source)
+
     def test_app_status_route_exposes_agent_probe_contract(self):
         campaign_dir = self._tmp / "campaigns" / "camp_live"
         self._write_snapshot(
@@ -634,6 +686,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # block. The narration branch renders sanitized {text} in a `div.body`; with the default
         # white-space the embedded blank-line paragraph breaks the DM emits collapse. The render
         # honors them via whiteSpace:"pre-line" (and sanitizeNarration is still applied first).
+        # Each narration row should not repeat the region title inline; the surrounding SectionTitle
+        # and role="log" label already name the Chronicle.
         status, _ctype, body = self._get("/openworlds/screen-table.jsx")
 
         self.assertEqual(status, 200)
@@ -642,6 +696,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertRegex(source, r'whiteSpace:\s*"pre-line"')
         # …and the GM-advisory strip is still in the narration path (not removed by this change).
         self.assertIn("sanitizeNarration(entry.text)", source)
+        self.assertIn('data-worldos-testid="chronicle-narration"', source)
+        self.assertNotIn('>Chronicle</span>\n          {text}', source)
 
     def test_openworlds_app_bounds_the_live_session_tail(self):
         # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long

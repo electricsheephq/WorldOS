@@ -259,6 +259,35 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   const sanitize = (t) => (typeof window !== "undefined" && typeof window.sanitizeNarration === "function")
     ? window.sanitizeNarration(t || "") : (t || "");
   const narrationKey = (t) => sanitize(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const QUICK_ACTION_REPLAY_ALIASES = {
+    look: ["look around"],
+    "look around": ["look"],
+  };
+  const QUICK_ACTION_REPLAY_LABELS = {
+    continue: "Continue",
+    "look around": "Look",
+  };
+  const playerEchoKeys = (entry) => {
+    const kind = entry && (entry.kind || entry.type);
+    const who = String(entry?.who || "").trim().toLowerCase();
+    if (kind !== "action" && !(kind === "dialog" && who === "you")) return [];
+    const key = String(entry?.text || "")
+      .replace(/^\s*(?:say|do|check|save)\s*:\s*/i, "")
+      .replace(/^[`'"“”]+|[`'"“”]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (!key) return [];
+    return [key, ...(QUICK_ACTION_REPLAY_ALIASES[key] || [])];
+  };
+  const projectPlayerReplay = (entry) => {
+    const kind = entry && (entry.kind || entry.type);
+    const who = String(entry?.who || "").trim().toLowerCase();
+    if (kind !== "dialog" || who !== "you") return entry;
+    const key = playerEchoKeys(entry)[0] || "";
+    const label = QUICK_ACTION_REPLAY_LABELS[key];
+    return label ? { ...entry, kind: "action", text: label } : entry;
+  };
   const orderOf = (e) => {
     if (e && typeof e.orderSeq === "number") return e.orderSeq;
     if (e && typeof e.seq === "number") return e.seq;
@@ -272,7 +301,18 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     if (sa !== null && sb !== null && sa !== sb) return sa - sb;
     return (a?.at || 0) - (b?.at || 0);
   };
-  const mergedTail = [...beats, ...echoes].sort((a, b) => {
+  // The live tail can carry the player's move twice: once as the optimistic local echo
+  // (immediate feedback after /move accepts) and once replayed from /chat as a "You" row.
+  // Prefer the optimistic echo when present so the Chronicle reads as one clean turn:
+  //   You continue → DM reply
+  // not
+  //   Abby — Continue → You "continue" → DM reply.
+  const optimisticPlayerKeys = new Set(echoes.flatMap(playerEchoKeys).filter(Boolean));
+  const dedupedBeats = beats.filter((b) => {
+    const keys = playerEchoKeys(b);
+    return !keys.length || !keys.some((key) => optimisticPlayerKeys.has(key));
+  });
+  const mergedTail = [...dedupedBeats.map(projectPlayerReplay), ...echoes].sort((a, b) => {
     return compareChronicle(a, b);
   });
   const liveSeqs = new Set(
@@ -1022,8 +1062,7 @@ function LogEntry({ entry }) {
             (the sibling skill PR emits \n\n) so a multi-paragraph beat renders as
             separated paragraphs instead of one run-on block. sanitizeNarration is
             still applied above, untouched. */}
-        <div className="body" style={{ flex: 1, whiteSpace: "pre-line" }}>
-          <span className="eyebrow" style={{ color: "var(--crimson)", marginRight: 8 }}>Chronicle</span>
+        <div className="body" data-worldos-testid="chronicle-narration" style={{ flex: 1, whiteSpace: "pre-line" }}>
           {text}
         </div>
       </div>

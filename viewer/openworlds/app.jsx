@@ -11,6 +11,20 @@ window.stripRoutingTag = window.stripRoutingTag || function stripRoutingTag(text
     .replace(/^\s*\[(say|do|check|save|continue|attack|cast|use_item|clarify)\]\s*/i, "");
 };
 
+window.playerReplayBeat = window.playerReplayBeat || function playerReplayBeat(text) {
+  const raw = String(text == null ? "" : text);
+  const match = raw.match(/^\s*\[(say|do|check|save|continue|attack|cast|use_item|clarify)\]\s*/i);
+  const route = (match?.[1] || "").toLowerCase();
+  const displayText = window.stripRoutingTag(raw).replace(/\s+/g, " ").trim();
+  if (!displayText) return null;
+  const quickLabels = {
+    continue: "Continue",
+    "look around": "Look",
+  };
+  if (route === "say" || !route) return { kind: "dialog", who: "You", text: displayText };
+  return { kind: "action", who: "You", text: quickLabels[displayText.toLowerCase()] || displayText };
+};
+
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "palette": "warm",
   "ornaments": true,
@@ -389,11 +403,13 @@ function useLiveSession(state) {
             .map((it) => {
               // #274: stamp each beat with the shared monotonic counter at ingest time so it
               // time-merges correctly against local player echoes (which share the same counter).
-              // #410: the engine logs the player's line WITH its routing tag ("[do] …") for move
-              // classification, and /chat replays it verbatim. Strip the tag for DISPLAY so the
-              // replayed dialog row shows the player's words, not "[do] …" (matches the optimistic
-              // echo above, which already strips via the same helper).
-              if (it.role === "player") return { kind: "dialog", who: "You", text: window.stripRoutingTag(it.text), at: nextLogSeq(), eventAt: it.at };
+              // #410/#548: the engine logs the player's line WITH its routing tag ("[do] …") for
+              // move classification, and /chat replays it verbatim. Parse the tag for DISPLAY so
+              // resumed/reloaded sessions keep actions as action rows while speech stays dialogue.
+              if (it.role === "player") {
+                const beat = window.playerReplayBeat(it.text);
+                return beat ? { ...beat, at: nextLogSeq(), eventAt: it.at } : null;
+              }
               dmLineArrived = true;
               // #405: a /chat DM line is the turn-RESOLUTION signal (it clears the pending indicator
               // below). It is NOT a second narration row when this run is streaming its prose via the
@@ -778,15 +794,25 @@ function App() {
       "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
       "seed", "settings",
     ]);
-    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory", heroes: "character", pick: "roster", picker: "roster" };
+    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory", heroes: "character", pick: "roster", picker: "roster", camp: "map", rest: "map" };
     const fromHash = () => {
       const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
       if (!raw) return null;
-      return VALID.has(raw) ? raw : (ALIAS[raw] || null);
+      const id = VALID.has(raw) ? raw : (ALIAS[raw] || null);
+      if (!id) return null;
+      return { id, campMode: raw === "camp" || raw === "rest" ? true : (id === "map" ? false : undefined) };
     };
     const initial = fromHash();
-    if (initial) setScreen(initial);
-    const onHash = () => { const id = fromHash(); if (id) setScreen(id); };
+    if (initial) {
+      if (typeof initial.campMode === "boolean") setCampMode(initial.campMode);
+      setScreen(initial.id);
+    }
+    const onHash = () => {
+      const route = fromHash();
+      if (!route) return;
+      if (typeof route.campMode === "boolean") setCampMode(route.campMode);
+      setScreen(route.id);
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -808,7 +834,7 @@ function App() {
     <div className="window">
       <TitleBar
         campaign={current.title}
-        location={SCREEN_TITLES[screen]}
+        location={screen === "map" && campMode ? "Camp" : SCREEN_TITLES[screen]}
         day={current.day}
         capability={capabilityForScreen(screen, nativeState)}
         nativeStatus={nativeState}

@@ -22,6 +22,12 @@ function jNpcScope(n) {
   return (n && n.id) ? "portrait-" + n.id : "";
 }
 
+function journalQuestInTab(q, tab) {
+  if (tab === "active") return q.status === "active";
+  if (tab === "complete") return q.status === "complete";
+  return q.status === "rumor";
+}
+
 function ScreenJournal({ onNavigate, state, setState }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
@@ -38,6 +44,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
   const threads = Array.isArray(surface?.threads) ? surface.threads : [];
   const [activeQuest, setActiveQuest] = React.useState("");
   const [tab, setTab] = React.useState("active");
+  const visibleQuests = React.useMemo(() => quests.filter((q) => journalQuestInTab(q, tab)), [quests, tab]);
 
   // Bookmarks (J-03): a player can pin quests; the set persists in localStorage so a
   // bookmark survives reload. Pinned quests show a marker in the chronicle list. No engine
@@ -88,17 +95,30 @@ function ScreenJournal({ onNavigate, state, setState }) {
   }, [loadSurface]);
 
   React.useEffect(() => {
-    if (quests.length && !quests.some((q) => q.id === activeQuest)) {
-      setActiveQuest(quests[0]?.id || "");
+    if (visibleQuests.length && !visibleQuests.some((q) => q.id === activeQuest)) {
+      setActiveQuest(visibleQuests[0]?.id || "");
+    } else if (!visibleQuests.length && activeQuest) {
+      setActiveQuest("");
     }
-  }, [quests, activeQuest]);
+  }, [visibleQuests, activeQuest]);
 
-  const quest = quests.find((q) => q.id === activeQuest) || quests[0] || {
-    label: "Empty",
-    title: "No quest selected",
-    entry: "No quests have been recorded yet.",
+  const emptyQuest = tab === "active" ? {
+    label: "Active",
+    title: "No active quests",
+    entry: "No quest has been committed to the chronicle yet. Rumors and hooks stay in the Rumors tab until the party pursues them.",
+    objectives: [],
+  } : tab === "complete" ? {
+    label: "Past",
+    title: "No past quests",
+    entry: "Nothing has been resolved or failed yet.",
+    objectives: [],
+  } : {
+    label: "Rumors",
+    title: "No rumors",
+    entry: "No rumors or untracked hooks have reached the party yet.",
     objectives: [],
   };
+  const quest = visibleQuests.find((q) => q.id === activeQuest) || visibleQuests[0] || emptyQuest;
 
   return (
     <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr", gap: 14, padding: 14 }}>
@@ -124,11 +144,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
         </div>
 
         <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-          {quests.filter((q) => {
-            if (tab === "active") return q.status === "active";
-            if (tab === "complete") return q.status === "complete";
-            return q.status === "rumor";
-          }).map((q) => (
+          {visibleQuests.map((q) => (
             <button key={q.id} onClick={() => setActiveQuest(q.id)} style={{
               textAlign: "left",
               padding: "10px 12px",
@@ -148,7 +164,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
               <div className="hand" style={{ fontSize: 13, color: "var(--ink-600)", marginTop: 4 }}>{q.objective}</div>
             </button>
           ))}
-          {!quests.filter((q) => (tab === "active" ? q.status === "active" : tab === "complete" ? q.status === "complete" : q.status === "rumor")).length && (
+          {!visibleQuests.length && (
             <div className="body-sm muted" style={{ padding: "8px 4px" }}>
               {tab === "active" ? "No active quests in the chronicle yet." : tab === "complete" ? "Nothing has been resolved or failed yet." : "No rumors or untracked hooks."}
             </div>

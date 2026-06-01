@@ -684,10 +684,75 @@ class LiveNarrationStreamTests(unittest.TestCase):
             out["chronicle"],
             [
                 {"kind": "narration", "text": "The lantern steadies."},
-                {"kind": "dialog", "text": "Ask what changed tonight.", "who": "You"},
+                {"kind": "action", "text": "Ask what changed tonight.", "who": "You"},
                 {"kind": "narration", "text": "A nearby voice answers."},
             ],
-            "system bookkeeping stays hidden and the player move renders before the DM reply when /chat timestamps place it there (#503)",
+            "system bookkeeping stays hidden and the player action renders before the DM reply when /chat timestamps place it there (#503)",
+        )
+
+    # The optimistic local echo is the row the player sees immediately after /move accepts.
+    # When /chat later replays the same player move, the Chronicle must not render a second
+    # "You ..." row for the same turn.
+    def test_chat_player_replay_is_deduped_against_optimistic_echo(self):
+        out = self._run(
+            "h.echo('Abby', 'Continue');"
+            "h.enqueue('/chat', { items: [{ role: 'player', text: '[do] continue', at: 20 }], next: 1 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [{"kind": "action", "text": "Continue", "who": "Abby"}],
+            "a /chat player replay matching the optimistic echo must not add a duplicate player row",
+        )
+
+    def test_quick_action_alias_replay_is_deduped_against_optimistic_echo(self):
+        out = self._run(
+            "h.echo('Abby', 'Look');"
+            "h.enqueue('/chat', { items: [{ role: 'player', text: '[do] look around', at: 20 }], next: 1 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [{"kind": "action", "text": "Look", "who": "Abby"}],
+            "quick action payload aliases like Look/look around must not render as a second You row",
+        )
+
+    def test_quick_action_replay_renders_as_clean_action_after_reload(self):
+        out = self._run(
+            "h.enqueue('/chat', { items: ["
+            "{ role: 'player', text: '[do] continue', at: 20 },"
+            "{ role: 'player', text: '[do] look around', at: 21 }"
+            "], next: 2 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [
+                {"kind": "action", "text": "Continue", "who": "You"},
+                {"kind": "action", "text": "Look", "who": "You"},
+            ],
+            "reloaded quick-action chat rows should render as clean player actions, not quoted dialogue",
+        )
+
+    def test_routed_player_replay_preserves_action_vs_speech_after_reload(self):
+        out = self._run(
+            "h.enqueue('/chat', { items: ["
+            "{ role: 'player', text: '[do] ask the guard what changed overnight', at: 20 },"
+            "{ role: 'player', text: '[say] Any trouble on the wall?', at: 21 }"
+            "], next: 2 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [
+                {"kind": "action", "text": "ask the guard what changed overnight", "who": "You"},
+                {"kind": "dialog", "text": "Any trouble on the wall?", "who": "You"},
+            ],
+            "routing tags should keep resumed action rows distinct from in-character speech rows",
         )
 
     # --- #479: provider wrappers may write the final DM reply to /chat only as a turn-resolution

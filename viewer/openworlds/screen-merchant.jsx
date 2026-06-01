@@ -12,10 +12,9 @@ function mItemScope(item) {
 
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
-  // MK-02: the initial id MUST match a MERCHANTS entry. It previously read "gate-sundries"
-  // while the only merchant is id:"talli", so the find() silently fell back to MERCHANTS[0] —
-  // masking the mismatch and breaking any id-keyed lookup (e.g. the portrait scope).
-  const [merchantId, setMerchantId] = React.useState("talli");
+  // MK-02/#548: the initial id MUST match a MERCHANTS entry and the first playable BG session
+  // should not open on an Act Two Last Light Inn merchant while the party is in the Lower City.
+  const [merchantId, setMerchantId] = React.useState("old-troutman");
   const [hoverItem, setHoverItem] = React.useState(null);
   const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
@@ -38,16 +37,27 @@ function ScreenMerchant({ onNavigate, state, setState }) {
       )
     : "";
   const [surface, setSurface] = React.useState(null);
+  const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
   React.useEffect(() => {
     let cancelled = false;
+    setSurfaceStatus("loading");
     fetch("/character-surface" + surfaceQuery, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled) setSurface(d); })
-      .catch(() => { if (!cancelled) setSurface(null); });
+      .then((d) => {
+        if (cancelled) return;
+        setSurface(d);
+        setSurfaceStatus(d ? "ready" : "preview");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSurface(null);
+        setSurfaceStatus("preview");
+      });
     return () => { cancelled = true; };
   }, [surfaceQuery]);
   const canAct = Boolean(surface?.can_act);
   const campaignId = surface?.campaign_id || "";
+  const surfaceLoading = surfaceStatus === "loading";
   const toast = window.useToast ? window.useToast() : (() => {});
 
   // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
@@ -60,6 +70,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const adjustedBuyTotal = Math.round(buyTotal * (1 - haggle / 100));
   const balanceDelta = sellTotal - adjustedBuyTotal;
   const displayedTotal = Math.abs(balanceDelta);
+  const merchantWaresName = merchant.waresName || merchant.name;
 
   const baseInv = tab === "buy" ? merchant.stock : stash.filter((i) => i.type !== "quest");
   // MK-06: the kinds actually present on the table, so the filter only offers real options.
@@ -136,7 +147,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
       {/* CENTER — split inventory */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <SectionTitle>{tab === "buy" ? "Wares of " + merchant.name.split(" ")[0] : "Your Stash"}</SectionTitle>
+          <SectionTitle>{tab === "buy" ? "Wares of " + merchantWaresName : "Your Stash"}</SectionTitle>
           <div style={{ display: "flex", gap: 4 }}>
             <button onClick={() => setTab("buy")} className="pill" style={{
               cursor: "pointer",
@@ -318,8 +329,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
           <BrassButton onClick={() => {
             // canAct (live play): relay the transaction as a structured `do` move so the
             // DM resolves the purchase via the engine's buy_item tool (engine = sole
-            // writer). Otherwise (read-only preview), keep the local-only behavior +
-            // honest "(preview)" label.
+            // writer). While the live read-model is loading, keep the button disabled so
+            // a fast click cannot silently mutate only local coins. Otherwise (read-only
+            // preview), keep the local-only behavior + honest preview tooltip.
+            if (surfaceLoading) return;
             if (canAct) {
               const buyItems = cart.filter((i) => i.mode === "buy").map((i) => i.name);
               const sellItems = cart.filter((i) => i.mode === "sell").map((i) => i.name);
@@ -338,7 +351,8 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ kind: "do", text, campaign: campaignId }),
-              }).then(() => {
+              }).then((response) => {
+                if (!response.ok) throw new Error(`move ${response.status}`);
                 toast({ kind: "item", eyebrow: "Market", title: balanceDelta > 0 ? "Sold" : "Bought", body: `Move relayed to the DM — the engine resolves the purchase.` });
                 setCart([]);
               }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
@@ -346,8 +360,8 @@ function ScreenMerchant({ onNavigate, state, setState }) {
               setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
               setCart([]);
             }
-          }} style={{ width: "100%" }} disabled={cart.length === 0 || (!canAct && coins.gp + balanceDelta < 0)} title={canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine"}>
-            {balanceDelta > 0 ? "Accept silver" : "Strike the bargain"}
+          }} style={{ width: "100%" }} disabled={cart.length === 0 || surfaceLoading || (!canAct && coins.gp + balanceDelta < 0)} title={surfaceLoading ? "Checking the live market action lane…" : (canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine")}>
+            {surfaceLoading && cart.length > 0 ? "Checking the counter…" : (balanceDelta > 0 ? "Accept silver" : "Strike the bargain")}
           </BrassButton>
         </div>
       </Panel>
@@ -372,35 +386,51 @@ const tdStyle = {
   verticalAlign: "middle",
 };
 
+const GATE_MARKET_STOCK = [
+  { id: "m1", name: "Crossbow bolts", type: "weapon", glyph: "bolts", qty: 30, weight: "3 lb", price: 6, desc: "Standard. Iron-tipped. The fletching is reused." },
+  { id: "m2", name: "Travel rations", type: "common", glyph: "rations", qty: 12, weight: "12 lb", price: 24, desc: "Hardtack, salted pork, hard cheese, dried apple." },
+  { id: "m3", name: "Iron lantern", type: "common", glyph: "lantern", qty: 1, weight: "2 lb", price: 7, desc: "Wick included. Oil sold separately, by the stall two rows over." },
+  { id: "m4", name: "Lantern oil", type: "common", glyph: "oil flask", qty: 4, weight: "1 lb", price: 1, desc: "One pint. Burns six hours, four in the river wind off the Chionthar." },
+  { id: "m5", name: "Studded leather", type: "armor", glyph: "leather armor", qty: 1, weight: "20 lb", price: 25, desc: "Sized for a medium frame. Belt may need a hole punched." },
+  { id: "m6", name: "Handaxes", type: "weapon", glyph: "axe pair", qty: 6, weight: "4 lb", price: 8, desc: "A set of three, light and balanced for throwing. Forged upriver, edged here at the Gate." },
+  { id: "m7", name: "Bandage roll", type: "common", glyph: "bandage", qty: 8, weight: "0.5 lb", price: 1, desc: "Linen. Clean. Mostly clean." },
+  { id: "m8", name: "Potion of Healing", type: "spell", glyph: "red potion", qty: 3, weight: "0.5 lb", price: 50, desc: "Restores 2d4+2 HP. Tastes of iron and elderberry." },
+  { id: "m9", name: "Antitoxin", type: "spell", glyph: "green vial", qty: 2, weight: "0.5 lb", price: 50, desc: "Advantage on saving throws against poison for 1 hour." },
+  { id: "m10", name: "Climbing kit", type: "common", glyph: "rope & pitons", qty: 2, weight: "10 lb", price: 80, desc: "Rope, pitons, hammer. Used. The hammer is new." },
+  { id: "m11", name: "Compass", type: "common", glyph: "brass compass", qty: 1, weight: "0.5 lb", price: 25, desc: "Brass. The needle drifts twelve degrees east of true. Dell knows this and has not said so." },
+  { id: "m12", name: "Heavy crossbow", type: "weapon", glyph: "heavy crossbow", qty: 1, weight: "8 lb", price: 50, desc: "Reliable. Slow. The kind of weapon you have time to be sorry about firing." },
+  { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged upriver. Tested at Wyrm's Crossing, by a man no longer with us." },
+  { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. She rarely stocks them — Sorcerous Sundries keeps the good paper." },
+  { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Hauled up the salt-roads south. Useful against more things than you think." },
+  { id: "m16", name: "Wax candle (×6)", type: "common", glyph: "candles", qty: 4, weight: "1 lb", price: 4, desc: "Beeswax. Burns long. Useful for vigils and for less wholesome purposes." },
+];
+
 const MERCHANTS = [
+  {
+    id: "old-troutman",
+    name: "Old Troutman",
+    short: "Old Troutman",
+    subtitle: "A shield dwarven trader working the docks east of Philgrave's Mansion.",
+    location: "Baldur's Gate — Lower City",
+    waresName: "Old Troutman",
+    greeting: "Aye, you found the right crate. Bolts, rations, rope, oil, and a few things the Watch forgot to inventory. Keep your purse where I can see it and your questions shorter than the tide.",
+    repLabel: "Wary but open",
+    rep: 28,
+    disposition: "dockside trade · open while the tide holds",
+    stock: GATE_MARKET_STOCK,
+  },
   {
     id: "talli",
     name: "Quartermaster Talli",
     short: "Q·portrait",
     subtitle: "The Harpers' quartermaster, and the woman the road found.",
     location: "the Last Light Inn",
+    waresName: "Talli",
     greeting: "Come in, then. Mind the curse outside — the lantern's covenant ends a step past the threshold. The bolts are sharp, the rations dry, the draughts honest. Coin first, then the catalogue. Harpers don't quibble, but we don't subsidize the careless either.",
     repLabel: "Cautiously fond",
     rep: 42,
     disposition: "open until dusk · shuttered when the Watch patrols",
-    stock: [
-      { id: "m1", name: "Crossbow bolts", type: "weapon", glyph: "bolts", qty: 30, weight: "3 lb", price: 6, desc: "Standard. Iron-tipped. The fletching is reused." },
-      { id: "m2", name: "Travel rations", type: "common", glyph: "rations", qty: 12, weight: "12 lb", price: 24, desc: "Hardtack, salted pork, hard cheese, dried apple." },
-      { id: "m3", name: "Iron lantern", type: "common", glyph: "lantern", qty: 1, weight: "2 lb", price: 7, desc: "Wick included. Oil sold separately, by the stall two rows over." },
-      { id: "m4", name: "Lantern oil", type: "common", glyph: "oil flask", qty: 4, weight: "1 lb", price: 1, desc: "One pint. Burns six hours, four in the river wind off the Chionthar." },
-      { id: "m5", name: "Studded leather", type: "armor", glyph: "leather armor", qty: 1, weight: "20 lb", price: 25, desc: "Sized for a medium frame. Belt may need a hole punched." },
-      { id: "m6", name: "Handaxes", type: "weapon", glyph: "axe pair", qty: 6, weight: "4 lb", price: 8, desc: "A set of three, light and balanced for throwing. Forged upriver, edged here at the Gate." },
-      { id: "m7", name: "Bandage roll", type: "common", glyph: "bandage", qty: 8, weight: "0.5 lb", price: 1, desc: "Linen. Clean. Mostly clean." },
-      { id: "m8", name: "Potion of Healing", type: "spell", glyph: "red potion", qty: 3, weight: "0.5 lb", price: 50, desc: "Restores 2d4+2 HP. Tastes of iron and elderberry." },
-      { id: "m9", name: "Antitoxin", type: "spell", glyph: "green vial", qty: 2, weight: "0.5 lb", price: 50, desc: "Advantage on saving throws against poison for 1 hour." },
-      { id: "m10", name: "Climbing kit", type: "common", glyph: "rope & pitons", qty: 2, weight: "10 lb", price: 80, desc: "Rope, pitons, hammer. Used. The hammer is new." },
-      { id: "m11", name: "Compass", type: "common", glyph: "brass compass", qty: 1, weight: "0.5 lb", price: 25, desc: "Brass. The needle drifts twelve degrees east of true. Dell knows this and has not said so." },
-      { id: "m12", name: "Heavy crossbow", type: "weapon", glyph: "heavy crossbow", qty: 1, weight: "8 lb", price: 50, desc: "Reliable. Slow. The kind of weapon you have time to be sorry about firing." },
-      { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged upriver. Tested at Wyrm's Crossing, by a man no longer with us." },
-      { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. She rarely stocks them — Sorcerous Sundries keeps the good paper." },
-      { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Hauled up the salt-roads south. Useful against more things than you think." },
-      { id: "m16", name: "Wax candle (×6)", type: "common", glyph: "candles", qty: 4, weight: "1 lb", price: 4, desc: "Beeswax. Burns long. Useful for vigils and for less wholesome purposes." },
-    ],
+    stock: GATE_MARKET_STOCK,
   },
 ];
 
