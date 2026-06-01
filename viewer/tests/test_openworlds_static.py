@@ -435,6 +435,26 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('testId="modal-close"', launcher + character)
         self.assertIn('data-worldos-testid="modal-close"', camp)
 
+    def test_launcher_shelf_filters_non_resumable_scratch_runs(self):
+        launcher = (server._OPENWORLDS_DIR / "screen-launcher.jsx").read_text(encoding="utf-8")
+        app = (server._OPENWORLDS_DIR / "app.jsx").read_text(encoding="utf-8")
+
+        self.assertIn("const playerChronicles = campaigns.filter(isPlayerChronicle);", launcher)
+        self.assertIn("function isPlayerChronicle(c)", launcher)
+        self.assertIn("return Boolean(c?.canResume || c?.current);", launcher)
+        self.assertIn("playerChronicles.length === 0", launcher)
+        self.assertIn("playerChronicles.map((c) =>", launcher)
+        self.assertNotIn("{campaigns.map((c) =>", launcher)
+        self.assertIn("playerChronicles.find((c) => c.live && c.canResume)", launcher)
+        self.assertIn("playerChronicles.find((c) => c.canResume)", launcher)
+        self.assertIn("function openWorldsPlayerChronicle(c)", app)
+        self.assertIn("const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);", app)
+        self.assertIn("const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);", app)
+        self.assertIn("playerCampaigns.find((c) => c.current)?.id", app)
+        self.assertIn("playerCampaigns.find((c) => c.live && c.canResume)?.id", app)
+        self.assertIn("playerCampaigns.find((c) => c.canResume)?.id", app)
+        self.assertNotIn("nextCampaigns[0]?.id", app)
+
     def test_openworlds_title_bar_keeps_title_and_day_pill_apart(self):
         # #306: long campaign titles must never wrap under the nav rail or collide with the
         # day/capability band. The structural fix is intentionally static so the built-app
@@ -612,7 +632,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('params.get("campaign")', source)
         self.assertIn("requestedCampaignRef", source)
         self.assertIn("requestedStillExists", source)
-        self.assertLess(source.index("requestedStillExists ? requestedCampaign"), source.index("nextCampaigns.find((c) => c.current)?.id"))
+        self.assertLess(source.index("requestedStillExists ? requestedCampaign"), source.index("playerCampaigns.find((c) => c.current)?.id"))
         self.assertIn("requestedCampaignRef.current = \"\"", source)
 
     def test_openworlds_camp_rest_gives_feedback_when_dm_is_busy(self):
