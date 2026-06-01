@@ -178,6 +178,29 @@ def git_text(repo: Path, args: Sequence[str], runner: CommandRunner) -> str:
     return (result.get("stdout") or "").strip() if result.get("ok") else ""
 
 
+def inspect_origin_main_query(repo: Path, runner: CommandRunner) -> dict:
+    result = runner(["git", "ls-remote", "origin", "refs/heads/main"], repo, 15)
+    stdout = (result.get("stdout") or "").strip()
+    remote_head = ""
+    if result.get("ok") and stdout:
+        first_field = stdout.split()[0]
+        if re.fullmatch(r"[0-9a-fA-F]{40}", first_field):
+            remote_head = first_field.lower()
+    info = {
+        "ok": bool(result.get("ok")) and bool(remote_head),
+        "exit_code": result.get("exit_code"),
+        "timed_out": bool(result.get("timed_out")),
+        "head": remote_head,
+        "head_short": remote_head[:7],
+    }
+    if not info["ok"]:
+        combined = "\n".join(
+            part for part in (result.get("stdout") or "", result.get("stderr") or "") if part
+        ).strip()
+        info["error_redacted"] = redacted_remote_url(combined)[:500]
+    return info
+
+
 def inspect_repo(repo: Path, expected_sha: str, runner: CommandRunner) -> tuple[dict, list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -193,6 +216,13 @@ def inspect_repo(repo: Path, expected_sha: str, runner: CommandRunner) -> tuple[
         "expected_sha": expected_sha or "",
         "expected_sha_match": None,
         "remote_origin": "",
+        "origin_main_query": {
+            "ok": False,
+            "exit_code": None,
+            "timed_out": False,
+            "head": "",
+            "head_short": "",
+        },
     }
 
     if not repo.exists() or not repo.is_dir():
@@ -210,6 +240,7 @@ def inspect_repo(repo: Path, expected_sha: str, runner: CommandRunner) -> tuple[
     info["head_short"] = git_text(repo, ["rev-parse", "--short", "HEAD"], runner)
     info["origin_main"] = git_text(repo, ["rev-parse", "origin/main"], runner)
     info["remote_origin"] = redacted_remote_url(git_text(repo, ["remote", "get-url", "origin"], runner))
+    info["origin_main_query"] = inspect_origin_main_query(repo, runner)
     status = git_text(repo, ["status", "--short"], runner)
     info["dirty"] = bool(status)
     if status:
@@ -229,6 +260,14 @@ def inspect_repo(repo: Path, expected_sha: str, runner: CommandRunner) -> tuple[
         warnings.append(
             f"HEAD {info['head_short'] or info['head']} differs from origin/main {info['origin_main'][:7]}"
         )
+    if not info["origin_main_query"].get("ok"):
+        blockers.append("repo origin/main is not queryable from this VM; configure approved GitHub credentials before RRI")
+    else:
+        remote_head = info["origin_main_query"].get("head")
+        if remote_head and info["origin_main"] and remote_head != info["origin_main"]:
+            warnings.append(
+                f"local origin/main {info['origin_main'][:7]} differs from queried origin/main {remote_head[:7]}"
+            )
 
     return info, blockers, warnings
 
@@ -605,6 +644,8 @@ def markdown_report(report: dict) -> str:
         f"- Expected SHA: `{report['repo'].get('expected_sha') or 'not supplied'}`",
         f"- Expected SHA match: `{report['repo'].get('expected_sha_match')}`",
         f"- Dirty: `{report['repo'].get('dirty')}`",
+        f"- Origin/main query: `{str(report['repo'].get('origin_main_query', {}).get('ok')).lower()}`",
+        f"- Queried origin/main: `{report['repo'].get('origin_main_query', {}).get('head_short') or 'unknown'}`",
         "",
         "## Blockers",
         "",

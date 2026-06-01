@@ -241,9 +241,10 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 - Do **not** use it as proof for Mac-only surfaces: `WorldOS.app` build/launch, native #356, and built-app
   UI play evidence stay on this Mac or macOS CI.
 - VM preflight before any RRI sweep: record VM identity, repo checkout path, branch/SHA, Codex CLI version,
-  auth/profile status, `uv`, Node/npm/Playwright/Chromium availability, private-art availability or explicit
-  backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and the artifact
-  return path under `/Volumes/LEXAR/Codex`. Use the repo-owned preflight artifact writer before #466:
+  GitHub `origin/main` queryability, auth/profile status, `uv`, Node/npm/Playwright/Chromium availability,
+  private-art availability or explicit backend-only/no-art classification, env vars, budget/concurrency cap,
+  teardown commands, and the artifact return path under `/Volumes/LEXAR/Codex`. Use the repo-owned preflight
+  artifact writer before #466:
   ```bash
   python3 qa/support_vm_preflight.py \
     --repo /root/worldos-qa/WorldOS \
@@ -254,19 +255,16 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
     --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/9545383-preflight
   ```
   The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
-  `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/tool/auth/private-art blockers
-  would make the RRI sweep untrustworthy.
-- Current preflight status (2026-06-01): this local Codex Desktop session can parse an SSH alias for
-  `support-vm-1`, but `ssh -o BatchMode=yes support-vm-1 ...` failed DNS resolution (`nodename nor servname
-  provided`). Do not start #466 there until operator routing is restored and the preflight fields above are
-  written to Lexar evidence.
+  `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/origin/tool/auth/private-art
+  blockers would make the RRI sweep untrustworthy.
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private
   art. The VM WorldOS checkout at `/root/worldos-qa/WorldOS` is clean but stale at `4524b3e` and behind
-  the `9545383` proof baseline; Codex auth/config is not proven; `/Volumes/LEXAR/Codex` does not exist on the VM.
-  Before #466, approve/sync the VM checkout, prove Codex auth, set a remote staging path, and copy artifacts
-  back to local Lexar.
+  the `9545383` proof baseline; `git` cannot query/sync the HTTPS origin in batch mode; Codex auth/config is
+  not proven; `/Volumes/LEXAR/Codex` does not exist on the VM. Before #466, approve/sync the VM checkout, prove
+  Codex auth, make `origin/main` queryable from the VM, set a remote staging path, and copy artifacts back to
+  local Lexar.
 - RRI rollup rule: Mac/local evidence supplies native Part A and built-app screenshots; VM artifacts can supply
   persona, behavior, image/network, palette-live, and score evidence only when `run.json`, `score.json`,
   `session_surface.final.json`, `network.ndjson`, and build SHA are present. Missing or mixed-SHA artifacts

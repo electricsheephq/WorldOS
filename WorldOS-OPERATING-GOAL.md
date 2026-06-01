@@ -5,7 +5,7 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-01T17:24:00+07:00 docs wording pass; latest handoff build remains 9545383
+     AS OF:        2026-06-01T18:10:00+07:00 support-VM origin-readiness pass; latest handoff build remains 9545383
      MAIN BASELINE:
                    Latest same-SHA app-proof target is `9545383` (PR #508 merged the repo-owned
                    support-VM preflight artifact gate, and the app handoff gate was rerun on that
@@ -22,13 +22,13 @@
                    in local operator-only evidence/runbooks, not tracked repo docs. Use it for
                    heavy backend/persona sweeps only after Codex/config/credentials are intentionally
                    installed. Mac-built `.app` smoke/play proof stays on this Mac or macOS CI.
-                   Current local preflight note: `ssh -G support-vm-1` resolves only to the alias;
-                   `ssh -o BatchMode=yes support-vm-1 ...` could not resolve the hostname in this
-                   Codex Desktop session. A read-only operator-endpoint scout reached `evaos-support`
-                   (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`, but that checkout
-                   was stale (`4524b3e`) and behind the `9545383` app-proof baseline; Codex auth/config was not
-                   proven. Restore/verify operator routing, fast-forward the VM repo, verify Codex auth,
-                   and define artifact return before running #466 there.
+                   Current local preflight note: a read-only operator-endpoint scout reached
+                   `evaos-support` (~32 GB RAM, 16 CPUs) with WorldOS at `/root/worldos-qa/WorldOS`,
+                   but that checkout was stale (`4524b3e`) and behind the `9545383` app-proof baseline.
+                   GitHub origin query/sync failed in batch mode (`could not read Username for
+                   'https://github.com'`), Codex auth/config was not proven, and artifact return needs
+                   remote staging plus copy-back to Lexar. Do not run #466 there until an operator
+                   approves repo sync/auth setup and the preflight passes.
      LAST MEASURED GATE BUILD:
                    f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
                    HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
@@ -61,7 +61,8 @@
                    the VM persona artifacts with the `9545383` Mac handoff JSON above. If a
                    newer release-candidate SHA is used instead, rerun the Mac handoff on that
                    same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps
-                   only after the preflight writes a redacted ready-for-RRI artifact.
+                   only after the preflight writes a redacted ready-for-RRI artifact, including a
+                   successful `origin/main` query from the VM.
                    If the VM route is still unavailable, record that as the blocker and
                    file/fix repo-side RRI harness gaps only if found. #481/#482/#483/#484/#485/#486
                    are closed; #466 remains the release-gate issue and #467 remains the UX-first sprint.
@@ -227,7 +228,7 @@ verifier; can revert the goal to "fix" anytime.
 
 ---
 
-## 9. CURRENT STATUS (2026-06-01T17:24:00+07:00 — latest same-SHA app proof is 9545383)
+## 9. CURRENT STATUS (2026-06-01T18:10:00+07:00 — latest same-SHA app proof is 9545383)
 
 - Repo truth stabilization merged in PR #465, UX-first doc sync merged in PR #468, first-minute
   click/title chrome proof merged in PR #470, local/Lexar/support-VM routing merged in PR #471,
@@ -270,11 +271,12 @@ verifier; can revert the goal to "fix" anytime.
   sweep runs on a newer `origin/main` tip, rerun the Mac handoff on that same SHA first.
   Heavy backend/persona sweeps belong on the owner-provided 32GB support VM (`support-vm-1`) once auth/config
   are intentionally installed there; connection details are kept outside tracked docs. In this Codex Desktop
-  session the local SSH alias for `support-vm-1` did not resolve; a read-only operator-endpoint scout reached
-  the VM and confirmed `evaos-support` has ~32 GB RAM, 16 CPUs, `git`, `python3`, `uv`, Node/npm, Codex CLI,
-  Playwright, and private art, but its WorldOS checkout is `4524b3e` and behind the `9545383` proof baseline; Codex
-  auth/config was not proven. Restore/verify VM routing, fast-forward the VM checkout, verify auth, and define
-  artifact return before the heavy sweep. Mac-only built-app launch/play proof stays on this Mac or macOS CI.
+  session a read-only operator-endpoint scout reached the VM and confirmed `evaos-support` has ~32 GB RAM,
+  16 CPUs, `git`, `python3`, `uv`, Node/npm, Codex CLI, Playwright, and private art, but its WorldOS checkout
+  is `4524b3e` and behind the `9545383` proof baseline; GitHub origin query/sync failed in batch mode; Codex
+  auth/config was not proven. Get operator approval for VM repo sync/auth setup, verify `origin/main` is
+  queryable from the VM, and define artifact return before the heavy sweep. Mac-only built-app launch/play
+  proof stays on this Mac or macOS CI.
 - Built-app diagnostic evidence exists, but release truth is still absent. The PR #475 pre-merge app-code
   proof `8bd833f` (`codex-app-headproof-20260601T043909`) was trace-clean. The post-merge main proof
   `32ca561` (`post475-main-app-proof-20260601T051230`) was playable with private art, Alfira, five enabled

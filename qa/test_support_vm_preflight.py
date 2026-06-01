@@ -11,17 +11,23 @@ class FakeRunner:
         self,
         repo: Path,
         *,
-        head: str = "deadbeefcafebabe1234567890",
+        head: str = "deadbeefcafebabe1234567890abcdef12345678",
         status: str = "",
         codex_auth_output: str = "Authenticated as codex-test",
         chromium_path: Path | None = None,
         create_chromium: bool = True,
+        remote_query_ok: bool = True,
+        remote_query_head: str | None = None,
+        remote_query_stderr: str = "could not read Username for 'https://github.com'",
     ):
         self.repo = repo
         self.head = head
         self.status = status
         self.codex_auth_output = codex_auth_output
         self.chromium_path = chromium_path or repo / ".fake-chromium"
+        self.remote_query_ok = remote_query_ok
+        self.remote_query_head = remote_query_head or head
+        self.remote_query_stderr = remote_query_stderr
         if create_chromium:
             self.chromium_path.parent.mkdir(parents=True, exist_ok=True)
             self.chromium_path.write_text("fake browser", encoding="utf-8")
@@ -44,6 +50,10 @@ class FakeRunner:
                 return ok(self.status)
             if args == ("remote", "get-url", "origin"):
                 return ok("https://github.com/electricsheephq/WorldOS.git")
+            if args == ("ls-remote", "origin", "refs/heads/main"):
+                if self.remote_query_ok:
+                    return ok(f"{self.remote_query_head}\trefs/heads/main")
+                return fail(self.remote_query_stderr)
             if args == ("--version",):
                 return ok("git version 2.50.0")
         if args == ("--version",):
@@ -239,6 +249,39 @@ class SupportVMPreflightTests(unittest.TestCase):
             blocker_text = "\n".join(report["blockers"])
             self.assertIn("dirty", blocker_text)
             self.assertIn("does not match expected SHA", blocker_text)
+
+    def test_origin_main_query_failure_blocks_readiness(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(
+                    config.repo,
+                    remote_query_ok=False,
+                    remote_query_stderr="fatal: could not read Username for 'https://token@example.com'",
+                ),
+                which=fake_which,
+                env={},
+            )
+            self.assertFalse(report["ready_for_rri"])
+            self.assertFalse(report["repo"]["origin_main_query"]["ok"])
+            self.assertIn("repo origin/main is not queryable", "\n".join(report["blockers"]))
+            self.assertIn("[REDACTED]@", report["repo"]["origin_main_query"]["error_redacted"])
+            self.assertNotIn("token@example.com", json.dumps(report))
+
+    def test_origin_main_query_records_remote_head(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            remote_head = "1111111222222233333334444444555555566666"
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(config.repo, remote_query_head=remote_head),
+                which=fake_which,
+                env={},
+            )
+            self.assertTrue(report["ready_for_rri"])
+            self.assertEqual(report["repo"]["origin_main_query"]["head"], remote_head)
+            self.assertIn("queried origin/main", "\n".join(report["warnings"]).lower())
 
     def test_missing_expected_sha_blocks_rri_readiness(self):
         with tempfile.TemporaryDirectory() as td:
