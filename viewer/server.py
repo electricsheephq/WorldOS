@@ -1651,6 +1651,7 @@ def build_session_surface(
     location = _session_location(snapshot)
     party = _session_party_cards(snapshot)
     action_model = build_action_model(snapshot, live=live, is_live_view=is_live_view)
+    actor = action_model.get("actor") if isinstance(action_model.get("actor"), dict) else None
     combat_view = build_combat_view(snapshot)
     actions = _session_available_actions(action_model)
     enabled_actions, blocked_actions = _session_action_buckets(actions)
@@ -1676,6 +1677,7 @@ def build_session_surface(
             "caption": location["name"],
             "imageScope": f"location:{location['id']}" if location["id"] else "",
         },
+        "actor": actor,
         "party": party,
         "conditions": _session_conditions(party),
         "activeQuests": active_quests,
