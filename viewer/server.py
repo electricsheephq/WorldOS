@@ -5310,6 +5310,7 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
                 "label": "Explore",
                 "actions": [
                     _action_item("continue", "Continue", kind="do", text="continue", detail="Press onward", disabled_reason=base_reason),
+                    _action_item("look", "Look", kind="do", text="look around", detail="Survey scene", disabled_reason=base_reason),
                     _action_item("say", "Say", detail="Speak aloud", disabled_reason=base_reason, ui="focus-say"),
                     _action_item("do", "Do", detail="Act in world", disabled_reason=base_reason, ui="focus-do"),
                     _action_item("check", "Check", detail="Roll a skill", disabled_reason=base_reason, ui="palette-skills"),
