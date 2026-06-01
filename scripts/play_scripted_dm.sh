@@ -48,11 +48,20 @@ mkdir -p "$TRACE_DIR"
 : > "$TRACE"
 
 json_append() {
-  python3 - "$1" "$2" "$3" <<'PY'
+  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
 import json, sys, time
-path, role, text = sys.argv[1:4]
+path, role, text, extra_raw = sys.argv[1:5]
+extra = {}
+if extra_raw.strip():
+    try:
+        parsed = json.loads(extra_raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid chat extra_json: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise SystemExit("chat extra_json must be an object")
+    extra = parsed
 with open(path, "a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"role": role, "text": text, "at": time.time()}) + "\n")
+    fh.write(json.dumps({"role": role, "text": text, "at": time.time(), **extra}) + "\n")
 PY
 }
 
@@ -185,7 +194,7 @@ PY
 CAMPAIGN_ID="$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["campaign_id"])' <<<"$BOOTSTRAP_JSON")"
 OPENING="$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["opening"])' <<<"$BOOTSTRAP_JSON")"
 PLAYER_NAME="$(python3 -c 'import json,sys;print((json.loads(sys.stdin.read())["player"].get("name") or "Hero"))' <<<"$BOOTSTRAP_JSON")"
-json_append "$CHAT" "dm" "$OPENING"
+json_append "$CHAT" "dm" "$OPENING" '{"engine_logged":true}'
 trace "bootstrap" "campaign=$CAMPAIGN_ID player=$PLAYER_NAME"
 processed=0
 write_summary
@@ -243,7 +252,7 @@ PY
       )"
       beat=$((processed + 1))
       json_append "$CHAT" "player" "$(move_chat_text "$line")"
-      json_append "$CHAT" "dm" "$reply"
+      json_append "$CHAT" "dm" "$reply" '{"engine_logged":true}'
       trace_json "move_resolved" "$beat" "$line"
       processed=$((processed + 1))
       write_summary
