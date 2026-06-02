@@ -94,9 +94,17 @@ class TilemapScene extends Phaser.Scene {
     this.add.text(VW + 12, 10, "GT1 · pixel turn-based", { font: "13px monospace", color: "#e8d8b0" });
     this.modeText = this.add.text(VW + 12, 28, "transport: …", { font: "11px monospace", color: "#9ab" });
 
+    this.base = new URLSearchParams(location.search).get("base") || "";
+    this.campaign = new URLSearchParams(location.search).get("campaign") || "";
+    // #439 asset pipeline: actor/scene art resolves through the existing Img-scope -> /image
+    // bridge (first-party imagegen + BG catalog; owner decision 2026-06-02). A miss is a 404,
+    // so we lazy-load each scope once and fall back to the procedural token/tile on loaderror.
+    // _art tracks per-scope load state: undefined=untried, "loading", "ok", "miss".
+    this._art = {};
+
     this.client = new window.SurfaceClient({
-      baseUrl: new URLSearchParams(location.search).get("base") || "",
-      campaign: new URLSearchParams(location.search).get("campaign") || "",
+      baseUrl: this.base,
+      campaign: this.campaign,
       onMode: (m) => {
         this.modeText.setText(`transport: ${m.toUpperCase()}${m === "fixture" ? " (fixtures)" : " (live)"}`);
         this.modeText.setColor(m === "live" ? "#8c8" : "#caa");
@@ -105,7 +113,40 @@ class TilemapScene extends Phaser.Scene {
     this.client.startPolling((snap) => this.render(snap));
   }
 
-  render({ atlas, combat, character }) {
+  // #439: resolve a render-profile art scope through GET /image?scope=… (first-party
+  // imagegen + BG catalog). Lazy + idempotent per scope: on success the texture is cached
+  // and we trigger a redraw so the sprite replaces its procedural placeholder; a 404 (miss)
+  // marks the scope "miss" so we never retry and the placeholder stands. Never blocks render.
+  _resolveArt(scope) {
+    if (!scope) return "miss";
+    const st = this._art[scope];
+    if (st) return st;                              // "loading" | "ok" | "miss"
+    this._art[scope] = "loading";
+    const key = "art:" + scope;
+    if (this.textures.exists(key)) { this._art[scope] = "ok"; return "ok"; }
+    const url = `${this.base}/image?scope=${encodeURIComponent(scope)}`;
+    const loader = this.load.image(key, url);
+    this.load.once("loaderror", (file) => {
+      if (file && file.key === key) this._art[scope] = "miss";
+    });
+    this.load.once(`filecomplete-image-${key}`, () => {
+      this._art[scope] = "ok";
+      if (this._lastSnap) this.render(this._lastSnap);   // redraw so the sprite appears
+    });
+    this.load.start();
+    return "loading";
+  }
+
+  // engine actor id -> art scope key, from the render-profile core.actors[] (#434/#439).
+  _actorScope(actorId) {
+    const actors = this.profile?.core?.actors || [];
+    const a = actors.find((x) => x.engine_actor_id === actorId);
+    return a?.art?.scope_key || "";
+  }
+
+  render(snap) {
+    const { atlas, combat, character } = snap;
+    this._lastSnap = snap;
     this.mapLayer.removeAll(true);
     this.tokenLayer.removeAll(true);
     this.fxLayer.removeAll(true);
@@ -185,7 +226,7 @@ class TilemapScene extends Phaser.Scene {
     const ts = this.tileSize, midY = Math.floor(GRID_H / 2);
     party.forEach((p, i) => {
       const tx = 3 + i, ty = midY;
-      this._token(tx * ts + ts / 2, ty * ts + ts / 2, "ally", (p.name || "?")[0]);
+      this._token(tx * ts + ts / 2, ty * ts + ts / 2, "ally", (p.name || "?")[0], p.name, p.id);
     });
   }
 
@@ -222,7 +263,7 @@ class TilemapScene extends Phaser.Scene {
         cx = (isFoe ? 0.7 : 0.25) * VW; cy = bandTop + 30 + (k - 1) * 34;
       }
       const team = c.is_current || c.active ? "current" : (isFoe ? "foe" : "ally");
-      this._token(cx, cy, team, (c.name || "?")[0], c.name);
+      this._token(cx, cy, team, (c.name || "?")[0], c.name, c.id);
     });
     // initiative strip in the HUD
     this.hud.list.filter(o => o._isInit).forEach(o => o.destroy());
@@ -238,14 +279,28 @@ class TilemapScene extends Phaser.Scene {
     });
   }
 
-  _token(cx, cy, team, glyph, label) {
-    const g = this.add.graphics();
+  _token(cx, cy, team, glyph, label, actorId) {
     const color = TEAM_COLOR[team] || TEAM_COLOR.ally;
-    g.fillStyle(color, 1); g.fillCircle(cx, cy, 13);
-    if (team === "current") { g.lineStyle(3, TEAM_COLOR.current, 0.9); g.strokeCircle(cx, cy, 17); }
-    this.tokenLayer.add(g);
-    this.tokenLayer.add(this.add.text(cx - 4, cy - 6, (glyph || "?").toUpperCase(),
-      { font: "12px monospace", color: "#0c0a06" }));
+    // #439: if the actor has resolvable art (render-profile scope → /image), draw the sprite;
+    // otherwise the procedural circle. Resolution is lazy + cached; a miss keeps the circle.
+    const scope = actorId ? this._actorScope(actorId) : "";
+    const artState = scope ? this._resolveArt(scope) : "miss";
+    if (artState === "ok") {
+      const spr = this.add.image(cx, cy, "art:" + scope).setDisplaySize(28, 34);
+      this.tokenLayer.add(spr);
+      if (team === "current") {
+        const ring = this.add.graphics();
+        ring.lineStyle(3, TEAM_COLOR.current, 0.9); ring.strokeCircle(cx, cy, 19);
+        this.tokenLayer.add(ring);
+      }
+    } else {
+      const g = this.add.graphics();
+      g.fillStyle(color, 1); g.fillCircle(cx, cy, 13);
+      if (team === "current") { g.lineStyle(3, TEAM_COLOR.current, 0.9); g.strokeCircle(cx, cy, 17); }
+      this.tokenLayer.add(g);
+      this.tokenLayer.add(this.add.text(cx - 4, cy - 6, (glyph || "?").toUpperCase(),
+        { font: "12px monospace", color: "#0c0a06" }));
+    }
     if (label) this.tokenLayer.add(this.add.text(cx - 16, cy + 16, label.slice(0, 10),
       { font: "9px monospace", color: "#eee" }));
   }

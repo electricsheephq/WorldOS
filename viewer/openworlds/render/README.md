@@ -17,11 +17,12 @@ constrained intents to `/move`.
   per location; **click-to-travel** on green exit tiles (`{kind:"travel"}`); party/status HUD
   from `/character-surface` (zero client rules); **zone-mode turn combat** as a pure replay of
   `/combat-surface` + `/events` (zone bands + tokens, NO VTT cells/rulers, derived positions).
-- **Deferred — #439 pixel asset pipeline:** real sprite-sheets/tilesets need an
-  image-generation model (self-hosted vs paid API) — an **owner cost/dependency decision**
-  (stop-and-ask). Until then the renderer draws **procedural placeholder tiles + tokens** so
-  the tier is fully demoable; real art swaps in via the render-profile scope keys (resolved
-  through the existing `Img-scope → /image` bridge) with no scene change.
+- **#439 asset pipeline — WIRED (owner decision 2026-06-02: reuse existing imagegen + BG
+  catalog, first-party/internal):** actor tokens resolve their render-profile `art.scope_key`
+  through the existing `GET /image?scope=…` bridge and draw the real sprite when present; a
+  miss (404) falls back to the procedural placeholder token. Lazy + cached per scope; redraws
+  when art loads. (The UGC-clean asset-model decision — self-hosted vs paid API for
+  user-shippable games — defers to M3.) Tiles remain procedural for now.
 - **Deferred — #440/#441 QA gates + blind-playtester:** wire when `qa/playwright/node_modules`
   is installed (the render-gate + persona harness need it). The static serve/contract gating
   (`test_render_tilemap.py`) is in CI now.
