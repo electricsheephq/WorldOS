@@ -182,6 +182,40 @@ clawdnd_dm_effort_arg() {
   CLAWDND_DM_EFFORT=(--effort "$level")
 }
 
+# DM-TURN TIMEOUT TIER (the ONE shared implementation of the cold-open-vs-routine timeout split).
+#
+# Both play loops wrap the DM's `claude -p` in `timeout <secs>` + ONE retry, so a wedged turn
+# recovers instead of hanging the session. But the two kinds of beat need very different deadlines,
+# for the SAME reason the effort tier splits them (clawdnd_dm_effort_arg, keyed off `first`):
+#   • the COLD OPEN (first != 0) is the one-time, --effort max, full world-build — generate the
+#     world, scene, PC, opening NPCs + portraits. That MAX-EFFORT cold open routinely runs ~280–400s;
+#     the routine 200s deadline KILLS it mid-build (the masked "cold-open reproducibly broken" mode),
+#     so the cold open gets a generous deadline: WORLDOS_COLDOPEN_TIMEOUT (default 400s).
+#   • CONTINUING / routine beats (first = 0) are --effort medium and resolve one move against
+#     established canon — fast — so they keep the existing per-beat deadline CLAWDND_BEAT_TIMEOUT
+#     (default 200s), unchanged. (Routine behavior is byte-identical to today.)
+# Keyed off the SAME `first` signal as the effort + lean levers, so cold-open=full+max+400s and the
+# long tail=lean+medium+200s stay in lock-step. Applies ONLY to the DM turn (player/companion turns
+# are never wrapped in a per-beat timeout at all).
+#
+# Both knobs resolve through the same WORLDOS_/CLAWDND_ fallback as everything else (worldos_env):
+#   WORLDOS_COLDOPEN_TIMEOUT (default 400) — the cold open's deadline, in seconds.
+#   CLAWDND_BEAT_TIMEOUT     (default 200) — every continuing beat's deadline (today's knob, kept).
+# Note: CLAWDND_BEAT_TIMEOUT keeps its CLAWDND_ name (it predates the WorldOS rename and is the
+# documented routine knob); only the NEW cold-open knob takes the WORLDOS_ name. worldos_env still
+# honors a WORLDOS_BEAT_TIMEOUT override of the routine tier for forward-compat.
+#
+# Unlike the effort/lean helpers (which populate an array spliced into argv), this just ECHOES the
+# resolved seconds — the caller uses it as the scalar `timeout <secs>` argument. $1 = first?(1/0)
+clawdnd_dm_timeout() {
+  local first="$1"
+  if [ "$first" != "0" ]; then
+    worldos_env COLDOPEN_TIMEOUT 400
+  else
+    worldos_env BEAT_TIMEOUT 200
+  fi
+}
+
 # RE-MINT SESSION ON RETRY (the ONE shared implementation of "never reuse a CONSUMED session id").
 # A `claude -p` attempt that fails AFTER startup STILL registered its --session-id on disk
 # (~/.claude/projects/<proj>/<uuid>.jsonl), so a retry that re-passes that SAME --session-id dies
