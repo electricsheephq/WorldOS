@@ -172,9 +172,15 @@ turn() {
   local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
+    # EFFORT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation scripts/play.sh,
+    # qa/run_duo.sh, and scripts/play_party.sh use, so the harnesses can't drift: --effort max on
+    # the cold open (one-time world-build), --effort medium on continuing beats (the bulk — cuts
+    # thinking-latency). Keyed off the SAME `first` signal the lean branch uses elsewhere. DM
+    # turn ONLY — the actor branch below never gets --effort.
+    clawdnd_dm_effort_arg "$first"
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
