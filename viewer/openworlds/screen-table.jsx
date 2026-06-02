@@ -422,6 +422,9 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const latestBeatRef = React.useRef(null);
   const pendingBeatRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  // #robustness: synchronous in-flight lock for postMove. pendingActive only arms AFTER the fetch
+  // (armPending fires post-await), so rapid double-click/double-Enter otherwise double-submits /move.
+  const submittingRef = React.useRef(false);
   // #402: auto-follow state. `stickToBottomRef` is true while the player is at/near the live
   // end of the chronicle (the default) and false once they scroll UP to read history — so the
   // auto-scroll effect follows new narration WITHOUT yanking a reader away mid-read. `snapNextRef` is
@@ -666,6 +669,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason });
       return;
     }
+    if (submittingRef.current) return; // already submitting this turn — drop the rapid double-fire
+    submittingRef.current = true;
     // #342: neutralize any markup in a free-text move (kind "do"/"say"/etc. carry the player's words
     // in move.text) BEFORE it is sent to the engine OR echoed — so an injection-y turn can't choke
     // the DM or ride along in the chronicle as raw markup. Structured moves (no free text) pass through.
@@ -696,6 +701,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       loadSurface();
     } catch (error) {
       toast({ kind: "danger", title: "Move not sent", body: error?.message || `The viewer could not reach ${writeLane.endpoint || "/move"}.` });
+    } finally {
+      submittingRef.current = false;
     }
   };
 
