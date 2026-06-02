@@ -135,8 +135,6 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }
         throw new Error(payload.reason || `move ${response.status}`);
       }
       toast({ kind: "rest", eyebrow: "Camp", title: "Resting", body: "Move relayed to the DM — the engine resolves the long rest, refreshes the party, and advances the clock to morning." });
-      // Keep the existing screen-map nicety working if the parent supplied one.
-      if (typeof onBeginRest === "function") { try { onBeginRest(); } catch (_) { /* non-fatal */ } }
     } catch (error) {
       toast({ kind: "danger", eyebrow: "Camp", title: "Rest not sent", body: error?.message || "The viewer could not reach /move." });
     } finally {

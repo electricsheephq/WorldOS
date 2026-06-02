@@ -773,6 +773,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # The button is disabled while busy, and the early-return path toasts instead of no-op'ing.
         self.assertIn("!canAct || dmBusy", camp_source)
         self.assertIn("still narrating", camp_source)
+        # A successful live rest already toasts "Resting"; do not call ScreenMap's atlas-only
+        # onBeginRest handler afterward, because that can emit a contradictory "Camp unavailable"
+        # toast when the current atlas location is not tagged as a rest point.
+        self.assertIn('title: "Resting"', camp_source)
+        self.assertNotIn("onBeginRest();", camp_source)
 
         # And the app actually passes liveSession to the map screen (so dmBusy is real, not always false).
         _s_app, _c_app, app_body = self._get("/openworlds/app.jsx")
