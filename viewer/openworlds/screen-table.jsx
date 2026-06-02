@@ -952,7 +952,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             )) : <div className="body-sm muted">No moves yet</div>}
             {pendingActive && (
               <div ref={pendingBeatRef} data-worldos-testid="chronicle-pending-beat" style={{ scrollMarginBlock: 12 }}>
-                <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} />
+                {/* #G3-UX: `streaming` (set by useLiveSession's notePendingProgress the moment live
+                    /events prose lands for this in-flight turn) flips the affordance from a generic
+                    "weaving the next beat" wait to confirming the scene is being written ABOVE — so
+                    the spinner is wired to the live narration tail the player is watching fill in,
+                    not a dead static line. `onNavigate` is passed so the wait can point the player at
+                    read-only screens (sheet/map/journal) that stay open during compose. */}
+                <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} streaming={Boolean(pending.streaming)} onNavigate={onNavigate} />
               </div>
             )}
             {pendingStuck && (
@@ -1318,7 +1324,7 @@ const DM_COLD_OPEN_FLAVOR = [
   "The ink is still drying on your opening…",
 ];
 
-function DmNarratingBeat({ since, firstBeat }) {
+function DmNarratingBeat({ since, firstBeat, streaming, onNavigate }) {
   const start = typeof since === "number" ? since : Date.now();
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -1331,14 +1337,34 @@ function DmNarratingBeat({ since, firstBeat }) {
   const elapsedLabel = `${mm}:${ss}`;
   // #385: the headline reads as an ACTIVE process, not a passive status. The cold-open rotates a
   // flavor line every ~4s (so the text itself visibly changes); later beats keep the steady label.
+  // #G3-UX: once `streaming` is true, the DM's prose is visibly filling into the chronicle directly
+  // ABOVE this affordance — so the later-beat copy switches from the anticipatory "weaving" wait to
+  // a present-tense confirmation that the scene is arriving NOW. This connects the spinner to the
+  // live /events narration tail the player is watching (the give-up the veteran hit was a dead
+  // static spinner; once prose is flowing the spinner should say so), without changing the cold-open
+  // path (which has its own minutes-long rotating flavor + window).
   const label = firstBeat
     ? DM_COLD_OPEN_FLAVOR[Math.floor(secs / 4) % DM_COLD_OPEN_FLAVOR.length]
-    : "The Dungeon Master is narrating";
+    : streaming
+      ? "The scene is unfolding above"
+      : "The Dungeon Master is narrating";
   const waitHint = firstBeat
     ? "The first beat of a session can take a few minutes — hang tight, your story is on its way."
-    // #399: a content-rich beat can run up to ~two minutes (the window is 180s); say "a minute or
-    // two" so a 90–120s wait reads as expected, not as the app having stalled.
-    : "Weaving the next beat — this can take a minute or two.";
+    : streaming
+      // The live prose is appending into the chronicle above this line as the DM writes it — say so,
+      // so the wait reads as visible progress (the scene is arriving) rather than a static spinner.
+      ? "The Dungeon Master is writing this beat — it's appearing above as it's composed."
+      // #399: a content-rich beat can run up to ~two minutes (the window is 180s); say "a minute or
+      // two" so a 90–120s wait reads as expected, not as the app having stalled.
+      : "Weaving the next beat — this can take a minute or two.";
+  // #G3-UX FIX 2: read-only navigation (the character sheet, the map/Travel, the Quest Journal, the
+  // Quick Stash) is already UN-gated during compose — only move/write controls gate on pendingActive.
+  // But a player staring at the wait doesn't KNOW that, so the long beat reads as "frozen, can't do
+  // anything". This one-liner advertises the affordance: the buttons are real `onNavigate` calls (so
+  // it's a working invitation, not just prose), and they route to read-only surfaces that stay open
+  // while the DM composes. Rendered for the normal later-beat wait (the ~120–200s beats the veteran
+  // rage-quit on); the cold-open path keeps its own focused "your story is on its way" reassurance.
+  const showNavAffordance = !firstBeat && typeof onNavigate === "function";
   // #385: a11y model for the cold-open. The frozen-app illusion came from the live region being the
   // ONLY accessible text AND it never changing (the dots/shimmer/elapsed were all aria-hidden). Fix:
   //   • The visible label + elapsed are NO LONGER aria-hidden for the first beat, so they appear in
@@ -1384,26 +1410,52 @@ function DmNarratingBeat({ since, firstBeat }) {
     );
   }
   return (
-    <div role="status" aria-live="polite" style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
+    <div style={{ margin: "14px 0", display: "flex", gap: 12, opacity: 0.92 }}>
       <div style={{ width: 4, alignSelf: "stretch", background: "linear-gradient(180deg, var(--crimson), transparent)" }} />
       <div className="body" style={{ flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>{label}</span>
-          <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
-            {[0, 1, 2].map((i) => (
-              <span key={i} style={{
-                width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
-                animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
-              }} />
-            ))}
-          </span>
-          <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-600)", fontVariantNumeric: "tabular-nums" }}>
-            {elapsedLabel}
-          </span>
+        {/* The status line (label + wait hint) is the announced region. Scoping aria-live HERE — not
+            on the whole affordance — means the #G3-UX nav buttons below are NOT re-announced every
+            time the label flips (e.g. when `streaming` turns on), avoiding screen-reader spam while
+            still announcing the single meaningful "the scene is arriving" change. The per-second
+            elapsed counter stays aria-hidden so the polite region isn't re-fired every tick. */}
+        <div role="status" aria-live="polite">
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span className="dm-narrating-label eyebrow" style={{ color: "var(--crimson)" }}>{label}</span>
+            <span className="dm-narrating-dots" aria-hidden="true" style={{ display: "inline-flex", gap: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  width: 6, height: 6, borderRadius: "50%", background: "var(--b-400)",
+                  animation: "dmNarratePulse 1200ms ease-in-out infinite", animationDelay: `${i * 200}ms`,
+                }} />
+              ))}
+            </span>
+            <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-600)", fontVariantNumeric: "tabular-nums" }}>
+              {elapsedLabel}
+            </span>
+          </div>
+          <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+            {waitHint}
+          </div>
         </div>
-        <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
-          {waitHint}
-        </div>
+        {/* #G3-UX FIX 2: tell the player the wait is NOT a freeze — read-only surfaces stay open while
+            the DM composes. The verbs are live onNavigate calls (a working invitation, not just copy)
+            to surfaces that don't gate on pendingActive: the character sheet, the map, the journal.
+            Lives OUTSIDE the aria-live region above so it isn't re-announced on every status change.
+            data-worldos-testid lets the static/jsdom harness assert the affordance renders. */}
+        {showNavAffordance && (
+          <div
+            data-worldos-testid="narrating-nav-affordance"
+            className="hand muted"
+            style={{ fontSize: 12, marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+          >
+            <span>While you wait, review your</span>
+            <button type="button" className="btn ghost sm" style={{ padding: "0 6px" }} onClick={() => onNavigate("character")}>character sheet</button>
+            <span>·</span>
+            <button type="button" className="btn ghost sm" style={{ padding: "0 6px" }} onClick={() => onNavigate("map")}>the map</button>
+            <span>·</span>
+            <button type="button" className="btn ghost sm" style={{ padding: "0 6px" }} onClick={() => onNavigate("journal")}>your journal</button>
+          </div>
+        )}
       </div>
     </div>
   );

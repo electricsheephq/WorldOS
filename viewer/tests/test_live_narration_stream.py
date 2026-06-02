@@ -324,6 +324,50 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertFalse(out["stuck"],
                          "fresh streamed prose proves the turn is alive — it must not read as stuck")
 
+    # --- #G3-UX FIX 1: a streamed beat marks the pending turn `streaming` -----------------------
+    # The narrating affordance (DmNarratingBeat) reads `pending.streaming` to flip its copy from the
+    # generic "weaving the next beat" wait to a present-tense confirmation that the scene is arriving
+    # above — wiring the spinner to the live /events tail the player is watching. This asserts the
+    # data wiring: the moment live prose streams for an in-flight turn, notePendingProgress stamps
+    # `streaming: true` (while KEEPING the turn gated — pending present, not stuck).
+    def test_streamed_beat_marks_pending_streaming(self):
+        out = self._run(
+            "h.arm('I push open the door');"
+            "var before = h.pending();"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'The hinges shriek.' }], next: 1 });"
+            "await h.tick();"
+            "var p = h.pending();"
+            "return ({ before_streaming: !!(before && before.streaming), after_streaming: !!(p && p.streaming), pending_present: !!p, stuck: !!(p && p.stuck) });"
+        )
+        self.assertFalse(out["before_streaming"],
+                         "a freshly-armed turn has not streamed yet — `streaming` must start falsy")
+        self.assertTrue(out["after_streaming"],
+                        "once live /events prose lands for the in-flight turn, the pending turn must be marked `streaming`")
+        self.assertTrue(out["pending_present"],
+                        "marking `streaming` must NOT resolve the turn — the bar stays gated until /chat resolves it")
+        self.assertFalse(out["stuck"],
+                         "fresh streamed prose proves the turn is alive — it must not be stuck")
+
+    # A fresh turn must NOT inherit the prior turn's `streaming` flag — armPending starts a clean
+    # pending object, so the affordance re-derives "the scene is arriving" from THIS turn's own
+    # /events arrivals (otherwise every later turn would falsely claim it's already streaming).
+    def test_new_turn_resets_streaming_flag(self):
+        out = self._run(
+            "h.arm('first move');"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: 'A first beat.' }], next: 1 });"
+            "await h.tick();"
+            "var first = h.pending();"
+            # resolve the first turn, then arm a second — its pending must start un-streamed.
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'A first beat.' }], next: 1 });"
+            "await h.tick();"
+            "h.arm('second move');"
+            "var second = h.pending();"
+            "return ({ first_streaming: !!(first && first.streaming), second_streaming: !!(second && second.streaming) });"
+        )
+        self.assertTrue(out["first_streaming"], "the first turn streamed → it was marked streaming")
+        self.assertFalse(out["second_streaming"],
+                         "a newly-armed turn must reset `streaming` to falsy (no prose has streamed for it yet)")
+
     # --- #393: the turn-END /chat line RESOLVES a turn whose prose already streamed --------------
     def test_chat_resolves_a_streamed_turn(self):
         out = self._run(
