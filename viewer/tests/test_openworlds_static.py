@@ -177,6 +177,20 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('else if (id !== "map") setCampMode(false)', source)
         self.assertIn('location={screen === "map" && campMode ? "Camp"', source)
 
+    def test_openworlds_hash_aliases_match_primary_nav_labels(self):
+        # Fresh players and browser-driving agents use the visible top-nav words as hashes.
+        # Keep those deep links mapped to the canonical screen ids the nav buttons open.
+        status, ctype, body = self._get("/openworlds/app.jsx")
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('id: "g_party", label: "Party"', chrome)
+        self.assertIn('id: "g_worlds", label: "Worlds"', chrome)
+        self.assertIn('party: "character"', source)
+        self.assertIn('worlds: "launcher"', source)
+
     def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
         status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
 

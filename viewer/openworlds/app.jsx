@@ -794,7 +794,20 @@ function App() {
       "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
       "seed", "settings",
     ]);
-    const ALIAS = { battle: "combat", parley: "dialogue", chronicles: "launcher", market: "merchant", stash: "inventory", heroes: "character", pick: "roster", picker: "roster", camp: "map", rest: "map" };
+    const ALIAS = {
+      battle: "combat",
+      parley: "dialogue",
+      party: "character",
+      heroes: "character",
+      chronicles: "launcher",
+      worlds: "launcher",
+      market: "merchant",
+      stash: "inventory",
+      pick: "roster",
+      picker: "roster",
+      camp: "map",
+      rest: "map",
+    };
     const fromHash = () => {
       const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
       if (!raw) return null;
