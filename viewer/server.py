@@ -55,6 +55,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 from _env import env_var, env_var_legacy  # noqa: E402  (after the path bootstrap above)
+import ugc_store  # noqa: E402  GRAPHICS #453/#442 UGC profile store (sibling; path bootstrapped above)
 
 # servers/voice lives two levels up from viewer/ (repo root / servers / voice).
 _VOICE_DIR = _HERE.parent / "servers" / "voice"
@@ -144,6 +145,12 @@ def _state_dir() -> Path:
 
 def _campaigns_dir() -> Path:
     return _state_dir() / "campaigns"
+
+
+def _ugc_root() -> Path:
+    """GRAPHICS #453/#442 — server-owned UGC render-profile store (presentation artifacts, NOT
+    game state, so the engine's sole-writership is untouched). Versioned append-only per owner."""
+    return _state_dir() / "ugc" / "render-profiles"
 
 
 def _moves_path() -> Path | None:
@@ -6533,6 +6540,28 @@ class _Handler(BaseHTTPRequestHandler):
             # canonical fallback (the GET surfaces are untouched); this only ADDS a channel. The
             # engine remains sole writer — this reader pushes the same build_*_surface output.
             self._serve_surface_stream(parse_qs(parsed.query))
+        elif route == "/ugc/profiles":
+            # GRAPHICS #453/#442 — list stored UGC games (read-only). Presentation artifacts,
+            # not game state; the engine remains sole writer of state.
+            self._json({"profiles": ugc_store.list_profiles(_ugc_root())})
+        elif route == "/ugc/profile":
+            # GRAPHICS #453/#442 — fetch a stored UGC render-profile (latest, or ?version=N).
+            qs = parse_qs(parsed.query)
+            game_id = _text((qs.get("game_id") or [""])[0], "")
+            owner = _text((qs.get("owner") or ["local"])[0], "local")
+            ver_raw = (qs.get("version") or [""])[0]
+            try:
+                version = int(ver_raw) if ver_raw else None
+            except (TypeError, ValueError):
+                version = None
+            if not game_id:
+                self._json({"ok": False, "reason": "game_id required"})
+                return
+            prof = ugc_store.load_profile(_ugc_root(), game_id, owner=owner, version=version)
+            if prof is None:
+                self._send(404, b'{"ok":false,"reason":"profile not found"}', "application/json")
+                return
+            self._json(prof)
         elif route == "/journal-surface":
             # The quest journal read model: tracked quests + unresolved hooks (as rumors)
             # + the Campaign Director's top structural debts (#72) as a GM advisory.
@@ -6769,6 +6798,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/portrait-gen":
             self._do_portrait_gen()
             return
+        if route == "/ugc/profile":
+            self._do_ugc_save()
+            return
         if route != "/move":
             self._send(404, b"not found", "text/plain")
             return
@@ -6800,6 +6832,38 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "reason": f"write failed: {exc}"})
             return
         self._json({"ok": True})
+
+    def _do_ugc_save(self) -> None:
+        """POST /ugc/profile — the UGC save-INTENT (#453/#442). Mirrors the /move discipline: a
+        client never writes the store directly; it submits a render-profile and the SERVER decides.
+        The submission is VALIDATED + GATED against the FROZEN contract (schema + required gates);
+        only an accepted profile is persisted, as a new append-only version (ownership/history
+        intact). A render-profile is presentation, not game state, so this does not touch the
+        engine's sole-writership. Body: {profile: <render-profile>, owner?: <str>}."""
+        payload = self._read_post_json()
+        if payload is ... or not isinstance(payload, dict):
+            self._json({"ok": False, "reason": "bad UGC payload"})
+            return
+        profile = payload.get("profile")
+        if not isinstance(profile, dict):
+            self._json({"ok": False, "reason": "missing 'profile' object"})
+            return
+        owner = _text(payload.get("owner") or "local", "local")
+        try:
+            result = ugc_store.save_profile(_ugc_root(), profile, owner=owner)
+        except OSError as exc:
+            self._json({"ok": False, "reason": f"store write failed: {exc}"})
+            return
+        if not result["accepted"]:
+            # rejected by the gate -> nothing persisted; surface why + the human-gate queue.
+            failed = {k: v["detail"] for k, v in result["report"]["gates"].items()
+                      if v.get("required") and v.get("passed") is False}
+            self._json({"ok": False, "reason": "rejected by contract gate", "failed_gates": failed,
+                        "human_gate_queue": result["report"]["human_gate_queue"]})
+            return
+        self._json({"ok": True, "owner": result["owner"], "game_id": result["game_id"],
+                    "version": result["version"],
+                    "human_gate_queue": result["report"]["human_gate_queue"]})
 
     def _do_seed_param(self) -> None:
         """POST /seed-param — the World-Seed write lane (#266). Mirrors /move's intent bridge
