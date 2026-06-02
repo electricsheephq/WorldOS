@@ -16,7 +16,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   // should not open on an Act Two Last Light Inn merchant while the party is in the Lower City.
   const [merchantId, setMerchantId] = React.useState("old-troutman");
   const [hoverItem, setHoverItem] = React.useState(null);
-  const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
+  // MK-13: local demo purse — used ONLY in read-only preview (no live surface). When a
+  // live /character-surface is present, the displayed `coins` below derives from its live
+  // currency so the Market matches the Stash exactly (no hardcoded-232-vs-live contradiction).
+  const [localCoins, setLocalCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
   // MK-11: guard the Confirm button against double-submit. The live path fires /move
@@ -62,6 +65,13 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const canAct = Boolean(surface?.can_act);
   const campaignId = surface?.campaign_id || "";
   const surfaceLoading = surfaceStatus === "loading";
+  // MK-13: the purse shown + spent-against is the LIVE currency when the surface carries it
+  // (engine = sole writer; matches the Stash). Falls back to the local demo purse only in
+  // read-only preview (no live session) — where the local-spend simulation still applies.
+  const liveCur = surface?.currency;
+  const coins = liveCur
+    ? { gp: Number(liveCur.gp) || 0, sp: Number(liveCur.sp) || 0, cp: Number(liveCur.cp) || 0, pp: Number(liveCur.pp) || 0, ep: Number(liveCur.ep) || 0 }
+    : localCoins;
   const toast = window.useToast ? window.useToast() : (() => {});
 
   // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
@@ -372,7 +382,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
               }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }))
                 .finally(() => { submittingRef.current = false; });
             } else {
-              setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
+              setLocalCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
               setCart([]);
               submittingRef.current = false;
             }

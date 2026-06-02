@@ -3541,6 +3541,10 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "hp": int(cur_hp) if cur_hp is not None else 1,
         "hpMax": int(max_hp) if max_hp is not None else 1,
         "tempHp": int(_num(ch.get("temp_hp")) or 0),
+        # Live coin purse (cp/sp/ep/gp/pp) so the Market reads the SAME currency the Stash
+        # does (engine = sole writer) — fixes the Market-vs-Stash coin contradiction where
+        # the merchant showed a hardcoded 232gp. Same helper the inventory-surface uses.
+        "currency": _currency_for(ch),
         "stats": stats,
         "skills": skills,
         "spells": spells,

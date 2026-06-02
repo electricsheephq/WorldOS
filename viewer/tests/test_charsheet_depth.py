@@ -170,6 +170,24 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertIn("hitDiceRemaining", stats)
         self.assertIsInstance(stats["passivePerception"], int)
 
+    def test_surface_exposes_currency_for_market_purse(self):
+        # #depth regression guard: the character-surface must emit live `currency`
+        # (cp/sp/ep/gp/pp) so the Market reads the SAME purse as the Stash — fixes the
+        # coin contradiction where the merchant showed a hardcoded 232gp. If this emit
+        # drops, the Market silently diverges from the engine's currency again.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["elara"]["currency"] = {"gp": 50, "sp": 7, "cp": 3}
+        self._write("camp_cur", snap)
+        status, surface = self._get_json("/character-surface?campaign=camp_cur")
+        self.assertEqual(status, 200)
+        cur = self._party(surface)["elara"]["currency"]
+        self.assertEqual(cur["gp"], 50)
+        self.assertEqual(cur["sp"], 7)
+        self.assertEqual(cur["cp"], 3)
+        # zero-fill for denominations not set -> stable shape for the UI
+        self.assertEqual(cur["pp"], 0)
+        self.assertEqual(cur["ep"], 0)
+
     def test_surface_omits_spellcasting_for_non_caster(self):
         self._write("camp_depth", _SNAPSHOT)
         _status, surface = self._get_json("/character-surface?campaign=camp_depth")
