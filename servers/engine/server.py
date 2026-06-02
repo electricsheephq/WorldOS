@@ -5885,9 +5885,13 @@ def set_pacing(campaign_id: str, mode: str) -> dict:
 
 
 @mcp.tool()
-def remember(campaign_id: str, character_id: str, fact: str) -> dict:
+def remember(campaign_id: str, character_id: str, fact: str = "", text: str = "") -> dict:
     """Append a fact to a character's (usually an NPC's) persistent memory, so it
-    is recalled in later sessions."""
+    is recalled in later sessions. Pass the fact as ``fact`` (canonical) or ``text``
+    (alias) — they are equivalent; ``fact`` wins if both are given."""
+    fact = fact if fact else text  # `text` is an accepted alias for the canonical `fact`
+    if not fact:
+        raise ValueError("remember needs a fact (pass `fact` or its alias `text`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -5939,15 +5943,21 @@ _ON_FAILURE_DIRECTIVE = {
 @mcp.tool()
 def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int,
                  target_name: str = "") -> dict:
-    """An actor's skill check against an NPC, with read-vs-influence semantics.
+    """An actor's skill check against a tracked NPC, monster, or COMPANION, with
+    read-vs-influence semantics.
+
+    The target (``npc_id``) may be an NPC, a monster, or a COMPANION — a party member is
+    a legitimate social target (persuade/intimidate/read a companion); it moves the SAME
+    attitude/approval track an NPC uses (the gauge companion arcs evaluate). Only a PLAYER
+    character cannot be the target.
 
     INFLUENCE skills (persuasion / deception / intimidation / …) try to move the
-    NPC: on success the attitude improves one step on the track (hostile -> wary ->
+    target: on success the attitude improves one step on the track (hostile -> wary ->
     indifferent -> friendly -> helpful), on failure it worsens one step.
 
-    READ skills (insight / perception / investigation) only PERCEIVE the NPC and
+    READ skills (insight / perception / investigation) only PERCEIVE the target and
     NEVER change its attitude — reading or misreading someone is observer clarity,
-    not influence. A read returns a `read` block (an accurate sense of the NPC's
+    not influence. A read returns a `read` block (an accurate sense of the target's
     stance on success; a deliberately uncertain, almost-grasped impression on a
     miss) for the DM to narrate — never a flat attitude penalty for a failed read.
 
@@ -5993,8 +6003,12 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
         if actor_id == npc_id:
             raise ValueError("actor and npc must be different characters")
         the_npc = _char(c, npc_id)
-        if the_npc.kind not in ("npc", "monster"):
-            raise ValueError("social_check target must be an NPC or monster")
+        # A companion IS a valid social target: persuading/intimidating/reading a party
+        # member moves the SAME attitude/attitude_value track an NPC uses (it's the approval
+        # gauge companion arcs already evaluate), so the influence/read logic below applies
+        # unchanged. Only a PLAYER (the actor's own party-of-one PCs) is not a social target.
+        if the_npc.kind not in ("npc", "monster", "companion"):
+            raise ValueError("social_check target must be an NPC, monster, or companion")
         r = dice_mod.roll(f"1d20+{actor.skill_bonus(sk)}")
         success = r.total >= dc
         old = the_npc.attitude
@@ -6056,8 +6070,9 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
 
 
 @mcp.tool()
-def skill_check(campaign_id: str, character_id: str, skill: str, dc: int = 0,
-                advantage: bool = False, disadvantage: bool = False) -> dict:
+def skill_check(campaign_id: str, character_id: str, skill: str = "", dc: int = 0,
+                advantage: bool = False, disadvantage: bool = False,
+                ability: str = "", skill_name: str = "", check: str = "") -> dict:
     """Roll a skill check for a character with the CORRECT modifier derived from their sheet
     (ability modifier + proficiency if proficient, doubled where they have expertise) — so you
     NEVER hand-compute a bonus, the most common mechanical error. Use this for any non-social
@@ -6065,7 +6080,13 @@ def skill_check(campaign_id: str, character_id: str, skill: str, dc: int = 0,
     the roll (``dc=0`` -> roll only, no pass/fail). For a check that targets an NPC's attitude
     (persuade / intimidate / read someone), use ``social_check`` instead. 5e RAW: a skill check
     does NOT auto-succeed on a natural 20 — success is total vs DC; the natural is reported so you
-    can flavor a 20/1. Read-only (a check is a roll, not a state change)."""
+    can flavor a 20/1. Read-only (a check is a roll, not a state change).
+
+    Name the skill via ``skill`` (canonical) or any of the aliases ``ability`` / ``skill_name`` /
+    ``check`` — they are equivalent; the canonical ``skill`` wins if more than one is given."""
+    skill = skill or ability or skill_name or check  # accept intuitive aliases; `skill` is canonical
+    if not skill:
+        raise ValueError("skill_check needs a skill (pass `skill` or an alias: `ability`/`skill_name`/`check`)")
     sk = skill.strip().lower().replace(" ", "_")
     if sk not in SKILL_ABILITIES:
         raise ValueError(f"unknown skill {skill!r}")
@@ -6968,13 +6989,22 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
 
 
 @mcp.tool()
-def set_companion_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
+def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None,
+                      companion: str = "", character_id: str = "") -> dict:
     """Attach (or REPLACE) a companion's relationship arc + sealed agenda, so the DM —
     or the ending-seed loader — can author what a bond grows into and what a saboteur is
     planning. `arc` is `{arc_gates: [{kind, threshold, note?}], agenda: {trigger, value?,
     note?}}` where gate `kind` is personal_quest|romance|loyalty|betrayal and agenda
     `trigger` is attitude_below|day_reached|party_vulnerable|prize_seized. The companion
-    must exist and be a companion. `check_companion_arc` then evaluates it each beat."""
+    must exist and be a companion. `check_companion_arc` then evaluates it each beat.
+
+    Identify the companion via ``companion_id`` (canonical) or the aliases ``companion`` /
+    ``character_id`` — equivalent; canonical ``companion_id`` wins if more than one is given."""
+    companion_id = companion_id or companion or character_id  # accept intuitive aliases
+    if not companion_id:
+        raise ValueError("set_companion_arc needs a companion id (pass `companion_id` or an alias: `companion`/`character_id`)")
+    if arc is None:
+        raise ValueError("set_companion_arc needs an `arc` object")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _require_companion(c, companion_id)
@@ -7760,17 +7790,19 @@ def advance_faction_arc(
 @mcp.tool()
 def record_decision(
     campaign_id: str,
-    summary: str,
+    summary: str = "",
     options: Optional[list] = None,
     chosen: str = "",
     rationale: str = "",
     actor_ids: Optional[list] = None,
     sets_flag: str = "",
+    decision: str = "",
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
-    `summary` (the decision), `options` (what was on the table), `chosen`, why
-    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+    `summary` (the decision; pass it as `summary` (canonical) or `decision` (alias) —
+    equivalent, `summary` wins if both given), `options` (what was on the table),
+    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
 
     `sets_flag` (optional, Quest & Arc engine Layer 2) ties this CHOICE to a CONTENT-
     defined campaign flag it raises — the one-step path for the owner's model ("let the
@@ -7780,6 +7812,9 @@ def record_decision(
     spikes). The flag NAME is yours (e.g. "let_daughter_die", "took_bribe") — never
     engine-coded. Equivalent to a `set_flag` call alongside the record; omit it (or use
     plain `set_flag`) when no agenda is gated on the choice. Returns the flag in `flag`."""
+    summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
+    if not summary:
+        raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         d = Decision(
