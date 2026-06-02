@@ -52,9 +52,11 @@ if [ -f "$COMMON" ]; then
   . "$COMMON"
 fi
 # Shared beat-driver helpers (the SAME ones play.sh + the QA duo source) — for the #357
-# empty-narration fallback (clawdnd_dm_narration_or_fallback). The solo path execs play.sh
-# (which sources this itself) before reaching the ensemble code below, so this only engages
-# the ensemble loop; pure function defs, safe to source unconditionally.
+# empty-narration fallback (clawdnd_dm_narration_or_fallback) AND the DM-turn lean + effort
+# levers (clawdnd_dm_lean_args + clawdnd_dm_effort_arg), so the ensemble DM runs the SAME fast
+# lean+effort config play.sh/run_duo do (the .app shells THIS script for its DM). The solo path
+# execs play.sh (which sources this itself) before reaching the ensemble code below, so this only
+# engages the ensemble loop; pure function defs, safe to source unconditionally.
 # shellcheck source=../qa/lib_beat_driver.sh
 . "$ROOT/qa/lib_beat_driver.sh"
 if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
@@ -71,6 +73,10 @@ COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
 # delegates to play.sh, which honors CLAWDND_DM_MODEL on its own (the env var carries through).
 CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
 CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
+# Lean-beat re-ground depth: how many recent player-facing beats the LEAN RE-GROUND directive
+# asks scene_context to fold in (default 8 — SAME as scripts/play.sh + qa/run_duo.sh). Used by
+# the DM turn's clawdnd_dm_lean_args call below; the helper also defaults to 8 if unset.
+CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
 
 # --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
 # Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
@@ -217,14 +223,36 @@ echo "[play-party] run=$RUN world=$WORLD port=$PORT companions=$NUM_COMP dm=$DSI
 # DM gets the plugin + stream-json (tool calls land in COMBINED). A companion gets ONLY its
 # facade config (--strict-mcp-config) + json output. Both carry --max-budget-usd (per call)
 # and append their stream to COMBINED so companion tool-call cost counts toward the ceiling.
+# The DM turn ALSO honors the shared lean + effort-tiering levers (clawdnd_dm_lean_args +
+# clawdnd_dm_effort_arg from qa/lib_beat_driver.sh) — the SAME path scripts/play.sh + qa/run_duo.sh
+# drive, so the .app's DM (which shells THIS script) runs the fast lean+effort config: continuing
+# beats re-ground from a fresh transcript-free session at --effort medium, the cold open keeps the
+# full session at --effort max. The companion facade branch gets NEITHER (player turns untouched).
 # $1=kind(dm|actor) $2=session-id $3=first?(1/0) $4=message $5=mcp-cfg(actor only); echoes reply.
 turn() {
-  local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=()
+  local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
+    # LEAN beats (CLAWDND_LEAN_BEATS=1, now the default): a CONTINUING DM beat (first=0) starts a
+    # FRESH session + a re-ground directive instead of --resume-ing the fat transcript — the SAME
+    # shared implementation scripts/play.sh + qa/run_duo.sh use (clawdnd_dm_lean_args in
+    # qa/lib_beat_driver.sh), so the three harnesses can't drift. play_party already knows the
+    # campaign id ($CAMPAIGN_ID, resolved up front from the pre-seed), so lean re-grounds against
+    # the real campaign on beats 2+; on the cold open (first!=0) or with CLAWDND_LEAN_BEATS=0 the
+    # helper leaves both arrays empty and we keep the --resume/--session-id path set above unchanged.
+    clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+      extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    fi
+    # EFFORT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation play.sh + run_duo.sh
+    # use: --effort max on the cold open (one-time world-build), --effort medium on continuing beats
+    # (the bulk — cuts thinking-latency). Keyed off the SAME `first` signal as lean. DM turn ONLY —
+    # the companion facade branch below never gets --effort (nor the lean re-ground).
+    clawdnd_dm_effort_arg "$first"
     out="$DM_LOG.$(date +%s%N).jsonl"
-    claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+    claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
