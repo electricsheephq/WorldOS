@@ -125,12 +125,19 @@ class TilemapScene extends Phaser.Scene {
     const key = "art:" + scope;
     if (this.textures.exists(key)) { this._art[scope] = "ok"; return "ok"; }
     const url = `${this.base}/image?scope=${encodeURIComponent(scope)}`;
-    const loader = this.load.image(key, url);
-    this.load.once("loaderror", (file) => {
-      if (file && file.key === key) this._art[scope] = "miss";
-    });
+    this.load.image(key, url);
+    // Use a PERSISTENT keyed loaderror listener (not .once) — `.once` could be consumed by a
+    // DIFFERENT scope's error in the same load batch, leaving this scope stuck "loading". We
+    // only act on our own key and remove our own listener, so concurrent 404s each resolve.
+    const onErr = (file) => {
+      if (!file || file.key !== key) return;
+      this._art[scope] = "miss";
+      this.load.off("loaderror", onErr);
+    };
+    this.load.on("loaderror", onErr);
     this.load.once(`filecomplete-image-${key}`, () => {
       this._art[scope] = "ok";
+      this.load.off("loaderror", onErr);                 // success → drop the error listener
       if (this._lastSnap) this.render(this._lastSnap);   // redraw so the sprite appears
     });
     this.load.start();
