@@ -660,7 +660,7 @@ PY
   cat > "$player_prompt" <<EOF
 $persona_brief
 
-You have a budget of about $BEATS actions for this whole session. Spend them trying to start and play the story, reporting friction as you go. When you have either (a) genuinely gotten stuck after reporting it, or (b) played a few real turns and seen enough to judge the experience, you may stop — give a final 1-2 sentence verdict and, if you got stuck, call give_up. Start now.
+You have a budget of about $BEATS actions for this whole session. Spend them trying to start and play the story, reporting friction as you go. Waiting for the DM to narrate is FREE and does not use your budget — a rich beat can take a few minutes, and the spinner / streaming text is PROGRESS, not a hang, so keep waiting rather than abandoning a beat. When you have played a few real turns and seen enough to judge the experience, call finish with your honest satisfaction (1-10) and a 1-2 sentence verdict. Call give_up ONLY if you are genuinely BLOCKED — a dead control, an error, or the DM truly stalled with no narration — NOT because a beat is slow. Either way, also end your final message with a line exactly like: Satisfaction: N/10. Start now.
 EOF
   log "[B] player agent starting (agent=$PLAYER_AGENT persona=$PERSONA, ~$BEATS actions, budget \$$player_budget)…"
   case "$PLAYER_AGENT" in
@@ -705,7 +705,7 @@ EOF
         -c "mcp_servers.clawdnd-uiplayer.env_vars=[\"CLAWDND_UIPT_URL\",\"CLAWDND_UIPT_RUNDIR\",\"CLAWDND_UIPT_CHANNEL\",\"CLAWDND_UIPT_PERSONA\"]" \
         -c "mcp_servers.clawdnd-uiplayer.required=true" \
         -c "mcp_servers.clawdnd-uiplayer.default_tools_approval_mode=\"approve\"" \
-        -c "mcp_servers.clawdnd-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\"]" \
+        -c "mcp_servers.clawdnd-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\",\"finish\"]" \
         - < "$player_prompt" > "$player_out" 2>> "$PLAYERDIR/player.err"
       ;;
   esac

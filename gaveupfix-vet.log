@@ -1,0 +1,61 @@
+[uipt-app] run=gaveupfix-vet world=baldurs-gate persona=veteran beats=40 budget=$8.00 part=AB player_agent=claude
+[uipt-app] build_sha=f1c796c version=v1.0.3-138-gf1c796c repo=/private/tmp/wos-gate
+[uipt-app] === PART A: native-transition gate (re-verifies #356) ===
+[A] pkill WorldOSApp + THIS checkout's stale viewers, rm -rf /private/tmp/wos-gate/dist/WorldOS.app, fresh build…
+[A] WOS_APP_NO_GLOBAL_KILL=1 — preserving other WorldOSApp processes.
+[A] launcher viewer ready on 8766; can_act(before)={"can_act":false,"is_live_view":false,"live":false}
+[A] before.png deferred to orchestrator
+[A] raising WorldOS to front + CGEvent-clicking the RESUME → PLAY CTA (with retries)…
+[A] window X=97.0 Y=36.0 W=1823.0 H=956.0; front='WorldOS'; click=(1701,240)
+[A] click posted.
+[A] polling for a minted live session (new run dir + can_act:true on a new port; deadline 420s / 140 polls)…
+[A] MINTED: run=play-20260602114235 port=8767 can_act=true (after 7 polls)
+[A] after.png deferred to orchestrator
+[A] tearing down minted backend (run=play-20260602114235) — cold-open was enough.
+[A] RESULT: PASS — #356 banner minted a live DM (can_act:true). surface={"can_act":true,"is_live_view":true,"live":true,"campaignId":null,"enabledActions":[]}
+<stdin>:23: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+[A] wrote /private/tmp/wos-gate/qa/ui_playtest_runs/gaveupfix-vet/native/transition.json
+[uipt-app] === PART B: persona loop on the .app-faithful backend ===
+[uipt-app] [B] Playwright not installed at /private/tmp/wos-gate/qa/playwright. Run: (cd qa/playwright && npm install && npx playwright install chromium)
+<stdin>:25: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+[uipt-app] === DONE. dir=/private/tmp/wos-gate/qa/ui_playtest_runs/gaveupfix-vet ===
+[uipt-app] part A (#356 gate): PASS   part B (persona loop): no_playwright
+[uipt-app] spend: DM ~$0 + player ~$0 = ~$0.0000 (budget $8.00)
+----- run.json -----
+{
+  "run": "gaveupfix-vet",
+  "world": "baldurs-gate",
+  "persona": "veteran",
+  "beats_cap": 40,
+  "budget_usd": 8.0,
+  "build_sha": "f1c796c",
+  "version": "v1.0.3-138-gf1c796c",
+  "part": "AB",
+  "part_a": {
+    "gate": "native_transition_356",
+    "result": "PASS",
+    "original_result": "PASS",
+    "failure_bucket": null,
+    "failure_detail": null,
+    "minted_run_dir": "play-20260602114235",
+    "minted_port": 8767,
+    "kept_backend_alive": false,
+    "first_turn_ready": false
+  },
+  "part_b": {
+    "persona_loop": "no_playwright",
+    "score_pass": false,
+    "provider": "claude",
+    "player_agent": "claude",
+    "original_result": "no_playwright",
+    "failure_bucket": "no_provider",
+    "failure_detail": "Playwright palette dependency is missing"
+  },
+  "spend_usd": {
+    "dm_and_companions": 0.0,
+    "player_agent": 0.0,
+    "total": 0.0
+  },
+  "surface": "BUILT dist/WorldOS.app (part A) + claude provider/claude player backend (part B)",
+  "at": "2026-06-02T11:42:56Z"
+}PLAYTEST_EXIT=1

@@ -637,6 +637,29 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  "finish",
+  {
+    description:
+      "End the playtest because you have PLAYED ENOUGH to fairly judge the experience and you are " +
+      "NOT blocked (use give_up ONLY when you are genuinely stuck). Give your honest overall " +
+      "satisfaction (1-10) and a 1-2 sentence closing verdict. This is the normal, satisfied way to end.",
+    inputSchema: {
+      satisfaction: z.number().int().min(1).max(10).describe("Your honest overall satisfaction, 1-10."),
+      verdict: z.string().describe("A 1-2 sentence closing verdict."),
+    },
+  },
+  async ({ satisfaction, verdict }) => {
+    const pg = await ensurePage().catch(() => null);
+    const sc = pg ? await snap(pg, "finish") : "";
+    logAction("finish", { satisfaction, verdict: String(verdict).slice(0, 200), screenshot: sc });
+    try {
+      fs.writeFileSync(STATUS, JSON.stringify({ ended: true, reason: "finish", satisfaction, detail: String(verdict).slice(0, 500), at: nowIso() }));
+    } catch (_e) {}
+    return textResult({ ok: true, ended: true, note: "Run ended — thanks for playing." });
+  }
+);
+
 // Graceful browser teardown on exit.
 async function shutdown() {
   try {
