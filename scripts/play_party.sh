@@ -77,6 +77,13 @@ CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 # asks scene_context to fold in (default 8 — SAME as scripts/play.sh + qa/run_duo.sh). Used by
 # the DM turn's clawdnd_dm_lean_args call below; the helper also defaults to 8 if unset.
 CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+# Which provider drives this run. The viewer's /app-status readiness gates ALL play controls on
+# a non-empty PROVIDER in {codex,claude,openclaw,scripted} (viewer/server.py: provider_ready +
+# ready_for_play). play_party.sh IS the Claude party play path, so default to "claude" and export
+# it into the viewer launch below; without it /app-status reports no_provider and every action
+# button stays locked even though /session-surface reports can_act:true. Resolves through the same
+# WORLDOS_/CLAWDND_ fallback as everything else (worldos_env), so an explicit env override wins.
+PROVIDER="$(worldos_env PROVIDER claude)"
 
 # --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
 # Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
@@ -368,6 +375,7 @@ VPID_FILE="$STATE_DIR/.viewer.pid"
 viewer_supervisor() {
   while :; do
     CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
+    WORLDOS_PROVIDER="$PROVIDER" CLAWDND_PROVIDER="$PROVIDER" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!; echo "$vp" > "$VPID_FILE"
     wait "$vp" 2>/dev/null   # blocks until the viewer exits (and reaps it)
