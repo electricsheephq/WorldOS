@@ -161,6 +161,63 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertFalse(config["demo_data"])
         self.assertTrue(config["demo_data_fallback"])
 
+    def test_openworlds_camp_deep_link_opens_map_camp_mode(self):
+        status, ctype, body = self._get("/openworlds/app.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('camp: "map"', source)
+        self.assertIn('rest: "map"', source)
+        self.assertIn('raw === "camp" || raw === "rest" ? true', source)
+        self.assertIn(': false', source)
+        self.assertIn('setCampMode(route.campMode)', source)
+        self.assertNotIn("typeof route.campMode", source)
+        self.assertNotIn("typeof initial.campMode", source)
+        self.assertIn('else if (id !== "map") setCampMode(false)', source)
+        self.assertIn('location={screen === "map" && campMode ? "Camp"', source)
+
+    def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
+        status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('React.useState("old-troutman")', source)
+        self.assertIn('id: "old-troutman"', source)
+        self.assertIn('waresName: "Old Troutman"', source)
+        self.assertIn('location: "Baldur\'s Gate — Lower City"', source)
+        self.assertIn('id: "talli"', source)
+
+    def test_merchant_waits_for_live_action_lane_before_purchase(self):
+        status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn('React.useState("loading")', source)
+        self.assertIn('setSurfaceStatus("loading")', source)
+        self.assertIn('const surfaceLoading = surfaceStatus === "loading"', source)
+        self.assertIn("if (surfaceLoading) return;", source)
+        self.assertIn("disabled={cart.length === 0 || surfaceLoading", source)
+        self.assertIn("Checking the counter", source)
+        self.assertIn("if (!response.ok) throw new Error", source)
+        self.assertIn('.catch((e) => toast({ kind: "danger"', source)
+        self.assertIn('title: "Move not sent"', source)
+
+    def test_journal_detail_matches_selected_tab_not_first_rumor(self):
+        status, ctype, body = self._get("/openworlds/screen-journal.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("function journalQuestInTab(q, tab)", source)
+        self.assertIn("const visibleQuests = React.useMemo", source)
+        self.assertIn("visibleQuests.find((q) => q.id === activeQuest)", source)
+        self.assertIn("visibleQuests[0] || emptyQuest", source)
+        self.assertIn("title: \"No active quests\"", source)
+        self.assertNotIn("|| quests[0] ||", source)
+
     def test_app_status_route_exposes_agent_probe_contract(self):
         campaign_dir = self._tmp / "campaigns" / "camp_live"
         self._write_snapshot(
@@ -519,6 +576,27 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("snapshot.json", source)
         self.assertNotIn("writeSnapshot", source)
 
+    def test_openworlds_table_blocks_moves_when_app_status_play_lane_not_ready(self):
+        # A static/no-provider viewer can still expose a writable /move file and a can_act surface.
+        # The player-facing table must trust same-port /app-status too, otherwise a click lands in
+        # "DM composing" forever with no resolver behind it.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("const [appStatus, setAppStatus] = React.useState(null);", source)
+        self.assertIn('fetch(`/app-status${query}`', source)
+        self.assertIn("const appStatusBlocksPlay = Boolean", source)
+        self.assertIn('"no_provider", "no_launcher", "move_rejected"', source)
+        self.assertIn("appReadiness.ready_for_play === false", source)
+        self.assertIn("Start or resume a provider-backed session from Chronicles", source)
+        self.assertIn("data-worldos-status-scope=\"app-status\"", source)
+        self.assertIn("appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason", source)
+        self.assertIn("disabled={!a.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("disabled={pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+
     def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
         # #402: the chronicle must stay navigable across a long session — the rendered row count is
         # CAPPED (DOM + a11y tree bounded so the latest beat isn't truncated), the scroll region is
@@ -587,7 +665,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("data-worldos-selected", source)
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive}", source)
+        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
@@ -634,6 +712,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # block. The narration branch renders sanitized {text} in a `div.body`; with the default
         # white-space the embedded blank-line paragraph breaks the DM emits collapse. The render
         # honors them via whiteSpace:"pre-line" (and sanitizeNarration is still applied first).
+        # Each narration row should not repeat the region title inline; the surrounding SectionTitle
+        # and role="log" label already name the Chronicle.
         status, _ctype, body = self._get("/openworlds/screen-table.jsx")
 
         self.assertEqual(status, 200)
@@ -642,6 +722,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertRegex(source, r'whiteSpace:\s*"pre-line"')
         # …and the GM-advisory strip is still in the narration path (not removed by this change).
         self.assertIn("sanitizeNarration(entry.text)", source)
+        self.assertIn('data-worldos-testid="chronicle-narration"', source)
+        self.assertNotRegex(source, r'data-worldos-testid="chronicle-narration"[\s\S]*?>Chronicle</span>')
 
     def test_openworlds_app_bounds_the_live_session_tail(self):
         # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long
@@ -691,6 +773,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # The button is disabled while busy, and the early-return path toasts instead of no-op'ing.
         self.assertIn("!canAct || dmBusy", camp_source)
         self.assertIn("still narrating", camp_source)
+        # A successful live rest already toasts "Resting"; do not call ScreenMap's atlas-only
+        # onBeginRest handler afterward, because that can emit a contradictory "Camp unavailable"
+        # toast when the current atlas location is not tagged as a rest point.
+        self.assertIn('title: "Resting"', camp_source)
+        self.assertNotIn("onBeginRest();", camp_source)
 
         # And the app actually passes liveSession to the map screen (so dmBusy is real, not always false).
         _s_app, _c_app, app_body = self._get("/openworlds/app.jsx")

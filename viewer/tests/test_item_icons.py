@@ -111,7 +111,11 @@ class ItemIconTests(unittest.TestCase):
         self.assertIn("window.itemArtScope", src)
         self.assertIn('"travel-rations": "rations"', src)
         self.assertIn('"iron-lantern": "lantern"', src)
+        self.assertIn('"climbing-kit": "rope"', src)
         self.assertIn('"wax-candle-6": "candle"', src)
+        self.assertIn('"sharpened-greataxe-edge": "greataxe"', src)
+        self.assertIn('"bandage-roll": ""', src)
+        self.assertIn("Object.prototype.hasOwnProperty.call(ITEM_ART_ALIASES, s)", src)
 
     def test_merchant_uses_shared_item_art_scope(self):
         """Merchant item icons must use the shared alias helper before falling back."""
@@ -119,6 +123,13 @@ class ItemIconTests(unittest.TestCase):
         src = body.decode("utf-8")
         self.assertIn("window.itemArtScope", src)
         self.assertIn("return window.itemArtScope(item)", src)
+
+    def test_forge_uses_shared_item_art_scope(self):
+        """Forge recipe icons must use shared item-art aliases before falling back."""
+        _status, _ctype, body = self._get("/openworlds/screen-forge.jsx")
+        src = body.decode("utf-8")
+        self.assertIn("window.itemArtScope", src)
+        self.assertIn("return window.itemArtScope(name)", src)
 
 
 if __name__ == "__main__":

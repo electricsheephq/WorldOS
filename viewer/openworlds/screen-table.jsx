@@ -259,6 +259,37 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   const sanitize = (t) => (typeof window !== "undefined" && typeof window.sanitizeNarration === "function")
     ? window.sanitizeNarration(t || "") : (t || "");
   const narrationKey = (t) => sanitize(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const QUICK_ACTION_REPLAY_ALIASES = {
+    look: ["look around"],
+    "look around": ["look"],
+  };
+  const QUICK_ACTION_REPLAY_LABELS = {
+    continue: "Continue",
+    "look around": "Look",
+  };
+  const playerEchoKeys = (entry) => {
+    const kind = entry && (entry.kind || entry.type);
+    const who = String(entry?.who || "").trim().toLowerCase();
+    if (entry?.route === "say" || entry?.mode === "say" || entry?.routing?.type === "say") return [];
+    if (kind !== "action" && !(kind === "dialog" && who === "you")) return [];
+    const key = String(entry?.text || "")
+      .replace(/^\s*(?:say|do|check|save)\s*:\s*/i, "")
+      .replace(/^[`'"“”]+|[`'"“”]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (!key) return [];
+    return [key, ...(QUICK_ACTION_REPLAY_ALIASES[key] || [])];
+  };
+  const projectPlayerReplay = (entry) => {
+    const kind = entry && (entry.kind || entry.type);
+    const who = String(entry?.who || "").trim().toLowerCase();
+    if (kind !== "dialog" || who !== "you") return entry;
+    if (entry?.route === "say" || entry?.mode === "say" || entry?.routing?.type === "say") return entry;
+    const key = playerEchoKeys(entry)[0] || "";
+    const label = QUICK_ACTION_REPLAY_LABELS[key];
+    return label ? { ...entry, kind: "action", text: label } : entry;
+  };
   const orderOf = (e) => {
     if (e && typeof e.orderSeq === "number") return e.orderSeq;
     if (e && typeof e.seq === "number") return e.seq;
@@ -272,7 +303,18 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     if (sa !== null && sb !== null && sa !== sb) return sa - sb;
     return (a?.at || 0) - (b?.at || 0);
   };
-  const mergedTail = [...beats, ...echoes].sort((a, b) => {
+  // The live tail can carry the player's move twice: once as the optimistic local echo
+  // (immediate feedback after /move accepts) and once replayed from /chat as a "You" row.
+  // Prefer the optimistic echo when present so the Chronicle reads as one clean turn:
+  //   You continue → DM reply
+  // not
+  //   Abby — Continue → You "continue" → DM reply.
+  const optimisticPlayerKeys = new Set(echoes.flatMap(playerEchoKeys).filter(Boolean));
+  const dedupedBeats = beats.filter((b) => {
+    const keys = playerEchoKeys(b);
+    return !keys.length || !keys.some((key) => optimisticPlayerKeys.has(key));
+  });
+  const mergedTail = [...dedupedBeats.map(projectPlayerReplay), ...echoes].sort((a, b) => {
     return compareChronicle(a, b);
   });
   const liveSeqs = new Set(
@@ -304,6 +346,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
   const [surface, setSurface] = React.useState(null);
   const [surfaceStatus, setSurfaceStatus] = React.useState("loading");
+  const [appStatus, setAppStatus] = React.useState(null);
   const demoLog = [];
   const [input, setInput] = React.useState("");
   const [composerModeId, setComposerModeId] = React.useState("do");
@@ -377,6 +420,20 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
+  const appReadiness = appStatus?.readiness || {};
+  const appHealth = appStatus?.health || {};
+  const appFailureBucket = appReadiness.failure_bucket || appHealth.failure_bucket || "";
+  const appFailureDetail = appReadiness.failure_detail || appHealth.failure_detail || "";
+  const appStatusBlocksPlay = Boolean(
+    appStatus &&
+    appReadiness.ready_for_play === false &&
+    ["no_provider", "no_launcher", "move_rejected"].includes(appFailureBucket),
+  );
+  const appStatusBlockReason = appFailureDetail || (
+    appFailureBucket === "no_provider"
+      ? "No Dungeon Master provider is connected."
+      : "The live move lane is not ready."
+  );
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const params = new URLSearchParams();
@@ -388,12 +445,22 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       const response = await fetch(`/session-surface${query}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`session surface ${response.status}`);
       const payload = await response.json();
+      let statusPayload = null;
+      try {
+        const statusResponse = await fetch(`/app-status${query}`, { cache: "no-store" });
+        if (!statusResponse.ok) throw new Error(`app status ${statusResponse.status}`);
+        statusPayload = await statusResponse.json();
+      } catch (_statusError) {
+        statusPayload = null;
+      }
       if (isCancelled()) return;
       setSurface(payload);
+      setAppStatus(statusPayload);
       setSurfaceStatus("ready");
     } catch (error) {
       if (isCancelled()) return;
       setSurfaceStatus(error?.message || "unavailable");
+      setAppStatus(null);
     }
     // #357 (nb3): the GM Advisory (Campaign Director #72) fetch was removed here — its only
     // consumer was the GM-bookkeeping panel that leaked into the player's live-play sidebar
@@ -508,8 +575,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
 
   const postMove = async (move, label, actionId) => {
     const enabledAction = actionId ? enabledActionById(actionId) : null;
-    if (!move || !canAct || pendingActive || (actionId && !enabledAction)) {
-      toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : readOnlyReason });
+    if (!move || !canAct || appStatusBlocksPlay || pendingActive || (actionId && !enabledAction)) {
+      toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason });
       return;
     }
     // #342: neutralize any markup in a free-text move (kind "do"/"say"/etc. carry the player's words
@@ -670,6 +737,24 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             {surfaceStatus === "loading" ? "Loading session surface." : `Session surface unavailable: ${surfaceStatus}`}
           </div>
         )}
+        {appStatusBlocksPlay && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-worldos-testid="app-status-banner"
+            data-worldos-status-scope="app-status"
+            data-worldos-status={appFailureBucket || "not-ready"}
+            className="body-sm"
+            style={{
+              padding: "8px 12px",
+              color: "var(--crimson)",
+              background: "rgba(176,141,87,0.08)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+            }}
+          >
+            {appStatusBlockReason} Start or resume a provider-backed session from Chronicles before sending moves.
+          </div>
+        )}
         {/* Scene plate */}
         <div style={{ position: "relative", flex: "0 0 auto" }}>
           <Img
@@ -773,7 +858,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     actionId={a.id}
                     selected={COMPOSER_MODE_BY_UI[a.ui] === composerModeId}
                     tone={a.available ? "" : "crimson"}
-                    disabled={!a.available || pendingActive}
+                    disabled={!a.available || pendingActive || appStatusBlocksPlay}
                     onClick={() => invokeAction(a)}
                   />
                 ))}
@@ -794,7 +879,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                       hint={ACTION_HINTS[a.id]}
                       actionId={a.id}
                       tone={a.available ? "royal" : "crimson"}
-                      disabled={!a.available || pendingActive}
+                      disabled={!a.available || pendingActive || appStatusBlocksPlay}
                       onClick={() => invokeAction(a)}
                     />
                   ))}
@@ -822,10 +907,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               </span>
               <div style={{ flex: 1 }} />
               {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="12" aria-label="Roll d12" onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="8" aria-label="Roll d8" onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="6" aria-label="Roll d6" onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="12" aria-label="Roll d12" onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="8" aria-label="Roll d8" onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="6" aria-label="Roll d6" onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
@@ -839,12 +924,12 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
-                disabled={pendingActive}
+                disabled={pendingActive || appStatusBlocksPlay}
                 title={DECLARE_HINT}
-                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
+                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : appStatusBlocksPlay ? "Start or resume a DM provider to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById(composerMode.actionId)?.available || pendingActive} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>
@@ -1022,8 +1107,7 @@ function LogEntry({ entry }) {
             (the sibling skill PR emits \n\n) so a multi-paragraph beat renders as
             separated paragraphs instead of one run-on block. sanitizeNarration is
             still applied above, untouched. */}
-        <div className="body" style={{ flex: 1, whiteSpace: "pre-line" }}>
-          <span className="eyebrow" style={{ color: "var(--crimson)", marginRight: 8 }}>Chronicle</span>
+        <div className="body" data-worldos-testid="chronicle-narration" style={{ flex: 1, whiteSpace: "pre-line" }}>
           {text}
         </div>
       </div>
