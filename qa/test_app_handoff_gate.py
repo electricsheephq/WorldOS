@@ -274,6 +274,68 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("smoke evidence gaps: 1", result.failure_detail)
         self.assertEqual(result.evidence_gaps, smoke_payload["evidence_gaps"])
 
+    def test_native_provider_gate_preserves_drive_move_evidence_gaps(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            args = SimpleNamespace(
+                run_id="fixture",
+                world="baldurs-gate",
+                art_root=None,
+                timeout=1.0,
+                codex_timeout=1.0,
+            )
+            gap = {"source": "screenshot", "kind": "initial", "reason": "chrome_exit=None"}
+
+            def fake_read_json(path):
+                path = Path(path)
+                if path.name == "run.json":
+                    return {
+                        "part_a": {
+                            "result": "PASS",
+                            "kept_backend_alive": True,
+                            "first_turn_ready": True,
+                            "minted_port": 8767,
+                            "minted_run_dir": "play-fixture",
+                        }
+                    }
+                if path.name == "transition.json":
+                    return {}
+                return {}
+
+            with mock.patch.object(gate, "run_logged", return_value=0), mock.patch.object(
+                gate,
+                "copy_native_run",
+                return_value=None,
+            ), mock.patch.object(
+                gate,
+                "read_json",
+                side_effect=fake_read_json,
+            ), mock.patch.object(
+                gate,
+                "drive_moves",
+                return_value=(False, "no_provider", "required evidence capture has gaps", {"evidence_gaps": [gap]}),
+            ), mock.patch.object(
+                gate,
+                "export_evidence",
+                return_value=(out / "manifest.json", {"evidence_gaps": []}),
+            ), mock.patch.object(
+                gate,
+                "cleanup_run",
+                return_value=None,
+            ):
+                result = gate.run_native_provider_gate(
+                    args,
+                    out,
+                    provider="codex",
+                    beats=1,
+                    budget="3.00",
+                    expected_sha="abc1234",
+                )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failure_detail, "required evidence capture has gaps")
+        self.assertEqual(result.evidence_gaps, [gap])
+
     def test_hook_probe_summary_reports_exact_missing_controls(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "hook-probe.json"

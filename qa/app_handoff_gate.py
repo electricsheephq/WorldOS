@@ -772,6 +772,9 @@ def run_native_provider_gate(
             expected_port=gate.port,
         )
         gate.details.update(details)
+        detail_gaps = details.get("evidence_gaps") if isinstance(details.get("evidence_gaps"), list) else []
+        if detail_gaps:
+            gate.evidence_gaps.extend(detail_gaps)
         if not ok:
             gate.fail(bucket, detail)
         else:
@@ -790,7 +793,8 @@ def run_native_provider_gate(
             verdict=gate.status,
         )
         gate.evidence_manifest = export_path
-        gate.evidence_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else []
+        manifest_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else []
+        gate.evidence_gaps.extend(manifest_gaps)
         cleanup_run(minted_run, gate.port)
     manifest_blockers = evidence_manifest_blockers(read_json(Path(gate.evidence_manifest))) if gate.status == "passed" else []
     if manifest_blockers:
