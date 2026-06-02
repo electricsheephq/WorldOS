@@ -1048,6 +1048,26 @@ function SpellsTab({ hero }) {
   return (
     <div>
       <SectionTitle ordinal="·" right={browseCta}>Spellbook</SectionTitle>
+      {/* #depth: surface the caster header the read-model already computes (hero.spellcasting:
+          {abilityShort, spellSaveDc, spellAttackBonus}, server.py _character_spellcasting). Omitted
+          for non-casters (spellcasting null). The optimizer persona's #1-cited missing number. */}
+      {hero.spellcasting ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "6px 0 14px" }}>
+          {[
+            `Spell Save DC ${hero.spellcasting.spellSaveDc}`,
+            `Spell Attack ${hero.spellcasting.spellAttackBonus >= 0 ? "+" : ""}${hero.spellcasting.spellAttackBonus}`,
+            `${String(hero.spellcasting.abilityShort || "").toUpperCase()} casting`,
+          ].map((label) => (
+            <span key={label} style={{
+              padding: "4px 11px",
+              background: "rgba(176,141,87,0.12)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+              fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.06em",
+              color: "var(--ink-900)", whiteSpace: "nowrap",
+            }}>{label}</span>
+          ))}
+        </div>
+      ) : null}
       <SpellSlotTrack slots={slots} />
       {groups.length ? (
         groups.map((group) => (
