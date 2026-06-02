@@ -17,16 +17,21 @@ const ITEM_ART_ALIASES = {
   "travel-ration": "rations",
   "travel-rations": "rations",
   "iron-lantern": "lantern",
+  "climbing-kit": "rope",
   "wax-candle-6": "candle",
   "wax-candles-6": "candle",
   "candles": "candle",
   "sharpened-greataxe-edge": "greataxe",
+  "bandage-roll": "",
+  "compass": "",
+  "iron-chain-10ft": "",
+  "spellbook-blank": "",
 };
 
 window.itemArtScope = function itemArtScope(itemOrName) {
   const name = typeof itemOrName === "string" ? itemOrName : itemOrName?.name;
   const s = window.slug(name);
-  const aliased = ITEM_ART_ALIASES[s] || s;
+  const aliased = Object.prototype.hasOwnProperty.call(ITEM_ART_ALIASES, s) ? ITEM_ART_ALIASES[s] : s;
   return aliased ? "item-" + aliased : "";
 };
 
