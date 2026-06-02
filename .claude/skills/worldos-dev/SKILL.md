@@ -124,6 +124,13 @@ filesystem access): `screenshot · a11y_tree · click · type · key · wait · 
 scorer PREFERS `status.satisfaction` over the brittle verdict-regex); **`give_up` = a genuine BLOCK** (dead
 control / error / DM stalled). Don't collapse them — #574: a satisfied player who just stopped was mis-scored
 `gave_up=true` + a derived low sat (7→2). Goal-gate G3 = sat ≥ 7 self-reported AND `gave_up=false`.
+**Reading a DERIVED sat (load-bearing — verify `satisfaction_source`):** most personas DON'T call
+`finish()` with a number (4/5 in the 2026-06-02 VM sweep), so the scorer DERIVES sat = `8 − friction`
+(crit=1 ⇒ 6) — which **can never clear G3 (≥7)**. So a run with `gave_up=false` + `arc=true` + `crit≤1`
++ a *derived* 5–6 is a **persona-didn't-self-report** signal, NOT a dissatisfied player; only
+`satisfaction_source: self-reported` counts toward G3, and a derived G3-miss is **inconclusive** (re-run a
+persona that finishes). (`self-reported` can also come from the mandated `Satisfaction: N/10` verdict line,
+not only `finish()`.) The fix is to make personas reliably self-report, not to read a derived 5–6 as "bad".
 (Use `locator.ariaSnapshot()` — `page.accessibility.snapshot()` was removed in Playwright ≥1.5x.)
 It **passively** auto-emits console errors + 4xx/5xx as `source:"auto"` bugs.
 
