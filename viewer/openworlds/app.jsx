@@ -80,6 +80,67 @@ function openWorldsPlayerChronicle(c) {
   return Boolean(c?.canResume || c?.current);
 }
 
+const OPENWORLDS_VALID_SCREENS = new Set([
+  "launcher", "roster", "table", "combat", "dialogue", "map", "character", "inventory",
+  "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
+  "seed", "settings",
+]);
+const OPENWORLDS_HASH_ALIASES = {
+  battle: "combat",
+  parley: "dialogue",
+  party: "character",
+  heroes: "character",
+  chronicles: "launcher",
+  worlds: "launcher",
+  market: "merchant",
+  stash: "inventory",
+  pick: "roster",
+  picker: "roster",
+  camp: "map",
+  rest: "map",
+};
+const OPENWORLDS_SCREEN_HASHES = {
+  launcher: "worlds",
+  roster: "roster",
+  table: "table",
+  combat: "battle",
+  dialogue: "parley",
+  map: "map",
+  character: "party",
+  inventory: "stash",
+  forge: "forge",
+  relations: "relations",
+  journal: "journal",
+  bestiary: "bestiary",
+  acts: "acts",
+  merchant: "market",
+  create: "create",
+  seed: "seed",
+  settings: "settings",
+};
+function openWorldsRouteFromHash() {
+  const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
+  if (!raw) return null;
+  const id = OPENWORLDS_VALID_SCREENS.has(raw) ? raw : (OPENWORLDS_HASH_ALIASES[raw] || null);
+  if (!id) return null;
+  return { id, campMode: raw === "camp" || raw === "rest" ? true : false };
+}
+function openWorldsHashForScreen(id, opts) {
+  if (id === "map" && opts?.openCamp) return "camp";
+  return OPENWORLDS_SCREEN_HASHES[id] || id;
+}
+function openWorldsSyncHashForScreen(id, opts) {
+  const hash = openWorldsHashForScreen(id, opts);
+  if (!hash) return;
+  const nextHash = `#${hash}`;
+  if (window.location.hash === nextHash) return;
+  if (opts?.replaceHash && window.history?.replaceState) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+  } else {
+    window.location.hash = nextHash;
+  }
+}
+
 // #342: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into the
 // chronicle. The adversarial run (#324 v2) found that submitting "<script>…</script>", "{{ }}", or
 // "<b>…</b>" sent the raw markup straight to the DM (it stalled 35s+) and rode along in the local
@@ -700,6 +761,13 @@ function App() {
     };
   }, [refreshNative]);
 
+  const navigate = React.useCallback((id, opts = {}) => {
+    if (opts?.openCamp) setCampMode(true);
+    else if (id !== "map") setCampMode(false);
+    setScreen(id);
+    openWorldsSyncHashForScreen(id, opts);
+  }, []);
+
   // Auto-land in the session when a live DM (provider) is attached. The launcher's "Resume /
   // Begin" calls the native startProviderSession bridge, which repoints the WebView at the
   // live, move-sink-wired viewer on a fresh port — the page reloads here at the launcher, and
@@ -710,9 +778,9 @@ function App() {
     if (didAutoRoute.current) return;
     if (nativeState?.appStatus?.runningProvider && screen === "launcher") {
       didAutoRoute.current = true;
-      setScreen("table");
+      navigate("table", { replaceHash: true });
     }
-  }, [nativeState, screen]);
+  }, [nativeState, screen, navigate]);
 
   // Building→table handoff. The "building your universe" overlay clears (active → inactive) the
   // moment the first DM narration beat lands — that beat is already in the chronicle, so land the
@@ -724,10 +792,10 @@ function App() {
   React.useEffect(() => {
     if (building.active) { wasBuilding.current = true; return; }
     if (wasBuilding.current && screen === "launcher") {
-      setScreen("table");
+      navigate("table", { replaceHash: true });
     }
     wasBuilding.current = false;
-  }, [building.active, screen]);
+  }, [building.active, screen, navigate]);
 
   // During a live play session (a DM provider is attached), keep the active campaign bound to
   // the viewer's CURRENT (live) campaign. The DM mints this run's campaign a few seconds after
@@ -778,50 +846,24 @@ function App() {
       const id = map[e.key.toLowerCase()];
       if (id) {
         e.preventDefault();
-        setScreen(id);
+        navigate(id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
 
   // Deep-link the active screen via the URL hash (e.g. #character, #battle→combat).
   // Lets a screen be linked/bookmarked directly and makes headless QA captures of a
   // specific screen possible. On mount we honor the hash; hashchange re-routes live.
   React.useEffect(() => {
-    const VALID = new Set([
-      "launcher", "roster", "table", "combat", "dialogue", "map", "character", "inventory",
-      "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
-      "seed", "settings",
-    ]);
-    const ALIAS = {
-      battle: "combat",
-      parley: "dialogue",
-      party: "character",
-      heroes: "character",
-      chronicles: "launcher",
-      worlds: "launcher",
-      market: "merchant",
-      stash: "inventory",
-      pick: "roster",
-      picker: "roster",
-      camp: "map",
-      rest: "map",
-    };
-    const fromHash = () => {
-      const raw = (window.location.hash || "").replace(/^#\/?/, "").trim().toLowerCase();
-      if (!raw) return null;
-      const id = VALID.has(raw) ? raw : (ALIAS[raw] || null);
-      if (!id) return null;
-      return { id, campMode: raw === "camp" || raw === "rest" ? true : false };
-    };
-    const initial = fromHash();
+    const initial = openWorldsRouteFromHash();
     if (initial) {
       setCampMode(initial.campMode);
       setScreen(initial.id);
     }
     const onHash = () => {
-      const route = fromHash();
+      const route = openWorldsRouteFromHash();
       if (!route) return;
       setCampMode(route.campMode);
       setScreen(route.id);
@@ -829,12 +871,6 @@ function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-
-  const navigate = (id, opts) => {
-    if (opts?.openCamp) setCampMode(true);
-    else if (id !== "map") setCampMode(false);
-    setScreen(id);
-  };
 
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const playerChronicles = campaigns.filter(openWorldsPlayerChronicle);

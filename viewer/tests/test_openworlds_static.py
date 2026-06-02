@@ -190,6 +190,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('id: "g_worlds", label: "Worlds"', chrome)
         self.assertIn('party: "character"', source)
         self.assertIn('worlds: "launcher"', source)
+        self.assertIn("OPENWORLDS_SCREEN_HASHES", source)
+        self.assertIn('character: "party"', source)
+        self.assertIn('merchant: "market"', source)
+        self.assertIn('launcher: "worlds"', source)
+        self.assertIn('if (id === "map" && opts?.openCamp) return "camp";', source)
+        self.assertIn("openWorldsSyncHashForScreen(id, opts)", source)
+        self.assertIn("window.location.hash = nextHash", source)
+        self.assertIn("navigate(id);", source)
 
     def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
         status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
