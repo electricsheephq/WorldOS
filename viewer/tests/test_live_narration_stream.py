@@ -609,6 +609,62 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertEqual(out["second"], ["Lightning splits the sky."],
                          "a re-ingested session-log line (same seq) must collapse to one row, immune to its prose (#405)")
 
+    # --- BUG2 (critical): a NEW session's narration after a session ROTATION must RENDER, not be
+    # suppressed by a `seq` COLLISION with a prior session's seq 0,1,2. -----------------------------
+    # The engine rotates the session log on a cold-open start_session AND on a DM-turn-retry re-mint
+    # (5e71f77): the new session's log restarts at line 0,1,2 — the SAME bare indices the cold-open
+    # already claimed. The bare-seq dedup (server + client) had NO session scope, so post-move
+    # narration from the new session was BOTH suppressed by claimNarrationSeq AND dropped by
+    # buildChronicleLog's seq match — the player saw "Composing…" then nothing. The server now stamps
+    # the resolved session id on the /events response, and the client composes a SESSION-SCOPED key
+    # `${sid}:${seq}`; "session_a:0" and "session_b:0" are distinct, so the rotated session renders.
+    # This is the cross-session twin of test_same_seq_reingested_is_shown_once (same sid:seq STILL
+    # collapses; a DIFFERENT sid with the same seq does NOT).
+    def test_new_session_seq_collision_after_rotation_still_renders(self):
+        out = self._run(
+            # Session A (the cold-open) streams its opening beats at seq 0,1,2 — claimed under sid A.
+            "h.enqueue('/events', { sid: 'session_a', entries: ["
+            "  { kind: 'narration', text: 'You wake in a cold cell.', seq: 0 },"
+            "  { kind: 'narration', text: 'A torch gutters in the corridor.', seq: 1 },"
+            "  { kind: 'narration', text: 'Footsteps approach.', seq: 2 }"
+            "], next: 3 });"
+            "await h.tick();"
+            "var coldOpen = h.narrationTexts();"
+            # The engine ROTATES the session (DM-turn-retry re-mint). The viewer's cursor is re-read
+            # from the new file's top, so the post-move reply arrives as a FRESH session's seq 0,1,2 —
+            # the SAME bare indices session A already claimed. Under the bug these were suppressed.
+            "h.enqueue('/events', { sid: 'session_b', entries: ["
+            "  { kind: 'narration', text: 'The guard hauls you to your feet.', seq: 0 },"
+            "  { kind: 'narration', text: 'The cell door clangs open.', seq: 1 }"
+            "], next: 2 });"
+            "await h.tick();"
+            "return ({ coldOpen: coldOpen, afterRotation: h.narrationTexts(), chronicle: h.chronicleNarration() });"
+        )
+        self.assertEqual(
+            out["coldOpen"],
+            ["You wake in a cold cell.", "A torch gutters in the corridor.", "Footsteps approach."],
+            "session A's cold-open beats stream live",
+        )
+        self.assertEqual(
+            out["afterRotation"],
+            [
+                "You wake in a cold cell.", "A torch gutters in the corridor.", "Footsteps approach.",
+                "The guard hauls you to your feet.", "The cell door clangs open.",
+            ],
+            "post-rotation narration (a NEW session's seq 0,1) must NOT be suppressed by collision with "
+            "session A's seq 0,1 — the session-scoped `${sid}:${seq}` key keeps them distinct (BUG2)",
+        )
+        # And the ASSEMBLED chronicle (the other half of BUG2 — buildChronicleLog dropped it too) must
+        # render all five beats in order, the two sessions' identical seq numbers no longer colliding.
+        self.assertEqual(
+            out["chronicle"],
+            [
+                "You wake in a cold cell.", "A torch gutters in the corridor.", "Footsteps approach.",
+                "The guard hauls you to your feet.", "The cell door clangs open.",
+            ],
+            "buildChronicleLog must render the rotated session's beats too (no cross-session seq drop) (BUG2)",
+        )
+
     # --- #405: CHRONOLOGICAL ORDER — beats that stream out of arrival order still render in session-log
     # (seq) order in the assembled chronicle. -------------------------------------------------------
     def test_chronicle_orders_by_session_log_seq(self):
