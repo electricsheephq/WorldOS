@@ -1,12 +1,33 @@
-# WorldOS render/ — Phaser thin-client (M0)
+# WorldOS render/ — Phaser thin-client renderers (M0 zone · M1 GT1 tilemap)
 
-The first graphical renderer for WorldOS, promoted from `spikes/m0-phaser-thin-client/`
-into the **served** viewer subtree. It is the M0 proof that the *renderer-as-thin-client*
-architecture works end-to-end against the real engine surfaces.
+The graphical renderers for WorldOS, served from this subtree (`/openworlds/render/`). Each is
+a *thin client* — it owns no game state; it reads the engine surfaces and writes only
+constrained intents to `/move`.
+
+- **`index.html` + `renderer.js`** — M0 zone thin-client (the architecture proof).
+- **`tilemap.html` + `renderer-tilemap.js`** — **M1 GT1 SNES-pixel tilemap** (top-down
+  16-bit exploration + zone-mode turn combat). Open `/openworlds/render/tilemap.html`.
 
 > **Roadmap:** `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` · **Contract:**
 > `docs/roadmap/contracts/render-profile.md` + `render-profile.schema.json` +
-> `move-intents.md`. This dir implements the M0 issues #425–#433 groundwork.
+> `move-intents.md`. Implements M0 (#425–#433) + M1 GT1 (#434–#438).
+
+## GT1 (M1) — what's built vs deferred
+- **Built (#434–#438):** `scene_kind:"tilemap"` render-profile; a procedural top-down tilemap
+  per location; **click-to-travel** on green exit tiles (`{kind:"travel"}`); party/status HUD
+  from `/character-surface` (zero client rules); **zone-mode turn combat** as a pure replay of
+  `/combat-surface` + `/events` (zone bands + tokens, NO VTT cells/rulers, derived positions).
+- **#439 asset pipeline — WIRED (owner decision 2026-06-02: reuse existing imagegen + BG
+  catalog, first-party/internal):** actor tokens resolve their render-profile `art.scope_key`
+  through the existing `GET /image?scope=…` bridge and draw the real sprite when present; a
+  miss (404) falls back to the procedural placeholder token. Lazy + cached per scope; redraws
+  when art loads. (The UGC-clean asset-model decision — self-hosted vs paid API for
+  user-shippable games — defers to M3.) Tiles remain procedural for now.
+- **Deferred — #440/#441 QA gates + blind-playtester:** wire when `qa/playwright/node_modules`
+  is installed (the render-gate + persona harness need it). The static serve/contract gating
+  (`test_render_tilemap.py`) is in CI now.
+- **Deferred — #442 UGC scene authoring v0:** an M3-foundation piece (engine-owned scene
+  persistence); lands with the M3 UGC work.
 
 ## Run it
 
