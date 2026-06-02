@@ -82,7 +82,21 @@ _OPENWORLDS_MIME_TYPES = {
 # kinds the dashboard emits (say/do free-text, check/save/combat/attack palette) plus
 # the facade's cast/use_item, plus `clarify` (ask the DM a question before acting — a
 # question, never a world-assertion, so it's a safe player-side move kind).
-_MOVE_KINDS = {"say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify"}
+#
+# Graphical-renderer intents (#429, graphics M0 — docs/roadmap/contracts/move-intents.md):
+# `travel` (go to a known/adjacent location, target=engine_location_id), `inspect`/`examine`
+# (look closely, target=location/actor/object id), `move_to_zone` (reposition within the
+# current scene's named zones, target=zone name). These are PLAYER intents (never
+# world-assertions): the renderer emits them on click; the DM reads them from the moves
+# file and resolves them through the engine, exactly like say/do. They reuse the existing
+# `target` field — no new field, so the anti-injection field-allowlist is untouched.
+_MOVE_KINDS = {
+    "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
+    "travel", "inspect", "examine", "move_to_zone",
+}
+# Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
+# intents. Used to relax the "needs text or name" guard below for these click-driven moves.
+_TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
 _MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc")
 _MOVE_MAXLEN = 2000
 
@@ -105,7 +119,12 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
             move[f] = v.strip()[:_MOVE_MAXLEN]
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             move[f] = v
-    if "text" not in move and "name" not in move:
+    # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
+    # everything else needs a `text` or `name` so the DM has something to act on.
+    if kind in _TARGET_ONLY_KINDS:
+        if "target" not in move:
+            return None, f"{kind!r} move needs a 'target'"
+    elif "text" not in move and "name" not in move:
         return None, "move needs a 'text' or 'name'"
     return move, ""
 
@@ -1833,6 +1852,15 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
         x, y, source = _combat_display_position(raw, idx=idx, zones=zones, zone_offsets=zone_offsets)
         token["x"] = x
         token["y"] = y
+        # #432 (graphics M0): x/y here are a DERIVED render-hint, never authoritative state.
+        # On the "zone" path they are synthesized from the engine's named zone (the engine
+        # has no per-combatant coordinates — Combatant.zone is the only spatial truth). A
+        # renderer/AI-loop MUST treat `zone` as authoritative and re-derive its own layout;
+        # it must NOT persist x/y as state (the engine would silently overwrite it). The
+        # `positionAuthority` flag makes that explicit so no downstream consumer mistakes the
+        # hint for truth. ("grid" source = the engine actually supplied coords, a future
+        # capability; "zone"/"theater" = derived.)
+        token["positionAuthority"] = "engine" if source == "grid" else "derived"
         position_sources.add(source)
 
         ch = chars.get(cid)

@@ -1,10 +1,13 @@
 # Graphical move-intent vocabulary (M0)
 
-> **Status:** M0 freeze artifact — the **specification** for issue **#429** (extend the
-> `_MOVE_KINDS` allowlist) and **#430** (document the vocabulary + reject-unknown test). This
-> doc is the design + acceptance spec; the code change to `viewer/server.py` is a separate,
-> coordinated PR (it touches a file the implementation agent shares, so it is sequenced, not
-> filed in the parallel-safe docs slice).
+> **Status:** M0 — **IMPLEMENTED.** This was the spec for #429 (`_MOVE_KINDS` += travel /
+> inspect / examine / move_to_zone) and #430 (document + reject-unknown test). The code now
+> lives in `viewer/server.py:sanitize_move` (the graphical intents are accepted, carried by
+> `target`; existing kinds + invariants unchanged) and is covered by
+> `viewer/tests/test_move_intents.py`. The companion #432 (derived combat-token x/y flagged
+> `positionAuthority:"derived"`) is also landed in `_combat_tokens`. Verified live: each new
+> intent POSTs 200 to `/move` and lands in the moves file the DM reads; unknown kinds +
+> missing-target are rejected.
 
 ## Why this must freeze in M0 (before any tier ships)
 
