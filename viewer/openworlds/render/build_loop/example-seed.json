@@ -1,0 +1,24 @@
+{
+  "game_id": "embergloom-pact-gt2",
+  "title": "The Embergloom Pact",
+  "scene_kind": "backdrop",
+  "positioning": "zone",
+  "locations": [
+    {
+      "engine_location_id": "loc-ashfall-market",
+      "name": "Ashfall Market",
+      "zones": ["the soot-stalls", "the cinder well", "the burnt arch"]
+    },
+    {
+      "engine_location_id": "loc-emberhold-gate",
+      "name": "Emberhold Gate",
+      "zones": ["the gate ramp", "the guard niche", "the outer road"]
+    }
+  ],
+  "actors": [
+    { "engine_actor_id": "char-kaelen", "name": "Kaelen", "kind": "pc" },
+    { "engine_actor_id": "char-mira", "name": "Mira", "kind": "pc" },
+    { "engine_actor_id": "mon-emberkin-1", "name": "Emberkin", "kind": "creature" },
+    { "engine_actor_id": "mon-emberkin-2", "name": "Emberkin", "kind": "creature" }
+  ]
+}
