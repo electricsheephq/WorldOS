@@ -16,9 +16,19 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   // should not open on an Act Two Last Light Inn merchant while the party is in the Lower City.
   const [merchantId, setMerchantId] = React.useState("old-troutman");
   const [hoverItem, setHoverItem] = React.useState(null);
-  const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
+  // MK-14 (optimizer #2): the item-detail pane shows the LAST-hovered ware's properties and
+  // persists after mouse-leave (hoverItem only drives the row tint, which clears on leave).
+  const [detailItem, setDetailItem] = React.useState(null);
+  // MK-13: local demo purse — used ONLY in read-only preview (no live surface). When a
+  // live /character-surface is present, the displayed `coins` below derives from its live
+  // currency so the Market matches the Stash exactly (no hardcoded-232-vs-live contradiction).
+  const [localCoins, setLocalCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
+  // MK-11: guard the Confirm button against double-submit. The live path fires /move
+  // fire-and-forget and only clears the cart in the async .then, so a fast second click
+  // would relay a SECOND purchase before the first resolves. Synchronous ref lock.
+  const submittingRef = React.useRef(false);
   // MK-06: real type filter for the wares table — no dead "Filter…" button.
   const [typeFilter, setTypeFilter] = React.useState("all");
 
@@ -58,6 +68,13 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const canAct = Boolean(surface?.can_act);
   const campaignId = surface?.campaign_id || "";
   const surfaceLoading = surfaceStatus === "loading";
+  // MK-13: the purse shown + spent-against is the LIVE currency when the surface carries it
+  // (engine = sole writer; matches the Stash). Falls back to the local demo purse only in
+  // read-only preview (no live session) — where the local-spend simulation still applies.
+  const liveCur = surface?.currency;
+  const coins = liveCur
+    ? { gp: Number(liveCur.gp) || 0, sp: Number(liveCur.sp) || 0, cp: Number(liveCur.cp) || 0, pp: Number(liveCur.pp) || 0, ep: Number(liveCur.ep) || 0 }
+    : localCoins;
   const toast = window.useToast ? window.useToast() : (() => {});
 
   // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
@@ -141,6 +158,38 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
         <Divider />
 
+        {/* MK-14 (optimizer #2): item-detail/inspect pane — Market rows had no properties view
+            ("Market items have no properties or compare pane"). Shows the last-hovered ware's
+            facts; honest empty-state until a row is hovered. */}
+        <SectionTitle>Item Detail</SectionTitle>
+        {detailItem ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <Img scope={mItemScope(detailItem)} label={detailItem.glyph || detailItem.name} w={44} h={44} fit="contain" framed />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: detailItem.type === "rare" ? "var(--royal)" : "var(--ink-900)" }}>{detailItem.name}</div>
+                <Pill>{(window.ITEM_TYPES && window.ITEM_TYPES[detailItem.type]) || detailItem.type || "—"}</Pill>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span className="muted body-sm">Weight</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>{detailItem.weight || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span className="muted body-sm">Price</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>
+                {detailItem.price || (typeof detailItem.value === "string" && detailItem.value.match(/(\d+) gp/) ? parseInt(detailItem.value.match(/(\d+) gp/)[1]) : "—")}
+                <span className="muted" style={{ fontSize: 9, marginLeft: 2 }}>gp</span>
+              </span>
+            </div>
+            {detailItem.desc && <p className="body-sm" style={{ marginTop: 2, color: "var(--ink-700)" }}>{detailItem.desc}</p>}
+          </div>
+        ) : (
+          <div className="hand muted" style={{ fontSize: 12, marginBottom: 4 }}>Hover a ware to inspect its properties.</div>
+        )}
+
+        <Divider />
+
         <BrassButton tone="dark" onClick={() => onNavigate("table")} style={{ width: "100%" }}>Leave Market</BrassButton>
       </Panel>
 
@@ -193,7 +242,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 const haggledPrice = tab === "buy" && haggle > 0 ? Math.round(shownPrice * (1 - haggle / 100)) : null;
                 return (
                   <tr key={it.id || i}
-                    onMouseEnter={() => setHoverItem(it)}
+                    onMouseEnter={() => { setHoverItem(it); setDetailItem(it); }}
                     onMouseLeave={() => setHoverItem(null)}
                     style={{
                       cursor: "pointer",
@@ -220,11 +269,17 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                     <td style={{ ...tdStyle, textAlign: "right", fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)" }}>
                       {it.weight || "—"}
                     </td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {/* MK-12: the struck list price + discounted price MUST be visually
+                          separated (an explicit arrow) — rendered adjacent they read as one
+                          run-together number, e.g. "24" + "23" → "2423" (adversarial bug). */}
                       {haggledPrice !== null && haggledPrice !== shownPrice && (
-                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 5 }}>
+                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 4 }}>
                           {shownPrice}
                         </span>
+                      )}
+                      {haggledPrice !== null && haggledPrice !== shownPrice && (
+                        <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--emerald)", marginRight: 4 }}>→</span>
                       )}
                       <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: haggledPrice !== null ? "var(--emerald)" : "var(--ink-900)" }}>
                         {haggledPrice !== null ? haggledPrice : shownPrice}
@@ -333,6 +388,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             // a fast click cannot silently mutate only local coins. Otherwise (read-only
             // preview), keep the local-only behavior + honest preview tooltip.
             if (surfaceLoading) return;
+            // MK-11: double-submit guard — lock synchronously before the async /move so a
+            // fast second click can't relay a second purchase; release in finally / after local apply.
+            if (submittingRef.current) return;
+            submittingRef.current = true;
             if (canAct) {
               const buyItems = cart.filter((i) => i.mode === "buy").map((i) => i.name);
               const sellItems = cart.filter((i) => i.mode === "sell").map((i) => i.name);
@@ -355,10 +414,12 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 if (!response.ok) throw new Error(`move ${response.status}`);
                 toast({ kind: "item", eyebrow: "Market", title: balanceDelta > 0 ? "Sold" : "Bought", body: `Move relayed to the DM — the engine resolves the purchase.` });
                 setCart([]);
-              }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+              }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }))
+                .finally(() => { submittingRef.current = false; });
             } else {
-              setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
+              setLocalCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
               setCart([]);
+              submittingRef.current = false;
             }
           }} style={{ width: "100%" }} disabled={cart.length === 0 || surfaceLoading || (!canAct && coins.gp + balanceDelta < 0)} title={surfaceLoading ? "Checking the live market action lane…" : (canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine")}>
             {surfaceLoading && cart.length > 0 ? "Checking the counter…" : (balanceDelta > 0 ? "Accept silver" : "Strike the bargain")}

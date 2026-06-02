@@ -730,7 +730,7 @@ def build_options_response(campaign_id: Optional[str], character_id: Optional[st
     }
 
 
-def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "") -> dict:
+def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "", reference: bool = False) -> dict:
     """GET /bestiary-surface read model.
 
     Bridges to the engine-owned player-safe bestiary projection. It exposes no write
@@ -742,6 +742,12 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
     no snapshot / no recorded intel) the surface stays the honest global SRD browse (tier-less
     preview), so an empty/new game is never a stat dump. The engine stays the projection
     authority and the sole writer; this only reads the snapshot and passes a dict in.
+
+    When ``reference`` is set, the campaign intel is BYPASSED and the surface returns the global
+    SRD browse (every match → names + tier-less preview stats). This is the codex "Browse all"
+    reference mode: in real play the intel codex is perpetually fog-of-war (the party rarely
+    slays enough to reveal much), so a player needs a way to read public monster facts (identity,
+    CR, the preview stat line) without it being gated on kills. Still strictly read-only.
     """
     engine = _load_engine_server()
     if engine is None:
@@ -752,7 +758,7 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
         }
     intel: Optional[dict] = None
     safe = _safe_campaign_id(campaign_id) if campaign_id else ""
-    if safe:
+    if safe and not reference:
         snap = _read_snapshot(safe)
         raw = snap.get("bestiary_intel") if isinstance(snap, dict) else None
         if isinstance(raw, dict):
@@ -3385,6 +3391,40 @@ def _equipped_items(ch: dict) -> list[dict]:
     return out
 
 
+_CLASS_FEATURE_DESCS: "dict | None" = None
+
+
+def _class_feature_desc_map() -> dict:
+    """name -> SRD description for class/subclass features (data/srd/class_features.json).
+
+    Lets the character read-model project feature DESCRIPTIONS instead of blank detail — the
+    engine already authored these canon SRD entries (260 of them), the read-model was just
+    dropping them, so the Abilities/Feats tabs rendered bare name-lists. Built once and cached;
+    global across every class/level bucket so a feature resolves regardless of which bucket holds
+    it. Honest: a feature with no authored desc stays blank (never fabricated)."""
+    global _CLASS_FEATURE_DESCS
+    if _CLASS_FEATURE_DESCS is not None:
+        return _CLASS_FEATURE_DESCS
+    out: dict = {}
+    try:
+        raw = json.loads((_REPO_ROOT / "data" / "srd" / "class_features.json").read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for by_level in raw.values():
+                if not isinstance(by_level, dict):
+                    continue
+                for feats in by_level.values():
+                    for f in (feats or []):
+                        if isinstance(f, dict):
+                            nm = str(f.get("name") or "").strip()
+                            ds = str(f.get("desc") or "").strip()
+                            if nm and ds:
+                                out.setdefault(nm, ds)
+    except Exception:
+        out = {}
+    _CLASS_FEATURE_DESCS = out
+    return out
+
+
 def _character_sheet(cid: str, ch: dict) -> dict:
     """One party character's full sheet for the heroes screen, mapping 5e snapshot fields
     into the shape screen-character.jsx renders (stats block, skills, spells, class
@@ -3427,6 +3467,12 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "ranged": prof + dex_mod,
         "initiative": int(init_bonus) if init_bonus is not None else dex_mod,
         "speed": int(speed) if speed is not None else 30,
+        # #depth: surface Hit Dice (short-rest attrition economy) + Passive Perception — both
+        # derivable from data already on the character model (hit_dice/hit_dice_remaining;
+        # perception skill bonus) but never previously emitted. Rendered as StatLines.
+        "hitDice": str(ch.get("hit_dice") or ""),
+        "hitDiceRemaining": int(_num(ch.get("hit_dice_remaining")) or 0),
+        "passivePerception": 10 + _skill_bonus_from_sheet(ch, "perception"),
     })
 
     # Skills: project the SRD skill list with sheet-correct bonuses (proficient first).
@@ -3518,6 +3564,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
     # two distinct sources so the sheet's Feats tab and Class Features list are not identical
     # duplicates (#286): classFeatures <- features, feats <- notes feat-markers (empty when none).
     features = [_text(f) for f in (ch.get("features") or []) if _text(f)]
+    _feat_descs = _class_feature_desc_map()  # name -> SRD desc, so classFeatures carry detail
     feat_names: list[str] = []
     for seg in _text(ch.get("notes")).split("|"):
         seg = seg.strip()
@@ -3541,6 +3588,10 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "hp": int(cur_hp) if cur_hp is not None else 1,
         "hpMax": int(max_hp) if max_hp is not None else 1,
         "tempHp": int(_num(ch.get("temp_hp")) or 0),
+        # Live coin purse (cp/sp/ep/gp/pp) so the Market reads the SAME currency the Stash
+        # does (engine = sole writer) — fixes the Market-vs-Stash coin contradiction where
+        # the merchant showed a hardcoded 232gp. Same helper the inventory-surface uses.
+        "currency": _currency_for(ch),
         "stats": stats,
         "skills": skills,
         "spells": spells,
@@ -3563,7 +3614,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in feat_names],
         "abilities": [],
         "proficiencies": features,
-        "classFeatures": [{"name": f, "detail": ""} for f in features],
+        "classFeatures": [{"name": f, "detail": _feat_descs.get(f, "")} for f in features],
         "traits": [],
         "dr": {"value": ", ".join(_text(x) for x in (ch.get("damage_resistances") or []) if _text(x)) or "None",
                "energy": ", ".join(_text(x) for x in (ch.get("damage_immunities") or []) if _text(x)) or "None"},
@@ -4061,6 +4112,12 @@ def _relations_factions(snapshot: dict) -> list[dict]:
             "tags": tags,
             "threshold": {"hostile": 25, "neutral": 50, "friendly": 75},
             "standing": _standing_label(rep),
+            # Faction-growth membership (engine Faction.rank/joined/questline_arc_id) — the
+            # Skyrim/PFK join->grow->lead loop the read-model was dropping. rank 0 == not a
+            # ranked member; joined == the join_faction latch; questlineArcId names the arc.
+            "rank": int(_num(row.get("rank")) or 0),
+            "joined": bool(row.get("joined")),
+            "questlineArcId": _text(row.get("questline_arc_id")),
             "lastContact": "",
             "body": _text(row.get("description"), "Little is recorded of this faction's dealings with the party."),
             "events": [],
@@ -6735,7 +6792,11 @@ class _Handler(BaseHTTPRequestHandler):
                 limit = int(raw_limit)
             except (TypeError, ValueError):
                 limit = 20
-            self._json(build_bestiary_response(query, limit, cid))
+            # ?reference=1 -> "Browse all": bypass campaign intel and return the global SRD
+            # preview so the codex is useful before the party has slain anything (the #263
+            # intel codex is perpetually fog-of-war in real play). Truthy: 1/true/yes/on.
+            reference = (qs.get("reference") or [""])[0].strip().lower() in ("1", "true", "yes", "on")
+            self._json(build_bestiary_response(query, limit, cid, reference=reference))
         elif route == "/roster-surface":
             # Read-only canon-NPC PICKER projection (the "reverse character creator"): the
             # PLAYABLE roster (origins excluded by the record `playable` flag), filtered by

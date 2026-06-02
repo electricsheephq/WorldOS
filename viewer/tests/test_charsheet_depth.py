@@ -158,6 +158,36 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertEqual(cast["spellAttackBonus"], 5)
         self.assertEqual(cast["abilityShort"], "int")
 
+    def test_surface_exposes_hit_dice_and_passive_perception(self):
+        # #depth regression guard: the read-model must emit hitDice/hitDiceRemaining +
+        # passivePerception (derivable from the character model) so the Defense block can render
+        # them — the exact "engine has it, viewer silently drops it" class the depth audit found.
+        self._write("camp_depth", _SNAPSHOT)
+        status, surface = self._get_json("/character-surface?campaign=camp_depth")
+        self.assertEqual(status, 200)
+        stats = self._party(surface)["elara"]["stats"]
+        self.assertIn("hitDice", stats)
+        self.assertIn("hitDiceRemaining", stats)
+        self.assertIsInstance(stats["passivePerception"], int)
+
+    def test_surface_exposes_currency_for_market_purse(self):
+        # #depth regression guard: the character-surface must emit live `currency`
+        # (cp/sp/ep/gp/pp) so the Market reads the SAME purse as the Stash — fixes the
+        # coin contradiction where the merchant showed a hardcoded 232gp. If this emit
+        # drops, the Market silently diverges from the engine's currency again.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["elara"]["currency"] = {"gp": 50, "sp": 7, "cp": 3}
+        self._write("camp_cur", snap)
+        status, surface = self._get_json("/character-surface?campaign=camp_cur")
+        self.assertEqual(status, 200)
+        cur = self._party(surface)["elara"]["currency"]
+        self.assertEqual(cur["gp"], 50)
+        self.assertEqual(cur["sp"], 7)
+        self.assertEqual(cur["cp"], 3)
+        # zero-fill for denominations not set -> stable shape for the UI
+        self.assertEqual(cur["pp"], 0)
+        self.assertEqual(cur["ep"], 0)
+
     def test_surface_omits_spellcasting_for_non_caster(self):
         self._write("camp_depth", _SNAPSHOT)
         _status, surface = self._get_json("/character-surface?campaign=camp_depth")
@@ -177,9 +207,12 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertIn("Evocation Savant", names)
         # subclass (School of Magic) is surfaced as the archetype, so the tab has context
         self.assertEqual(elara["archetype"], "School of Evocation")
-        # honest: the engine models feature NAMES, not descriptions -> detail is empty
+        # #depth: the read-model now JOINS the SRD class-feature descriptions
+        # (data/srd/class_features.json), so a known class feature carries real detail
+        # (was blank before — the engine authored 260 descs the surface was dropping).
         arcane = next(c for c in elara["classFeatures"] if c["name"] == "Arcane Recovery")
-        self.assertEqual(arcane["detail"], "")
+        self.assertTrue(arcane["detail"], "Arcane Recovery should carry its SRD description")
+        self.assertIn("slot", arcane["detail"].lower())
 
     def test_surface_class_features_empty_when_engine_has_none(self):
         """A character with no engine-populated features surfaces an empty list (honest),

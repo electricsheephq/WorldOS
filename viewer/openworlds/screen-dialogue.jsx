@@ -113,6 +113,9 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
   // actual text (not a hardcoded placeholder). Send is disabled until something is typed.
   const [freeFormMode, setFreeFormMode] = React.useState(false);
   const [userText, setUserText] = React.useState("");
+  // #robustness: synchronous in-flight lock — pick()/sendFreeForm() fire /move fire-and-forget with
+  // no guard, so a rapid double-click queues duplicate social-check/say intents. Cleared in .finally.
+  const submittingRef = React.useRef(false);
 
   const pick = (slot) => {
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
@@ -121,6 +124,8 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
       toast({ kind: "danger", eyebrow: "Parley", title: "Preview — no live DM", body: "Open a chronicle from Chronicles to converse; then the DM voices and adjudicates the approach you pick." });
       return;
     }
+    if (submittingRef.current) return; // already submitting a check — drop the rapid double-click
+    submittingRef.current = true;
     fetch("/move", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -128,7 +133,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
     }).then((r) => r.json().catch(() => ({}))).then((payload) => {
       if (payload && payload.ok === false) throw new Error(payload.reason || "move rejected");
       toast({ kind: "item", eyebrow: "Parley", title: `${actorName} — ${slot.label}`, body: `Requested a ${slot.label} check at DC ${slot.suggested_dc}.` });
-    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." })).finally(() => { submittingRef.current = false; });
   };
 
   const openFreeForm = () => {
@@ -142,6 +147,8 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
   const sendFreeForm = () => {
     const text = userText.trim();
     if (!text) return;
+    if (submittingRef.current) return; // already sending — drop the rapid double-click / double-Enter
+    submittingRef.current = true;
     fetch("/move", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "say", text, campaign: surface.campaign_id || "" }),
@@ -151,7 +158,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
       setUserText("");
       setFreeFormMode(false);
       toast({ kind: "item", eyebrow: "Parley", title: `${actorName} — Free-form`, body: "Spoke their own words — the DM adjudicates." });
-    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." })).finally(() => { submittingRef.current = false; });
   };
 
   return (
@@ -242,10 +249,18 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
               {/* Skill slot choices */}
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {slots.map((slot, i) => (
+                {slots.map((slot, i) => {
+                  // Dialogue-depth (BG3 "how hard is this roll"): a per-slot success-odds chip.
+                  // p = passing d20 faces / 20, clamped to [5%,95%] (nat-1 always fails, nat-20
+                  // always succeeds). Pure client-derived from the modifier + suggested_dc the
+                  // surface already carries — no engine/read-model change.
+                  const oddsFaces = Math.max(1, Math.min(19, 21 - (slot.suggested_dc - slot.modifier)));
+                  const oddsPct = Math.round(oddsFaces / 20 * 100);
+                  const oddsTone = oddsPct >= 65 ? "var(--emerald)" : oddsPct >= 35 ? "#c9a227" : "var(--crimson)";
+                  return (
                   <button key={slot.skill} onClick={() => pick(slot)} style={{
                     display: "grid",
-                    gridTemplateColumns: "24px 1fr auto auto",
+                    gridTemplateColumns: "24px 1fr auto auto auto",
                     gap: 10, alignItems: "center",
                     padding: "8px 12px",
                     textAlign: "left",
@@ -277,8 +292,13 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
                     <span style={{ fontFamily: "var(--f-display)", color: "var(--b-500)", fontSize: 12, letterSpacing: "0.1em" }}>
                       DC {slot.suggested_dc}
                     </span>
+                    <span title={`Roll d20 ${slot.modifier >= 0 ? "+" : ""}${slot.modifier} vs DC ${slot.suggested_dc} → about ${oddsPct}% to succeed`}
+                      style={{ fontFamily: "var(--f-mono)", fontSize: 11, fontWeight: 700, color: oddsTone, minWidth: 36, textAlign: "right" }}>
+                      {oddsPct}%
+                    </span>
                   </button>
-                ))}
+                  );
+                })}
 
                 {/* Free-form path — always present (free_form is always true). When active,
                     reveal a textarea so the player types their OWN line and POSTs that text. */}

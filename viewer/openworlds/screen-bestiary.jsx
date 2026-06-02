@@ -103,6 +103,12 @@ function liveBestiaryEntry(item) {
     stats: (item?.abilities && typeof item.abilities === "object") ? item.abilities : undefined,
     tactics: item?.tactics ? String(item.tactics) : "",
     knownActions: Array.isArray(item?.known_actions) ? item.known_actions.filter((a) => String(a).trim()) : [],
+    // #depth: tier-3 (slain) defenses — the most tactically load-bearing facts (the engine now
+    // passes these through intel_projection). Each row hidden when blank.
+    resistances: Array.isArray(item?.damage_resistances) ? item.damage_resistances.filter((x) => String(x).trim()) : [],
+    immunities: Array.isArray(item?.damage_immunities) ? item.damage_immunities.filter((x) => String(x).trim()) : [],
+    vulnerabilities: Array.isArray(item?.damage_vulnerabilities) ? item.damage_vulnerabilities.filter((x) => String(x).trim()) : [],
+    conditionImmunities: Array.isArray(item?.condition_immunities) ? item.condition_immunities.filter((x) => String(x).trim()) : [],
     contentOrigin: String(item?.content_origin || "srd"),
     source: item?.source ? String(item.source) : "",
     license: item?.license ? String(item.license) : "",
@@ -121,6 +127,11 @@ function ScreenBestiary({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("creatures");
   const [selected, setSelected] = React.useState(null);
   const [filter, setFilter] = React.useState("");
+  // BE-depth (optimizer #1): "Browse all" reference mode. The intel codex (#263) is
+  // fog-of-war until the party SLAYS creatures, so in real play it reads "zero creature
+  // names." This toggles ?reference=1 → the public SRD preview for every creature (name +
+  // CR + the preview stat line), making the codex useful from turn one. Off = earned-intel.
+  const [browseAll, setBrowseAll] = React.useState(false);
   // Live codex from /bestiary-surface; null until the first successful fetch.
   const [liveCreatures, setLiveCreatures] = React.useState(null);
   // World/region label for the codex eyebrow. Data-driven when the surface carries a label
@@ -136,6 +147,9 @@ function ScreenBestiary({ onNavigate, state, setState }) {
     try {
       const params = new URLSearchParams(surfaceQuery.replace(/^\?/, ""));
       if (q) params.set("q", q); else params.delete("q");
+      // Browse-all: bypass earned intel (?reference=1) + widen the page so the SRD browse
+      // returns a useful spread, not just the first 20.
+      if (browseAll) { params.set("reference", "1"); params.set("limit", "50"); }
       const qs = params.toString();
       const response = await fetch("/bestiary-surface" + (qs ? "?" + qs : ""), { cache: "no-store" });
       if (!response.ok) throw new Error(`bestiary surface ${response.status}`);
@@ -151,7 +165,7 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       if (isCancelled()) return;
       /* keep the last good surface; the empty-state shows until the first success */
     }
-  }, [surfaceQuery]);
+  }, [surfaceQuery, browseAll]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -194,6 +208,17 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div className="eyebrow" style={{ color: "var(--crimson)" }}>Encyclopaedia of</div>
         <h2 className="h1" style={{ fontSize: 22 }}>{worldLabel || "the Sword Coast"}</h2>
+        {/* BE-depth: toggle the fog-of-war intel codex vs the full public SRD reference browse,
+            so the codex isn't useless before the party has slain anything (optimizer #1). */}
+        <button
+          onClick={() => setBrowseAll((v) => !v)}
+          className="btn ghost sm"
+          aria-pressed={browseAll}
+          style={{ marginTop: 6, fontSize: 10, alignSelf: "flex-start" }}
+          title={browseAll ? "Showing every creature (public SRD reference)" : "Showing only creatures your party has encountered — click to browse all"}
+        >
+          {browseAll ? "✓ Browse all" : "Browse all"}
+        </button>
         <Divider />
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
@@ -376,6 +401,27 @@ function BestiaryEntry({ entry, tab }) {
               </div>
             </>
           )}
+
+          {/* #depth: Defenses — resistances/immunities/vulnerabilities/condition-immunities learned at
+              slain-tier (the single most tactically load-bearing facts). Each row hidden when empty. */}
+          {((entry.immunities && entry.immunities.length) || (entry.resistances && entry.resistances.length) || (entry.vulnerabilities && entry.vulnerabilities.length) || (entry.conditionImmunities && entry.conditionImmunities.length)) ? (
+            <>
+              <Divider />
+              <SectionTitle>Defenses</SectionTitle>
+              {entry.immunities && entry.immunities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Immune</span>{entry.immunities.map((x) => <Pill key={`im-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.resistances && entry.resistances.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Resist</span>{entry.resistances.map((x) => <Pill key={`re-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.vulnerabilities && entry.vulnerabilities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Vulnerable</span>{entry.vulnerabilities.map((x) => <Pill key={`vu-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.conditionImmunities && entry.conditionImmunities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Cond. Immune</span>{entry.conditionImmunities.map((x) => <Pill key={`ci-${x}`}>{x}</Pill>)}</div>
+              )}
+            </>
+          ) : null}
 
           {/* Provenance — authored (non-SRD) content credits its source/license. */}
           {entry.contentOrigin === "authored" && (entry.source || entry.license || entry.provenance) && (

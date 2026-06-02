@@ -282,14 +282,17 @@ function FactionDetail({ f }) {
 
       <p className="body dropcap" style={{ marginTop: 0, fontSize: 14 }}>{f.body}</p>
 
-      {(f.standing || f.lastContact || (f.events && f.events.length) || (f.offers && f.offers.length)) && <Divider />}
+      {(f.standing || f.lastContact || f.joined || (f.events && f.events.length) || (f.offers && f.offers.length)) && <Divider />}
 
       {/* Standing/last-contact grid — only render a StatLine whose value is present; the live
           surface emits standing but leaves lastContact blank. */}
-      {(f.standing || f.lastContact) && (
+      {(f.standing || f.lastContact || f.joined) && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {f.standing && <StatLine k="Standing" v={f.standing} />}
+            {/* Faction-growth membership (engine join_faction / advance_faction_arc): the
+                Skyrim/PFK join -> grow -> lead loop, now legible. rank 0 == joined but unranked. */}
+            {f.joined && <StatLine k="Membership" v={f.rank > 0 ? `Member · Rank ${f.rank}` : "Member"} />}
             {f.lastContact && <StatLine k="Last contact" v={f.lastContact} />}
           </div>
 
