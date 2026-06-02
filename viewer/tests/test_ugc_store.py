@@ -92,6 +92,14 @@ class UgcStoreUnitTests(unittest.TestCase):
         self.assertEqual(listing[0]["scene_kind"], "backdrop")
         self.assertEqual(listing[0]["latest_version"], 1)
 
+    def test_resolve_under_rejects_escape(self):
+        # the realpath+commonpath barrier (CWE-22 fix): a segment that resolves outside root raises.
+        with self.assertRaises(ValueError):
+            ugc_store._resolve_under(self.root, "..", "..", "etc")
+        # a normal slugified segment resolves cleanly under root
+        p = ugc_store._resolve_under(self.root, "alice", "game-1")
+        self.assertTrue(str(p.resolve()).startswith(str(self.root.resolve())))
+
     def test_traversal_is_slugified(self):
         evil = json.loads(json.dumps(self.prof))
         evil["game_id"] = "../../etc/passwd"

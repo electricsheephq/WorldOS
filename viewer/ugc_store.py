@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -49,11 +50,29 @@ def _load_gate():
     return mod
 
 
+_SEGMENT_OK = re.compile(r"[a-z0-9][a-z0-9._-]*")
+
+
 def _safe_slug(text: str, fallback: str) -> str:
-    """A filesystem-safe, traversal-proof slug (no '/', no '..')."""
+    """A filesystem-safe, traversal-proof path SEGMENT. Two layers:
+    1. transform to the allowed charset (no '/', no '..'), then
+    2. VALIDATE against a strict allowlist and fall back if it doesn't match — a guard, not just
+       a transform, so it reads as a real sanitizer (and is provably contained by _resolve_under)."""
     s = _SLUG_RE.sub("-", (text or "").strip().lower()).strip("-.")
     s = s.replace("..", "-")
-    return s or fallback
+    return s if _SEGMENT_OK.fullmatch(s or "") else fallback
+
+
+def _resolve_under(root: Path, *segments: str) -> Path:
+    """Join slugified segments under `root` and PROVE the realpath stays within root — the
+    path-injection (CWE-22) barrier. Even though each segment is already slugified, this resolves
+    the final path and rejects anything that escapes the store root, so a path can never traverse
+    out regardless of input. Raises ValueError on escape."""
+    base = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(base, *segments))
+    if base != target and os.path.commonpath([base, target]) != base:
+        raise ValueError("UGC path escapes the store root")
+    return Path(target)
 
 
 def _schema() -> dict:
@@ -68,7 +87,8 @@ def validate_and_gate(profile: dict, schema: dict | None = None) -> dict:
 
 
 def _game_dir(root: Path, owner: str, game_id: str) -> Path:
-    return root / _safe_slug(owner, "local") / _safe_slug(game_id, "untitled")
+    # slugify each segment AND prove the resolved path stays under root (path-injection barrier).
+    return _resolve_under(root, _safe_slug(owner, "local"), _safe_slug(game_id, "untitled"))
 
 
 def _versions(game_dir: Path) -> list[int]:
@@ -96,22 +116,26 @@ def save_profile(root: Path, profile: dict, *, owner: str = "local",
     game_dir.mkdir(parents=True, exist_ok=True)
     version = (max(_versions(game_dir)) if _versions(game_dir) else 0) + 1
     text = json.dumps(profile, indent=2) + "\n"
-    (game_dir / f"v{version}.json").write_text(text)
-    (game_dir / "latest.json").write_text(text)  # convenience pointer to the newest version
+    # version is an int we computed; resolve-under keeps the write provably inside game_dir.
+    _resolve_under(game_dir, f"v{int(version)}.json").write_text(text)
+    _resolve_under(game_dir, "latest.json").write_text(text)  # pointer to the newest version
     return {"accepted": True, "owner": owner_slug, "game_id": _safe_slug(game_id, "untitled"),
             "version": version, "report": report}
 
 
 def load_profile(root: Path, game_id: str, *, owner: str = "local",
                  version: int | None = None) -> dict | None:
-    """Load a stored profile (latest if version is None). None if absent."""
-    game_dir = _game_dir(root, owner, game_id)
+    """Load a stored profile (latest if version is None). None if absent or path-rejected."""
+    try:
+        game_dir = _game_dir(root, owner, game_id)
+    except ValueError:
+        return None
     if version is None:
         vs = _versions(game_dir)
         if not vs:
             return None
         version = max(vs)
-    path = game_dir / f"v{int(version)}.json"
+    path = _resolve_under(game_dir, f"v{int(version)}.json")
     if not path.is_file():
         return None
     try:

@@ -6851,6 +6851,9 @@ class _Handler(BaseHTTPRequestHandler):
         owner = _text(payload.get("owner") or "local", "local")
         try:
             result = ugc_store.save_profile(_ugc_root(), profile, owner=owner)
+        except ValueError as exc:
+            self._json({"ok": False, "reason": f"rejected: {exc}"})
+            return
         except OSError as exc:
             self._json({"ok": False, "reason": f"store write failed: {exc}"})
             return
