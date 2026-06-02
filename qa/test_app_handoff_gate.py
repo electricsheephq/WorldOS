@@ -243,6 +243,79 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("settings:provider-status", detail)
         self.assertEqual(payload["schema"], "worldos.app-handoff-hooks.v1")
 
+    def test_drive_moves_tolerates_transient_app_status_timeout(self):
+        status_initial = {
+            "schema": "worldos.app-status.v1",
+            "build": {"sha": "abc1234"},
+            "viewer": {"port": 8899, "chat_lines": 1},
+            "art": {"private_root_present": True},
+            "live": {
+                "can_act": True,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 6,
+            },
+            "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
+            "health": {"failure_bucket": "none"},
+        }
+        status_after = {
+            **status_initial,
+            "viewer": {"port": 8899, "chat_lines": 2},
+        }
+        surface = {"recentEvents": [{"kind": "narration", "text": "Opening."}]}
+
+        with tempfile.TemporaryDirectory() as td:
+            gate_dir = Path(td)
+            with mock.patch.object(
+                gate.smoke,
+                "wait_for_status",
+                side_effect=[status_initial, TimeoutError("busy status probe"), status_after, status_after],
+            ), mock.patch.object(
+                gate.smoke,
+                "fetch_json",
+                return_value=(surface, 200),
+            ), mock.patch.object(
+                gate.smoke,
+                "html_text",
+                return_value="<main>WorldOS</main>",
+            ), mock.patch.object(
+                gate.smoke,
+                "capture_openworlds_screenshot",
+                return_value=None,
+            ), mock.patch.object(
+                gate.smoke,
+                "post_json",
+                return_value=({"ok": True}, 200),
+            ), mock.patch.object(
+                gate.smoke,
+                "copy_play_state",
+                return_value=None,
+            ), mock.patch.object(
+                gate,
+                "run_hook_probe",
+                return_value=(True, "", {"ok": True}),
+            ), mock.patch.object(
+                gate,
+                "provider_trace_summary",
+                return_value={"trace_exists": True, "failed_or_error_count": 0},
+            ), mock.patch.object(gate.time, "sleep", return_value=None):
+                ok, bucket, detail, details = gate.drive_moves(
+                    base_url="http://127.0.0.1:8899",
+                    gate_dir=gate_dir,
+                    run_id="fixture-run",
+                    provider="codex",
+                    beats=1,
+                    timeout=5,
+                    expected_sha="abc1234",
+                    expected_port=8899,
+                )
+
+            network = (gate_dir / "network.ndjson").read_text(encoding="utf-8")
+
+        self.assertTrue(ok, detail)
+        self.assertEqual(bucket, "")
+        self.assertIn("busy status probe", network)
+        self.assertEqual(details["provider_trace"]["trace_exists"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

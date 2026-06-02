@@ -533,8 +533,18 @@ def drive_moves(
 
         deadline = time.time() + timeout
         advanced = False
+        last_status_error = ""
         while time.time() < deadline:
-            status = smoke.wait_for_status(base_url, gate_dir, timeout=3)
+            try:
+                status = smoke.wait_for_status(base_url, gate_dir, timeout=3)
+            except Exception as exc:  # noqa: BLE001 - keep polling through transient busy/status timeouts.
+                last_status_error = str(exc)
+                append_ndjson(
+                    gate_dir / "network.ndjson",
+                    {"at": time.time(), "method": "GET", "url": urllib.parse.urljoin(base_url, "/app-status"), "error": last_status_error},
+                )
+                time.sleep(1 if provider != "scripted" else 0.5)
+                continue
             chat_lines = int(((status.get("viewer") or {}).get("chat_lines") or 0) if isinstance(status.get("viewer"), dict) else 0)
             if chat_lines > last_chat_lines:
                 if provider != "scripted":
@@ -556,7 +566,8 @@ def drive_moves(
         smoke.write_text_snapshot(gate_dir / "a11y" / f"beat-{beat}.html", smoke.html_text(base_url))
         smoke.capture_openworlds_screenshot(base_url=base_url, out=gate_dir, port=expected_port, label=f"beat-{beat:03d}", gaps=gaps, screenshots=screenshots)
         if not advanced:
-            return False, "no_narration", f"narration did not advance after {provider} beat {beat}", {"screenshots": screenshots, "evidence_gaps": gaps}
+            suffix = f"; last app-status error: {last_status_error}" if last_status_error else ""
+            return False, "no_narration", f"narration did not advance after {provider} beat {beat}{suffix}", {"screenshots": screenshots, "evidence_gaps": gaps}
 
     final_status = smoke.wait_for_status(base_url, gate_dir, timeout=5)
     json_dump(gate_dir / "app-status.final.json", final_status)
