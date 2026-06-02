@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorldOS — GT2 backdrop-isometric renderer (M2)</title>
+  <!-- Phaser 3 (MIT) VENDORED locally, no runtime CDN. See ../vendor/THIRD_PARTY_NOTICES.md. -->
+  <script src="../vendor/phaser-3.80.1.min.js"></script>
+  <style>
+    body { margin: 0; background: #0a0c0e; color: #b8c2cb; font-family: -apple-system, system-ui, sans-serif; }
+    #wrap { max-width: 1040px; margin: 1.2em auto; padding: 0 1em; }
+    #game { box-shadow: 0 0 0 1px rgba(80,110,140,.4); width: max-content; }
+    h1 { font-size: 1.1em; } .meta { color: #788; font-size: .85em; line-height: 1.5; }
+    code { background: #141a1e; padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>WorldOS — GT2 Pillars/BG backdrop-isometric (M2)</h1>
+    <p class="meta">
+      Tier-2 renderer: a Pillars/Baldur's-Gate-style <strong>painted backdrop</strong> with depth-sorted
+      token actors, driven by the WorldOS surfaces. Reads <code>/atlas-surface</code> +
+      <code>/character-surface</code> + <code>/combat-surface</code> + <code>/events</code>; writes only
+      intents to <code>/move</code> — click the <strong>walkable floor</strong> to move
+      (→ <code>{kind:move_to_zone}</code>) or an <strong>exit</strong> (→ <code>{kind:travel}</code>).
+      The <strong>walkmask is renderer-owned presentation</strong> (the engine knows location adjacency,
+      not walkable pixels); destinations still resolve to engine zones/locations. Combat renders as a
+      <strong>pure replay</strong> of engine combat (paused/turn, no client dice). Backdrops + tokens are
+      <strong>procedural placeholders</strong> until the #447 painted-backdrop asset pipeline lands; real
+      art then swaps in via the render-profile scope keys with no scene change. Flat-lit MVP (normal-map
+      lighting is M5/Branch B). Standalone on bundled fixtures; add <code>?campaign=&lt;id&gt;</code>
+      (optional <code>?base=…</code>) for a live game.
+    </p>
+    <div id="game"></div>
+    <p class="meta">
+      Served at <code>/openworlds/render/backdrop.html</code> — self-contained sub-app, zero edits to the shared viewer.
+      See <code>README.md</code>.
+    </p>
+  </div>
+  <script src="./surface-client.js"></script>
+  <script src="./renderer-backdrop.js"></script>
+</body>
+</html>

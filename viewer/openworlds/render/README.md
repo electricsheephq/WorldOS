@@ -1,4 +1,4 @@
-# WorldOS render/ — Phaser thin-client renderers (M0 zone · M1 GT1 tilemap)
+# WorldOS render/ — Phaser thin-client renderers (M0 zone · M1 GT1 tilemap · M2 GT2 backdrop)
 
 The graphical renderers for WorldOS, served from this subtree (`/openworlds/render/`). Each is
 a *thin client* — it owns no game state; it reads the engine surfaces and writes only
@@ -7,10 +7,34 @@ constrained intents to `/move`.
 - **`index.html` + `renderer.js`** — M0 zone thin-client (the architecture proof).
 - **`tilemap.html` + `renderer-tilemap.js`** — **M1 GT1 SNES-pixel tilemap** (top-down
   16-bit exploration + zone-mode turn combat). Open `/openworlds/render/tilemap.html`.
+- **`backdrop.html` + `renderer-backdrop.js`** — **M2 GT2 Pillars/BG backdrop-isometric**
+  (painted full-screen backdrop + renderer-owned walkmask + depth-sorted token actors +
+  click-to-move + backdrop-mode combat replay). Open `/openworlds/render/backdrop.html`.
 
 > **Roadmap:** `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` · **Contract:**
 > `docs/roadmap/contracts/render-profile.md` + `render-profile.schema.json` +
-> `move-intents.md`. Implements M0 (#425–#433) + M1 GT1 (#434–#438).
+> `move-intents.md`. Implements M0 (#425–#433) + M1 GT1 (#434–#440) + M2 GT2 (#443–#448).
+
+## GT2 (M2) — what's built vs deferred
+- **Built (#443–#446):** `scene_kind:"backdrop"` render-profile (#443); a **renderer-owned
+  walkmask** floor polygon whose clicks resolve to engine **zones** via `{kind:"move_to_zone"}`
+  — the engine owns the destination, the renderer owns the path, no engine change (#444);
+  full-screen backdrop swap per location + **depth-sorted token actors** (feet-anchored, nearer
+  occludes farther) + **click-to-move**/click-to-travel (#445); **backdrop-mode combat** as a
+  pure replay of `/combat-surface` + `/events` — BG/PoE paused-turn presentation, engine decides
+  every outcome, derived positions never authoritative (#446). Flat-lit MVP (normal-map lighting
+  is M5/Branch B).
+- **#447 painted-backdrop asset pipeline — WIRED to reuse the existing imagegen + BG catalog**
+  (owner decision 2026-06-02, first-party/internal): location backdrops + actor tokens resolve
+  their render-profile `art.scope_key` through the existing `GET /image?scope=…` bridge and draw
+  the real art when present; a miss (404) falls back to the procedural painted-ish backdrop /
+  token. Lazy + cached per scope; redraws when art loads. The painted-backdrop **gen +
+  walkmask-authoring + vision-critic coherence gate** (and the UGC rights-clean asset model)
+  defer to M3.
+- **#448 QA gates:** the render gate (`qa/render_gate_probe.js`) now covers `backdrop.html`
+  (boots clean, canvas mounts, no React/VTT chrome leak); `test_render_backdrop.py` gates
+  serve/MIME/contract in CI. The backdrop/occlusion screenshot-critic + blind-playtester
+  traversal build on the M3 gated AI build-loop harness (same as M1 #441).
 
 ## GT1 (M1) — what's built vs deferred
 - **Built (#434–#438):** `scene_kind:"tilemap"` render-profile; a procedural top-down tilemap
