@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from qa import app_handoff_gate as gate
@@ -221,6 +222,120 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("export_app_evidence exited 17", payload["failure"]["failure_detail"])
         self.assertEqual(persisted, payload)
 
+    def test_evidence_manifest_blockers_include_handoff_gate_reasons(self):
+        payload = {
+            "evidence_gaps": [],
+            "handoff_gate": {
+                "ok": False,
+                "blocking_reasons": ["can_act not true", "no enabled actions"],
+            },
+        }
+
+        self.assertEqual(
+            gate.evidence_manifest_blockers(payload),
+            ["can_act not true", "no enabled actions"],
+        )
+
+    def test_run_web_scripted_fails_on_smoke_evidence_gaps(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            args = SimpleNamespace(run_id="fixture", web_beats=1, web_port=8899, timeout=1.0, art_root=None)
+            smoke_payload = {
+                "status": "passed",
+                "evidence_gaps": [{"source": "screenshot", "kind": "initial", "reason": "chrome_exit=None"}],
+            }
+            final_status = {"schema": "worldos.app-status.v1"}
+
+            def fake_read_json(path):
+                path = Path(path)
+                if path.name == "smoke.json":
+                    return smoke_payload
+                if path.name == "app-status.final.json":
+                    return final_status
+                return {}
+
+            with mock.patch.object(gate, "run_logged", return_value=0), mock.patch.object(
+                gate,
+                "read_json",
+                side_effect=fake_read_json,
+            ), mock.patch.object(
+                gate,
+                "validate_app_status",
+                return_value=("", ""),
+            ), mock.patch.object(
+                gate,
+                "export_evidence",
+                return_value=(out / "manifest.json", {"evidence_gaps": []}),
+            ):
+                result = gate.run_web_scripted(args, out, "abc1234")
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failure_bucket, "no_provider")
+        self.assertIn("smoke evidence gaps: 1", result.failure_detail)
+        self.assertEqual(result.evidence_gaps, smoke_payload["evidence_gaps"])
+
+    def test_native_provider_gate_preserves_drive_move_evidence_gaps(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            args = SimpleNamespace(
+                run_id="fixture",
+                world="baldurs-gate",
+                art_root=None,
+                timeout=1.0,
+                codex_timeout=1.0,
+            )
+            gap = {"source": "screenshot", "kind": "initial", "reason": "chrome_exit=None"}
+
+            def fake_read_json(path):
+                path = Path(path)
+                if path.name == "run.json":
+                    return {
+                        "part_a": {
+                            "result": "PASS",
+                            "kept_backend_alive": True,
+                            "first_turn_ready": True,
+                            "minted_port": 8767,
+                            "minted_run_dir": "play-fixture",
+                        }
+                    }
+                if path.name == "transition.json":
+                    return {}
+                return {}
+
+            with mock.patch.object(gate, "run_logged", return_value=0), mock.patch.object(
+                gate,
+                "copy_native_run",
+                return_value=None,
+            ), mock.patch.object(
+                gate,
+                "read_json",
+                side_effect=fake_read_json,
+            ), mock.patch.object(
+                gate,
+                "drive_moves",
+                return_value=(False, "no_provider", "required evidence capture has gaps", {"evidence_gaps": [gap]}),
+            ), mock.patch.object(
+                gate,
+                "export_evidence",
+                return_value=(out / "manifest.json", {"evidence_gaps": []}),
+            ), mock.patch.object(
+                gate,
+                "cleanup_run",
+                return_value=None,
+            ):
+                result = gate.run_native_provider_gate(
+                    args,
+                    out,
+                    provider="codex",
+                    beats=1,
+                    budget="3.00",
+                    expected_sha="abc1234",
+                )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failure_detail, "required evidence capture has gaps")
+        self.assertEqual(result.evidence_gaps, [gap])
+
     def test_hook_probe_summary_reports_exact_missing_controls(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "hook-probe.json"
@@ -242,6 +357,100 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("table:move-submit", detail)
         self.assertIn("settings:provider-status", detail)
         self.assertEqual(payload["schema"], "worldos.app-handoff-hooks.v1")
+
+    def test_drive_moves_tolerates_transient_app_status_timeout(self):
+        status_initial = {
+            "schema": "worldos.app-status.v1",
+            "build": {"sha": "abc1234"},
+            "viewer": {"port": 8899, "chat_lines": 1, "last_chat_role": "dm"},
+            "art": {"private_root_present": True},
+            "live": {
+                "can_act": True,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 6,
+            },
+            "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
+            "health": {"failure_bucket": "none"},
+        }
+        status_busy = {
+            **status_initial,
+            "viewer": {"port": 8899, "chat_lines": 2, "last_chat_role": "player"},
+            "live": {
+                "can_act": False,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 0,
+                "pending_player_turn": True,
+            },
+            "readiness": {
+                "status": "busy",
+                "ready_for_smoke": True,
+                "ready_for_play": False,
+                "pending_player_turn": True,
+                "failure_bucket": "none",
+            },
+            "health": {"failure_bucket": "none", "pending_player_turn": True},
+        }
+        status_after = {
+            **status_initial,
+            "viewer": {"port": 8899, "chat_lines": 3, "last_chat_role": "dm"},
+        }
+        surface = {"recentEvents": [{"kind": "narration", "text": "Opening."}]}
+
+        with tempfile.TemporaryDirectory() as td:
+            gate_dir = Path(td)
+            with mock.patch.object(
+                gate.smoke,
+                "wait_for_status",
+                side_effect=[status_initial, TimeoutError("busy status probe"), status_busy, status_after, status_after],
+            ), mock.patch.object(
+                gate.smoke,
+                "fetch_json",
+                return_value=(surface, 200),
+            ), mock.patch.object(
+                gate.smoke,
+                "html_text",
+                return_value="<main>WorldOS</main>",
+            ), mock.patch.object(
+                gate.smoke,
+                "capture_openworlds_screenshot",
+                return_value=None,
+            ), mock.patch.object(
+                gate.smoke,
+                "post_json",
+                return_value=({"ok": True}, 200),
+            ), mock.patch.object(
+                gate.smoke,
+                "copy_play_state",
+                return_value=None,
+            ), mock.patch.object(
+                gate,
+                "run_hook_probe",
+                return_value=(True, "", {"ok": True}),
+            ), mock.patch.object(
+                gate,
+                "provider_trace_summary",
+                return_value={"trace_exists": True, "failed_or_error_count": 0},
+            ), mock.patch.object(gate.time, "sleep", return_value=None):
+                ok, bucket, detail, details = gate.drive_moves(
+                    base_url="http://127.0.0.1:8899",
+                    gate_dir=gate_dir,
+                    run_id="fixture-run",
+                    provider="codex",
+                    beats=1,
+                    timeout=5,
+                    expected_sha="abc1234",
+                    expected_port=8899,
+                )
+
+            network = (gate_dir / "network.ndjson").read_text(encoding="utf-8")
+            beat_status = json.loads((gate_dir / "app-status.beat-1.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(ok, detail)
+        self.assertEqual(bucket, "")
+        self.assertEqual(detail, "")
+        self.assertIn("busy status probe", network)
+        self.assertEqual(beat_status["viewer"]["last_chat_role"], "dm")
+        self.assertEqual(details["provider_trace"]["trace_exists"], True)
 
 
 if __name__ == "__main__":

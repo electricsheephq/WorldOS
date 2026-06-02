@@ -80,6 +80,11 @@ function openWorldsPlayerChronicle(c) {
   return Boolean(c?.canResume || c?.current);
 }
 
+function openWorldsCampaignMatches(c, campaignRef) {
+  if (!campaignRef) return false;
+  return c?.id === campaignRef || c?.campaign_id === campaignRef;
+}
+
 const OPENWORLDS_VALID_SCREENS = new Set([
   "launcher", "roster", "table", "combat", "dialogue", "map", "character", "inventory",
   "forge", "relations", "journal", "bestiary", "acts", "merchant", "create",
@@ -245,7 +250,7 @@ function nextLogSeq() { __logSeq += 1; return __logSeq; }
 function useLiveSession(state) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
-    campaigns.find((c) => c.id === state?.activeCampaign) ||
+    campaigns.find((c) => openWorldsCampaignMatches(c, state?.activeCampaign)) ||
     campaigns[0] ||
     {};
   const campaignId = activeCampaign.campaign_id || state?.activeCampaign || activeCampaign.id || "";
@@ -714,11 +719,15 @@ function App() {
         const nextCampaigns = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
         setState((s) => {
           const requestedCampaign = requestedCampaignRef.current;
-          const requestedStillExists = requestedCampaign && nextCampaigns.some((c) => c.id === requestedCampaign);
+          const requestedEntry = requestedCampaign
+            ? nextCampaigns.find((c) => openWorldsCampaignMatches(c, requestedCampaign))
+            : null;
+          const requestedStillExists = Boolean(requestedEntry);
+          const requestedActiveId = requestedEntry?.id || "";
           const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);
-          const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);
+          const activeStillExists = playerCampaigns.some((c) => openWorldsCampaignMatches(c, s?.activeCampaign));
           const preferred =
-            (requestedStillExists ? requestedCampaign : "") ||
+            requestedActiveId ||
             playerCampaigns.find((c) => c.current)?.id ||
             playerCampaigns.find((c) => c.live && c.canResume)?.id ||
             playerCampaigns.find((c) => c.canResume)?.id ||
@@ -727,7 +736,7 @@ function App() {
           return {
             ...s,
             campaigns: nextCampaigns,
-            activeCampaign: requestedStillExists ? requestedCampaign : (activeStillExists ? s.activeCampaign : preferred),
+            activeCampaign: requestedActiveId || (activeStillExists ? s.activeCampaign : preferred),
             campaignCatalog: {
               loaded: true,
               total: payload?.total ?? nextCampaigns.length,
@@ -906,7 +915,7 @@ function App() {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const playerChronicles = campaigns.filter(openWorldsPlayerChronicle);
   const current =
-    playerChronicles.find((c) => c.id === state?.activeCampaign) ||
+    playerChronicles.find((c) => openWorldsCampaignMatches(c, state?.activeCampaign)) ||
     playerChronicles[0] ||
     { title: "Open Worlds", day: "" };
 
