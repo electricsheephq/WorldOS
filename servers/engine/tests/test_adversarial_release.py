@@ -215,3 +215,18 @@ def test_issue51_campaign_new_command_creates_one_campaign():
     text = (_ROOT / "commands" / "campaign-new.md").read_text(encoding="utf-8")
     assert "create_campaign` to get a campaign id, then" not in text  # the two-campaign instruction
     assert "start_adventure(adventure_id)" in text and "Do NOT call `create_campaign` first" in text
+
+
+def test_any_skill_class_resolves_to_concrete_skills():
+    # QA (optimizer crit, sweep_v7): a "choose any N skills" class (Bard's class_skills =
+    # {count:3, from:['any']}) must persist CONCRETE skill proficiencies, not the literal
+    # ['any'] placeholder — which matches no skill and rendered 0 proficiencies on the sheet,
+    # making a min-maxer bail. Creation now expands 'any' to the real skill pool.
+    cid = _campaign()
+    bard = server.create_character(cid, "Lute", kind="player", class_name="Bard",
+                                   level=1, apply_srd_defaults=True)["id"]
+    ch = next(c for c in server.get_state(cid)["party"] if c["id"] == bard)
+    skills = ch.get("skill_proficiencies") or []
+    assert skills, "Bard should have default skill proficiencies, not an empty sheet"
+    assert "any" not in skills, f"unresolved 'any' placeholder persisted: {skills}"
+    assert len(skills) == 3, f"Bard should get 3 concrete skills, got {skills}"

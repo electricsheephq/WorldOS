@@ -1091,7 +1091,16 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         # `skills` list to choose; this only fills an otherwise-empty list.
         if not ch.skill_proficiencies:
             sk = srd_tables.class_skills(cname)
-            ch.skill_proficiencies = list(sk.get("from", []))[: int(sk.get("count", 0))]
+            pool = [str(s).strip().lower() for s in sk.get("from", []) if str(s).strip()]
+            # A "choose any N skills" class (Bard, etc.) encodes its pool as the placeholder
+            # ["any"] — which is NOT a real skill. Persisting it literally renders 0 proficiencies
+            # on the sheet (QA: optimizer crit — a level-1 Bard showed no skills and bailed).
+            # Expand "any" to the full skill list so we store concrete proficiencies, keeping
+            # any explicitly-listed real skills first.
+            if "any" in pool:
+                explicit = [s for s in pool if s != "any" and s in SKILL_ABILITIES]
+                pool = explicit + [s for s in SKILL_ABILITIES if s not in explicit]
+            ch.skill_proficiencies = pool[: int(sk.get("count", 0))]
         _recompute_spellcasting(ch)
         _seed_starting_spells(ch, cname, level)
         _recompute_class_resources(ch)
