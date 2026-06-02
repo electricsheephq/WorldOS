@@ -964,19 +964,25 @@ def build_campaign_summary(
     }
 
 
-def _list_campaigns() -> list[dict]:
+def _list_campaigns(attached: str | None = None) -> list[dict]:
     """All projectable campaigns under the campaigns dir, newest-active first (#H3 switcher).
 
     One entry per campaign is a read-only save card with title, day, location, party, quest
     count, live/current flags, and last-played recency. Empty/unparseable snapshots are
     skipped — the SAME guard _pick_campaign uses, so a half-written/`{}` snapshot never
     shows as a pickable game. Sorted by recency descending. Pure reader: no writes, no
-    engine import."""
+    engine import.
+
+    `attached` names which campaign is the live/attached one (sets each card's `current`
+    flag). It defaults to the served handler's attached id; callers that have ALREADY resolved
+    it (the live-view recovery) pass it explicitly so the flag never depends on class-attribute
+    shadowing or a mid-request re-resolve."""
     cdir = _campaigns_dir()
     out: list[dict] = []
     if not cdir.is_dir():
         return out
-    attached = _Handler.campaign_id
+    if attached is None:
+        attached = _Handler.campaign_id
     now = time.time()
     for snap in cdir.glob("*/snapshot.json"):
         try:
@@ -6195,6 +6201,50 @@ class _Handler(BaseHTTPRequestHandler):
             return override
         return self._resolve_campaign()
 
+    def _live_play_view_campaign(self, query: dict) -> str:
+        """The campaign the LIVE-PLAY gates (/app-status, /session-surface) should project.
+
+        Same as `_view_campaign`, but with a NARROW self-healing step that fixes the
+        permanent action-lock wedge: the play surface gates every action on
+        `can_act = live AND viewed == attached`. The attached campaign is recency-resolved
+        and re-evaluated each request (the viewer launches UNPINNED for `scripts/play.sh` and
+        the native app), while the browser sends a STICKY `?campaign=` derived from its catalog
+        pick. If those drift — the catalog poll briefly drops `current`, the provider process
+        exits so the client's native auto-follow stops re-syncing, or a second save out-ranks
+        the live run on recency — the client keeps posting a STALE `viewed`, so `is_live_view`
+        latches False with no recovery and the table reads "live provider move sink is not
+        ready" / "viewing non-live campaign" forever (a release blocker).
+
+        Recovery rule (matches the move sink's own truth, so it can't misroute a write):
+        FOLLOW the attached campaign when the move sink is live AND we are in AUTO-FOLLOW
+        (unpinned) mode AND the attached campaign is a real, resumable PLAY-store campaign AND
+        the client's view is stale — empty, or pointing at a campaign that is NOT the current
+        live run. We do NOT snap when launched PINNED (an explicit director's view stays
+        gated), nor when the viewed campaign IS the live one (already correct), nor when there
+        is no resolvable live campaign (nothing to follow — keep the honest read-only state).
+        The POST /move cross-campaign refusal (engine = sole writer) is unchanged; this only
+        re-aligns the READ-model gate to the sink the writes already go to."""
+        attached = self._resolve_campaign()
+        if self.pinned or not attached or not _live_play():
+            # Pinned view, no live game, or no attached campaign → leave the switcher exactly
+            # as-is (a genuine read-only/non-live director's view MUST stay gated).
+            return self._view_campaign(query)
+        override = _safe_campaign_id((query.get("campaign") or [""])[0])
+        if override and override == attached:
+            return override  # already viewing the live run — nothing to heal
+        # The attached campaign is only the recovery target when it is the SINGLE current,
+        # resumable play-store campaign (so we never follow into a parallel/stale store). Pass
+        # the just-resolved `attached` so the `current` flag is correct regardless of class state.
+        live_current = [
+            c.get("id") for c in _list_campaigns(attached)
+            if isinstance(c, dict) and c.get("current") and c.get("live")
+        ]
+        if attached in live_current and (not override or override not in live_current):
+            # Client view is stale (empty, or a non-live save) while exactly the attached run
+            # is live → follow it so the action layer recovers the moment the sink is healthy.
+            return attached
+        return override or attached
+
     def _serve_simple_surface(self, qs: dict, builder) -> None:
         """Dispatch a snapshot-only read-model surface (journal/character/inventory/
         relations/parley). Mirrors the /atlas-surface handler exactly: a catalog ?source/
@@ -6441,7 +6491,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(_openworlds_config())
         elif route in ("/app-status", "/__worldos/app-status.json"):
             qs = parse_qs(parsed.query)
-            viewed = self._view_campaign(qs)
+            viewed = self._live_play_view_campaign(qs)
             self._json(_app_status_payload(
                 port=int(self.server.server_address[1]),
                 attached_campaign_id=self.campaign_id,
@@ -6465,7 +6515,7 @@ class _Handler(BaseHTTPRequestHandler):
                     recent_events=_session_event_tail_from_dir(campaign_dir, raw_snap),
                 ))
                 return
-            cid = self._view_campaign(qs)
+            cid = self._live_play_view_campaign(qs)
             if not cid:
                 self._json(build_session_surface({}, campaign_id="", live=live, is_live_view=False))
                 return
