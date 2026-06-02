@@ -238,14 +238,18 @@ def test_codex_dm_wrapper_prompts_are_self_contained_for_live_app_turns():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "DM_CONTRACT_RULE" in source
+    assert "DM_VOICE_RULE" in source
     assert "Self-contained DM contract" in source
     assert "Do not read skill files" in source
     assert "~/.codex skills" in source
+    assert "warm, fair, generous storyteller voice" in source
+    assert "never invent dice, rules outcomes, or campaign state" in source
     assert "Use clawdnd-engine as the sole writer of campaign state" in source
     assert "Final output must be 2nd-person player-facing narration" in source
     assert "skills/dungeon-master/SKILL.md" not in source
     assert "/Users/lume/.codex/skills/dungeon-master" not in source
     assert source.count("$DM_CONTRACT_RULE") == 3
+    assert source.count("$DM_VOICE_RULE") == 3
 
 
 def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
