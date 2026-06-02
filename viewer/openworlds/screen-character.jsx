@@ -201,6 +201,13 @@ function ScreenCharacter({ onNavigate, state, setState }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
               <StatLine k="AC" v={hero.stats.ac} />
               <StatLine k="Speed" v={`${hero.stats.speed} ft`} />
+              {/* #depth: read-model now emits passivePerception + hitDice/hitDiceRemaining (server.py) */}
+              {hero.stats.passivePerception != null ? (
+                <StatLine k="Passive Perc" v={hero.stats.passivePerception} />
+              ) : null}
+              {hero.stats.hitDice ? (
+                <StatLine k="Hit Dice" v={`${hero.stats.hitDiceRemaining}/${hero.stats.hitDice}`} />
+              ) : null}
             </div>
 
             <Divider />

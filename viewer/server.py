@@ -3421,6 +3421,12 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "ranged": prof + dex_mod,
         "initiative": int(init_bonus) if init_bonus is not None else dex_mod,
         "speed": int(speed) if speed is not None else 30,
+        # #depth: surface Hit Dice (short-rest attrition economy) + Passive Perception — both
+        # derivable from data already on the character model (hit_dice/hit_dice_remaining;
+        # perception skill bonus) but never previously emitted. Rendered as StatLines.
+        "hitDice": str(ch.get("hit_dice") or ""),
+        "hitDiceRemaining": int(_num(ch.get("hit_dice_remaining")) or 0),
+        "passivePerception": 10 + _skill_bonus_from_sheet(ch, "perception"),
     })
 
     # Skills: project the SRD skill list with sheet-correct bonuses (proficient first).

@@ -158,6 +158,18 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertEqual(cast["spellAttackBonus"], 5)
         self.assertEqual(cast["abilityShort"], "int")
 
+    def test_surface_exposes_hit_dice_and_passive_perception(self):
+        # #depth regression guard: the read-model must emit hitDice/hitDiceRemaining +
+        # passivePerception (derivable from the character model) so the Defense block can render
+        # them — the exact "engine has it, viewer silently drops it" class the depth audit found.
+        self._write("camp_depth", _SNAPSHOT)
+        status, surface = self._get_json("/character-surface?campaign=camp_depth")
+        self.assertEqual(status, 200)
+        stats = self._party(surface)["elara"]["stats"]
+        self.assertIn("hitDice", stats)
+        self.assertIn("hitDiceRemaining", stats)
+        self.assertIsInstance(stats["passivePerception"], int)
+
     def test_surface_omits_spellcasting_for_non_caster(self):
         self._write("camp_depth", _SNAPSHOT)
         _status, surface = self._get_json("/character-surface?campaign=camp_depth")
