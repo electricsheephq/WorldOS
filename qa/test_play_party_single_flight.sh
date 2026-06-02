@@ -57,5 +57,29 @@ rm -rf "$LOCK"
 CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$TMP"; rc=$?
 chk "acquire succeeds again after a clean release"   '[ "$rc" = 0 ]'
 
+# (5) Non-contention mkdir failures fail FAST — must never spin forever (CodeRabbit on #564).
+#  (a) play-state cannot be created (ROOT is a regular file) → up-front guard rejects, no hang.
+notdir="$TMP/iam-a-file"; : > "$notdir"
+CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$notdir" 2>"$TMP/err5a"; rc=$?
+chk "uncreatable play-state → acquire fails (rc!=0)"  '[ "$rc" != 0 ]'
+chk "...with a clear 'could not create' message"      'grep -q "could not create" "$TMP/err5a"'
+#  (b) play-state exists but the lock dir is uncreatable (read-only) → in-loop guard rejects fast
+#      instead of spinning. Run in the background with a watchdog so a regression FAILS, not hangs.
+#      Needs non-root (root bypasses directory permissions), so skip there.
+if [ "$(id -u)" != 0 ]; then
+  ro="$TMP/ro"; mkdir -p "$ro/play-state"; chmod 555 "$ro/play-state"
+  ( CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$ro" >/dev/null 2>>"$TMP/err5b"; echo "$?" > "$TMP/rc5b" ) &
+  bpid=$!
+  for _ in $(seq 1 50); do kill -0 "$bpid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$bpid" 2>/dev/null; then
+    kill "$bpid" 2>/dev/null; echo "FAIL: read-only lock dir made acquire SPIN (did not return)"; fail=1
+  else
+    chk "read-only lock dir → acquire fails fast (rc!=0)" '[ "$(cat "$TMP/rc5b" 2>/dev/null)" != 0 ]'
+  fi
+  chmod 755 "$ro/play-state" 2>/dev/null
+else
+  echo "PASS: read-only-dir spin guard (skipped — running as root bypasses dir perms)"
+fi
+
 [ "$fail" = 0 ] && echo "ALL ASSERTIONS PASSED" || echo "SOME ASSERTIONS FAILED"
 exit "$fail"

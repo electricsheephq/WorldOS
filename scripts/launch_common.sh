@@ -116,11 +116,20 @@ clawdnd_acquire_launch_lock() {
   local root="$1" lock="$1/play-state/.launch.lock" waited=0 held_pid
   local wait="${CLAWDND_LAUNCH_LOCK_WAIT:-5}"
   case "$wait" in ''|*[!0-9]*) wait=5 ;; esac   # tolerate a bad value → default
-  mkdir -p "$root/play-state" 2>/dev/null
+  if ! mkdir -p "$root/play-state" 2>/dev/null; then
+    echo "[play-party] could not create $root/play-state for the launch lock." >&2
+    return 1
+  fi
   while :; do
     if mkdir "$lock" 2>/dev/null; then
       printf '%s\n' "$$" > "$lock/pid"          # won the atomic create → we own it
       return 0
+    fi
+    if [ ! -d "$lock" ]; then
+      # mkdir failed but the lock dir does NOT exist → this is NOT contention (read-only checkout,
+      # missing parent, disk full). Fail fast with a clear message instead of spinning forever.
+      echo "[play-party] could not create the launch lock at $lock — check permissions/disk space." >&2
+      return 1
     fi
     held_pid="$(cat "$lock/pid" 2>/dev/null || true)"
     if [ -n "$held_pid" ] && kill -0 "$held_pid" 2>/dev/null; then
