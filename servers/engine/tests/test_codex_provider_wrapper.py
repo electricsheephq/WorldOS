@@ -293,7 +293,55 @@ def test_codex_dm_wrapper_move_prompt_does_not_restate_opening_persist_ban():
     assert "do not call persist_beat during the opening turn" not in move_prompt
 
 
-def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
+def test_codex_dm_wrapper_run_pins_supported_default_model_with_fake_codex(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      last="$2"
+      shift 2
+      ;;
+    --model)
+      [ "$2" = "gpt-5.5" ] || {
+        echo "unexpected model: $2" >&2
+        exit 7
+      }
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat >/dev/null
+printf 'Opening narration from fake Codex.' > "$last"
+printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="fake-codex-run",
+        CLAWDND_PLAY_PORT="8797",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+
+    result = _run_dm([], env, timeout=20)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    chat = tmp_path / "fake-codex-run" / "chat.jsonl"
+    assert "Opening narration from fake Codex." in chat.read_text(encoding="utf-8")
+
+
+def test_codex_dm_wrapper_can_delegate_to_cli_default_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake_codex = bin_dir / "codex"
@@ -326,15 +374,16 @@ printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="fake-codex-run",
-        CLAWDND_PLAY_PORT="8797",
+        CLAWDND_RUN_ID="fake-codex-cli-default",
+        CLAWDND_PLAY_PORT="8799",
+        WORLDOS_CODEX_MODEL="auto",
         CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
 
     result = _run_dm([], env, timeout=20)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    chat = tmp_path / "fake-codex-run" / "chat.jsonl"
+    chat = tmp_path / "fake-codex-cli-default" / "chat.jsonl"
     assert "Opening narration from fake Codex." in chat.read_text(encoding="utf-8")
 
 

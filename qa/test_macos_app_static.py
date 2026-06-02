@@ -89,14 +89,15 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("player_agent", harness)
         self.assertIn("provider", harness)
 
-    def test_codex_provider_wrappers_omit_model_arg_when_env_unset(self):
+    def test_codex_provider_wrappers_pin_supported_default_model(self):
         dm = self.read("scripts/play_codex_dm.sh")
         actor = self.read("scripts/play_codex_actor.sh")
 
         for script in (dm, actor):
             self.assertIn("WORLDOS_CODEX_MODEL", script)
-            self.assertIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"', script)
-            self.assertNotIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"', script)
+            self.assertIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"', script)
+            self.assertIn("auto|default|cli-default", script)
+            self.assertNotIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"', script)
             self.assertIn('MODEL_ARGS=(--model "$CODEX_MODEL")', script)
             self.assertIn("--ignore-user-config", script)
 

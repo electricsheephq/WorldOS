@@ -530,8 +530,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('style={{ width: 86, textAlign: "center" }}', launcher)
         self.assertIn('w={86} h={104}', launcher)
         self.assertIn("function openWorldsPlayerChronicle(c)", app)
+        self.assertIn("function openWorldsCampaignMatches(c, campaignRef)", app)
         self.assertIn("const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);", app)
-        self.assertIn("const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);", app)
+        self.assertIn("const activeStillExists = playerCampaigns.some((c) => openWorldsCampaignMatches(c, s?.activeCampaign));", app)
         self.assertIn("playerCampaigns.find((c) => c.current)?.id", app)
         self.assertIn("playerCampaigns.find((c) => c.live && c.canResume)?.id", app)
         self.assertIn("playerCampaigns.find((c) => c.canResume)?.id", app)
@@ -864,8 +865,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("new URLSearchParams(window.location.search || \"\")", source)
         self.assertIn('params.get("campaign")', source)
         self.assertIn("requestedCampaignRef", source)
+        self.assertIn("openWorldsCampaignMatches(c, requestedCampaign)", source)
+        self.assertIn("requestedActiveId", source)
         self.assertIn("requestedStillExists", source)
-        self.assertLess(source.index("requestedStillExists ? requestedCampaign"), source.index("playerCampaigns.find((c) => c.current)?.id"))
+        self.assertLess(source.index("requestedActiveId ||"), source.index("playerCampaigns.find((c) => c.current)?.id"))
+        self.assertIn("c?.id === campaignRef || c?.campaign_id === campaignRef", source)
         self.assertIn("requestedCampaignRef.current = \"\"", source)
 
     def test_openworlds_camp_rest_gives_feedback_when_dm_is_busy(self):

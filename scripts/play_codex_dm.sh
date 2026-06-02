@@ -34,8 +34,8 @@ Required environment:
 Optional:
   CLAWDND_PLAY_COMPANIONS
   CLAWDND_PLAY_HERO
-  WORLDOS_CODEX_MODEL
-  CLAWDND_CODEX_MODEL
+  WORLDOS_CODEX_MODEL (default: gpt-5.5; set to auto/default/cli-default to let Codex CLI choose)
+  CLAWDND_CODEX_MODEL (legacy fallback)
   CLAWDND_STATE_ROOT
 EOF
     exit 0
@@ -239,13 +239,16 @@ if [ "$MODE" != "run" ]; then
 fi
 
 # codex exec intentionally ignores user config so app/provider proofs do not
-# inherit local prompts or sandbox policy. Let Codex CLI choose its account
-# default unless the operator explicitly pins a provider model.
-CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"
+# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported
+# provider model unless the operator explicitly selects another one. The Codex
+# CLI account default can drift to a model this auth surface rejects, so app
+# playability should not depend on that ambient default.
+CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
 MODEL_ARGS=()
-if [ -n "${CODEX_MODEL//[[:space:]]/}" ]; then
-  MODEL_ARGS=(--model "$CODEX_MODEL")
-fi
+case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in
+  ""|auto|default|cli-default) ;;
+  *) MODEL_ARGS=(--model "$CODEX_MODEL") ;;
+esac
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"
 export CLAWDND_RULES_OFFLINE=1
