@@ -73,6 +73,18 @@ struct ClaudeProvider: ProviderAdapter {
             environment["CLAWDND_PLAY_HERO"] = trimmedHero
         }
 
+        // Tell the move-sink viewer which provider is driving the run. The viewer's
+        // /app-status readiness gates ALL play controls on a non-empty PROVIDER that is in
+        // {codex, claude, openclaw, scripted} (viewer/server.py: provider_ready + ready_for_play);
+        // without it, /session-surface reports can_act:true but /app-status reports
+        // no_provider, so every action button stays locked ("live provider move sink is not
+        // ready"). The Codex/OpenClaw/scripted lanes set this via providerEnvironment(); the
+        // Claude lane builds its own environment, so set it directly here. We set both the
+        // canonical WORLDOS_ name and the legacy CLAWDND_ name the viewer's env_var() falls
+        // back to, mirroring how the other lanes (and budgetEnvironment) carry both prefixes.
+        environment["WORLDOS_PROVIDER"] = kind.rawValue
+        environment["CLAWDND_PROVIDER"] = kind.rawValue
+
         return ProviderLaunchRequest(
             name: "Claude game",
             executable: "/usr/bin/env",

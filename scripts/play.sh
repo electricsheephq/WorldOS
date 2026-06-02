@@ -78,6 +78,13 @@ CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-200}"
 # Recent player-facing narration tail the lean re-ground asks scene_context for (generous by
 # default so continuity survives the lean boundary — named NPCs, prior choices, the scene).
 CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+# Which provider drives this run. The viewer's /app-status readiness gates ALL play controls
+# on a non-empty PROVIDER in {codex,claude,openclaw,scripted} (viewer/server.py: provider_ready
+# + ready_for_play). play.sh IS the Claude play path, so default to "claude" and export it into
+# the viewer launch below; without it /app-status reports no_provider and every action button
+# stays locked even though /session-surface reports can_act:true. Resolves through the same
+# WORLDOS_/CLAWDND_ fallback as everything else, so an explicit env override still wins.
+PROVIDER="$(worldos_env PROVIDER claude)"
 
 # Product play state lives under the repo's play-state/ (git-ignored), one dir per game,
 # so saves, the chat log, and the move sink stay together and out of the QA sandbox.
@@ -301,6 +308,7 @@ viewer_supervisor() {
     WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
     WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
     WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
+    WORLDOS_PROVIDER="$PROVIDER" CLAWDND_PROVIDER="$PROVIDER" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!; echo "$vp" > "$VPID_FILE"
     wait "$vp" 2>/dev/null   # blocks until the viewer exits (and reaps it)
