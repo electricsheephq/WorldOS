@@ -4106,6 +4106,12 @@ def _relations_factions(snapshot: dict) -> list[dict]:
             "tags": tags,
             "threshold": {"hostile": 25, "neutral": 50, "friendly": 75},
             "standing": _standing_label(rep),
+            # Faction-growth membership (engine Faction.rank/joined/questline_arc_id) — the
+            # Skyrim/PFK join->grow->lead loop the read-model was dropping. rank 0 == not a
+            # ranked member; joined == the join_faction latch; questlineArcId names the arc.
+            "rank": int(_num(row.get("rank")) or 0),
+            "joined": bool(row.get("joined")),
+            "questlineArcId": _text(row.get("questline_arc_id")),
             "lastContact": "",
             "body": _text(row.get("description"), "Little is recorded of this faction's dealings with the party."),
             "events": [],
