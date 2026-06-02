@@ -127,6 +127,11 @@ function ScreenBestiary({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("creatures");
   const [selected, setSelected] = React.useState(null);
   const [filter, setFilter] = React.useState("");
+  // BE-depth (optimizer #1): "Browse all" reference mode. The intel codex (#263) is
+  // fog-of-war until the party SLAYS creatures, so in real play it reads "zero creature
+  // names." This toggles ?reference=1 → the public SRD preview for every creature (name +
+  // CR + the preview stat line), making the codex useful from turn one. Off = earned-intel.
+  const [browseAll, setBrowseAll] = React.useState(false);
   // Live codex from /bestiary-surface; null until the first successful fetch.
   const [liveCreatures, setLiveCreatures] = React.useState(null);
   // World/region label for the codex eyebrow. Data-driven when the surface carries a label
@@ -142,6 +147,9 @@ function ScreenBestiary({ onNavigate, state, setState }) {
     try {
       const params = new URLSearchParams(surfaceQuery.replace(/^\?/, ""));
       if (q) params.set("q", q); else params.delete("q");
+      // Browse-all: bypass earned intel (?reference=1) + widen the page so the SRD browse
+      // returns a useful spread, not just the first 20.
+      if (browseAll) { params.set("reference", "1"); params.set("limit", "50"); }
       const qs = params.toString();
       const response = await fetch("/bestiary-surface" + (qs ? "?" + qs : ""), { cache: "no-store" });
       if (!response.ok) throw new Error(`bestiary surface ${response.status}`);
@@ -157,7 +165,7 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       if (isCancelled()) return;
       /* keep the last good surface; the empty-state shows until the first success */
     }
-  }, [surfaceQuery]);
+  }, [surfaceQuery, browseAll]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -200,6 +208,17 @@ function ScreenBestiary({ onNavigate, state, setState }) {
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div className="eyebrow" style={{ color: "var(--crimson)" }}>Encyclopaedia of</div>
         <h2 className="h1" style={{ fontSize: 22 }}>{worldLabel || "the Sword Coast"}</h2>
+        {/* BE-depth: toggle the fog-of-war intel codex vs the full public SRD reference browse,
+            so the codex isn't useless before the party has slain anything (optimizer #1). */}
+        <button
+          onClick={() => setBrowseAll((v) => !v)}
+          className="btn ghost sm"
+          aria-pressed={browseAll}
+          style={{ marginTop: 6, fontSize: 10, alignSelf: "flex-start" }}
+          title={browseAll ? "Showing every creature (public SRD reference)" : "Showing only creatures your party has encountered — click to browse all"}
+        >
+          {browseAll ? "✓ Browse all" : "Browse all"}
+        </button>
         <Divider />
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>

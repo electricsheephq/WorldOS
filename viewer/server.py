@@ -730,7 +730,7 @@ def build_options_response(campaign_id: Optional[str], character_id: Optional[st
     }
 
 
-def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "") -> dict:
+def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "", reference: bool = False) -> dict:
     """GET /bestiary-surface read model.
 
     Bridges to the engine-owned player-safe bestiary projection. It exposes no write
@@ -742,6 +742,12 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
     no snapshot / no recorded intel) the surface stays the honest global SRD browse (tier-less
     preview), so an empty/new game is never a stat dump. The engine stays the projection
     authority and the sole writer; this only reads the snapshot and passes a dict in.
+
+    When ``reference`` is set, the campaign intel is BYPASSED and the surface returns the global
+    SRD browse (every match → names + tier-less preview stats). This is the codex "Browse all"
+    reference mode: in real play the intel codex is perpetually fog-of-war (the party rarely
+    slays enough to reveal much), so a player needs a way to read public monster facts (identity,
+    CR, the preview stat line) without it being gated on kills. Still strictly read-only.
     """
     engine = _load_engine_server()
     if engine is None:
@@ -752,7 +758,7 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
         }
     intel: Optional[dict] = None
     safe = _safe_campaign_id(campaign_id) if campaign_id else ""
-    if safe:
+    if safe and not reference:
         snap = _read_snapshot(safe)
         raw = snap.get("bestiary_intel") if isinstance(snap, dict) else None
         if isinstance(raw, dict):
@@ -6654,7 +6660,11 @@ class _Handler(BaseHTTPRequestHandler):
                 limit = int(raw_limit)
             except (TypeError, ValueError):
                 limit = 20
-            self._json(build_bestiary_response(query, limit, cid))
+            # ?reference=1 -> "Browse all": bypass campaign intel and return the global SRD
+            # preview so the codex is useful before the party has slain anything (the #263
+            # intel codex is perpetually fog-of-war in real play). Truthy: 1/true/yes/on.
+            reference = (qs.get("reference") or [""])[0].strip().lower() in ("1", "true", "yes", "on")
+            self._json(build_bestiary_response(query, limit, cid, reference=reference))
         elif route == "/roster-surface":
             # Read-only canon-NPC PICKER projection (the "reverse character creator"): the
             # PLAYABLE roster (origins excluded by the record `playable` flag), filtered by

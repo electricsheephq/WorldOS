@@ -128,6 +128,23 @@ class BestiarySurfaceTests(unittest.TestCase):
             self.assertNotIn("name", item)   # the real name is withheld (#263)
             self.assertIn("id_hint", item)   # only an opaque render key rides along
 
+    def test_reference_mode_browses_all_bypassing_intel(self):
+        # BE-depth (optimizer #1): ?reference=1 must BYPASS earned intel and return the public
+        # SRD browse — NAMED creatures with preview stats — even for a campaign that has slain
+        # nothing. Without this the codex is perpetually fog-of-war ("zero creature names").
+        self._write("camp_ref", {"id": "camp_ref", "bestiary_intel": {"wolf": 1}})
+        # The same campaign+query returns redacted rumour rows WITHOUT reference:
+        _s0, gated = self._get_json("/bestiary-surface?campaign=camp_ref&q=goblin")
+        self.assertTrue(gated.get("items"))
+        self.assertTrue(all(i.get("unknown") for i in gated["items"]))  # fog-of-war
+        # WITH reference=1 the goblins come back NAMED, not redacted.
+        status, ref = self._get_json("/bestiary-surface?campaign=camp_ref&q=goblin&reference=1")
+        self.assertEqual(status, 200)
+        items = ref.get("items", [])
+        self.assertTrue(items)
+        self.assertTrue(any(i.get("name") for i in items))       # real names present
+        self.assertFalse(any(i.get("unknown") for i in items))   # nothing redacted
+
     def test_tier0_rumour_rows_carry_no_creature_name(self):
         # #263 redaction hygiene: the whole point of a rumour row is progressive reveal, so the
         # real creature name must never ship on a tier-0 row — a player reading the network tab
