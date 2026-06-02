@@ -677,6 +677,22 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
               {selected.current ? "Current location" : (travel?.minutes ? `${travel.minutes} minutes away` : "Known location")}
             </div>
 
+            {/* Route readout (BG3/PFK "do I dare take this road"): the engine ships
+                danger/difficulty/route_kind/tags per travel edge; the sidebar was rendering
+                only minutes. Pure presentation of data already on the travel object. */}
+            {!selected.current && travel && (typeof travel.danger === "number" || travel.route_kind || travel.difficulty) && (
+              <div className="tag-row" style={{ marginTop: 8 }}>
+                {travel.route_kind && <Pill>{String(travel.route_kind).replace(/_/g, " ")}</Pill>}
+                {travel.difficulty && <Pill tone={/hard|treacher|deadly/i.test(String(travel.difficulty)) ? "crimson" : ""}>{travel.difficulty}</Pill>}
+                {typeof travel.danger === "number" && (
+                  <Pill tone={travel.danger >= 6 ? "crimson" : travel.danger >= 3 ? "" : "emerald"}>
+                    {travel.danger >= 6 ? "⚠ " : ""}Danger {travel.danger}/10
+                  </Pill>
+                )}
+                {(travel.tags || []).filter((t) => t !== "danger").slice(0, 3).map((t) => <Pill key={t}>{t}</Pill>)}
+              </div>
+            )}
+
             <Divider />
             <Img scope={selected.id ? "location:" + selected.id : ""} label={selected.name} w="100%" h={118} framed />
             <p className="body dropcap" style={{ marginTop: 12, fontSize: 15 }}>
