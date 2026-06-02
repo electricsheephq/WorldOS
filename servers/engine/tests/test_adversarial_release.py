@@ -225,7 +225,7 @@ def test_any_skill_class_resolves_to_concrete_skills():
     cid = _campaign()
     bard = server.create_character(cid, "Lute", kind="player", class_name="Bard",
                                    level=1, apply_srd_defaults=True)["id"]
-    ch = next(c for c in server.get_state(cid)["party"] if c["id"] == bard)
+    ch = server.get_character(cid, bard)  # FULL sheet — get_state party is only a vitals summary
     skills = ch.get("skill_proficiencies") or []
     assert skills, "Bard should have default skill proficiencies, not an empty sheet"
     assert "any" not in skills, f"unresolved 'any' placeholder persisted: {skills}"
