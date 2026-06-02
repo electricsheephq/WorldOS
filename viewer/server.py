@@ -6219,6 +6219,86 @@ class _Handler(BaseHTTPRequestHandler):
             is_live_view=live and cid == self.campaign_id,
         ))
 
+    def _build_render_surfaces(self, qs: dict) -> dict:
+        """GRAPHICS #455 — build the {atlas, combat, character} bundle a graphical client needs,
+        using the EXACT same builders + campaign-resolution the GET routes use (catalog ?source/
+        ?run ref wins, else ?campaign view, else attached campaign; empty snapshot -> graceful
+        empty surfaces). This guarantees the SSE payloads are byte-identical to the polled ones.
+        Pure reader; never writes."""
+        live = _live_play()
+        catalog_ref = _session_surface_catalog_ref(qs)
+        if catalog_ref is not None:
+            cid, raw_snap, campaign_dir, root_is_current = catalog_ref
+            is_live = bool(live and root_is_current and cid == self.campaign_id)
+            recent = _session_event_tail_from_dir(campaign_dir, raw_snap)
+        else:
+            cid = self._view_campaign(qs)
+            raw_snap = _read_snapshot(cid) if cid else {}
+            if not isinstance(raw_snap, dict):
+                raw_snap = {}
+            is_live = bool(live and cid and cid == self.campaign_id)
+            recent = _session_event_tail(cid) if cid else None
+        cid = cid or ""
+        combat_kwargs = {"recent_events": recent} if recent is not None else {}
+        return {
+            "type": "surfaces",
+            "campaign_id": cid,
+            "atlas": build_atlas_surface(raw_snap, campaign_id=cid, live=live, is_live_view=is_live),
+            "combat": build_combat_surface(raw_snap, campaign_id=cid, live=live,
+                                           is_live_view=is_live, **combat_kwargs),
+            "character": build_character_surface(raw_snap, campaign_id=cid, live=live,
+                                                 is_live_view=is_live),
+        }
+
+    def _serve_surface_stream(self, qs: dict) -> None:
+        """GRAPHICS #455 — Server-Sent-Events stream of the render surfaces. Emits a `surfaces`
+        event whenever the bundle changes (+ a heartbeat comment between), so a client gets push
+        latency instead of a 3s poll. BOUNDED so it never hangs a worker or test: `?once=1`
+        sends one event and closes; `?max_seconds=N` caps the lifetime (default 30, hard-capped
+        300); the loop also exits on client disconnect. Additive — the polled GET surfaces are
+        unchanged and remain the canonical fallback."""
+        once = (qs.get("once") or ["0"])[0] in ("1", "true", "yes")
+        try:
+            max_seconds = float((qs.get("max_seconds") or ["30"])[0])
+        except (TypeError, ValueError):
+            max_seconds = 30.0
+        max_seconds = max(1.0, min(max_seconds, 300.0))
+        try:
+            interval = float((qs.get("interval") or ["1"])[0])
+        except (TypeError, ValueError):
+            interval = 1.0
+        interval = max(0.25, min(interval, 10.0))
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")  # don't let a proxy buffer the stream
+        self.end_headers()
+
+        deadline = time.monotonic() + max_seconds
+        last_sig: str | None = None
+        try:
+            # tell the client to reconnect ~1s after we cap/close the stream (low combat latency).
+            self.wfile.write(b"retry: 1000\n\n")
+            self.wfile.flush()
+            while True:
+                bundle = self._build_render_surfaces(qs)
+                data = json.dumps(bundle)
+                sig = str(hash(data))
+                if sig != last_sig:
+                    self.wfile.write(f"event: surfaces\ndata: {data}\n\n".encode("utf-8"))
+                    last_sig = sig
+                else:
+                    self.wfile.write(b": heartbeat\n\n")
+                self.wfile.flush()
+                if once or time.monotonic() >= deadline:
+                    break
+                time.sleep(interval)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            # client disconnected — normal SSE teardown, not an error.
+            return
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -6446,6 +6526,13 @@ class _Handler(BaseHTTPRequestHandler):
                 live=live,
                 is_live_view=live and cid == self.campaign_id,
             ))
+        elif route == "/surface-stream":
+            # GRAPHICS #455 — SSE push transport. An ADDITIVE Server-Sent-Events mirror of the
+            # render surfaces (atlas + combat + character) behind IDENTICAL payload shapes, so a
+            # graphical client can react to engine changes without 3s polling. Polling stays the
+            # canonical fallback (the GET surfaces are untouched); this only ADDS a channel. The
+            # engine remains sole writer — this reader pushes the same build_*_surface output.
+            self._serve_surface_stream(parse_qs(parsed.query))
         elif route == "/journal-surface":
             # The quest journal read model: tracked quests + unresolved hooks (as rumors)
             # + the Campaign Director's top structural debts (#72) as a GM advisory.
