@@ -254,7 +254,11 @@ function useLiveSession(state) {
 
   const [chatBeats, setChatBeats] = React.useState([]);
   const [log, setLog] = React.useState([]);           // local optimistic player echoes
-  const [pending, setPending] = React.useState(null);  // { text, since, stuck? } | null
+  const [pending, setPending] = React.useState(null);  // { text, since, stuck?, firstBeat?, streaming? } | null
+  // `streaming` (set in notePendingProgress) means live /events prose has begun arriving for THIS
+  // in-flight turn — the narrating affordance uses it to confirm the scene is being written above,
+  // instead of showing the generic "weaving the next beat" wait. armPending starts a fresh pending
+  // object without it, so each new turn re-derives `streaming` from its own /events arrivals.
   const chatCursor = React.useRef(0);
   const eventsCursor = React.useRef(0);                // #393: per-file cursor for the live /events tail
   const dmBeatCountRef = React.useRef(0);
@@ -404,8 +408,14 @@ function useLiveSession(state) {
     recoveryTimer.current = window.setTimeout(() => {
       setPendingState((q) => (q ? { ...q, stuck: true } : q));
     }, recoveryMs);
-    // Clear any prior 'stuck' flag — fresh prose just arrived, so the turn is plainly not stuck.
-    if (p.stuck) setPendingState((q) => (q ? { ...q, stuck: false } : q));
+    // #G3-UX: fresh prose just streamed via /events for THIS in-flight turn → mark the pending turn
+    // as `streaming`. The narrating affordance reads this to flip its copy from the generic "weaving
+    // the next beat" wait to "the scene is arriving above" — so the spinner is no longer disconnected
+    // from the live narration tail filling in right above it (the player WATCHES the beat being
+    // written instead of staring at a static spinner). Clear any prior 'stuck' flag in the same
+    // update — fresh prose just arrived, so the turn is plainly not stuck. Folding both into one
+    // updater keeps `streaming`/`stuck` mutually consistent and avoids a second state churn.
+    setPendingState((q) => (q ? (q.streaming && !q.stuck ? q : { ...q, streaming: true, stuck: false }) : q));
   }, [clearRecoveryTimer, setPendingState]);
 
   // #399: idempotent player echo for STUCK retries only. The #344 'Try again' recovery re-POSTs

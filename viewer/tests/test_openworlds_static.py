@@ -665,6 +665,50 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # The action bar is explicitly anchored (never pushed out by a growing chronicle).
         self.assertIn('flex: "0 0 auto"', source)
 
+    def test_openworlds_narrating_beat_reflects_live_stream_and_offers_nav(self):
+        # #G3-UX: the ~120–200s/beat wait was a give-up because the play-screen spinner was a DEAD
+        # static line ("Weaving the next beat…") with no connection to the live /events narration
+        # that #393 already streams into the chronicle above it, and nothing told the player that
+        # read-only screens stay open during compose. Two LOW-RISK fixes, asserted statically here:
+        #
+        # FIX 1 — the spinner is WIRED to the in-flight /events tail. The pending turn carries a
+        # `streaming` flag (set in app.jsx's notePendingProgress the moment live prose lands), passed
+        # into DmNarratingBeat, which flips its copy to confirm the scene is arriving ABOVE — so the
+        # player watches the beat being written instead of a frozen spinner.
+        #
+        # FIX 2 — a visible nav affordance near the narrating beat invites the player to the
+        # read-only character sheet / map / journal (all un-gated during compose) via real
+        # onNavigate calls, so the long wait no longer reads as "frozen, can't do anything".
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+
+        # The pending beat passes the live-stream + nav wiring into DmNarratingBeat.
+        self.assertIn("streaming={Boolean(pending.streaming)}", source)
+        self.assertIn("onNavigate={onNavigate}", source)
+        # DmNarratingBeat accepts the new props.
+        self.assertIn("function DmNarratingBeat({ since, firstBeat, streaming, onNavigate })", source)
+
+        # FIX 1: the later-beat copy is streaming-aware — when prose is arriving it confirms the
+        # scene is being written above, instead of the generic anticipatory "weaving" wait. Both
+        # the streaming and the not-yet-streaming strings must exist (the flip is conditional on
+        # `streaming`), so the spinner is demonstrably connected to the /events tail it sits below.
+        self.assertIn("The scene is unfolding above", source)
+        self.assertIn("appearing above as it's composed", source)
+        # The original anticipatory wait is still the copy BEFORE prose starts arriving.
+        self.assertIn("Weaving the next beat — this can take a minute or two.", source)
+
+        # FIX 2: a testable nav affordance with real onNavigate calls to read-only surfaces.
+        self.assertIn('data-worldos-testid="narrating-nav-affordance"', source)
+        self.assertIn("showNavAffordance", source)
+        self.assertIn('onNavigate("character")', source)
+        self.assertIn('onNavigate("map")', source)
+        self.assertIn('onNavigate("journal")', source)
+        # The affordance is gated to the later-beat path + an actual handler (not the cold-open,
+        # which keeps its own focused reassurance), so it only shows where the player can really act.
+        self.assertIn('const showNavAffordance = !firstBeat && typeof onNavigate === "function";', source)
+
     def test_openworlds_table_promotes_action_palette_into_main_column(self):
         # #G3: the action palette must be PROMINENT in the main play flow, not buried in the
         # 320px right rail. It is rendered in the CENTER column (LEFT — Party / CENTER — Scene
