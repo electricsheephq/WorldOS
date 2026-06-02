@@ -576,6 +576,27 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("snapshot.json", source)
         self.assertNotIn("writeSnapshot", source)
 
+    def test_openworlds_table_blocks_moves_when_app_status_play_lane_not_ready(self):
+        # A static/no-provider viewer can still expose a writable /move file and a can_act surface.
+        # The player-facing table must trust same-port /app-status too, otherwise a click lands in
+        # "DM composing" forever with no resolver behind it.
+        status, ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("const [appStatus, setAppStatus] = React.useState(null);", source)
+        self.assertIn('fetch(`/app-status${query}`', source)
+        self.assertIn("const appStatusBlocksPlay = Boolean", source)
+        self.assertIn('"no_provider", "no_launcher", "move_rejected"', source)
+        self.assertIn("appReadiness.ready_for_play === false", source)
+        self.assertIn("Start or resume a provider-backed session from Chronicles", source)
+        self.assertIn("data-worldos-status-scope=\"app-status\"", source)
+        self.assertIn("appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason", source)
+        self.assertIn("disabled={!a.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("disabled={pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+
     def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
         # #402: the chronicle must stay navigable across a long session — the rendered row count is
         # CAPPED (DOM + a11y tree bounded so the latest beat isn't truncated), the scroll region is
@@ -644,7 +665,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("data-worldos-selected", source)
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive}", source)
+        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
