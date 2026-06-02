@@ -289,17 +289,28 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     continue: "Continue",
     "look around": "Look",
   };
-  const playerEchoKeys = (entry) => {
-    const kind = entry && (entry.kind || entry.type);
-    const who = String(entry?.who || "").trim().toLowerCase();
-    if (entry?.route === "say" || entry?.mode === "say" || entry?.routing?.type === "say") return [];
-    if (kind !== "action" && !(kind === "dialog" && who === "you")) return [];
-    const key = String(entry?.text || "")
+  const playerEchoRoute = (entry) => String(entry?.route || entry?.mode || entry?.routing?.type || "").trim().toLowerCase();
+  const canonicalPlayerEchoKey = (raw) => {
+    let key = String(raw || "")
+      .replace(/^\s*\[(?:say|do|check|save|continue|attack|cast|use_item|clarify)\]\s*/i, "")
       .replace(/^\s*(?:say|do|check|save)\s*:\s*/i, "")
       .replace(/^[`'"“”]+|[`'"“”]+$/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
+    if (!key) return "";
+    const requestedDie = key.match(/^requests?\s+a\s+d(\d+)\s+roll$/);
+    if (requestedDie) return `roll d${requestedDie[1]}`;
+    const rolledDie = key.match(/^roll\s+d(\d+)$/);
+    if (rolledDie) return `roll d${rolledDie[1]}`;
+    return key;
+  };
+  const playerEchoKeys = (entry) => {
+    const kind = entry && (entry.kind || entry.type);
+    const who = String(entry?.who || "").trim().toLowerCase();
+    const route = playerEchoRoute(entry);
+    if (kind !== "action" && !(kind === "dialog" && (who === "you" || route === "say"))) return [];
+    const key = canonicalPlayerEchoKey(entry?.text);
     if (!key) return [];
     return [key, ...(QUICK_ACTION_REPLAY_ALIASES[key] || [])];
   };
@@ -649,7 +660,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.reason || `move ${response.status}`);
       }
-      recordPlayerEcho(hero.name, text);
+      recordPlayerEcho(hero.name, text, cleanMove);
       armPending(text);
       // #402: a new turn was just submitted — force the chronicle back to the bottom on the next
       // content change even if the player had scrolled up, so they always see their move land and

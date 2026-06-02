@@ -226,12 +226,13 @@ const h = {
   chronicle: (recent) => sandbox.window.buildChronicleLog(recent || [], reactHost.api().chatBeats || [], reactHost.api().log || [])
     .map((e) => ({ kind: e.kind, text: e.text, who: e.who })),
   pending: () => reactHost.api().pending,
+  markStuck: () => { const p = reactHost.api().pending; if (p) p.stuck = true; },
   // arm the "DM is narrating…" indicator exactly as a posted player move does (armPending is on
   // the hook's returned api). Used to prove a streamed paragraph CLEARS it (the give-up fix).
   arm: (text) => reactHost.api().armPending(text || 'open the scene'),
   // #399: the hook's public player-echo append (the chronicle's optimistic "You: …" row). Idempotent
   // so a #344 'Try again' re-POST of the exact stalled move doesn't double the line.
-  echo: (who, text) => reactHost.api().recordPlayerEcho(who, text),
+  echo: (who, text, move) => reactHost.api().recordPlayerEcho(who, text, move),
   log: () => (reactHost.api().log || []).map((e) => ({ kind: e.kind, who: e.who, text: e.text })),
   // #399: the recovery-window selector by turn position (firstBeat ⇒ cold-open window, else later).
   recoveryWindowMs: (firstBeat) => sandbox.window.recoveryWindowMs(firstBeat),
@@ -453,15 +454,18 @@ class LiveNarrationStreamTests(unittest.TestCase):
                          "the later-beat window must be 180s so a content-rich 90–120s beat 2–4 isn't falsely declared stuck (#399)")
         self.assertEqual(out["first"], 4 * 60 * 1000, "the cold-open window is unchanged (4 min)")
 
-    # --- #399: the player echo is IDEMPOTENT (the 'Try again' re-POST doesn't duplicate) -------
+    # --- #399: the player echo is IDEMPOTENT only during stuck-turn retry ---------------------
     # The #344 stuck-recovery re-POSTs the EXACT stalled move (postMove → recordPlayerEcho again),
     # which used to append a SECOND identical action row — the duplicated "Rolan—" the playtester
-    # filed. A back-to-back identical (who, text) must NOT double the chronicle line.
+    # filed. Suppress that duplicate only when the pending turn is actually in stuck retry state;
+    # a normal later turn may intentionally repeat the same words/action.
     def test_player_echo_is_idempotent_on_retry(self):
         out = self._run(
             "await h.drain();"
             "h.echo('Rolan', 'Rolan\\u2014 hold the line');"  # original submit
             "var afterFirst = h.log();"
+            "h.arm('Rolan\\u2014 hold the line');"
+            "h.markStuck();"
             "h.echo('Rolan', 'Rolan\\u2014 hold the line');"  # 'Try again' re-POST (exact same move)
             "var afterRetry = h.log();"
             "return ({ afterFirst: afterFirst, afterRetry: afterRetry });"
@@ -470,6 +474,17 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertEqual(len(out["afterRetry"]), 1,
                          "a 'Try again' re-POST of the exact same move must NOT duplicate the chronicle action (#399)")
         self.assertEqual(out["afterRetry"][0]["text"], "Rolan— hold the line")
+
+    # --- #399/#503: normal repeated moves are NOT deduped ------------------------------------
+    def test_player_echo_keeps_normal_repeated_action(self):
+        out = self._run(
+            "await h.drain();"
+            "h.echo('Rolan', 'hold the line');"
+            "h.echo('Rolan', 'hold the line');"
+            "return ({ log: h.log() });"
+        )
+        self.assertEqual(len(out["log"]), 2,
+                         "a normal repeated action must appear twice; idempotence is only for stuck retry")
 
     # --- #399: a DIFFERENT action (a rephrase, or a later turn) is NOT deduped -----------------
     def test_player_echo_keeps_distinct_actions(self):
@@ -717,6 +732,32 @@ class LiveNarrationStreamTests(unittest.TestCase):
             out["chronicle"],
             [{"kind": "action", "text": "Look", "who": "Abby"}],
             "quick action payload aliases like Look/look around must not render as a second You row",
+        )
+
+    def test_say_replay_is_deduped_against_optimistic_dialog_echo(self):
+        out = self._run(
+            "h.echo('Abby', 'Say: Hi', { kind: 'say', text: 'Hi' });"
+            "h.enqueue('/chat', { items: [{ role: 'player', text: '[say] Hi', at: 20 }], next: 1 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [{"kind": "dialog", "text": "Hi", "who": "Abby"}],
+            "a typed Say move should show one speech row, not an optimistic action plus a replayed You quote",
+        )
+
+    def test_dice_roll_replay_is_deduped_against_optimistic_roll_echo(self):
+        out = self._run(
+            "h.echo('Abby', 'requests a d20 roll', { kind: 'check', text: 'roll d20' });"
+            "h.enqueue('/chat', { items: [{ role: 'player', text: '[check] roll d20', at: 20 }], next: 1 });"
+            "await h.tick();"
+            "return ({ chronicle: h.chronicle() });"
+        )
+        self.assertEqual(
+            out["chronicle"],
+            [{"kind": "action", "text": "requests a d20 roll", "who": "Abby"}],
+            "a dice request should show one player row, not both the local request and replayed roll text",
         )
 
     def test_quick_action_replay_renders_as_clean_action_after_reload(self):
