@@ -43,22 +43,27 @@ the user's owned, versioned game. Richer in-browser authoring (drag-place, live 
 this store.
 
 ## Ownership + MIT redistribution story (#453)
+**WorldOS is a TOOL, not a marketplace or publisher.** Licensing, royalties, and any AI-content
+disclosure for a game a user creates are the **creator's responsibility** — we provide no legal
+advice and take on no compliance obligation on their behalf.
 - **The runtime is MIT-clean to ship.** The renderers are **vendored Phaser (MIT)** + our own
   MIT glue (`renderer-*.js`, `surface-client.js`). A user can redistribute a game built on them.
 - **The user owns their profile + procedural/generated art.** A generated render-profile and the
   procedural placeholder art are the creator's.
-- **The first-party BG catalog is NEVER shippable in UGC.** It is internal/first-party reference
-  only. The build-loop's human-gate **`ai-disclosure-and-rights`** item flags this on every
-  profile, and the store persists only profiles that passed the gate — so the catalog can't leak
-  into a shippable UGC game.
-- **AI-disclosure travels with the profile** (`core.ai_disclosure`), feeding the EU
-  machine-readable obligation + Steam's AI survey downstream (#454).
+- **The first-party BG catalog is NEVER bundled into UGC.** It is internal/first-party reference
+  only — a *WorldOS-asset boundary* (not user advice). The build-loop human-gate surfaces this on
+  every profile, and the store persists only gated profiles, so the catalog can't leak into a
+  user's shippable game.
+- **AI-disclosure metadata travels with the profile** (`core.ai_disclosure`) and is **surfaced
+  as-is** for the creator to use however their own jurisdiction/platform requires. We populate it
+  for generated content as a convenience; we make no disclosure claim on the user's behalf.
 
 ## Deferred (owner decisions, per the roadmap triggers)
 - **#454 shippable-UGC asset model** (self-hosted vs paid image API) — owner cost/dependency
   decision; **deferred** (owner, 2026-06-02): ship the build-loop + store with first-party gen
-  only; the shippable UGC asset model is decided when there's real creator demand. The disclosure
-  + rights *metadata* path is already wired.
+  only; the shippable UGC asset model is decided when there's real creator demand. *(The
+  compliance/legal framing of the old #454 was dropped 2026-06-03 — tool-not-marketplace; the
+  `ai_disclosure` metadata pass-through is all we provide.)*
 - Multi-user auth / quotas / moderation — future, once the single-user `owner="local"` v0 lands.
 
 Implemented by `viewer/ugc_store.py` (stdlib, no engine import) + the three routes in
