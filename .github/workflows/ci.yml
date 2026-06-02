@@ -19,6 +19,10 @@ jobs:
         run: uv run --directory servers/rules --group dev pytest -q
       - name: Voice tests (torch-free; null backend + static metadata)
         run: uv run --directory servers/voice --group dev pytest -q
+      - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
+        # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
+        # play_party.sh cold-open is cleanly rejected and the lock self-heals (release / dead holder).
+        run: bash qa/test_play_party_single_flight.sh
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in

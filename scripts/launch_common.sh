@@ -95,3 +95,60 @@ clawdnd_choose_port() {
   echo "Close an existing viewer/monitor, or pass a port explicitly." >&2
   return 1
 }
+
+# --- Single-flight launch lock --------------------------------------------------------------
+# Refuse a SECOND concurrent ensemble cold-open from this checkout, so two play_party.sh runs
+# can't collide on session ids / the viewer port. (Observed under memory pressure: launching a
+# second cold-open while one was already running failed with "Session ID already in use".)
+#
+# Mechanism: an atomic `mkdir` lock dir holding the owner's PID, with PID-liveness staleness.
+# Deliberately portable and flock-FREE — stock macOS has no flock(1) (the collision was seen on a
+# Mac), and more decisively, the viewer supervisor in play_party.sh is an orphan-surviving respawn
+# loop: a flock fd inherited by it would stay held FOREVER if the main process is OOM-killed
+# (SIGKILL skips the cleanup trap). Recording the MAIN pid instead lets the next launch notice the
+# owner is gone (`kill -0` fails) and reclaim the lock. `mkdir`/`kill -0`/`rm` behave identically
+# on macOS and Linux, so there is one code path and the behavioral test runs everywhere.
+#
+# Knob: CLAWDND_LAUNCH_LOCK_WAIT = seconds to wait for a LIVE holder before rejecting (default 5;
+# 0 = reject immediately). The short wait lets the native app's "restart" (terminate-old then
+# start-new) succeed — the old run releases on SIGTERM and the new one acquires within the window.
+clawdnd_acquire_launch_lock() {
+  local root="$1" lock="$1/play-state/.launch.lock" waited=0 held_pid
+  local wait="${CLAWDND_LAUNCH_LOCK_WAIT:-5}"
+  case "$wait" in ''|*[!0-9]*) wait=5 ;; esac   # tolerate a bad value → default
+  mkdir -p "$root/play-state" 2>/dev/null
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      printf '%s\n' "$$" > "$lock/pid"          # won the atomic create → we own it
+      return 0
+    fi
+    held_pid="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -n "$held_pid" ] && kill -0 "$held_pid" 2>/dev/null; then
+      :                                         # a LIVE cold-open holds it → wait, then reject
+    elif [ -z "$held_pid" ] && [ "$waited" -lt "$wait" ]; then
+      :                                         # owner mid-acquire (mkdir done, pid not yet written)
+                                                # → wait a beat and re-read; do NOT reclaim (race-safe)
+    else
+      # dead owner (gone, e.g. OOM-killed before cleanup), or a lock that never recorded a pid
+      echo "[play-party] clearing a stale launch lock (previous holder pid ${held_pid:-none} is gone)." >&2
+      rm -rf "$lock" 2>/dev/null
+      continue
+    fi
+    if [ "$waited" -ge "$wait" ]; then
+      echo "[play-party] another WorldOS cold-open is already running (pid ${held_pid:-?}) — refusing to start a second so they can't collide. Stop it first, or wait for it to finish." >&2
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+# Release the launch lock, but ONLY if we are the recorded owner — a rejected second launch must
+# never delete the winner's lock. Safe to call unconditionally from cleanup. $1 = repo ROOT.
+clawdnd_release_launch_lock() {
+  local lock="$1/play-state/.launch.lock"
+  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ]; then
+    rm -rf "$lock" 2>/dev/null
+  fi
+  return 0
+}

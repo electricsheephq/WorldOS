@@ -108,6 +108,14 @@ MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"               # hard cap on agent turn
 if declare -F clawdnd_choose_port >/dev/null 2>&1; then
   PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
 fi
+# Single-flight: refuse a SECOND concurrent ensemble cold-open (two collide under memory pressure —
+# "Session ID already in use"). Acquired here, before any heavy work (companion pre-seed, the viewer
+# supervisor, the DSID mint, the DM cold-open); released in _party_cleanup below. A rejected launch
+# exits here BEFORE the EXIT/INT/TERM traps are armed, so it runs no cleanup and never touches the
+# holder's lock. (set -uo pipefail has no -e, so the explicit `exit 1` is required.)
+if declare -F clawdnd_acquire_launch_lock >/dev/null 2>&1; then
+  clawdnd_acquire_launch_lock "$ROOT" || exit 1
+fi
 AGENT_TURNS=0
 
 # Product play state under play-state/ (git-ignored), same layout as play.sh.
@@ -340,7 +348,7 @@ viewer_supervisor &  SUP=$!
 # main loop, so `kill`/closing the window couldn't stop a wedged run (it took kill -9, and a
 # dry-run with no human spun a sleep-loop for 8.5h). Separate the EXIT trap (cleanup) from the
 # signal traps (cleanup + exit) so a normal `kill` actually stops it.
-_party_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
+_party_cleanup() { declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"; kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
 trap _party_cleanup EXIT
 trap '_party_cleanup; exit 130' INT TERM
 
