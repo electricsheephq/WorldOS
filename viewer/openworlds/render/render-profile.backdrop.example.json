@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../docs/roadmap/contracts/render-profile.schema.json",
+  "schema_version": 1,
+  "game_id": "bg-absolute-remnants-gt2",
+  "title": "Baldur's Gate — Absolute Remnants (GT2 backdrop-isometric)",
+  "core": {
+    "scene_kind": "backdrop",
+    "positioning": "zone",
+    "locations": [
+      {
+        "engine_location_id": "loc-lower-city",
+        "art": { "scope_key": "scene-lower-city" },
+        "zones": ["the gate approach", "the market row", "the alley mouth"]
+      },
+      {
+        "engine_location_id": "loc-wyrms-crossing",
+        "art": { "scope_key": "scene-wyrms-crossing" },
+        "zones": ["the bridge span", "the toll house", "the far bank"]
+      }
+    ],
+    "actors": [
+      { "engine_actor_id": "char-aubree", "art": { "scope_key": "portrait-aubree" } },
+      { "engine_actor_id": "char-companion-1", "art": { "scope_key": "portrait-shadowheart" } },
+      { "engine_actor_id": "mon-cultist-1", "art": { "scope_key": "creature-cultist" } },
+      { "engine_actor_id": "mon-cultist-2", "art": { "scope_key": "creature-cultist" } }
+    ],
+    "ai_disclosure": {
+      "generated_by": "worldos-ai-build-loop",
+      "model": "example",
+      "date": "2026-06-02"
+    }
+  },
+  "renderer_profiles": {
+    "phaser": {
+      "ui_skin": "painted",
+      "backdrop_layout": {
+        "scene-lower-city": { "horizon_y": 0.42, "ground_tint": "#2a2218" },
+        "scene-wyrms-crossing": { "horizon_y": 0.48, "ground_tint": "#1f2a30" }
+      },
+      "walkmask_ref": "procedural",
+      "depth_bands": [0.55, 0.7, 0.85]
+    }
+  }
+}
