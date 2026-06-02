@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from qa import app_handoff_gate as gate
@@ -234,6 +235,44 @@ class AppHandoffGateTests(unittest.TestCase):
             gate.evidence_manifest_blockers(payload),
             ["can_act not true", "no enabled actions"],
         )
+
+    def test_run_web_scripted_fails_on_smoke_evidence_gaps(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            args = SimpleNamespace(run_id="fixture", web_beats=1, web_port=8899, timeout=1.0, art_root=None)
+            smoke_payload = {
+                "status": "passed",
+                "evidence_gaps": [{"source": "screenshot", "kind": "initial", "reason": "chrome_exit=None"}],
+            }
+            final_status = {"schema": "worldos.app-status.v1"}
+
+            def fake_read_json(path):
+                path = Path(path)
+                if path.name == "smoke.json":
+                    return smoke_payload
+                if path.name == "app-status.final.json":
+                    return final_status
+                return {}
+
+            with mock.patch.object(gate, "run_logged", return_value=0), mock.patch.object(
+                gate,
+                "read_json",
+                side_effect=fake_read_json,
+            ), mock.patch.object(
+                gate,
+                "validate_app_status",
+                return_value=("", ""),
+            ), mock.patch.object(
+                gate,
+                "export_evidence",
+                return_value=(out / "manifest.json", {"evidence_gaps": []}),
+            ):
+                result = gate.run_web_scripted(args, out, "abc1234")
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.failure_bucket, "no_provider")
+        self.assertIn("smoke evidence gaps: 1", result.failure_detail)
+        self.assertEqual(result.evidence_gaps, smoke_payload["evidence_gaps"])
 
     def test_hook_probe_summary_reports_exact_missing_controls(self):
         with tempfile.TemporaryDirectory() as td:

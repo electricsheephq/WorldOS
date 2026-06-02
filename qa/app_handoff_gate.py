@@ -658,9 +658,13 @@ def run_web_scripted(args: argparse.Namespace, out: Path, expected_sha: str) -> 
     )
     gate.evidence_manifest = manifest_path
     blockers = evidence_manifest_blockers(manifest) if gate.status == "passed" else []
+    if gate.status == "passed" and gate.evidence_gaps:
+        blockers.insert(0, f"smoke evidence gaps: {len(gate.evidence_gaps)}")
     if blockers:
         gate.fail("no_provider", "web scripted evidence manifest is not handoff-ready: " + "; ".join(blockers))
-        gate.evidence_gaps = manifest.get("evidence_gaps", [])
+        manifest_gaps = manifest.get("evidence_gaps", [])
+        if isinstance(manifest_gaps, list):
+            gate.evidence_gaps.extend(manifest_gaps)
     elif gate.status != "passed":
         gate.evidence_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else gate.evidence_gaps
     return gate
