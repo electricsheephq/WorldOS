@@ -19,6 +19,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const [coins, setCoins] = React.useState({ gp: 232, sp: 68, cp: 14 });
   const [cart, setCart] = React.useState([]);
   const [haggle, setHaggle] = React.useState(0);
+  // MK-11: guard the Confirm button against double-submit. The live path fires /move
+  // fire-and-forget and only clears the cart in the async .then, so a fast second click
+  // would relay a SECOND purchase before the first resolves. Synchronous ref lock.
+  const submittingRef = React.useRef(false);
   // MK-06: real type filter for the wares table — no dead "Filter…" button.
   const [typeFilter, setTypeFilter] = React.useState("all");
 
@@ -220,11 +224,17 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                     <td style={{ ...tdStyle, textAlign: "right", fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)" }}>
                       {it.weight || "—"}
                     </td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {/* MK-12: the struck list price + discounted price MUST be visually
+                          separated (an explicit arrow) — rendered adjacent they read as one
+                          run-together number, e.g. "24" + "23" → "2423" (adversarial bug). */}
                       {haggledPrice !== null && haggledPrice !== shownPrice && (
-                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 5 }}>
+                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 4 }}>
                           {shownPrice}
                         </span>
+                      )}
+                      {haggledPrice !== null && haggledPrice !== shownPrice && (
+                        <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--emerald)", marginRight: 4 }}>→</span>
                       )}
                       <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: haggledPrice !== null ? "var(--emerald)" : "var(--ink-900)" }}>
                         {haggledPrice !== null ? haggledPrice : shownPrice}
@@ -333,6 +343,10 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             // a fast click cannot silently mutate only local coins. Otherwise (read-only
             // preview), keep the local-only behavior + honest preview tooltip.
             if (surfaceLoading) return;
+            // MK-11: double-submit guard — lock synchronously before the async /move so a
+            // fast second click can't relay a second purchase; release in finally / after local apply.
+            if (submittingRef.current) return;
+            submittingRef.current = true;
             if (canAct) {
               const buyItems = cart.filter((i) => i.mode === "buy").map((i) => i.name);
               const sellItems = cart.filter((i) => i.mode === "sell").map((i) => i.name);
@@ -355,10 +369,12 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 if (!response.ok) throw new Error(`move ${response.status}`);
                 toast({ kind: "item", eyebrow: "Market", title: balanceDelta > 0 ? "Sold" : "Bought", body: `Move relayed to the DM — the engine resolves the purchase.` });
                 setCart([]);
-              }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }));
+              }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }))
+                .finally(() => { submittingRef.current = false; });
             } else {
               setCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
               setCart([]);
+              submittingRef.current = false;
             }
           }} style={{ width: "100%" }} disabled={cart.length === 0 || surfaceLoading || (!canAct && coins.gp + balanceDelta < 0)} title={surfaceLoading ? "Checking the live market action lane…" : (canAct ? "Relays the transaction to the DM via /move — the engine resolves the purchase" : "Display-only — transaction is not saved to the engine")}>
             {surfaceLoading && cart.length > 0 ? "Checking the counter…" : (balanceDelta > 0 ? "Accept silver" : "Strike the bargain")}
