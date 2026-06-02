@@ -239,9 +239,9 @@ if [ "$MODE" != "run" ]; then
 fi
 
 # codex exec intentionally ignores user config so app/provider proofs do not
-# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported model
-# unless the operator explicitly selects another one.
-CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
+# inherit local prompts or sandbox policy. Let Codex CLI choose its account
+# default unless the operator explicitly pins a provider model.
+CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"
 MODEL_ARGS=()
 if [ -n "${CODEX_MODEL//[[:space:]]/}" ]; then
   MODEL_ARGS=(--model "$CODEX_MODEL")
