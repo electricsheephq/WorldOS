@@ -401,22 +401,28 @@ function useLiveSession(state) {
     if (p.stuck) setPendingState((q) => (q ? { ...q, stuck: false } : q));
   }, [clearRecoveryTimer, setPendingState]);
 
-  // #399: idempotent player echo. The #344 'Try again' recovery re-POSTs the EXACT stalled move
-  // (postMove → recordPlayerEcho again), which used to append a SECOND identical action row — the
-  // duplicated "Rolan—" the playtester saw in the chronicle. Skip the append when the last entry is
-  // already an identical action (same `who` + same trimmed text) so a retry never doubles the line.
-  // Only a back-to-back exact repeat is suppressed; a genuine "do X" then "do X again" two turns
-  // apart is separated by the DM's narration beat between them, so it is NOT deduped.
-  const recordPlayerEcho = React.useCallback((who, text) => {
+  // #399: idempotent player echo for STUCK retries only. The #344 'Try again' recovery re-POSTs
+  // the EXACT stalled move (postMove → recordPlayerEcho again), which used to append a SECOND
+  // identical action row. Suppress that duplicate only while the pending turn is explicitly stuck:
+  // a player may intentionally repeat the same words/action on a later normal turn, and the
+  // Chronicle must show that second choice.
+  const recordPlayerEcho = React.useCallback((who, text, move) => {
     setLog((l) => {
+      const route = String(move?.kind || "").trim().toLowerCase();
+      const echoText = route === "say"
+        ? window.stripRoutingTag(move?.text || text).replace(/^\s*say\s*:\s*/i, "").replace(/\s+/g, " ").trim()
+        : text;
+      const entryKind = route === "say" ? "dialog" : "action";
       const last = l[l.length - 1];
-      if (last && last.kind === "action" && last.who === who
-          && String(last.text || "").trim() === String(text || "").trim()) {
+      const retryingStuckTurn = Boolean(pendingRef.current && pendingRef.current.stuck);
+      if (retryingStuckTurn && last && last.kind === entryKind && last.who === who
+          && String(last.text || "").trim() === String(echoText || "").trim()
+          && String(last.route || "") === route) {
         return l;  // identical to the row already showing (a Try-again re-POST) — no duplicate.
       }
       // #402: bound the echo tail so a long session doesn't grow `log` (and the rendered DOM /
       // a11y tree) without limit. Keep the most-recent MAX_LIVE_ECHOES.
-      return boundTail([...l, { kind: "action", who, text, at: nextLogSeq(), eventAt: Date.now() / 1000 }], MAX_LIVE_ECHOES);  // #274: creation-order stamp
+      return boundTail([...l, { kind: entryKind, who, text: echoText, route, at: nextLogSeq(), eventAt: Date.now() / 1000 }], MAX_LIVE_ECHOES);  // #274: creation-order stamp
     });
   }, []);
 
