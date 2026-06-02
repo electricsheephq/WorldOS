@@ -150,7 +150,19 @@ turn() {
 # silently truncate a run). Echoes the reply text (possibly empty after the retry).
 turn_retry() {
   local r; r="$(turn "$@")"
-  [ -z "$r" ] && { echo "[duo] empty turn ($1) — retrying once…" >&2; r="$(turn "$@")"; }
+  if [ -z "$r" ]; then
+    echo "[duo] empty turn ($1) — retrying once…" >&2
+    # A cold-open ($3=1) retry must NOT reuse $2's already-registered --session-id (a failed but
+    # registered attempt → "Session ID … is already in use." → empty output again). Re-mint a fresh
+    # id for the retry. Continuing beats ($3=0) use --resume (safe to repeat); lean continuing beats
+    # already mint their own fresh id inside turn(), so only the cold open needs a swap here.
+    if [ "${3:-}" = "1" ]; then
+      local _fresh; _fresh="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+      r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
+    else
+      r="$(turn "$@")"
+    fi
+  fi
   printf '%s' "$r"
 }
 

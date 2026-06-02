@@ -245,14 +245,22 @@ dm_turn() {
   }
   _dm_invoke; rc=$?
   if [ "$rc" -ne 0 ]; then
-    # timeout(1) exits 124 on the deadline; any nonzero gets ONE retry. A retried lean beat
-    # mints a NEW fresh session id (never replay a half-written transcript).
-    echo "[play] DM turn rc=$rc (timeout=${CLAWDND_BEAT_TIMEOUT}s) — retrying once" >&2
-    # A retried lean beat mints a NEW fresh session id (never replay a half-written transcript);
-    # re-call the shared helper so the re-mint stays in lock-step with the lean path above. The
-    # re-ground directive ($extra) is unchanged, so we only refresh the session id here.
+    # Surface attempt 1's REAL error (it's a stdout result event in $out; only stderr reaches
+    # $DM_LOG.err, so without this the run log shows just a downstream "Session ID … in use").
+    clawdnd_report_attempt_failure "$out" "$rc"
+    # timeout(1) exits 124 on the deadline; any nonzero gets ONE retry — on a FRESH session id. A
+    # failed attempt STILL registered its --session-id, so reusing it dies "Session ID … is already
+    # in use." → 0-byte → empty narration. A lean beat re-mints via clawdnd_dm_lean_args; the
+    # cold-open / legacy --resume path re-mints via clawdnd_dm_remint_session_on_retry. (The
+    # re-ground directive $extra is unchanged — we only refresh the session id.)
+    echo "[play] DM turn rc=$rc (timeout=${CLAWDND_BEAT_TIMEOUT}s) — retrying once with a fresh session" >&2
     clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
-    [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+    else
+      clawdnd_dm_remint_session_on_retry ${resume[@]+"${resume[@]}"}
+      [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_RETRY_SESSION[@]}")
+    fi
     out="$DM_LOG.$(date +%s%N).jsonl"
     _dm_invoke; rc=$?
     [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2

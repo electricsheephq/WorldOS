@@ -182,6 +182,57 @@ clawdnd_dm_effort_arg() {
   CLAWDND_DM_EFFORT=(--effort "$level")
 }
 
+# RE-MINT SESSION ON RETRY (the ONE shared implementation of "never reuse a CONSUMED session id").
+# A `claude -p` attempt that fails AFTER startup STILL registered its --session-id on disk
+# (~/.claude/projects/<proj>/<uuid>.jsonl), so a retry that re-passes that SAME --session-id dies
+# "Session ID <uuid> is already in use." → 0-byte output → empty narration → the cold open never
+# completes (the masked failure mode behind the 2026-06-02 "reproducibly broken cold-open" reports:
+# attempt 1 actually 401'd, but the retry's session collision is all that reached dm.err). The LEAN
+# path already side-steps this (clawdnd_dm_lean_args mints a fresh uuid every call); the COLD-OPEN /
+# legacy --resume path passes a STABLE $DSID and so MUST be re-minted before its retry. Given the
+# resume-mode the prior attempt used (the caller's `resume` array, passed as "$@"), populate the
+# well-known global CLAWDND_DM_RETRY_SESSION:
+#   • prior mode --session-id (a CREATE) → (--session-id <fresh-uuid>)  — retry on a BRAND-NEW session.
+#   • prior mode --resume <id>           → ()  — resuming an already-created session on retry is safe;
+#                                               leave the caller's --resume untouched.
+# Caller contract: call this ONLY when the lean helper did NOT fire (lean re-mints itself), so each
+# path mints exactly once. Bash 3.2: no namerefs — inspect args by value + populate a global (mirrors
+# clawdnd_dm_lean_args / clawdnd_dm_effort_arg). $@ = the caller's current `resume` array tokens.
+clawdnd_dm_remint_session_on_retry() {
+  CLAWDND_DM_RETRY_SESSION=()
+  if [ "${1:-}" = "--session-id" ]; then
+    CLAWDND_DM_RETRY_SESSION=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
+  fi
+}
+
+# SURFACE A FAILED DM ATTEMPT'S REAL ERROR (stop the masking). A DM turn redirects only STDERR to
+# dm.err, but `claude -p`'s real failure (a 401 auth error, a budget stop, an MCP startup failure)
+# is a STRUCTURED event on STDOUT — in the per-attempt $out jsonl. So when attempt 1 fails and the
+# retry then collides on the session id, dm.err shows ONLY "Session ID … in use" and the TRUE cause
+# is invisible (this masked a 401 as a phantom concurrency race across ~3 runs). Parse the last
+# result event from $out and echo a clear "[dm-attempt] …" reason to stderr; a 401/403 is flagged
+# NON-retryable with an operator hint. Read-only on engine state; jq-optional (a grep fallback still
+# names an HTTP status); a missing/0-byte $out → a generic rc line (no regression).
+# $1 = the failed attempt's stream-json path  $2 = its exit code (rc)
+clawdnd_report_attempt_failure() {
+  local out="$1" rc="$2" reason status
+  reason="$(jq -rs 'map(select(.type=="result"))[-1] | if . == null then "" else "is_error=\(.is_error) subtype=\(.subtype // "?") result=\((.result // "")[0:180])" end' "$out" 2>/dev/null)"
+  status="$(grep -oE '"(api_error_status|status)":[[:space:]]*[0-9]{3}' "$out" 2>/dev/null | grep -oE '[0-9]{3}' | head -n1)"
+  if [ -z "${reason//[[:space:]]/}" ] && [ -z "$status" ]; then
+    if [ "$rc" = "124" ]; then
+      echo "[dm-attempt] DM turn timed out (rc=124; no result event written to $out)" >&2
+    else
+      echo "[dm-attempt] DM turn failed (rc=$rc; no parseable result event in $out)" >&2
+    fi
+    return 0
+  fi
+  echo "[dm-attempt] DM turn failed (rc=$rc):${status:+ HTTP $status}${reason:+ $reason}" >&2
+  case "$status" in
+    401|403) echo "[dm-attempt] -> HTTP $status is an AUTH failure and is NOT retryable: check 'claude' login / ANTHROPIC_API_KEY (apiKeySource was likely \"none\"). The retry will also fail until auth is restored." >&2 ;;
+  esac
+  return 0
+}
+
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
 # TAB-separated line:  day <TAB> time_of_day <TAB> visited_count <TAB> npcs_met <TAB>
 # current_location_id <TAB> current_location_visited(0/1) <TAB> combat_active(0/1)

@@ -259,9 +259,31 @@ turn() {
     # the companion facade branch below never gets --effort (nor the lean re-ground).
     clawdnd_dm_effort_arg "$first"
     out="$DM_LOG.$(date +%s%N).jsonl"
-    claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-      --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+    # DM turn with ONE retry (parity with scripts/play.sh dm_turn — play_party is the native app's
+    # entry point and previously had NO DM retry, so a transient cold-open failure was permanent).
+    local rc
+    _dm_invoke() {
+      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+    }
+    _dm_invoke; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      # Surface attempt 1's real error, then retry ONCE on a FRESH session id — never reuse a
+      # consumed --session-id ("Session ID … is already in use."). Lean re-mints itself; the
+      # cold-open / --resume path re-mints via the shared helper. ($extra is unchanged.)
+      clawdnd_report_attempt_failure "$out" "$rc"
+      echo "[play-party] DM turn rc=$rc — retrying once with a fresh session" >&2
+      clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+      if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+        resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+      else
+        clawdnd_dm_remint_session_on_retry ${resume[@]+"${resume[@]}"}
+        [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_RETRY_SESSION[@]}")
+      fi
+      out="$DM_LOG.$(date +%s%N).jsonl"
+      _dm_invoke; rc=$?
+    fi
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   else
