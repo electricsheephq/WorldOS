@@ -61,11 +61,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 . "$ROOT/qa/lib_beat_driver.sh"  # worldos_env + shared helpers (snapshot path, cost, etc.)
 
-RUN="${1:-app-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
 PERSONA="${3:-newbie}"
 BEATS="${4:-6}"
 BUDGET="${5:-4.00}"
+# Canonical run name: <YYYYMMDDTHHMMSSZ>-<sha7>-<world>-<persona>-<provider>-<scenario>
+# Indexer (qa/scripts/indexer.py) parses this form; older ad-hoc names still work.
+_DEFAULT_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+RUN="${1:-$(date -u +%Y%m%dT%H%M%SZ)-${_DEFAULT_SHA}-${WORLD}-${PERSONA}-${WOS_APP_SELECTED_PROVIDER:-claude}-app}"
 PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
 KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
 SELECTED_PROVIDER="${WOS_APP_SELECTED_PROVIDER:-}"
@@ -892,6 +895,11 @@ log "=== DONE. dir=$RUNDIR ==="
 log "part A (#356 gate): $PART_A_RESULT   part B (persona loop): $PART_B_RESULT"
 log "spend: DM ~\$$FINAL_DM_SPEND + player ~\$$PART_B_PLAYER_COST = ~\$$TOTAL_SPEND (budget \$$BUDGET)"
 [ -f "$RUNDIR/run.json" ] && { echo "----- run.json -----"; cat "$RUNDIR/run.json"; }
+
+# --- auto-index this run for qa/INDEX.jsonl (best-effort, never blocks) ------
+if [ -f "$ROOT/qa/scripts/indexer.py" ]; then
+  python3 "$ROOT/qa/scripts/indexer.py" --append "$RUNDIR" --root "$ROOT" 2>&1 || true
+fi
 
 EXIT_OK=1
 case "$PART" in

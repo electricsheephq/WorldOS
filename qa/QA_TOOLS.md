@@ -20,6 +20,10 @@ Default local paths:
 | `qa/export_app_evidence.py` | Normalize a live app or run dir into a reviewable evidence bundle | `manifest.json`, status/session snapshots, screenshots, traces, logs | You are trying to prove behavior without first running a gate |
 | `qa/app_failure_buckets.py` | Classify harness failures into the stable app bucket list | Bucket JSON / shell-readable output | You need product fixes; this only labels failures |
 | `qa/app_handoff_hooks.js` | Static/same-port hook probe for core agent-driving controls | Hook-check JSON inside handoff evidence | You need human exploratory testing; this is a bounded locator check |
+| `qa/scripts/find_run.py` | Search past QA artifacts (playtest runs, play-states, transcripts) by date / sha / persona / gate state / failed / gave-up. Reads `qa/INDEX.jsonl` — the local artifact catalog built by `backfill_index.py` and auto-appended by the runners. | Stdout: matching entries with paths | You want curated headline quality verdicts — use `qa/scores_ledger.md` (rendered from `qa/scores.db`) instead |
+| `qa/scripts/backfill_index.py` | Rebuild `qa/INDEX.jsonl` from scratch (one-time on fresh clone, or after manual artifact moves). Idempotent. | `qa/INDEX.jsonl` (gitignored, per-dev) | The index is already current — the runners auto-append on every playtest |
+
+Don't grep `qa/ui_playtest_runs/` directly to find past runs — use `qa/scripts/find_run.py`. Full schema and recipes in [`qa/INDEX_SCHEMA.md`](INDEX_SCHEMA.md).
 
 Copy-paste fast handoff command:
 

@@ -27,11 +27,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 . "$ROOT/qa/lib_beat_driver.sh"  # worldos_env + shared helpers
 
-RUN="${1:-play-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
 PERSONA="${3:-newbie}"
 BEATS="${4:-30}"          # max player palette actions (soft cap)
 BUDGET="${5:-3.00}"       # USD cap for the PLAYER agent
+# Canonical run name: <YYYYMMDDTHHMMSSZ>-<sha7>-<world>-<persona>-<provider>-<scenario>
+# Indexer (qa/scripts/indexer.py) parses this form; older ad-hoc names still work.
+_DEFAULT_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+RUN="${1:-$(date -u +%Y%m%dT%H%M%SZ)-${_DEFAULT_SHA}-${WORLD}-${PERSONA}-claude-play}"
 PW_DIR="$ROOT/qa/playwright"
 PW_CHANNEL="$(worldos_env UIPT_CHANNEL "")"   # "" = bundled chromium; "chrome" = system Chrome
 DM_MODEL="$(worldos_env DM_MODEL sonnet)"
@@ -229,4 +232,10 @@ echo "[uipt] done. dir=$RUNDIR"
 if [ -f "$RUNDIR/summary.md" ]; then
   echo "----- summary.md -----"; cat "$RUNDIR/summary.md"
 fi
+
+# --- auto-index this run for qa/INDEX.jsonl (best-effort, never blocks) ------
+if [ -f "$ROOT/qa/scripts/indexer.py" ]; then
+  python3 "$ROOT/qa/scripts/indexer.py" --append "$RUNDIR" --root "$ROOT" 2>&1 || true
+fi
+
 exit "$SCORE_RC"

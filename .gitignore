@@ -28,6 +28,14 @@
 # committed; its output is not.
 /qa/findings.jsonl
 
+# Local QA artifact index (qa/scripts/backfill_index.py output) — auto-built catalog of
+# every playtest run + play-state + transcript. Per-developer (each local tree has its own
+# artifacts). The indexer/backfill/find_run scripts and INDEX_SCHEMA.md ARE committed;
+# the INDEX.jsonl itself is not. Query with `qa/scripts/find_run.py`.
+/qa/INDEX.jsonl
+/qa/INDEX.jsonl.new
+/qa/INDEX.jsonl.lock
+
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/

@@ -29,6 +29,18 @@
 - The VM cannot prove Mac-only surfaces. `WorldOS.app` build/launch, native #356, and built-app UI play evidence stay on this Mac or macOS CI.
 - VM artifacts can feed RRI only when `run.json`, `score.json`, `session_surface.final.json`, network/image evidence, palette-live evidence, and build SHA are explicit. Otherwise the result remains partial/harness-contaminated.
 
+## QA Artifact Index
+
+- Past playtest runs, play-state snapshots, and transcripts are indexed at `qa/INDEX.jsonl` (gitignored, per-dev). Query with `qa/scripts/find_run.py`, not raw `ls`/grep.
+- On a fresh clone (or after manual artifact moves): `python3 qa/scripts/backfill_index.py` rebuilds the local index. Idempotent. Takes <1s.
+- Common queries:
+  - `qa/scripts/find_run.py --since 2026-05-25 --kind run --failed` — recent failed runs
+  - `qa/scripts/find_run.py --sha <sha7>` — every artifact for a commit
+  - `qa/scripts/find_run.py --persona newbie --gave-up` — runs where the persona gave up
+  - `qa/scripts/find_run.py --scored` — runs that also have a curated `qa/scores.db` verdict
+- Two layers, two stores: `qa/INDEX.jsonl` is the RAW artifact catalog (~800 rows); `qa/scores.db` (rendered to `qa/scores_ledger.md`) is the CURATED quality verdict layer (~69 hand-validated rows). INDEX entries cross-link to ledger rows via `scored_in_ledger`.
+- Schema, naming convention, and rebuild recipes: [`qa/INDEX_SCHEMA.md`](qa/INDEX_SCHEMA.md).
+
 ## GitHub And Reviews
 
 - Use branch prefix `codex/` for new branches unless instructed otherwise.
