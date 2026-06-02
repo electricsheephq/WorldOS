@@ -3385,6 +3385,40 @@ def _equipped_items(ch: dict) -> list[dict]:
     return out
 
 
+_CLASS_FEATURE_DESCS: "dict | None" = None
+
+
+def _class_feature_desc_map() -> dict:
+    """name -> SRD description for class/subclass features (data/srd/class_features.json).
+
+    Lets the character read-model project feature DESCRIPTIONS instead of blank detail — the
+    engine already authored these canon SRD entries (260 of them), the read-model was just
+    dropping them, so the Abilities/Feats tabs rendered bare name-lists. Built once and cached;
+    global across every class/level bucket so a feature resolves regardless of which bucket holds
+    it. Honest: a feature with no authored desc stays blank (never fabricated)."""
+    global _CLASS_FEATURE_DESCS
+    if _CLASS_FEATURE_DESCS is not None:
+        return _CLASS_FEATURE_DESCS
+    out: dict = {}
+    try:
+        raw = json.loads((_REPO_ROOT / "data" / "srd" / "class_features.json").read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for by_level in raw.values():
+                if not isinstance(by_level, dict):
+                    continue
+                for feats in by_level.values():
+                    for f in (feats or []):
+                        if isinstance(f, dict):
+                            nm = str(f.get("name") or "").strip()
+                            ds = str(f.get("desc") or "").strip()
+                            if nm and ds:
+                                out.setdefault(nm, ds)
+    except Exception:
+        out = {}
+    _CLASS_FEATURE_DESCS = out
+    return out
+
+
 def _character_sheet(cid: str, ch: dict) -> dict:
     """One party character's full sheet for the heroes screen, mapping 5e snapshot fields
     into the shape screen-character.jsx renders (stats block, skills, spells, class
@@ -3524,6 +3558,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
     # two distinct sources so the sheet's Feats tab and Class Features list are not identical
     # duplicates (#286): classFeatures <- features, feats <- notes feat-markers (empty when none).
     features = [_text(f) for f in (ch.get("features") or []) if _text(f)]
+    _feat_descs = _class_feature_desc_map()  # name -> SRD desc, so classFeatures carry detail
     feat_names: list[str] = []
     for seg in _text(ch.get("notes")).split("|"):
         seg = seg.strip()
@@ -3573,7 +3608,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in feat_names],
         "abilities": [],
         "proficiencies": features,
-        "classFeatures": [{"name": f, "detail": ""} for f in features],
+        "classFeatures": [{"name": f, "detail": _feat_descs.get(f, "")} for f in features],
         "traits": [],
         "dr": {"value": ", ".join(_text(x) for x in (ch.get("damage_resistances") or []) if _text(x)) or "None",
                "energy": ", ".join(_text(x) for x in (ch.get("damage_immunities") or []) if _text(x)) or "None"},

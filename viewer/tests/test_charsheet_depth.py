@@ -207,9 +207,12 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertIn("Evocation Savant", names)
         # subclass (School of Magic) is surfaced as the archetype, so the tab has context
         self.assertEqual(elara["archetype"], "School of Evocation")
-        # honest: the engine models feature NAMES, not descriptions -> detail is empty
+        # #depth: the read-model now JOINS the SRD class-feature descriptions
+        # (data/srd/class_features.json), so a known class feature carries real detail
+        # (was blank before — the engine authored 260 descs the surface was dropping).
         arcane = next(c for c in elara["classFeatures"] if c["name"] == "Arcane Recovery")
-        self.assertEqual(arcane["detail"], "")
+        self.assertTrue(arcane["detail"], "Arcane Recovery should carry its SRD description")
+        self.assertIn("slot", arcane["detail"].lower())
 
     def test_surface_class_features_empty_when_engine_has_none(self):
         """A character with no engine-populated features surfaces an empty list (honest),
