@@ -438,6 +438,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
+  const composerAction = actionById(composerMode.actionId);
+  const draftText = input.trim();
   const appReadiness = appStatus?.readiness || {};
   const appHealth = appStatus?.health || {};
   const appFailureBucket = appReadiness.failure_bucket || appHealth.failure_bucket || "";
@@ -654,7 +656,11 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const sendAction = async () => {
     if (pendingActive) return;
     const text = input.trim();
-    if (!text) return;
+    if (!text) {
+      toast({ kind: "danger", title: "Type a move first", body: `Add ${composerMode.label.toLowerCase()} details, then press Declare.` });
+      inputRef.current?.focus();
+      return;
+    }
     const action = actionById(composerMode.actionId);
     if (!action?.available) {
       toast({ kind: "danger", title: `${composerMode.label} is unavailable`, body: action?.disabled_reason || readOnlyReason });
@@ -691,6 +697,18 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // #344: the Declare button doubles as the stuck-recovery "Try again" button (same slot, relabeled).
   // Route the click to the right handler so a stuck turn actually retries instead of no-op'ing.
   const onDeclareClick = () => (pendingStuck ? retryStuck() : sendAction());
+  const declareNeedsDraft = !pendingStuck && !draftText;
+  const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft;
+  const declareTitle = pendingStuck
+    ? "Re-send your last action to the Dungeon Master, or type a new one first."
+    : declareNeedsDraft
+      ? `Type ${composerMode.label.toLowerCase()} details before declaring.`
+      : DECLARE_HINT;
+  const declareAriaLabel = pendingStuck
+    ? "Try action again"
+    : declareNeedsDraft
+      ? "Type a move before declaring"
+      : "Declare move";
 
   const requestRoll = (sides = 20) => {
     const action = actionById("check");
@@ -983,7 +1001,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : appStatusBlocksPlay ? "Start or resume a DM provider to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
-              <BrassButton onClick={onDeclareClick} title={pendingStuck ? "Re-send your last action to the Dungeon Master, or type a new one first." : DECLARE_HINT} disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay} testId="move-submit" ariaLabel={pendingStuck ? "Try action again" : "Declare move"}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
+              <BrassButton onClick={onDeclareClick} title={declareTitle} disabled={declareDisabled} testId="move-submit" ariaLabel={declareAriaLabel}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
             </div>
           </div>
         </Panel>

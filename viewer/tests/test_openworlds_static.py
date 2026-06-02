@@ -609,7 +609,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason", source)
         self.assertIn("disabled={!a.available || pendingActive || appStatusBlocksPlay}", source)
         self.assertIn("disabled={pendingActive || appStatusBlocksPlay}", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn("disabled={declareDisabled}", source)
 
     def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
         # #402: the chronicle must stay navigable across a long session — the rendered row count is
@@ -699,7 +700,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("data-worldos-selected", source)
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("const declareNeedsDraft = !pendingStuck && !draftText", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn('title={declareTitle}', source)
+        self.assertIn('ariaLabel={declareAriaLabel}', source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
