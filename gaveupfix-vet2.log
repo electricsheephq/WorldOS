@@ -1,0 +1,200 @@
+[uipt-app] run=gaveupfix-vet2 world=baldurs-gate persona=veteran beats=40 budget=$8.00 part=AB player_agent=claude
+[uipt-app] build_sha=f1c796c version=v1.0.3-138-gf1c796c repo=/private/tmp/wos-gate
+[uipt-app] === PART A: native-transition gate (re-verifies #356) ===
+[A] pkill WorldOSApp + THIS checkout's stale viewers, rm -rf /private/tmp/wos-gate/dist/WorldOS.app, fresh build…
+[A] WOS_APP_NO_GLOBAL_KILL=1 — preserving other WorldOSApp processes.
+[A] launcher viewer ready on 8766; can_act(before)={"can_act":true,"is_live_view":true,"live":true}
+[A] before.png deferred to orchestrator
+[A] raising WorldOS to front + CGEvent-clicking the RESUME → PLAY CTA (with retries)…
+[A] window X=97.0 Y=36.0 W=1823.0 H=956.0; front='WorldOS'; click=(1701,240)
+[A] click posted.
+[A] polling for a minted live session (new run dir + can_act:true on a new port; deadline 420s / 140 polls)…
+[A] no mint yet after 24s — re-clicking the CTA (focus-race recovery)…
+[A] window X=97.0 Y=36.0 W=1823.0 H=956.0; front='WorldOS'; click=(1701,240)
+[A] click posted.
+[A] no mint yet after 48s — re-clicking the CTA (focus-race recovery)…
+[A] window X=97.0 Y=36.0 W=1823.0 H=956.0; front='WorldOS'; click=(1701,240)
+[A] click posted.
+[A] MINTED: run=play-20260602114555 port=8768 can_act=true (after 24 polls)
+[A] after.png deferred to orchestrator
+[A] tearing down minted backend (run=play-20260602114555) — cold-open was enough.
+[A] RESULT: PASS — #356 banner minted a live DM (can_act:true). surface={"can_act":true,"is_live_view":true,"live":true,"campaignId":null,"enabledActions":[]}
+<stdin>:23: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+[A] wrote /private/tmp/wos-gate/qa/ui_playtest_runs/gaveupfix-vet2/native/transition.json
+[uipt-app] === PART B: persona loop on the .app-faithful backend ===
+[uipt-app] [B] launching faithful backend: provider=claude run=gaveupfix-vet2-b port=8791 DM=sonnet
+[uipt-app] [B] waiting for the backend to be player-ready (can_act + seated PC + opening narration)…
+[uipt-app] [B] proceeding without opening narration after 150s (chat empty — persona will judge it; possible #357).
+[uipt-app] [B] backend player-ready on 8791. Pointing the palette persona at it.
+[uipt-app] [B] player agent starting (agent=claude persona=veteran, ~40 actions, budget $8.00)…
+[uipt-app] [B] player agent finished (rc=0).
+<stdin>:11: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+[uipt-app] [B] scoring + summarizing…
+----- part B summary.md -----
+# UI Playtest — gaveupfix-vet2 (veteran on baldurs-gate)
+
+**Verdict: FAIL**  ·  satisfaction 2/10 (derived)  ·  145 actions  ·  ~$5.51
+
+Pass gate: reached the play screen + took an in-story turn, zero critical bugs, zero console errors, satisfaction ≥ 6.
+
+## Did the first-timer get into the game?
+
+- Reached the play screen (table): **yes**
+- Completed intro flow (played a turn): **yes**
+- Actions to first in-story turn: **2** (newbie target ≤ 10)
+- In-story turns taken: **8**
+- Screens visited: launcher, table, combat, journal, map, journal, character, table, combat, table, journal, table, combat, character, table, combat, table
+- **Gave up:** Audit complete, not blocked. I played 6 beats across Day 1 morning to Day 2 evening, visited every major screen (Session/Battle/Parley, Party/Heroes/Stash/Forge/Relations, Map, Journal/Codex, Market), and reported 10 bugs. I have enough data for a thorough verdict and am stopping by choice, not necessity.
+
+## Health signals
+
+- Dead clicks (landed but screen didn't change): **1** (target 0)
+- Console errors: **0** (target 0)
+- Failed/4xx-5xx network requests: **0** (target 0)
+- Missing-image 404s (expected graceful degradation, not counted above): **10**
+
+## Bugs found
+
+- Total: **13** (player-reported 11, auto-captured 1)
+- By severity: critical **0**, major **11**, minor **1**, trivial **1**
+- By screen: launcher (1), Party → Heroes → character sheet (Lineage section) (1), Party → Heroes → abilities panel (Saving Throws section) (1), Party → Heroes → spells panel (1), Party → Relations (1), Map → World Atlas (1), Market (1), Table → Session → chronicle log (1), Table → Battle tab (1), Table → Session → Chronicle log (1), Table → Parley tab (1), Party → Heroes → Rest & Prepare dialog (1), table (1)
+- By category: ux (11), network (1), content (1)
+
+### Top findings
+
+- **[MAJOR]** (Party → Heroes → abilities panel (Saving Throws section)) Saving throws show no proficiency markers — impossible to tell which saves are class-proficient
+    - expected: BG3's character sheet marks each proficient saving throw with a filled dot (●) and untrained throws with an empty dot (○), at a glance making it clear which two saves the class grants. A veteran can scan and immediately know "INT and WIS are proficient for this Wizard."
+    - actual: Saving Throws section lists all six values (STR -1, DEX +1, CON +2, INT +4, WIS +3, CHA +0) as plain numbers with no visual proficiency indicator. A player has to do mental arithmetic (compare to the ability modifier and subtract prof bonus) to figure out which saves are proficient — the opposite of BG3's affordance.
+    - evidence: `player/screenshots/step-024-bug.png`
+- **[MAJOR]** (Party → Heroes → spells panel) Spell entries show condensed stat blurbs — no full rules text inspector on hover/click
+    - expected: BG3 shows a full rules-text tooltip for every spell: the complete description, all scaling options (e.g. "cast at a higher slot: add 1d4+1 per slot level"), saving throw DC, AoE shape details, and any concentration/ritual notes. A veteran uses this constantly to make informed decisions.
+    - actual: Each spell entry shows a compact stat block (e.g. "Magic Missile Level 1 · Evocation Range 120 feet Cast action Duration instantaneous Effect 1d4 + 1 force") with no apparent way to expand it to full rules text. New or returning players cannot look up what a spell actually does in-context.
+    - evidence: `player/screenshots/step-027-bug.png`
+- **[MAJOR]** (Party → Relations) No per-companion approval gauges — only faction standing tracked
+    - expected: BG3's approval system gives every companion an individual approval gauge (e.g. Shadowheart: -/+) that ticks up or down based on specific decisions. Seeing that gauge after each choice is a core feedback loop — players optimise or roleplay around it constantly. I'd expect individual NPC/companion approval entries for any recruited party members.
+    - actual: Relations shows faction-level standing (8 factions, 0–100 gauge each) only. "Persons We Know" exists as a section but it's empty and there's no individual companion approval row — even for a companion like the half-elf encountered in the opening scene.
+    - evidence: `player/screenshots/step-032-bug.png`
+- **[MAJOR]** (Map → World Atlas) Atlas is a location list, not a visual map — no party position, no fog of war, no sub-area detail
+    - expected: BG3's map shows a rendered overhead image with your party marker, unexplored fog-of-war, and sub-area maps (e.g. a detailed layout of the Elfsong Tavern). Fast travel is gated on discovering locations by actually visiting them. I expect to see my position on a painted map, not a list of buttons.
+    - actual: The Atlas shows a small image placeholder labeled "N OPEN WORLDS ATLAS" surrounded by buttons for 21 locations (all pre-discovered). There's no visual overhead map, no party position indicator, and no fog of war. All 21 locations are listed as discovered from session start — exploration has no spatial component.
+    - evidence: `player/screenshots/step-035-bug.png`
+- **[MAJOR]** (Market) Shop items have no inspect/tooltip — buying blind with no stats, rarity, or magical properties visible
+    - expected: BG3's shop shows a full stat card for every item on hover/click before purchase: AC bonus, damage dice, magical enchantments, rarity (color-coded), compare-delta vs currently equipped. A veteran would never buy a piece of armor without seeing its full stat block first.
+    - actual: Each row shows item name, type tag, weight, and price — clicking "Take" stages it to the counter immediately with no preview. There is no way to read an item's stats or compare it to equipped gear before buying. "Studded leather Armor 20 lb 25gp" tells a veteran nothing about AC or requirements.
+    - evidence: `player/screenshots/step-042-bug.png`
+- **[MAJOR]** (Table → Session → chronicle log) Dice roll results buried in DM narration text — no prominent roll display, no DC shown
+    - expected: BG3 shows a cinematic d20 spinning on screen with the result prominently displayed (e.g. "Deception — 5 vs DC 14 — FAILURE"), then narrates the consequence. Players track their rolls, see which skill was used, and the DC for skill-gated decisions. The roll is a satisfying interactive moment, not a footnote.
+    - actual: Roll result appeared as inline text within the DM's narration paragraph: "A five. The bluff lands wrong. ---". No dedicated roll display, no skill name, no DC shown, no visual distinction between the roll result and the story prose. Players who miss the "A five." sentence won't realize a dice roll happened at all.
+    - evidence: `player/screenshots/step-050-bug.png`
+- **[MAJOR]** (Table → Battle tab) No tactical grid, no movement preview, no spell AoE circles in the combat interface
+    - expected: BG3's combat runs on a fully rendered 3D tactical grid: your movement range highlights in blue as you hover, spell cones/circles show the AoE footprint before casting, tokens show position and conditions as icon rings, and enemies display HP bars. The spatial element is the heart of tactical BG3 combat.
+    - actual: The Battle tab shows Move/Attack/Bonus/Reaction/End Turn buttons (correct action economy structure) but no grid or map — it appears combat is positional only via "Zones" (an abstract zone concept, not a coordinate grid). No movement preview, no spell targeting circles, and no token icon layout. Out of combat the buttons are all disabled, so can't confirm if projection happens during live combat.
+    - evidence: `player/screenshots/step-064-bug.png`
+- **[MAJOR]** (Table → Session → Chronicle log) Chronicle log accumulates full session history — latest DM narration buried / inaccessible as session grows
+    - expected: BG3's dialogue/log always surfaces the most recent event at the top or in a focused panel, and older entries collapse or paginate away. A player should always be able to read the DM's most recent beat at a glance without scrolling through every prior beat since session start.
+    - actual: The chronicle log contains the entire session history as a single monolithic block of text. After 4 beats the log is long enough to truncate the accessibility tree output before reaching the current DM narration — making it impossible to read the latest response without manually scrolling. Screen readers would also lose the current state entirely.
+    - evidence: `player/screenshots/step-090-bug.png`
+- **[MAJOR]** (Table → Parley tab) Parley shows no NPC dialogue options or response text preview — skill slots chosen blind
+    - expected: BG3's dialogue system shows a dialogue wheel/list with the actual text of what your character will say for each option, so you choose the exact words before committing. You also see NPC reaction cues (tone, body language). Picking "Persuasion" or "Intimidation" in BG3 still shows you a text line like "I think we can work something out…" before you commit. Players should know what they're about to say.
+    - actual: Parley tab shows 6 skill slots (Arcana +4 DC14, History +4 DC14, Persuasion +0 DC14, etc.) with no text indicating what Rolan actually says when each is selected. Players pick skills mechanically with no narrative preview. Also says "Speaking with Rolan" (player's own character) — likely showing self instead of an NPC, suggesting this panel is designed for active dialogue context that wasn't triggered.
+    - evidence: `player/screenshots/step-111-bug.png`
+- **[MAJOR]** (Party → Heroes → Rest & Prepare dialog) Long Rest has no spell preparation interface — Wizard cannot choose which spells to prepare after resting
+    - expected: BG3's Long Rest launches a "Prepare Spells" screen before sleep: Wizards pick which spells to memorize from their full spellbook, up to their INT modifier + Wizard level limit. This is one of the most satisfying character-management moments in BG3. Players should be able to swap prepared spells after every long rest.
+    - actual: Rest & Prepare shows a "Long Rest" button that restores HP and spell slots, but there is no spell preparation phase — no screen to choose which spells from the spellbook to prepare for the next day. Rolan has 7 spells in his spellbook (per the Spells tab "Browse spellbook (7)") but only 4 are ever prepared with no UI to change them.
+    - evidence: `player/screenshots/step-136-bug.png`
+- **[MAJOR]** (table) Player gave up: Audit complete, not blocked. I played 6 beats across Day 1 morning to Day 2 even
+    - expected: A first-timer can keep playing without getting stuck.
+    - actual: Audit complete, not blocked. I played 6 beats across Day 1 morning to Day 2 evening, visited every major screen (Session/Battle/Parley, Party/Heroes/Stash/Forge/Relations, Map, Journal/Codex, Market), and reported 10 bugs. I have enough data for a thorough verdict and am stopping by choice, not necessity.
+    - evidence: `player/screenshots/step-144-giveup.png`
+- **[MINOR]** (Party → Heroes → character sheet (Lineage section)) Raw wiki markup "__notoc__" visible in character Lineage description
+    - expected: Clean prose biography for Rolan's lineage text — BG3's codex entries are polished lore blurbs with no visible markup.
+    - actual: Lineage description reads: "__notoc__ Rolan is an aspiring wizard..." — the MediaWiki suppress-TOC directive is leaking into the UI as raw visible text.
+    - evidence: `player/screenshots/step-023-bug.png`
+
+## Player's closing verdict
+
+> ## BG3 Veteran Verdict
+> 
+> **6 beats played, Day 1 morning → Day 2 evening, 10 bugs filed.**
+> 
+> ---
+> 
+> ### What's Genuinely Impressive
+> 
+> **The DM layer is exceptional.** The opening scene — warm Netherbrain-scarred cobblestones, the tiefling girl silently holding her cart, Harvin the corrupt Flaming Fist trooper as an emergent antagonist — reads like BG3 Act 1 companion writing. Dice are consequential and narrated faithfully (`d20 Rolan — Intimidation vs DC 13: 1d20[16]+0 = 16 — SUCCESS. Fire-bolt warning clears the lane`). This may be the best live AI storytelling in any game I've played.
+> 
+> Other genuine strengths:
+> - Full 12-slot paper-doll (matches BG3 exactly)  
+> - Honest `(preview)` labels on unfinished controls — player trust done right  
+> - Fog-of-war Codex with 21 `?????` entries — clever  
+> - Faction standing for 8 lore-accurate factions  
+> - Day/night time cycle advancing with consequences  
+> - XP tracking live (75/2700 after 6 beats)
+> 
+> ---
+> 
+> ### Where a BG3 Veteran Reaches for Things That Aren't There
+> 
+> | Gap | BG3 Affordance | WorldOS Actual |
+> |---|---|---|
+> | Saving throw proficiency | Filled ●/empty ○ dots per save | Plain numbers, mental math required |
+> | Spell inspector | Full rules text on hover | One-line stat blurb only |
+> | Visual map | Overhead art + party position + fog | Location list with descriptions |
+> | Shop inspect | Full stat card before purchase | Name/weight/price only |
+> | Dice roll display | Cinematic d20 spin + DC shown | Inline in DM prose (improved after beat 3) |
+> | Chronicle pagination | Log collapses old beats | Full session history: a11y truncates before latest narration |
+> | Parley dialogue preview | Exact words shown before committing | Skill slots picked blind (no text preview) |
+> | Tactical combat grid | Movement range highlighted, spell AoE circles | No grid; zone-abstraction, untestable without live combat |
+> | Spell preparation | Pick spells after Long Rest | Long Rest button only — no prep interface |
+> | Companion approval | Per-companion gauge per decision | Faction-level only |
+> 
+> ---
+> 
+> ### Summary
+> 
+> A BG3 veteran will be genuinely hooked by the first scene and feel mostly at home navigating the systems screens. The narrative depth clears BG3's bar easily. The gap is in the **tactile feedback layer** — the satisfying mechanical rituals BG3 players rely on: the dice popup, the AoE targeting circle, the spell prep screen, the item compare tooltip, the save proficiency dot. Those are largely absent. Fix the 10 filed gaps and this rivals BG3's moment-to-moment feel; in the narrative layer, it already surpasses it.
+
+---
+_Generated by qa/ui_playtest_score.py from gaveupfix-vet2/. Artifacts: player/screenshots/, player/a11y/, bugs.ndjson, actions.ndjson, console.ndjson, network.ndjson._
+<stdin>:25: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+[uipt-app] === DONE. dir=/private/tmp/wos-gate/qa/ui_playtest_runs/gaveupfix-vet2 ===
+[uipt-app] part A (#356 gate): PASS   part B (persona loop): PASS
+[uipt-app] spend: DM ~$1.9476 + player ~$5.5139135999999995 = ~$7.4615 (budget $8.00)
+----- run.json -----
+{
+  "run": "gaveupfix-vet2",
+  "world": "baldurs-gate",
+  "persona": "veteran",
+  "beats_cap": 40,
+  "budget_usd": 8.0,
+  "build_sha": "f1c796c",
+  "version": "v1.0.3-138-gf1c796c",
+  "part": "AB",
+  "part_a": {
+    "gate": "native_transition_356",
+    "result": "PASS",
+    "original_result": "PASS",
+    "failure_bucket": null,
+    "failure_detail": null,
+    "minted_run_dir": "play-20260602114555",
+    "minted_port": 8768,
+    "kept_backend_alive": false,
+    "first_turn_ready": false
+  },
+  "part_b": {
+    "persona_loop": "PASS",
+    "score_pass": false,
+    "provider": "claude",
+    "player_agent": "claude",
+    "original_result": "PASS",
+    "failure_bucket": "no_provider",
+    "failure_detail": "score.json failed: Audit complete, not blocked. I played 6 beats across Day 1 morning to Day 2 evening, visited every major screen (Session/Battle/Parley, Party/Heroes/Stash/Forge/Relations, Map, Journal/Codex, Market), and reported 10 bugs. I have enough data for a thorough verdict and am stopping by choice, not necessity."
+  },
+  "spend_usd": {
+    "dm_and_companions": 1.9476,
+    "player_agent": 5.5139,
+    "total": 7.4615
+  },
+  "surface": "BUILT dist/WorldOS.app (part A) + claude provider/claude player backend (part B)",
+  "at": "2026-06-02T12:16:08Z"
+}PLAYTEST_EXIT=1

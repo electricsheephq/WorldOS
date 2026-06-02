@@ -147,23 +147,31 @@ def main() -> int:
     gave_up = status.get("reason") == "give_up"
 
     # --- satisfaction --------------------------------------------------------
-    satisfaction = extract_satisfaction(verdict)
-    if satisfaction is None:
-        # Derive a rough satisfaction when the player didn't state one: start at 8,
-        # subtract for the friction we measured. (Informational, clearly derived.)
-        s = 8
-        if not completed_intro_flow:
-            s -= 3
-        if gave_up:
-            s -= 2
-        s -= min(3, by_sev.get("critical", 0) * 2 + by_sev.get("major", 0))
-        s -= min(2, dead_clicks)
-        if console_errors:
-            s -= 1
-        satisfaction = clamp10(s)
-        satisfaction_source = "derived"
-    else:
+    # A `finish` tool call records a structured 1-10 satisfaction in status.json — the most
+    # reliable self-report (a validated tool arg, impossible to mis-parse). Prefer it; then a
+    # "N/10" in the verdict text; then derive from measured friction.
+    status_sat = status.get("satisfaction")
+    if isinstance(status_sat, (int, float)) and not isinstance(status_sat, bool):
+        satisfaction = clamp10(int(status_sat))
         satisfaction_source = "self-reported"
+    else:
+        satisfaction = extract_satisfaction(verdict)
+        if satisfaction is None:
+            # Derive a rough satisfaction when the player didn't state one: start at 8,
+            # subtract for the friction we measured. (Informational, clearly derived.)
+            s = 8
+            if not completed_intro_flow:
+                s -= 3
+            if gave_up:
+                s -= 2
+            s -= min(3, by_sev.get("critical", 0) * 2 + by_sev.get("major", 0))
+            s -= min(2, dead_clicks)
+            if console_errors:
+                s -= 1
+            satisfaction = clamp10(s)
+            satisfaction_source = "derived"
+        else:
+            satisfaction_source = "self-reported"
 
     critical = by_sev.get("critical", 0)
     major = by_sev.get("major", 0)

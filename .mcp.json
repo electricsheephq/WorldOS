@@ -3,6 +3,7 @@
     "clawdnd-engine": {
       "type": "stdio",
       "command": "uv",
+      "alwaysLoad": true,
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/engine", "server.py"]
     },
     "clawdnd-rules": {
