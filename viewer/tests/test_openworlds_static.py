@@ -170,8 +170,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('camp: "map"', source)
         self.assertIn('rest: "map"', source)
         self.assertIn('raw === "camp" || raw === "rest" ? true', source)
-        self.assertIn('id === "map" ? false', source)
+        self.assertIn(': false', source)
         self.assertIn('setCampMode(route.campMode)', source)
+        self.assertNotIn("typeof route.campMode", source)
+        self.assertNotIn("typeof initial.campMode", source)
+        self.assertIn('else if (id !== "map") setCampMode(false)', source)
         self.assertIn('location={screen === "map" && campMode ? "Camp"', source)
 
     def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
@@ -199,6 +202,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("disabled={cart.length === 0 || surfaceLoading", source)
         self.assertIn("Checking the counter", source)
         self.assertIn("if (!response.ok) throw new Error", source)
+        self.assertIn('.catch((e) => toast({ kind: "danger"', source)
+        self.assertIn('title: "Move not sent"', source)
 
     def test_journal_detail_matches_selected_tab_not_first_rumor(self):
         status, ctype, body = self._get("/openworlds/screen-journal.jsx")
@@ -697,7 +702,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # …and the GM-advisory strip is still in the narration path (not removed by this change).
         self.assertIn("sanitizeNarration(entry.text)", source)
         self.assertIn('data-worldos-testid="chronicle-narration"', source)
-        self.assertNotIn('>Chronicle</span>\n          {text}', source)
+        self.assertNotRegex(source, r'data-worldos-testid="chronicle-narration"[\s\S]*?>Chronicle</span>')
 
     def test_openworlds_app_bounds_the_live_session_tail(self):
         # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long

@@ -1,10 +1,11 @@
 /* Screen: Forge — item & spell crafting */
 
-/* W2d: item-icon scope helper — mirrors screen-inventory's slug()/itemScope(). Recipes craft
-   a real item (its `name`) and components are named reagents; build "item-<slug(name)>" so
-   wiki icons resolve, with graceful 404 → <Placeholder> fallback inside <Img>. Obscure
-   crafting reagents with no wiki page simply fall back to the placeholder glyph. */
+/* W2d: item-icon scope helper — mirrors screen-inventory's slug()/itemScope(). Recipes often
+   name an outcome ("Sharpened greataxe edge") while the ingested art cache stores the reusable
+   base prop ("item-greataxe"), so ask the shared alias helper first. Obscure crafting reagents
+   with no wiki page simply fall back to the placeholder glyph. */
 function fItemScope(name) {
+  if (window.itemArtScope) return window.itemArtScope(name);
   const s = (window.slug ? window.slug(name) : "");
   return s ? "item-" + s : "";
 }

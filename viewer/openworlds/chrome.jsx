@@ -20,6 +20,7 @@ const ITEM_ART_ALIASES = {
   "wax-candle-6": "candle",
   "wax-candles-6": "candle",
   "candles": "candle",
+  "sharpened-greataxe-edge": "greataxe",
 };
 
 window.itemArtScope = function itemArtScope(itemOrName) {

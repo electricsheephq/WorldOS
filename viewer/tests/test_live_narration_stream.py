@@ -741,8 +741,9 @@ class LiveNarrationStreamTests(unittest.TestCase):
         out = self._run(
             "h.enqueue('/chat', { items: ["
             "{ role: 'player', text: '[do] ask the guard what changed overnight', at: 20 },"
-            "{ role: 'player', text: '[say] Any trouble on the wall?', at: 21 }"
-            "], next: 2 });"
+            "{ role: 'player', text: '[say] Any trouble on the wall?', at: 21 },"
+            "{ role: 'player', text: '[say] continue', at: 22 }"
+            "], next: 3 });"
             "await h.tick();"
             "return ({ chronicle: h.chronicle() });"
         )
@@ -751,6 +752,7 @@ class LiveNarrationStreamTests(unittest.TestCase):
             [
                 {"kind": "action", "text": "ask the guard what changed overnight", "who": "You"},
                 {"kind": "dialog", "text": "Any trouble on the wall?", "who": "You"},
+                {"kind": "dialog", "text": "continue", "who": "You"},
             ],
             "routing tags should keep resumed action rows distinct from in-character speech rows",
         )

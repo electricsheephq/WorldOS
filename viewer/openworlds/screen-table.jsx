@@ -270,6 +270,7 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   const playerEchoKeys = (entry) => {
     const kind = entry && (entry.kind || entry.type);
     const who = String(entry?.who || "").trim().toLowerCase();
+    if (entry?.route === "say" || entry?.mode === "say" || entry?.routing?.type === "say") return [];
     if (kind !== "action" && !(kind === "dialog" && who === "you")) return [];
     const key = String(entry?.text || "")
       .replace(/^\s*(?:say|do|check|save)\s*:\s*/i, "")
@@ -284,6 +285,7 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     const kind = entry && (entry.kind || entry.type);
     const who = String(entry?.who || "").trim().toLowerCase();
     if (kind !== "dialog" || who !== "you") return entry;
+    if (entry?.route === "say" || entry?.mode === "say" || entry?.routing?.type === "say") return entry;
     const key = playerEchoKeys(entry)[0] || "";
     const label = QUICK_ACTION_REPLAY_LABELS[key];
     return label ? { ...entry, kind: "action", text: label } : entry;

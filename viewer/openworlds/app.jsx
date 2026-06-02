@@ -21,8 +21,8 @@ window.playerReplayBeat = window.playerReplayBeat || function playerReplayBeat(t
     continue: "Continue",
     "look around": "Look",
   };
-  if (route === "say" || !route) return { kind: "dialog", who: "You", text: displayText };
-  return { kind: "action", who: "You", text: quickLabels[displayText.toLowerCase()] || displayText };
+  if (route === "say" || !route) return { kind: "dialog", who: "You", text: displayText, route: route || "" };
+  return { kind: "action", who: "You", text: quickLabels[displayText.toLowerCase()] || displayText, route };
 };
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
@@ -800,17 +800,17 @@ function App() {
       if (!raw) return null;
       const id = VALID.has(raw) ? raw : (ALIAS[raw] || null);
       if (!id) return null;
-      return { id, campMode: raw === "camp" || raw === "rest" ? true : (id === "map" ? false : undefined) };
+      return { id, campMode: raw === "camp" || raw === "rest" ? true : false };
     };
     const initial = fromHash();
     if (initial) {
-      if (typeof initial.campMode === "boolean") setCampMode(initial.campMode);
+      setCampMode(initial.campMode);
       setScreen(initial.id);
     }
     const onHash = () => {
       const route = fromHash();
       if (!route) return;
-      if (typeof route.campMode === "boolean") setCampMode(route.campMode);
+      setCampMode(route.campMode);
       setScreen(route.id);
     };
     window.addEventListener("hashchange", onHash);
@@ -819,6 +819,7 @@ function App() {
 
   const navigate = (id, opts) => {
     if (opts?.openCamp) setCampMode(true);
+    else if (id !== "map") setCampMode(false);
     setScreen(id);
   };
 
