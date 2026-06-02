@@ -15,7 +15,13 @@ enum ProviderKind: String, CaseIterable, Identifiable {
     }
 
     static var scriptedProviderEnabled: Bool {
-        ProcessInfo.processInfo.environment["WORLDOS_ENABLE_SCRIPTED_PROVIDER"] == "1"
+        if ProcessInfo.processInfo.environment["WORLDOS_ENABLE_SCRIPTED_PROVIDER"] == "1" {
+            return true
+        }
+        if let bundled = Bundle.main.object(forInfoDictionaryKey: "WorldOSEnableScriptedProvider") as? Bool {
+            return bundled
+        }
+        return false
     }
 
     var id: String { rawValue }

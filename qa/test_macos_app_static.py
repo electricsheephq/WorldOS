@@ -89,6 +89,16 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("player_agent", harness)
         self.assertIn("provider", harness)
 
+    def test_codex_provider_wrappers_pin_supported_default_model(self):
+        dm = self.read("scripts/play_codex_dm.sh")
+        actor = self.read("scripts/play_codex_actor.sh")
+
+        for script in (dm, actor):
+            self.assertIn("WORLDOS_CODEX_MODEL", script)
+            self.assertIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"', script)
+            self.assertIn('MODEL_ARGS=(--model "$CODEX_MODEL")', script)
+            self.assertIn("--ignore-user-config", script)
+
     def test_codex_dm_provider_feeds_live_progress_events(self):
         script = self.read("scripts/play_codex_dm.sh")
         app = self.read("viewer/openworlds/app.jsx")
@@ -135,12 +145,18 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         root_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/RootView.swift")
         play_view = self.read("macos/WorldOSApp/Sources/WorldOSApp/Views/PlayView.swift")
         script = self.read("scripts/play_scripted_dm.sh")
+        build_script = self.read("script/build_and_run.sh")
 
         self.assertIn("case scripted", models)
         self.assertIn("WORLDOS_ENABLE_SCRIPTED_PROVIDER", models)
+        self.assertIn('Bundle.main.object(forInfoDictionaryKey: "WorldOSEnableScriptedProvider")', models)
         self.assertIn("static var allCases", models)
         self.assertIn("cases.append(.scripted)", models)
         self.assertIn("var isLaunchEnabled", models)
+
+        self.assertIn('ENABLE_SCRIPTED_PROVIDER="${WORLDOS_ENABLE_SCRIPTED_PROVIDER:-0}"', build_script)
+        self.assertIn("WorldOSEnableScriptedProvider", build_script)
+        self.assertIn('ENABLE_SCRIPTED_PROVIDER_PLIST="$(plist_bool "$ENABLE_SCRIPTED_PROVIDER")"', build_script)
 
         self.assertIn("struct ScriptedProvider", providers)
         self.assertIn("ProviderKind.scriptedProviderEnabled", providers)

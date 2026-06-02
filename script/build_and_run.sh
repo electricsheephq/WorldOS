@@ -12,6 +12,7 @@ MIN_SYSTEM_VERSION="13.0"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ART_ROOT="${WORLDOS_ART_REPO_ROOT:-${CLAWDND_ART_REPO_ROOT:-$ROOT_DIR}}"
 PREFER_LAUNCH_ROOTS="${WORLDOS_PREFER_LAUNCH_ROOTS:-1}"
+ENABLE_SCRIPTED_PROVIDER="${WORLDOS_ENABLE_SCRIPTED_PROVIDER:-0}"
 plist_escape() {
   local value="$1"
   value="${value//&/&amp;}"
@@ -32,6 +33,7 @@ plist_bool() {
 ROOT_DIR_PLIST="$(plist_escape "$ROOT_DIR")"
 ART_ROOT_PLIST="$(plist_escape "$ART_ROOT")"
 PREFER_LAUNCH_ROOTS_PLIST="$(plist_bool "$PREFER_LAUNCH_ROOTS")"
+ENABLE_SCRIPTED_PROVIDER_PLIST="$(plist_bool "$ENABLE_SCRIPTED_PROVIDER")"
 PACKAGE_DIR="$ROOT_DIR/macos/WorldOSApp"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$DISPLAY_NAME.app"
@@ -131,6 +133,8 @@ build_bundle() {
   <string>$ART_ROOT_PLIST</string>
   <key>WorldOSPreferLaunchRoots</key>
   $PREFER_LAUNCH_ROOTS_PLIST
+  <key>WorldOSEnableScriptedProvider</key>
+  $ENABLE_SCRIPTED_PROVIDER_PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSAppTransportSecurity</key>
