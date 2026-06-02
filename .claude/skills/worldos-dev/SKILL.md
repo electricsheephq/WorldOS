@@ -10,6 +10,16 @@ star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; go
 universe-system that generates worlds. Source-available commercial product, BG-focused. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
+> **⚠ HEAVY QA SWEEPS (5-persona / RRI) → USE THE SUPPORT VM, NOT LOCAL.** The 16 GB Mac OOMs mid-sweep
+> (proven 2026-06-02: cratered to 147 M free, personas 2–5 backends never minted, shipped a junk PARTIAL RRI 2.7).
+> Documented lane: **`WorldOS-GUI-RUNBOOK.md` § "Support VM lane (heavy sweeps)"** + memory note
+> `project_worldos_vm_sweep_lane.md`. The Mac runs the **macOS-only** native Part-A (#356 `.app` launcher +
+> built-app screenshots); the **32 GB evaos-support VM** (`root@178.104.123.213`, repo `/root/worldos-qa/WorldOS`,
+> harness `sweep_v2.sh`) runs the heavy **part-B** 5-persona sweep against the **real OpenWorlds browser GUI**
+> (server.py + playwright/chromium — NOT a degraded proxy). RRI rolls up Mac `--handoff-json` + same-SHA VM dirs.
+> **On resume after a compaction, re-read that runbook section FIRST** — do not rebuild the QA plan from memory
+> or fight local RAM. For per-beat DM latency, see the `worldos-latency-forensics` skill.
+
 ## Load-bearing INVARIANTS (never violate)
 1. **Engine = SOLE WRITER.** State is `snapshot.json` written under `campaign_lock` via
    atomic temp-file + `os.replace` (`servers/engine/store.py`). The player facade
@@ -58,8 +68,13 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
    ```
 
 ## THE QA LOOP
-Spec: `qa/SCORING.md`. **Log every run to `qa/SCORECARD.md`.** Targets: **story ≥ 4.3,
-mechanical ≥ 4.5, gate GREEN, 0 critical/high.**
+Spec: `qa/SCORING.md`. **The ledger is `qa/scores_db.py` (SQLite `scores.db`) → rendered to
+`qa/scores_ledger.md` (`add_run(...)` / `--render`); `qa/SCORECARD.md` is LEGACY narrative.** Append
+every scored run via `add_run(...)` — NEVER hand-edit `scores_ledger.md`. Load-bearing columns:
+**surface** (engine-duo / GUI-built-app / GUI-headless-proxy / smoke-only) + **dm_model** + **actor_model**
++ **scorer** — this is what prevents cross-surface/cross-model score confusion; mark contaminated rows
+(RED-capped / PARTIAL / harness) with `*` so an RRI-2.7-class number is never cited as a clean quality score.
+Targets: **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0 critical/high.**
 
 **Story/mechanical runners** (from repo root):
 - `qa/run_duo.sh <run> <world> <persona> [beats] [budget]` — AI player + DM duo (gateway-free
@@ -102,9 +117,13 @@ with ONLY the Playwright palette MCP — a blind persona; sees only screenshot/a
 the palette). The Player drives the browser → clicks POST `/move` → the DM resolves → narration
 flows back onto the screen; the loop is validated **because the player could play it**.
 
-The restricted **8-tool palette** (`qa/playwright/palette_server.js`, an MCP server backing a
+The restricted **9-tool palette** (`qa/playwright/palette_server.js`, an MCP server backing a
 Chromium browser — mirrors the engine's role-enforced `player_server.py` facade; NO source/engine/
-filesystem access): `screenshot · a11y_tree · click · type · key · wait · report_bug · give_up`.
+filesystem access): `screenshot · a11y_tree · click · type · key · wait · report_bug · give_up · finish`.
+**`finish(satisfaction, verdict)` = a SATISFIED end** → `gave_up=false` + a self-reported 1–10 score (the
+scorer PREFERS `status.satisfaction` over the brittle verdict-regex); **`give_up` = a genuine BLOCK** (dead
+control / error / DM stalled). Don't collapse them — #574: a satisfied player who just stopped was mis-scored
+`gave_up=true` + a derived low sat (7→2). Goal-gate G3 = sat ≥ 7 self-reported AND `gave_up=false`.
 (Use `locator.ariaSnapshot()` — `page.accessibility.snapshot()` was removed in Playwright ≥1.5x.)
 It **passively** auto-emits console errors + 4xx/5xx as `source:"auto"` bugs.
 
@@ -164,6 +183,17 @@ an unattended loop.
 - **Surfacing info ≠ the DM using it** — fold the value into a trigger the DM already hits
   every turn (e.g. `turn_brief` on `next_turn`; Director at beat start), or ENFORCE in the
   engine (Multiattack #181, turn-skip #183).
+- **QA must EXERCISE the flag before you trust an A/B** — `qa/run_duo.sh` once `--resume`d the full
+  transcript and IGNORED `CLAWDND_LEAN_BEATS`, so every prior "lean" A/B was a non-lean artifact (a
+  short run just has a smaller transcript that reads as "context dropped"). Before trusting a flag A/B
+  (lean / effort / `alwaysLoad`), READ the runner you invoked and confirm its DM turn actually consumes
+  the flag. A flag BUILT but never exercised by QA is DEAD CODE — expect latent bugs the moment it runs
+  for real (#538 recent_narration + #543 scene_context AttributeError surfaced only after #549 wired lean).
+- **DM-beat latency is model REASONING, not the GUI/harness** — measured ~100–126s/beat at `--effort
+  medium` ≈ original Opus-high; it's `duration_api_ms` (surface-independent), not the viewer/Playwright.
+  Don't chase a harness perf bug. Levers + the SDK measurement method are in the `worldos-latency-forensics`
+  skill: `alwaysLoad` un-defers engine tools (cold-open 248→176s, neutral), effort is the trading lever
+  (owner's quality call, A/B first), model choice is OPEN (see `docs/MODEL-TIERING-STRATEGY.md`).
 - **First-principles for load-bearing decisions** (public contract/schema/tool API) — write
   a decision doc, not speculative code.
 - **REUSE before rebuild** — the engine is usually ~80–90% there (Quest-Arc reused the
