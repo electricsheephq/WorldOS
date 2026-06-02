@@ -270,6 +270,21 @@ def evidence_gap_count(payload: dict[str, Any]) -> int:
     return len(gaps) if isinstance(gaps, list) else 0
 
 
+def evidence_manifest_blockers(payload: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    gap_count = evidence_gap_count(payload)
+    if gap_count:
+        blockers.append(f"evidence gaps: {gap_count}")
+    handoff_gate = payload.get("handoff_gate") if isinstance(payload.get("handoff_gate"), dict) else {}
+    if handoff_gate.get("ok") is False:
+        reasons = handoff_gate.get("blocking_reasons")
+        if isinstance(reasons, list) and reasons:
+            blockers.extend(str(reason) for reason in reasons)
+        else:
+            blockers.append("handoff evidence marked ok:false")
+    return blockers
+
+
 @dataclass
 class GateResult:
     name: str
@@ -533,19 +548,37 @@ def drive_moves(
 
         deadline = time.time() + timeout
         advanced = False
+        last_status_error = ""
         while time.time() < deadline:
-            status = smoke.wait_for_status(base_url, gate_dir, timeout=3)
+            try:
+                status = smoke.wait_for_status(base_url, gate_dir, timeout=3)
+            except Exception as exc:  # noqa: BLE001 - keep polling through transient busy/status timeouts.
+                last_status_error = str(exc)
+                append_ndjson(
+                    gate_dir / "network.ndjson",
+                    {"at": time.time(), "method": "GET", "url": urllib.parse.urljoin(base_url, "/app-status"), "error": last_status_error},
+                )
+                time.sleep(1 if provider != "scripted" else 0.5)
+                continue
             chat_lines = int(((status.get("viewer") or {}).get("chat_lines") or 0) if isinstance(status.get("viewer"), dict) else 0)
             if chat_lines > last_chat_lines:
                 if provider != "scripted":
-                    advanced = True
-                    last_chat_lines = chat_lines
-                    break
-                summary = smoke.provider_summary(ROOT / "play-state" / run_id)
-                if int(summary.get("resolved_move_count") or summary.get("move_resolved_count") or 0) >= beat:
-                    advanced = True
-                    last_chat_lines = chat_lines
-                    break
+                    viewer = status.get("viewer") if isinstance(status.get("viewer"), dict) else {}
+                    readiness = status.get("readiness") if isinstance(status.get("readiness"), dict) else {}
+                    last_role = str(viewer.get("last_chat_role") or "").strip().lower()
+                    ready_for_play = readiness.get("ready_for_play") is True
+                    # Non-scripted providers echo the player's move before the DM reply.
+                    # Count only the post-move DM tail plus a playable app status as narration advance.
+                    if chat_lines >= last_chat_lines + 2 and last_role == "dm" and ready_for_play:
+                        advanced = True
+                        last_chat_lines = chat_lines
+                        break
+                else:
+                    summary = smoke.provider_summary(ROOT / "play-state" / run_id)
+                    if int(summary.get("resolved_move_count") or summary.get("move_resolved_count") or 0) >= beat:
+                        advanced = True
+                        last_chat_lines = chat_lines
+                        break
             time.sleep(1 if provider != "scripted" else 0.5)
         json_dump(gate_dir / f"app-status.beat-{beat}.json", status)
         try:
@@ -556,7 +589,8 @@ def drive_moves(
         smoke.write_text_snapshot(gate_dir / "a11y" / f"beat-{beat}.html", smoke.html_text(base_url))
         smoke.capture_openworlds_screenshot(base_url=base_url, out=gate_dir, port=expected_port, label=f"beat-{beat:03d}", gaps=gaps, screenshots=screenshots)
         if not advanced:
-            return False, "no_narration", f"narration did not advance after {provider} beat {beat}", {"screenshots": screenshots, "evidence_gaps": gaps}
+            suffix = f"; last app-status error: {last_status_error}" if last_status_error else ""
+            return False, "no_narration", f"narration did not advance after {provider} beat {beat}{suffix}", {"screenshots": screenshots, "evidence_gaps": gaps}
 
     final_status = smoke.wait_for_status(base_url, gate_dir, timeout=5)
     json_dump(gate_dir / "app-status.final.json", final_status)
@@ -623,9 +657,14 @@ def run_web_scripted(args: argparse.Namespace, out: Path, expected_sha: str) -> 
         verdict=gate.status,
     )
     gate.evidence_manifest = manifest_path
-    if gate.status == "passed" and evidence_gap_count(manifest):
-        gate.fail("no_provider", "web scripted evidence manifest has gaps")
-        gate.evidence_gaps = manifest.get("evidence_gaps", [])
+    blockers = evidence_manifest_blockers(manifest) if gate.status == "passed" else []
+    if gate.status == "passed" and gate.evidence_gaps:
+        blockers.insert(0, f"smoke evidence gaps: {len(gate.evidence_gaps)}")
+    if blockers:
+        gate.fail("no_provider", "web scripted evidence manifest is not handoff-ready: " + "; ".join(blockers))
+        manifest_gaps = manifest.get("evidence_gaps", [])
+        if isinstance(manifest_gaps, list):
+            gate.evidence_gaps.extend(manifest_gaps)
     elif gate.status != "passed":
         gate.evidence_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else gate.evidence_gaps
     return gate
@@ -733,6 +772,9 @@ def run_native_provider_gate(
             expected_port=gate.port,
         )
         gate.details.update(details)
+        detail_gaps = details.get("evidence_gaps") if isinstance(details.get("evidence_gaps"), list) else []
+        if detail_gaps:
+            gate.evidence_gaps.extend(detail_gaps)
         if not ok:
             gate.fail(bucket, detail)
         else:
@@ -751,10 +793,12 @@ def run_native_provider_gate(
             verdict=gate.status,
         )
         gate.evidence_manifest = export_path
-        gate.evidence_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else []
+        manifest_gaps = manifest.get("evidence_gaps", []) if isinstance(manifest.get("evidence_gaps"), list) else []
+        gate.evidence_gaps.extend(manifest_gaps)
         cleanup_run(minted_run, gate.port)
-    if gate.status == "passed" and evidence_gap_count(read_json(Path(gate.evidence_manifest))):
-        gate.fail("no_provider", "native evidence manifest has gaps")
+    manifest_blockers = evidence_manifest_blockers(read_json(Path(gate.evidence_manifest))) if gate.status == "passed" else []
+    if manifest_blockers:
+        gate.fail("no_provider", "native evidence manifest is not handoff-ready: " + "; ".join(manifest_blockers))
     return gate
 
 

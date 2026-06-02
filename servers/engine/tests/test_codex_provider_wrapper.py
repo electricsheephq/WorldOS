@@ -186,16 +186,20 @@ def test_codex_dm_wrapper_forbids_null_speaker_arguments():
 
     assert "LOG_EVENT_TOOL_RULE=" in source
     assert "LIVE_PROGRESS_LOG_RULE=" in source
+    assert "LIVE_DIALOGUE_LOG_RULE=" in source
     assert "OPENING_LOG_EVENT_RULE=" in source
     assert "omit the speaker argument entirely" in source
     assert "Never pass JSON null for speaker" in source
     assert "visible story progress while your turn is still running" in source
+    assert 'do not call log_event(kind=\\"dialogue\\")' in source
+    assert "without hiding dialogue from the player" in source
     assert "Do not log the full opening this way" in source
     assert "log_engine_narration" in source
     assert '[ -n "${campaign_id//[[:space:]]/}" ] || return 1' in source
     assert '[ -n "${text//[[:space:]]/}" ] || return 1' in source
     assert source.count("$LOG_EVENT_TOOL_RULE") >= 3
     assert source.count("$LIVE_PROGRESS_LOG_RULE") == 3
+    assert source.count("$LIVE_DIALOGUE_LOG_RULE") == 3
     assert 'record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"' in source
     assert '"engine_logged":true' in source
     assert "invalid chatlog extra_json" in source
@@ -228,6 +232,24 @@ def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
     assert "Live campaign_id:" in source
     assert "Do not use shell commands, rg, find" in source
     assert "CAMPAIGN_TOOL_HINT" in source
+
+
+def test_codex_dm_wrapper_prompts_are_self_contained_for_live_app_turns():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert "DM_CONTRACT_RULE" in source
+    assert "DM_VOICE_RULE" in source
+    assert "Self-contained DM contract" in source
+    assert "Do not read skill files" in source
+    assert "~/.codex skills" in source
+    assert "warm, fair, generous storyteller voice" in source
+    assert "never invent dice, rules outcomes, or campaign state" in source
+    assert "Use clawdnd-engine as the sole writer of campaign state" in source
+    assert "Final output must be 2nd-person player-facing narration" in source
+    assert "skills/dungeon-master/SKILL.md" not in source
+    assert "/Users/lume/.codex/skills/dungeon-master" not in source
+    assert source.count("$DM_CONTRACT_RULE") == 3
+    assert source.count("$DM_VOICE_RULE") == 3
 
 
 def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
@@ -293,7 +315,55 @@ def test_codex_dm_wrapper_move_prompt_does_not_restate_opening_persist_ban():
     assert "do not call persist_beat during the opening turn" not in move_prompt
 
 
-def test_codex_dm_wrapper_run_allows_unset_model_with_fake_codex(tmp_path):
+def test_codex_dm_wrapper_run_pins_supported_default_model_with_fake_codex(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      last="$2"
+      shift 2
+      ;;
+    --model)
+      [ "$2" = "gpt-5.5" ] || {
+        echo "unexpected model: $2" >&2
+        exit 7
+      }
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat >/dev/null
+printf 'Opening narration from fake Codex.' > "$last"
+printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="fake-codex-run",
+        CLAWDND_PLAY_PORT="8797",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+
+    result = _run_dm([], env, timeout=20)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    chat = tmp_path / "fake-codex-run" / "chat.jsonl"
+    assert "Opening narration from fake Codex." in chat.read_text(encoding="utf-8")
+
+
+def test_codex_dm_wrapper_can_delegate_to_cli_default_with_fake_codex(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake_codex = bin_dir / "codex"
@@ -326,15 +396,16 @@ printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="fake-codex-run",
-        CLAWDND_PLAY_PORT="8797",
+        CLAWDND_RUN_ID="fake-codex-cli-default",
+        CLAWDND_PLAY_PORT="8799",
+        WORLDOS_CODEX_MODEL="auto",
         CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
 
     result = _run_dm([], env, timeout=20)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    chat = tmp_path / "fake-codex-run" / "chat.jsonl"
+    chat = tmp_path / "fake-codex-cli-default" / "chat.jsonl"
     assert "Opening narration from fake Codex." in chat.read_text(encoding="utf-8")
 
 

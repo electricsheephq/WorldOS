@@ -32,12 +32,16 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._old_clawdnd_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
         self._old_worldos_player_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
         self._old_clawdnd_player_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
+        self._old_worldos_provider = os.environ.get("WORLDOS_PROVIDER")
+        self._old_clawdnd_provider = os.environ.get("CLAWDND_PROVIDER")
         os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
         os.environ.pop("WORLDOS_REPO_ROOT", None)
         os.environ.pop("CLAWDND_REPO_ROOT", None)
         os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PROVIDER", None)
+        os.environ.pop("CLAWDND_PROVIDER", None)
         self._old_here = server._HERE
         os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
@@ -81,6 +85,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("CLAWDND_PLAYER_MOVES", None)
         else:
             os.environ["CLAWDND_PLAYER_MOVES"] = self._old_clawdnd_player_moves
+        if self._old_worldos_provider is None:
+            os.environ.pop("WORLDOS_PROVIDER", None)
+        else:
+            os.environ["WORLDOS_PROVIDER"] = self._old_worldos_provider
+        if self._old_clawdnd_provider is None:
+            os.environ.pop("CLAWDND_PROVIDER", None)
+        else:
+            os.environ["CLAWDND_PROVIDER"] = self._old_clawdnd_provider
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -302,6 +314,89 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("image_probe_ok", payload["health"])
         self.assertIn("failure_bucket", payload["health"])
         self.assertEqual(payload["endpoints"]["session_surface"], "/session-surface")
+
+    def test_app_status_reports_busy_turn_when_last_chat_row_is_player(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_live"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_live",
+                "title": "Live Probe Save",
+                "active_session_id": "session_live",
+                "world_id": "baldurs-gate",
+                "current_location_id": "loc-lower-city",
+                "locations": {
+                    "loc-lower-city": {
+                        "id": "loc-lower-city",
+                        "name": "Lower City",
+                    },
+                },
+                "party": ["hero"],
+                "characters": {
+                    "hero": {
+                        "id": "hero",
+                        "name": "Probe Hero",
+                        "kind": "player",
+                        "current_hp": 8,
+                        "max_hp": 8,
+                    },
+                },
+            },
+        )
+        moves = self._tmp / "play-123" / "player_moves.jsonl"
+        moves.parent.mkdir()
+        moves.write_text(json.dumps({"kind": "do", "text": "Act."}) + "\n", encoding="utf-8")
+        art_root = self._tmp / "art-root"
+        image_dir = art_root / "content" / "worlds" / "_private" / "baldurs-gate" / "images" / "location_loc-lower-city"
+        image_dir.mkdir(parents=True)
+        (image_dir / "wiki_ingest.json").write_text(
+            json.dumps({"scope": "location:loc-lower-city", "url": "https://example.invalid/lower-city.png"}),
+            encoding="utf-8",
+        )
+        chat = self._tmp / "play-123" / "chat.jsonl"
+        chat.write_text(
+            json.dumps({"role": "dm", "text": "Opening."}) + "\n"
+            + json.dumps({"role": "player", "text": "[do] Act."}) + "\n",
+            encoding="utf-8",
+        )
+        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_ART_REPO_ROOT"] = str(art_root)
+        os.environ["WORLDOS_PROVIDER"] = "codex"
+        _QuietHandler.campaign_id = "camp_live"
+        _QuietHandler.chat_path = str(chat)
+
+        status, _ctype, body = self._get("/app-status?campaign=camp_live")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["viewer"]["chat_lines"], 2)
+        self.assertEqual(payload["viewer"]["last_chat_role"], "player")
+        self.assertTrue(payload["live"]["surface_can_act"])
+        self.assertTrue(payload["live"]["pending_player_turn"])
+        self.assertFalse(payload["live"]["can_act"])
+        self.assertIn("continue", payload["live"]["surface_enabled_action_ids"])
+        self.assertEqual(payload["live"]["enabled_action_ids"], [])
+        self.assertEqual(payload["live"]["enabled_action_count"], 0)
+        self.assertEqual(payload["readiness"]["status"], "busy")
+        self.assertTrue(payload["readiness"]["ready_for_smoke"])
+        self.assertFalse(payload["readiness"]["ready_for_play"])
+        self.assertTrue(payload["readiness"]["pending_player_turn"])
+        self.assertTrue(payload["health"]["pending_player_turn"])
+        self.assertEqual(payload["health"]["failure_bucket"], "none")
+
+    def test_chat_file_summary_ignores_malformed_trailing_row(self):
+        chat = self._tmp / "chat.jsonl"
+        chat.write_text(
+            json.dumps({"role": "dm", "text": "Opening."}) + "\n"
+            + '{"role":"player","text":"half-written"',
+            encoding="utf-8",
+        )
+
+        summary = server._chat_file_summary(str(chat))
+
+        self.assertEqual(summary["line_count"], 1)
+        self.assertEqual(summary["last_role"], "dm")
+        self.assertFalse(summary["pending_player_turn"])
 
     def test_app_status_browser_health_counts_console_and_network_logs(self):
         console = self._tmp / "console.ndjson"
@@ -530,8 +625,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('style={{ width: 86, textAlign: "center" }}', launcher)
         self.assertIn('w={86} h={104}', launcher)
         self.assertIn("function openWorldsPlayerChronicle(c)", app)
+        self.assertIn("function openWorldsCampaignMatches(c, campaignRef)", app)
         self.assertIn("const playerCampaigns = nextCampaigns.filter(openWorldsPlayerChronicle);", app)
-        self.assertIn("const activeStillExists = playerCampaigns.some((c) => c.id === s?.activeCampaign);", app)
+        self.assertIn("const activeStillExists = playerCampaigns.some((c) => openWorldsCampaignMatches(c, s?.activeCampaign));", app)
         self.assertIn("playerCampaigns.find((c) => c.current)?.id", app)
         self.assertIn("playerCampaigns.find((c) => c.live && c.canResume)?.id", app)
         self.assertIn("playerCampaigns.find((c) => c.canResume)?.id", app)
@@ -864,8 +960,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("new URLSearchParams(window.location.search || \"\")", source)
         self.assertIn('params.get("campaign")', source)
         self.assertIn("requestedCampaignRef", source)
+        self.assertIn("openWorldsCampaignMatches(c, requestedCampaign)", source)
+        self.assertIn("requestedActiveId", source)
         self.assertIn("requestedStillExists", source)
-        self.assertLess(source.index("requestedStillExists ? requestedCampaign"), source.index("playerCampaigns.find((c) => c.current)?.id"))
+        self.assertLess(source.index("requestedActiveId ||"), source.index("playerCampaigns.find((c) => c.current)?.id"))
+        self.assertIn("c?.id === campaignRef || c?.campaign_id === campaignRef", source)
         self.assertIn("requestedCampaignRef.current = \"\"", source)
 
     def test_openworlds_camp_rest_gives_feedback_when_dm_is_busy(self):

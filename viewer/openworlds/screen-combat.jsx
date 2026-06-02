@@ -433,11 +433,29 @@ function CombatEmptyState({ status, onNavigate }) {
   );
 }
 
+/* HONEST RENDERING (graphics #432 / #438): the engine's combat is GRIDLESS / named-zone. A
+   token's x/y are DERIVED render-hints (positionAuthority:"derived"), never authoritative — so
+   we must NOT draw a measured VTT grid and place tokens by x/y. The previous board did exactly
+   that: a fixed 16×10 grid with tokens at (t.x, t.y), which fell back to `Number(t.x) || 1` and
+   piled EVERY token onto cell (1,1) whenever the engine sent no coordinates (the normal case),
+   while zones floated as disconnected labels. Instead we render ZONE BANDS and group each
+   combatant under its named zone — the same honest model the M1/M2 graphical renderers use.
+
+   A real measured-tile grid (range/LoS/flanking) is the evidence-gated #461 future: it requires
+   the engine to gain authoritative coordinates (positionAuthority:"engine" + grid.mode==="grid").
+   When that lands, a grid board plugs in here behind that flag; until then, zones are the truth. */
 function CombatMap({ tokens, zones, selected, onSelect }) {
-  const cols = 16, rows = 10;
-  const terrain = zones.length
-    ? zones.map((z) => z.name).filter(Boolean).join(" · ")
-    : "tactical field";
+  const named = (zones || []).map((z) => (typeof z === "string" ? z : z && z.name)).filter(Boolean);
+  const FIELD = "The Field";
+  let zoneNames = named.slice();
+  if (!zoneNames.length) zoneNames = [...new Set(tokens.map((t) => t.zone).filter(Boolean))];
+  const inList = (t) => Boolean(t.zone) && zoneNames.includes(t.zone);
+  if (!zoneNames.length) zoneNames = [FIELD];
+  else if (tokens.some((t) => !inList(t))) zoneNames = [...zoneNames, FIELD];
+  const byZone = {};
+  zoneNames.forEach((z) => (byZone[z] = []));
+  tokens.forEach((t) => byZone[inList(t) ? t.zone : FIELD].push(t));
+
   return (
     <div style={{
       position: "relative",
@@ -447,57 +465,34 @@ function CombatMap({ tokens, zones, selected, onSelect }) {
          linear-gradient(135deg, #3a2418 0%, #25160e 100%)`,
       boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.6)",
       overflow: "hidden",
+      display: "flex", gap: 10, padding: 12,
     }}>
-      <div style={{ position: "absolute", inset: 12 }}>
-        <Placeholder label={terrain} h="100%" style={{ width: "100%", height: "100%", opacity: 0.5 }} />
-      </div>
-
-      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-        <defs>
-          <pattern id="openworldsCombatGrid" x="0" y="0" width={`${100 / cols}%`} height={`${100 / rows}%`} patternUnits="userSpaceOnUse">
-            <rect width="100%" height="100%" fill="none" stroke="rgba(176, 141, 87, 0.18)" strokeWidth="1" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#openworldsCombatGrid)" />
-        {Array.from({ length: cols }).map((_, i) => (
-          <text key={`c${i}`} x={`${(i + 0.5) * (100 / cols)}%`} y="12" textAnchor="middle"
-            fontFamily="Cinzel" fontSize="9" fill="rgba(212, 185, 122, 0.4)" letterSpacing="1">
-            {String.fromCharCode(65 + i)}
-          </text>
-        ))}
-        {Array.from({ length: rows }).map((_, i) => (
-          <text key={`r${i}`} x="6" y={`${(i + 0.5) * (100 / rows) + 3}%`}
-            fontFamily="Cinzel" fontSize="9" fill="rgba(212, 185, 122, 0.4)">{i + 1}</text>
-        ))}
-      </svg>
-
-      {zones.map((z, i) => (
-        <div key={z.name || i} style={{
-          position: "absolute",
-          left: `${4 + (i % 4) * 24}%`,
-          top: `${8 + Math.floor(i / 4) * 28}%`,
-          padding: "4px 7px",
-          fontFamily: "var(--f-display)",
-          fontSize: 9,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "rgba(244, 210, 123, 0.68)",
-          background: "rgba(30,18,10,0.32)",
+      {zoneNames.map((zn) => (
+        <div key={zn} style={{
+          flex: 1, minWidth: 0,
+          display: "flex", flexDirection: "column",
+          background: "rgba(30,18,10,0.30)",
           boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.18)",
         }}>
-          {z.name}
+          <div title={zn} style={{
+            padding: "5px 8px",
+            fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em",
+            textTransform: "uppercase", color: "rgba(244, 210, 123, 0.75)",
+            borderBottom: "1px solid rgba(176,141,87,0.18)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>{zn}</div>
+          <div style={{
+            flex: 1, display: "flex", flexWrap: "wrap", gap: 12,
+            alignContent: "flex-start", justifyContent: "center",
+            padding: "16px 8px", overflow: "auto",
+          }}>
+            {byZone[zn].length
+              ? byZone[zn].map((t) => (
+                  <CombatToken key={t.id} t={t} selected={selected === t.id} onClick={() => onSelect(t.id)} />
+                ))
+              : <div className="body-sm" style={{ color: "rgba(212,185,122,0.35)", alignSelf: "center" }}>empty</div>}
+          </div>
         </div>
-      ))}
-
-      {tokens.map((t) => (
-        <CombatToken
-          key={t.id}
-          t={t}
-          cols={cols}
-          rows={rows}
-          selected={selected === t.id}
-          onClick={() => onSelect(t.id)}
-        />
       ))}
     </div>
   );
@@ -537,24 +532,24 @@ function hpBarFillInit(t, isFoe, ratio) {
   return `${hatch}, ${solid}`;
 }
 
-function CombatToken({ t, cols, rows, selected, onClick }) {
-  const xPct = (((Number(t.x) || 1) - 0.5) / cols) * 100;
-  const yPct = (((Number(t.y) || 1) - 0.5) / rows) * 100;
+/* A single combatant token — now a FLOW element laid out inside its zone band (no absolute
+   x/y on a fake grid). Visual language (circle, foe/ally tint, selection glow, honest HP bar,
+   name) is preserved; only positioning changed from x/y-on-grid to zone-grouped flow. */
+function CombatToken({ t, selected, onClick }) {
   const isFoe = t.team === "foe";
   const hpRatio = healthRatio(t);
   return (
-    <button onClick={onClick} style={{
-      position: "absolute",
-      left: `${xPct}%`, top: `${yPct}%`,
-      width: 48, height: 48,
-      transform: "translate(-50%, -50%)",
+    <button onClick={onClick} title={t.name} style={{
+      position: "relative",
+      width: 48,
       background: "none",
       cursor: "pointer",
       padding: 0,
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
       zIndex: selected ? 10 : 5,
     }}>
       <div style={{
-        width: "100%", height: "100%",
+        width: 48, height: 48,
         borderRadius: "50%",
         background: isFoe
           ? "radial-gradient(circle at 30% 30%, #c54040, var(--crimson) 60%, #3a0a0a)"
@@ -563,10 +558,6 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
           ? `inset 0 0 0 2px var(--gold-glow), 0 0 0 3px ${isFoe ? "var(--crimson-bright)" : "var(--gold-glow)"}, 0 0 24px rgba(244, 210, 123, 0.7), 0 4px 8px rgba(0,0,0,0.5)`
           : `inset 0 0 0 2px ${isFoe ? "#5a1414" : "var(--b-500)"}, 0 0 0 2px ${isFoe ? "var(--crimson)" : "var(--b-300)"}, 0 4px 8px rgba(0,0,0,0.6)`,
         display: "grid", placeItems: "center",
-        fontFamily: "var(--f-display)",
-        fontSize: 13,
-        letterSpacing: "0.04em",
-        color: isFoe ? "var(--p-100)" : "var(--ink-900)",
         overflow: "hidden",
       }}>
         <Img
@@ -579,10 +570,10 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
         />
       </div>
       <div style={{
-        position: "absolute", left: "50%", bottom: -10, transform: "translateX(-50%)",
         width: 44, height: 4,
         background: "rgba(0,0,0,0.5)",
         boxShadow: "0 0 0 1px rgba(0,0,0,0.8)",
+        position: "relative",
       }}>
         <div style={{
           position: "absolute", left: 0, top: 0, bottom: 0,
@@ -591,9 +582,9 @@ function CombatToken({ t, cols, rows, selected, onClick }) {
         }} />
       </div>
       <div style={{
-        position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)",
-        fontFamily: "var(--f-display)", fontSize: 8, letterSpacing: "0.15em",
-        textTransform: "uppercase", whiteSpace: "nowrap",
+        fontFamily: "var(--f-display)", fontSize: 8, letterSpacing: "0.1em",
+        textTransform: "uppercase", whiteSpace: "nowrap", maxWidth: 64,
+        overflow: "hidden", textOverflow: "ellipsis",
         color: isFoe ? "var(--crimson-bright)" : "var(--gold-glow)",
         textShadow: "0 1px 2px rgba(0,0,0,0.9)",
       }}>{t.name}</div>

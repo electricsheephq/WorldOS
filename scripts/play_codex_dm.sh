@@ -34,8 +34,8 @@ Required environment:
 Optional:
   CLAWDND_PLAY_COMPANIONS
   CLAWDND_PLAY_HERO
-  WORLDOS_CODEX_MODEL
-  CLAWDND_CODEX_MODEL
+  WORLDOS_CODEX_MODEL (default: gpt-5.5; set to auto/default/cli-default to let Codex CLI choose)
+  CLAWDND_CODEX_MODEL (legacy fallback)
   CLAWDND_STATE_ROOT
 EOF
     exit 0
@@ -239,13 +239,16 @@ if [ "$MODE" != "run" ]; then
 fi
 
 # codex exec intentionally ignores user config so app/provider proofs do not
-# inherit local prompts or sandbox policy. Let Codex CLI choose its account
-# default unless the operator explicitly pins a provider model.
-CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"
+# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported
+# provider model unless the operator explicitly selects another one. The Codex
+# CLI account default can drift to a model this auth surface rejects, so app
+# playability should not depend on that ambient default.
+CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
 MODEL_ARGS=()
-if [ -n "${CODEX_MODEL//[[:space:]]/}" ]; then
-  MODEL_ARGS=(--model "$CODEX_MODEL")
-fi
+case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in
+  ""|auto|default|cli-default) ;;
+  *) MODEL_ARGS=(--model "$CODEX_MODEL") ;;
+esac
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"
 export CLAWDND_RULES_OFFLINE=1
@@ -428,8 +431,11 @@ codex_dm_turn() {
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
 LIVE_PROGRESS_LOG_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") once with a short, non-duplicate, player-facing progress beat before any longer resolution work. This is how /events shows visible story progress while your turn is still running. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+LIVE_DIALOGUE_LOG_RULE="Live dialogue rule: in this Codex app-provider wrapper, do not call log_event(kind=\"dialogue\"). Put quoted NPC speech inside a narration progress beat or your final reply instead; the wrapper records the final reply after the turn, and narration-only live events avoid provider safety cancellation without hiding dialogue from the player."
 OPENING_LOG_EVENT_RULE="Opening progress rule: during the opening, after get_state establishes the already-seated player and live scene, write one short sensory progress beat through log_event(kind=\"narration\", text=\"...\") before deeper setup or rules work. Do not log the full opening this way; your final reply must still be non-empty opening narration for the player."
-STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
+DM_CONTRACT_RULE="Self-contained DM contract: you are already inside the WorldOS Dungeon Master provider. Do not read skill files, ~/.codex skills, repo docs, or use shell commands for instructions during this live app turn. Use clawdnd-engine as the sole writer of campaign state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend. Final output must be 2nd-person player-facing narration."
+DM_VOICE_RULE="Voice rule: use a warm, fair, generous storyteller voice with Baldur's Gate 3 prestige narration energy; spotlight the player, say yes-and to clever ideas, and never invent dice, rules outcomes, or campaign state that should come from engine/rules tools."
+STATE_DISCOVERY_RULE="State discovery rule: use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
 SOCIAL_CHECK_TARGET_RULE="Social check target rule: call social_check only when scene_context already shows a real tracked npc_id for the target. Do not call load_canon_character or create_character solely to manufacture a social-check target during the same turn. If the target is not already tracked, do not use persuasion, deception, intimidation, or another attitude-moving social skill. Use a non-attitude skill_check such as investigation or perception for what the player can infer, then narrate the scene-local response; persist a new NPC later only when the player keeps engaging them."
 RULES_LOOKUP_RULE="Rules lookup rule: during the opening turn, do not call lookup_class or other rules lookups just to restate the pre-seated player's class/race; get_state already includes enough player-facing identity for the opener. Use clawdnd-rules only when resolving an actual rule, spell, item, condition, or monster question."
@@ -493,10 +499,11 @@ if [ -n "$HERO_CAMP" ]; then
   OPENING_PROMPT="$(cat <<EOF
 You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
 
-Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
-
+$DM_CONTRACT_RULE
+$DM_VOICE_RULE
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -523,10 +530,11 @@ else
   OPENING_PROMPT="$(cat <<EOF
 You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
 
-Before acting, read skills/dungeon-master/SKILL.md and follow its live-world contract. Use the clawdnd-engine tools as the sole writer of game state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend.
-
+$DM_CONTRACT_RULE
+$DM_VOICE_RULE
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -574,8 +582,11 @@ while true; do
       || echo "[codex-dm-provider] warning: could not record immediate move progress narration" >&2
     if ! REPLY="$(codex_dm_turn "You are the Dungeon Master mid-session. Re-ground from the engine state first, then resolve this player move through the engine/rules tools and reply with 2nd-person player-facing narration.
 
+$DM_CONTRACT_RULE
+$DM_VOICE_RULE
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
 $SOCIAL_CHECK_TARGET_RULE

@@ -202,8 +202,24 @@ UI audit, image denominator/source, palette-live evidence, per-run Part B pass s
 SHA evidence.
 The runtime safety gate includes both critical bug reports and raw console/page errors from the
 palette run.
-Append every `--scorecard-row` line to `qa/SCORECARD.md` as diagnostic release evidence. Only a
-non-partial, non-harness-contaminated 10/10 row with no evidence gaps can count as release evidence.
+Append every `--scorecard-row` line to the ledger (`qa/scores_db.py` → `qa/scores_ledger.md`; `qa/SCORECARD.md`
+is legacy) as diagnostic release evidence. Only a non-partial, non-harness-contaminated 10/10 row with no
+evidence gaps can count as release evidence.
+
+### Reading the sweep — honest satisfaction (finish vs give_up vs derived)
+- **Two clean endings, don't collapse them (#574):** `finish(satisfaction, verdict)` = a SATISFIED end
+  (`gave_up=false` + a self-reported 1–10 — **the ONLY path that clears G3 ≥7**); `give_up` = a genuine BLOCK
+  (dead control / error / DM stalled with no narration).
+- **The budget is STORY BEATS, not wall-clock.** A persona's clicks/types/WAITS within a beat are free; a rich
+  beat is ~100–126s of DM *reasoning* (the spinner / streaming narration is PROGRESS, not a hang — #571). A slow
+  beat is not a give-up.
+- **Every persona MUST end via `finish(satisfaction, verdict)`.** If it just stops, the scorer DERIVES sat
+  (`8 − friction`, capped < 7 once any friction lands), so the gate reads artificially low. A `gave_up=false` +
+  `arc=true` + *derived* 5–6 run = "persona didn't self-report," NOT a dissatisfied player (2026-06-02 VM sweep:
+  4/5 derived — a self-report-coverage artifact, not a quality verdict). Read `satisfaction_source`; a derived
+  G3-miss is inconclusive.
+- **PARTIAL ≠ product RED.** A host-memory crater (only persona-1 scored) or a hung/incomplete rollup (e.g. the
+  duo step stalls) is harness-contaminated — re-run via the VM lane; never cite a PARTIAL RRI as a quality score.
 
 ## macOS privacy prompt triage
 

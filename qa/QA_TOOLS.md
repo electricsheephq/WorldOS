@@ -94,6 +94,10 @@ For any app run, review in this order:
 5. Screenshots and accessibility snapshots.
 6. `moves.ndjson`, `actions.ndjson`, `console.ndjson`, `network.ndjson`.
 7. Provider trace summary and raw trace snippets.
+8. **When scores look like a regression** (engine 4.x vs GUI 2.x, or a sweep's *derived* 5–6): read
+   **`qa/REGRESSION-FORENSICS.md` FIRST** — the 4.x-vs-2.x gap is a **surface + rubric artifact** (same Sonnet,
+   different scales: engine-duo = 3× 0–5 lenses; GUI = 0–10 sat + 11-gate RRI), NOT an engine regression; and a
+   derived 5–6 sat is a self-report-coverage artifact (see the finish-vs-derived rule), not a quality drop.
 
 If a screenshot shows a playable page but same-port `/app-status` is missing, classify it as
 `no_launcher`. Stale rendered browser tabs are not evidence.

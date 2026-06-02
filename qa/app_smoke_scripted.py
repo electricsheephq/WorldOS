@@ -193,58 +193,61 @@ def capture_openworlds_screenshot(
     if not chrome:
         gaps.append({"source": "screenshot", "kind": label, "path": str(target), "reason": "chrome_not_found"})
         return
-    profile = out / ".chrome-profile" / f"{port}-{label}"
-    profile.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/openworlds/#table"
-    cmd = [
-        chrome,
-        "--headless=new",
-        "--disable-gpu",
-        "--hide-scrollbars",
-        "--force-device-scale-factor=1",
-        "--window-size=1512,982",
-        f"--user-data-dir={profile}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-background-networking",
-        "--disable-component-update",
-        "--disable-default-apps",
-        "--disable-sync",
-        "--virtual-time-budget=5000",
-        f"--screenshot={target}",
-        url,
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-    deadline = time.time() + 12
-    while time.time() < deadline:
+    reasons: list[str] = []
+    for attempt in range(1, 3):
+        profile = out / ".chrome-profile" / f"{port}-{label}-{attempt}"
+        profile.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            chrome,
+            "--headless=new",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            "--force-device-scale-factor=1",
+            "--window-size=1512,982",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--virtual-time-budget=7000",
+            f"--screenshot={target}",
+            url,
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if target.exists() and target.stat().st_size > 200:
+                screenshots.append(str(target.relative_to(out)))
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                shutil.rmtree(profile, ignore_errors=True)
+                return
+            if proc.poll() is not None:
+                break
+            time.sleep(0.25)
         if target.exists() and target.stat().st_size > 200:
             screenshots.append(str(target.relative_to(out)))
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
             shutil.rmtree(profile, ignore_errors=True)
             return
-        if proc.poll() is not None:
-            break
-        time.sleep(0.25)
-    if target.exists() and target.stat().st_size > 200:
-        screenshots.append(str(target.relative_to(out)))
-        shutil.rmtree(profile, ignore_errors=True)
-        return
-    try:
-        proc.terminate()
-        proc.wait(timeout=2)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
-        proc.kill()
-    finally:
-        shutil.rmtree(profile, ignore_errors=True)
-    if target.exists() and target.stat().st_size > 200:
-        screenshots.append(str(target.relative_to(out)))
-        return
-    reason = f"chrome_exit={proc.returncode}"
-    gaps.append({"source": "screenshot", "kind": label, "path": str(target), "reason": reason})
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            proc.kill()
+        finally:
+            shutil.rmtree(profile, ignore_errors=True)
+        if target.exists() and target.stat().st_size > 200:
+            screenshots.append(str(target.relative_to(out)))
+            return
+        reasons.append(f"attempt{attempt}:chrome_exit={proc.returncode}")
+        time.sleep(0.5)
+    gaps.append({"source": "screenshot", "kind": label, "path": str(target), "reason": "; ".join(reasons)})
 
 
 def classify_status(status: dict[str, Any]) -> tuple[str, str]:
