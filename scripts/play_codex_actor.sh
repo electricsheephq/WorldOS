@@ -35,6 +35,7 @@ Optional:
   CLAWDND_PLAY_COMPANIONS
   CLAWDND_ACTOR_ID
   CLAWDND_ACTOR_ROLE
+  WORLDOS_CODEX_MODEL
   CLAWDND_CODEX_MODEL
   CLAWDND_STATE_ROOT
 EOF
@@ -196,7 +197,10 @@ if [ "$MODE" != "run" ]; then
   exit 0
 fi
 
-CODEX_MODEL="${CLAWDND_CODEX_MODEL:-}"
+# codex exec intentionally ignores user config so app/provider proofs do not
+# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported model
+# unless the operator explicitly selects another one.
+CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
 MODEL_ARGS=()
 if [ -n "${CODEX_MODEL//[[:space:]]/}" ]; then
   MODEL_ARGS=(--model "$CODEX_MODEL")
