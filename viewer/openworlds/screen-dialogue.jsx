@@ -113,6 +113,9 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
   // actual text (not a hardcoded placeholder). Send is disabled until something is typed.
   const [freeFormMode, setFreeFormMode] = React.useState(false);
   const [userText, setUserText] = React.useState("");
+  // #robustness: synchronous in-flight lock — pick()/sendFreeForm() fire /move fire-and-forget with
+  // no guard, so a rapid double-click queues duplicate social-check/say intents. Cleared in .finally.
+  const submittingRef = React.useRef(false);
 
   const pick = (slot) => {
     const move = { kind: "check", name: `${slot.label} (DC ${slot.suggested_dc})`, skill: slot.skill, dc: slot.suggested_dc, text: `attempts ${slot.label} (DC ${slot.suggested_dc})` };
@@ -121,6 +124,8 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
       toast({ kind: "danger", eyebrow: "Parley", title: "Preview — no live DM", body: "Open a chronicle from Chronicles to converse; then the DM voices and adjudicates the approach you pick." });
       return;
     }
+    if (submittingRef.current) return; // already submitting a check — drop the rapid double-click
+    submittingRef.current = true;
     fetch("/move", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -128,7 +133,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
     }).then((r) => r.json().catch(() => ({}))).then((payload) => {
       if (payload && payload.ok === false) throw new Error(payload.reason || "move rejected");
       toast({ kind: "item", eyebrow: "Parley", title: `${actorName} — ${slot.label}`, body: `Requested a ${slot.label} check at DC ${slot.suggested_dc}.` });
-    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." })).finally(() => { submittingRef.current = false; });
   };
 
   const openFreeForm = () => {
@@ -142,6 +147,8 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
   const sendFreeForm = () => {
     const text = userText.trim();
     if (!text) return;
+    if (submittingRef.current) return; // already sending — drop the rapid double-click / double-Enter
+    submittingRef.current = true;
     fetch("/move", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "say", text, campaign: surface.campaign_id || "" }),
@@ -151,7 +158,7 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
       setUserText("");
       setFreeFormMode(false);
       toast({ kind: "item", eyebrow: "Parley", title: `${actorName} — Free-form`, body: "Spoke their own words — the DM adjudicates." });
-    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." }));
+    }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "The viewer could not reach /move." })).finally(() => { submittingRef.current = false; });
   };
 
   return (
