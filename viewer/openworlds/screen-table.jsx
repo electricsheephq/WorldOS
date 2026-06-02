@@ -359,14 +359,17 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const session = liveSession || { chatBeats: [], log: [], pending: null, armPending: () => {}, clearPending: () => {}, recordPlayerEcho: () => {} };
   const { chatBeats, log, pending } = session;
   const logRef = React.useRef(null);
+  const latestBeatRef = React.useRef(null);
+  const pendingBeatRef = React.useRef(null);
   const inputRef = React.useRef(null);
-  // #402: auto-follow state. `stickToBottomRef` is true while the player is at/near the bottom of the
-  // chronicle (the default) and false once they scroll UP to read history — so the auto-scroll effect
-  // follows new narration to the bottom WITHOUT yanking a reader back down mid-read. `snapNextRef` is
-  // a one-shot "force to bottom on the next content change" flag set when the player submits a move
-  // (a new turn) — so declaring an action always re-pins to the latest, even if they'd scrolled up.
+  // #402: auto-follow state. `stickToBottomRef` is true while the player is at/near the live
+  // end of the chronicle (the default) and false once they scroll UP to read history — so the
+  // auto-scroll effect follows new narration WITHOUT yanking a reader away mid-read. `snapNextRef` is
+  // a one-shot "force to latest" flag set when the player submits a move (a new turn) — so declaring
+  // an action always re-pins to the new beat, even if they'd scrolled up.
   const stickToBottomRef = React.useRef(true);
   const snapNextRef = React.useRef(false);
+  const programmaticScrollRef = React.useRef(false);
   const toast = window.useToast ? window.useToast() : (() => {});
   const fallbackParty = [];
   const party = Array.isArray(surface?.party) && surface.party.length ? surface.party : fallbackParty;
@@ -513,7 +516,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     }
   }, [party, activeHero]);
 
-  // #402: auto-follow the newest narration to the bottom — but RESPECT a reader who scrolled up.
+  // #402: auto-follow the newest narration — but RESPECT a reader who scrolled up.
   // The old effect pinned scrollTop to scrollHeight on EVERY content change unconditionally, which
   // (a) yanked a player back down the instant a streamed paragraph or 5s surface poll arrived while
   // they were reading history, and (b) never fired when ONLY the pending/narrating indicator toggled
@@ -521,15 +524,32 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // to bottom only when the player is already at/near the bottom (stickToBottomRef) OR a new move was
   // just submitted (snapNextRef, a one-shot re-pin on a new turn). Depending on `pending` too means
   // the narrating indicator (and a freshly-streamed beat) is followed into view the same way.
+  // A long Codex beat can be taller than the Chronicle viewport. Pinning to scrollHeight showed
+  // the END of the new response and hid its first line, making the fresh player's story read
+  // mid-sentence. Completed beats now align to their START; in-flight pending/stuck beats still align
+  // to their END so the player sees the live "DM is narrating…" feedback.
   React.useEffect(() => {
     const el = logRef.current;
     if (!el) return;
     if (snapNextRef.current || stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      const pendingTarget = pendingActive || pendingStuck ? pendingBeatRef.current : null;
+      const latestTarget = pendingTarget || latestBeatRef.current;
+      programmaticScrollRef.current = true;
+      if (latestTarget && typeof latestTarget.scrollIntoView === "function") {
+        latestTarget.scrollIntoView({
+          block: pendingTarget ? "end" : "start",
+          inline: "nearest",
+        });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+      window.setTimeout(() => {
+        programmaticScrollRef.current = false;
+      }, 120);
       snapNextRef.current = false;
-      stickToBottomRef.current = true;  // a programmatic snap leaves us pinned to the bottom
+      stickToBottomRef.current = true;  // a programmatic snap leaves us following the live end
     }
-  }, [renderedLog, pending]);
+  }, [renderedLog, pendingActive, pendingStuck]);
 
   // #402: track whether the player is reading history (scrolled up) vs. parked at the bottom. A
   // generous threshold (~64px) keeps "near the bottom" sticky through small layout shifts (the
@@ -538,6 +558,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const onLogScroll = React.useCallback(() => {
     const el = logRef.current;
     if (!el) return;
+    if (programmaticScrollRef.current) {
+      stickToBottomRef.current = true;
+      return;
+    }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distanceFromBottom <= 64;
   }, []);
@@ -810,7 +834,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             ref={logRef}
             tabIndex={0}
             role="log"
-            aria-label="Chronicle — most recent narration at the bottom"
+            aria-label="Chronicle — latest narration starts in view"
             data-worldos-testid="narration-log"
             onScroll={onLogScroll}
             style={{ flex: "1 1 auto", overflow: "auto", paddingRight: 12 }}
@@ -826,10 +850,25 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               </div>
             )}
             {renderedLog.length ? renderedLog.map((entry, i) => (
-              <LogEntry key={entry.id || `${entry.kind || "n"}-${i}`} entry={entry} />
+              <div
+                key={entry.id || `${entry.kind || "n"}-${i}`}
+                ref={i === renderedLog.length - 1 ? latestBeatRef : null}
+                data-worldos-testid={i === renderedLog.length - 1 ? "chronicle-latest-beat" : undefined}
+                style={{ scrollMarginBlock: 12 }}
+              >
+                <LogEntry entry={entry} />
+              </div>
             )) : <div className="body-sm muted">No moves yet</div>}
-            {pendingActive && <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} />}
-            {pendingStuck && <DmStuckBeat />}
+            {pendingActive && (
+              <div ref={pendingBeatRef} data-worldos-testid="chronicle-pending-beat" style={{ scrollMarginBlock: 12 }}>
+                <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} />
+              </div>
+            )}
+            {pendingStuck && (
+              <div ref={pendingBeatRef} data-worldos-testid="chronicle-stuck-beat" style={{ scrollMarginBlock: 12 }}>
+                <DmStuckBeat />
+              </div>
+            )}
           </div>
 
           {/* #G3: PRIMARY action palette — promoted into the MAIN column, anchored in the Chronicle
