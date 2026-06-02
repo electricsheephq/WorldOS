@@ -153,12 +153,18 @@ def _human_gate_queue(profile: dict) -> list[dict]:
     queue.append({"kind": "story-signoff",
                   "detail": {"game_id": profile.get("game_id"), "title": profile.get("title")},
                   "route": "narrative reviewer"})
-    # 4. AI-disclosure + asset-rights compliance (#454).
+    # 4. AI-disclosure + asset-rights — surfaced for the CREATOR, not enforced by us.
+    #    WorldOS is a TOOL, not a marketplace/publisher: licensing, royalties, and any
+    #    AI-content disclosure for a shipped game are the CREATOR's responsibility. We expose
+    #    ai_disclosure as-is for them to use as they see fit; we make no compliance claim on
+    #    their behalf and give no legal advice. (The first-party BG catalog is internal-only and
+    #    is never bundled into a UGC profile — that's a WorldOS-asset boundary, not user advice.)
     disc = core.get("ai_disclosure")
     queue.append({"kind": "ai-disclosure-and-rights", "detail": {"ai_disclosure": disc,
-                  "note": "shippable/UGC games need rights-clean assets (imagegen or "
-                          "rights-clean uploads); BG catalog is first-party-only"},
-                  "route": "compliance reviewer"})
+                  "note": "WorldOS is a tool, not a publisher: licensing/royalties/AI-disclosure "
+                          "for a shipped game are the creator's responsibility. ai_disclosure is "
+                          "surfaced as-is. (First-party BG catalog is internal-only, never in UGC.)"},
+                  "route": "creator (their responsibility)"})
     return queue
 
 
