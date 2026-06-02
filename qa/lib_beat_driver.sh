@@ -130,9 +130,11 @@ clawdnd_dm_lean_args() {
   local first="$1" campaign_id="${2:-}" lean_tail="${3:-8}"
   CLAWDND_DM_LEAN_SESSION=()
   CLAWDND_DM_LEAN_EXTRA=()
-  # The cold open (first != 0), flag off, or no campaign to re-ground against → no-op (caller's
-  # existing --resume/--session-id path is used unchanged). Lean fires on CONTINUING beats only.
-  if [ "$first" != "0" ] || [ "${CLAWDND_LEAN_BEATS:-0}" != "1" ] || [ -z "$campaign_id" ]; then
+  # The cold open (first != 0), flag explicitly off (CLAWDND_LEAN_BEATS=0), or no campaign to
+  # re-ground against → no-op (caller's existing --resume/--session-id path is used unchanged).
+  # Lean fires on CONTINUING beats only. DEFAULT is now lean-ON (:-1): lean is standard, and
+  # CLAWDND_LEAN_BEATS=0 is the explicit opt-out (matches the default flipped in both harnesses).
+  if [ "$first" != "0" ] || [ "${CLAWDND_LEAN_BEATS:-1}" != "1" ] || [ -z "$campaign_id" ]; then
     return 0
   fi
   # LEAN beat: fresh session, no transcript replay. Re-ground from persisted truth.
@@ -144,6 +146,40 @@ clawdnd_dm_lean_args() {
   • recent_narration — the last $lean_tail player-facing beats' prose (the immediate story-so-far).
   • state — the volatile current scene, party vitals, day/time, active quests, combat, pacing_mode, seed_params.
 Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, or forget a prior choice. CRUCIAL — LOSSLESS RULE: this compact bundle is the always-pinned SPINE, not the whole world. For ANYTHING the moment reaches back to that is NOT in this bundle (a fact, NPC, place, event, or lore detail from earlier), you MUST retrieve it BEFORE you narrate — the entire world/lore/history is searchable on disk: call recall(campaign_id=\"$campaign_id\", query=\"…\") for past events/decisions/facts, lookup_lore(campaign_id=\"$campaign_id\", query=\"…\") for world/setting lore, or recall_npc(campaign_id=\"$campaign_id\", npc_id=\"…\") before voicing a returning NPC. NEVER guess and NEVER invent a detail that contradicts established canon — retrieve first. (You may also pass recall_query=\"…\" to scene_context to fold a recall into the same first call.) Then resolve the move and narrate, seamlessly continuing the established story.")
+}
+
+# DM-TURN EFFORT TIER (the ONE shared implementation of the cold-open-vs-routine effort split).
+#
+# Both play loops drive the DM through `claude -p --model …`. Opus (and the other thinking
+# models) default to effort=high — i.e. maximum thinking budget every turn — which is the single
+# biggest per-turn LATENCY cost. But the two kinds of beat want different budgets:
+#   • the COLD OPEN (first != 0) is the one-time, do-it-right world-build — generate the world,
+#     scene, PC, opening NPCs — so it earns the richest thinking: --effort max.
+#   • CONTINUING / routine beats (first = 0) are the BULK of a session and mostly resolve one
+#     move against already-established canon — so a medium thinking budget keeps quality while
+#     cutting the thinking-latency that dominates each turn: --effort medium.
+# This is keyed off the SAME `first` signal the lean branch uses (clawdnd_dm_lean_args), so the
+# cold open is always full+max and the long tail is lean+medium — the two levers stay in lock-step.
+#
+# Levels are env-overridable (e.g. bump the routine tier back to high for a quality A/B, or drop
+# the cold open to high to save cost) via the same WORLDOS_/CLAWDND_ resolution as everything else:
+#   WORLDOS_DM_EFFORT_COLDOPEN (default max)    — the cold open's effort
+#   WORLDOS_DM_EFFORT_ROUTINE  (default medium) — every continuing beat's effort
+# Valid claude levels: low|medium|high|xhigh|max (a bad override is passed through verbatim and the
+# CLI validates it). Applies ONLY to the DM turn — the player/actor facade never gets --effort.
+#
+# Like the lean helper, bash 3.2 has no namerefs, so this POPULATES a well-known GLOBAL array the
+# caller splices into its claude -p invocation (never empty — every DM turn gets an explicit tier):
+#   CLAWDND_DM_EFFORT — (--effort max) on the cold open, (--effort medium) on continuing beats.
+# $1 = first?(1/0)
+clawdnd_dm_effort_arg() {
+  local first="$1" level
+  if [ "$first" != "0" ]; then
+    level="$(worldos_env DM_EFFORT_COLDOPEN max)"
+  else
+    level="$(worldos_env DM_EFFORT_ROUTINE medium)"
+  fi
+  CLAWDND_DM_EFFORT=(--effort "$level")
 }
 
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
