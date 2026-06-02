@@ -887,7 +887,8 @@ def add_location(
 
 
 @mcp.tool()
-def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False) -> dict:
+def travel_to(campaign_id: str, destination_id: str = "", advance_time: bool = False,
+              destination: str = "", to: str = "", location_id: str = "") -> dict:
     """Move the party to a connected location along the map graph.
 
     The destination must be reachable from the current location (listed in its
@@ -898,7 +899,13 @@ def travel_to(campaign_id: str, destination_id: str, advance_time: bool = False)
     True for a long or overland journey. Returns ``{from, to, to_name,
     first_visit, day, time_of_day, reachable}`` so the DM knows whether to read
     first-visit boxed text.
+
+    Name the destination via ``destination_id`` (canonical) or the aliases ``destination`` /
+    ``to`` / ``location_id`` — ``destination_id`` wins if more than one is given.
     """
+    destination_id = destination_id or destination or to or location_id  # accept the id the DM reaches for
+    if not destination_id:
+        raise ValueError("travel_to needs a destination (pass `destination_id` or an alias: `destination`/`to`/`location_id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         before_day = c.day
@@ -1534,7 +1541,7 @@ def start_character(
 @mcp.tool()
 def recruit_companion(
     campaign_id: str,
-    npc_id: str,
+    npc_id: str = "",
     class_name: str = "",
     level: int = 1,
     abilities: Optional[dict] = None,
@@ -1543,6 +1550,9 @@ def recruit_companion(
     armor_class: int = 0,
     apply_srd_defaults: bool = True,
     skills: Optional[list] = None,
+    character_id: str = "",
+    companion_id: str = "",
+    id: str = "",
 ) -> dict:
     """Promote an EXISTING roster NPC into the party's companion — the clean way to
     bring a world-seed candidate (e.g. "Minsc is ready", "Bram is ready") into the
@@ -1552,7 +1562,13 @@ def recruit_companion(
     for the companion's build; `apply_srd_defaults` sets saves/HP/AC/features (HP is
     auto-set only at level 1 — pass `max_hp` for a higher-level companion). Idempotent
     if already a companion. This prevents the duplicate-stub bug (a roster NPC plus a
-    second hand-built companion of the same name)."""
+    second hand-built companion of the same name).
+
+    Identify the roster figure via ``npc_id`` (canonical) or the aliases ``character_id`` /
+    ``companion_id`` / ``id`` — ``npc_id`` wins if more than one is given."""
+    npc_id = npc_id or character_id or companion_id or id  # accept the id the DM reaches for
+    if not npc_id:
+        raise ValueError("recruit_companion needs an id (pass `npc_id` or an alias: `character_id`/`companion_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, npc_id)  # raises if the id isn't in the campaign
@@ -1778,7 +1794,8 @@ def _bump_intel(c: Campaign, slug: str, tier: int) -> None:
 
 
 @mcp.tool()
-def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
+def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
+                  monster: str = "", monster_name: str = "", creature: str = "") -> dict:
     """Spawn combat-ready monster(s) from the bundled SRD bestiary by name.
 
     Looks the creature up (case-insensitive) in the ~330-creature SRD data and
@@ -1789,7 +1806,13 @@ def spawn_monster(campaign_id: str, name: str, count: int = 1) -> dict:
     monster's `notes` (with the to-hit/damage text) for you to drive `attack`.
     count>1 spawns numbered copies. Unknown name -> {"error", "suggestions"} from a
     fuzzy search (try e.g. 'Goblin Warrior', 'Wolf'). Returns the spawned ids + a
-    stat summary incl. xp_each (the encounter reward); pass the ids to start_combat."""
+    stat summary incl. xp_each (the encounter reward); pass the ids to start_combat.
+
+    Name the creature via ``name`` (canonical) or any of the aliases ``monster`` /
+    ``monster_name`` / ``creature`` — ``name`` wins if more than one is given."""
+    name = name or monster or monster_name or creature  # accept the name the DM reaches for
+    if not name:
+        raise ValueError("spawn_monster needs a name (pass `name` or an alias: `monster`/`monster_name`/`creature`)")
     canonical = bestiary.resolve(name)
     sb = bestiary.stat_block(canonical) if canonical else None
     if sb is None:
@@ -2047,11 +2070,17 @@ def _combat_numbers(ch: Character) -> dict:
 
 
 @mcp.tool()
-def get_character(campaign_id: str, character_id: str) -> dict:
+def get_character(campaign_id: str, character_id: str = "", target_id: str = "", id: str = "") -> dict:
     """Return a character's full sheet, including depletable class-resource pools
     (Rage, Ki, Lay on Hands, Channel Divinity, …) under `class_resources` plus a
     `class_resources_view` with fables-style remaining/max bars, and a `combat_numbers`
-    block (sheet-derived attack/damage bonuses) so the DM never hand-invents a to-hit."""
+    block (sheet-derived attack/damage bonuses) so the DM never hand-invents a to-hit.
+
+    Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``id`` — equivalent; ``character_id`` wins if more than one is given."""
+    character_id = character_id or target_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("get_character needs a character (pass `character_id` or an alias: `target_id`/`id`)")
     c = _require(campaign_id)
     ch = c.characters.get(character_id)
     if ch is None:
@@ -2130,13 +2159,20 @@ def find_npcs(
 
 
 @mcp.tool()
-def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_party: bool = False) -> dict:
+def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", add_to_party: bool = False,
+                         character_name: str = "", canon_name: str = "") -> dict:
     """Pull a CANON character (e.g. Shadowheart, Astarion, Gale) from the world's ingested
     roster into this campaign — with their real identity: race, class, and the
     appearance / personality / mannerisms / backstory the DM voices from. Makes the
     post-BG3 cast encounterable instead of re-invented. `kind`="npc" (default) or
     "companion"; `add_to_party` brings a companion along. For a full COMBAT sheet, follow
-    with apply_srd_defaults / recruit_companion. Refuses a duplicate name."""
+    with apply_srd_defaults / recruit_companion. Refuses a duplicate name.
+
+    Name the character via ``name`` (canonical) or the aliases ``character_name`` /
+    ``canon_name`` — ``name`` wins if more than one is given."""
+    name = name or character_name or canon_name  # accept the name the DM reaches for
+    if not name:
+        raise ValueError("load_canon_character needs a name (pass `name` or an alias: `character_name`/`canon_name`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         rec = content_mod.load_canon_character(c.world_id, name) if c.world_id else None
@@ -2333,7 +2369,8 @@ def load_canon_character(campaign_id: str, name: str, kind: str = "npc", add_to_
 
 
 @mcp.tool()
-def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
+def update_character(campaign_id: str, character_id: str = "", patch: dict = None,
+                     target_id: str = "", id: str = "") -> dict:
     """Apply a partial update to a character and persist it.
 
     `patch` is a dict of fields to change (deep-merged for nested objects), e.g.
@@ -2351,7 +2388,15 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
     REPLACED wholesale by the patch, not merged. To change a single condition
     use add_condition / remove_condition; for HP use set_hp. Vitals are clamped
     to valid ranges (current_hp to 0..max_hp, exhaustion to 0..6).
+    Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``id`` — equivalent; ``character_id`` wins if more than one is given (this is the
+    character-identity arg, distinct from the flat class aliases inside ``patch``).
     """
+    character_id = character_id or target_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("update_character needs a character (pass `character_id` or an alias: `target_id`/`id`)")
+    if patch is None:
+        raise ValueError("update_character needs a `patch` object")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -2409,12 +2454,14 @@ def update_character(campaign_id: str, character_id: str, patch: dict) -> dict:
 @mcp.tool()
 def add_condition(
     campaign_id: str,
-    character_id: str,
-    condition: str,
+    character_id: str = "",
+    condition: str = "",
     repeat_save_ability: str = "",
     repeat_save_dc: int = 0,
     source_id: str = "",
     spell_name: str = "",
+    target_id: str = "",
+    id: str = "",
 ) -> dict:
     """Add a 5e condition to a character (idempotent). Prefer this over patching
     the whole conditions list. Valid values: blinded, charmed, deafened,
@@ -2430,7 +2477,15 @@ def add_condition(
     effect to its concentration so a successful escape also ends the caster's
     concentration. ADDITIVE: omit these and the condition behaves exactly as before
     (no end-of-turn save — the DM resolves any save by hand). cast_spell surfaces the
-    `condition_rider` hint telling you exactly which values to pass here."""
+    `condition_rider` hint telling you exactly which values to pass here.
+
+    Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``id`` — ``character_id`` wins if more than one is given."""
+    character_id = character_id or target_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("add_condition needs a character (pass `character_id` or an alias: `target_id`/`id`)")
+    if not condition:
+        raise ValueError("add_condition needs a `condition`")
     cond = Condition(condition.lower())
     rs_ability = _parse_ability(repeat_save_ability) if repeat_save_ability else None
     with campaign_lock(campaign_id):
@@ -2486,8 +2541,16 @@ def add_condition(
 
 
 @mcp.tool()
-def remove_condition(campaign_id: str, character_id: str, condition: str) -> dict:
-    """Remove a 5e condition from a character (no-op if not present)."""
+def remove_condition(campaign_id: str, character_id: str = "", condition: str = "",
+                     target_id: str = "", id: str = "") -> dict:
+    """Remove a 5e condition from a character (no-op if not present). Identify the character
+    via ``character_id`` (canonical) or the aliases ``target_id`` / ``id`` — ``character_id``
+    wins if more than one is given."""
+    character_id = character_id or target_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("remove_condition needs a character (pass `character_id` or an alias: `target_id`/`id`)")
+    if not condition:
+        raise ValueError("remove_condition needs a `condition`")
     cond = Condition(condition.lower())
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -2499,10 +2562,16 @@ def remove_condition(campaign_id: str, character_id: str, condition: str) -> dic
 
 @mcp.tool()
 def set_hp(
-    campaign_id: str, character_id: str, current_hp: int, temp_hp: Optional[int] = None
+    campaign_id: str, character_id: str = "", current_hp: int = 0, temp_hp: Optional[int] = None,
+    target_id: str = "", id: str = ""
 ) -> dict:
     """Set a character's current HP (and optionally temporary HP). Values are
-    clamped to valid ranges by the engine (current_hp to 0..max_hp, temp_hp >= 0)."""
+    clamped to valid ranges by the engine (current_hp to 0..max_hp, temp_hp >= 0).
+    Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``id`` — ``character_id`` wins if more than one is given."""
+    character_id = character_id or target_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("set_hp needs a character (pass `character_id` or an alias: `target_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -2912,13 +2981,20 @@ def _zone_exists(c: Campaign, zone: str) -> bool:
 
 
 @mcp.tool()
-def place_combatant(campaign_id: str, combatant_id: str, zone: str) -> dict:
+def place_combatant(campaign_id: str, combatant_id: str = "", zone: str = "",
+                    character_id: str = "", id: str = "") -> dict:
     """Place a combatant directly into a tactical `zone` (S2.7) — the initial setup
     move, with NO opportunity-attack check (use move_to_zone for in-combat movement
     that may provoke). The combatant must be in the initiative order. `zone` should
     name a declared zone (set_zones); an unknown name is accepted but flagged in
     `warnings` so a typo doesn't silently strand a fighter. Returns the combat view
-    (now carrying each placed combatant's `zone`)."""
+    (now carrying each placed combatant's `zone`).
+
+    Identify the combatant via ``combatant_id`` (canonical) or the aliases ``character_id`` /
+    ``id`` — ``combatant_id`` wins if more than one is given."""
+    combatant_id = combatant_id or character_id or id  # accept the id the DM reaches for
+    if not combatant_id:
+        raise ValueError("place_combatant needs a combatant (pass `combatant_id` or an alias: `character_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -2940,7 +3016,8 @@ def place_combatant(campaign_id: str, combatant_id: str, zone: str) -> dict:
 
 
 @mcp.tool()
-def move_to_zone(campaign_id: str, combatant_id: str, zone: str) -> dict:
+def move_to_zone(campaign_id: str, combatant_id: str = "", zone: str = "",
+                 character_id: str = "", id: str = "") -> dict:
     """Move a combatant across the zone graph DURING combat (S2.7). Unlike
     place_combatant, this models leaving the current zone: if the combatant is
     LEAVING a zone that still holds a hostile (a creature of a different
@@ -2953,7 +3030,13 @@ def move_to_zone(campaign_id: str, combatant_id: str, zone: str) -> dict:
     `zone` should be the SAME as or ADJACENT to the current zone (a single move);
     a non-adjacent hop is allowed but flagged in `warnings` (advisory, never
     blocked — the DM may rule a Dash or special movement). Returns the combat view
-    plus `from`, `to`, `opportunity_attack`, and `provokers`."""
+    plus `from`, `to`, `opportunity_attack`, and `provokers`.
+
+    Identify the combatant via ``combatant_id`` (canonical) or the aliases ``character_id`` /
+    ``id`` — ``combatant_id`` wins if more than one is given."""
+    combatant_id = combatant_id or character_id or id  # accept the id the DM reaches for
+    if not combatant_id:
+        raise ValueError("move_to_zone needs a combatant (pass `combatant_id` or an alias: `character_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -3488,9 +3571,9 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
 @mcp.tool()
 def attack(
     campaign_id: str,
-    attacker_id: str,
-    target_id: str,
-    attack_bonus: int,
+    attacker_id: str = "",
+    target_id: str = "",
+    attack_bonus: int = 0,
     damage_dice: str = "",
     damage_type: str = "",
     advantage: bool = False,
@@ -3498,6 +3581,9 @@ def attack(
     is_ranged: bool = False,
     is_reaction: bool = False,
     damage_rolls: list[dict] | None = None,
+    character_id: str = "",
+    npc_id: str = "",
+    id: str = "",
 ) -> dict:
     """Resolve an attack. The DM supplies attack_bonus and damage_dice (e.g.
     '1d8+3'); the engine rolls 1d20+bonus vs the target's AC, auto-hits on a
@@ -3527,6 +3613,16 @@ def attack(
     an opportunity attack explicitly. An illegal attack (wrong turn / out of attacks /
     no reaction left) is REJECTED with a clear error and NO state change (no roll,
     no damage). Inert when no combat is active or the attacker isn't a combatant."""
+    # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
+    # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
+    # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
+    # is the attacker alias here, so it would be ambiguous.)
+    attacker_id = attacker_id or character_id
+    target_id = target_id or npc_id or id
+    if not attacker_id:
+        raise ValueError("attack needs an attacker (pass `attacker_id` or its alias `character_id`)")
+    if not target_id:
+        raise ValueError("attack needs a target (pass `target_id` or an alias: `npc_id`/`id`)")
     # Damage spec: exactly one of damage_dice / damage_rolls. ``damage_dice`` became
     # optional (default "") so a multi-component caller can omit it, but a hit needs
     # SOME damage to roll — reject a spec-less call up front with a clear message rather
@@ -3942,7 +4038,8 @@ def attack(
 
 @mcp.tool()
 def apply_damage(
-    campaign_id: str, target_id: str, amount: int, damage_type: str = "", crit: bool = False, half: bool = False
+    campaign_id: str, target_id: str = "", amount: int = 0, damage_type: str = "", crit: bool = False,
+    half: bool = False, character_id: str = "", id: str = ""
 ) -> dict:
     """Apply damage to a character. Temp HP is absorbed first; HP floors at 0;
     massive damage causes instant death; dropping to 0 makes the target unconscious
@@ -3950,7 +4047,11 @@ def apply_damage(
     Set half=True for a successful save vs a 'half on save' spell (halves the amount).
     `damage_type` (e.g. 'fire', 'slashing') applies the target's resistance (half),
     immunity (none), or vulnerability (double). Returns the new state, including
-    any concentration_dc to roll."""
+    any concentration_dc to roll. Identify the target via ``target_id`` (canonical) or the
+    aliases ``character_id`` / ``id`` — equivalent; ``target_id`` wins if more than one is given."""
+    target_id = target_id or character_id or id  # accept the id the DM reaches for
+    if not target_id:
+        raise ValueError("apply_damage needs a target (pass `target_id` or an alias: `character_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         target = _char(c, target_id)
@@ -3978,9 +4079,14 @@ def apply_damage(
 
 
 @mcp.tool()
-def apply_healing(campaign_id: str, target_id: str, amount: int) -> dict:
+def apply_healing(campaign_id: str, target_id: str = "", amount: int = 0,
+                  character_id: str = "", id: str = "") -> dict:
     """Heal a character (up to max HP). Healing above 0 HP ends the dying state
-    and resets death saves. Cannot revive the dead."""
+    and resets death saves. Cannot revive the dead. Identify the target via ``target_id``
+    (canonical) or the aliases ``character_id`` / ``id`` — ``target_id`` wins if more than one."""
+    target_id = target_id or character_id or id  # accept the id the DM reaches for
+    if not target_id:
+        raise ValueError("apply_healing needs a target (pass `target_id` or an alias: `character_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         target = _char(c, target_id)
@@ -4001,9 +4107,14 @@ def apply_healing(campaign_id: str, target_id: str, amount: int) -> dict:
 
 
 @mcp.tool()
-def set_temp_hp(campaign_id: str, target_id: str, amount: int) -> dict:
+def set_temp_hp(campaign_id: str, target_id: str = "", amount: int = 0,
+                character_id: str = "", id: str = "") -> dict:
     """Grant temporary HP. Temp HP does NOT stack — keeps the higher of current
-    and new (SRD rule)."""
+    and new (SRD rule). Identify the target via ``target_id`` (canonical) or the aliases
+    ``character_id`` / ``id`` — ``target_id`` wins if more than one is given."""
+    target_id = target_id or character_id or id  # accept the id the DM reaches for
+    if not target_id:
+        raise ValueError("set_temp_hp needs a target (pass `target_id` or an alias: `character_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, target_id)
@@ -4800,11 +4911,14 @@ def _expire_clock_effects_all(c: Campaign, *, long_rest: bool = False) -> list[d
 def cast_spell(
     campaign_id: str,
     character_id: str,
-    spell_name: str,
+    spell_name: str = "",
     slot_level: Optional[int] = None,
     target_id: str = "",
     is_melee: bool = False,
     is_reaction: bool = False,
+    spell: str = "",
+    npc_id: str = "",
+    id: str = "",
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -4824,7 +4938,17 @@ def cast_spell(
     Shocking Grasp, Inflict Wounds) to get the same advisory `range_warning` as a
     melee attack when caster and target aren't in the same or an adjacent zone.
     Ranged spells reach any zone — leave `is_melee` False (the default) and they're
-    never gated. Inert when no zones are declared (theater-of-the-mind)."""
+    never gated. Inert when no zones are declared (theater-of-the-mind).
+
+    Name the spell via ``spell_name`` (canonical) or ``spell`` (alias); identify an explicit
+    target via ``target_id`` (canonical) or the aliases ``npc_id`` / ``id``. (``character_id``
+    is the CASTER and is unchanged.) Canonical names win if more than one is given."""
+    # Coalesce intuitive arg-name aliases to the canonical params. `character_id` (the caster)
+    # is canonical and untouched; the alias ids resolve only the explicit `target_id`.
+    spell_name = spell_name or spell
+    target_id = target_id or npc_id or id
+    if not spell_name:
+        raise ValueError("cast_spell needs a spell (pass `spell_name` or its alias `spell`)")
     curated = None
     try:
         curated = spells.spell_data(spell_name)
@@ -5825,14 +5949,21 @@ def _clamp_attitude(value: int) -> int:
 
 @mcp.tool()
 def set_attitude(
-    campaign_id: str, character_id: str, attitude: str, value: int | None = None
+    campaign_id: str, character_id: str = "", attitude: str = "", value: int | None = None,
+    target_id: str = "", npc_id: str = "", id: str = ""
 ) -> dict:
     """Set an NPC's attitude (free text, e.g. 'guarded', or a track value:
     hostile / wary / indifferent / friendly / helpful).
 
     Pass `value` (-100..+100, 0 = neutral) to ALSO set the numeric per-NPC
     relationship the dashboard bar reads; omit it to leave the number untouched
-    (the free-text track keeps working exactly as before)."""
+    (the free-text track keeps working exactly as before).
+
+    Identify the NPC via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``npc_id`` / ``id`` — ``character_id`` wins if more than one is given."""
+    character_id = character_id or target_id or npc_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("set_attitude needs a character (pass `character_id` or an alias: `target_id`/`npc_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -5849,10 +5980,17 @@ def set_attitude(
 
 
 @mcp.tool()
-def adjust_attitude(campaign_id: str, character_id: str, delta: int) -> dict:
+def adjust_attitude(campaign_id: str, character_id: str = "", delta: int = 0,
+                    target_id: str = "", npc_id: str = "", id: str = "") -> dict:
     """Nudge an NPC's numeric relationship (`attitude_value`) by `delta`, clamped to
     -100..+100. For the DM to reward a kindness or punish a betrayal directly, outside
-    a social check. Leaves the free-text `attitude` track unchanged."""
+    a social check. Leaves the free-text `attitude` track unchanged.
+
+    Identify the NPC via ``character_id`` (canonical) or the aliases ``target_id`` /
+    ``npc_id`` / ``id`` — ``character_id`` wins if more than one is given."""
+    character_id = character_id or target_id or npc_id or id  # accept the id the DM reaches for
+    if not character_id:
+        raise ValueError("adjust_attitude needs a character (pass `character_id` or an alias: `target_id`/`npc_id`/`id`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -5902,8 +6040,13 @@ def remember(campaign_id: str, character_id: str, fact: str = "", text: str = ""
 
 
 @mcp.tool()
-def forget(campaign_id: str, character_id: str, fact: str) -> dict:
-    """Remove a remembered fact (exact match) from a character's memory."""
+def forget(campaign_id: str, character_id: str, fact: str = "", text: str = "") -> dict:
+    """Remove a remembered fact (exact match) from a character's memory. Pass the fact as
+    ``fact`` (canonical) or ``text`` (alias) — equivalent, mirroring ``remember``; ``fact``
+    wins if both are given."""
+    fact = fact if fact else text  # `text` is an accepted alias for the canonical `fact` (mirrors remember)
+    if not fact:
+        raise ValueError("forget needs a fact (pass `fact` or its alias `text`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -5941,15 +6084,19 @@ _ON_FAILURE_DIRECTIVE = {
 
 
 @mcp.tool()
-def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: int,
-                 target_name: str = "") -> dict:
+def social_check(campaign_id: str, actor_id: str, npc_id: str = "", skill: str = "", dc: int = 0,
+                 target_name: str = "", target_id: str = "", character_id: str = "",
+                 id: str = "", ability: str = "", skill_name: str = "", check: str = "") -> dict:
     """An actor's skill check against a tracked NPC, monster, or COMPANION, with
     read-vs-influence semantics.
 
     The target (``npc_id``) may be an NPC, a monster, or a COMPANION — a party member is
     a legitimate social target (persuade/intimidate/read a companion); it moves the SAME
     attitude/approval track an NPC uses (the gauge companion arcs evaluate). Only a PLAYER
-    character cannot be the target.
+    character cannot be the target. Identify the target via ``npc_id`` (canonical) or any
+    of the aliases ``target_id`` / ``character_id`` / ``id`` — equivalent; ``npc_id`` wins
+    if more than one is given. Name the skill via ``skill`` (canonical) or the aliases
+    ``ability`` / ``skill_name`` / ``check``.
 
     INFLUENCE skills (persuasion / deception / intimidation / …) try to move the
     target: on success the attitude improves one step on the track (hostile -> wary ->
@@ -5968,6 +6115,20 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str, skill: str, dc: i
     standing NPC's id as a throwaway target silently corrupts their attitude across the
     whole campaign (QA: a Deception vs a dock extra accidentally shifted a seeded
     companion's standing because her id was passed as the target)."""
+    # Coalesce intuitive arg-name aliases to the canonical params BEFORE any branching.
+    # `npc_id` (canonical) wins; the id MUST resolve before the ephemeral/target_name path
+    # below, or an alias-only call would wrongly take the scene-extra branch (npc_id="").
+    npc_id = npc_id or target_id or character_id or id  # accept the id the DM reaches for
+    skill = skill or ability or skill_name or check  # match skill_check's accepted aliases
+    if not skill:
+        raise ValueError(
+            "social_check needs a skill (pass `skill` or an alias: `ability`/`skill_name`/`check`)"
+        )
+    if not npc_id and not target_name.strip():
+        raise ValueError(
+            "social_check needs a target: pass `npc_id` (a tracked NPC/monster/companion; "
+            "aliases `target_id`/`character_id`/`id`) or `target_name` (a scene extra)"
+        )
     if skill.lower() not in SKILL_ABILITIES:
         raise ValueError(f"unknown skill {skill!r}")
     with campaign_lock(campaign_id):
@@ -6694,13 +6855,22 @@ def list_slots(campaign_id: str) -> dict:
 def log_event(
     campaign_id: str,
     kind: str,
-    text: str,
+    text: str = "",
     speaker: Optional[str] = "",
     payload: Optional[dict] = None,
+    message: str = "",
+    content: str = "",
+    note: str = "",
 ) -> dict:
     """Record a story beat in the current session log (kind: narration | dialogue
     | roll | system | combat). Auto-starts a session if none is active. Powers
-    recaps and post-compaction recovery."""
+    recaps and post-compaction recovery.
+
+    Pass the beat as ``text`` (canonical) or any of the aliases ``message`` / ``content`` /
+    ``note`` — ``text`` wins if more than one is given."""
+    text = text or message or content or note  # accept the text the DM reaches for
+    if not text:
+        raise ValueError("log_event needs text (pass `text` or an alias: `message`/`content`/`note`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         entry = _log_session_entry(c, kind=kind, text=text, speaker=speaker, payload=payload)
@@ -6769,12 +6939,20 @@ def recall_decisions(campaign_id: str, query: str = "", limit: int = 12) -> dict
 
 
 @mcp.tool()
-def add_consequence(campaign_id: str, in_days: int, text: str, note: str = "") -> dict:
+def add_consequence(campaign_id: str, in_days: int = 0, text: str = "", note: str = "",
+                    message: str = "", content: str = "") -> dict:
     """Schedule a time-deferred world event to come due `in_days` from now (the
     in-world Campaign.day). Use it whenever the present sets up the future — a
     ritual that completes in 3 days, a spared villain who returns in a week, a
     siege that arrives, a debt called in. `check_consequences` surfaces them when
-    the day arrives. This is how the world keeps moving between adventures."""
+    the day arrives. This is how the world keeps moving between adventures.
+
+    Pass the event as ``text`` (canonical) or the aliases ``message`` / ``content`` —
+    ``text`` wins if more than one is given. (``note`` is a SEPARATE optional field, not an
+    alias.)"""
+    text = text or message or content  # accept the text the DM reaches for (NOT `note` — distinct field)
+    if not text:
+        raise ValueError("add_consequence needs text (pass `text` or an alias: `message`/`content`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         conseq = consequences_mod.schedule(c, in_days, text, note)
