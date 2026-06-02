@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorldOS — Render (M0 thin-client)</title>
+  <!-- Phaser 3 (MIT) VENDORED locally, no CDN at runtime — mirrors how the viewer
+       vendors babel-standalone + react (repo policy: packaged app must be
+       network-independent). See ../vendor/THIRD_PARTY_NOTICES.md. -->
+  <script src="../vendor/phaser-3.80.1.min.js"></script>
+  <style>
+    body { margin: 0; background: #0c0a06; color: #cbb890; font-family: -apple-system, system-ui, sans-serif; }
+    #wrap { max-width: 980px; margin: 1.2em auto; padding: 0 1em; }
+    #game { width: 960px; height: 600px; box-shadow: 0 0 0 1px rgba(140,100,60,.4); }
+    h1 { font-size: 1.1em; } .meta { color: #897; font-size: .85em; line-height: 1.5; }
+    code { background: #1c180e; padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>WorldOS — renderer-as-thin-client (Phaser 3, M0)</h1>
+    <p class="meta">
+      A renderer that owns <strong>no game state</strong>: it reads
+      <code>/atlas-surface</code>, <code>/combat-surface</code>, <code>/character-surface</code>,
+      <code>/events</code> and writes only an <strong>intent</strong> via <code>POST /move</code>.
+      Tokens are placed by engine <strong>zone</strong> (zone bands, not a VTT grid),
+      re-derived client-side — the renderer owns layout, the engine owns truth.
+      Runs <strong>standalone on bundled fixtures</strong>; add <code>?campaign=&lt;id&gt;</code>
+      (optional <code>?base=http://127.0.0.1:8765</code>) to drive a live game.
+    </p>
+    <div id="game"></div>
+    <p class="meta">
+      Served at <code>/openworlds/render/</code> by <code>viewer/server.py</code> (no server change —
+      the OpenWorlds asset handler serves any file under <code>viewer/openworlds/</code>).
+      Consumes the M0 render-profile contract (<code>docs/roadmap/contracts/render-profile.md</code>).
+      See <code>README.md</code> for the contract this validates.
+    </p>
+  </div>
+  <script src="./surface-client.js"></script>
+  <script src="./renderer.js"></script>
+</body>
+</html>

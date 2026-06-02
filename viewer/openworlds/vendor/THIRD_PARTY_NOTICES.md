@@ -30,6 +30,20 @@ the project-level `THIRD_PARTY_NOTICES.md` record why the local copy is bundled.
 Babel's license is included in the upstream package. This file and the
 project-level `THIRD_PARTY_NOTICES.md` record why the local copy is bundled.
 
+## Phaser
+
+- File: `phaser-3.80.1.min.js`
+- Version: 3.80.1
+- Source: `https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js`
+- License: MIT
+- SHA256: `62081f6a1b51d040473f919ffedef9009953c20833518e146da5a8d1c9405ea8`
+
+Phaser is the 2D renderer for the OpenWorlds graphics tiers (the `render/`
+thin-client; graphics roadmap `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`).
+Vendored locally so the packaged app makes no runtime CDN call — same policy as
+the React + Babel runtimes above. Phaser's MIT license is included in the
+upstream distribution header.
+
 ## Google Fonts
 
 - CSS: `google-fonts.css`
