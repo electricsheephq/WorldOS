@@ -70,6 +70,12 @@ PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
 KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
 SELECTED_PROVIDER="${WOS_APP_SELECTED_PROVIDER:-}"
 PLAYER_AGENT="${WOS_APP_PLAYER_AGENT:-claude}"
+# Part-A cold-open mint deadline (seconds). The #356 banner spawns the DM cold open, whose
+# --effort max world-build runs ~280–400s (qa/lib_beat_driver.sh WORLDOS_COLDOPEN_TIMEOUT=400);
+# the old 210s poll (70 × 3s) was SHORTER than a max-effort cold open, so a slow-but-healthy
+# mint timed out as a spurious FAIL. Give the poll a 420s budget (just past the cold-open
+# deadline), env-overridable for fast inner loops.
+PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-420}"
 if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
   printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
   exit 2
@@ -392,15 +398,18 @@ PY
   a_log "[A] raising WorldOS to front + CGEvent-clicking the RESUME → PLAY CTA (with retries)…"
   click_play_cta   # first attempt (the poll re-clicks if the focus-race ate it)
 
-  # ASSERT the mint. Poll up to ~3.5 min for BOTH: (i) a NEW play-state run dir AND (ii) a NEW
-  # viewer (a DIFFERENT port than the launcher) whose /session-surface reports can_act:true. The
-  # DM cold-open mints the campaign; can_act flips once the move-sink is set AND the viewer binds
-  # the live campaign (auto-follow), which happens early in the cold-open turn. RE-CLICK every
-  # ~24s while nothing has minted: on a busy multi-app desktop another window can steal focus
-  # between the activate and the CGEvent, swallowing the click — a re-click recovers it.
-  a_log "[A] polling for a minted live session (new run dir + can_act:true on a new port)…"
+  # ASSERT the mint. Poll up to PART_A_DEADLINE (default 420s, env WOS_APP_PART_A_DEADLINE) for
+  # BOTH: (i) a NEW play-state run dir AND (ii) a NEW viewer (a DIFFERENT port than the launcher)
+  # whose /session-surface reports can_act:true. The DM cold-open mints the campaign; can_act flips
+  # once the move-sink is set AND the viewer binds the live campaign (auto-follow), which happens
+  # early in the cold-open turn — but the budget must outlast the max-effort cold open (~280–400s),
+  # so the old 210s poll was a spurious FAIL on a slow-but-healthy mint. RE-CLICK every ~24s while
+  # nothing has minted: on a busy multi-app desktop another window can steal focus between the
+  # activate and the CGEvent, swallowing the click — a re-click recovers it.
+  local part_a_polls=$(( PART_A_DEADLINE / 3 )); [ "$part_a_polls" -lt 1 ] && part_a_polls=1
+  a_log "[A] polling for a minted live session (new run dir + can_act:true on a new port; deadline ${PART_A_DEADLINE}s / ${part_a_polls} polls)…"
   local minted_port="" minted_run="" can_act="false"
-  for i in $(seq 1 70); do
+  for i in $(seq 1 "$part_a_polls"); do
     # (i) a new play-state dir
     local now_dirs new_dir
     now_dirs="$(ls -1 "$ROOT/play-state" 2>/dev/null | sort || true)"

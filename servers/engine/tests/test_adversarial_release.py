@@ -182,6 +182,35 @@ def test_issue50_play_party_prompt_uses_existing_campaign_not_start_world():
     assert "DO NOT call start_world" in text and "campaign_id=$CAMPAIGN_ID" in text
 
 
+def test_coldopen_play_party_guards_player_pc_seating():
+    """Cold-open reliability: play_party.sh (the .app's path) creates the human PC live in a
+    DM-stochastic turn. A forensic run minted can_act:true but the DM never seated a PC →
+    viewer readiness=degraded / no_actor. Guard the miss: detect a seated player actor after
+    the cold open, retry once, and FAIL LOUD rather than silently hand a no_actor session."""
+    text = (_ROOT / "scripts" / "play_party.sh").read_text(encoding="utf-8")
+    # (1) the prompt mandates seating the PC (kind="player", add_to_party) up front.
+    assert 'create_character with kind=\\"player\\" and add_to_party=true' in text
+    # (2) a snapshot-backed guard exists and matches the viewer's _action_actor notion of a
+    #     seated PC (a party member whose record is kind="player").
+    assert "pc_seated()" in text
+    assert 'get("kind") == "player"' in text
+    # (3) the guard retries the cold open ONCE, then aborts loudly on a still-unseated party.
+    assert "retrying the cold open ONCE" in text
+    assert "COLD-OPEN SEATED NO PC" in text and "exit 1" in text
+
+
+def test_coldopen_part_a_poll_window_outlasts_max_effort_coldopen():
+    """Cold-open reliability: the Part-A (#356) mint poll must outlast the max-effort cold open
+    (~280–400s). The old 210s window (70 × 3s) was a spurious FAIL; the deadline is now a
+    420s-default, env-overridable knob."""
+    text = (_ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
+    assert 'PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-420}"' in text
+    # the poll loop derives its iteration count from the deadline (no more hardcoded `seq 1 70`).
+    assert "part_a_polls=$(( PART_A_DEADLINE / 3 ))" in text
+    assert 'for i in $(seq 1 "$part_a_polls"); do' in text
+    assert "for i in $(seq 1 70); do" not in text
+
+
 def test_issue51_campaign_new_command_creates_one_campaign():
     text = (_ROOT / "commands" / "campaign-new.md").read_text(encoding="utf-8")
     assert "create_campaign` to get a campaign id, then" not in text  # the two-campaign instruction

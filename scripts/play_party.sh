@@ -416,7 +416,7 @@ Begin a session in a living world for a single human player (who acts through th
 - This session's campaign ALREADY EXISTS: use campaign_id=$CAMPAIGN_ID for EVERY engine call. The world, party, and companions were pre-seeded for you. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN the pre-seeded companions; DO NOT recruit or create companions yourself.
 - call get_state(\"$CAMPAIGN_ID\") FIRST to read the world bible (premise, era/chronology, tone, standing threads, seeded regions/factions) AND the existing party roster. The companions already present are: $COMP_NAME_LIST. They are SEPARATE people with their own agency — each is controlled by its OWN agent. You voice the WORLD and NPCs and resolve everyone's declared moves; you NEVER invent a companion's internal choice or speak for them beyond narrating the RESULT of what they declared.
 - start_session (for continuity and the recap) if get_state shows no active session.
-- Create a level-3 player character for the HUMAN (generate_ability_scores + create_character, apply_srd_defaults, sensible skills/spells). Pick a fitting concept and tell the player who they are. This is the ONLY character you create.
+- SEAT THE PLAYER CHARACTER FIRST — this is MANDATORY and comes BEFORE any narration, art, or scene-setting. Create a level-3 player character for the HUMAN (generate_ability_scores + create_character with kind=\"player\" and add_to_party=true, apply_srd_defaults, sensible skills/spells). Pick a fitting concept and tell the player who they are. This is the ONLY character you create. A cold open that ends with NO seated player PC (the party has no kind=\"player\" member) is a BROKEN session the player cannot play — never end this turn without the human's PC seated in the party.
 - Open a human-scale, personal scene grounded in the world's canon, with real quoted dialogue, that includes the human's PC AND their companions, and hand the player an open moment + a clear, real choice.
 
 CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, written as 2nd-person player-facing prose (addressed to \"you\"): where the player IS, what they see/hear/smell, who is present and a real quoted line from them, ending on a clear open moment + choice. The player reads ONLY your final reply text as the scene — so the opening prose MUST be IN it. Do your setup with the tools FIRST, then CLOSE the turn by writing the scene. NEVER end this turn on a tool call, and NEVER let your reply be a 3rd-person setup brief or game-system notation (e.g. \"COLD OPEN — ARRIVAL: <Name> (tiefling wizard, PC) walks toward…\") — that is your private scratchpad, not the player's scene. If you logged a setup note via log_event, you must STILL write the 2nd-person scene as your reply text.
@@ -428,6 +428,58 @@ DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 [ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 chatlog dm "$DMSG"; AGENT_TURNS=1
 echo "[play-party] DM opened: ${DMSG:0:120}…"
+
+# --- SEATING GUARD: the cold open MUST seat a player PC ----------------------------------
+# UNLIKE the companions (pre-seeded above), the human's PC is created by the DM live in the
+# cold-open turn (play.sh-parity "the DM hands you a character" feel). That makes seating
+# DM-STOCHASTIC: a forensic .app run (g1, veteran persona) built the world but its cold-open
+# turn ended after start_world WITHOUT ever calling create_character(kind="player") — leaving
+# party=[] and characters={NPCs only}. The viewer then reports readiness=degraded /
+# failure_bucket="no_actor" ("no active player actor is seated"), an UNPLAYABLE surface the
+# persona cannot escape (viewer/server.py `_action_actor` returns None when no party member is
+# kind="player"). A prior newbie run DID seat (PC Rolan), so this is a stochastic miss, not a
+# code break. Guard it the same way the DM TURN itself is guarded (one retry, then fail loud):
+# read the snapshot for a seated player actor; if none, retry the cold open ONCE on a FRESH
+# session with a hard seat-only directive; if STILL none, abort with a clear, non-silent error
+# rather than hand the player a no_actor session. Mirrors viewer/server.py `_action_actor`:
+# a seated PC = a party member whose character record is kind="player".
+pc_seated() {  # 0 = a player PC is seated in the party; 1 = none
+  local snap="$CAMP_DIR/snapshot.json"
+  [ -f "$snap" ] || return 1   # no snapshot at all -> definitely not seated
+  python3 - "$snap" <<'PY'
+import json, sys
+try:
+    snap = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+chars = snap.get("characters") if isinstance(snap.get("characters"), dict) else {}
+party = snap.get("party") if isinstance(snap.get("party"), list) else []
+# Match the viewer's _action_actor: a party member whose record is kind="player".
+seated = any(
+    isinstance(chars.get(cid), dict) and chars.get(cid, {}).get("kind") == "player"
+    for cid in party if isinstance(cid, str)
+)
+sys.exit(0 if seated else 1)
+PY
+}
+if ! pc_seated; then
+  echo "[play-party] cold open seated NO player PC (party has no kind=\"player\" member) — retrying the cold open ONCE on a fresh session…" >&2
+  # Fresh session id so the retry's first=1 --session-id can't collide with the consumed $DSID.
+  DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+  RESEAT_DMSG="$(turn dm "$DSID" 1 "Your previous cold-open turn for campaign $CAMPAIGN_ID did NOT seat the human's player character — the party still has no kind=\"player\" member, so the game is UNPLAYABLE. Fix this NOW, before anything else.
+
+- use campaign_id=$CAMPAIGN_ID for EVERY engine call. DO NOT call start_world (it would mint a NEW campaign id and ORPHAN the pre-seeded companions). The companions already present are: $COMP_NAME_LIST.
+- SEAT THE PLAYER CHARACTER: generate_ability_scores + create_character with kind=\"player\" and add_to_party=true, apply_srd_defaults, sensible skills/spells. Pick a fitting concept and tell the player who they are. This is the ONLY character you create. The party MUST contain the human's kind=\"player\" PC when this turn ends.
+- Then CLOSE the turn by writing the opening SCENE as 2nd-person player-facing prose addressed to \"you\" (where the player IS, what they see/hear/smell, who is present + a real quoted line), ending on a clear open moment + choice. NEVER end on a tool call or a 3rd-person setup brief.")"
+  RESEAT_DMSG="$(clawdnd_dm_narration_or_fallback "$RESEAT_DMSG" "$STATE_DIR")"
+  AGENT_TURNS=$((AGENT_TURNS + 1))
+  if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; chatlog dm "$DMSG"; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
+  if ! pc_seated; then
+    echo "[play-party] COLD-OPEN SEATED NO PC: after a retry the party still has no kind=\"player\" member — aborting rather than hand the player a no_actor session (see $COMBINED)." >&2
+    exit 1
+  fi
+  echo "[play-party] reseat OK — a player PC is now seated in the party."
+fi
 
 # --- beat 0: each companion INTRODUCES in character, loading its PERSONA -----------------
 # This is the fix for the inert-companion bug: COMP_PERSONAS is wired above but was never
