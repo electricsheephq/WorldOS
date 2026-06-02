@@ -249,10 +249,18 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
 
               {/* Skill slot choices */}
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {slots.map((slot, i) => (
+                {slots.map((slot, i) => {
+                  // Dialogue-depth (BG3 "how hard is this roll"): a per-slot success-odds chip.
+                  // p = passing d20 faces / 20, clamped to [5%,95%] (nat-1 always fails, nat-20
+                  // always succeeds). Pure client-derived from the modifier + suggested_dc the
+                  // surface already carries — no engine/read-model change.
+                  const oddsFaces = Math.max(1, Math.min(19, 21 - (slot.suggested_dc - slot.modifier)));
+                  const oddsPct = Math.round(oddsFaces / 20 * 100);
+                  const oddsTone = oddsPct >= 65 ? "var(--emerald)" : oddsPct >= 35 ? "#c9a227" : "var(--crimson)";
+                  return (
                   <button key={slot.skill} onClick={() => pick(slot)} style={{
                     display: "grid",
-                    gridTemplateColumns: "24px 1fr auto auto",
+                    gridTemplateColumns: "24px 1fr auto auto auto",
                     gap: 10, alignItems: "center",
                     padding: "8px 12px",
                     textAlign: "left",
@@ -284,8 +292,13 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
                     <span style={{ fontFamily: "var(--f-display)", color: "var(--b-500)", fontSize: 12, letterSpacing: "0.1em" }}>
                       DC {slot.suggested_dc}
                     </span>
+                    <span title={`Roll d20 ${slot.modifier >= 0 ? "+" : ""}${slot.modifier} vs DC ${slot.suggested_dc} → about ${oddsPct}% to succeed`}
+                      style={{ fontFamily: "var(--f-mono)", fontSize: 11, fontWeight: 700, color: oddsTone, minWidth: 36, textAlign: "right" }}>
+                      {oddsPct}%
+                    </span>
                   </button>
-                ))}
+                  );
+                })}
 
                 {/* Free-form path — always present (free_form is always true). When active,
                     reveal a textarea so the player types their OWN line and POSTs that text. */}
