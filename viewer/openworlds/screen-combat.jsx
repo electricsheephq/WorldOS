@@ -40,6 +40,10 @@ function ScreenCombat({ onNavigate, state }) {
   const [selectedToken, setSelectedToken] = React.useState("");
   const [localLog, setLocalLog] = React.useState([]);
   const [busyAction, setBusyAction] = React.useState("");
+  // #robustness: synchronous in-flight lock. setBusyAction is async (state read at the disabled
+  // check is stale), so two rapid clicks before re-render both pass — the adversarial's "Attack
+  // dies on double-click" / double-submit vector. busyRef gates synchronously.
+  const busyRef = React.useRef(false);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
@@ -130,6 +134,8 @@ function ScreenCombat({ onNavigate, state }) {
       });
       return;
     }
+    if (busyRef.current) return; // already submitting — drop the rapid double-click / double-Enter
+    busyRef.current = true;
     setBusyAction(action.id);
     try {
       const response = await fetch("/move", {
@@ -154,6 +160,7 @@ function ScreenCombat({ onNavigate, state }) {
     } catch (error) {
       toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
     } finally {
+      busyRef.current = false;
       setBusyAction("");
     }
   };
