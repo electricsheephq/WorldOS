@@ -93,6 +93,59 @@ clawdnd_dm_narration_or_fallback() {
   fi
 }
 
+# LEAN-BEAT DM-TURN ARGS (the ONE shared implementation of the CLAWDND_LEAN_BEATS path).
+#
+# Both play loops (scripts/play.sh AND qa/run_duo.sh) drive a DM turn through `claude -p`,
+# normally `--resume`-ing the DM's growing session every beat (which REPLAYS the whole
+# transcript → prefill grows ~6–10K tok/beat → the late-session slowdown a narrative persona
+# quit over). With CLAWDND_LEAN_BEATS=1, continuing beats (NOT the cold open) instead start a
+# FRESH session — a new --session-id, NO transcript carried — plus an --append-system-prompt
+# re-ground directive telling the DM to re-ground from the engine's persisted truth via
+# scene_context (which bundles state/threads/arcs + the recent player-facing narration TAIL)
+# rather than from the fat transcript.
+#
+# This used to live INLINE in scripts/play.sh's dm_turn only, so qa/run_duo.sh's DM turn
+# silently ignored the flag and the duo QA harness could never exercise lean. Factored here so
+# the lean SESSION-ARG decision + the (long, drift-prone) re-ground directive prose live in
+# EXACTLY ONE place and the two harnesses can't drift again (the file's stated intent).
+#
+# Bash 3.2 (the macOS system bash both harnesses run under) has NO namerefs, so this CANNOT
+# return arrays by reference. Instead it POPULATES two well-known GLOBAL arrays the caller
+# splices into its claude -p invocation:
+#   CLAWDND_DM_LEAN_SESSION  — () when NOT lean (caller keeps its own --resume/--session-id),
+#                              else (--session-id <fresh-uuid>) for a transcript-free turn.
+#   CLAWDND_DM_LEAN_EXTRA    — () when NOT lean, else (--append-system-prompt "<directive>").
+# Lean fires ONLY when: first = 0 (a CONTINUING beat)  AND  $CLAWDND_LEAN_BEATS = 1  AND
+# campaign_id is non-empty. The cold open (first != 0) or an unknown campaign id falls through
+# to the caller's normal resume path — byte-identical to today when the flag is off.
+# CONVENTION (both harnesses): first=1 ⇒ the cold open that mints the session; first=0 ⇒ a
+# continuing beat that would otherwise --resume it. Lean replaces that --resume on continuing
+# beats with a fresh transcript-free session — so the firing condition is first=0, NOT first!=0.
+# (scripts/play.sh's old inline lean used `first != 0`, which — combined with campaign_id only
+# being known on continuing beats — meant its lean branch NEVER actually fired; this shared
+# helper restores the documented intent: lean on beats 2+, full cold open. See PR notes.)
+# $CLAWDND_LEAN_TAIL ($3, default 8) is the recent-narration depth the re-ground asks for.
+# $1 = first?(1/0)  $2 = campaign_id (may be empty)  $3 = lean_tail (optional; default 8)
+clawdnd_dm_lean_args() {
+  local first="$1" campaign_id="${2:-}" lean_tail="${3:-8}"
+  CLAWDND_DM_LEAN_SESSION=()
+  CLAWDND_DM_LEAN_EXTRA=()
+  # The cold open (first != 0), flag off, or no campaign to re-ground against → no-op (caller's
+  # existing --resume/--session-id path is used unchanged). Lean fires on CONTINUING beats only.
+  if [ "$first" != "0" ] || [ "${CLAWDND_LEAN_BEATS:-0}" != "1" ] || [ -z "$campaign_id" ]; then
+    return 0
+  fi
+  # LEAN beat: fresh session, no transcript replay. Re-ground from persisted truth.
+  CLAWDND_DM_LEAN_SESSION=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
+  CLAWDND_DM_LEAN_EXTRA=(--append-system-prompt "LEAN RE-GROUND (this turn has NO prior conversation transcript — by design, to keep your turn fast). You are mid-campaign, NOT starting over. Your FIRST action this turn MUST be clawdnd-engine scene_context(campaign_id=\"$campaign_id\", recent_narration=$lean_tail). That one call returns the campaign's CANON, and it is your whole memory for this beat — HONOR all of it as canon YOU already authored:
+  • durable — the standing threads that persist across the campaign: open_quests (each with its still-open objectives = what the party still OWES), npc_relationships (every NPC the party has MET, with their attitude_value + attitude + relationship tags), companions (each companion's standing bond — attitude_value, has_arc, has_betrayal_agenda), factions (reputation + standing gauges), and the set flags.
+  • director — the top structural debts the campaign owes right now (advisory; pay the top one as fiction, never recite it).
+  • events / companion_arcs — any decisional that fired this beat, and any bond that just turned or betrayal_warning to foreshadow.
+  • recent_narration — the last $lean_tail player-facing beats' prose (the immediate story-so-far).
+  • state — the volatile current scene, party vitals, day/time, active quests, combat, pacing_mode, seed_params.
+Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, or forget a prior choice. CRUCIAL — LOSSLESS RULE: this compact bundle is the always-pinned SPINE, not the whole world. For ANYTHING the moment reaches back to that is NOT in this bundle (a fact, NPC, place, event, or lore detail from earlier), you MUST retrieve it BEFORE you narrate — the entire world/lore/history is searchable on disk: call recall(campaign_id=\"$campaign_id\", query=\"…\") for past events/decisions/facts, lookup_lore(campaign_id=\"$campaign_id\", query=\"…\") for world/setting lore, or recall_npc(campaign_id=\"$campaign_id\", npc_id=\"…\") before voicing a returning NPC. NEVER guess and NEVER invent a detail that contradicts established canon — retrieve first. (You may also pass recall_query=\"…\" to scene_context to fold a recall into the same first call.) Then resolve the move and narrate, seamlessly continuing the established story.")
+}
+
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
 # TAB-separated line:  day <TAB> time_of_day <TAB> visited_count <TAB> npcs_met <TAB>
 # current_location_id <TAB> current_location_visited(0/1) <TAB> combat_active(0/1)

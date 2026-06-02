@@ -32,6 +32,20 @@ CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+
+# --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
+# MIRRORS scripts/play.sh exactly (and shares its ONE implementation via the
+# clawdnd_dm_lean_args helper in qa/lib_beat_driver.sh). With CLAWDND_LEAN_BEATS=1, the DM's
+# CONTINUING beats (beats 1..N below — NOT the cold open D1) start a FRESH claude session (a
+# new --session-id, NO transcript replay) seeded with a re-ground directive: the DM re-grounds
+# from the engine's persisted truth via scene_context (state/director/events/companion_arcs +
+# the recent player-facing narration TAIL) instead of from the growing transcript. This is the
+# whole point of the flag — and the duo QA harness USED to ignore it (its DM turn always
+# `--resume`d the full transcript), so the lean path could never be validated through the duo
+# runner that qa/release_gate.sh uses. DEFAULT 0 ⇒ the --resume path is untouched, fully
+# reversible. The recent-narration tail depth mirrors play.sh's CLAWDND_LEAN_TAIL (default 8).
+CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-0}"
+CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
@@ -79,6 +93,11 @@ PY
 
 DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+# The DM's campaign id (for the lean re-ground). Resolved AFTER the cold-open D1 mints the
+# world (start_world writes $STATE_DIR/campaigns/<id>/). Declared here (empty) so the DM
+# turn()'s lean branch can reference it safely under `set -u` even during the cold open —
+# when it's empty, clawdnd_dm_lean_args no-ops and the normal --resume path is used.
+CAMPAIGN_ID=""
 DM_BRIEF="$(cat qa/play_dm_duo.txt)"; PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
 # A clean two-sided conversation log (the player agent's turns AND the DM's), so the
@@ -90,11 +109,24 @@ echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
 
 # $1=role(player|dm) $2=session-id $3=first?(1/0) $4=message ; echoes the agent's reply text
 turn() {
-  local role="$1" sid="$2" first="$3" msg="$4" out resume=()
+  local role="$1" sid="$2" first="$3" msg="$4" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$role" = "dm" ]; then
+    # LEAN beats (CLAWDND_LEAN_BEATS=1): a continuing DM beat starts a FRESH session + a
+    # re-ground directive instead of --resume-ing the full transcript — the SAME implementation
+    # scripts/play.sh uses, via the shared clawdnd_dm_lean_args helper (qa/lib_beat_driver.sh),
+    # so the two harnesses can't drift. CAMPAIGN_ID is resolved after the opening beat (it's
+    # empty during the cold open D1, so lean correctly no-ops there); the helper ALSO only fires
+    # on a continuing beat (first=0) and no-ops on the cold open (first!=0). When lean doesn't
+    # fire (flag off / cold open / unknown id) the helper leaves both arrays empty and we keep
+    # the --resume/--session-id behavior set above unchanged.
+    clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+      extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    fi
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
-    claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+    claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
@@ -164,6 +196,27 @@ DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 [ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 chatlog dm "$DMSG"
+
+# Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
+# CLAWDND_LEAN_BEATS=0). D1's start_world wrote the snapshot to
+# $STATE_DIR/campaigns/<id>/snapshot.json — read the id back from that dir. Mirrors
+# scripts/play.sh:347-363. The run wipes $STATE_DIR/campaigns at setup, so there is exactly
+# one campaign here; prefer the largest non-empty snapshot's parent (via the shared helper,
+# robust against a lock-only orphan dir), falling back to the sole campaign subdir. Empty ⇒
+# the DM turn's lean branch no-ops and the normal --resume path is used.
+CAMPAIGN_SNAP="$(clawdnd_snapshot_path "$STATE_DIR")"
+if [ -n "$CAMPAIGN_SNAP" ]; then
+  CAMPAIGN_ID="$(basename "$(dirname "$CAMPAIGN_SNAP")")"
+elif [ -d "$STATE_DIR/campaigns" ]; then
+  CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+fi
+if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
+  if [ -n "$CAMPAIGN_ID" ]; then
+    echo "[duo] lean-beats ON — beats 2+ re-ground via scene_context (campaign=$CAMPAIGN_ID), no transcript replay"
+  else
+    echo "[duo] lean-beats ON but campaign id not found under $STATE_DIR/campaigns — beats use the normal resume path" >&2
+  fi
+fi
 
 # Alternate player <-> DM for BEATS rounds. Each beat is now BEAT-AWARE (decision §A):
 # read the clock + location at the START of the beat, pick the ONE moment-specific runbook

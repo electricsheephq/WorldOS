@@ -217,16 +217,15 @@ fi
 # Echoes the DM's final text.
 dm_turn() {
   local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc
-  if [ "$first" != "0" ] && [ "$CLAWDND_LEAN_BEATS" = "1" ] && [ -n "$campaign_id" ]; then
-    # LEAN beat: fresh session, no transcript replay. Re-ground from persisted truth.
-    resume=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
-    extra=(--append-system-prompt "LEAN RE-GROUND (this turn has NO prior conversation transcript — by design, to keep your turn fast). You are mid-campaign, NOT starting over. Your FIRST action this turn MUST be clawdnd-engine scene_context(campaign_id=\"$campaign_id\", recent_narration=$CLAWDND_LEAN_TAIL). That one call returns the campaign's CANON, and it is your whole memory for this beat — HONOR all of it as canon YOU already authored:
-  • durable — the standing threads that persist across the campaign: open_quests (each with its still-open objectives = what the party still OWES), npc_relationships (every NPC the party has MET, with their attitude_value + attitude + relationship tags), companions (each companion's standing bond — attitude_value, has_arc, has_betrayal_agenda), factions (reputation + standing gauges), and the set flags.
-  • director — the top structural debts the campaign owes right now (advisory; pay the top one as fiction, never recite it).
-  • events / companion_arcs — any decisional that fired this beat, and any bond that just turned or betrayal_warning to foreshadow.
-  • recent_narration — the last $CLAWDND_LEAN_TAIL player-facing beats' prose (the immediate story-so-far).
-  • state — the volatile current scene, party vitals, day/time, active quests, combat, pacing_mode, seed_params.
-Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, or forget a prior choice. CRUCIAL — LOSSLESS RULE: this compact bundle is the always-pinned SPINE, not the whole world. For ANYTHING the moment reaches back to that is NOT in this bundle (a fact, NPC, place, event, or lore detail from earlier), you MUST retrieve it BEFORE you narrate — the entire world/lore/history is searchable on disk: call recall(campaign_id=\"$campaign_id\", query=\"…\") for past events/decisions/facts, lookup_lore(campaign_id=\"$campaign_id\", query=\"…\") for world/setting lore, or recall_npc(campaign_id=\"$campaign_id\", npc_id=\"…\") before voicing a returning NPC. NEVER guess and NEVER invent a detail that contradicts established canon — retrieve first. (You may also pass recall_query=\"…\" to scene_context to fold a recall into the same first call.) Then resolve the move and narrate, seamlessly continuing the established story.")
+  # The lean-beat path (fresh session + re-ground directive) is the ONE shared implementation
+  # in qa/lib_beat_driver.sh — qa/run_duo.sh drives the SAME helper, so the two harnesses can't
+  # drift. It populates CLAWDND_DM_LEAN_{SESSION,EXTRA} when this is a continuing beat AND
+  # CLAWDND_LEAN_BEATS=1 AND campaign_id is known; otherwise both stay empty and we use the
+  # normal resume path below (byte-identical to the flag-off behavior).
+  clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
+  if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+    resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+    extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
   elif [ "$first" = "0" ]; then
     resume=(--resume "$DSID")
   else
@@ -244,9 +243,11 @@ Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, o
     # timeout(1) exits 124 on the deadline; any nonzero gets ONE retry. A retried lean beat
     # mints a NEW fresh session id (never replay a half-written transcript).
     echo "[play] DM turn rc=$rc (timeout=${CLAWDND_BEAT_TIMEOUT}s) — retrying once" >&2
-    if [ "$first" != "0" ] && [ "$CLAWDND_LEAN_BEATS" = "1" ] && [ -n "$campaign_id" ]; then
-      resume=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
-    fi
+    # A retried lean beat mints a NEW fresh session id (never replay a half-written transcript);
+    # re-call the shared helper so the re-mint stays in lock-step with the lean path above. The
+    # re-ground directive ($extra) is unchanged, so we only refresh the session id here.
+    clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
+    [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
     out="$DM_LOG.$(date +%s%N).jsonl"
     _dm_invoke; rc=$?
     [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2
