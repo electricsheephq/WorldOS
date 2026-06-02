@@ -170,6 +170,20 @@ function sanitizeNarration(text) {
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function isVisibleChronicleEntry(entry) {
+  if (!entry) return false;
+  if (entry.kind === "narration") return Boolean(sanitizeNarration(entry.text));
+  return true;
+}
+
+function lastVisibleChronicleIndex(rows) {
+  if (!Array.isArray(rows)) return -1;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (isVisibleChronicleEntry(rows[i])) return i;
+  }
+  return -1;
+}
+
 // #337: the quick-action buttons (Continue / Say / Do / Check / Save) and the dice buttons are
 // icon+label only — a first-timer can't tell how they differ from typing free-text + Declare, so
 // the #324 newbie ignored all of them. These short hints surface as native `title=` tooltips
@@ -420,6 +434,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // turns, and ≫ one multi-paragraph DM turn) so we never clip an in-flight beat as it streams.
   const hiddenLogCount = Math.max(0, visibleLog.length - CHRONICLE_RENDER_CAP);
   const renderedLog = hiddenLogCount > 0 ? visibleLog.slice(visibleLog.length - CHRONICLE_RENDER_CAP) : visibleLog;
+  const lastVisibleLogIndex = lastVisibleChronicleIndex(renderedLog);
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
@@ -852,8 +867,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             {renderedLog.length ? renderedLog.map((entry, i) => (
               <div
                 key={entry.id || `${entry.kind || "n"}-${i}`}
-                ref={i === renderedLog.length - 1 ? latestBeatRef : null}
-                data-worldos-testid={i === renderedLog.length - 1 ? "chronicle-latest-beat" : undefined}
+                ref={i === lastVisibleLogIndex ? latestBeatRef : null}
+                data-worldos-testid={i === lastVisibleLogIndex ? "chronicle-latest-beat" : undefined}
                 style={{ scrollMarginBlock: 12 }}
               >
                 <LogEntry entry={entry} />
