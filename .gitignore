@@ -21,7 +21,7 @@
 # (qa/ui_playtest.sh), palette MCP server (qa/playwright/palette_server.js + package.json),
 # persona briefs, and scorer ARE committed; only the run outputs + node_modules are ignored.
 /qa/ui_playtest_runs/
-/qa/playwright/node_modules/
+/qa/playwright/node_modules
 /qa/playwright/_*.js
 # The on-demand findings ledger (qa/collect_findings.py output) — a regenerable digest of
 # local QA run scores, derived from the ignored qa/transcripts/. The collector script IS
