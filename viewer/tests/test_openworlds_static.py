@@ -617,8 +617,28 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # Auto-follow respects a reader scrolled up, and a new move re-pins to the latest.
         self.assertIn("stickToBottomRef", source)
         self.assertIn("snapNextRef", source)
+        # Long completed narration aligns to the START of the latest beat so first lines do not
+        # land above the fold; pending/stuck feedback still aligns to the end so the player sees
+        # the live "DM is narrating…" state.
+        self.assertIn("latestBeatRef", source)
+        self.assertIn("pendingBeatRef", source)
+        self.assertIn("programmaticScrollRef", source)
+        self.assertIn("function isVisibleChronicleEntry(entry)", source)
+        self.assertIn('if (entry.kind === "narration") return Boolean(sanitizeNarration(entry.text));', source)
+        self.assertIn("function lastVisibleChronicleIndex(rows)", source)
+        self.assertIn("const lastVisibleLogIndex = lastVisibleChronicleIndex(renderedLog);", source)
+        self.assertIn("scrollIntoView", source)
+        self.assertIn('block: pendingTarget ? "end" : "start"', source)
+        self.assertIn("programmaticScrollRef.current = true", source)
+        self.assertIn("stickToBottomRef.current = true;", source)
+        self.assertIn('"chronicle-latest-beat"', source)
+        self.assertIn("i === lastVisibleLogIndex ? latestBeatRef : null", source)
+        self.assertNotIn("i === renderedLog.length - 1 ? latestBeatRef : null", source)
+        self.assertIn('data-worldos-testid="chronicle-pending-beat"', source)
+        self.assertIn('data-worldos-testid="chronicle-stuck-beat"', source)
+        self.assertIn('aria-label="Chronicle — latest narration starts in view"', source)
         # The auto-scroll effect follows the pending/narrating indicator into view too (not just log).
-        self.assertIn("}, [renderedLog, pending]);", source)
+        self.assertIn("}, [renderedLog, pendingActive, pendingStuck]);", source)
         # The action bar is explicitly anchored (never pushed out by a growing chronicle).
         self.assertIn('flex: "0 0 auto"', source)
 
