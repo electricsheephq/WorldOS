@@ -103,6 +103,12 @@ function liveBestiaryEntry(item) {
     stats: (item?.abilities && typeof item.abilities === "object") ? item.abilities : undefined,
     tactics: item?.tactics ? String(item.tactics) : "",
     knownActions: Array.isArray(item?.known_actions) ? item.known_actions.filter((a) => String(a).trim()) : [],
+    // #depth: tier-3 (slain) defenses — the most tactically load-bearing facts (the engine now
+    // passes these through intel_projection). Each row hidden when blank.
+    resistances: Array.isArray(item?.damage_resistances) ? item.damage_resistances.filter((x) => String(x).trim()) : [],
+    immunities: Array.isArray(item?.damage_immunities) ? item.damage_immunities.filter((x) => String(x).trim()) : [],
+    vulnerabilities: Array.isArray(item?.damage_vulnerabilities) ? item.damage_vulnerabilities.filter((x) => String(x).trim()) : [],
+    conditionImmunities: Array.isArray(item?.condition_immunities) ? item.condition_immunities.filter((x) => String(x).trim()) : [],
     contentOrigin: String(item?.content_origin || "srd"),
     source: item?.source ? String(item.source) : "",
     license: item?.license ? String(item.license) : "",
@@ -376,6 +382,27 @@ function BestiaryEntry({ entry, tab }) {
               </div>
             </>
           )}
+
+          {/* #depth: Defenses — resistances/immunities/vulnerabilities/condition-immunities learned at
+              slain-tier (the single most tactically load-bearing facts). Each row hidden when empty. */}
+          {((entry.immunities && entry.immunities.length) || (entry.resistances && entry.resistances.length) || (entry.vulnerabilities && entry.vulnerabilities.length) || (entry.conditionImmunities && entry.conditionImmunities.length)) ? (
+            <>
+              <Divider />
+              <SectionTitle>Defenses</SectionTitle>
+              {entry.immunities && entry.immunities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Immune</span>{entry.immunities.map((x) => <Pill key={`im-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.resistances && entry.resistances.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Resist</span>{entry.resistances.map((x) => <Pill key={`re-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.vulnerabilities && entry.vulnerabilities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Vulnerable</span>{entry.vulnerabilities.map((x) => <Pill key={`vu-${x}`}>{x}</Pill>)}</div>
+              )}
+              {entry.conditionImmunities && entry.conditionImmunities.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}><span className="eyebrow" style={{ marginRight: 6 }}>Cond. Immune</span>{entry.conditionImmunities.map((x) => <Pill key={`ci-${x}`}>{x}</Pill>)}</div>
+              )}
+            </>
+          ) : null}
 
           {/* Provenance — authored (non-SRD) content credits its source/license. */}
           {entry.contentOrigin === "authored" && (entry.source || entry.license || entry.provenance) && (

@@ -516,6 +516,14 @@ def intel_projection(name: str, tier: int) -> Optional[dict]:
             out["abilities"] = dict(sb["abilities"])
         if sb.get("saves"):
             out["saves"] = dict(sb["saves"])
+        # #depth: at slain-tier, reveal the defenses you'd learn by killing it — the single most
+        # tactically load-bearing facts. stat_block populates these (lines ~394-397) but the tier-3
+        # reveal dropped them, so a player who SLEW an Adult Red Dragon couldn't learn it's
+        # fire-immune. Emit only non-empty lists (the hide-when-blank UI drops the rest).
+        for _rk in ("damage_resistances", "damage_immunities", "damage_vulnerabilities", "condition_immunities"):
+            _rv = sb.get(_rk)
+            if _rv:
+                out[_rk] = list(_rv)
         out["known_actions"] = [
             str(a.get("name", "")).strip() for a in sb.get("actions", []) if a.get("name")
         ][:8]

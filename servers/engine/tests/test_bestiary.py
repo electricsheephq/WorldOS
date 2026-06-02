@@ -375,6 +375,18 @@ def test_intel_projection_tier_gating():
     assert set(t2.keys()) - {"tier"} <= set(t3.keys())
 
 
+def test_intel_projection_tier3_reveals_resistances_and_immunities():
+    """#depth regression guard: slain-tier (3) must reveal damage resistances/immunities/
+    vulnerabilities + condition immunities — the most tactically load-bearing facts. stat_block
+    populates them but the tier-3 reveal previously DROPPED them. The Adult Red Dragon is
+    fire-immune; tier 2 (engaged) must not reveal it yet (strict gating)."""
+    t3 = bestiary.intel_projection("Adult Red Dragon", 3)
+    assert t3 is not None
+    assert "fire" in (t3.get("damage_immunities") or [])
+    t2 = bestiary.intel_projection("Adult Red Dragon", 2)
+    assert "damage_immunities" not in t2  # defenses gated until slain-tier
+
+
 def test_player_bestiary_no_intel_is_back_compat():
     """player_bestiary() with no intel is BYTE-identical to the pre-#263 preview surface."""
     out = bestiary.player_bestiary("goblin", 10)
