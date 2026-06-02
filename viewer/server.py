@@ -5425,12 +5425,12 @@ def _chat_file_summary(path: str) -> dict:
         for line in Path(path).read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            summary["line_count"] += 1
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if isinstance(payload, dict):
+                summary["line_count"] += 1
                 last = payload
     except OSError:
         return summary

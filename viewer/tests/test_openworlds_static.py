@@ -384,6 +384,20 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertTrue(payload["health"]["pending_player_turn"])
         self.assertEqual(payload["health"]["failure_bucket"], "none")
 
+    def test_chat_file_summary_ignores_malformed_trailing_row(self):
+        chat = self._tmp / "chat.jsonl"
+        chat.write_text(
+            json.dumps({"role": "dm", "text": "Opening."}) + "\n"
+            + '{"role":"player","text":"half-written"',
+            encoding="utf-8",
+        )
+
+        summary = server._chat_file_summary(str(chat))
+
+        self.assertEqual(summary["line_count"], 1)
+        self.assertEqual(summary["last_role"], "dm")
+        self.assertFalse(summary["pending_player_turn"])
+
     def test_app_status_browser_health_counts_console_and_network_logs(self):
         console = self._tmp / "console.ndjson"
         network = self._tmp / "network.ndjson"

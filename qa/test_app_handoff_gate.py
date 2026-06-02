@@ -221,6 +221,20 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("export_app_evidence exited 17", payload["failure"]["failure_detail"])
         self.assertEqual(persisted, payload)
 
+    def test_evidence_manifest_blockers_include_handoff_gate_reasons(self):
+        payload = {
+            "evidence_gaps": [],
+            "handoff_gate": {
+                "ok": False,
+                "blocking_reasons": ["can_act not true", "no enabled actions"],
+            },
+        }
+
+        self.assertEqual(
+            gate.evidence_manifest_blockers(payload),
+            ["can_act not true", "no enabled actions"],
+        )
+
     def test_hook_probe_summary_reports_exact_missing_controls(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "hook-probe.json"
@@ -247,7 +261,7 @@ class AppHandoffGateTests(unittest.TestCase):
         status_initial = {
             "schema": "worldos.app-status.v1",
             "build": {"sha": "abc1234"},
-            "viewer": {"port": 8899, "chat_lines": 1},
+            "viewer": {"port": 8899, "chat_lines": 1, "last_chat_role": "dm"},
             "art": {"private_root_present": True},
             "live": {
                 "can_act": True,
@@ -257,9 +271,27 @@ class AppHandoffGateTests(unittest.TestCase):
             "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
             "health": {"failure_bucket": "none"},
         }
+        status_busy = {
+            **status_initial,
+            "viewer": {"port": 8899, "chat_lines": 2, "last_chat_role": "player"},
+            "live": {
+                "can_act": False,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 0,
+                "pending_player_turn": True,
+            },
+            "readiness": {
+                "status": "busy",
+                "ready_for_smoke": True,
+                "ready_for_play": False,
+                "pending_player_turn": True,
+                "failure_bucket": "none",
+            },
+            "health": {"failure_bucket": "none", "pending_player_turn": True},
+        }
         status_after = {
             **status_initial,
-            "viewer": {"port": 8899, "chat_lines": 2},
+            "viewer": {"port": 8899, "chat_lines": 3, "last_chat_role": "dm"},
         }
         surface = {"recentEvents": [{"kind": "narration", "text": "Opening."}]}
 
@@ -268,7 +300,7 @@ class AppHandoffGateTests(unittest.TestCase):
             with mock.patch.object(
                 gate.smoke,
                 "wait_for_status",
-                side_effect=[status_initial, TimeoutError("busy status probe"), status_after, status_after],
+                side_effect=[status_initial, TimeoutError("busy status probe"), status_busy, status_after, status_after],
             ), mock.patch.object(
                 gate.smoke,
                 "fetch_json",
@@ -310,10 +342,13 @@ class AppHandoffGateTests(unittest.TestCase):
                 )
 
             network = (gate_dir / "network.ndjson").read_text(encoding="utf-8")
+            beat_status = json.loads((gate_dir / "app-status.beat-1.json").read_text(encoding="utf-8"))
 
         self.assertTrue(ok, detail)
         self.assertEqual(bucket, "")
+        self.assertEqual(detail, "")
         self.assertIn("busy status probe", network)
+        self.assertEqual(beat_status["viewer"]["last_chat_role"], "dm")
         self.assertEqual(details["provider_trace"]["trace_exists"], True)
 
 
