@@ -699,16 +699,28 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const onDeclareClick = () => (pendingStuck ? retryStuck() : sendAction());
   const declareNeedsDraft = !pendingStuck && !draftText;
   const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft;
-  const declareTitle = pendingStuck
-    ? "Re-send your last action to the Dungeon Master, or type a new one first."
-    : declareNeedsDraft
-      ? `Type ${composerMode.label.toLowerCase()} details before declaring.`
-      : DECLARE_HINT;
-  const declareAriaLabel = pendingStuck
-    ? "Try action again"
-    : declareNeedsDraft
-      ? "Type a move before declaring"
-      : "Declare move";
+  const declareTitle = !composerAction?.available
+    ? `${composerMode.label} is unavailable: ${composerAction?.disabled_reason || readOnlyReason}`
+    : pendingActive
+      ? (pendingFirstBeat ? "The Dungeon Master is composing your opening scene." : "The Dungeon Master is still narrating.")
+      : appStatusBlocksPlay
+        ? appStatusBlockReason
+        : pendingStuck
+          ? "Re-send your last action to the Dungeon Master, or type a new one first."
+          : declareNeedsDraft
+            ? `Type ${composerMode.label.toLowerCase()} details before declaring.`
+            : DECLARE_HINT;
+  const declareAriaLabel = !composerAction?.available
+    ? `${composerMode.label} unavailable`
+    : pendingActive
+      ? "Wait for the Dungeon Master before declaring"
+      : appStatusBlocksPlay
+        ? "Start or resume provider before declaring"
+        : pendingStuck
+          ? "Try action again"
+          : declareNeedsDraft
+            ? "Type a move before declaring"
+            : "Declare move";
 
   const requestRoll = (sides = 20) => {
     const action = actionById("check");

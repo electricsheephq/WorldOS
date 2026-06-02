@@ -704,6 +704,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
         self.assertIn('title={declareTitle}', source)
         self.assertIn('ariaLabel={declareAriaLabel}', source)
+        self.assertIn('!composerAction?.available', source)
+        self.assertIn('pendingActive', source)
+        self.assertIn('appStatusBlocksPlay', source)
+        self.assertIn('"Wait for the Dungeon Master before declaring"', source)
+        self.assertIn('"Start or resume provider before declaring"', source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
