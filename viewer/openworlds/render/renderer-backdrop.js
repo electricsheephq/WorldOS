@@ -84,11 +84,15 @@ class BackdropScene extends Phaser.Scene {
   constructor() { super("backdrop"); }
 
   preload() {
-    this.load.json("profile", "./render-profile.backdrop.example.json");
+    // A generated game (M3 build-loop #451) injects its profile via window.WORLDOS_PROFILE
+    // (object) or WORLDOS_PROFILE_URL (path); the bundled demo falls back to the example. This
+    // is what makes the renderer reusable by AI-built games with no per-game renderer fork.
+    if (window.WORLDOS_PROFILE) return;
+    this.load.json("profile", window.WORLDOS_PROFILE_URL || "./render-profile.backdrop.example.json");
   }
 
   create() {
-    this.profile = this.cache.json.get("profile");
+    this.profile = window.WORLDOS_PROFILE || this.cache.json.get("profile");
     this.phaser = this.profile?.renderer_profiles?.phaser || {};
 
     this.bgLayer = this.add.container(0, 0);      // backdrop
