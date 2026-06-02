@@ -431,6 +431,7 @@ codex_dm_turn() {
 
 LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speaker argument entirely. For dialogue, pass a real non-empty character id or name. Never pass JSON null for speaker or any optional string field."
 LIVE_PROGRESS_LOG_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") once with a short, non-duplicate, player-facing progress beat before any longer resolution work. This is how /events shows visible story progress while your turn is still running. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+LIVE_DIALOGUE_LOG_RULE="Live dialogue rule: in this Codex app-provider wrapper, do not call log_event(kind=\"dialogue\"). Put quoted NPC speech inside a narration progress beat or your final reply instead; the wrapper records the final reply after the turn, and narration-only live events avoid provider safety cancellation without hiding dialogue from the player."
 OPENING_LOG_EVENT_RULE="Opening progress rule: during the opening, after get_state establishes the already-seated player and live scene, write one short sensory progress beat through log_event(kind=\"narration\", text=\"...\") before deeper setup or rules work. Do not log the full opening this way; your final reply must still be non-empty opening narration for the player."
 STATE_DISCOVERY_RULE="State discovery rule: after reading skills/dungeon-master/SKILL.md, use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
@@ -500,6 +501,7 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -530,6 +532,7 @@ Before acting, read skills/dungeon-master/SKILL.md and follow its live-world con
 
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $OPENING_LOG_EVENT_RULE
 $STATE_DISCOVERY_RULE
 $STARTUP_MUTATION_RULE
@@ -579,6 +582,7 @@ while true; do
 
 $LOG_EVENT_TOOL_RULE
 $LIVE_PROGRESS_LOG_RULE
+$LIVE_DIALOGUE_LOG_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
 $SOCIAL_CHECK_TARGET_RULE

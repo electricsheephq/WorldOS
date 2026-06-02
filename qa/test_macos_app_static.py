@@ -106,8 +106,11 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         app = self.read("viewer/openworlds/app.jsx")
 
         self.assertIn("LIVE_PROGRESS_LOG_RULE", script)
+        self.assertIn("LIVE_DIALOGUE_LOG_RULE", script)
         self.assertIn("visible story progress while your turn is still running", script)
         self.assertIn("log_event(kind=\\\"narration\\\", text=\\\"...\\\")", script)
+        self.assertIn("do not call log_event(kind=\\\"dialogue\\\")", script)
+        self.assertIn("without hiding dialogue from the player", script)
         self.assertIn("the wrapper records the final reply through the engine after the turn", script)
         self.assertIn("OPENING_PROGRESS_TEXT=", script)
         self.assertIn("MOVE_PROGRESS_TEXTS=(", script)
@@ -129,6 +132,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
             script.index('codex_dm_turn "You are the Dungeon Master mid-session.'),
         )
         self.assertGreaterEqual(script.count("$LIVE_PROGRESS_LOG_RULE"), 3)
+        self.assertGreaterEqual(script.count("$LIVE_DIALOGUE_LOG_RULE"), 3)
         self.assertNotIn(
             "Do not call log_event for player-facing narration or dialogue in this provider wrapper",
             script,
