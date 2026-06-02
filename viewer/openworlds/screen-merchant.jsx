@@ -16,6 +16,9 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   // should not open on an Act Two Last Light Inn merchant while the party is in the Lower City.
   const [merchantId, setMerchantId] = React.useState("old-troutman");
   const [hoverItem, setHoverItem] = React.useState(null);
+  // MK-14 (optimizer #2): the item-detail pane shows the LAST-hovered ware's properties and
+  // persists after mouse-leave (hoverItem only drives the row tint, which clears on leave).
+  const [detailItem, setDetailItem] = React.useState(null);
   // MK-13: local demo purse — used ONLY in read-only preview (no live surface). When a
   // live /character-surface is present, the displayed `coins` below derives from its live
   // currency so the Market matches the Stash exactly (no hardcoded-232-vs-live contradiction).
@@ -155,6 +158,38 @@ function ScreenMerchant({ onNavigate, state, setState }) {
 
         <Divider />
 
+        {/* MK-14 (optimizer #2): item-detail/inspect pane — Market rows had no properties view
+            ("Market items have no properties or compare pane"). Shows the last-hovered ware's
+            facts; honest empty-state until a row is hovered. */}
+        <SectionTitle>Item Detail</SectionTitle>
+        {detailItem ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <Img scope={mItemScope(detailItem)} label={detailItem.glyph || detailItem.name} w={44} h={44} fit="contain" framed />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: detailItem.type === "rare" ? "var(--royal)" : "var(--ink-900)" }}>{detailItem.name}</div>
+                <Pill>{(window.ITEM_TYPES && window.ITEM_TYPES[detailItem.type]) || detailItem.type || "—"}</Pill>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span className="muted body-sm">Weight</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>{detailItem.weight || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span className="muted body-sm">Price</span>
+              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>
+                {detailItem.price || (typeof detailItem.value === "string" && detailItem.value.match(/(\d+) gp/) ? parseInt(detailItem.value.match(/(\d+) gp/)[1]) : "—")}
+                <span className="muted" style={{ fontSize: 9, marginLeft: 2 }}>gp</span>
+              </span>
+            </div>
+            {detailItem.desc && <p className="body-sm" style={{ marginTop: 2, color: "var(--ink-700)" }}>{detailItem.desc}</p>}
+          </div>
+        ) : (
+          <div className="hand muted" style={{ fontSize: 12, marginBottom: 4 }}>Hover a ware to inspect its properties.</div>
+        )}
+
+        <Divider />
+
         <BrassButton tone="dark" onClick={() => onNavigate("table")} style={{ width: "100%" }}>Leave Market</BrassButton>
       </Panel>
 
@@ -207,7 +242,7 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                 const haggledPrice = tab === "buy" && haggle > 0 ? Math.round(shownPrice * (1 - haggle / 100)) : null;
                 return (
                   <tr key={it.id || i}
-                    onMouseEnter={() => setHoverItem(it)}
+                    onMouseEnter={() => { setHoverItem(it); setDetailItem(it); }}
                     onMouseLeave={() => setHoverItem(null)}
                     style={{
                       cursor: "pointer",
