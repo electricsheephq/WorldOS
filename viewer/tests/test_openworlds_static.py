@@ -190,6 +190,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('id: "g_worlds", label: "Worlds"', chrome)
         self.assertIn('party: "character"', source)
         self.assertIn('worlds: "launcher"', source)
+        self.assertIn("OPENWORLDS_SCREEN_HASHES", source)
+        self.assertIn('character: "party"', source)
+        self.assertIn('merchant: "market"', source)
+        self.assertIn('launcher: "worlds"', source)
+        self.assertIn('if (id === "map" && opts?.openCamp) return "camp";', source)
+        self.assertIn("openWorldsSyncHashForScreen(id, opts)", source)
+        self.assertIn("window.location.hash = nextHash", source)
+        self.assertIn("navigate(id);", source)
 
     def test_merchant_defaults_to_baldurs_gate_lower_city_vendor(self):
         status, ctype, body = self._get("/openworlds/screen-merchant.jsx")
@@ -609,7 +617,8 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason", source)
         self.assertIn("disabled={!a.available || pendingActive || appStatusBlocksPlay}", source)
         self.assertIn("disabled={pendingActive || appStatusBlocksPlay}", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn("disabled={declareDisabled}", source)
 
     def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
         # #402: the chronicle must stay navigable across a long session — the rendered row count is
@@ -699,7 +708,15 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("data-worldos-selected", source)
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
-        self.assertIn("disabled={!actionById(composerMode.actionId)?.available || pendingActive || appStatusBlocksPlay}", source)
+        self.assertIn("const declareNeedsDraft = !pendingStuck && !draftText", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn('title={declareTitle}', source)
+        self.assertIn('ariaLabel={declareAriaLabel}', source)
+        self.assertIn('!composerAction?.available', source)
+        self.assertIn('pendingActive', source)
+        self.assertIn('appStatusBlocksPlay', source)
+        self.assertIn('"Wait for the Dungeon Master before declaring"', source)
+        self.assertIn('"Start or resume provider before declaring"', source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
