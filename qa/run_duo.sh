@@ -55,7 +55,7 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"  # the player's structured moves (It.1)
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" "$ROOT" <<'PY'
-import json, sys
+import json, sys, os
 cfg_path, state, out, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(cfg_path))
 # RE-ROOT every MCP server's `--directory` at THIS repo ($ROOT) so the DM engine,
@@ -81,6 +81,11 @@ for name, srv in cfg.get("mcpServers", {}).items():
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "clawdnd-engine":
         srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
+        # Parity with scripts/play.sh: pin the engine tools (un-defer) so the DM stops burning
+        # ~2 ToolSearch round-trips/beat re-discovering them. Set CLAWDND_ENGINE_ALWAYSLOAD=0 for
+        # the deferred baseline (the latency A/B arm).
+        if os.environ.get("CLAWDND_ENGINE_ALWAYSLOAD", "1") == "1":
+            srv["alwaysLoad"] = True
 json.dump(cfg, open(out, "w"))
 PY
 # The player gets ONLY the constrained move facade (clawdnd-player): it acts through
