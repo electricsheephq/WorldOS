@@ -495,7 +495,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         ):
             self.assertIn(hook, table)
         self.assertIn('testId="move-submit"', table)
-        self.assertIn('aria-label="Describe your move"', table)
+        self.assertIn('aria-label={composerMode.inputLabel || "Describe your move"}', table)
         self.assertIn('aria-live={surfaceStatus === "loading" ? "polite" : "assertive"}', table)
         self.assertIn('aria-label={label}', table)
 
@@ -775,6 +775,23 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("sanitizeNarration(entry.text)", source)
         self.assertIn('data-worldos-testid="chronicle-narration"', source)
         self.assertNotRegex(source, r'data-worldos-testid="chronicle-narration"[\s\S]*?>Chronicle</span>')
+
+    def test_openworlds_table_composer_input_help_matches_mode(self):
+        # A fresh player selecting Say/Check/Save should not see the generic "hero does" tooltip.
+        # The placeholder already changes by mode; the accessible label and native tooltip should
+        # follow it so the Declare box teaches the selected action type.
+        status, _ctype, body = self._get("/openworlds/screen-table.jsx")
+
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        self.assertIn('inputLabel: "Describe what your hero says"', source)
+        self.assertIn('inputTitle: "Type what your hero says in character, then Declare to speak."', source)
+        self.assertIn('inputLabel: "Describe what your hero checks"', source)
+        self.assertIn('inputTitle: "Describe the check you want to make and how, then Declare."', source)
+        self.assertIn('inputLabel: "Describe what your hero resists"', source)
+        self.assertIn('inputTitle: "Describe the danger your hero is resisting, then Declare."', source)
+        self.assertIn('aria-label={composerMode.inputLabel || "Describe your move"}', source)
+        self.assertIn("title={composerMode.inputTitle || DECLARE_HINT}", source)
 
     def test_openworlds_app_bounds_the_live_session_tail(self):
         # #402: the live tail (chatBeats + player echoes) is bounded in useLiveSession so a long

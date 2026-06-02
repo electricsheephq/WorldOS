@@ -207,6 +207,8 @@ const COMPOSER_MODES = {
     kind: "do",
     label: "Do",
     helper: "Write what your hero attempts.",
+    inputLabel: "Describe what your hero does",
+    inputTitle: DECLARE_HINT,
     placeholder: "Describe what your hero does...",
   },
   say: {
@@ -214,6 +216,8 @@ const COMPOSER_MODES = {
     kind: "say",
     label: "Say",
     helper: "Speak in character.",
+    inputLabel: "Describe what your hero says",
+    inputTitle: "Type what your hero says in character, then Declare to speak.",
     placeholder: "What do you say?",
   },
   check: {
@@ -221,6 +225,8 @@ const COMPOSER_MODES = {
     kind: "check",
     label: "Check",
     helper: "Ask the DM for a skill or ability check.",
+    inputLabel: "Describe what your hero checks",
+    inputTitle: "Describe the check you want to make and how, then Declare.",
     placeholder: "What are you checking, and how?",
   },
   save: {
@@ -228,6 +234,8 @@ const COMPOSER_MODES = {
     kind: "save",
     label: "Save",
     helper: "Resist a danger or effect.",
+    inputLabel: "Describe what your hero resists",
+    inputTitle: "Describe the danger your hero is resisting, then Declare.",
     placeholder: "What danger are you resisting?",
   },
 };
@@ -1003,13 +1011,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             <div style={{ display: "flex", gap: 10 }}>
               <input
                 ref={inputRef}
-                aria-label="Describe your move"
+                aria-label={composerMode.inputLabel || "Describe your move"}
                 data-worldos-testid="move-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
                 disabled={pendingActive || appStatusBlocksPlay}
-                title={DECLARE_HINT}
+                title={composerMode.inputTitle || DECLARE_HINT}
                 placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : appStatusBlocksPlay ? "Start or resume a DM provider to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
