@@ -323,17 +323,40 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     const label = QUICK_ACTION_REPLAY_LABELS[key];
     return label ? { ...entry, kind: "action", text: label } : entry;
   };
-  const orderOf = (e) => {
-    if (e && typeof e.orderSeq === "number") return e.orderSeq;
-    if (e && typeof e.seq === "number") return e.seq;
+  // #405/BUG2: the STABLE, SESSION-SCOPED beat identity — the composite `${sid}:${seq}`. Live beats
+  // carry it on `orderSeq` (app.jsx composed it from the /events response sid). A recentEvents history
+  // row carries `seq` (the absolute session-log line index) + `sid` separately; compose the SAME key
+  // here so the two bands de-dup against ONE id space. A bare line index is NOT unique across a
+  // session ROTATION (the new session restarts at 0,1,2), which is BUG2 — the composite fixes it.
+  // Tolerates a legacy live beat that already carries a numeric orderSeq (older client) by coercing
+  // it to the same ":N" shape an empty-sid server produces.
+  const seqKeyOf = (e) => {
+    if (e && typeof e.orderSeq === "string" && e.orderSeq) return e.orderSeq;
+    if (e && typeof e.orderSeq === "number") return `:${e.orderSeq}`;
+    if (e && typeof e.seq === "number") return `${(typeof e.sid === "string" && e.sid) ? e.sid : ""}:${e.seq}`;
+    if (e && typeof e.seq === "string" && e.seq) return e.seq;
     return null;
+  };
+  // Parse a composite key into { sid, num } for the ORDER tiebreak. The seq tiebreak only needs
+  // WITHIN-session monotonicity (eventAt is the primary cross-session sort), so we compare the
+  // numeric tail ONLY when two rows share a session id; across sessions (or an unparseable key) we
+  // defer to the monotonic creation-order `.at`. Splitting on the LAST ':' keeps a sid that itself
+  // contains ':' intact.
+  const orderOf = (e) => {
+    const key = seqKeyOf(e);
+    if (key === null) return null;
+    const idx = key.lastIndexOf(":");
+    const sidPart = idx >= 0 ? key.slice(0, idx) : "";
+    const num = Number(idx >= 0 ? key.slice(idx + 1) : key);
+    return Number.isFinite(num) ? { sid: sidPart, num } : null;
   };
   const timeOf = (e) => (e && typeof e.eventAt === "number") ? e.eventAt : null;
   const compareChronicle = (a, b) => {
     const ta = timeOf(a), tb = timeOf(b);
     if (ta !== null && tb !== null && ta !== tb) return ta - tb;
     const sa = orderOf(a), sb = orderOf(b);
-    if (sa !== null && sb !== null && sa !== sb) return sa - sb;
+    // Within-session numeric tiebreak (monotonic by construction); cross-session falls to `.at`.
+    if (sa !== null && sb !== null && sa.sid === sb.sid && sa.num !== sb.num) return sa.num - sb.num;
     return (a?.at || 0) - (b?.at || 0);
   };
   // The live tail can carry the player's move twice: once as the optimistic local echo
@@ -350,8 +373,12 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
   const mergedTail = [...dedupedBeats.map(projectPlayerReplay), ...echoes].sort((a, b) => {
     return compareChronicle(a, b);
   });
+  // #405/BUG2: the set of live narration beats keyed by the SESSION-SCOPED composite `${sid}:${seq}`
+  // (via seqKeyOf). A recentEvents row that shares a live beat's composite is the same session-log
+  // line and must be dropped — prose-independent. (Previously a bare int, which collided across a
+  // session rotation; the composite is globally unique.)
   const liveSeqs = new Set(
-    mergedTail.filter((b) => b && b.kind === "narration" && typeof b.orderSeq === "number").map((b) => b.orderSeq),
+    mergedTail.filter((b) => b && b.kind === "narration").map((b) => seqKeyOf(b)).filter((k) => k !== null),
   );
   const liveNarrationKeys = new Set(
     mergedTail.filter((b) => b && b.kind === "narration").map((b) => narrationKey(b.text)).filter(Boolean),
@@ -360,8 +387,8 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
     const kind = (row && (row.kind || row.type)) || "narration";
     if (kind === "system") return false; // engine bookkeeping; never player-facing
     if (kind !== "narration" && kind !== "dialogue") return true;  // gameplay mechanic rows kept
-    const seq = row && row.seq;
-    if (typeof seq === "number") return !liveSeqs.has(seq);  // stable-id match (prose-independent)
+    const seqKey = seqKeyOf(row);  // composes `${sid}:${seq}` for the history-band row (BUG2)
+    if (seqKey !== null) return !liveSeqs.has(seqKey);  // stable-id match (prose-independent)
     const key = narrationKey(row && (row.text || row.detail));
     return !key || !liveNarrationKeys.has(key);
   });

@@ -302,15 +302,22 @@ function useLiveSession(state) {
 
   // sanitizeNarration lives in screen-table.jsx (loaded first); fall back to identity if absent.
   const sanitize = (txt) => (typeof window.sanitizeNarration === "function" ? window.sanitizeNarration(txt) : (txt || ""));
-  // #405: claim a narration beat by its STABLE session-log `seq` (the server-stamped absolute line
-  // index). First-seen returns true (show it + record the id); any later arrival of the same line —
-  // a windowing re-mount, a session-rotation cursor rewind, or the recentEvents history band
-  // overlapping the live tail — returns false and is suppressed. Keyed by id, so it is immune to the
-  // DM rewording the prose between its streamed copy and its reply.
-  const claimNarrationSeq = React.useCallback((seq) => {
-    if (typeof seq !== "number" || !Number.isFinite(seq)) return false;
-    if (seenSeq.current.has(seq)) return false;
-    seenSeq.current.add(seq);
+  // #405/BUG2: claim a narration beat by its STABLE, SESSION-SCOPED key — the composite
+  // `${sid}:${seq}` (the server-stamped session id + the absolute session-log line index). First-seen
+  // returns true (show it + record the id); any later arrival of the same line — a windowing re-mount,
+  // a session-rotation cursor rewind, or the recentEvents history band overlapping the live tail —
+  // returns false and is suppressed. Keyed by id, so it is immune to the DM rewording the prose
+  // between its streamed copy and its reply.
+  // BUG2 root cause: the bare `seq` is only a PER-SESSION-LOG line index — it carries NO session
+  // scope. When the engine ROTATES the session log (cold-open start_session + the DM-turn-retry
+  // re-mint, 5e71f77) the new session's narration restarts at seq 0,1,2 — the SAME values the
+  // cold-open already claimed — so the post-move reply was wrongly suppressed here (and dropped by
+  // buildChronicleLog's matching seq set). Composing the session id makes the key globally unique
+  // across rotations, while preserving within-session monotonicity for the order tiebreak.
+  const claimNarrationSeq = React.useCallback((key) => {
+    if (typeof key !== "string" || !key) return false;
+    if (seenSeq.current.has(key)) return false;
+    seenSeq.current.add(key);
     return true;
   }, []);
   // #393/#405: the TEXT-key fallback for narration with no seq (a /chat-only beat). Whitespace-
@@ -559,6 +566,12 @@ function useLiveSession(state) {
         if (!resp.ok) return;
         const payload = await resp.json();
         const entries = Array.isArray(payload.entries) ? payload.entries : [];
+        // BUG2: the server now stamps the resolved session id on the /events response so the client
+        // can SESSION-SCOPE each `seq`. The composite `${sid}:${seq}` is globally unique across a
+        // session rotation (where the bare line index restarts at 0,1,2 and collided with the prior
+        // session's cold-open). Empty sid (legacy server) degrades to ":${seq}", still unique within
+        // the single session it serves.
+        const sid = (payload && typeof payload.sid === "string") ? payload.sid : "";
         if (!cancelled && entries.length) {
           // Only player-facing prose streams live: narration + dialogue. Roll/system/combat rows are
           // mechanics the chronicle surfaces elsewhere — folding them in here would read as noise
@@ -569,17 +582,19 @@ function useLiveSession(state) {
               if (kind !== "narration" && kind !== "dialogue") return null;
               const clean = sanitize(e && (e.text || e.detail));
               if (!clean) return null;
-              // #405: dedup by the STABLE session-log `seq` the server stamps on each entry — NOT by
+              // #405/BUG2: dedup by the STABLE, SESSION-SCOPED composite key `${sid}:${seq}` — NOT by
               // prose. So a paragraph re-ingested by a windowing re-mount or a session-rotation cursor
-              // rewind collapses to one row, and the dedup can't be defeated by a reworded copy. A
-              // legacy entry with no seq (older server) falls back to the text key. The seq doubles as
-              // the chronological order key: `orderSeq` keeps the engine's session-log line order so
-              // live narration can never interleave out of order with the (now-removed) /chat source.
+              // rewind collapses to one row, the dedup can't be defeated by a reworded copy, AND a
+              // post-rotation beat (a fresh session's seq 0,1,2) is no longer suppressed by collision
+              // with a prior session's seq 0,1,2 (BUG2). A legacy entry with no seq (older server)
+              // falls back to the text key. `orderSeq` carries the SAME composite as the chronological
+              // order key; compareChronicle parses its numeric tail for the within-session tiebreak.
               const seq = (e && typeof e.seq === "number") ? e.seq : null;
-              const fresh = (seq !== null) ? claimNarrationSeq(seq) : claimNarration(clean);
+              const seqKey = (seq !== null) ? `${sid}:${seq}` : null;
+              const fresh = (seqKey !== null) ? claimNarrationSeq(seqKey) : claimNarration(clean);
               if (!fresh) return null;
               eventsStreamedThisTurnRef.current = true;  // the current turn HAS streamed live narration
-              return { kind: "narration", text: clean, at: nextLogSeq(), orderSeq: seq, eventAt: e && e.t };
+              return { kind: "narration", text: clean, at: nextLogSeq(), orderSeq: seqKey, eventAt: e && e.t };
             })
             .filter(Boolean);
           if (beats.length) {

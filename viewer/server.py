@@ -1514,9 +1514,17 @@ def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
         # viewer's leading history band (recentEvents) de-dups against the live /events tail by ID,
         # not by prose. _session_event_tail_from_dir stamps it; an older snapshot/path without it
         # simply omits the key and the viewer falls back to its text-key dedup for that row.
+        # BUG2: a bare line index is NOT unique across a session ROTATION (cold-open start_session +
+        # the DM-turn-retry re-mint, 5e71f77) — the new session's log restarts at 0,1,2, the same
+        # indices the prior session already claimed. So carry the resolved session id (`sid`) too; the
+        # viewer composes `${sid}:${seq}` as the globally-unique dedup/order key, so a fresh session's
+        # narration is no longer suppressed by collision with a prior session's seq 0,1,2.
         seq = row.get("seq")
         if isinstance(seq, int) and not isinstance(seq, bool):
             item["seq"] = seq
+        sid = row.get("sid")
+        if isinstance(sid, str) and sid:
+            item["sid"] = sid
         event_at = row.get("t")
         if isinstance(event_at, (int, float)) and not isinstance(event_at, bool):
             item["eventAt"] = event_at
@@ -1596,6 +1604,9 @@ def _session_event_tail_from_dir(campaign_dir: Path, snapshot: dict, limit: int 
             continue
         if isinstance(row, dict):
             row.setdefault("seq", base + offset)
+            # BUG2: stamp the resolved session id so recentEvents composes the SAME `${sid}:${seq}`
+            # key the live /events tail does — a bare line index collides across a session rotation.
+            row.setdefault("sid", sid)
             out.append(row)
     return out
 
@@ -5623,6 +5634,16 @@ def _app_status_payload(*, port: int, attached_campaign_id: str, viewed_campaign
     }
 
 
+def _active_session_id(campaign_id: str) -> str:
+    """Resolve the campaign's current session id (the session-log basename the /events feed tails).
+    BUG2: this is the namespace the viewer composes onto each `seq` (`${sid}:${seq}`) so the dedup/
+    order key is globally unique across a session ROTATION — without it a fresh session's narration
+    (which restarts at line 0,1,2) collides with the prior session's seq 0,1,2 and is suppressed."""
+    snap = _read_snapshot(campaign_id)
+    sid = snap.get("active_session_id") or (snap.get("session_ids") or [None])[-1]
+    return sid if isinstance(sid, str) else ""
+
+
 def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     """Return (new story entries after line `since`, new line count). Drops a
     trailing partial line defensively (append-only writes can exceed PIPE_BUF)."""
@@ -6576,8 +6597,13 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/events":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])
-            entries, nxt = _read_events(self._view_campaign(qs), since)
-            self._json({"entries": entries, "next": nxt})
+            view_cid = self._view_campaign(qs)
+            entries, nxt = _read_events(view_cid, since)
+            # BUG2: include the resolved session id so the client composes a globally-unique
+            # `${sid}:${seq}` dedup/order key — a bare per-session line index collides across a
+            # session rotation (cold-open + DM-turn-retry re-mint), suppressing the new session's
+            # post-move narration (seq 0,1,2 already claimed by the prior session's cold-open).
+            self._json({"entries": entries, "next": nxt, "sid": _active_session_id(view_cid)})
         elif route == "/activity":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])
