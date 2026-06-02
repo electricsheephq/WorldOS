@@ -1,7 +1,7 @@
 # WorldOS QA Scoring System — standardized reference
 
 > Source of truth for HOW we measure a playtest. Current as of 2026-05-26.
-> The running results ledger is `qa/SCORECARD.md`.
+> The running results ledger is `qa/scores_db.py` (SQLite) → `qa/scores_ledger.md` (`add_run()` / `--render`); `qa/SCORECARD.md` is LEGACY narrative.
 > For the current app/native handoff tools and RRI routing, start with `qa/QA_TOOLS.md` and
 > `WorldOS-GUI-RUNBOOK.md`; this file describes the story/mechanical scoring model.
 
@@ -62,4 +62,4 @@ Default DM/player model = `sonnet` (`CLAWDND_DM_MODEL` / `CLAWDND_ACTOR_MODEL` e
 ## 5. Reading a result line
 `[duo] done. story-craft=X mechanical=Y angry-dm=Z behavioral=GREEN|RED`
 - **RED** ⇒ X/Y/Z are RED-capped; read `$RUN.gate.txt` for the failed checks.
-- **GREEN** ⇒ real scores; compare against the North-Star targets and log to `SCORECARD.md`.
+- **GREEN** ⇒ real scores; compare against the North-Star targets and append via `qa/scores_db.py` `add_run(...)` (→ `scores_ledger.md`; `SCORECARD.md` is legacy).
