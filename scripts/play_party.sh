@@ -258,14 +258,24 @@ turn() {
     # (the bulk — cuts thinking-latency). Keyed off the SAME `first` signal as lean. DM turn ONLY —
     # the companion facade branch below never gets --effort (nor the lean re-ground).
     clawdnd_dm_effort_arg "$first"
+    # TIMEOUT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation scripts/play.sh's
+    # dm_turn uses: the cold open's --effort max world-build runs ~280–400s, so it gets
+    # WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats get CLAWDND_BEAT_TIMEOUT (default
+    # 200s). Keyed off the SAME `first` signal as the effort tier above. This wraps the DM turn in
+    # `timeout` (parity with play.sh dm_turn — play_party is the native app's entry point and
+    # previously had NO per-beat deadline, so a wedged DM turn could hang the session indefinitely;
+    # the one-retry below recovers a transient timeout). DM turn ONLY — the companion facade never
+    # gets a per-beat timeout.
+    local beat_timeout; beat_timeout="$(clawdnd_dm_timeout "$first")"
     out="$DM_LOG.$(date +%s%N).jsonl"
     # DM turn with ONE retry (parity with scripts/play.sh dm_turn — play_party is the native app's
     # entry point and previously had NO DM retry, so a transient cold-open failure was permanent).
     local rc
     _dm_invoke() {
-      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-        --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+      timeout "$beat_timeout" \
+        claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+          --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+          --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
     }
     _dm_invoke; rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -273,7 +283,7 @@ turn() {
       # consumed --session-id ("Session ID … is already in use."). Lean re-mints itself; the
       # cold-open / --resume path re-mints via the shared helper. ($extra is unchanged.)
       clawdnd_report_attempt_failure "$out" "$rc"
-      echo "[play-party] DM turn rc=$rc — retrying once with a fresh session" >&2
+      echo "[play-party] DM turn rc=$rc (timeout=${beat_timeout}s) — retrying once with a fresh session" >&2
       clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
       if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
         resume=("${CLAWDND_DM_LEAN_SESSION[@]}")

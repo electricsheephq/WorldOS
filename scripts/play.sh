@@ -67,8 +67,13 @@ DM_TURNS=0
 # path (byte-identical to the pre-lean behavior) — still fully reversible per-run. A/B harness:
 # qa/lib/lean_beats_check.sh.
 CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
-# Per-beat backend timeout (seconds) + ONE retry, so a wedged DM turn recovers instead of
-# hanging the session. Applies in BOTH modes (it only wraps the existing claude -p call).
+# Per-beat backend timeout (seconds) + ONE retry, so a wedged DM turn recovers instead of hanging
+# the session. The deadline is TIERED off the cold-open `first` signal (clawdnd_dm_timeout in
+# qa/lib_beat_driver.sh, the sibling of the effort tier): the cold open's --effort max world-build
+# runs ~280–400s so it gets WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing/routine beats keep
+# CLAWDND_BEAT_TIMEOUT (default 200s, unchanged). Both knobs are read inside dm_turn via the helper;
+# this line documents the routine default. Applies in BOTH lean/legacy modes (it only wraps the
+# existing claude -p call) and ONLY to the DM turn.
 CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-200}"
 # Recent player-facing narration tail the lean re-ground asks scene_context for (generous by
 # default so continuity survives the lean boundary — named NPCs, prior choices, the scene).
@@ -213,11 +218,14 @@ fi
 #     narration tail) and honor every established fact/name/voice as canon it already
 #     authored. $3 (campaign_id) lets the directive name the exact id to pass to
 #     scene_context; on beat 1, or when $3 is empty, lean is a no-op (we mint/resume $DSID).
-# A per-beat timeout (CLAWDND_BEAT_TIMEOUT) wraps the claude -p in BOTH modes; ONE retry on
-# timeout/failure, then the caller's #357 fallback recovers any prose the DM streamed live.
-# Echoes the DM's final text.
+# A per-beat timeout wraps the claude -p in BOTH modes; ONE retry on timeout/failure, then the
+# caller's #357 fallback recovers any prose the DM streamed live. The deadline is TIERED off the
+# SAME `first` cold-open signal as the effort tier (clawdnd_dm_timeout, qa/lib_beat_driver.sh): the
+# cold open (first=1) is the --effort max world-build that runs ~280–400s, so it gets a generous
+# WORLDOS_COLDOPEN_TIMEOUT (default 400s) instead of the 200s that was KILLING it; continuing beats
+# keep CLAWDND_BEAT_TIMEOUT (default 200s). Echoes the DM's final text.
 dm_turn() {
-  local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc
+  local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc beat_timeout
   # The lean-beat path (fresh session + re-ground directive) is the ONE shared implementation
   # in qa/lib_beat_driver.sh — qa/run_duo.sh drives the SAME helper, so the two harnesses can't
   # drift. It populates CLAWDND_DM_LEAN_{SESSION,EXTRA} when this is a continuing beat AND
@@ -236,9 +244,13 @@ dm_turn() {
   # one-time world-build), --effort medium on continuing beats (the bulk — cuts thinking-latency).
   # Keyed off the SAME `first` signal as lean. DM turn ONLY (the player facade never gets --effort).
   clawdnd_dm_effort_arg "$first"
+  # TIMEOUT TIER (shared helper, qa/lib_beat_driver.sh): the cold open's max-effort world-build runs
+  # ~280–400s, so it gets WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats keep
+  # CLAWDND_BEAT_TIMEOUT (default 200s). Keyed off the SAME `first` signal as the effort tier above.
+  beat_timeout="$(clawdnd_dm_timeout "$first")"
   out="$DM_LOG.$(date +%s%N).jsonl"
   _dm_invoke() {
-    timeout "$CLAWDND_BEAT_TIMEOUT" \
+    timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
@@ -253,7 +265,7 @@ dm_turn() {
     # in use." → 0-byte → empty narration. A lean beat re-mints via clawdnd_dm_lean_args; the
     # cold-open / legacy --resume path re-mints via clawdnd_dm_remint_session_on_retry. (The
     # re-ground directive $extra is unchanged — we only refresh the session id.)
-    echo "[play] DM turn rc=$rc (timeout=${CLAWDND_BEAT_TIMEOUT}s) — retrying once with a fresh session" >&2
+    echo "[play] DM turn rc=$rc (timeout=${beat_timeout}s) — retrying once with a fresh session" >&2
     clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
     if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
