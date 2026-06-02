@@ -42,9 +42,11 @@ CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 # the recent player-facing narration TAIL) instead of from the growing transcript. This is the
 # whole point of the flag — and the duo QA harness USED to ignore it (its DM turn always
 # `--resume`d the full transcript), so the lean path could never be validated through the duo
-# runner that qa/release_gate.sh uses. DEFAULT 0 ⇒ the --resume path is untouched, fully
-# reversible. The recent-narration tail depth mirrors play.sh's CLAWDND_LEAN_TAIL (default 8).
-CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-0}"
+# runner that qa/release_gate.sh uses. DEFAULT 1 (lean is now STANDARD — validated: ~10–27×
+# context drop, story quality held at 4.4); set CLAWDND_LEAN_BEATS=0 to force the legacy
+# --resume path (byte-identical to pre-lean). The recent-narration tail depth mirrors
+# play.sh's CLAWDND_LEAN_TAIL (default 8).
+CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
 CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
@@ -125,9 +127,14 @@ turn() {
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
       extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
     fi
+    # EFFORT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation play.sh uses, so the
+    # two harnesses can't drift: --effort max on the cold open (one-time world-build), --effort
+    # medium on continuing beats (the bulk — cuts thinking-latency). Keyed off the SAME `first`
+    # signal as lean. DM turn ONLY — the player branch below never gets --effort.
+    clawdnd_dm_effort_arg "$first"
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     cat "$out" >> "$COMBINED"
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null

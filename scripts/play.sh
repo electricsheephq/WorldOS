@@ -62,10 +62,11 @@ DM_TURNS=0
 # re-grounds from the engine's persisted truth via scene_context (which already bundles
 # state/director/events/companion_arcs + the recent player-facing narration TAIL) rather
 # than from the fat transcript. Beat 1 (the cold open) is ALWAYS full — it establishes and
-# persists the world/scene/PC. DEFAULT 0 ⇒ the resume path below is untouched, so this is
-# fully reversible and a regression can't ship by accident. A/B harness:
+# persists the world/scene/PC. DEFAULT 1 (lean is now STANDARD — validated: ~10–27× context
+# drop, story quality held at 4.4). Set CLAWDND_LEAN_BEATS=0 to force the legacy full-resume
+# path (byte-identical to the pre-lean behavior) — still fully reversible per-run. A/B harness:
 # qa/lib/lean_beats_check.sh.
-CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-0}"
+CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
 # Per-beat backend timeout (seconds) + ONE retry, so a wedged DM turn recovers instead of
 # hanging the session. Applies in BOTH modes (it only wraps the existing claude -p call).
 CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-200}"
@@ -231,11 +232,15 @@ dm_turn() {
   else
     resume=(--session-id "$DSID")
   fi
+  # EFFORT TIER (shared helper, qa/lib_beat_driver.sh): --effort max on the cold open (rich,
+  # one-time world-build), --effort medium on continuing beats (the bulk — cuts thinking-latency).
+  # Keyed off the SAME `first` signal as lean. DM turn ONLY (the player facade never gets --effort).
+  clawdnd_dm_effort_arg "$first"
   out="$DM_LOG.$(date +%s%N).jsonl"
   _dm_invoke() {
     timeout "$CLAWDND_BEAT_TIMEOUT" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-        --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
   }
   _dm_invoke; rc=$?
