@@ -1,56 +1,48 @@
-# WorldOS Model Tiering Strategy
+# WorldOS Model & Effort Strategy
 
-Status: proposal / to-test. This document captures a takeover whiteboard from 2026-05-31. It does
-not change runtime behavior and must not be treated as release evidence.
+Status: **MEASURED (2026-06-02)** for the latency/effort mechanics; the **model choice itself remains an
+open owner decision** (see below). Supersedes the 2026-05-31 "proposal/to-test" whiteboard. Companion:
+the `worldos-latency-forensics` skill (the measurement method + full lever taxonomy).
 
-## Why This Exists
+## What was measured (not recollection)
+- **The DM is generation-bound.** Per-beat `claude -p` time is ~90–100% `duration_api_ms` (model thinking +
+  emitting); true engine tool-exec is ~1–4%. So latency is driven by **input-token mass + per-turn thinking
+  (effort)**, NOT by tool round-trips, and NOT by the GUI/harness (`duration_api_ms` is surface-independent).
+- **Effort is the big wall-clock lever.** Routine beats ~100–126s at `--effort medium` ≈ the original
+  Opus-high feel; cold-open (max-effort world-build) ~280–400s. Dropping below medium is faster but trades
+  story quality.
+- **Story A/B (engine-duo, same week, same Sonnet scorer):** Opus story 4.4–4.5 vs Sonnet 4.2; Sonnet is
+  faster/cheaper. Both surfaces (engine harnesses AND the `.app`) currently **default Sonnet** — there is no
+  tracked artifact where Opus was "decided." Models are **options we offer, never bolted on.**
 
-The recent low story/mechanical scores raised a plausible model-routing question: should the DM use a
-stronger model for the parts of play where quality is felt, while cheaper/faster models handle test
-drivers or research helpers?
+## Invariants (do these regardless of model)
+1. **ONE model end-to-end per campaign.** **NEVER switch model mid-campaign** — a model switch invalidates the
+   Anthropic prompt cache; **effort changes are cache-safe.** (This retires the old "Opus cold-open / Sonnet
+   routine" model-tiering proposal — tier the EFFORT, not the model.)
+2. **Effort tier:** `--effort max` cold-open (one-time world-build), `--effort medium` routine. Drop to a lower
+   routine effort ONLY behind a default-off flag AND a quality A/B that holds story ≥ 4.3.
+3. **Build-the-world-once-expensive → live-in-it-cheap:** re-ground each beat from the compact `scene_context`
+   digest (durable threads + recent-narration tail) off the snapshot+session-log, NOT the ~690K transcript.
+4. **`alwaysLoad` the engine MCP tools** (un-defer) — neutral latency win on the cold-open, cache-stable.
 
-Owner recollection says earlier DM runs used Opus and later runs defaulted to Sonnet. Treat that as
-owner recollection until backed by tracked repo history or release artifacts. The tracked scripts do
-verify the current default:
+## The OPEN decision (owner's call — do not assume)
+**Which model the DM runs is not settled.** The measured trade: **Opus = higher story (4.4–4.5)**;
+**Sonnet = faster + cheaper + already the default** and its story (4.2) is near the 4.3 bar. Pick ONE and
+hold it for the campaign; expose it as `WORLDOS_DM_MODEL` (option, not a hardcode). Do NOT unilaterally flip
+the default to Opus — that would create a config mismatch the codebase doesn't currently have.
 
-| Role | Job | Current default | Evidence |
-|---|---|---|---|
-| DM | product story, rulings, combat staging | `sonnet`, overridable by `WORLDOS_DM_MODEL` / `CLAWDND_DM_MODEL` | `scripts/play.sh`, `scripts/play_party.sh`, `qa/run_duo.sh` |
-| AI playtest persona | test driver, not product output | `sonnet` / actor model envs | `qa/ui_playtest_app.sh`, `qa/run_duo.sh` |
-| Scorer | story/mechanical judge | `sonnet` today | `qa/score.sh` |
+## REFUTED — do not re-chase
+- **A Haiku (or any small-model) "research-packet" helper to prefetch for the DM** — the beat is
+  generation-bound, so a prefetch helper touches ≤5% of the wall-clock. Refuted by the latency forensics.
+- **A headless `--fast` mode** — doesn't exist for `claude -p`; use `--effort`.
 
-The f5500ac RRI must not be used as proof that model choice is the root cause. That run was partial
-and harness-contaminated.
+## Validation ladder (cheap → expensive; before any model/effort spend)
+digest-correctness (1 engine call, no LLM) → cache-stability (1 two-beat run) → effort/flag-wiring probe
+(confirm the runner consumes the flag — see worldos-dev "QA must exercise the flag") → short duo A/B on the
+32 GB VM (same SHA + seed, one credit window) → ONLY THEN the 5-persona `.app` gate (Mac native Part-A + the
+VM part-B sweep; see the Support VM lane). Hold the scorer constant during any A/B.
 
-## Proposal
-
-Use the best model where the player feels quality, and keep the test harness stable:
-
-1. Cold open / universe setup: test Opus DM.
-2. Combat or high-stakes rulings: test Opus DM.
-3. Routine continuation beats: test Sonnet, or a later tiered mode only after a clean baseline.
-4. Scorer: hold constant during A/B runs, so the ruler does not move while the DM changes.
-
-The Haiku idea is not “make Haiku the DM.” The stronger proposal is to prototype Haiku as a helper
-lane for lore/rules/state research packets, so the DM spends fewer serial tool round-trips and keeps
-premium context focused on judgment and prose.
-
-## Test Sequence
-
-Run this only after gate trust is restored:
-
-1. Sonnet baseline: fixed orchestrator, lean off, scorer constant.
-2. Opus-DM arm: same scenario and scorer, `WORLDOS_DM_MODEL=opus` or the confirmed current Opus id.
-3. Optional tiered arm: cold-open/combat Opus, routine beats Sonnet, behind a default-off flag.
-4. Optional helper prototype: Haiku research packet helper for lore/rules/state gathering.
-
-Run backend/persona sweeps on the 32GB VM. Keep the Mac-only built `.app` launch/play smoke on this
-Mac or macOS CI.
-
-## Open Questions
-
-- Which exact Opus model id is valid in the current CLI/runtime?
-- Is Claude fast mode reachable from headless `claude -p`, or only interactive Claude Code?
-- Should the scorer be promoted to Opus later as a one-time re-baseline after the DM A/B?
-- Should helper agents route through Codex subagents first, or through OpenClaw/Codex provider
-  adapters after the release gate is trustworthy?
+## Still open
+- The exact Opus model id valid in the current CLI/runtime.
+- Whether a lower routine effort holds story ≥ 4.3 (needs the quality A/B).
+- Scorer-to-Opus re-baseline as a later one-time calibration.

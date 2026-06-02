@@ -1,4 +1,9 @@
-# WorldOS QA Scorecard — running ledger
+# WorldOS QA Scorecard — running ledger (LEGACY)
+
+> **⚠ THE LEDGER MOVED.** The canonical scores ledger is now `qa/scores_db.py` (SQLite `scores.db`) → rendered to
+> `qa/scores_ledger.md` via `add_run(...)` / `--render`. Append NEW runs there (it carries the load-bearing
+> **surface / dm_model / actor_model / scorer** columns that prevent cross-surface/cross-model score confusion).
+> This file is kept as narrative history only — do NOT add new rows here, and do NOT hand-edit `scores_ledger.md`.
 
 > The "what did each run score, and what change was under test" log. Updated per QA run.
 > System reference: `qa/SCORING.md`. Targets: **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0 critical/high.**
