@@ -240,6 +240,23 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertFalse(self._party(surface2)["elara"]["pendingSubclass"])
         self.assertFalse(self._party(surface2)["thornwick"]["pendingSubclass"])
 
+    def test_capitalized_skill_proficiencies_still_project(self):
+        """QA 2026-06-03 (optimizer crit, sat=4): a canon-seated character can carry CAPITALIZED
+        skill names on a stale snapshot (['Arcana','History',...]). The Skills tab must still mark
+        them proficient WITH the proficiency bonus, not '0 proficient' — a case mismatch against the
+        lowercase SKILL_ABILITIES keys. Mirrors the engine Character._normalize_skill_case."""
+        ch = copy.deepcopy(_SNAPSHOT["characters"]["elara"])  # INT 16 (+3), proficiency_bonus 2
+        ch["skill_proficiencies"] = ["Arcana", "History", "Investigation", "Perception"]
+        ch["skill_expertise"] = []
+        sheet = server._character_sheet("elara", ch)
+        by_name = {s["name"]: s for s in sheet["skills"]}
+        proficient = [s for s in sheet["skills"] if s["proficient"]]
+        self.assertEqual(len(proficient), 4, "all 4 capitalized proficiencies must project as proficient")
+        self.assertTrue(by_name["Arcana"]["proficient"])
+        # Arcana (INT) = INT mod (+3) + proficiency (+2) = +5, NOT the raw +3 of the case-broken bug.
+        self.assertEqual(by_name["Arcana"]["mod"], 5)
+        self.assertFalse(by_name["Acrobatics"]["proficient"])
+
 
 if __name__ == "__main__":
     unittest.main()

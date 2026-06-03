@@ -3326,6 +3326,16 @@ def _ability_mod(score: object) -> int:
     return ((int(s) - 10) // 2) if s is not None else 0
 
 
+def _norm_skills(v: object) -> list:
+    """Normalize a snapshot skill list to the lowercase-underscore keys the projection compares
+    against (mirrors models.Character._normalize_skill_case). Stale snapshots seated before that
+    engine normalizer can carry CAPITALIZED canon names (e.g. ['Arcana','History']) — without this
+    the case mismatch renders '0 proficient' and drops the proficiency bonus (QA 2026-06-03)."""
+    if not isinstance(v, list):
+        return []
+    return [str(s).strip().lower().replace(" ", "_") for s in v if str(s).strip()]
+
+
 def _skill_bonus_from_sheet(ch: dict, skill: str) -> int:
     """Mirror Character.skill_bonus off raw snapshot fields: ability modifier of the
     skill's governing ability + proficiency (doubled on expertise)."""
@@ -3336,8 +3346,8 @@ def _skill_bonus_from_sheet(ch: dict, skill: str) -> int:
     bonus = _ability_mod(abilities.get(ability))
     prof = _num(ch.get("proficiency_bonus"))
     prof = int(prof) if prof is not None else 2
-    expertise = ch.get("skill_expertise") if isinstance(ch.get("skill_expertise"), list) else []
-    proficiencies = ch.get("skill_proficiencies") if isinstance(ch.get("skill_proficiencies"), list) else []
+    expertise = _norm_skills(ch.get("skill_expertise"))
+    proficiencies = _norm_skills(ch.get("skill_proficiencies"))
     if skill in expertise:
         bonus += 2 * prof
     elif skill in proficiencies:
@@ -3476,8 +3486,10 @@ def _character_sheet(cid: str, ch: dict) -> dict:
     })
 
     # Skills: project the SRD skill list with sheet-correct bonuses (proficient first).
-    proficiencies = ch.get("skill_proficiencies") if isinstance(ch.get("skill_proficiencies"), list) else []
-    expertise = ch.get("skill_expertise") if isinstance(ch.get("skill_expertise"), list) else []
+    # Normalize case so capitalized canon names (['Arcana',...]) on a stale snapshot still match
+    # the lowercase SKILL_ABILITIES keys — else the Skills tab shows "0 proficient" (QA 2026-06-03).
+    proficiencies = _norm_skills(ch.get("skill_proficiencies"))
+    expertise = _norm_skills(ch.get("skill_expertise"))
     skill_ids = list(dict.fromkeys([*proficiencies, *expertise, *_SKILL_ABILITIES.keys()]))
     skills = [
         {"name": sk.replace("_", " ").title(), "mod": _skill_bonus_from_sheet(ch, sk),

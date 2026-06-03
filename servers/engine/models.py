@@ -762,6 +762,19 @@ class Character(_StrictModel):
             res.used = max(0, min(res.used, res.max))
         return self
 
+    @model_validator(mode="after")
+    def _normalize_skill_case(self) -> "Character":
+        # Skill names are compared case-sensitively everywhere (skill_bonus below, social_check,
+        # the viewer's Skills tab) against the lowercase-underscore SKILL_ABILITIES keys. Canon
+        # character records and DM `patch={"skills":["Arcana",...]}` aliases introduce CAPITALIZED
+        # (or space-separated) names, which then silently match nothing -> "0 proficient" + skill
+        # checks missing the proficiency bonus (QA 2026-06-03: optimizer crit on a L5 Wizard/Sage
+        # whose Arcana/History showed +3 not +6). load_canon_character runs this via model_validate,
+        # so normalizing at the model boundary fixes every seat/patch path and the saved snapshot.
+        self.skill_proficiencies = [str(s).strip().lower().replace(" ", "_") for s in self.skill_proficiencies if str(s).strip()]
+        self.skill_expertise = [str(s).strip().lower().replace(" ", "_") for s in self.skill_expertise if str(s).strip()]
+        return self
+
     @property
     def total_level(self) -> int:
         return sum(c.level for c in self.classes) or 1
