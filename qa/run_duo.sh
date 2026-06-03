@@ -26,6 +26,19 @@ WORLD="${2:-baldurs-gate}"
 PLAYER_PROMPT_FILE="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-6}"
 BUDGET="${5:-0.80}"
+
+# ── Root + IS_SANDBOX preflight (the real beat-0 blocker, 2026-06-03) ─────────────────
+# claude refuses `--dangerously-skip-permissions` (which `--permission-mode bypassPermissions`
+# maps to) when running as root, UNLESS IS_SANDBOX=1. On a root QA host (the 32GB support VM) every
+# claude turn would otherwise return an empty `.result` and the run aborts with a confusing
+# "player produced no intro — aborting". Fail LOUDLY with the fix instead of silently. sweep_v2.sh
+# exports IS_SANDBOX=1 itself; a STANDALONE duo on the VM needs `IS_SANDBOX=1 bash qa/run_duo.sh …`.
+if [ "$(id -u)" = "0" ] && [ -z "${IS_SANDBOX:-}" ]; then
+  echo "[duo] FATAL: running as root without IS_SANDBOX=1 — claude refuses --dangerously-skip-permissions as root." >&2
+  echo "[duo]        re-run as: IS_SANDBOX=1 bash qa/run_duo.sh $*" >&2
+  exit 2
+fi
+
 # The DM model is an env var so A/B-testing Opus vs sonnet for structural adherence is a
 # one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default sonnet.
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
@@ -194,22 +207,21 @@ player_move() {
   [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
 }
 
-# P0: the player introduces their character in PLAIN TEXT — who they are + what they're after.
-# They do NOT act yet: the world isn't built and the scene isn't set, so "firing off" actions into
-# a void reads as the PLAYER authoring the story (owner live-QA: "the player just starts making up
+# P0: the player introduces their character with a SINGLE say() — who they are + what they're after.
+# They do NOT act yet: the world isn't built and the scene isn't set, so "firing off" actions into a
+# void reads as the PLAYER authoring the story (owner live-QA: "the player just starts making up
 # story; there's no intro"). The DM opens the scene next (D1); the player's first real action comes
 # at beat 1.
 #
-# WHY PLAIN TEXT (not a say() tool call): at P0 there is no campaign/session yet, so a say() move has
-# nothing to write into — the move-intent never lands in $MOVES, and player_move (which extracts from
-# $MOVES) returns empty → "player produced no intro — aborting". A one/two-sentence text intro is all
-# the DM needs to open around the player's concept, and it carries no pre-world tool dependency. We
-# capture the agent's text via turn_retry (returns `.result`, and re-mints a fresh session id on an
-# empty cold-open attempt) so a transient blank doesn't abort the whole run — the same retry safety
-# D1 already had, which P0's bare player_move lacked.
-PMSG="$(turn_retry player "$PSID" 1 "$PLAYER_BRIEF
+# The intro goes through say() (a TAGGED [say] move via player_move), NOT raw prose: the behavioral
+# gate `player_turns_structured` requires every player turn to be a facade move, and a raw-text intro
+# trips it RED (which caps all G5 lenses ≤2.5). An earlier "plain-text intro" experiment (#636) did
+# exactly that — it ALSO mis-diagnosed the real beat-0 blocker, which is `IS_SANDBOX=1`: on a root QA
+# host claude refuses `--dangerously-skip-permissions` → empty turn → "player produced no intro". The
+# root guard above enforces that, so the say()-based intro lands cleanly and stays a tagged move.
+PMSG="$(player_move 1 "$PLAYER_BRIEF
 
-This is the very start — the world isn't built and the scene isn't set yet. Introduce your character in ONE OR TWO SENTENCES of plain text: who they are and what they want. Reply with prose only — do NOT call say()/do()/attack/cast yet (there is no scene to act in). The DM opens the scene next; your first action comes after.")"
+This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else.")"
 echo "[duo] player intro: ${PMSG:0:120}…"
 [ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
 chatlog player "$PMSG"
