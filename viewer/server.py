@@ -3581,6 +3581,12 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "race": _text(ch.get("race")),
         "class": klass,
         "archetype": _text((ch.get("classes") or [{}])[0].get("subclass") if isinstance(ch.get("classes"), list) and ch.get("classes") else "") or _text(ch.get("background")),
+        # #397 (read-model increment 1): flag a PENDING subclass choice — at/above the class's
+        # subclass-selection level (3; warlock 6) with no subclass set — so the character screen can
+        # offer the build-choice PICKER. Detect, do NOT auto-fill (#624's auto-fill pre-empts the
+        # choice the optimizer wants; CI's build_options test confirmed the subclass must stay choosable).
+        "pendingSubclass": bool((level or 1) >= (6 if klass.lower() == "warlock" else 3)
+                                and not str((ch.get("classes") or [{}])[0].get("subclass") or "").strip()),
         "alignment": _text(ch.get("alignment"), "Unaligned"),
         "level": level or 1,
         "xp": int(_num(ch.get("xp")) or 0),
