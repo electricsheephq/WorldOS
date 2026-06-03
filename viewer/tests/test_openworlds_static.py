@@ -788,10 +788,13 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("appReadiness.ready_for_play === false", source)
         self.assertIn("Start or resume a provider-backed session from Chronicles", source)
         self.assertIn("data-worldos-status-scope=\"app-status\"", source)
-        self.assertIn("appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason", source)
-        self.assertIn("disabled={!a.available || pendingActive || appStatusBlocksPlay}", source)
-        self.assertIn("disabled={pendingActive || appStatusBlocksPlay}", source)
-        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn("const surfaceStatusBlocksPlay = surfaceStatus !== \"ready\"", source)
+        self.assertIn("const livePlayBlocked = surfaceStatusBlocksPlay || appStatusBlocksPlay", source)
+        self.assertIn("livePlayBlocked ? livePlayBlockReason : readOnlyReason", source)
+        self.assertIn("disabled={!a.available || pendingActive || livePlayBlocked}", source)
+        self.assertIn("disabled={pendingActive || livePlayBlocked}", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft", source)
+        self.assertIn('"Reconnect live session before declaring"', source)
         self.assertIn("disabled={declareDisabled}", source)
 
     def test_openworlds_table_bounds_and_anchors_the_chronicle(self):
@@ -927,14 +930,15 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
         self.assertIn("const declareNeedsDraft = !pendingStuck && !draftText", source)
-        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft", source)
+        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft", source)
         self.assertIn('title={declareTitle}', source)
         self.assertIn('ariaLabel={declareAriaLabel}', source)
         self.assertIn('!composerAction?.available', source)
         self.assertIn('pendingActive', source)
         self.assertIn('appStatusBlocksPlay', source)
+        self.assertIn('livePlayBlocked', source)
         self.assertIn('"Wait for the Dungeon Master before declaring"', source)
-        self.assertIn('"Start or resume provider before declaring"', source)
+        self.assertIn('"Reconnect live session before declaring"', source)
 
     def test_openworlds_table_immediate_actions_reset_stale_composer_mode(self):
         # Fresh-player blocker: if Say was selected, clicking an immediate action like Continue
