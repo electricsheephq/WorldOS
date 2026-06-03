@@ -518,6 +518,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const appHealth = appStatus?.health || {};
   const appFailureBucket = appReadiness.failure_bucket || appHealth.failure_bucket || "";
   const appFailureDetail = appReadiness.failure_detail || appHealth.failure_detail || "";
+  const surfaceStatusBlocksPlay = surfaceStatus !== "ready";
+  const surfaceStatusBlockReason = surfaceStatus === "loading"
+    ? "The live session surface is still loading."
+    : `Session surface unavailable: ${surfaceStatus}`;
   const appStatusBlocksPlay = Boolean(
     appStatus &&
     appReadiness.ready_for_play === false &&
@@ -528,6 +532,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       ? "No Dungeon Master provider is connected."
       : "The live move lane is not ready."
   );
+  const livePlayBlocked = surfaceStatusBlocksPlay || appStatusBlocksPlay;
+  const livePlayBlockReason = surfaceStatusBlocksPlay ? surfaceStatusBlockReason : appStatusBlockReason;
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const params = new URLSearchParams();
@@ -690,8 +696,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
 
   const postMove = async (move, label, actionId) => {
     const enabledAction = actionId ? enabledActionById(actionId) : null;
-    if (!move || !canAct || appStatusBlocksPlay || pendingActive || (actionId && !enabledAction)) {
-      toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : appStatusBlocksPlay ? appStatusBlockReason : readOnlyReason });
+    if (!move || !canAct || livePlayBlocked || pendingActive || (actionId && !enabledAction)) {
+      toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : livePlayBlocked ? livePlayBlockReason : readOnlyReason });
       return;
     }
     if (submittingRef.current) return; // already submitting this turn — drop the rapid double-fire
@@ -776,13 +782,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // Route the click to the right handler so a stuck turn actually retries instead of no-op'ing.
   const onDeclareClick = () => (pendingStuck ? retryStuck() : sendAction());
   const declareNeedsDraft = !pendingStuck && !draftText;
-  const declareDisabled = !composerAction?.available || pendingActive || appStatusBlocksPlay || declareNeedsDraft;
+  const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft;
   const declareTitle = !composerAction?.available
     ? `${composerMode.label} is unavailable: ${composerAction?.disabled_reason || readOnlyReason}`
     : pendingActive
       ? (pendingFirstBeat ? "The Dungeon Master is composing your opening scene." : "The Dungeon Master is still narrating.")
-      : appStatusBlocksPlay
-        ? appStatusBlockReason
+      : livePlayBlocked
+        ? livePlayBlockReason
         : pendingStuck
           ? "Re-send your last action to the Dungeon Master, or type a new one first."
           : declareNeedsDraft
@@ -792,8 +798,8 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     ? `${composerMode.label} unavailable`
     : pendingActive
       ? "Wait for the Dungeon Master before declaring"
-      : appStatusBlocksPlay
-        ? "Start or resume provider before declaring"
+      : livePlayBlocked
+        ? "Reconnect live session before declaring"
         : pendingStuck
           ? "Try action again"
           : declareNeedsDraft
@@ -1026,7 +1032,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     actionId={a.id}
                     selected={COMPOSER_MODE_BY_UI[a.ui] === composerModeId}
                     tone={a.available ? "" : "crimson"}
-                    disabled={!a.available || pendingActive || appStatusBlocksPlay}
+                    disabled={!a.available || pendingActive || livePlayBlocked}
                     onClick={() => invokeAction(a)}
                   />
                 ))}
@@ -1047,7 +1053,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                       hint={ACTION_HINTS[a.id]}
                       actionId={a.id}
                       tone={a.available ? "royal" : "crimson"}
-                      disabled={!a.available || pendingActive || appStatusBlocksPlay}
+                      disabled={!a.available || pendingActive || livePlayBlocked}
                       onClick={() => invokeAction(a)}
                     />
                   ))}
@@ -1075,10 +1081,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               </span>
               <div style={{ flex: 1 }} />
               {/* #337: dice buttons explain themselves on hover — a newbie didn't know d20/d12/d8/d6 ask the DM for a check. */}
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="12" aria-label="Roll d12" onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="8" aria-label="Roll d8" onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
-              <button type="button" data-worldos-testid="dice-button" data-worldos-die="6" aria-label="Roll d6" onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || appStatusBlocksPlay}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="20" aria-label="Roll d20" onClick={() => requestRoll(20)} title={DICE_HINT(20)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || livePlayBlocked}>{window.OpenWorldsIcon?.has?.("dice.d20") && <window.OpenWorldsIcon id="dice.d20" size={13} />} d20</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="12" aria-label="Roll d12" onClick={() => requestRoll(12)} title={DICE_HINT(12)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || livePlayBlocked}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d12</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="8" aria-label="Roll d8" onClick={() => requestRoll(8)} title={DICE_HINT(8)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || livePlayBlocked}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d8</button>
+              <button type="button" data-worldos-testid="dice-button" data-worldos-die="6" aria-label="Roll d6" onClick={() => requestRoll(6)} title={DICE_HINT(6)} className="btn ghost sm" disabled={!actionById("check")?.available || pendingActive || livePlayBlocked}>{window.OpenWorldsIcon?.has?.("dice.roll") && <window.OpenWorldsIcon id="dice.roll" size={13} />} d6</button>
             </div>
             {/* #337: one-line hint under the action bar so a first-timer knows free-text + Declare is the core loop, distinct from the quick-action buttons. */}
             <div className="body-xs muted" style={{ marginBottom: 6 }}>
@@ -1092,9 +1098,9 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
-                disabled={pendingActive || appStatusBlocksPlay}
+                disabled={pendingActive || livePlayBlocked}
                 title={composerMode.inputTitle || DECLARE_HINT}
-                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : appStatusBlocksPlay ? "Start or resume a DM provider to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
+                placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : livePlayBlocked ? "Reconnect the live session to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}
               />
               <BrassButton onClick={onDeclareClick} title={declareTitle} disabled={declareDisabled} testId="move-submit" ariaLabel={declareAriaLabel}>{pendingFirstBeat ? "Composing…" : pendingActive ? "Narrating…" : pendingStuck ? "Try again" : "Declare"}</BrassButton>
