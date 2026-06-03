@@ -194,14 +194,22 @@ player_move() {
   [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
 }
 
-# P0: the player introduces their character with a SINGLE say() — who they are + what
-# they're after. They do NOT act yet: the world isn't built and the scene isn't set, so
-# "firing off" actions into a void reads as the PLAYER authoring the story (owner live-QA:
-# "the player just starts making up story; there's no intro"). The DM opens the scene next
-# (D1); the player's first real action comes at beat 1.
-PMSG="$(player_move 1 "$PLAYER_BRIEF
+# P0: the player introduces their character in PLAIN TEXT — who they are + what they're after.
+# They do NOT act yet: the world isn't built and the scene isn't set, so "firing off" actions into
+# a void reads as the PLAYER authoring the story (owner live-QA: "the player just starts making up
+# story; there's no intro"). The DM opens the scene next (D1); the player's first real action comes
+# at beat 1.
+#
+# WHY PLAIN TEXT (not a say() tool call): at P0 there is no campaign/session yet, so a say() move has
+# nothing to write into — the move-intent never lands in $MOVES, and player_move (which extracts from
+# $MOVES) returns empty → "player produced no intro — aborting". A one/two-sentence text intro is all
+# the DM needs to open around the player's concept, and it carries no pre-world tool dependency. We
+# capture the agent's text via turn_retry (returns `.result`, and re-mints a fresh session id on an
+# empty cold-open attempt) so a transient blank doesn't abort the whole run — the same retry safety
+# D1 already had, which P0's bare player_move lacked.
+PMSG="$(turn_retry player "$PSID" 1 "$PLAYER_BRIEF
 
-This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else.")"
+This is the very start — the world isn't built and the scene isn't set yet. Introduce your character in ONE OR TWO SENTENCES of plain text: who they are and what they want. Reply with prose only — do NOT call say()/do()/attack/cast yet (there is no scene to act in). The DM opens the scene next; your first action comes after.")"
 echo "[duo] player intro: ${PMSG:0:120}…"
 [ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
 chatlog player "$PMSG"
