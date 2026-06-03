@@ -24,8 +24,8 @@ const DM_ENGINE_TOOLS = [
 // A line whose ENTIRE content is a GM-advisory directive or a bare tool reference.
 const _TOOLS_ALT = DM_ENGINE_TOOLS.join("|");
 // Header line of the right-panel Director advisory if it ever bleeds into prose.
-const _GM_ADVISORY_HEADER = /^\s*(?:#{1,6}\s*)?(?:\**\s*)?GM\s+Advisory\b/i;
-const _ADVISORY_SUBTITLE = /^\s*what the campaign owes the story\b/i;
+const _GM_ADVISORY_HEADER = /^\s*(?:#{1,6}\s*)?(?:[*_`'"]+\s*)?GM\s+Advisory\b/i;
+const _ADVISORY_SUBTITLE = /^\s*(?:[*_`'"]+\s*)?what the campaign owes the story\b/i;
 // The scene-debt KIND labels (mirrors servers/engine/director.py debt kinds; the GM-Advisory
 // panel renders them with underscores→spaces, e.g. "npc_introduced_silent" → "npc introduced
 // silent"). #357 (nb3): the WHOLE advisory panel string leaked to the player —
@@ -44,7 +44,7 @@ const _DEBT_KIND_LABEL =
 const _ADVISORY_DIRECTIVE = new RegExp(
   "(?:" +
     // #357: a line LED by a scene-debt kind label (optionally back-ticked) — the panel leak.
-    "^\\s*[`'\"]?\\s*" + _DEBT_KIND_LABEL + "\\b|" +
+    "^\\s*[`'\"*_]*\\s*" + _DEBT_KIND_LABEL + "(?:\\b|[`'\"*_]+\\s*[:;,.!?-]?)|" +
     "\\b(?:has been introduced but hasn'?t spoken)\\b|" +
     "\\b(?:untracked hook)\\b.*\\bcall\\b|" +
     "\\bquest\\b.*\\bhas stalled\\b|" +
@@ -59,7 +59,7 @@ const _ADVISORY_DIRECTIVE = new RegExp(
 // A line that is ESSENTIALLY just an engine-tool token (optionally back-ticked,
 // optionally with a trivial call signature) — e.g. "`remember`", "remember(...)".
 const _BARE_TOOL_LINE = new RegExp(
-  "^\\s*[`'\"(]*\\s*(?:" + _TOOLS_ALT + ")\\s*(?:\\([^)]*\\))?\\s*[`'\")]*\\s*[.;:]?\\s*$",
+  "^\\s*[`'\"(_*]*\\s*(?:" + _TOOLS_ALT + ")\\s*(?:\\([^)]*\\))?\\s*[`'\")_*]*\\s*[.;:]?\\s*$",
   "i",
 );
 function _isInternalLine(line) {
@@ -156,11 +156,24 @@ function _stripScaffoldingSentences(line) {
     .replace(/\s*[;,]\s*$/, ".")
     .trim();
 }
+function _stripInlineMarkdown(line) {
+  if (typeof line !== "string" || !line) return line;
+  return line
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/__([^\n]+?)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/(^|[^A-Za-z0-9])_([^_\n]+)_([^A-Za-z0-9]|$)/g, "$1$2$3");
+}
 function sanitizeNarration(text) {
   if (typeof text !== "string" || !text) return "";
   const kept = text
     .split(/\r?\n/)
-    // #347: first excise any scaffolding sentences embedded in a line…
+    // The Chronicle renders text, not Markdown. Keep useful provider content like roll
+    // numbers while dropping inline emphasis/code markers that otherwise show as raw syntax.
+    .map((line) => _stripInlineMarkdown(line))
+    // #347: then excise any scaffolding sentences embedded in a line after removing
+    // formatting markers that could otherwise split a tally or stage-direction phrase.
     .map((line) => _stripScaffoldingSentences(line))
     // …then drop any line that is wholly a #335 advisory/tool-name internal line (or was
     // emptied by the scaffolding strip above — _isInternalLine returns false on "", so an
