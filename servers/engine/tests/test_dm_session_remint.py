@@ -145,3 +145,15 @@ def test_run_duo_has_root_is_sandbox_guard():
     duo = _src("qa/run_duo.sh")
     assert '[ "$(id -u)" = "0" ] && [ -z "${IS_SANDBOX:-}" ]' in duo, "must detect root + missing IS_SANDBOX"
     assert "IS_SANDBOX=1 bash qa/run_duo.sh" in duo, "must tell the user the exact fix"
+
+
+def test_play_party_single_flights_the_cold_open_campaign():
+    """#640 (the #1 cross-persona G3 blocker): play_party.sh must REUSE a recent seeded campaign in
+    its state dir rather than start_world-minting a fresh one on every launch. The .app native RESUME
+    and the part-B harness each run the pre-seed; parallel campaigns made the viewer's is_live_view
+    (= viewed == attached) latch False → frozen chronicle + 'viewing non-live campaign' read-only
+    lockout (newbie/narrative/adversarial, 2026-06-03). Verified on the VM: 3 launches → 1 campaign."""
+    party = _src("scripts/play_party.sh")
+    assert "Single-flight (#640)" in party, "play_party.sh lost the single-flight reuse"
+    assert "_minted = camp is None" in party, "must only mint when no recent campaign was reused"
+    assert "time.time() - os.path.getmtime" in party, "reuse must be scoped by a recency window (this run only)"
