@@ -323,6 +323,10 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   const [subclassName, setSubclassName] = React.useState("");
   const [asiNote, setAsiNote] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  // #robustness: synchronous in-flight lock (mirrors screen-table.jsx). The `submitting` STATE
+  // only updates on re-render, so a rapid double-click would otherwise relay TWO level-up intents
+  // and double-level the character. The ref blocks the second call within the same tick.
+  const submittingRef = React.useRef(false);
   const cap = (s) => (s || "").replace(/^./, (ch) => ch.toUpperCase());
 
   React.useEffect(() => {
@@ -361,7 +365,8 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   const toLevel = (option && option.to && option.to.level) || (Number(hero.level) + 1);
 
   const confirm = async () => {
-    if (submitting) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     const cls = cap((option && option.class_name) || hero.class || "my class");
     const parts = ["I advance " + (hero.name || "my character") + " to level " + toLevel + " as a " + cls];
@@ -392,6 +397,7 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
         title: "Level-up not sent",
         body: (e && e.message) || "The viewer could not reach /move.",
       });
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

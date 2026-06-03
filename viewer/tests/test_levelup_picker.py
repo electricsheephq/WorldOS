@@ -70,6 +70,14 @@ class LevelUpPickerGuard(unittest.TestCase):
         self.assertIn("disabled={confirmDisabled}", self.modal)
         self.assertNotIn("not saved to the engine", self.modal)
 
+    def test_confirm_is_guarded_against_double_submit(self):
+        """A rapid double-click must not relay two level-up intents (which would double-level the
+        character). The state-based `submitting` only updates on re-render, so the guard MUST be a
+        synchronous ref lock (the established screen-table.jsx pattern), checked + set before await."""
+        self.assertIn("submittingRef", self.modal)
+        self.assertIn("if (submittingRef.current) return;", self.modal)
+        self.assertIn("submittingRef.current = true;", self.modal)
+
     def test_subclass_is_named_input_not_a_fabricated_dropdown(self):
         """The engine does not enumerate world-canon subclasses, so the picker must take a NAMED
         subclass (player types it, DM finalizes) — never a hardcoded list the engine doesn't assert."""
