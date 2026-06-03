@@ -32,6 +32,7 @@ function ScreenCharacter({ onNavigate, state, setState }) {
   const [active, setActive] = React.useState("");
   const [tab, setTab] = React.useState("abilities");
   const [restOpen, setRestOpen] = React.useState(false);
+  const [levelUpOpen, setLevelUpOpen] = React.useState(false);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
@@ -124,6 +125,15 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         <BrassButton tone="dark" size="sm" onClick={() => setRestOpen(true)} style={{ width: "100%" }}>
           Rest & Prepare
         </BrassButton>
+        {/* #397: the build-choice affordance. Shown ONLY when the engine read-model says a choice
+            is actually due — a pending subclass (pendingSubclass, even from creation above the
+            choose-level) or enough XP for the next level. Never a faked "always available" button. */}
+        {(hero.pendingSubclass || (Number(hero.xp) >= Number(hero.xpMax) && Number(hero.xpMax) > 0)) && (
+          <BrassButton size="sm" onClick={() => setLevelUpOpen(true)} style={{ width: "100%", marginTop: 8 }}
+            testId="level-up-open" ariaLabel={hero.pendingSubclass ? "Choose your subclass" : "Level up"}>
+            {hero.pendingSubclass ? "Choose Subclass" : "Level Up"}
+          </BrassButton>
+        )}
       </Panel>
 
       {/* RIGHT: sheet */}
@@ -286,6 +296,226 @@ function ScreenCharacter({ onNavigate, state, setState }) {
       </div>
 
       {restOpen && <RestPrepareModal hero={hero} party={party} onClose={() => setRestOpen(false)} toast={toast} setState={setState} />}
+      {levelUpOpen && (
+        <LevelUpModal
+          hero={hero}
+          campaignId={surface?.campaign_id || state?.activeCampaign || ""}
+          onClose={() => setLevelUpOpen(false)}
+          onDone={() => { setLevelUpOpen(false); loadSurface(); }}
+          toast={toast}
+        />
+      )}
+    </div>
+  );
+}
+
+// #397 — the build-choice PICKER. Unlike RestPrepareModal (display-only), this writes for real:
+// it reads the engine-owned legal level-up preview from /build-options (HP/features/slots — never
+// faked), and on confirm relays a `do` move-intent to the DM, who resolves it through the engine
+// level_up tool (sole writer) exactly as camp-sidebar.jsx relays "make camp". The subclass is NOT
+// a hardcoded dropdown — the engine does not enumerate world-canon subclasses (class_data has no
+// subclass list); the player NAMES it and the DM, which knows the world's options, finalizes it.
+function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
+  const [planner, setPlanner] = React.useState(null);
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [chosenClass, setChosenClass] = React.useState((hero.class || "").toLowerCase());
+  const [subclassName, setSubclassName] = React.useState("");
+  const [asiNote, setAsiNote] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  // #robustness: synchronous in-flight lock (mirrors screen-table.jsx). The `submitting` STATE
+  // only updates on re-render, so a rapid double-click would otherwise relay TWO level-up intents
+  // and double-level the character. The ref blocks the second call within the same tick.
+  const submittingRef = React.useRef(false);
+  const cap = (s) => (s || "").replace(/^./, (ch) => ch.toUpperCase());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = "/build-options?campaign=" + encodeURIComponent(campaignId || "") +
+                    "&character=" + encodeURIComponent(hero.id || "");
+        const response = await fetch(url, { cache: "no-store" });
+        const payload = await response.json();
+        if (cancelled) return;
+        if (payload && payload.ok && payload.planner) {
+          setPlanner(payload.planner);
+        } else {
+          setError((payload && Array.isArray(payload.errors) && payload.errors[0]) || "The build planner is unavailable.");
+        }
+      } catch (e) {
+        if (!cancelled) setError("Could not reach the build planner.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [campaignId, hero.id]);
+
+  const options = (planner && Array.isArray(planner.options)) ? planner.options : [];
+  // The option for the chosen class (default: continue the current class), else the first legal path.
+  const option = options.find((o) => (o.class_name || "").toLowerCase() === chosenClass) || options[0] || null;
+  const featuresGained = (option && Array.isArray(option.features_gained)) ? option.features_gained : [];
+  // Subclass is DUE if the engine grants a "<X> Subclass" feature at this level, or the read-model
+  // already flagged one pending (created above the choose-level). Either way the player names it.
+  const subclassDue = !!hero.pendingSubclass ||
+    featuresGained.some((f) => /subclass/i.test((f && f.name) || ""));
+  const asiRequired = !!(option && option.choices && option.choices.asi_required);
+  const featAllowed = !!(option && option.choices && option.choices.feat_allowed);
+  const toLevel = (option && option.to && option.to.level) || (Number(hero.level) + 1);
+
+  const confirm = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    const cls = cap((option && option.class_name) || hero.class || "my class");
+    const parts = ["I advance " + (hero.name || "my character") + " to level " + toLevel + " as a " + cls];
+    if (subclassDue && subclassName.trim()) parts.push("choosing the " + subclassName.trim() + " subclass");
+    if (asiRequired) {
+      parts.push("and for my ability score improvement" + (featAllowed ? " (or feat)" : "") + ": " +
+                 (asiNote.trim() || "ask me which to take"));
+    }
+    const text = parts.join(", ") + ".";
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "do", text, campaign: campaignId }),
+      });
+      if (!response.ok) throw new Error("move " + response.status);
+      toast({
+        kind: "rest",
+        eyebrow: "Advancement",
+        title: "Level-up relayed to the DM",
+        body: "Move relayed — the engine resolves the level-up and refreshes the sheet.",
+      });
+      if (onDone) onDone(); else onClose();
+    } catch (e) {
+      toast({
+        kind: "danger",
+        eyebrow: "Advancement",
+        title: "Level-up not sent",
+        body: (e && e.message) || "The viewer could not reach /move.",
+      });
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  // Confirm is blocked ONLY while submitting or when a subclass is required but unnamed — it is
+  // never permanently disabled (that is the RestPrepareModal display-only stub; the picker writes).
+  const confirmDisabled = submitting || (subclassDue && !subclassName.trim());
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(15, 8, 2, 0.7)",
+      display: "grid", placeItems: "center",
+      backdropFilter: "blur(2px)",
+    }} onClick={onClose} role="dialog" aria-modal="true" aria-label="Level up" data-worldos-testid="level-up-modal">
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>
+        <Panel framed>
+          <div className="eyebrow" style={{ color: "var(--crimson)" }}>Advancement</div>
+          <h2 className="h1" style={{ fontSize: 26 }}>Level Up — {hero.name}</h2>
+          <Divider />
+
+          {loading ? (
+            <p className="body muted">Consulting the build planner…</p>
+          ) : error ? (
+            <p className="body" style={{ color: "var(--crimson)" }} data-worldos-testid="levelup-error">{error}</p>
+          ) : (
+            <>
+              <p className="body" style={{ marginTop: 0 }}>
+                {hero.name} has earned the next rung. The engine planner shows what this level grants —
+                confirm to relay the advancement to the Dungeon Master, who records it.
+              </p>
+
+              {options.length > 1 && (
+                <div style={{ marginTop: 12 }}>
+                  <SectionTitle>Advance as</SectionTitle>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {options.map((o) => {
+                      const cn = (o.class_name || "").toLowerCase();
+                      return (
+                        <button key={cn} onClick={() => setChosenClass(cn)}
+                          data-worldos-testid={"levelup-class-" + cn}
+                          style={{
+                            padding: "6px 12px", cursor: "pointer",
+                            background: chosenClass === cn ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+                            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                            color: chosenClass === cn ? "var(--w-300)" : "var(--ink-800)",
+                            fontFamily: "var(--f-display)", fontSize: 12,
+                          }}>
+                          {cap(o.class_name)}{o.multiclass ? " · multiclass" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {option && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <Pill tone="emerald" dot>Level {(option.from && option.from.level) || hero.level} → {toLevel}</Pill>
+                    {typeof option.hp_gain === "number" && <Pill tone="crimson" dot>+{option.hp_gain} HP</Pill>}
+                    <Pill>{cap(option.class_name)}</Pill>
+                  </div>
+                  {featuresGained.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <SectionTitle>Features gained</SectionTitle>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {featuresGained.map((f, i) => (
+                          <li key={i} className="body-sm" style={{ color: "var(--ink-800)" }}>{(f && f.name) || String(f)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {subclassDue && (
+                <div style={{ marginTop: 16 }}>
+                  <SectionTitle>Choose your subclass</SectionTitle>
+                  <p className="body-sm muted" style={{ marginTop: 0 }}>
+                    This level grants a subclass. Name the one your character takes — the DM confirms it against the world's options.
+                  </p>
+                  <input type="text" value={subclassName} onChange={(e) => setSubclassName(e.target.value)}
+                    placeholder="e.g. School of Evocation"
+                    data-worldos-testid="levelup-subclass-input"
+                    style={{
+                      width: "100%", padding: "8px 10px", boxSizing: "border-box",
+                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                      background: "rgba(255,250,235,0.5)", fontFamily: "var(--f-body)", fontSize: 14,
+                    }} />
+                </div>
+              )}
+
+              {asiRequired && (
+                <div style={{ marginTop: 16 }}>
+                  <SectionTitle>Ability Score Improvement{featAllowed ? " or feat" : ""}</SectionTitle>
+                  <input type="text" value={asiNote} onChange={(e) => setAsiNote(e.target.value)}
+                    placeholder={featAllowed ? "e.g. +2 STR — or a feat like Great Weapon Master" : "e.g. +2 STR, or +1 STR / +1 CON"}
+                    data-worldos-testid="levelup-asi-input"
+                    style={{
+                      width: "100%", padding: "8px 10px", boxSizing: "border-box",
+                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                      background: "rgba(255,250,235,0.5)", fontFamily: "var(--f-body)", fontSize: 14,
+                    }} />
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+                <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close level up modal">Not yet</BrassButton>
+                <BrassButton onClick={confirm} disabled={confirmDisabled} testId="levelup-confirm"
+                  ariaLabel="Confirm level up and relay to the Dungeon Master">
+                  {submitting ? "Relaying…" : "Confirm advancement"}
+                </BrassButton>
+              </div>
+            </>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }
