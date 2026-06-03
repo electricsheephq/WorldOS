@@ -21,7 +21,7 @@ function ToastProvider({ children }) {
         display: "flex", flexDirection: "column", gap: 10,
         pointerEvents: "none",
         maxWidth: 360,
-      }} aria-live="polite" aria-label="Notifications" data-worldos-testid="toast-region">
+      }} role="region" aria-live="polite" aria-label="Notifications" data-worldos-testid="toast-region">
         {toasts.map((t) => <Toast key={t.id} toast={t} />)}
       </div>
     </ToastCtx.Provider>
