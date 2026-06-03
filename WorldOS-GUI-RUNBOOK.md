@@ -281,6 +281,16 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   blockers would make the RRI sweep untrustworthy. Its generated persona commands must include both
   `WOS_APP_SELECTED_PROVIDER` and `WOS_APP_PLAYER_AGENT`; otherwise the VM sweep lane is not defined
   tightly enough to count toward #466.
+- **⚠ `IS_SANDBOX=1` is MANDATORY for the claude lane (the VM runs as root):** `claude -p
+  --permission-mode bypassPermissions` is REFUSED as root → silent empty-turn abort. `sweep_v2.sh` sets it;
+  a standalone `run_duo.sh`/`play.sh` needs `IS_SANDBOX=1 bash qa/...`. (This — not say()-into-void — was the
+  duo's beat-0 blocker, 2026-06-03.) Art is at `content/worlds/_private/baldurs-gate/images`, NOT top-level
+  `_private`. **The full ONE-COMMAND part-B sweep + exact step-by-step is in the `worldos-dev` skill →
+  "VM GATE SWEEP — exact procedure"; keep that section and this one in sync as the harness changes.**
+- **VM status UPDATE (2026-06-03 — supersedes the stale 2026-06-01 scout below):** the VM is READY — git-fetch
+  from origin WORKS now (the old "could not read Username" failure is resolved), claude 2.1.158 is authed,
+  codex 0.120.0 present, art present, ~28 GB free. The 2026-06-01 "stale `4524b3e` / sync-failed / Lexar-absent"
+  blockers no longer hold; the heavy part-B `sweep_v2.sh` lane is runnable.
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private

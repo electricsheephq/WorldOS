@@ -20,6 +20,49 @@ universe-system that generates worlds. Source-available commercial product, BG-f
 > **On resume after a compaction, re-read that runbook section FIRST** — do not rebuild the QA plan from memory
 > or fight local RAM. For per-beat DM latency, see the `worldos-latency-forensics` skill.
 
+## VM GATE SWEEP — exact procedure (heavy part-B; the thing you keep re-deriving)
+**The full gate is ONE command on the 32 GB VM. Update THIS section when the harness changes** — it is
+the source of truth so a cold post-compaction agent never re-learns it (it cost a real diagnosis 2026-06-03).
+
+**The VM** (`evaos-support`): `root@178.104.123.213`, key `~/.openclaw/secrets/cloud-deploy-key` (key-only
+root; wrong-user probes trip fail2ban — always `root`). Repo `/root/worldos-qa/WorldOS`; harness
+`/root/worldos-qa/sweep_v2.sh`; results `/root/worldos-qa/results/`. 30 GB / 16 CPU. Has claude (authed) +
+codex(≥0.120) + uv + node + playwright/chromium + art. **No swift** → the native Part-A `.app` gate stays Mac.
+
+**⚠ `IS_SANDBOX=1` IS MANDATORY (the VM is root).** `claude -p --permission-mode bypassPermissions`
+(→ `--dangerously-skip-permissions`) is REFUSED as root → empty `.result` → silent abort ("player produced
+no intro — aborting"). `sweep_v2.sh` exports it itself; a STANDALONE `run_duo.sh`/`play.sh` on the VM needs
+`IS_SANDBOX=1 bash qa/...`. (A direct `claude -p` WITHOUT the bypass flag works as root → proves auth is
+fine; only bypass+root is guarded.) This — NOT say()-into-void — was the duo's beat-0 blocker (2026-06-03).
+
+**Art lives at `content/worlds/_private/baldurs-gate/images`** (~2360 dirs / 3 GB, gitignored, present on the
+VM) — NOT top-level `_private`. Don't false-alarm on `ls WorldOS/_private`.
+
+```bash
+KEY=~/.openclaw/secrets/cloud-deploy-key; VM=root@178.104.123.213
+# 1) SCOUT (read-only): reachable? SHA? git-fetch works? claude authed? RAM?
+ssh -i $KEY $VM 'cd /root/worldos-qa/WorldOS && git rev-parse --short HEAD && free -g|grep Mem && claude --version'
+# 2) FF the VM to the SHA under test (origin/main)
+ssh -i $KEY $VM 'cd /root/worldos-qa/WorldOS && git fetch origin -q && git checkout main -q && git pull --ff-only'
+# 3) SMOKE first (confirm scoring works before the ~$30-60 batch): 2-beat duo, ~10 min
+ssh -i $KEY $VM 'cd /root/worldos-qa/WorldOS && IS_SANDBOX=1 nohup bash qa/run_duo.sh smoke baldurs-gate qa/play_player_duo.txt 2 0.80 >/tmp/smoke.log 2>&1 &'
+# 4) FULL part-B (canary newbie → 4 personas PARALLEL → duo G5 → behavioral → ui_audit → RRI), ~60-90 min:
+ssh -i $KEY $VM 'nohup bash /root/worldos-qa/sweep_v2.sh >/root/worldos-qa/results/sweep.out 2>&1 &'
+# 5) READ results
+ssh -i $KEY $VM 'cd /root/worldos-qa/results && cat sweep2.log && for f in score-*.json; do echo "== $f =="; \
+  python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print({k:d.get(k) for k in [\"persona_satisfaction\",\"gave_up\",\"bug_reports_critical\",\"completed_intro_flow\",\"satisfaction_source\"]})" "$f"; done'
+```
+**Maps to the gates:** `score-<persona>.json` ×5 → G2 (`bug_reports_critical`=0) + G3 (`persona_satisfaction`≥7
+**self-reported** AND `gave_up`=false) + G1 (`completed_intro_flow`) · `duo-tolkien.json`/`duo-angrydm.json` →
+G5 (story ≥4.3 / mech ≥4.5) · `behavioral.log` → G5 behavioral · `ui_audit.log` → G4 (axe 0).
+**Honest-score guard:** a DERIVED sat (verify `satisfaction_source`) of 5–6 is INCONCLUSIVE, not "bad" (see
+the GUI QA LOOP note) — only `self-reported` counts toward G3.
+
+**Rollup → RRI (#466):** the Mac runs native Part-A on the BUILT `.app` (`qa/app_handoff_gate.py` →
+handoff.json) at the **SAME SHA**; `qa/release_readiness.py --handoff-json <mac.json> <vm score dirs>`
+combines them. Mixed-SHA / missing `run.json`/`score.json`/`network.ndjson` ⇒ `partial`/`harness_contaminated`
+(never a clean release). Copy VM `results/` back under `/Volumes/LEXAR/Codex/...` for the rollup + ledger.
+
 ## Load-bearing INVARIANTS (never violate)
 1. **Engine = SOLE WRITER.** State is `snapshot.json` written under `campaign_lock` via
    atomic temp-file + `os.replace` (`servers/engine/store.py`). The player facade
