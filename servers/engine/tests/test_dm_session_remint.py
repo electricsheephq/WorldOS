@@ -124,19 +124,24 @@ def test_play_party_dm_has_live_progress_rule():
     assert "LIVE_PROGRESS_LOG_RULE" in _src("scripts/play_codex_dm.sh")
 
 
-def test_run_duo_p0_intro_is_robust_plain_text():
-    """G5: the duo's opening player intro (P0) must be a retry-safe PLAIN-TEXT capture, not a
-    pre-world say() tool call. The world/session does not exist yet at P0, so a say() move never
-    lands in $MOVES and the old bare-player_move path returned empty -> 'player produced no intro
-    -- aborting', killing every duo run before beat 1 (the G5 story/mechanical scores could never
-    be measured). The fix: capture the agent's `.result` via turn_retry (which re-mints a fresh
-    session on an empty cold-open attempt, the retry safety D1 already had and P0 lacked), and ask
-    for prose rather than a tool call. Guards against regressing to the brittle say()-into-void."""
+def test_run_duo_p0_intro_is_a_tagged_say_move():
+    """G5/behavioral: the duo's opening player intro (P0) must be a `say()` TAGGED move (via
+    player_move), NOT raw prose. The behavioral gate `player_turns_structured` requires every player
+    turn to be a facade move; a raw-text intro trips it RED and caps all G5 lenses ≤2.5 (measured on
+    the VM 2026-06-03 — the #636 plain-text intro produced exactly that). So P0 goes through
+    player_move with a 'SINGLE say()' prompt, keeping the intro a tagged [say] move."""
     duo = _src("qa/run_duo.sh")
-    # P0 routes through turn_retry (retry-safe), NOT a bare player_move that can silently abort.
-    assert 'PMSG="$(turn_retry player "$PSID" 1' in duo, "P0 intro must use turn_retry, not bare player_move"
-    # the P0 prompt asks for plain-text prose, never a mandatory pre-world say() tool call.
-    assert "ONE OR TWO SENTENCES of plain text" in duo
-    assert "do NOT call say()" in duo
-    # the abort guard stays (an intro is still required) — we made it reachable, not removed it.
+    assert 'PMSG="$(player_move 1 ' in duo, "P0 intro must go through player_move (a tagged say move)"
+    assert "SINGLE say(" in duo, "P0 prompt must ask for a say(), so the intro is a tagged move"
+    assert "ONE OR TWO SENTENCES of plain text" not in duo, "the raw-text intro (behavioral RED) must be reverted"
+    # the abort guard stays (an intro is still required).
     assert "player produced no intro — aborting" in duo
+
+
+def test_run_duo_has_root_is_sandbox_guard():
+    """The REAL beat-0 blocker on the root QA VM: claude refuses --dangerously-skip-permissions as
+    root unless IS_SANDBOX=1, so every turn returns empty and the run silently aborts. run_duo.sh
+    must fail LOUDLY (with the fix) instead of the confusing 'no intro' abort."""
+    duo = _src("qa/run_duo.sh")
+    assert '[ "$(id -u)" = "0" ] && [ -z "${IS_SANDBOX:-}" ]' in duo, "must detect root + missing IS_SANDBOX"
+    assert "IS_SANDBOX=1 bash qa/run_duo.sh" in duo, "must tell the user the exact fix"
