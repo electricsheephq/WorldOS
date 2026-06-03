@@ -30,6 +30,7 @@ def _env(tmp_path: Path, **overrides: str) -> dict[str, str]:
         "CLAWDND_PLAY_MAX_TURNS": "1",
         "CLAWDND_PLAY_COMPANIONS": "",
         "CLAWDND_STATE_ROOT": str(tmp_path),
+        "WORLDOS_PROVIDER_STOP_GRACE_SECONDS": "0",
     }
     env.update(overrides)
     return env

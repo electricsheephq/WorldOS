@@ -99,6 +99,7 @@ STDERR_LOG="$PROVIDER_DIR/codex-dm.stderr.log"
 LAST_MESSAGE="$PROVIDER_DIR/codex-dm.last.txt"
 VIEWER_LOG="$RUN_DIR/viewer.log"
 VIEWER_URL="http://127.0.0.1:$CLAWDND_PLAY_PORT/openworlds/"
+PROVIDER_STATUS="$RUN_DIR/provider_status.json"
 
 mkdir -p "$PROVIDER_DIR"
 touch "$MOVES" "$CHAT"
@@ -365,6 +366,45 @@ with open(path, "a", encoding="utf-8") as handle:
 PY
 }
 
+write_provider_status() {
+  local status="$1" reason="$2" detail="$3"
+  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" <<'PY'
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+path, status, reason, detail, provider, max_turns, turns = sys.argv[1:]
+path = Path(path)
+payload = {
+    "schema": "worldos.provider-status.v1",
+    "provider": provider,
+    "status": status,
+    "reason": reason,
+    "detail": detail,
+    "max_turns": int(max_turns) if str(max_turns).isdigit() else max_turns,
+    "dm_turns": int(turns) if str(turns).isdigit() else turns,
+    "updated_at": time.time(),
+}
+tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+with tmp_path.open("w", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+tmp_path.replace(path)
+try:
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+except OSError:
+    dir_fd = None
+if dir_fd is not None:
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+PY
+}
+
 log_engine_narration() {
   local campaign_id="$1" text="$2"
   [ -n "${campaign_id//[[:space:]]/}" ] || return 1
@@ -487,6 +527,9 @@ trap '_cleanup; exit 130' INT TERM
 echo "WorldOS Codex DM provider -> $VIEWER_URL"
 echo "  Save dir: $RUN_DIR"
 
+DM_TURNS=0
+write_provider_status "running" "active" "Codex DM provider is running."
+
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"
 MCURSOR="${MCURSOR:-0}"
 
@@ -565,8 +608,13 @@ record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$OPENING" "opening"
 CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
 
 DM_TURNS=1
+write_provider_status "running" "active" "Codex DM provider is running."
 while true; do
-  [ "$DM_TURNS" -ge "$CLAWDND_PLAY_MAX_TURNS" ] && break
+  if [ "$DM_TURNS" -ge "$CLAWDND_PLAY_MAX_TURNS" ]; then
+    write_provider_status "stopped" "turn_cap" "Codex DM stopped after reaching the configured max turns. Increase Max turns or start a new provider-backed session to continue."
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    break
+  fi
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"
   total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then

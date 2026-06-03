@@ -384,6 +384,84 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertTrue(payload["health"]["pending_player_turn"])
         self.assertEqual(payload["health"]["failure_bucket"], "none")
 
+    def test_app_status_blocks_play_when_provider_status_is_stopped(self):
+        campaign_dir = self._tmp / "campaigns" / "camp_live"
+        self._write_snapshot(
+            campaign_dir,
+            {
+                "id": "camp_live",
+                "title": "Live Probe Save",
+                "active_session_id": "session_live",
+                "world_id": "baldurs-gate",
+                "current_location_id": "loc-lower-city",
+                "locations": {
+                    "loc-lower-city": {
+                        "id": "loc-lower-city",
+                        "name": "Lower City",
+                    },
+                },
+                "party": ["hero"],
+                "characters": {
+                    "hero": {
+                        "id": "hero",
+                        "name": "Probe Hero",
+                        "kind": "player",
+                        "current_hp": 8,
+                        "max_hp": 8,
+                    },
+                },
+            },
+        )
+        moves = self._tmp / "play-123" / "player_moves.jsonl"
+        moves.parent.mkdir()
+        moves.write_text(json.dumps({"kind": "check", "text": "roll d20"}) + "\n", encoding="utf-8")
+        art_root = self._tmp / "art-root"
+        image_dir = art_root / "content" / "worlds" / "_private" / "baldurs-gate" / "images" / "location_loc-lower-city"
+        image_dir.mkdir(parents=True)
+        (image_dir / "wiki_ingest.json").write_text(
+            json.dumps({"scope": "location:loc-lower-city", "url": "https://example.invalid/lower-city.png"}),
+            encoding="utf-8",
+        )
+        chat = self._tmp / "play-123" / "chat.jsonl"
+        chat.write_text(
+            json.dumps({"role": "dm", "text": "The d20 result lands."}) + "\n",
+            encoding="utf-8",
+        )
+        (self._tmp / "provider_status.json").write_text(
+            json.dumps({
+                "schema": "worldos.provider-status.v1",
+                "provider": "codex",
+                "status": "stopped",
+                "reason": "turn_cap",
+                "detail": "Codex DM stopped after reaching the configured max turns.",
+                "max_turns": 3,
+                "dm_turns": 3,
+            }),
+            encoding="utf-8",
+        )
+        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_ART_REPO_ROOT"] = str(art_root)
+        os.environ["WORLDOS_PROVIDER"] = "codex"
+        _QuietHandler.campaign_id = "camp_live"
+        _QuietHandler.chat_path = str(chat)
+
+        status, _ctype, body = self._get("/app-status?campaign=camp_live")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["viewer"]["provider_status"]["status"], "stopped")
+        self.assertEqual(payload["viewer"]["provider_status"]["reason"], "turn_cap")
+        self.assertTrue(payload["live"]["surface_can_act"])
+        self.assertFalse(payload["live"]["pending_player_turn"])
+        self.assertFalse(payload["live"]["can_act"])
+        self.assertEqual(payload["live"]["enabled_action_ids"], [])
+        self.assertEqual(payload["live"]["enabled_action_count"], 0)
+        self.assertEqual(payload["readiness"]["status"], "degraded")
+        self.assertFalse(payload["readiness"]["ready_for_play"])
+        self.assertEqual(payload["readiness"]["failure_bucket"], "no_provider")
+        self.assertIn("configured max turns", payload["readiness"]["failure_detail"])
+        self.assertEqual(payload["health"]["provider_status"]["status"], "stopped")
+
     def test_chat_file_summary_ignores_malformed_trailing_row(self):
         chat = self._tmp / "chat.jsonl"
         chat.write_text(
