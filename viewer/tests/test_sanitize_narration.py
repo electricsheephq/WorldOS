@@ -230,6 +230,30 @@ class SanitizeNarrationTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(value, "The lock holds.")
 
+    def test_wrapper_progress_placeholders_do_not_become_story(self):
+        cases = {
+            "opening": "The first scene gathers around you; voices, risks, and choices come into focus.",
+            "move_1": "Your choice takes hold; nearby voices, risks, and consequences begin to answer.",
+            "move_2": "The world turns with your action; the scene shifts toward its answer.",
+            "move_3": "Your move lands; attention gathers around what changes next.",
+            "move_4": "Momentum carries through the scene; consequences are beginning to surface.",
+            "mixed": (
+                "The guard leans closer.\n"
+                "The world turns with your action; the scene shifts toward its answer.\n"
+                "The rooftop hand tightens on the dart."
+            ),
+            "near_miss": (
+                "The world turns with your action; the scene shifts toward its answer "
+                "as the gate opens."
+            ),
+        }
+        out = self._sanitize_many(cases)
+        for key in ("opening", "move_1", "move_2", "move_3", "move_4"):
+            with self.subTest(case=key):
+                self.assertEqual(out[key], "")
+        self.assertEqual(out["mixed"], "The guard leans closer.\nThe rooftop hand tightens on the dart.")
+        self.assertEqual(out["near_miss"], cases["near_miss"])
+
 
 if __name__ == "__main__":
     unittest.main()
