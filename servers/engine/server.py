@@ -1048,6 +1048,18 @@ def _class_level_hp(class_name: str, level: int, con_mod: int) -> "int | None":
     return max(1, die + con_mod + (lvl - 1) * per_level_after_first)
 
 
+# #624: iconic SRD default subclass per class — fills an UNSET subclass at/above the class's
+# subclass-selection level so a created character never shows a BLANK build choice (a level-3
+# Wizard with no Arcane Tradition reads as an unfinished build and a min-maxer bails). The
+# interactive picker is #397; this is the honest default until then. An explicit subclass wins.
+_DEFAULT_SUBCLASS = {
+    "barbarian": "Path of the Berserker", "bard": "College of Lore", "cleric": "Life Domain",
+    "druid": "Circle of the Land", "fighter": "Champion", "monk": "Way of the Open Hand",
+    "paladin": "Oath of Devotion", "ranger": "Hunter", "rogue": "Thief",
+    "sorcerer": "Draconic Bloodline", "warlock": "The Fiend", "wizard": "School of Evocation",
+}
+
+
 def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
     """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
     hit dice, level-1 HP (max die + CON), proficiency bonus, class base AC (when
@@ -1101,6 +1113,14 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 explicit = [s for s in pool if s != "any" and s in SKILL_ABILITIES]
                 pool = explicit + [s for s in SKILL_ABILITIES if s not in explicit]
             ch.skill_proficiencies = pool[: int(sk.get("count", 0))]
+        # #624: at/above the class's subclass-selection level (3, warlock 6), a blank subclass
+        # reads as an unfinished build — the optimizer bailed at turn 2 on "unresolved build
+        # choices". Fill the iconic SRD default when the caller chose none (explicit always wins).
+        _sub_at = 6 if cname == "warlock" else 3
+        if level >= _sub_at and ch.classes and not str(ch.classes[0].subclass or "").strip():
+            _def_sub = _DEFAULT_SUBCLASS.get(cname)
+            if _def_sub:
+                ch.classes[0].subclass = _def_sub
         _recompute_spellcasting(ch)
         _seed_starting_spells(ch, cname, level)
         _recompute_class_resources(ch)

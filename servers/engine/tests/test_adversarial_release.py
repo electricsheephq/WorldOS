@@ -230,3 +230,23 @@ def test_any_skill_class_resolves_to_concrete_skills():
     assert skills, "Bard should have default skill proficiencies, not an empty sheet"
     assert "any" not in skills, f"unresolved 'any' placeholder persisted: {skills}"
     assert len(skills) == 3, f"Bard should get 3 concrete skills, got {skills}"
+
+
+def test_subclass_filled_at_subclass_level_when_unset():
+    # #624: a character created at/above its subclass level with no subclass must get the iconic
+    # SRD default (not a BLANK build) — the optimizer bailed at turn 2 on "unresolved build
+    # choices". The interactive picker is #397; this is the honest interim default. Explicit wins.
+    cid = _campaign()
+    wiz = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                  level=3, apply_srd_defaults=True)["id"]
+    wclasses = server.get_character(cid, wiz).get("classes") or []
+    assert wclasses and (wclasses[0].get("subclass") or "").strip(), "L3 wizard must carry a subclass"
+    assert "Evocation" in wclasses[0]["subclass"], wclasses[0]["subclass"]
+    # below the subclass level → still unset (no premature subclass)
+    f1 = server.create_character(cid, "Recruit", kind="player", class_name="Fighter",
+                                 level=1, apply_srd_defaults=True)["id"]
+    assert not ((server.get_character(cid, f1).get("classes") or [{}])[0].get("subclass") or "").strip()
+    # an explicit subclass is preserved (the default never overwrites a choice)
+    rg = server.create_character(cid, "Sneak", kind="player", class_name="Rogue", level=3,
+                                 subclass="Arcane Trickster", apply_srd_defaults=True)["id"]
+    assert (server.get_character(cid, rg).get("classes") or [{}])[0].get("subclass") == "Arcane Trickster"
