@@ -157,3 +157,14 @@ def test_play_party_single_flights_the_cold_open_campaign():
     assert "Single-flight (#640)" in party, "play_party.sh lost the single-flight reuse"
     assert "_minted = camp is None" in party, "must only mint when no recent campaign was reused"
     assert "time.time() - os.path.getmtime" in party, "reuse must be scoped by a recency window (this run only)"
+
+
+def test_play_party_drives_the_arc_runbook():
+    """G1 (2026-06-03): the .app DM path (play_party.sh) must DRIVE the story arc per beat via the
+    shared clawdnd_runbook_for_beat (the same arc-driver run_duo.sh uses, which reaches engine
+    combat/travel/rest). Without it the DM was purely reactive and free-play personas finished at
+    the intro — the full 8-beat arc never fired (G1 fail). Mirrors play.sh/run_duo arc-driving."""
+    party = _src("scripts/play_party.sh")
+    assert "clawdnd_runbook_for_beat" in party, "play_party.sh must call the shared arc runbook"
+    assert "BEAT_NO=$((BEAT_NO + 1))" in party, "must advance a per-beat counter for the runbook"
+    assert 'turn dm "$DSID" 0 "$RUNBOOK' in party, "the runbook must be injected into the DM beat turn"

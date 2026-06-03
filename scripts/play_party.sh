@@ -579,6 +579,11 @@ MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
 # CLAWDND_PLAY_MAX_IDLE seconds (default 30 min) with no new move; relaunch when you're ready.
 MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-1800}"
 last_activity=$SECONDS
+# G1: drive the story arc per beat via the SHARED runbook (clawdnd_runbook_for_beat in
+# lib_beat_driver.sh) — the SAME arc-driver run_duo.sh uses (which reaches combat/travel/rest).
+# Without it the .app DM was purely reactive, so free-play personas finished at the intro and the
+# full 8-beat arc (parley → engine combat → travel → rest → travel) never fired (G1 fail, 2026-06-03).
+BEAT_NO=0; PREV_LOC=""
 while true; do
   over_budget && break
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
@@ -590,6 +595,13 @@ while true; do
     [ -z "$PMSG" ] && continue
     echo "[play-party] you: ${PMSG:0:100}"
     chatlog player "$PMSG"
+
+    # G1 arc-driver: pick this beat's moment-specific runbook (scene-intro / midpoint reversal /
+    # climax / travel-peopling / rising-action) off the engine's progress, like run_duo.sh. Nominal
+    # 8-beat arc so the phases progress as the session builds. Injected into the DM turn below.
+    BEAT_NO=$((BEAT_NO + 1))
+    RUNBOOK="$(clawdnd_runbook_for_beat "$BEAT_NO" 8 "$PREV_LOC" "$STATE_DIR")"
+    echo "[play-party] beat $BEAT_NO runbook: ${RUNBOOK%% (*}…"
 
     # Each living companion reacts to the LAST DM narration + (implicitly) the unfolding
     # beat, taking its own move via its facade. Relay ONLY structured moves to the DM.
@@ -610,7 +622,9 @@ $PMSG${COMP_BLOCK:+
 
 $COMP_BLOCK}"
 
-    DMSG="$(turn dm "$DSID" 0 "This beat, the party acts (resolve EACH actor's structured moves through the engine — roll/cast/attack/use as needed; a companion's [attack] on an ALLY is a real betrayal, resolve it as combat, do not soften it into narration):
+    DMSG="$(turn dm "$DSID" 0 "$RUNBOOK
+
+This beat, the party acts (resolve EACH actor's structured moves through the engine — roll/cast/attack/use as needed; a companion's [attack] on an ALLY is a real betrayal, resolve it as combat, do not soften it into narration):
 
 $PARTY_BLOCK
 
@@ -621,6 +635,8 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     # player-facing narration the engine logged this beat so the chat is never blank.
     DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
     chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
+    # Remember this beat's location so the next beat's runbook can detect a stuck party (travel cue).
+    PREV_LOC="$(printf '%s' "$(clawdnd_read_progress "$STATE_DIR")" | cut -f5)"
   else
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
       echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
