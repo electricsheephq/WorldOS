@@ -135,6 +135,15 @@ DM_LOG="$STATE_DIR/dm"          # per-turn stream-json files: $DM_LOG.<ts>.jsonl
 COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"  # every agent turn's stream (cost accounting)
 VIEWER_LOG="$STATE_DIR/viewer.log"
 
+# #623: the live-progress rule (parity with scripts/play_codex_dm.sh's LIVE_PROGRESS_LOG_RULE).
+# Without it the claude/plugin DM emits NOTHING to /events until the full 85-157s beat completes,
+# so the viewer shows blank and the player (and a persona playtester) perceives a "dropped"/"hung"
+# beat — the single biggest story-persona satisfaction drag (sweep_v8 forensics: healthy beats,
+# zero streaming refs). Instructing the DM to log ONE early narration progress-beat makes /events
+# show visible story progress while the turn is still composing (the #571 streaming lever, which
+# play_party.sh — the .app's AND the VM sweep's DM path — was missing while play_codex_dm.sh had it).
+CLAWDND_LIVE_PROGRESS_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") ONCE with a short, non-duplicate, player-facing progress beat BEFORE any longer resolution work. This is how /events shows visible story progress while your turn is still running. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+
 # --- DM config: the three plugin MCP servers, engine pointed at this game's state dir,
 # silent voice backend — IDENTICAL wiring to play.sh (the DM runs the full plugin). -----
 python3 - "$ROOT" "$STATE_DIR" "$DM_CFG" <<'PY'
@@ -248,6 +257,9 @@ turn() {
   local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
+    # #623: prepend the live-progress rule so the DM logs an early /events narration beat (parity
+    # with play_codex_dm.sh) — without it the long beat shows blank → the perceived drop/hang.
+    msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
     # LEAN beats (CLAWDND_LEAN_BEATS=1, now the default): a CONTINUING DM beat (first=0) starts a
     # FRESH session + a re-ground directive instead of --resume-ing the fat transcript — the SAME
     # shared implementation scripts/play.sh + qa/run_duo.sh use (clawdnd_dm_lean_args in
