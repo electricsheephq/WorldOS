@@ -165,6 +165,16 @@ function _stripInlineMarkdown(line) {
     .replace(/\*([^*\n]+)\*/g, "$1")
     .replace(/(^|[^A-Za-z0-9])_([^_\n]+)_([^A-Za-z0-9]|$)/g, "$1$2$3");
 }
+const _WRAPPER_PROGRESS_LINES = new Set([
+  "The first scene gathers around you; voices, risks, and choices come into focus.",
+  "Your choice takes hold; nearby voices, risks, and consequences begin to answer.",
+  "The world turns with your action; the scene shifts toward its answer.",
+  "Your move lands; attention gathers around what changes next.",
+  "Momentum carries through the scene; consequences are beginning to surface.",
+]);
+function _isWrapperProgressLine(line) {
+  return _WRAPPER_PROGRESS_LINES.has((line || "").trim());
+}
 function sanitizeNarration(text) {
   if (typeof text !== "string" || !text) return "";
   const kept = text
@@ -178,7 +188,9 @@ function sanitizeNarration(text) {
     // …then drop any line that is wholly a #335 advisory/tool-name internal line (or was
     // emptied by the scaffolding strip above — _isInternalLine returns false on "", so an
     // emptied line survives as "" and is harmlessly collapsed by the blank-run join below).
-    .filter((line) => !_isInternalLine(line));
+    // Also drop the wrapper-authored generic progress placeholders. They are useful only while
+    // a provider turn is in flight; once the real DM beat arrives they read like canned story prose.
+    .filter((line) => !_isInternalLine(line) && !_isWrapperProgressLine(line));
   // Collapse the blank-line runs an excised directive may leave behind.
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
