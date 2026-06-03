@@ -153,6 +153,25 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("provider to write one short engine-owned progress narration", app)
         self.assertIn("when /events progress arrives, it keeps a healthy turn alive", app)
 
+    def test_codex_dm_provider_publishes_turn_cap_stop_status(self):
+        script = self.read("scripts/play_codex_dm.sh")
+        server = self.read("viewer/server.py")
+
+        self.assertIn('PROVIDER_STATUS="$RUN_DIR/provider_status.json"', script)
+        self.assertIn("write_provider_status() {", script)
+        self.assertIn('"schema": "worldos.provider-status.v1"', script)
+        self.assertIn('write_provider_status "running" "active"', script)
+        self.assertIn('write_provider_status "stopped" "turn_cap"', script)
+        self.assertIn("WORLDOS_PROVIDER_STOP_GRACE_SECONDS", script)
+        self.assertIn('tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")', script)
+        self.assertIn("os.fsync(handle.fileno())", script)
+        self.assertIn("tmp_path.replace(path)", script)
+
+        self.assertIn("def _provider_status_summary() -> dict:", server)
+        self.assertIn('"provider_status": provider_status', server)
+        self.assertIn('provider_lifecycle in {"stopped", "failed", "exhausted"}', server)
+        self.assertIn("DM provider is no longer running", server)
+
     def test_scripted_provider_is_dev_gated_and_model_free(self):
         models = self.read("macos/WorldOSApp/Sources/WorldOSApp/Models/ProviderModels.swift")
         providers = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/ProviderAdapters.swift")
