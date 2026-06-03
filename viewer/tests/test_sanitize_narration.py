@@ -183,6 +183,53 @@ class SanitizeNarrationTests(unittest.TestCase):
         self.assertNotIn("cold open", out.lower())
         self.assertNotIn("meeting beat", out.lower())
 
+    def test_inline_markdown_emphasis_is_plain_text_for_players(self):
+        # Live Codex-provider proof on 43e62e5 produced a roll beat that rendered
+        # the raw Markdown marker in the Chronicle: "settles on **11**." The
+        # player-facing projection should keep the number while dropping the
+        # formatting syntax; React will not render Markdown for us.
+        cases = {
+            "bold_roll": "The die settles on **11**.",
+            "italic_note": "The lute gives one *uneasy* hum.",
+            "underscore_italic_note": "The lute gives one _uneasy_ hum.",
+            "inline_code": "The clue is marked `violet wax` near your boot.",
+        }
+        out = self._sanitize_many(cases)
+        self.assertEqual(out["bold_roll"], "The die settles on 11.")
+        self.assertEqual(out["italic_note"], "The lute gives one uneasy hum.")
+        self.assertEqual(out["underscore_italic_note"], "The lute gives one uneasy hum.")
+        self.assertEqual(out["inline_code"], "The clue is marked violet wax near your boot.")
+
+    def test_markdown_wrapped_internal_lines_still_do_not_render(self):
+        cases = {
+            "bold_tool": "**remember**",
+            "underscore_tool": "_remember_",
+            "italic_subtitle": "*What the campaign owes the story*",
+            "bold_advisory": "**GM Advisory:** call remember for the silent NPC.",
+            "underscore_advisory": "_GM Advisory:_ call remember for the silent NPC.",
+            "underscore_kind": "_npc_introduced_silent_: Vanos has not spoken yet.",
+            "dunder_kind": "__npc_introduced_silent__: Vanos has not spoken yet.",
+        }
+        out = self._sanitize_many(cases)
+        self.assertEqual(out["bold_tool"], "")
+        self.assertEqual(out["underscore_tool"], "")
+        self.assertEqual(out["italic_subtitle"], "")
+        self.assertEqual(out["bold_advisory"], "")
+        self.assertEqual(out["underscore_advisory"], "")
+        self.assertEqual(out["underscore_kind"], "")
+        self.assertEqual(out["dunder_kind"], "")
+
+    def test_markdown_wrapped_scaffolding_tallies_are_still_stripped(self):
+        cases = {
+            "wrapped_count": "The lock holds after **three** failed social checks.",
+            "wrapped_result": "The lock holds after three **failed** social checks.",
+            "wrapped_noun": "The lock holds after three failed **social checks**.",
+        }
+        out = self._sanitize_many(cases)
+        for value in out.values():
+            with self.subTest(value=value):
+                self.assertEqual(value, "The lock holds.")
+
 
 if __name__ == "__main__":
     unittest.main()
