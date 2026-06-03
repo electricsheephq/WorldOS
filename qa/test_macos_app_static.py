@@ -166,6 +166,12 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")', script)
         self.assertIn("os.fsync(handle.fileno())", script)
         self.assertIn("tmp_path.replace(path)", script)
+        move_turn_increment = 'DM_TURNS=$((DM_TURNS + 1))'
+        self.assertIn(move_turn_increment, script)
+        self.assertLess(
+            script.index(move_turn_increment),
+            script.index('write_provider_status "running" "active"', script.index(move_turn_increment)),
+        )
 
         self.assertIn("def _provider_status_summary() -> dict:", server)
         self.assertIn('"provider_status": provider_status', server)

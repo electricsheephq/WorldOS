@@ -650,6 +650,7 @@ $PMSG")"; then
     fi
     record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"
     DM_TURNS=$((DM_TURNS + 1))
+    write_provider_status "running" "active" "Codex DM provider is running."
   else
     sleep 2
   fi
