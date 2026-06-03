@@ -174,14 +174,40 @@ PY
 # (the persona/agenda NEVER does). Prints JSON: {campaign_id, companions:[{id,name,persona}]}.
 # Run under `uv` from the engine dir (its venv has mcp/pydantic; bare python3 lacks them).
 SEED_JSON="$(CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "$COMPANION_SPEC" <<'PY'
-import json, sys
+import json, sys, os, glob, time
 world, spec = sys.argv[1], sys.argv[2]
 import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
 
-# A new campaign in this world, with an active session. If the world returns existing
-# campaigns we still start a fresh one (start_world mints a new campaign id).
-camp = server.start_world(world)["campaign_id"]
-server.start_session(camp, title="Dashboard party")
+# Single-flight (#640): REUSE a RECENT, fully-seeded campaign in this state dir rather than minting a
+# parallel one. The .app's native RESUME and the part-B harness each run this pre-seed; minting a
+# fresh campaign each launch creates DIVERGENT campaigns, so the viewer's is_live_view (= viewed ==
+# attached) latches False → frozen chronicle + "viewing non-live campaign" read-only lockout (the #1
+# cross-persona G3 blocker, measured 2026-06-03). The 30-min window scopes reuse to THIS run, so a
+# stale cross-run campaign in the same state dir is never resurrected.
+camp = None
+companions = []
+_camps_dir = os.path.join(os.environ.get("CLAWDND_STATE_DIR", ""), "campaigns")
+for _snap in sorted(glob.glob(os.path.join(_camps_dir, "camp_*", "snapshot.json")), key=os.path.getmtime, reverse=True):
+    if time.time() - os.path.getmtime(_snap) > 1800:
+        break  # newest-first list; once we pass the window, all the rest are older too
+    try:
+        _d = json.load(open(_snap))
+    except Exception:
+        continue
+    if _d.get("world_id") != world:
+        continue
+    _comps = [{"id": _cid, "name": _c.get("name"), "persona": "qa/play_companion.txt"}
+              for _cid, _c in (_d.get("characters") or {}).items() if _c.get("kind") == "companion"]
+    if _comps:  # a prior launch already seeded this world here → reuse it (no parallel campaign)
+        camp = _d.get("campaign_id") or os.path.basename(os.path.dirname(_snap))
+        companions = _comps
+        break
+
+_minted = camp is None
+if _minted:
+    # A new campaign in this world, with an active session (first launch / no recent campaign).
+    camp = server.start_world(world)["campaign_id"]
+    server.start_session(camp, title="Dashboard party")
 
 # Each companion: a fresh kind="companion" with an SRD sheet, added to the party. The
 # player PC is intentionally NOT created here (the DM creates the human PC live). Spec
@@ -191,8 +217,7 @@ server.start_session(camp, title="Dashboard party")
 # sealed agenda (that lives solely in the persona PROMPT, read later by the shell).
 # Companions are COMMA-separated (so a spell field can contain spaces like "Cure Wounds");
 # fields within a token are ":"-separated; spells "|"-separated.
-companions = []
-for tok in (t for t in spec.split(",") if t.strip()):
+for tok in (t for t in (spec.split(",") if _minted else []) if t.strip()):
     parts = tok.strip().split(":")
     name = parts[0].strip()
     cls = parts[1] if len(parts) > 1 and parts[1] else "fighter"
