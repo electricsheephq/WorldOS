@@ -158,8 +158,12 @@ def test_update_character_skills_alias_maps_to_proficiencies(tmp_path, monkeypat
     pc = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
     out = server.update_character(
         cid, pc, {"skills": ["Arcana", "History"], "expertise": ["Arcana"]})
-    assert out["skill_proficiencies"] == ["Arcana", "History"]
-    assert out["skill_expertise"] == ["Arcana"]
+    # Normalized to the lowercase-underscore SKILL_ABILITIES keys (Character._normalize_skill_case,
+    # 2026-06-03): a DM passing the natural Capitalized names must STILL produce proficiencies that
+    # match everywhere (skill_bonus / the viewer Skills tab) — capitalized values silently matched
+    # nothing and rendered "0 proficient" (optimizer crit).
+    assert out["skill_proficiencies"] == ["arcana", "history"]
+    assert out["skill_expertise"] == ["arcana"]
     with pytest.raises(Exception):
         server.update_character(cid, pc, {"skilz": ["Stealth"]})
 
