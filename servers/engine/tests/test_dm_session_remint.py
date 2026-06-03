@@ -107,3 +107,18 @@ def test_all_three_harnesses_remint_on_retry():
     # run_duo.sh's cold-open ($3=1) retry mints a fresh id rather than reusing $2.
     assert 'if [ "${3:-}" = "1" ]; then' in duo
     assert 'turn "$1" "$_fresh" "$3" "${@:4}"' in duo
+
+
+def test_play_party_dm_has_live_progress_rule():
+    """#623: play_party.sh (the .app + VM-sweep claude DM path) must apply a live-progress rule so
+    the DM logs an EARLY /events narration beat — parity with play_codex_dm.sh's
+    LIVE_PROGRESS_LOG_RULE. Without it the DM emits nothing to /events until the full 85-157s beat
+    completes, so the viewer shows blank and a player/persona perceives a 'dropped'/'hung' beat
+    (sweep_v8 forensics: healthy beats, zero streaming refs). Guards against the rule being lost or
+    the three harnesses drifting."""
+    party = _src("scripts/play_party.sh")
+    assert "CLAWDND_LIVE_PROGRESS_RULE=" in party, "play_party.sh lost the live-progress rule definition"
+    assert 'msg="$CLAWDND_LIVE_PROGRESS_RULE"' in party, "the rule must be applied to the DM turn message"
+    assert "Live progress rule" in party and "log_event" in party and "narration" in party
+    # parity: the codex DM path already carried this intent.
+    assert "LIVE_PROGRESS_LOG_RULE" in _src("scripts/play_codex_dm.sh")
