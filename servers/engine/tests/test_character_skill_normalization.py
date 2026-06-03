@@ -8,17 +8,12 @@ and skill checks that miss the proficiency bonus (a L5 Wizard/Sage showed Arcana
 Character._normalize_skill_case normalizes at the model boundary; load_canon_character runs it via
 model_validate, so the seat path + saved snapshot end up correct.
 """
-import importlib.util
-from pathlib import Path
-
-_SPEC = importlib.util.spec_from_file_location("wos_models", Path(__file__).resolve().parents[1] / "models.py")
-models = importlib.util.module_from_spec(_SPEC)
-assert _SPEC.loader is not None
-_SPEC.loader.exec_module(models)
+import server  # noqa: F401 — importing the engine resolves Character's forward refs (model_rebuild)
+from models import Character, SKILL_ABILITIES
 
 
 def test_skill_names_normalized_to_lowercase_underscore():
-    ch = models.Character.model_validate({
+    ch = Character.model_validate({
         "id": "rolan", "name": "Rolan",
         "classes": [{"name": "Wizard", "level": 5}],
         "abilities": {"intelligence": 17},
@@ -33,14 +28,14 @@ def test_skill_names_normalized_to_lowercase_underscore():
 def test_skill_bonus_finds_proficiency_after_normalization():
     """The whole point: skill_bonus must add the proficiency bonus for a (formerly capitalized)
     proficient skill — Arcana = INT mod + proficiency_bonus, not the bare INT mod."""
-    ch = models.Character.model_validate({
+    ch = Character.model_validate({
         "id": "rolan", "name": "Rolan",
         "classes": [{"name": "Wizard", "level": 5}],
         "abilities": {"intelligence": 17},  # +3
         "proficiency_bonus": 3,
         "skill_proficiencies": ["Arcana"],
     })
-    int_mod = ch.ability_modifier(models.SKILL_ABILITIES["arcana"])
+    int_mod = ch.ability_modifier(SKILL_ABILITIES["arcana"])
     assert ch.skill_bonus("arcana") == int_mod + 3
     # a non-proficient skill stays at the bare ability modifier
-    assert ch.skill_bonus("nature") == ch.ability_modifier(models.SKILL_ABILITIES["nature"])
+    assert ch.skill_bonus("nature") == ch.ability_modifier(SKILL_ABILITIES["nature"])
