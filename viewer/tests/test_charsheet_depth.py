@@ -224,6 +224,22 @@ class CharsheetDepthTests(unittest.TestCase):
         elara = self._party(surface)["elara"]
         self.assertEqual(elara["classFeatures"], [])
 
+    def test_surface_flags_pending_subclass_choice(self):
+        # #397 (read-model increment 1): a character at/above its subclass-selection level (3;
+        # warlock 6) with NO subclass set must flag pendingSubclass=True so the character screen
+        # can offer the build-choice picker. Detect, not auto-fill (#624 proved auto-fill pre-empts
+        # the choice). With a subclass set, or below the level, it's False.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["elara"]["classes"][0]["subclass"] = None  # L3 wizard, no Arcane Tradition
+        self._write("camp_pend", snap)
+        _s, surface = self._get_json("/character-surface?campaign=camp_pend")
+        self.assertTrue(self._party(surface)["elara"]["pendingSubclass"])
+        # the default snapshot: elara has "School of Evocation", thornwick (L4 fighter) has "Champion"
+        self._write("camp_set", copy.deepcopy(_SNAPSHOT))
+        _s2, surface2 = self._get_json("/character-surface?campaign=camp_set")
+        self.assertFalse(self._party(surface2)["elara"]["pendingSubclass"])
+        self.assertFalse(self._party(surface2)["thornwick"]["pendingSubclass"])
+
 
 if __name__ == "__main__":
     unittest.main()
