@@ -122,3 +122,21 @@ def test_play_party_dm_has_live_progress_rule():
     assert "Live progress rule" in party and "log_event" in party and "narration" in party
     # parity: the codex DM path already carried this intent.
     assert "LIVE_PROGRESS_LOG_RULE" in _src("scripts/play_codex_dm.sh")
+
+
+def test_run_duo_p0_intro_is_robust_plain_text():
+    """G5: the duo's opening player intro (P0) must be a retry-safe PLAIN-TEXT capture, not a
+    pre-world say() tool call. The world/session does not exist yet at P0, so a say() move never
+    lands in $MOVES and the old bare-player_move path returned empty -> 'player produced no intro
+    -- aborting', killing every duo run before beat 1 (the G5 story/mechanical scores could never
+    be measured). The fix: capture the agent's `.result` via turn_retry (which re-mints a fresh
+    session on an empty cold-open attempt, the retry safety D1 already had and P0 lacked), and ask
+    for prose rather than a tool call. Guards against regressing to the brittle say()-into-void."""
+    duo = _src("qa/run_duo.sh")
+    # P0 routes through turn_retry (retry-safe), NOT a bare player_move that can silently abort.
+    assert 'PMSG="$(turn_retry player "$PSID" 1' in duo, "P0 intro must use turn_retry, not bare player_move"
+    # the P0 prompt asks for plain-text prose, never a mandatory pre-world say() tool call.
+    assert "ONE OR TWO SENTENCES of plain text" in duo
+    assert "do NOT call say()" in duo
+    # the abort guard stays (an intro is still required) — we made it reachable, not removed it.
+    assert "player produced no intro — aborting" in duo
