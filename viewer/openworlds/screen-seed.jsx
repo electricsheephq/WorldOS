@@ -9,11 +9,16 @@
 // Option tables: each control shows a human LABEL but submits the engine VALUE the
 // /seed-surface params bind to (e.g. narration "florid", chronicle_voice "first_person_plural").
 const SEED_OPTIONS = {
+  // Notes describe the NARRATIVE register each tone sows (what the engine actually shapes via
+  // the chronicle), NOT a chrome palette. The chrome palette is the user's own theme tweak
+  // (app.jsx `data-palette`: warm/cool/dark) and is decoupled from the seed tone — the old copy
+  // ("Gold, royal blue, candlelight" / "Crimson and walnut" / "Brass and oxblood") promised a
+  // visual shift that selecting a tone never produces (S-06). Honest copy, render-only.
   tone: [
-    { value: "Heroic", label: "Heroic", note: "Gold, royal blue, candlelight. Players are who they say they are." },
-    { value: "Grim", label: "Grim", note: "Crimson and walnut. Successes are uncomfortable. Most are." },
+    { value: "Heroic", label: "Heroic", note: "Players are who they say they are. Valour reads as valour." },
+    { value: "Grim", label: "Grim", note: "Successes are uncomfortable. Most are." },
     { value: "Picaresque", label: "Picaresque", note: "The party will lie. The chronicle will pretend not to notice." },
-    { value: "Mythic", label: "Mythic", note: "Brass and oxblood. The land is older than the law and is winning." },
+    { value: "Mythic", label: "Mythic", note: "The land is older than the law, and is winning." },
   ],
   difficulty: [
     { value: "easy", label: "Story", note: "Combat is forgiving. The chronicle is the point." },
