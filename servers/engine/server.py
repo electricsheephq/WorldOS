@@ -1863,8 +1863,41 @@ def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         spawned = []
+        # ID-reconcile (combat seam): re-staging a creature already standing pristine on the
+        # table — a second spawn_monster("Ogre") for "the ogre" the DM just described — must
+        # NOT mint a fresh duplicate id. A duplicate the DM never targets stays in the
+        # initiative order at full HP, so end_combat reports a live hostile after the REAL
+        # foe is killed, the behavioral gate goes RED, and a clean fight is judged broken
+        # (dc0d625 sweep: end_combat fired with a living Ogre while the duo had actually won).
+        # Reuse pristine, in-scene copies of this TYPE — alive, undamaged, no conditions, NOT
+        # already in the active combat order (so two foes the DM is genuinely fighting are
+        # never collapsed) — before minting any new record. Deterministic (sorted by id).
+        in_combat_ids = {cb.character_id for cb in c.combat.order}
+        reusable = sorted(
+            (
+                ch for ch in c.characters.values()
+                if ch.kind == "monster"
+                and getattr(ch, "creature_slug", "") == slug
+                and slug != ""
+                and not ch.dead
+                and ch.current_hp == ch.max_hp
+                and ch.current_hp > 0
+                and ch.temp_hp == 0
+                and not ch.conditions
+                and ch.xp_value == sb["xp"]
+                and ch.id not in in_combat_ids
+            ),
+            key=lambda ch: ch.id,
+        )
         for i in range(n):
             label = f"{sb['name']} {i + 1}" if n > 1 else sb["name"]
+            if reusable:
+                # Reconcile onto the existing record: reuse its id (the DM's "the ogre"),
+                # refresh the label so numbering stays consistent, and report reused=True.
+                ch = reusable.pop(0)
+                ch.name = label
+                spawned.append({"id": ch.id, "name": ch.name, "reused": True})
+                continue
             ch = Character(
                 name=label,
                 kind="monster",
