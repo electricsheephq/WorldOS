@@ -515,6 +515,104 @@ function StepPortrait({ hero, setHero }) {
   const [genState, setGenState] = React.useState(hero.portraitMode === "gen" ? "done" : "idle");
   const toast = window.useToast ? window.useToast() : (() => {});
   const genMode = hero.portraitMode === "gen" && !!hero.portraitGenScope;
+  // #376 / #315 AC4 — "Bring your own": a drop zone + file picker that uploads a PNG/JPEG and
+  // threads it through the SAME provisional-scope seam the generated face uses (portrait-pc-<hash>
+  // -> bindHero {mode:"gen", scope} -> play.sh re-keys onto portrait-<char_id>). uploadState:
+  // "idle" | "uploading". byoPreview holds an object-URL for an instant local preview while the
+  // upload lands; it's revoked on the next pick / unmount so we don't leak blob URLs.
+  const [uploadState, setUploadState] = React.useState("idle");
+  const [byoPreview, setByoPreview] = React.useState("");
+  const fileInputRef = React.useRef(null);
+  const byoPreviewRef = React.useRef("");
+  React.useEffect(function cleanupByoPreview() {
+    return function () { if (byoPreviewRef.current) URL.revokeObjectURL(byoPreviewRef.current); };
+  }, []);
+
+  const BYO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — mirrors the server cap + the UI copy.
+  const BYO_TYPES = ["image/png", "image/jpeg"];
+
+  const clearByoPreview = () => {
+    if (byoPreviewRef.current) { URL.revokeObjectURL(byoPreviewRef.current); byoPreviewRef.current = ""; }
+    setByoPreview("");
+  };
+  const setLocalPreview = (file) => {
+    const url = URL.createObjectURL(file);
+    if (byoPreviewRef.current) URL.revokeObjectURL(byoPreviewRef.current);
+    byoPreviewRef.current = url;
+    setByoPreview(url);
+  };
+
+  // Read a File -> base64 string (no data-URL prefix) for the upload body.
+  const fileToBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const out = String(reader.result || "");
+      const comma = out.indexOf(",");
+      resolve(comma >= 0 ? out.slice(comma + 1) : out);
+    };
+    reader.onerror = () => reject(reader.error || new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+
+  const acceptFile = async (file) => {
+    if (!file) return;
+    if (uploadState === "uploading") return; // one in-flight upload
+    // Reject non-image MIME / oversize INLINE — never a console throw, never a silent no-op (AC5).
+    if (!BYO_TYPES.includes(file.type)) {
+      toast({ kind: "danger", title: "That file isn't a portrait", body: "Bring a PNG or JPEG image." });
+      return;
+    }
+    if (file.size > BYO_MAX_BYTES) {
+      toast({ kind: "danger", title: "Image too large", body: "Keep your portrait under 5 MB." });
+      return;
+    }
+    setLocalPreview(file); // instant local preview (AC2) while the bytes land server-side.
+    setUploadState("uploading");
+    try {
+      const bytes = await fileToBase64(file);
+      const resp = await fetch("/portrait-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mime: file.type,
+          bytes,
+          race: hero.race,
+          class: hero.class,
+          name: (hero.name || "").trim(),
+        }),
+      });
+      const res = await resp.json().catch(() => ({}));
+      if (res && res.ok && res.scope) {
+        // Reuse the generated-face seam: the upload now resolves via <Img scope=…> on every
+        // surface, and bindHero carries {mode:"gen", scope} so play.sh re-keys it onto the PC.
+        setHero({ ...hero, portraitMode: "gen", portraitGenScope: res.scope });
+        setGenState("done");
+        setUploadState("idle");
+        return;
+      }
+      setUploadState("idle");
+      clearByoPreview();
+      toast({ kind: "danger", title: "Couldn't use that image", body: (res && res.reason) || "Try a different PNG or JPEG." });
+    } catch (err) {
+      setUploadState("idle");
+      clearByoPreview();
+      toast({ kind: "danger", title: "Couldn't use that image", body: "Try a different PNG or JPEG." });
+    }
+  };
+
+  const onByoDrop = (e) => {
+    e.preventDefault(); // stop the browser navigating away to the dropped file (the old broken behavior).
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    acceptFile(file);
+  };
+  const openFilePicker = () => { if (fileInputRef.current) fileInputRef.current.click(); };
+  const onByoKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      openFilePicker();
+    }
+  };
+
   const portraitChoiceState = portraitChoicesForRace(hero.race);
   const galleryChoices = portraitChoiceState.choices;
   const usingGalleryFallback = portraitChoiceState.usingFallback;
@@ -655,8 +753,76 @@ function StepPortrait({ hero, setHero }) {
       </div>
 
       <Divider />
-      <div className="hand muted">
-        Bring your own — drop a PNG onto any frame to replace it.
+
+      {/* #376 / #315 AC4 — "Bring your own": a real drop zone + file picker. Keyboard-reachable
+          (focusable, Space/Enter open the native picker; role=button + aria-label for AT). Accepts
+          PNG/JPEG up to 5 MB; anything else is rejected with an inline toast (never a console throw,
+          never a silent no-op). On a valid pick the upload lands via /portrait-upload and joins the
+          generated-face seam, so it persists through bindHero -> play.sh re-key like any unique face. */}
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start" }}>
+        <div>
+          {/* Live local preview of the uploaded face (object-URL) until/after the bytes land. */}
+          {byoPreview ? (
+            <img
+              src={byoPreview}
+              alt="your uploaded portrait"
+              style={{ width: "100%", height: 150, objectFit: "cover", display: "block",
+                boxShadow: "inset 0 0 0 2px var(--b-500), 0 0 16px -2px var(--gold-glow)" }}
+            />
+          ) : (
+            <Placeholder label="your own face" w="100%" h={150} framed />
+          )}
+        </div>
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Bring your own</div>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Bring your own portrait"
+            data-worldos-testid="portrait-byo-dropzone"
+            onClick={openFilePicker}
+            onKeyDown={onByoKeyDown}
+            onDrop={onByoDrop}
+            onDragOver={(e) => e.preventDefault()}
+            onDragEnter={(e) => e.preventDefault()}
+            style={{
+              padding: "18px 14px",
+              textAlign: "center",
+              cursor: uploadState === "uploading" ? "progress" : "pointer",
+              color: "var(--ink-700)",
+              background: "rgba(176,141,87,0.06)",
+              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+              lineHeight: 1.5,
+            }}
+          >
+            <div className="body-sm" style={{ color: "var(--ink-800)" }}>
+              {uploadState === "uploading"
+                ? "Setting your face…"
+                : "Drop a PNG or JPEG here, or choose a file."}
+            </div>
+            <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Up to 5 MB. This face becomes your hero on every screen.
+            </div>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            data-worldos-testid="portrait-byo-input"
+            onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; acceptFile(f); }}
+            style={{ display: "none" }}
+          />
+          <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
+            <BrassButton onClick={openFilePicker} disabled={uploadState === "uploading"}>
+              {uploadState === "uploading" ? "Setting your face…" : "Choose file…"}
+            </BrassButton>
+            {byoPreview && uploadState !== "uploading" && (
+              <BrassButton tone="ghost" size="sm" onClick={() => { clearByoPreview(); setHero({ ...hero, portraitMode: "gallery" }); setGenState("idle"); }}>
+                Use a gallery face
+              </BrassButton>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
