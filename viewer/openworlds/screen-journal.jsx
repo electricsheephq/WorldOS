@@ -22,6 +22,14 @@ function jNpcScope(n) {
   return (n && n.id) ? "portrait-" + n.id : "";
 }
 
+// Drop-cap guard (J-08): the .dropcap class floats a giant ::first-letter, which looks
+// broken when the entry opens on a digit or punctuation (e.g. a quote or "3 days ago…").
+// Only opt into the drop-cap when the first non-space character is an actual letter.
+function journalDropcap(entry) {
+  const ch = String(entry == null ? "" : entry).trim().charAt(0);
+  return /\p{L}/u.test(ch) ? "body dropcap" : "body";
+}
+
 function journalQuestInTab(q, tab) {
   if (tab === "active") return q.status === "active";
   if (tab === "complete") return q.status === "complete";
@@ -194,6 +202,27 @@ function ScreenJournal({ onNavigate, state, setState }) {
             </div>
           </div>
         )}
+
+        {/* "All caught up" pill (J-06) — when the campaign owes nothing structural, show a
+            small emerald reassurance instead of an empty rail. Gated on a real advisory
+            (source !== "empty"): never fabricated on the no-snapshot / demo fallback, where
+            an honest journal has nothing to say about debts. */}
+        {advisory.source && advisory.source !== "empty" && advisory.total_debts === 0 &&
+          !(Array.isArray(advisory.debts) && advisory.debts.length > 0) && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed rgba(80,50,20,0.3)" }}>
+            <div className="eyebrow" style={{ color: "var(--crimson)", marginBottom: 6 }}>GM Advisory</div>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 10px",
+              background: "rgba(60,140,90,0.12)",
+              boxShadow: "inset 0 0 0 1px var(--emerald)",
+              color: "var(--emerald)",
+            }}>
+              <span aria-hidden="true">✓</span>
+              <span className="eyebrow" style={{ fontSize: 9 }}>All caught up</span>
+            </div>
+          </div>
+        )}
       </Panel>
 
       {/* RIGHT — Two-page spread */}
@@ -254,7 +283,7 @@ function ScreenJournal({ onNavigate, state, setState }) {
 
             <Divider />
 
-            <p className="body dropcap" style={{ marginTop: 0 }}>
+            <p className={journalDropcap(quest.entry)} style={{ marginTop: 0 }}>
               {quest.entry}
             </p>
 
