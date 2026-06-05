@@ -3405,34 +3405,81 @@ _CLASS_FEATURE_DESCS: "dict | None" = None
 
 
 def _class_feature_desc_map() -> dict:
-    """name -> SRD description for class/subclass features (data/srd/class_features.json).
+    """(class, name) -> SRD description for class/subclass features (data/srd/class_features.json).
 
     Lets the character read-model project feature DESCRIPTIONS instead of blank detail — the
     engine already authored these canon SRD entries (260 of them), the read-model was just
-    dropping them, so the Abilities/Feats tabs rendered bare name-lists. Built once and cached;
-    global across every class/level bucket so a feature resolves regardless of which bucket holds
-    it. Honest: a feature with no authored desc stays blank (never fabricated)."""
+    dropping them, so the Abilities/Feats tabs rendered bare name-lists.
+
+    CLASS-AWARE keying (the fix): a feature NAME like "Spellcasting" is SHARED across 7 caster
+    classes with 7 DISTINCT descriptions ("Cast wizard spells using Intelligence…" vs "Cast bard
+    spells using Charisma…"), and so are "Expertise"/"Fighting Style"/"Channel Divinity"/
+    "Unarmored Defense"/"Subclass Feature". Keying by name alone collapsed all of them onto
+    whichever class loaded first (bard, alphabetically), so EVERY caster's Spellcasting read out
+    the bard's text — wrong class AND wrong ability. We key by ``(class_lower, name)`` so the
+    description resolves against the character's ACTUAL class.
+
+    The cache holds two sub-maps:
+      - ``"by_class_feature"``: {(class_lower, name): desc} — the authoritative class-aware lookup.
+      - ``"shared_names"``: the set of feature names that appear with >1 distinct desc across
+        classes — i.e. names we must NEVER resolve without a class (the flat fallback skips them so
+        a name-only lookup can't mislabel a shared feature).
+
+    Built once and cached. Honest: a feature with no authored desc stays blank (never fabricated)."""
     global _CLASS_FEATURE_DESCS
     if _CLASS_FEATURE_DESCS is not None:
         return _CLASS_FEATURE_DESCS
-    out: dict = {}
+    by_class_feature: dict = {}
+    name_descs: dict = {}  # name -> set of distinct descs (to detect shared/ambiguous names)
     try:
         raw = json.loads((_REPO_ROOT / "data" / "srd" / "class_features.json").read_text(encoding="utf-8"))
         if isinstance(raw, dict):
-            for by_level in raw.values():
+            for cls, by_level in raw.items():
                 if not isinstance(by_level, dict):
                     continue
+                cls_key = str(cls or "").strip().lower()
                 for feats in by_level.values():
                     for f in (feats or []):
                         if isinstance(f, dict):
                             nm = str(f.get("name") or "").strip()
                             ds = str(f.get("desc") or "").strip()
                             if nm and ds:
-                                out.setdefault(nm, ds)
+                                by_class_feature.setdefault((cls_key, nm), ds)
+                                name_descs.setdefault(nm, set()).add(ds)
     except Exception:
-        out = {}
-    _CLASS_FEATURE_DESCS = out
-    return out
+        by_class_feature, name_descs = {}, {}
+    shared_names = {nm for nm, descs in name_descs.items() if len(descs) > 1}
+    _CLASS_FEATURE_DESCS = {
+        "by_class_feature": by_class_feature,
+        "shared_names": shared_names,
+        # Flat fallback for legacy/class-less resolution: only UNAMBIGUOUS names (one desc across
+        # all classes) so we can never mislabel a shared feature when the class is unknown.
+        "by_name": {nm: next(iter(descs)) for nm, descs in name_descs.items() if len(descs) == 1},
+    }
+    return _CLASS_FEATURE_DESCS
+
+
+def _feature_desc(class_names: "list[str]", feature_name: str) -> str:
+    """Resolve a class feature's SRD description for a character with class(es) ``class_names``.
+
+    Tries the CLASS-AWARE map ((class, name) -> desc) for each of the character's classes first —
+    so a Wizard's "Spellcasting" gets the wizard/Intelligence text and a Bard's gets the bard/
+    Charisma text. Falls back to the unambiguous flat map only for a non-shared name (a feature
+    whose description is identical across every class that has it, e.g. a uniquely-named class
+    feature). A name that's shared with conflicting descriptions but doesn't match the character's
+    class returns "" rather than guessing the wrong class — honest over fabricated."""
+    maps = _class_feature_desc_map()
+    by_cf = maps["by_class_feature"]
+    for cls in class_names:
+        ck = str(cls or "").strip().lower()
+        if ck:
+            ds = by_cf.get((ck, feature_name))
+            if ds:
+                return ds
+    # No class matched. Only fall back for an unambiguous (non-shared) name.
+    if feature_name in maps["shared_names"]:
+        return ""
+    return maps["by_name"].get(feature_name, "")
 
 
 def _character_sheet(cid: str, ch: dict) -> dict:
@@ -3576,7 +3623,21 @@ def _character_sheet(cid: str, ch: dict) -> dict:
     # two distinct sources so the sheet's Feats tab and Class Features list are not identical
     # duplicates (#286): classFeatures <- features, feats <- notes feat-markers (empty when none).
     features = [_text(f) for f in (ch.get("features") or []) if _text(f)]
-    _feat_descs = _class_feature_desc_map()  # name -> SRD desc, so classFeatures carry detail
+    # Class-aware feature descriptions: resolve each feature's SRD desc against the character's
+    # ACTUAL class(es) so a shared name like "Spellcasting" carries the right class+ability text
+    # (Wizard -> Intelligence, Bard -> Charisma), not whichever class loaded first. _class_feature_names
+    # comes from the engine-set `classes` list (and falls back to the single `class`/`klass` field).
+    _class_feature_names: list[str] = []
+    _classes_list = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    for _cl in _classes_list:
+        if isinstance(_cl, dict):
+            _cn = _text(_cl.get("name") or _cl.get("class_name"))
+            if _cn:
+                _class_feature_names.append(_cn)
+    if not _class_feature_names:
+        _fallback_cls = _text(ch.get("class") or ch.get("klass"))
+        if _fallback_cls:
+            _class_feature_names.append(_fallback_cls)
     feat_names: list[str] = []
     for seg in _text(ch.get("notes")).split("|"):
         seg = seg.strip()
@@ -3632,7 +3693,7 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in feat_names],
         "abilities": [],
         "proficiencies": features,
-        "classFeatures": [{"name": f, "detail": _feat_descs.get(f, "")} for f in features],
+        "classFeatures": [{"name": f, "detail": _feature_desc(_class_feature_names, f)} for f in features],
         "traits": [],
         "dr": {"value": ", ".join(_text(x) for x in (ch.get("damage_resistances") or []) if _text(x)) or "None",
                "energy": ", ".join(_text(x) for x in (ch.get("damage_immunities") or []) if _text(x)) or "None"},
