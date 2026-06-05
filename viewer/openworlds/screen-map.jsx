@@ -436,9 +436,27 @@ function computeAtlasLayout(locations, edges) {
 function edgeStyle(edge) {
   const kind = (edge.route_kind || "").toLowerCase();
   const danger = typeof edge.danger === "number" ? edge.danger : 0;
+  // High-danger routes dominate the style: dark red dashed, regardless of kind.
   if (danger >= 6) return { stroke: "rgba(120,32,32,0.62)", width: 0.7, dash: "1.4 1" };
+  // Urban + extramural surface routes — solid brown.
   if (kind === "street" || kind === "road") return { stroke: "rgba(60,30,10,0.6)", width: 0.85, dash: "" };
+  // Water + crossing — solid blue. "ferry" is now a valid Literal member (#381).
   if (kind === "river" || kind === "ferry" || kind === "sea") return { stroke: "rgba(40,90,120,0.6)", width: 0.7, dash: "" };
+  // Bridge — slightly thicker amber-brown to mark a load-bearing crossing
+  // (Wyrm's Crossing over the Chionthar, etc.) as distinct from a regular road.
+  // Added Loop-10 / #381.
+  if (kind === "bridge") return { stroke: "rgba(110,75,30,0.72)", width: 1.05, dash: "" };
+  // Underground — Underdark passages, Bhaal Temple stairs, sewers. Tight dotted
+  // dash reads as "you go down, not across." Added Loop-10 / #381 ahead of the
+  // #380 Underdark POIs.
+  if (kind === "underground" || kind === "passage") return { stroke: "rgba(40,25,10,0.66)", width: 0.7, dash: "0.7 1.8" };
+  // Portal — extraplanar / arcane (Avernus gate, Astral, etc.). A subtle violet
+  // tint flags the route as "not walking distance" even when the connection is
+  // visually short.
+  if (kind === "portal") return { stroke: "rgba(95,55,135,0.62)", width: 0.7, dash: "1.2 1.2" };
+  // Trail — wilds-grade path. Lighter and looser-dashed than the default to
+  // read as "you'll get there, just not quickly."
+  if (kind === "trail") return { stroke: "rgba(85,60,30,0.5)", width: 0.6, dash: "1.4 1.6" };
   return { stroke: "rgba(60,30,10,0.46)", width: 0.5, dash: "1.6 1.2" };
 }
 

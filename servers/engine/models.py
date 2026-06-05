@@ -871,7 +871,18 @@ class WorldGraphEdge(_StrictModel):
 
     from_id: str
     to_id: str
-    route_kind: Literal["street", "road", "trail", "sea", "river", "passage", "portal"] = "road"
+    # #381 (Loop-10): additive route-kind members. The original 7 kinds + the
+    # default "road" are unchanged (zero behavior change for existing content):
+    #   - "ferry": was already a styled branch in screen-map.jsx edgeStyle but
+    #     the model rejected it on author; now authorable.
+    #   - "bridge": Wyrm's Crossing over the Chionthar is canonically a bridge,
+    #     not a road — a first-class kind so styling can mark the crossing.
+    #   - "underground": Underdark passages, sewers, Bhaal Temple stairs (lands
+    #     ahead of #380 so the data surface is ready for those POIs).
+    route_kind: Literal[
+        "street", "road", "trail", "sea", "river", "passage", "portal",
+        "ferry", "bridge", "underground",
+    ] = "road"
     minutes: Optional[int] = Field(None, ge=1)
     distance: Optional[float] = Field(None, ge=0)
     difficulty: Literal["easy", "normal", "hard", "hazardous"] = "normal"
