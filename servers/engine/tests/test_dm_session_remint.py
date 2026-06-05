@@ -167,4 +167,8 @@ def test_play_party_drives_the_arc_runbook():
     party = _src("scripts/play_party.sh")
     assert "clawdnd_runbook_for_beat" in party, "play_party.sh must call the shared arc runbook"
     assert "BEAT_NO=$((BEAT_NO + 1))" in party, "must advance a per-beat counter for the runbook"
-    assert 'turn dm "$DSID" 0 "$RUNBOOK' in party, "the runbook must be injected into the DM beat turn"
+    assert 'ARC CUE' in party and '$RUNBOOK' in party, "the runbook must be injected (framed as internal arc cue)"
+    # the arc cue is INTERNAL planning the DM must NOT echo, and the reply must be prose not scaffolding
+    # (2026-06-05 narrative crit: the DM rendered its scaffolding notes verbatim instead of a lived scene).
+    assert "do NOT quote, echo, or render this line" in party.lower() or "Do NOT quote, echo, or render this line" in party
+    assert "terse scaffolding" in party, "must forbid scaffolding-note output (prose-only rule)"
