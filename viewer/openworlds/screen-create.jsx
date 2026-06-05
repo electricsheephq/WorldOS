@@ -34,7 +34,17 @@ function classScope(id) {
 // #315: StepPortrait filters the gallery to faces whose race matches the hero's chosen
 // lineage (so a dwarf isn't offered a tiefling face) and never offers a dead figure as a
 // player avatar (per #305's content-curation policy — a dead figure is lore-only).
-const PORTRAIT_GALLERY = [
+//
+// #378 / #315 AC3: this array is the STABLE BASE PREFIX (indices 0..11). A larger curated
+// set of canon faces — drawn from the ~2,077-portrait local pool — is loaded at runtime
+// from /openworlds/portrait-gallery.json and APPENDED in place (indices 12+) by
+// loadPortraitGallery() below. Appending (never inserting) keeps hero.portrait index
+// serialization stable so existing saves never re-roll a face. The screen has no build
+// step, so the manifest is a plain fetch with graceful degradation: if it 404s or fails,
+// the base 12 still render. `let` (not `const`) so the loader can extend it in place; the
+// exported portraitScope / heroPortraitScope / portraitChoicesForRace all read this same
+// array and so transparently see the appended faces.
+let PORTRAIT_GALLERY = [
   // A LIVING canon face leads the gallery (Aubree, a Flaming Fist ranger). Was Dal Lightspark,
   // but he is dead in canon — per #305's content-curation policy a dead figure is lore-only,
   // never offered as a player avatar.
@@ -66,6 +76,55 @@ const PORTRAIT_GALLERY = [
   { slug: "jord", name: "Jord", race: "half-orc", alive: true },
   { slug: "gronch", name: "Gronch", race: "half-orc", alive: true },
 ];
+
+// #378: load the curated canon-face manifest and APPEND its entries onto PORTRAIT_GALLERY
+// (in place, after the stable base prefix). Idempotent + memoized: the fetch runs once and
+// only ever appends slugs not already present, so a second mount or a re-render never
+// duplicates or shifts indices. Returns a promise that resolves to the count of newly
+// appended entries (0 on a miss / failure — the base gallery stands). Each manifest entry
+// is validated to a known RACES key and a real (non-synthetic) face before it is admitted.
+let _portraitGalleryLoaded = false;
+let _portraitGalleryPromise = null;
+function mergePortraitManifest(manifestEntries) {
+  if (!Array.isArray(manifestEntries)) return 0;
+  const have = new Set(PORTRAIT_GALLERY.map((p) => p.slug));
+  let added = 0;
+  for (const e of manifestEntries) {
+    if (!e || typeof e !== "object") continue;
+    const slug = typeof e.slug === "string" ? e.slug : "";
+    const race = typeof e.race === "string" ? e.race : "";
+    if (!slug || !race || have.has(slug)) continue;
+    // Only admit faces whose race the player can actually pick (a valid RACES key) and that
+    // are canon-rendered (synthetic faces stay opt-in, per #378 AC2). Default alive=true.
+    if (!RACES[race]) continue;
+    if (e.synthetic === true) continue;
+    PORTRAIT_GALLERY.push({
+      slug,
+      name: typeof e.name === "string" && e.name ? e.name : slug,
+      race,
+      alive: e.alive !== false,
+    });
+    have.add(slug);
+    added += 1;
+  }
+  return added;
+}
+function loadPortraitGallery() {
+  if (_portraitGalleryLoaded) return Promise.resolve(0);
+  if (_portraitGalleryPromise) return _portraitGalleryPromise;
+  _portraitGalleryPromise = fetch("portrait-gallery.json", { cache: "no-cache" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      _portraitGalleryLoaded = true;
+      return mergePortraitManifest(data && data.entries);
+    })
+    .catch(() => {
+      // No build step + graceful degradation: a missing/404 manifest leaves the base 12.
+      _portraitGalleryLoaded = true;
+      return 0;
+    });
+  return _portraitGalleryPromise;
+}
 function portraitScope(i) {
   const p = PORTRAIT_GALLERY[i];
   return p ? "portrait-" + p.slug : "";
@@ -758,6 +817,21 @@ function StepPortrait({ hero, setHero }) {
 
   // #315 AC5: filter portraits by lineage AND subrace; degrades to race-only when the curated
   // gallery carries no subrace-tagged faces yet (keeps the grid non-empty / creation playable).
+  // #378: pull the curated canon-face manifest (race-filtered larger gallery) the first time
+  // the Face step mounts, then bump a render counter so the appended faces show. The merge is
+  // in-place + memoized, so a re-mount is cheap and never duplicates. A missing manifest is a
+  // no-op (the base 12 still render) — the gallery is never empty because of this fetch.
+  const [galleryRev, setGalleryRev] = React.useState(0);
+  React.useEffect(() => {
+    let active = true;
+    loadPortraitGallery().then((added) => {
+      if (active && added > 0) setGalleryRev((n) => n + 1);
+    });
+    return () => { active = false; };
+  }, []);
+
+  // #315 AC5: filter portraits by lineage AND subrace; degrades to race-only when the curated
+  // gallery carries no subrace-tagged faces yet (keeps the grid non-empty / creation playable).
   const portraitChoiceState = portraitChoicesForRace(hero.race, hero.subrace);
   const galleryChoices = portraitChoiceState.choices;
   const usingGalleryFallback = portraitChoiceState.usingFallback;
@@ -831,11 +905,18 @@ function StepPortrait({ hero, setHero }) {
         </div>
       )}
 
-      <div data-worldos-testid="portrait-gallery" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+      <div
+        data-worldos-testid="portrait-gallery"
+        data-gallery-rev={galleryRev}
+        data-gallery-count={galleryChoices.length}
+        style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}
+      >
         {/* #315: prefer canon faces of the hero's lineage, and never a dead figure. #379/#390:
             if a selectable lineage has no curated faces yet, keep character creation playable
             by showing the full living gallery instead of an empty grid. The original
-            gallery index drives selection + scope, so map filtered entries back to it. */}
+            gallery index drives selection + scope, so map filtered entries back to it.
+            #378: the manifest-appended faces widen this grid the moment loadPortraitGallery
+            resolves (galleryRev bump), so a dwarf/elf/tiefling/… now sees many more faces. */}
         {galleryChoices.map((p) => {
           const i = PORTRAIT_GALLERY.indexOf(p);
           return (
@@ -1441,4 +1522,4 @@ const BACKGROUNDS = {
   spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
-Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, portraitChoicesForRace, PORTRAIT_GALLERY, subracesForRace, hasSubraces, mergeBonus, effectiveRaceBonus, subraceLineageName });
+Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, portraitChoicesForRace, mergePortraitManifest, loadPortraitGallery, PORTRAIT_GALLERY, subracesForRace, hasSubraces, mergeBonus, effectiveRaceBonus, subraceLineageName });

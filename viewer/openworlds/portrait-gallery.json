@@ -1,0 +1,440 @@
+{
+  "schema": "worldos.portrait-gallery.v1",
+  "note": "Curated canon faces APPENDED after screen-create.jsx PORTRAIT_GALLERY (stable append-only base, currently indices 0..21). Scope-only (portrait-<slug>); raw art stays gitignored in _private. Regenerate via viewer/openworlds/tools/gen_portrait_gallery.py.",
+  "base_prefix": [
+    "aubree",
+    "shadowheart",
+    "astarion",
+    "gale",
+    "lae-zel",
+    "wyll",
+    "karlach",
+    "jaheira",
+    "minsc",
+    "halsin",
+    "minthara",
+    "dame-aylin",
+    "baelen-bonecloak",
+    "thokki",
+    "cora-highberry",
+    "roger-highberry",
+    "barcus-wroot",
+    "wulbren-bongle",
+    "medrash",
+    "lyrux-goldthroat",
+    "jord",
+    "gronch"
+  ],
+  "per_race_appended": {
+    "human": 30,
+    "elf": 5,
+    "half": 2,
+    "tiefling": 9,
+    "drow": 3,
+    "githyanki": 2,
+    "dwarf": 4,
+    "gnome": 1,
+    "aasimar": 1
+  },
+  "entries": [
+    {
+      "slug": "anders",
+      "name": "Anders",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "abdirak",
+      "name": "Abdirak",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "isobel",
+      "name": "Isobel",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "liara-portyr",
+      "name": "Liara Portyr",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "roah-moonglow",
+      "name": "Roah Moonglow",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "rugan",
+      "name": "Rugan",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "valeria",
+      "name": "Valeria",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "zhalk",
+      "name": "Commander Zhalk",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "oliver",
+      "name": "Oliver",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "alfira",
+      "name": "Alfira",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "lakrissa",
+      "name": "Lakrissa",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "benryn",
+      "name": "Benryn",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "dribbles",
+      "name": "Dribbles the Clown",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "helsik",
+      "name": "Helsik",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "akabi",
+      "name": "Akabi",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "amira",
+      "name": "Amira",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "aminah",
+      "name": "Aminah",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "albert",
+      "name": "Albert",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "anderson",
+      "name": "Anderson",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "yenna",
+      "name": "Yenna",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "grukkoh",
+      "name": "Grukkoh",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "ferg-drogher",
+      "name": "Ferg Drogher",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "dolly-dolly-dolly",
+      "name": "Dolly Dolly Dolly",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "brem",
+      "name": "Brem",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "gribbo",
+      "name": "Gribbo",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "nine-fingers-keene",
+      "name": "Nine-Fingers Keene",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "kressa-bonedaughter",
+      "name": "Kressa Bonedaughter",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "malus-thorm",
+      "name": "Malus Thorm",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "gerringothe-thorm",
+      "name": "Gerringothe Thorm",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "thisobald-thorm",
+      "name": "Thisobald Thorm",
+      "race": "human",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "kagha",
+      "name": "Kagha",
+      "race": "elf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "aelar",
+      "name": "Aelar",
+      "race": "elf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "nettie",
+      "name": "Nettie",
+      "race": "elf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "araj-oblodra",
+      "name": "Araj Oblodra",
+      "race": "elf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "elminster",
+      "name": "Elminster",
+      "race": "elf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "dammon",
+      "name": "Dammon",
+      "race": "half",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "zevlor",
+      "name": "Zevlor",
+      "race": "half",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "mol",
+      "name": "Mol",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "mattis",
+      "name": "Mattis",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "umi",
+      "name": "Umi",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "rolan",
+      "name": "Rolan",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "cal",
+      "name": "Cal",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "lia",
+      "name": "Lia",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "arka",
+      "name": "Arka",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "komira",
+      "name": "Komira",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "mirkon",
+      "name": "Mirkon",
+      "race": "tiefling",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "sorn-orlith",
+      "name": "Sorn Orlith",
+      "race": "drow",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "nadira",
+      "name": "Nadira",
+      "race": "drow",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "ulma",
+      "name": "Ulma",
+      "race": "drow",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "voss",
+      "name": "Commander Voss",
+      "race": "githyanki",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "varrl",
+      "name": "Varrl",
+      "race": "githyanki",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "gekh-coal",
+      "name": "Gekh Coal",
+      "race": "dwarf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "nere",
+      "name": "Nere",
+      "race": "dwarf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "thrumbo",
+      "name": "Thrumbo",
+      "race": "dwarf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "filro",
+      "name": "Filro",
+      "race": "dwarf",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "philomeen",
+      "name": "Philomeen",
+      "race": "gnome",
+      "alive": true,
+      "synthetic": false
+    },
+    {
+      "slug": "hope",
+      "name": "Hope",
+      "race": "aasimar",
+      "alive": true,
+      "synthetic": false
+    }
+  ]
+}
