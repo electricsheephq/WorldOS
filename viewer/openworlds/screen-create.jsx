@@ -50,6 +50,21 @@ const PORTRAIT_GALLERY = [
   { slug: "halsin", name: "Halsin", race: "elf", alive: true },
   { slug: "minthara", name: "Minthara", race: "drow", alive: true },
   { slug: "dame-aylin", name: "Dame Aylin", race: "aasimar", alive: true },
+  // #379: five selectable lineages (dwarf, halfling, gnome, dragonborn, half-orc) had ZERO
+  // canon faces, so StepPortrait fell back to the lineage-mismatched living gallery for them.
+  // These are wire-ups of art ALREADY ingested under `_private/.../portrait_<slug>/` — each is a
+  // recognizable, LIVING, non-hostile BG3 NPC whose canon race (verified against bg3.wiki) maps to
+  // a RACES key below. Appended (never reordered) so existing hero.portrait indices stay stable.
+  { slug: "baelen-bonecloak", name: "Baelen Bonecloak", race: "dwarf", alive: true },
+  { slug: "thokki", name: "Thokki", race: "dwarf", alive: true },
+  { slug: "cora-highberry", name: "Cora Highberry", race: "halfling", alive: true },
+  { slug: "roger-highberry", name: "Roger Highberry", race: "halfling", alive: true },
+  { slug: "barcus-wroot", name: "Barcus Wroot", race: "gnome", alive: true },
+  { slug: "wulbren-bongle", name: "Wulbren Bongle", race: "gnome", alive: true },
+  { slug: "medrash", name: "Medrash", race: "dragonborn", alive: true },
+  { slug: "lyrux-goldthroat", name: "Lyrux Goldthroat", race: "dragonborn", alive: true },
+  { slug: "jord", name: "Jord", race: "half-orc", alive: true },
+  { slug: "gronch", name: "Gronch", race: "half-orc", alive: true },
 ];
 function portraitScope(i) {
   const p = PORTRAIT_GALLERY[i];
