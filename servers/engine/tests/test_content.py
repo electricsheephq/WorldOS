@@ -275,6 +275,51 @@ def test_seed_world_seeds_world_graph_metadata_without_authorizing_travel(capsys
     assert "unknown location" in out
 
 
+def test_baldurs_gate_ships_route_kind_world_graph_edges(capsys):
+    # Regression guard for #381: the shipped baldurs-gate world must seed its
+    # full 6-edge world_graph with route_kind metadata. This breaks if (a) the
+    # world.json world_graph block is dropped, (b) any edge stops matching a
+    # canonical Location.connection, or (c) the WorldGraphEdge.route_kind Literal
+    # loses one of the kinds used here ("street"/"bridge"/"road") — in which case
+    # the loader silently drops that edge and the count/kinds assertions fail.
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)
+
+    edges = c.world_graph.edges
+    pairs = {(e.from_id, e.to_id): e for e in edges}
+    expected = {
+        ("loc-lower-city", "loc-upper-city"): "street",
+        ("loc-lower-city", "loc-outer-city"): "street",
+        ("loc-outer-city", "loc-wyrms-crossing"): "bridge",
+        ("loc-wyrms-crossing", "loc-elturel"): "road",
+        ("loc-wyrms-crossing", "loc-reithwin"): "road",
+        ("loc-wyrms-crossing", "loc-candlekeep"): "road",
+    }
+    # Exactly these 6 edges land (no edge silently dropped, none spuriously added).
+    assert set(pairs) == set(expected)
+    assert len(edges) == 6
+    for pair, kind in expected.items():
+        assert pairs[pair].route_kind == kind, (pair, pairs[pair].route_kind)
+
+    # The "bridge" kind is the canonical Wyrm's Crossing over the Chionthar and
+    # MUST survive the additive-Literal change specifically (it is the load-bearing
+    # new member exercised by shipped content).
+    crossing = pairs[("loc-outer-city", "loc-wyrms-crossing")]
+    assert crossing.route_kind == "bridge"
+    assert "chionthar" in crossing.tags
+
+    # Every seeded edge references a canonical Location.connection in at least one
+    # direction (the loader's own guard); proven here against the shipped content.
+    for e in edges:
+        src = c.locations[e.from_id]
+        dst = c.locations[e.to_id]
+        assert e.to_id in src.connections or e.from_id in dst.connections
+
+    # No "skipping ... edge" diagnostics for the shipped BG graph — all 6 are clean.
+    out = capsys.readouterr().out
+    assert "skipping world_graph edge" not in out
+
+
 def test_seed_world_seeds_settlement_pressure_additively(capsys):
     world = {
         "id": "settlement-test",

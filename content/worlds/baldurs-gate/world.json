@@ -50,6 +50,18 @@
     {"id": "loc-reithwin", "name": "Reithwin & the Lifting Shadow", "description": "The Shadow-Cursed Lands around Moonrise Towers, where Ketheric Thorm's curse of Shar is slowly lifting since his fall — Last Light Inn rekindles, the dead grow quieter, and survivors return to a poisoned country to see what crawled out of the dark.", "connections": ["loc-wyrms-crossing"], "tags": ["wilds", "shadow", "ruins"]},
     {"id": "loc-candlekeep", "name": "Candlekeep", "description": "The great fortress-library on the Sword Coast, hoarding the world's knowledge behind a one-book toll. If the truth about the Crown of Karsus, the Emperor's past, or a loose illithid is written anywhere, it is here — guarded by Avowed who do not love visitors.", "connections": ["loc-wyrms-crossing"], "tags": ["lore", "library", "secrets"]}
   ],
+  "world_graph": {
+    "seed": "baldurs-gate-loop-10-route-kinds",
+    "provenance": "authored",
+    "edges": [
+      {"from_id": "loc-lower-city",      "to_id": "loc-upper-city",      "route_kind": "street", "minutes":    8, "difficulty": "easy",   "danger": 1, "tags": ["urban", "uphill", "fist-checkpoint"]},
+      {"from_id": "loc-lower-city",      "to_id": "loc-outer-city",      "route_kind": "street", "minutes":   12, "difficulty": "easy",   "danger": 2, "tags": ["urban", "basilisk-gate", "slums-edge"]},
+      {"from_id": "loc-outer-city",      "to_id": "loc-wyrms-crossing",  "route_kind": "bridge", "minutes":   18, "difficulty": "easy",   "danger": 2, "tags": ["chionthar", "fist-toll", "wyrms-rock"]},
+      {"from_id": "loc-wyrms-crossing",  "to_id": "loc-elturel",         "route_kind": "road",   "minutes": 1440, "difficulty": "normal", "danger": 3, "tags": ["risen-road", "south", "hellrider-patrol"]},
+      {"from_id": "loc-wyrms-crossing",  "to_id": "loc-reithwin",        "route_kind": "road",   "minutes": 2160, "difficulty": "hard",   "danger": 5, "tags": ["shadow-cursed", "north", "lifting"]},
+      {"from_id": "loc-wyrms-crossing",  "to_id": "loc-candlekeep",      "route_kind": "road",   "minutes": 5760, "difficulty": "normal", "danger": 2, "tags": ["coast-road", "west", "avowed-watch"]}
+    ]
+  },
   "factions": [
     {"id": "fac-flaming-fist", "name": "The Flaming Fist", "description": "The Gate's mercenary army and de facto police, overstretched and leaderless-feeling with the Steel Watch gone and the dukedom contested. Honorable in the ranks, political at the top.", "reputation": 1},
     {"id": "fac-guild", "name": "The Guild", "description": "Baldur's Gate's vast thieves' network — smuggling, protection, information. Pragmatic, everywhere, and the ones who actually know what moves in the dark.", "reputation": 0},
