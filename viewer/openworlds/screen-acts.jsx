@@ -70,7 +70,18 @@ function ScreenActs({ onNavigate, state, setState }) {
   }, [currentAct?.id, selectedActId, acts]);
 
   return (
-    <div className="screen" style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 14, padding: 14 }}>
+    <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 14, padding: 14 }}>
+
+      {/* A-09: read-only banner sits ABOVE both panes, spanning the full width, rather than
+          buried in the left spine column — more visible. Shown only while untracked. */}
+      {surface && !surface.tracked && (
+        <div style={{ padding: 12, background: "rgba(176,141,87,0.08)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.28)" }}>
+          <div className="eyebrow">Read-only</div>
+          <div className="body-sm muted" style={{ marginTop: 4 }}>{surface.emptyState?.body}</div>
+        </div>
+      )}
+
+      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 14 }}>
 
       {/* LEFT — Timeline of acts */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
@@ -80,13 +91,6 @@ function ScreenActs({ onNavigate, state, setState }) {
           {surface ? (surface.tracked ? surface.dayLabel : surface.emptyState?.title) : surfaceStatus}
         </div>
         <Divider />
-
-        {surface && !surface.tracked && (
-          <div style={{ padding: 12, marginBottom: 12, background: "rgba(176,141,87,0.08)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.28)" }}>
-            <div className="eyebrow">Read-only</div>
-            <div className="body-sm muted" style={{ marginTop: 4 }}>{surface.emptyState?.body}</div>
-          </div>
-        )}
 
         <div style={{ position: "relative", paddingLeft: 24 }}>
           {/* Spine */}
@@ -140,6 +144,7 @@ function ScreenActs({ onNavigate, state, setState }) {
       <Panel framed style={{ padding: 28, overflow: "auto" }}>
         <ActDetail act={selectedAct} surface={surface} />
       </Panel>
+      </div>
     </div>
   );
 }
@@ -271,6 +276,10 @@ function ActDetail({ act, surface }) {
       </div>
     );
   }
+  // Resolve the choice + beat lists once so A-07 can collapse them into a single empty-state
+  // when BOTH are empty (same data sources the two sub-sections render from).
+  const choices = act.choices || surface?.majorChoices || [];
+  const beats = act.memories || act.beats || surface?.threads || [];
   return (
     <div>
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>Act {act.numeral || act.id}{(status === "current" || status === "active") ? " · in progress" : ""}</div>
@@ -293,56 +302,67 @@ function ActDetail({ act, surface }) {
 
       <Divider />
 
-      <SectionTitle ordinal="·">Key choices made</SectionTitle>
-      {!(act.choices || surface?.majorChoices || []).length ? (
-        <div className="hand muted">No turning points yet. The road still has shape to give.</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {(act.choices || surface?.majorChoices || []).map((c, i) => (
-            <div key={i} style={{
-              padding: 10,
-              background: "rgba(176,141,87,0.08)",
-              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
-              borderLeft: `3px solid ${c.tone === "good" ? "var(--royal)" : c.tone === "ill" ? "var(--crimson)" : "var(--b-400)"}`,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
-                  {c.title}
-                </span>
-                <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10 }}>{c.when}</span>
-              </div>
-              <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 4 }}>{c.body}</div>
-              {c.consequence && (
-                <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
-                  → {c.consequence}
-                </div>
-              )}
-            </div>
-          ))}
+      {/* A-07: "Key choices" + "Beats and callbacks" are each empty-able. When BOTH are empty
+          (the common case for a freshly-compiled act), collapse them into a single empty-state
+          instead of stacking two near-identical "nothing yet" sub-sections. */}
+      {choices.length + beats.length === 0 ? (
+        <div className="hand muted">
+          No turning points or memorable beats have been tracked for this act yet. The road still has shape to give.
         </div>
-      )}
-
-      <Divider />
-
-      <SectionTitle>Beats and callbacks</SectionTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {(act.memories || act.beats || surface?.threads || []).map((m, i) => (
-          <div key={i} style={{
-            padding: 10,
-            background: "rgba(95, 75, 45, 0.06)",
-            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
-          }}>
-            <Img scope={m.imageScope || ("beat-" + (m.id != null ? m.id : i))} label={`chronicle · ${m.sketch || m.status || m.label || "beat"}`} h={70} fit="cover" framed />
-            <div className="hand" style={{ fontSize: 13, marginTop: 6, color: "var(--ink-700)", fontStyle: "italic" }}>
-              "{m.text || m.title || m.questTitle || m.note}"
+      ) : (
+        <>
+          <SectionTitle ordinal="·">Key choices made</SectionTitle>
+          {!choices.length ? (
+            <div className="hand muted">No turning points yet. The road still has shape to give.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {choices.map((c, i) => (
+                <div key={i} style={{
+                  padding: 10,
+                  background: "rgba(176,141,87,0.08)",
+                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                  borderLeft: `3px solid ${c.tone === "good" ? "var(--royal)" : c.tone === "ill" ? "var(--crimson)" : "var(--b-400)"}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                      {c.title}
+                    </span>
+                    <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10 }}>{c.when}</span>
+                  </div>
+                  <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 4 }}>{c.body}</div>
+                  {c.consequence && (
+                    <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      → {c.consequence}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-            <div className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 9, marginTop: 4 }}>
-              {m.when || (m.triggerDay ? `day ${m.triggerDay}` : m.status)}
-            </div>
+          )}
+
+          <Divider />
+
+          <SectionTitle>Beats and callbacks</SectionTitle>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {beats.map((m, i) => (
+              <div key={i} style={{
+                padding: 10,
+                background: "rgba(95, 75, 45, 0.06)",
+                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+              }}>
+                <Img scope={m.imageScope || ("beat-" + (m.id != null ? m.id : i))} label={`chronicle · ${m.sketch || m.status || m.label || "beat"}`} h={70} fit="cover" framed />
+                <div className="hand" style={{ fontSize: 13, marginTop: 6, color: "var(--ink-700)", fontStyle: "italic" }}>
+                  "{m.text || m.title || m.questTitle || m.note}"
+                </div>
+                <div className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 9, marginTop: 4 }}>
+                  {m.when || (m.triggerDay ? `day ${m.triggerDay}` : m.status)}
+                </div>
+              </div>
+            ))}
+            {!beats.length && <div className="body-sm muted">No beats have been tracked for this act yet.</div>}
           </div>
-        ))}
-        {!(act.memories || act.beats || surface?.threads || []).length && <div className="body-sm muted">No beats have been tracked for this act yet.</div>}
-      </div>
+        </>
+      )}
 
       {act.partyAtStart && (
         <>
