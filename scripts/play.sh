@@ -182,6 +182,11 @@ pc = server.create_character(
     background=spec.get("background", "") or "",
     skills=spec.get("skills") or None,
     apply_srd_defaults=True,
+    # Loop-10 #383: player-authored identity prose from the wizard's Family/House
+    # + Biography inputs. PR #369 threaded both into the bindHero spec; this is
+    # where the engine seating path picks them up. Empty == today's behavior.
+    house=str(spec.get("house", "") or ""),
+    biography=str(spec.get("biography", "") or ""),
 )
 # 265 portrait re-key: the wizard generated a unique face to a PROVISIONAL content-scope
 # portrait-pc-<hash> because the PC had no engine id yet. Now that create_character minted

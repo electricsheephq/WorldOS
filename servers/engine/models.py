@@ -607,6 +607,13 @@ class Character(_StrictModel):
     classes: list[ClassLevel] = Field(default_factory=list)
     background: str = ""
     alignment: str = ""
+    # Loop-10 #383: player-authored identity from the Creation wizard's "Family /
+    # House" + "Biography" inputs. PR #369 wired both into the bindHero spec but
+    # the engine seating path dropped them at 4 sites (this model, create_character,
+    # play.sh, /character-surface). Empty == today's behavior (no field was set
+    # before — additive, deserializes existing snapshots unchanged).
+    house: str = ""
+    biography: str = ""
 
     abilities: AbilityScores = Field(default_factory=AbilityScores)
     proficiency_bonus: int = 2
