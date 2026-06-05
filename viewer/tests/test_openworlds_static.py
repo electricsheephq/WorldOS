@@ -828,17 +828,35 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         source = body.decode("utf-8")
         self.assertIn("const [appStatus, setAppStatus] = React.useState(null);", source)
         self.assertIn('fetch(`/app-status${query}`', source)
+        # LOCKOUT P0: the play gate is now one pure, unit-testable helper (`computePlayGate`) that the
+        # component calls — the readiness/bucket logic moved INTO it (see test_recovery_timing.py
+        # PlayGateLockoutTests for the behavioral coverage). The contract strings live there now.
+        self.assertIn("function computePlayGate(", source)
         self.assertIn("const appStatusBlocksPlay = Boolean", source)
         self.assertIn('"no_provider", "no_launcher", "move_rejected"', source)
-        self.assertIn("appReadiness.ready_for_play === false", source)
-        self.assertIn("Start or resume a provider-backed session from Chronicles", source)
+        self.assertIn("readiness.ready_for_play === false", source)
+        # LOCKOUT P0 (Layer B): the raw "provider-backed session" dev string that leaked verbatim to
+        # two sweep personas (a MAJOR) must NO LONGER appear in any player-facing JSX literal. It only
+        # survives now inside the jargon-detection regex (`/move sink|provider-backed|…/`) that KEEPS
+        # the raw server `failure_detail` from ever being shown — never as rendered copy. The behavioral
+        # guarantee is in test_recovery_timing.py::PlayGateLockoutTests; here we lock the literal out of
+        # the render path and confirm the humane replacement is present.
+        self.assertNotIn("Start or resume a provider-backed session from Chronicles", source)
+        self.assertNotIn("> Start or resume", source)
+        self.assertIn("/move sink|provider-backed", source)  # the jargon FILTER, not a rendered string
+        self.assertIn("Resume this chronicle from Chronicles", source)
         self.assertIn("data-worldos-status-scope=\"app-status\"", source)
         self.assertIn("const surfaceStatusBlocksPlay = surfaceStatus !== \"ready\"", source)
         self.assertIn("const livePlayBlocked = surfaceStatusBlocksPlay || appStatusBlocksPlay", source)
-        self.assertIn("livePlayBlocked ? livePlayBlockReason : readOnlyReason", source)
+        # LOCKOUT P0 (Layer C): a stuck turn re-opens the bar for a real retry through an app-status
+        # latch — the controls now branch on `stuckRetryUnblocked` so the recovery promise is real.
+        self.assertIn("stuckRetryUnblocked", source)
         self.assertIn("disabled={!a.available || pendingActive || livePlayBlocked}", source)
-        self.assertIn("disabled={pendingActive || livePlayBlocked}", source)
-        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft", source)
+        # LOCKOUT P0 (Layer C): the composer + Declare/Try-again re-open on a stuck turn so the player
+        # can actually retry — they branch on `stuckRetryUnblocked` rather than ANDing in
+        # `livePlayBlocked` unconditionally (the old hard-freeze that made the recovery message a lie).
+        self.assertIn("disabled={stuckRetryUnblocked ? false : (pendingActive || livePlayBlocked)}", source)
+        self.assertIn("const declareDisabled = stuckRetryUnblocked", source)
         self.assertIn('"Reconnect live session before declaring"', source)
         self.assertIn("disabled={declareDisabled}", source)
 
@@ -975,7 +993,12 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("kind: composerMode.kind", source)
         self.assertIn("composerMode.placeholder", source)
         self.assertIn("const declareNeedsDraft = !pendingStuck && !draftText", source)
-        self.assertIn("const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft", source)
+        # LOCKOUT P0 (Layer C): on a stuck turn the Declare slot is "Try again" and must stay clickable
+        # through an app-status latch, so `declareDisabled` now branches on `stuckRetryUnblocked`; the
+        # full normal-path gate (composerAction.available || pendingActive || livePlayBlocked || …) is
+        # the else-branch.
+        self.assertIn("const declareDisabled = stuckRetryUnblocked", source)
+        self.assertIn("(!composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft)", source)
         self.assertIn('title={declareTitle}', source)
         self.assertIn('ariaLabel={declareAriaLabel}', source)
         self.assertIn('!composerAction?.available', source)

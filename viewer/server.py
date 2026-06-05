@@ -6582,9 +6582,21 @@ class _Handler(BaseHTTPRequestHandler):
         # The attached campaign is only the recovery target when it is the SINGLE current,
         # resumable play-store campaign (so we never follow into a parallel/stale store). Pass
         # the just-resolved `attached` so the `current` flag is correct regardless of class state.
+        #
+        # LOCKOUT P0 (detach-locks-the-action-bar): `_list_campaigns` derives each card's `live`
+        # flag purely from snapshot/session recency (`(now - recency) < 90`). On a long quiet DM
+        # beat — or after the player navigates several hops away while the DM narrates — the live
+        # run's mtimes age past 90s, so its recency-`live` flips False and `live_current` goes
+        # EMPTY, defeating this heal: is_live_view latched False and the action bar locked even
+        # though the move sink was healthy. We are already inside the `_live_play()` branch above,
+        # so the sink the writes go to is genuinely alive AND it feeds exactly the `attached`
+        # campaign — so `attached` is live HERE by construction, regardless of snapshot decay.
+        # Treat it as live (the sink is the authority); keep the recency signal for the OTHER
+        # campaigns so we still won't auto-snap away from a genuinely-active parallel run.
         live_current = [
             c.get("id") for c in _list_campaigns(attached)
-            if isinstance(c, dict) and c.get("current") and c.get("live")
+            if isinstance(c, dict) and c.get("current")
+            and (c.get("id") == attached or c.get("live"))
         ]
         if attached in live_current and (not override or override not in live_current):
             # Client view is stale (empty, or a non-live save) while exactly the attached run
