@@ -1634,6 +1634,50 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIsNotNone(aylin_match, "Dame Aylin gallery row not found")
         self.assertIn(aylin_match.group(1), race_keys)
 
+    def test_openworlds_create_every_selectable_race_has_a_living_gallery_face(self):
+        # #379: the race-aware StepPortrait filter (p.race === hero.race && p.alive !== false)
+        # left dwarf/halfling/gnome/dragonborn/half-orc with ZERO lineage-correct faces, so those
+        # five lineages silently fell back to a mismatched gallery. Guard that EVERY selectable
+        # RACES key now has >= 1 LIVING (alive !== false) PORTRAIT_GALLERY face of its own lineage,
+        # so the curated grid is lineage-correct for all races (not just the fallback grid).
+        status, ctype, body = self._get("/openworlds/screen-create.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+
+        # RACES keys the player can actually pick (StepRace renders Object.entries(RACES)).
+        races_match = re.search(r"const RACES = \{(.*?)\n\};", source, re.S)
+        self.assertIsNotNone(races_match, "RACES object not found in screen-create.jsx")
+        race_keys = {
+            quoted or bare
+            for quoted, bare in re.findall(
+                r'^\s{2}(?:"([a-z-]+)"|([a-z-]+)):\s*\{', races_match.group(1), re.M
+            )
+        }
+        self.assertIn("human", race_keys)  # sanity: parser found real keys
+
+        # Parse PORTRAIT_GALLERY rows into (race, alive) pairs.
+        gallery_match = re.search(r"const PORTRAIT_GALLERY = \[(.*?)\n\];", source, re.S)
+        self.assertIsNotNone(gallery_match, "PORTRAIT_GALLERY array not found")
+        rows = re.findall(
+            r'\{\s*slug:\s*"[a-z0-9-]+",\s*name:[^,]+,\s*race:\s*"([a-z-]+)",\s*alive:\s*(true|false)',
+            gallery_match.group(1),
+        )
+        self.assertTrue(rows, "no PORTRAIT_GALLERY rows parsed")
+        living_races = {race for race, alive in rows if alive == "true"}
+
+        missing = sorted(race_keys - living_races)
+        self.assertEqual(
+            missing,
+            [],
+            f"selectable races with no LIVING lineage-correct gallery face (#379): {missing}",
+        )
+
+        # Pin the five lineages this issue fixed so a future trim can't silently reopen the gap.
+        for race in ("dwarf", "halfling", "gnome", "dragonborn", "half-orc"):
+            self.assertIn(race, living_races, f"#379 regression: {race} lost its gallery face")
+
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
         (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")
