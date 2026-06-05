@@ -360,6 +360,13 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
     return () => { cancelled = true; };
   }, [campaignId, hero.id]);
 
+  // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
+  React.useEffect(() => {
+    const esc = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+
   const options = (planner && Array.isArray(planner.options)) ? planner.options : [];
   // The option for the chosen class (default: continue the current class), else the first legal path.
   const option = options.find((o) => (o.class_name || "").toLowerCase() === chosenClass) || options[0] || null;
@@ -534,6 +541,13 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
   const [prepared, setPrepared] = React.useState({});
   // Watch order is drawn from the LIVE party (first names), never the hardcoded demo trio.
   const watchOrder = (Array.isArray(party) ? party : []).map((p) => (p.name || "").split(" ")[0]).filter(Boolean);
+
+  // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
+  React.useEffect(() => {
+    const esc = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
 
   const availableSpells = hero.spells || [];
   // Data-driven from the live hero. The /character-surface read-model does not project
@@ -1400,6 +1414,12 @@ function SpellbookBrowser({ hero, groups, onClose }) {
   // that write-flow). When the engine carries no spell NAMES, we say so honestly rather than
   // fabricate an SRD list, and point the player at Rest & Prepare.
   const list = (Array.isArray(groups) ? groups : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+  // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
+  React.useEffect(() => {
+    const esc = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 200,
