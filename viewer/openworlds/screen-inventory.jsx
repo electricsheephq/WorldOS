@@ -46,6 +46,9 @@ function ScreenInventory({ onNavigate, state, setState }) {
     ? surface.party
     : [];
   const [filter, setFilter] = React.useState("all");
+  // I-06: client-side sort order for the stash grid (display-only reordering — never an engine
+  // write). "found" keeps the surface's own order (as carried). Cycles found → name → type.
+  const [sortKey, setSortKey] = React.useState("found");
   const [activeHero, setActiveHero] = React.useState("");
   const [selectedItem, setSelectedItem] = React.useState(null);
   const [ctxMenu, setCtxMenu] = React.useState(null);
@@ -108,9 +111,17 @@ function ScreenInventory({ onNavigate, state, setState }) {
     }
   }, [stash, selectedItem]);
 
-  const filtered = filter === "all"
+  const _typeFiltered = filter === "all"
     ? stash
     : stash.filter((i) => i.type === filter);
+  // I-06: apply the client-side sort as a render-only reordering. "found" preserves the
+  // surface's carried order; "name"/"type" sort a shallow copy so the source list is untouched.
+  const filtered = sortKey === "found"
+    ? _typeFiltered
+    : [..._typeFiltered].sort((a, b) =>
+        sortKey === "name"
+          ? (a.name || "").localeCompare(b.name || "")
+          : (a.type || "").localeCompare(b.type || "") || (a.name || "").localeCompare(b.name || ""));
 
   // No live hero yet (pre-fetch, fetch failed, or an empty party) — clean empty-state
   // instead of dereferencing a fabricated hero or leaking demo data.
@@ -142,7 +153,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
         {party.length > 1 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
             {party.map((p) => (
-              <button key={p.id} onClick={() => setActiveHero(p.id)} className="pill" style={{
+              <button key={p.id} onClick={() => setActiveHero(p.id)} aria-pressed={activeHero === p.id ? "true" : "false"} className="pill" style={{
                 cursor: "pointer",
                 background: activeHero === p.id ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.08)",
                 color: activeHero === p.id ? "var(--w-300)" : "var(--ink-700)",
@@ -164,15 +175,21 @@ function ScreenInventory({ onNavigate, state, setState }) {
             hero.equipped (live). Coin Purse below is the hero's live currency. */}
 
         <div className="eyebrow">Coin Purse</div>
+        {/* I-09: PP/GP/SP are the everyday 5e coinage — always shown. Electrum (EP) and Copper
+            (CP) are minted only rarely; the surface emits them as 0 by default, so an empty
+            EP/CP slot is dead chrome. Render those two only when the hero actually holds them
+            (data-driven, hide-when-absent) — never fabricate a metal the engine isn't tracking. */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
           <CoinSlot tone="#e5e4e2" label="PP" val={String(hero.currency?.pp ?? 0)} />
           <CoinSlot tone="#d4b97a" label="GP" val={String(hero.currency?.gp ?? 0)} />
           <CoinSlot tone="#c0c0c0" label="SP" val={String(hero.currency?.sp ?? 0)} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-          <CoinSlot tone="#b08860" label="EP" val={String(hero.currency?.ep ?? 0)} />
-          <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency?.cp ?? 0)} />
-        </div>
+        {((hero.currency?.ep ?? 0) > 0 || (hero.currency?.cp ?? 0) > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+            {(hero.currency?.ep ?? 0) > 0 && <CoinSlot tone="#b08860" label="EP" val={String(hero.currency.ep)} />}
+            {(hero.currency?.cp ?? 0) > 0 && <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency.cp)} />}
+          </div>
+        )}
       </Panel>
 
       {/* CENTER — Shared Stash */}
@@ -192,7 +209,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
             { id: "rare", label: "Relics" },
             { id: "common", label: "Sundries" },
           ].map((f) => (
-            <button key={f.id} onClick={() => setFilter(f.id)} className={`pill ${filter === f.id ? "" : "muted"}`} style={{
+            <button key={f.id} onClick={() => setFilter(f.id)} aria-pressed={filter === f.id ? "true" : "false"} className={`pill ${filter === f.id ? "" : "muted"}`} style={{
               cursor: "pointer",
               background: filter === f.id ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.1)",
               color: filter === f.id ? "var(--w-300)" : "var(--ink-700)",
@@ -238,6 +255,15 @@ function ScreenInventory({ onNavigate, state, setState }) {
                   setSelectedItem(it);
                   setCtxMenu({ x: e.clientX, y: e.clientY, item: it });
                 }}
+                onContextKey={(e) => {
+                  // I-05(b) / C6: keyboard equivalent of right-click — Enter or the context-menu
+                  // key on a focused item opens the same actions menu, anchored to the tile.
+                  if (e.key !== "Enter" && e.key !== "ContextMenu") return;
+                  e.preventDefault();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setSelectedItem(it);
+                  setCtxMenu({ x: Math.round(r.right - 8), y: Math.round(r.bottom - 8), item: it });
+                }}
               />
             ))}
             {/* I-07: no fixed 60-slot pack — the grid grows to actual content (OpenWorlds is
@@ -248,9 +274,18 @@ function ScreenInventory({ onNavigate, state, setState }) {
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="muted body-sm">{filtered.length} items · {stash.length} total</span>
           <div style={{ display: "flex", gap: 6 }}>
-            <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Sort (preview)</BrassButton>
-            <BrassButton tone="ghost" size="sm" disabled title="Display-only — not saved to the engine">Mark Trash (preview)</BrassButton>
-            <BrassButton size="sm" disabled title="Display-only — not saved to the engine">Loot Pile (preview)</BrassButton>
+            {/* I-06: Sort is a real client-side reordering (no engine write needed), so it is
+                wired live rather than shipped as a disabled "(preview)" button. The two other
+                bottom buttons were removed: per the audit (I-06 / I-11) they had no engine route
+                and no defined behavior — dead UI we do not ship. */}
+            <BrassButton
+              tone="ghost"
+              size="sm"
+              onClick={() => setSortKey((k) => k === "found" ? "name" : k === "name" ? "type" : "found")}
+              title="Reorder the stash on screen (display-only — not saved to the engine)"
+            >
+              Sort: {sortKey === "found" ? "As Carried" : sortKey === "name" ? "Name" : "Type"}
+            </BrassButton>
           </div>
         </div>
       </Panel>
@@ -432,7 +467,7 @@ function CoinSlot({ tone, label, val }) {
   );
 }
 
-function ItemSlot({ item, selected, onClick, onContextMenu }) {
+function ItemSlot({ item, selected, onClick, onContextMenu, onContextKey }) {
   const tone = item.type === "rare" ? "var(--royal)" :
                item.type === "quest" ? "var(--crimson)" :
                item.type === "spell" ? "var(--royal-bright)" :
@@ -440,7 +475,13 @@ function ItemSlot({ item, selected, onClick, onContextMenu }) {
                "var(--b-500)";
   return (
     <window.Tooltip content={<window.ItemTooltip item={item} />} side="top">
-      <button onClick={onClick} onContextMenu={onContextMenu} style={{
+      <button
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        onKeyDown={onContextKey}
+        aria-haspopup="menu"
+        aria-label={item.name + (item.qty > 1 ? " ×" + item.qty : "")}
+        style={{
       position: "relative",
       padding: 0,
       height: 68,
