@@ -198,6 +198,51 @@ class LiveViewRecoveryTests(unittest.TestCase):
         self.assertFalse(surface["live"])
         self.assertFalse(surface["can_act"], "no live sink → must stay read-only")
 
+    # -- symmetric heal across the OTHER play surfaces (the #640 Parley lockout) ----
+    def test_play_surfaces_heal_symmetrically_with_session(self):
+        """The Parley-tab read-only lockout: /combat-, /atlas-, /parley-, /character-surface must
+        self-heal a stale ?campaign to the live run EXACTLY like /session-surface. Before the fix
+        they resolved via the non-healing ``_view_campaign`` and latched ``is_live_view=False``
+        ("viewing non-live campaign"), so navigating to Parley/Combat during live play stranded the
+        player read-only with every social/combat button disabled even though the sink was healthy."""
+        self._enable_move_sink()
+        self._write("old_save", _snap("Old Save"), age_seconds=600)
+        self._write("live_run", _snap("Embergloom"), age_seconds=0)
+        self.assertEqual(server._pick_campaign(None), "live_run")
+
+        for route in ("/combat-surface", "/atlas-surface",
+                      "/parley-surface", "/character-surface"):
+            status, surface = self._get(f"{route}?campaign=old_save")
+            self.assertEqual(status, 200, route)
+            self.assertTrue(surface.get("is_live_view"),
+                            f"{route} must self-heal is_live_view to the live run (not latch False)")
+            self.assertEqual(surface.get("campaign_id"), "live_run",
+                             f"{route} recovery must follow the live run")
+            # atlas/parley/character gate can_act purely on (live AND is_live_view) → it unlocks
+            # with the heal. combat additionally needs an active fight, so its recovery is the
+            # is_live_view assertion above (a stale view would have latched it False).
+            if route != "/combat-surface":
+                self.assertTrue(surface.get("can_act"),
+                                f"{route} can_act must recover once is_live_view heals")
+
+    def test_play_surfaces_pinned_view_stays_gated(self):
+        """The heal must preserve legitimate read-only gating on the other play surfaces too: a
+        PINNED director's view of a different campaign stays honestly gated (no auto-snap)."""
+        self._enable_move_sink()
+        self._write("the_pinned_run", _snap("Pinned"))
+        self._write("a_different_save", _snap("Other"))
+        _QuietHandler.pinned = True
+        _QuietHandler.campaign_id = "the_pinned_run"
+
+        for route in ("/combat-surface", "/atlas-surface",
+                      "/parley-surface", "/character-surface"):
+            status, surface = self._get(f"{route}?campaign=a_different_save")
+            self.assertEqual(status, 200, route)
+            self.assertEqual(surface.get("campaign_id"), "a_different_save", route)
+            self.assertFalse(surface.get("is_live_view"),
+                             f"{route} pinned view of another campaign must stay gated")
+            self.assertFalse(surface.get("can_act"), f"{route} pinned view must stay read-only")
+
 
 if __name__ == "__main__":
     unittest.main()

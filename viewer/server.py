@@ -6408,7 +6408,7 @@ class _Handler(BaseHTTPRequestHandler):
             return attached
         return override or attached
 
-    def _serve_simple_surface(self, qs: dict, builder) -> None:
+    def _serve_simple_surface(self, qs: dict, builder, *, heal: bool = False) -> None:
         """Dispatch a snapshot-only read-model surface (journal/character/inventory/
         relations/parley). Mirrors the /atlas-surface handler exactly: a catalog ?source/
         ?run ref wins (a QA/parallel run), else the per-request ?campaign view override,
@@ -6425,7 +6425,11 @@ class _Handler(BaseHTTPRequestHandler):
                 is_live_view=bool(live and root_is_current and cid == self.campaign_id),
             ))
             return
-        cid = self._view_campaign(qs)
+        # Symmetric heal (#640): a play surface (parley/character) opts into the SAME self-healing
+        # the /session-surface gate uses, so a drifted client ?campaign re-aligns to the live run
+        # instead of latching is_live_view=False ("viewing non-live campaign" read-only). Pure
+        # read-only views (journal/seed/acts/inventory/relations) keep the literal ?campaign view.
+        cid = self._live_play_view_campaign(qs) if heal else self._view_campaign(qs)
         if not cid:
             self._json(builder({}, campaign_id="", live=live, is_live_view=False))
             return
@@ -6452,7 +6456,9 @@ class _Handler(BaseHTTPRequestHandler):
             is_live = bool(live and root_is_current and cid == self.campaign_id)
             recent = _session_event_tail_from_dir(campaign_dir, raw_snap)
         else:
-            cid = self._view_campaign(qs)
+            # Symmetric heal (#640): match the GET combat/atlas surfaces (and /session-surface) so
+            # the SSE render mirror re-aligns to the live run too — keeps SSE consistent with polled.
+            cid = self._live_play_view_campaign(qs)
             raw_snap = _read_snapshot(cid) if cid else {}
             if not isinstance(raw_snap, dict):
                 raw_snap = {}
@@ -6706,7 +6712,9 @@ class _Handler(BaseHTTPRequestHandler):
                     recent_events=_session_event_tail_from_dir(campaign_dir, raw_snap),
                 ))
                 return
-            cid = self._view_campaign(qs)
+            # Symmetric heal (#640): mirror /session-surface — re-align to the live run instead of
+            # latching is_live_view=False (the read-only lockout) when the client's ?campaign drifts.
+            cid = self._live_play_view_campaign(qs)
             if not cid:
                 self._json(build_combat_surface({}, campaign_id="", live=live, is_live_view=False))
                 return
@@ -6733,7 +6741,9 @@ class _Handler(BaseHTTPRequestHandler):
                     is_live_view=bool(live and root_is_current and cid == self.campaign_id),
                 ))
                 return
-            cid = self._view_campaign(qs)
+            # Symmetric heal (#640): mirror /session-surface — re-align to the live run instead of
+            # latching is_live_view=False (the read-only lockout) when the client's ?campaign drifts.
+            cid = self._live_play_view_campaign(qs)
             if not cid:
                 self._json(build_atlas_surface({}, campaign_id="", live=live, is_live_view=False))
                 return
@@ -6791,7 +6801,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/character-surface":
             # The party's full character sheets (classes/skills/spells/resources/AC/death
             # saves) projected from the engine snapshot into the heroes screen shape.
-            self._serve_simple_surface(parse_qs(parsed.query), build_character_surface)
+            self._serve_simple_surface(parse_qs(parsed.query), build_character_surface, heal=True)
         elif route == "/inventory-surface":
             # Each party member's pack (name/qty/type/glyph/equipped) + currency.
             self._serve_simple_surface(parse_qs(parsed.query), build_inventory_surface)
@@ -6807,6 +6817,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_simple_surface(
                 qs,
                 lambda snap, **kw: build_parley_surface(snap, difficulty=difficulty, **kw),
+                heal=True,
             )
         elif route == _OPENWORLDS_ROUTE:
             suffix = f"?{parsed.query}" if parsed.query else ""
