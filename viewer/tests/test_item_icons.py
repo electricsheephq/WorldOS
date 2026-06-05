@@ -174,6 +174,74 @@ class ForgePolishTests(ItemIconTests):
         self.assertIn('aria-label={"Tier "', src)
         # The list row no longer renders the recipe tier via a bare <Pill>.
         self.assertNotIn("<Pill>{r.tier}</Pill>", src)
+class InventoryPolishPassTests(unittest.TestCase):
+    """Guards for the #251 inventory polish pass (I-05b / I-06 / I-09 + C6 accessibility).
+
+    These are render-only / static-source assertions in the same spirit as
+    test_openworlds_static.py: the JSX is served as text/babel with no build step, so a
+    string-level guard is the contract check that the wiring is present and the dead UI is
+    gone. No engine state is asserted (the read-model is untouched by this pass).
+    """
+
+    def setUp(self):
+        self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        _QuietHandler.campaign_id = ""
+        _QuietHandler.transcript_path = ""
+        _QuietHandler.chat_path = ""
+        _QuietHandler.pinned = False
+        self._httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), _QuietHandler)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        self._host, self._port = self._httpd.server_address
+
+    def tearDown(self):
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._thread.join(timeout=2)
+        if self._old_state is None:
+            os.environ.pop("CLAWDND_STATE_DIR", None)
+        else:
+            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+
+    def _src(self) -> str:
+        conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
+        try:
+            conn.request("GET", "/openworlds/screen-inventory.jsx")
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            return response.read().decode("utf-8")
+        finally:
+            conn.close()
+
+    def test_filter_chips_and_hero_pills_have_aria_pressed(self):
+        """C6: filter chips + hero switcher pills expose aria-pressed for screen readers."""
+        src = self._src()
+        self.assertIn('aria-pressed={filter === f.id ? "true" : "false"}', src)
+        self.assertIn('aria-pressed={activeHero === p.id ? "true" : "false"}', src)
+
+    def test_item_slot_is_keyboard_context_accessible(self):
+        """I-05(b): a focused item opens the actions menu via keyboard (Enter / ContextMenu)."""
+        src = self._src()
+        self.assertIn("onKeyDown={onContextKey}", src)
+        self.assertIn('aria-haspopup="menu"', src)
+        self.assertIn('e.key !== "Enter" && e.key !== "ContextMenu"', src)
+
+    def test_dead_preview_buttons_removed(self):
+        """I-06 / I-11: Mark Trash + Loot Pile dead UI is gone; Sort is wired live (no preview)."""
+        src = self._src()
+        self.assertNotIn("Mark Trash", src)
+        self.assertNotIn("Loot Pile", src)
+        self.assertNotIn("Sort (preview)", src)
+        # Sort is a real client-side reordering control, not a disabled stub.
+        self.assertIn("setSortKey(", src)
+
+    def test_electrum_and_copper_hidden_when_zero(self):
+        """I-09: EP/CP coin slots render only when the hero actually holds them."""
+        src = self._src()
+        self.assertIn("(hero.currency?.ep ?? 0) > 0", src)
+        self.assertIn("(hero.currency?.cp ?? 0) > 0", src)
 
 
 if __name__ == "__main__":
