@@ -103,6 +103,15 @@ function liveBestiaryEntry(item) {
     stats: (item?.abilities && typeof item.abilities === "object") ? item.abilities : undefined,
     tactics: item?.tactics ? String(item.tactics) : "",
     knownActions: Array.isArray(item?.known_actions) ? item.known_actions.filter((a) => String(a).trim()) : [],
+    // #674: the structured reference actions — name + desc carrying the to-hit/damage MECHANICS (e.g.
+    // "Scimitar. Melee Attack Roll: +4 … 5 (1d6+2) Slashing damage."). The 'Browse all' public reference
+    // projection (bestiary.public_reference_projection) supplies these; the theorycrafter optimizer needs
+    // the mechanics, not just the names in knownActions. Hidden when none.
+    actions: Array.isArray(item?.actions)
+      ? item.actions
+          .filter((a) => a && (String(a.name || "").trim() || String(a.desc || "").trim()))
+          .map((a) => ({ name: String(a.name || "").trim(), desc: String(a.desc || "").trim() }))
+      : [],
     // #depth: tier-3 (slain) defenses — the most tactically load-bearing facts (the engine now
     // passes these through intel_projection). Each row hidden when blank.
     resistances: Array.isArray(item?.damage_resistances) ? item.damage_resistances.filter((x) => String(x).trim()) : [],
@@ -409,6 +418,21 @@ function BestiaryEntry({ entry, tab }) {
               <div className="tag-row" style={{ marginTop: 6 }}>
                 {entry.knownActions.map((a) => <Pill key={a}>{a}</Pill>)}
               </div>
+            </>
+          )}
+
+          {/* #674: full Actions — name + the to-hit/damage mechanics (desc) from the 'Browse all' public
+              reference projection, for the theorycrafter who needs the numbers, not just names. Hidden when none. */}
+          {Array.isArray(entry.actions) && entry.actions.length > 0 && (
+            <>
+              <Divider />
+              <SectionTitle>Actions</SectionTitle>
+              {entry.actions.map((a, i) => (
+                <div key={`act-${i}-${a.name}`} style={{ marginTop: 6 }}>
+                  {a.name && <span className="eyebrow" style={{ marginRight: 6 }}>{a.name}</span>}
+                  {a.desc && <span style={{ fontSize: 13, opacity: 0.9 }}>{a.desc}</span>}
+                </div>
+              ))}
             </>
           )}
 
