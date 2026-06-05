@@ -194,8 +194,16 @@ push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass
 
 ## THE QA LOOP
 
+**Pick the TIER — don't run the 90-min sweep to iterate.** Tier 0 `qa/fast_gate.sh` ($0 / ~2s, every
+change) → Tier 1 `qa/fast_probe.sh` (~$2–3 / ~20 min, DM-craft/UX/satisfaction) → Tier 2 the milestone
+5-persona `.app` sweep (~$10 / ~90 min, only before a version bump). Strategy + the adversarial-validated
+signal accounting: `docs/qa/FAST_GATE.md` and the `worldos-dev` skill's "QA STRATEGY" table. The runners
+below are what each tier composes.
+
 The fitness function = **1 hard behavioral gate** + **3 LLM lenses**. Spec: `qa/SCORING.md`.
-**Log every run to `qa/SCORECARD.md`** (the ledger that survives compaction).
+**Log every scored run to the ledger: `qa/scores_db.py` → SQLite `scores.db` → rendered to
+`qa/scores_ledger.md` (`add_run(...)` / `--render`)** — the compaction-surviving ledger. (`qa/SCORECARD.md`
+is LEGACY narrative; don't hand-edit it.)
 
 **Runners:**
 - `qa/run_duo.sh <run> <world> <persona> [beats] [budget]` — AI player + DM duo via

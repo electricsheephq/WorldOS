@@ -188,14 +188,31 @@ by an average). **RRI 10/10 = every gate holds on one fresh build:**
 
 ---
 
-## 5. THE ITERATE LOOP (while the gate fails)
+## 5. THE ITERATE LOOP (while the gate fails) — TIERED, not all-or-nothing
 
-`git fetch` → create/update a **same-disk local worktree off origin/main** for tracked edits
-when GUI/app tests need assets (Lexar is evidence/scratch, not the default runtime tree) →
-`rm -rf dist/WorldOS.app` in the local app checkout → `qa/ui_playtest_app.sh` × 5 personas against the built `.app` → **score** (5-persona
-satisfaction + 3 lenses + behavioral + axe) → **file GitHub issues** tied to `{build_sha, version_tag}`
-with `file:line` + acceptance criteria → **delegate code to builder subagents** (worktree → PR →
-CI-green incl. `viewer-tests` → squash-merge) → **rebuild → re-playtest.**
+Iterate with the test **tier matched to the change + current confidence** — do NOT run the ~90-min
+5-persona sweep for every edit (that is the milestone *verdict*, not the inner loop; running it as the
+loop is what made progress crawl). Full design + the adversarial-validated honest-signal accounting
+(why naive mid-arc-snapshot seeding is a false-confidence trap): `docs/qa/FAST_GATE.md`.
+
+- **Tier 0 — deterministic, $0, ~2s (`qa/fast_gate.sh`):** run on EVERY engine/content/data/viewer
+  change (it is also in CI). 186 engine tests + the end-to-end seat-path skill guard catch the
+  structural / seat-path / rest / travel / combat-resolution regression classes — most of what we
+  actually ship (e.g. the skill-case +3-not-+6 crit) — free + instant.
+- **Tier 1 — fast LLM loop, ~$2–3, ~20 min (`qa/fast_probe.sh`):** run on any DM-craft / UX /
+  satisfaction change. ONE persona ROTATED by iteration (`newbie→…→optimizer`, so cross-persona
+  variance is swept over 5 loops at one-persona cost) + a 6-beat duo. An ITERATION signal, never a
+  release verdict.
+- **Tier 2 — milestone sweep, ~$10, ~90 min:** ONLY when Tier 0+1 pass + before a version bump.
+  `git fetch` → same-disk worktree off `origin/main` → `rm -rf dist/WorldOS.app` → `qa/ui_playtest_app.sh`
+  × 5 personas against the built `.app` → 5-persona satisfaction + 3 lenses + behavioral + axe → RRI
+  rollup (VM part-B + Mac part-A, same SHA) → #466. Also the periodic recalibration that keeps the
+  cheap tiers' "~80% signal" *measured* against the full RRI, not assumed.
+
+Then, regardless of tier: **file GitHub issues** tied to `{build_sha, version_tag}` with `file:line` +
+acceptance criteria → **delegate code to builder subagents** (worktree → PR → CI-green incl.
+`viewer-tests` → squash-merge) → re-run the matched tier. **Document the outcome** (tier, build SHA,
+result, delta) to the ledger / session scratchpad so progress is observable.
 **An issue closes ONLY when the NEXT build's playtest no longer reproduces it.**
 
 ---

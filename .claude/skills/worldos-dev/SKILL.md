@@ -110,6 +110,25 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
    git worktree remove --force <worktree> && git branch -D <branch> && git worktree prune
    ```
 
+## QA STRATEGY — pick the TIER (don't run the 90-min sweep to iterate)
+**Match the test to the change + your confidence — run a MIX, not all-or-nothing.** The full 5-persona
+sweep is the MILESTONE verdict, not the inner loop. Design + the honest signal accounting (the
+adversarial critique that proved naive mid-arc-snapshot seeding is a false-confidence trap — it bakes
+in the post-fix state and skips the seat-path/cold-open/free-play surfaces our bugs live in):
+`docs/qa/FAST_GATE.md`.
+
+| Tier | Run | Cost | When |
+|---|---|---|---|
+| **0 — deterministic** | `qa/fast_gate.sh` | **$0, ~2s** | EVERY engine/content/data/viewer change (and in CI). 186 engine tests + the end-to-end seat-path skill guard → the structural / seat-path / rest / travel / combat-resolution regression classes, caught free + instant. |
+| **1 — fast LLM loop** | `qa/fast_probe.sh [persona]` | ~$2–3, ~20 min | DM-craft / UX / satisfaction changes. ONE persona ROTATED by iteration (`newbie→…→optimizer`) + a 6-beat duo (≥6 keeps the behavioral floors armed). Iteration signal ONLY. |
+| **2 — milestone sweep** | the `## VM GATE SWEEP` procedure above (VM part-B + Mac part-A) | ~$10, ~90 min | ONLY when 0+1 pass + before a version bump → RRI → #466. Also the periodic recalibration of the cheap tiers vs the full RRI. |
+
+Rules: Tier 0 on **every** change (free + instant — most regressions we ship live here, e.g. the
+skill-case +3-not-+6 crit). Tier 1 when you touched DM/UX and need a satisfaction/quality read —
+**rotate the persona** so variance sweeps over 5 loops (one fixed optimizer misses the veteran/
+adversarial fails). Tier 2 sparingly. **NEVER report a Tier-0/1 result as a release verdict.** After
+any tier, log the outcome (tier, build SHA, result, delta) to the ledger so progress is observable.
+
 ## THE QA LOOP
 Spec: `qa/SCORING.md`. **The ledger is `qa/scores_db.py` (SQLite `scores.db`) → rendered to
 `qa/scores_ledger.md` (`add_run(...)` / `--render`); `qa/SCORECARD.md` is LEGACY narrative.** Append
