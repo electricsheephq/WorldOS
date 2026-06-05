@@ -132,5 +132,49 @@ class ItemIconTests(unittest.TestCase):
         self.assertIn("return window.itemArtScope(name)", src)
 
 
+class ForgePolishTests(ItemIconTests):
+    """screen-forge.jsx audit polish (issue #252): F-04 unlock affordance,
+    F-07 known/rumoured divider, F-08 tier numeral plate."""
+
+    def _forge_src(self) -> str:
+        status, ctype, body = self._get("/openworlds/screen-forge.jsx")
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        return body.decode("utf-8")
+
+    def test_forge_locked_recipes_carry_unlock_copy(self):
+        """F-04: each locked recipe must record how it is learned (an `unlock` string),
+        so the right pane and row tooltip can show a concrete affordance, not a dead end."""
+        src = self._forge_src()
+        # The locked recipes declare an `unlock:` hint…
+        self.assertIn("unlock:", src)
+        self.assertIn("Candlekeep", src)
+        self.assertIn("Dammon", src)
+
+    def test_forge_renders_unlock_affordance_and_tooltip(self):
+        """F-04: the unlock copy is rendered in the blueprint pane and as the locked row's title."""
+        src = self._forge_src()
+        # Right-pane affordance reads the selected recipe's unlock hint.
+        self.assertIn("selected.unlock", src)
+        self.assertIn("How it is learned", src)
+        # Locked recipe row exposes a hover tooltip with the unlock copy.
+        self.assertIn("title={r.locked", src)
+
+    def test_forge_separates_known_from_rumoured(self):
+        """F-07: a 'Rumoured' divider must separate known recipes from locked ones."""
+        src = self._forge_src()
+        self.assertIn("Rumoured", src)
+
+    def test_forge_tier_uses_numeral_plate_not_plain_pill(self):
+        """F-08: the tier marker must be the wax-seal TierPlate (aria-labelled), not a bare Pill."""
+        src = self._forge_src()
+        self.assertIn("function TierPlate", src)
+        self.assertIn("<TierPlate tier=", src)
+        # The plate carries an accessible label for the otherwise opaque roman numeral.
+        self.assertIn('aria-label={"Tier "', src)
+        # The list row no longer renders the recipe tier via a bare <Pill>.
+        self.assertNotIn("<Pill>{r.tier}</Pill>", src)
+
+
 if __name__ == "__main__":
     unittest.main()
