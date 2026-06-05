@@ -1700,6 +1700,87 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         for race in ("dwarf", "halfling", "gnome", "dragonborn", "half-orc"):
             self.assertIn(race, living_races, f"#379 regression: {race} lost its gallery face")
 
+    def test_openworlds_create_subrace_handling_is_wired(self):
+        # #377 (#315 AC5): the Creation Plane must offer subrace as an OPTIONAL second-tier
+        # lineage choice for the SRD-correct races, stack its ability delta on top of the base
+        # race, carry it across the startProviderSession seam, and degrade gracefully for races
+        # that have no subraces (the wizard must never block a base-race-only hero).
+        status, ctype, body = self._get("/openworlds/screen-create.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+
+        # AC1 — data model: each SRD race declares a non-empty `subraces` map with the canonical
+        # set. Parse the RACES object and confirm the subrace keys per race.
+        races_match = re.search(r"const RACES = \{(.*?)\n\};", source, re.S)
+        self.assertIsNotNone(races_match, "RACES object not found in screen-create.jsx")
+        races_body = races_match.group(1)
+        # Split RACES into per-top-level-race chunks so a subrace key can be attributed to its race.
+        entries = list(re.finditer(r'^\s{2}(?:"([a-z-]+)"|([a-z-]+)):\s*\{', races_body, re.M))
+        chunks: dict[str, str] = {}
+        for i, m in enumerate(entries):
+            name = m.group(1) or m.group(2)
+            start = m.end()
+            end = entries[i + 1].start() if i + 1 < len(entries) else len(races_body)
+            chunks[name] = races_body[start:end]
+        expected_subraces = {
+            "elf": {"high", "wood"},
+            "dwarf": {"mountain", "hill"},
+            "halfling": {"lightfoot", "stout"},
+            "gnome": {"forest", "rock"},
+        }
+        for race, expected in expected_subraces.items():
+            self.assertIn(race, chunks, f"{race} missing from RACES")
+            chunk = chunks[race]
+            self.assertIn("subraces:", chunk, f"{race} must declare a subraces map")
+            sub_match = re.search(r"subraces:\s*\{(.*?)\n\s{4}\},", chunk, re.S)
+            self.assertIsNotNone(sub_match, f"{race}.subraces block not parseable")
+            found = set(re.findall(r"^\s{6}([a-z]+):\s*\{", sub_match.group(1), re.M))
+            self.assertEqual(found, expected, f"{race} subrace keys {found} != {expected}")
+            # Every subrace declares a bonus delta (the ability stacking that AC3 verifies).
+            self.assertIn("bonus:", sub_match.group(1), f"{race} subraces must carry bonus deltas")
+
+        # Drow decision is documented and drow stays a STANDALONE top-level race (not in elf.subraces).
+        self.assertNotIn("drow", expected_subraces["elf"])
+        self.assertIn("Drow DECISION", source)
+        self.assertNotIn("drow:", chunks.get("elf", ""))
+
+        # AC2 — UI: a SubracePicker renders radio chips, gated on the race having subraces, with a
+        # "Standard" default and a per-chip accessibility role.
+        self.assertIn("function SubracePicker(", source)
+        self.assertIn("hasSubraces(hero.race)", source)
+        self.assertIn('data-worldos-testid="subrace-picker"', source)
+        self.assertIn('data-worldos-testid="subrace-chip"', source)
+        self.assertIn('role="radiogroup"', source)
+        self.assertIn('role="radio"', source)
+        # The synthesized first option is "Standard" (subrace: null) and is the default choice.
+        self.assertIn('name: "Standard"', source)
+        self.assertRegex(source, r'\[\["",\s*\{\s*name:\s*"Standard"')
+
+        # AC3 — ability stacking: a single effectiveRaceBonus(hero) that mergeBonus-stacks base +
+        # subrace, used by BOTH the StepAbilities preview and the StepReview summary (no surface
+        # left reading the bare base-race bonus).
+        self.assertIn("function mergeBonus(", source)
+        self.assertIn("function effectiveRaceBonus(hero)", source)
+        self.assertIn("const racial = effectiveRaceBonus(hero)[k] || 0;", source)
+        self.assertIn("hero.abilities[a] + (effectiveRaceBonus(hero)[a] || 0)", source)
+        self.assertNotIn("RACES[hero.race]?.bonus?.[k] || 0", source)
+        self.assertNotIn("RACES[hero.race]?.bonus?.[a] || 0", source)
+
+        # AC2 — switching race clears a stale subrace so a Wood Elf pick can't linger onto Dwarf.
+        self.assertIn("subrace: id === hero.race ? hero.subrace : null", source)
+
+        # AC4 — bindHero spec serializes the subrace across the startProviderSession seam.
+        self.assertIn('subrace: hero.subrace || "",', source)
+
+        # Initial hero state carries the subrace slot (default null = Standard).
+        self.assertIn("subrace: null,", source)
+
+        # #315 AC5 — the portrait filter ANDs in subrace but degrades to race-only (never empty).
+        self.assertIn("function portraitChoicesForRace(race, subrace)", source)
+        self.assertIn("portraitChoicesForRace(hero.race, hero.subrace)", source)
+
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
         (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")
