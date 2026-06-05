@@ -744,10 +744,13 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
     authority and the sole writer; this only reads the snapshot and passes a dict in.
 
     When ``reference`` is set, the campaign intel is BYPASSED and the surface returns the global
-    SRD browse (every match → names + tier-less preview stats). This is the codex "Browse all"
-    reference mode: in real play the intel codex is perpetually fog-of-war (the party rarely
-    slays enough to reveal much), so a player needs a way to read public monster facts (identity,
-    CR, the preview stat line) without it being gated on kills. Still strictly read-only.
+    SRD browse with the engine's PUBLIC-REFERENCE projection — every match → FULL public SRD stats
+    (AC, HP/hit dice, speed, ability scores, saves, senses, resistances/immunities, and key actions
+    WITH their to-hit/damage mechanics). This is the codex "Browse all" reference mode: in real play
+    the intel codex is perpetually fog-of-war (the party rarely slays enough to reveal much), so a
+    player/theorycrafter needs a way to read PUBLIC monster facts without it being gated on kills.
+    SRD 5.2 stats are public Open Game Content, so the reference browse renders full stat blocks
+    instead of the old hollow preview (the optimizer root-cause fix). Still strictly read-only.
     """
     engine = _load_engine_server()
     if engine is None:
@@ -756,9 +759,13 @@ def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str =
             "validation_errors": [],
             "error": f"engine import failed: {_ENGINE_IMPORT_ERROR}",
         }
+    if reference:
+        # "Browse all": the engine returns the full public-SRD reference sheet per match. Campaign
+        # intel is intentionally not loaded — a reference browse is public OGC, not fog-of-war.
+        return engine.bestiary.player_bestiary(query, limit, reference=True)
     intel: Optional[dict] = None
     safe = _safe_campaign_id(campaign_id) if campaign_id else ""
-    if safe and not reference:
+    if safe:
         snap = _read_snapshot(safe)
         raw = snap.get("bestiary_intel") if isinstance(snap, dict) else None
         if isinstance(raw, dict):

@@ -408,3 +408,57 @@ def test_player_bestiary_intel_mode_tiers_and_rumours():
     rumours = [i for i in out["items"] if i.get("unknown")]
     assert rumours and all(i.get("tier") == 0 for i in rumours)
     assert all("ac" not in i and "cr" not in i for i in rumours)  # no stats leaked on a rumour
+
+
+# --- public-reference projection ("Browse all" — optimizer root-cause) ------
+
+
+def test_public_reference_projection_returns_full_public_stats():
+    """GUARD: the public-reference projection returns FULL SRD-public stats — AC, HP/hit dice,
+    speed, ability scores, proficient saves, and at least one ACTION carrying its to-hit/damage
+    MECHANICS (not just the action name). This is the optimizer root-cause: the 'Browse all'
+    reference codex previously showed hollow stat blocks (only CR/size/type + action names), so
+    the theorycrafter couldn't evaluate creatures."""
+    proj = bestiary.public_reference_projection("Goblin Warrior")
+    assert proj is not None
+    # identity + threat
+    assert proj["name"] == "Goblin Warrior" and proj.get("cr")
+    # vitals + defenses that the hollow preview withheld
+    assert isinstance(proj.get("ac"), int) and proj["ac"] > 0
+    assert isinstance(proj.get("hp"), int) and proj["hp"] > 0
+    assert str(proj.get("hit_dice", "")).strip()
+    assert proj.get("speed")  # at least a walk speed
+    # full ability scores
+    assert proj.get("abilities") and {"str", "dex", "con", "int", "wis", "cha"} <= set(proj["abilities"])
+    # an ACTION with mechanics (to-hit / damage), not merely its name
+    actions = proj.get("actions")
+    assert isinstance(actions, list) and actions, "reference projection must carry structured actions"
+    scimitar = next((a for a in actions if a.get("name") == "Scimitar"), None)
+    assert scimitar is not None
+    desc = scimitar.get("desc", "")
+    assert "+4" in desc and "damage" in desc.lower()  # to-hit bonus + damage clause present
+    # a reference row is NOT an earned-intel row
+    assert proj.get("reference") is True and "tier" not in proj
+
+
+def test_public_reference_projection_unknown_returns_none():
+    assert bestiary.public_reference_projection("nonexistent beast") is None
+
+
+def test_player_bestiary_reference_mode_renders_full_stats():
+    """End-to-end: player_bestiary(reference=True) returns full public stat blocks for every
+    match (the surface the viewer's 'Browse all' toggle drives), not the hollow preview."""
+    out = bestiary.player_bestiary("goblin", 20, reference=True)
+    by_name = {i.get("name"): i for i in out["items"]}
+    gw = by_name["Goblin Warrior"]
+    # full stats present, no fog-of-war / rumour redaction on a public reference browse
+    assert "ac" in gw and "hp" in gw and "abilities" in gw and gw.get("reference") is True
+    assert not any(i.get("unknown") for i in out["items"])  # reference mode never blurs
+
+
+def test_player_bestiary_reference_precedence_over_intel():
+    """reference=True bypasses earned intel — a 'Browse all' request renders full public stats
+    even when an intel dict is also supplied (deterministic precedence)."""
+    out = bestiary.player_bestiary("goblin", 20, intel={"goblin-warrior": 1}, reference=True)
+    gw = next(i for i in out["items"] if i.get("name") == "Goblin Warrior")
+    assert "ac" in gw and "hp" in gw and gw.get("reference") is True

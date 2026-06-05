@@ -533,23 +533,93 @@ def intel_projection(name: str, tier: int) -> Optional[dict]:
     return out
 
 
-def player_bestiary(query: str = "", limit: int = 20, intel: Optional[dict] = None) -> dict:
+def _public_actions(sb: dict) -> list[dict]:
+    """The creature's actions as structured rows for the PUBLIC reference codex — ``name`` +
+    the raw mechanics ``desc`` (to-hit / reach / range / damage) + ``action_type``. Unlike the
+    intel codex's name-only ``known_actions`` (a kill-tier reveal that withholds the numbers),
+    a reference browse is public SRD reading material, so the to-hit/damage text rides along so
+    the theorycrafter can actually evaluate the creature. Empty list when it has no actions. Pure;
+    rows with no name are skipped (an SRD action always has a name)."""
+    out: list[dict] = []
+    for a in sb.get("actions", []) or []:
+        name = str(a.get("name", "")).strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "desc": str(a.get("desc", "")).strip(),
+            "action_type": str(a.get("action_type", "ACTION")).strip() or "ACTION",
+        })
+    return out
+
+
+def public_reference_projection(name: str) -> Optional[dict]:
+    """Full public-SRD reference stat block for a creature, or ``None`` if unknown.
+
+    This is the "Browse all" reference surface (optimizer root-cause dc0d625): the intel codex
+    (#263) is fog-of-war — gated on the party SLAYING creatures — so before a kill the reference
+    browse showed only HOLLOW rows (CR/size/type + action NAMES, no AC/HP/abilities/saves/action
+    mechanics), and a theorycrafter couldn't evaluate anything. SRD 5.2 creature stats are public
+    Open Game Content (CC-BY-4.0), so a *reference* browse has nothing to hide — this returns the
+    FULL public sheet: identity + CR, AC, HP/hit dice, speed, ability scores, proficient saves,
+    senses, the damage resistance/immunity/vulnerability + condition-immunity lists, and the key
+    actions WITH their to-hit/damage mechanics (``actions`` rows carry the raw SRD desc, not just
+    the name as the kill-tier ``known_actions`` does). A ``tactics`` blurb composed from the action
+    text is included too.
+
+    Built on top of ``intel_projection(name, 3)`` (the slain-tier reveal) so the field set tracks
+    a single source of truth — then the public-reference extras (structured ``actions`` with
+    mechanics) are layered on. The returned dict carries ``reference: True`` (and NO ``tier`` key)
+    so a caller can tell a reference row from an earned-intel row. Pure + READ-ONLY over the
+    bestiary index; the engine remains the sole writer.
+    """
+    proj = intel_projection(name, 3)
+    if proj is None:
+        return None
+    sb = stat_block(name)  # already known-good (intel_projection succeeded), reused for actions
+    proj.pop("tier", None)
+    proj["reference"] = True
+    if sb is not None:
+        actions = _public_actions(sb)
+        if actions:
+            proj["actions"] = actions
+    return proj
+
+
+def player_bestiary(
+    query: str = "", limit: int = 20, intel: Optional[dict] = None, reference: bool = False
+) -> dict:
     """Read-only player-facing bestiary/codex projection.
 
-    Two modes, selected by ``intel`` (kept PURE — this module never opens a campaign file;
-    the viewer loads the snapshot read-only and passes the dict in):
+    Three modes (kept PURE — this module never opens a campaign file; the viewer loads the
+    snapshot read-only and passes the dict in):
 
-    * ``intel is None`` (today's call): the global SRD browse — ``player_bestiary_preview``
-      for every match, no campaign scope, no leakage. Back-compat preserved byte-for-byte.
+    * ``reference=True`` (the "Browse all" public reference codex): the global SRD browse with
+      ``public_reference_projection`` for every match — FULL public SRD stats (AC, HP/hit dice,
+      speed, ability scores, saves, senses, resistances/immunities, and key actions WITH their
+      to-hit/damage mechanics). No campaign scope, no fog-of-war — SRD stats are public Open Game
+      Content, so a reference browse renders full stat blocks instead of the hollow preview. This
+      is the optimizer root-cause fix (dc0d625): the theorycrafter can finally evaluate creatures.
+    * ``intel is None`` and not ``reference`` (the legacy default call): the global SRD browse —
+      ``player_bestiary_preview`` for every match, no campaign scope, no leakage. Back-compat
+      preserved byte-for-byte.
     * ``intel`` set (a ``{creature_slug: max_tier}`` dict, the campaign's earned intel): the
       intel-tier codex (#263). Each match's tier is looked up by ``creature_slug(name)``;
       creatures at tier >= 1 get ``intel_projection`` (progressively more stats per tier),
       and unencountered matches (tier 0) become a REDACTED ``{id_hint, tier:0, unknown:true}``
       rumour row — the real name is withheld from the wire (only an opaque render key is sent),
       so the index can show "N known · M rumoured" without leaking unencountered creature names.
+
+    ``reference`` takes precedence over ``intel`` (a "Browse all" request bypasses earned intel);
+    the viewer never passes both, but the precedence is explicit so the surface is deterministic.
     """
     n = max(1, min(int(limit), 50))
     names = find(query, n)
+    if reference:
+        return {
+            "items": [p for name in names if (p := public_reference_projection(name)) is not None],
+            "validation_errors": authored_validation_errors(),
+        }
     if intel is None:
         return {
             "items": [p for name in names if (p := player_bestiary_preview(name)) is not None],
