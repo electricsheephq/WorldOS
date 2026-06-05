@@ -622,7 +622,8 @@ $PMSG${COMP_BLOCK:+
 
 $COMP_BLOCK}"
 
-    DMSG="$(turn dm "$DSID" 0 "$RUNBOOK
+    DMSG="$(turn dm "$DSID" 0 "[ARC CUE — internal planning ONLY. Do NOT quote, echo, or render this line in your reply; weave its INTENT into the lived scene below.]
+$RUNBOOK
 
 This beat, the party acts (resolve EACH actor's structured moves through the engine — roll/cast/attack/use as needed; a companion's [attack] on an ALLY is a real betrayal, resolve it as combat, do not soften it into narration):
 
@@ -630,7 +631,7 @@ $PARTY_BLOCK
 
 For EACH companion this beat, call check_companion_arc(companion_id) — the engine tracks each companion's relationship arc + any SEALED agenda. If it reports a newly-unlocked gate or a FIRED agenda, DRAMATIZE it now: a fired betrayal agenda becomes a REAL attack on the party (resolve it through combat, do not soften it into narration); an unlocked gate becomes a real scene beat. Do not invent a turn the engine hasn't fired, and do not suppress one it has.
 
-Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.' ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it.")"
+Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.' ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it. Your reply IS the scene: write FLOWING 2nd-person PROSE, NEVER your planning notes or terse scaffolding. (Wrong — internal shorthand the player must never see: \"Devella presses Renn on the seal. Renn: the rangers made that call — no log filed.\" Right — render it lived: her jaw tightening, the quoted line in her own voice, the weight of the answer in the room.)")"
     # #357: if the DM turn ended on a tool call / 3rd-person status line, recover the
     # player-facing narration the engine logged this beat so the chat is never blank.
     DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
