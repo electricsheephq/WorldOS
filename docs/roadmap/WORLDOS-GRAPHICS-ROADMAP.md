@@ -137,7 +137,7 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 ### M0 — Contract freeze + thin-client spike  *(advances C6 freeze, C1=zone, C8 groundwork; GT-agnostic)*
 - **R0.1 Render-profile contract** (core + per-renderer blocks; zones-not-xy; core-only conformance test in CI)
 - **R0.2 Graphical move-intent vocabulary** (extend `_MOVE_KINDS`: travel/inspect/move_to_zone; doc; reject-unknown test; cross-component freeze)
-- **R0.3 Surface-read guarantees + spike** (stable-actor-id test [BLOCKING]; namespace the derived position hint; Phaser thin-client spike rendering one location)
+- **R0.3 Surface-read guarantees + spike** (stable-actor-id test [BLOCKING]; namespace the derived position hint; Phaser thin-client spike rendering one location). The `/events` **ordering/replay** half of R0.3 is frozen as the **Action-Replay envelope** contract (`docs/roadmap/contracts/action-replay-envelope.md`; epic **#645** R645.1) — `{seq, actor_fk, verb, target_fk, result, anim_hint}`, the time-axis companion to the render-profile (frame) + move-intents (write) contracts.
 
 ### M1 — GT1: SNES pixel turn-based MVP  *(C2=tilemap, C3=zone-band, C4=click-to-zone, C5=sprites, C9=manual)*
 - **R1.1 T1 render profile + tilemaps** · **R1.2 T1 combat + character UI (zone-mode)** · **R1.3 T1 QA gates** (reuse screenshot-recorder + UI-gate + blind-playtester; add "no VTT grid chrome in zone mode" check)
