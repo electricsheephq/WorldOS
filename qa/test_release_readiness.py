@@ -172,6 +172,16 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                         "mac_handoff_required": True,
                         "blocking_categories": blocking_categories,
                     },
+                    "rri_plan": {
+                        "support_preflight_json": str(preflight),
+                        "support_preflight_required_for_split_rollup": True,
+                        "rri_rollup_command_template": (
+                            "python3 qa/release_readiness.py --runs VM_PERSONA_RUN_DIRS_CSV "
+                            "--handoff-json SAME_SHA_MAC_HANDOFF_JSON "
+                            "--support-preflight-json support_vm_preflight.json "
+                            f"--build-sha {sha}"
+                        ),
+                    },
                 }
             ),
             encoding="utf-8",
@@ -1358,6 +1368,57 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             support_gaps = [gap for gap in payload["evidence_gaps"] if gap["gate"] == "support_preflight"]
             self.assertTrue(support_gaps)
             self.assertIn("badcafe", " ".join(gap["detail"] for gap in support_gaps))
+
+    def test_split_vm_support_preflight_requires_rollup_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [self.write_persona_run(tmp, persona, include_part_a=False) for persona in personas]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)
+            support_preflight = self.write_support_preflight(tmp)
+            preflight_payload = json.loads(support_preflight.read_text(encoding="utf-8"))
+            preflight_payload.pop("rri_plan", None)
+            support_preflight.write_text(json.dumps(preflight_payload), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("native_gate", payload["failed_gates"])
+            self.assertFalse(payload["support_preflight_evidence"]["valid"])
+            support_gaps = [gap for gap in payload["evidence_gaps"] if gap["gate"] == "support_preflight"]
+            self.assertTrue(support_gaps)
+            self.assertIn("support_preflight_required_for_split_rollup", " ".join(gap["detail"] for gap in support_gaps))
+            self.assertIn("rri_rollup_command_template", " ".join(gap["detail"] for gap in support_gaps))
 
     def test_direct_native_evidence_ignores_optional_stale_support_preflight(self):
         with tempfile.TemporaryDirectory() as td:
