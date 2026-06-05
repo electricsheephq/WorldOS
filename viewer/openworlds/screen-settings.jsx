@@ -198,7 +198,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
             <Slider label="UI scale" value={a11y.uiScale} onChange={(v) => applyA11y({ uiScale: v })} min={75} max={150} unit="%" />
 
             <Divider />
-            <SectionTitle>Not yet wired</SectionTitle>
+            <SectionTitle>Coming soon</SectionTitle>
             <PreviewBanner>Display-only — the controls below have no backing yet. UI scale above is live and persists across reloads.</PreviewBanner>
             <Slider preview label="Contrast" value={display.contrast} onChange={(v) => setDisplay({ ...display, contrast: v })} />
 
@@ -257,7 +257,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
 
         {section === "controls" && (
           <SettingsSection title="The Player's Hand" eyebrow="Keys & gestures" ordinal="IV.">
-            <PreviewBanner>Display-only — these are the fixed default shortcuts; rebinding and gesture options are not yet wired.</PreviewBanner>
+            <PreviewBanner>Display-only — these are the fixed default shortcuts; rebinding and gesture options are not yet available.</PreviewBanner>
             <SectionTitle>Bindings <span style={{ fontSize: 9, opacity: 0.7, letterSpacing: "0.18em" }}>(preview)</span></SectionTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {KEYBINDS.map((kb) => (
@@ -281,7 +281,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
             <Toggle label="High-contrast UI" value={a11y.highContrast} onChange={(v) => applyA11y({ highContrast: v })} />
 
             <Divider />
-            <SectionTitle>Not yet wired</SectionTitle>
+            <SectionTitle>Coming soon</SectionTitle>
             <PreviewBanner>Display-only — the controls below have no backing yet. Reduce motion and high-contrast above are live and persist across reloads.</PreviewBanner>
             <Toggle preview label="Dyslexic-friendly font for body text" value={accessibility.dyslexic} onChange={(v) => setAccessibility({ ...accessibility, dyslexic: v })} />
             <Toggle preview label="Always show captions for narration" value={accessibility.captions} onChange={(v) => setAccessibility({ ...accessibility, captions: v })} />
@@ -309,7 +309,7 @@ function ScreenSettings({ onNavigate, state, setState, nativeState, refreshNativ
               <BrassButton size="sm" tone="ghost" disabled={!activeCampaignId || !!savesBusy} onClick={loadSlot}>{savesBusy === "load" ? "Restoring…" : "Quickload"}</BrassButton>
               <BrassButton size="sm" tone="ghost" disabled={!activeCampaignId || !!savesBusy} onClick={exportChronicle}>{savesBusy === "export" ? "Exporting…" : "Export chronicle…"}</BrassButton>
               <div style={{ flex: 1 }} />
-              <BrassButton size="sm" tone="crimson" disabled title="Display-only — erase is not wired; nothing is deleted">Erase all <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
+              <BrassButton size="sm" tone="crimson" disabled title="Display-only — erase is not available; nothing is deleted">Erase all <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span></BrassButton>
             </div>
             {campaigns.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -410,7 +410,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
   return (
     <SettingsSection title="WorldOS Native App" eyebrow="Supervisor bridge" ordinal="I.">
       <div role="status" aria-live="polite" data-worldos-testid="provider-status" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        <Pill tone={bridgeReady ? "emerald" : "crimson"}>{bridgeReady ? "Wired" : "Unavailable"}</Pill>
+        <Pill tone={bridgeReady ? "emerald" : "crimson"}>{bridgeReady ? "Bridge connected" : "Bridge offline"}</Pill>
         <Pill tone={viewer.status === "running" ? "emerald" : "royal"}>Viewer {viewer.status || "stopped"}</Pill>
         {app.runningProvider && <Pill tone="royal">Provider {app.runningProvider}</Pill>}
       </div>
@@ -475,7 +475,7 @@ function NativeAppSection({ nativeState, refreshNative }) {
 /* Honest-UI marker, matching screen-merchant.jsx / screen-forge.jsx: a brass "Preview" badge
    plus a one-line explanation, shown above any section whose controls are decorative. */
 function PreviewBanner({ children }) {
-  const badge = { label: "Preview", tone: "muted", detail: typeof children === "string" ? children : "Display-only — not yet wired." };
+  const badge = { label: "Preview", tone: "muted", detail: typeof children === "string" ? children : "Display-only — not yet available." };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", marginBottom: 16, background: "rgba(80,50,20,0.18)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.45)", borderRadius: 2 }}>
       <CapabilityBadge capability={badge} nativeStatus={null} />
