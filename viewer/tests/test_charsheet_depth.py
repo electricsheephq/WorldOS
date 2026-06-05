@@ -67,8 +67,29 @@ _SNAPSHOT = {
             "proficiency_bonus": 2, "armor_class": 18, "max_hp": 36, "current_hp": 36,
             "features": ["Second Wind", "Action Surge", "Improved Critical"],
         },
+        # A second caster whose "Spellcasting" feature is the SAME NAME as the Wizard's but a
+        # DIFFERENT class+ability (Charisma/bard). Used to prove the read-model resolves the
+        # description against the character's ACTUAL class, not whichever class loaded first.
+        "lyric": {
+            "id": "lyric", "name": "Lyric Songsteel", "kind": "player", "race": "Half-Elf",
+            "alignment": "Chaotic Good",
+            "classes": [{"name": "Bard", "level": 3, "subclass": "College of Lore"}],
+            "abilities": {"strength": 9, "dexterity": 14, "constitution": 12,
+                          "intelligence": 11, "wisdom": 10, "charisma": 16},
+            "proficiency_bonus": 2, "armor_class": 13, "max_hp": 18, "current_hp": 18,
+            "spell_slots": {"1": {"maximum": 4, "used": 0}, "2": {"maximum": 2, "used": 0}},
+            # Both casters carry the shared-name "Spellcasting" class feature.
+            "features": ["Spellcasting", "Bardic Inspiration", "Expertise"],
+        },
     },
 }
+
+# Give the Wizard the same shared-name "Spellcasting" feature so the cross-class guard can
+# compare the two side by side (the engine populates it for every caster at L1).
+_SNAPSHOT["characters"]["elara"]["features"] = [
+    "Spellcasting", "Arcane Recovery", "Evocation Savant", "Sculpt Spells",
+]
+_SNAPSHOT["party"].append("lyric")
 
 
 class _QuietHandler(server._Handler):
@@ -212,6 +233,48 @@ class CharsheetDepthTests(unittest.TestCase):
         # (was blank before — the engine authored 260 descs the surface was dropping).
         arcane = next(c for c in elara["classFeatures"] if c["name"] == "Arcane Recovery")
         self.assertTrue(arcane["detail"], "Arcane Recovery should carry its SRD description")
+        self.assertIn("slot", arcane["detail"].lower())
+
+    def test_shared_feature_desc_is_class_aware(self):
+        """Cross-class feature-description bug (dc0d625 sweep): "Spellcasting" is one feature NAME
+        shared by 7 caster classes with 7 DISTINCT descriptions. Keying the SRD desc map by NAME
+        alone collapsed them onto whichever class loaded first (bard), so a Wizard's Spellcasting
+        read out the BARD's text — wrong class AND wrong ability. The read-model must resolve the
+        description against the character's ACTUAL class: a Wizard's references Intelligence/wizard,
+        a Bard's references Charisma/bard."""
+        self._write("camp_depth", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_depth")
+        party = self._party(surface)
+
+        def _spellcasting_detail(char):
+            return next(c["detail"] for c in char["classFeatures"] if c["name"] == "Spellcasting")
+
+        wiz_detail = _spellcasting_detail(party["elara"]).lower()
+        bard_detail = _spellcasting_detail(party["lyric"]).lower()
+
+        # Wizard: Intelligence + wizard list (NOT the bard's Charisma text).
+        self.assertIn("intelligence", wiz_detail)
+        self.assertIn("wizard", wiz_detail)
+        self.assertNotIn("charisma", wiz_detail)
+        self.assertNotIn("bard", wiz_detail)
+
+        # Bard: Charisma + bard list.
+        self.assertIn("charisma", bard_detail)
+        self.assertIn("bard", bard_detail)
+        self.assertNotIn("intelligence", bard_detail)
+
+        # And the two descriptions are genuinely different (proves the lookup is class-aware,
+        # not just that one class happens to match the global-first entry).
+        self.assertNotEqual(wiz_detail, bard_detail)
+
+    def test_unique_named_feature_desc_not_regressed(self):
+        """Guard against over-correction: a UNIQUELY-named class feature (one class, one desc)
+        must still carry its SRD description. The class-aware fix must not blank these out."""
+        self._write("camp_depth", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_depth")
+        elara = self._party(surface)["elara"]
+        arcane = next(c for c in elara["classFeatures"] if c["name"] == "Arcane Recovery")
+        self.assertTrue(arcane["detail"], "Arcane Recovery should still carry its SRD description")
         self.assertIn("slot", arcane["detail"].lower())
 
     def test_surface_class_features_empty_when_engine_has_none(self):
