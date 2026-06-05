@@ -114,6 +114,18 @@ class LiveViewRecoveryTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def _post(self, path: str, payload: dict) -> tuple[int, dict]:
+        conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
+        try:
+            body = json.dumps(payload).encode("utf-8")
+            conn.request("POST", path, body=body,
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            data = resp.read()
+            return resp.status, (json.loads(data.decode("utf-8")) if data else {})
+        finally:
+            conn.close()
+
     # -- the wedge + its recovery ---------------------------------------------
     def test_stale_viewed_campaign_recovers_can_act_on_live_run(self):
         """A stale ?campaign= (the client latched an OLD, non-current save while the live run
@@ -242,6 +254,117 @@ class LiveViewRecoveryTests(unittest.TestCase):
             self.assertFalse(surface.get("is_live_view"),
                              f"{route} pinned view of another campaign must stay gated")
             self.assertFalse(surface.get("can_act"), f"{route} pinned view must stay read-only")
+
+    # -- the detach-locks-the-action-bar P0 (dc0d625 re-baseline sweep) --------
+    # The slow-but-alive beat: the DM is narrating, the move sink is healthy, but the
+    # snapshot/session mtimes have aged past the 90s recency window (a long quiet beat,
+    # or the player navigated away for several hops). `_list_campaigns` derives each
+    # card's `live` flag purely from recency (`(now - recency) < 90`, server.py:1007),
+    # so EVERY card flips live=False — which empties the heal's `live_current` guard
+    # (server.py:6401-6404) and the self-heal no-ops, latching is_live_view=False and
+    # leaking "live provider move sink is not ready". This is the confirmed trigger.
+    def test_stale_snapshot_but_live_sink_recovers_can_act(self):
+        """REPRO (sub-case a): a single live run whose snapshot is stale >90s while the move
+        sink is live (a long quiet DM beat) must STILL be live + actable — not latch the lock."""
+        self._enable_move_sink()
+        # One real run, recency aged past the 90s window (DM has been narrating quietly).
+        self._write("live_run", _snap("Embergloom"), age_seconds=300)
+        self.assertEqual(server._pick_campaign(None), "live_run")
+        # Pre-fix: the recency-only live flag is False for the only campaign.
+        cards = server._list_campaigns("live_run")
+        self.assertTrue(any(c["id"] == "live_run" for c in cards))
+
+        status, surface = self._get("/session-surface?campaign=live_run")
+        self.assertEqual(status, 200)
+        self.assertTrue(surface["live"],
+                        "a live move sink keeps the attached run live despite a stale snapshot")
+        self.assertTrue(surface["is_live_view"],
+                        "viewing the attached live run must report is_live_view (no false lock)")
+        self.assertTrue(surface["can_act"],
+                        "can_act must hold while the sink is live — the slow-beat lockout")
+
+        status, payload = self._get("/app-status?campaign=live_run")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["live"]["can_act"], "app-status can_act must hold for the live run")
+        self.assertNotEqual(payload["readiness"]["failure_bucket"], "no_provider",
+                            "the no_provider bucket / raw 'move sink not ready' must NOT fire")
+
+    def test_stale_snapshot_two_campaigns_heals_to_live_run(self):
+        """REPRO (sub-case c): two play-store campaigns BOTH aged past 90s while the sink is
+        live (player nav-hopped to 'the other Live chronicle'). The stale ?campaign on the
+        non-attached run must heal to the attached live run, not latch the lock."""
+        self._enable_move_sink()
+        # The attached/live run is the most-recently-active; a second chronicle also exists.
+        self._write("other_chronicle", _snap("Chapter Two"), age_seconds=200)
+        self._write("live_run", _snap("Embergloom"), age_seconds=120)
+        self.assertEqual(server._pick_campaign(None), "live_run")
+
+        status, surface = self._get("/session-surface?campaign=other_chronicle")
+        self.assertEqual(status, 200)
+        self.assertTrue(surface["is_live_view"],
+                        "a stale view of the other chronicle must heal to the live run")
+        self.assertEqual(surface["campaign_id"], "live_run", "recovery follows the live run")
+        self.assertTrue(surface["can_act"], "can_act recovers after the heal")
+
+        # /app-status agrees — the no_provider bucket clears and the action lane is actable again.
+        status, payload = self._get("/app-status?campaign=other_chronicle")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["live"]["can_act"])
+        self.assertTrue(payload["live"]["is_live_view"])
+        self.assertEqual(payload["live"]["campaign_id"], "live_run")
+        self.assertNotEqual(payload["readiness"]["failure_bucket"], "no_provider")
+
+    def test_dead_sink_with_stale_snapshot_stays_read_only(self):
+        """GUARD: when the sink is genuinely dead (file removed/unwritable) AND the snapshot is
+        stale, it MUST stay read-only — the slow-beat heal must not fabricate can_act for a dead
+        provider. Complements test_no_move_sink_stays_read_only with the stale-snapshot case."""
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
+        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        self.assertFalse(server._live_play())
+        self._write("dead_run", _snap("Disconnected"), age_seconds=300)
+
+        status, surface = self._get("/session-surface?campaign=dead_run")
+        self.assertEqual(status, 200)
+        self.assertFalse(surface["live"], "no live sink → not live")
+        self.assertFalse(surface["can_act"], "dead provider stays honestly read-only")
+
+        status, payload = self._get("/app-status?campaign=dead_run")
+        self.assertFalse(payload["live"]["can_act"],
+                         "a genuinely dead sink must report can_act=False")
+        # The dead sink is honestly NOT ready (degraded). We don't pin the exact bucket here —
+        # in the bare test harness `no_art` (missing private art root) can pre-empt `no_provider`
+        # in the readiness ladder; either way the run is degraded, never falsely ready.
+        self.assertNotEqual(payload["readiness"]["failure_bucket"], "none",
+                            "a genuinely dead sink must stay degraded, never ready")
+        self.assertFalse(payload["readiness"]["ready_for_play"])
+
+    # -- the /move POST gate is the real write authority for a client retry ----
+    def test_move_accepts_untagged_retry_while_sink_live(self):
+        """The /move gate (server.py:7035-7062) accepts an UNTAGGED move whenever the sink is
+        writable — it never gates on is_live_view. This is what lets a STUCK-turn client retry
+        recover: the frozen action bar is a CLIENT gate only; the server would take the re-POST."""
+        self._enable_move_sink()
+        self._write("live_run", _snap("Embergloom"), age_seconds=300)
+        server._Handler.campaign_id = "live_run"
+
+        # An untagged say-move (no `campaign` field): the gate never consults is_live_view, so a
+        # stuck-turn client retry lands as long as the sink is writable.
+        status, body = self._post("/move", {"kind": "say", "text": "I press on."})
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("ok"), f"untagged retry must be accepted: {body}")
+
+    def test_move_refuses_when_sink_dead(self):
+        """The honest-dead-provider path: with no sink, /move refuses — so the client must NOT
+        promise a working retry; it surfaces 'Resume from Chronicles' instead of a silent freeze."""
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
+        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        self.assertFalse(server._live_play())
+        server._Handler.campaign_id = "live_run"
+
+        status, body = self._post("/move", {"kind": "say", "text": "I press on."})
+        self.assertEqual(status, 200)
+        self.assertFalse(body.get("ok"), "a dead sink must refuse the move")
+        self.assertIn("read-only", str(body.get("reason", "")))
 
 
 if __name__ == "__main__":

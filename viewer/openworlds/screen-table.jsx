@@ -422,6 +422,65 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
 // Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
 if (typeof window !== "undefined") window.buildChronicleLog = buildChronicleLog;
 
+// LOCKOUT P0 — the detach-locks-the-action-bar play gate, as ONE pure function so the exact
+// boolean logic is unit-testable (mirrors app.jsx's `recoveryWindowMs`). Inputs are the surface +
+// app-status facts the component already has; outputs are every derived play-gate flag + the single
+// player-facing block message. The three load-bearing contracts this encodes:
+//   1. NO raw dev string ever reaches the player — the "live provider move sink is not ready …"
+//      detail is mapped by BUCKET to humane, story-adjacent copy (`blockReason`).
+//   2. A STUCK turn (pending.stuck — the DM timed out) re-opens the bar for a REAL retry:
+//      `stuckRetryUnblocked` is true even through an app-status latch (`appStatusBlocksPlay`), so the
+//      retry can PROBE the server /move gate (the real write authority). It is NOT unblocked when the
+//      surface fetch itself failed/loading (`surfaceStatusBlocksPlay`) — nothing to act on then.
+//   3. The honest-dead-provider path is preserved: a genuine surface outage still blocks, and a probe
+//      that the server refuses (dead sink) surfaces that reason rather than re-arming.
+function computePlayGate({ surfaceStatus, appStatus, pendingStuck }) {
+  const readiness = appStatus?.readiness || {};
+  const health = appStatus?.health || {};
+  const failureBucket = readiness.failure_bucket || health.failure_bucket || "";
+  const failureDetail = readiness.failure_detail || health.failure_detail || "";
+  const surfaceStatusBlocksPlay = surfaceStatus !== "ready";
+  const surfaceStatusBlockReason = surfaceStatus === "loading"
+    ? "The live session surface is still loading."
+    : `Session surface unavailable: ${surfaceStatus}`;
+  const appStatusBlocksPlay = Boolean(
+    appStatus &&
+    readiness.ready_for_play === false &&
+    ["no_provider", "no_launcher", "move_rejected"].includes(failureBucket),
+  );
+  // Only ever surface the raw server detail when it is a clearly-human sentence (no internal jargon).
+  const detailLooksHuman = Boolean(
+    failureDetail &&
+    !/move sink|provider-backed|app-status|app_status|readiness|failure_bucket|localhost/i.test(failureDetail),
+  );
+  const appStatusBlockReason = (
+    failureBucket === "no_launcher"
+      ? "The play window lost its connection. Resume this chronicle from Chronicles to keep going."
+      : failureBucket === "no_provider"
+        ? "The Dungeon Master has stepped away. Resume this chronicle from Chronicles to bring them back."
+        : failureBucket === "move_rejected"
+          ? "That move could not be sent to the live session. Resume this chronicle from Chronicles and try again."
+          : detailLooksHuman
+            ? failureDetail
+            : "The live session paused. Resume this chronicle from Chronicles to keep playing."
+  );
+  const livePlayBlocked = surfaceStatusBlocksPlay || appStatusBlocksPlay;
+  const blockReason = surfaceStatusBlocksPlay ? surfaceStatusBlockReason : appStatusBlockReason;
+  // A stuck turn re-opens the bar for a real retry, bypassing ONLY the app-status latch (never a
+  // genuine surface outage). The server /move gate is the authority on whether the retry lands.
+  const stuckRetryUnblocked = Boolean(pendingStuck) && !surfaceStatusBlocksPlay;
+  return {
+    failureBucket,
+    surfaceStatusBlocksPlay,
+    appStatusBlocksPlay,
+    livePlayBlocked,
+    blockReason,
+    stuckRetryUnblocked,
+  };
+}
+// Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
+if (typeof window !== "undefined") window.computePlayGate = computePlayGate;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -514,26 +573,19 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
   const composerAction = actionById(composerMode.actionId);
   const draftText = input.trim();
-  const appReadiness = appStatus?.readiness || {};
-  const appHealth = appStatus?.health || {};
-  const appFailureBucket = appReadiness.failure_bucket || appHealth.failure_bucket || "";
-  const appFailureDetail = appReadiness.failure_detail || appHealth.failure_detail || "";
-  const surfaceStatusBlocksPlay = surfaceStatus !== "ready";
-  const surfaceStatusBlockReason = surfaceStatus === "loading"
-    ? "The live session surface is still loading."
-    : `Session surface unavailable: ${surfaceStatus}`;
-  const appStatusBlocksPlay = Boolean(
-    appStatus &&
-    appReadiness.ready_for_play === false &&
-    ["no_provider", "no_launcher", "move_rejected"].includes(appFailureBucket),
-  );
-  const appStatusBlockReason = appFailureDetail || (
-    appFailureBucket === "no_provider"
-      ? "No Dungeon Master provider is connected."
-      : "The live move lane is not ready."
-  );
-  const livePlayBlocked = surfaceStatusBlocksPlay || appStatusBlocksPlay;
-  const livePlayBlockReason = surfaceStatusBlocksPlay ? surfaceStatusBlockReason : appStatusBlockReason;
+  // The action bar's pending/stuck state (owned by useLiveSession in app.jsx): `pendingActive` is a
+  // turn the DM is still narrating; `pendingStuck` is a turn the recovery timeout flagged as timed-out
+  // (the bar re-opens so the player can retry — see the LOCKOUT P0 recovery below).
+  const pendingActive = Boolean(pending && !pending.stuck);
+  const pendingStuck = Boolean(pending && pending.stuck);
+  // LOCKOUT P0 — every derived play-gate flag + the single player-facing block message come from ONE
+  // pure helper (`computePlayGate`, module scope above) so the boolean logic is unit-testable and can
+  // never drift between the controls. `stuckRetryUnblocked` re-opens the bar for a real retry through
+  // an app-status latch; `livePlayBlocked` still freezes a genuine surface outage; `blockReason` is
+  // humane copy (the raw "live provider move sink is not ready" dev string never reaches the player).
+  const playGate = computePlayGate({ surfaceStatus, appStatus, pendingStuck });
+  const { surfaceStatusBlocksPlay, appStatusBlocksPlay, livePlayBlocked, stuckRetryUnblocked } = playGate;
+  const livePlayBlockReason = playGate.blockReason;
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const params = new URLSearchParams();
@@ -665,12 +717,11 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
 
   // #340 + #342: arming / clearing the "DM is narrating…" pending state now lives in the app-level
   // useLiveSession hook (so it survives navigation, and carries the 90s recovery + 12-min backstop).
-  // ScreenTable just calls into it. `pendingActive` is the gate for the action bar — a turn that the
-  // recovery timeout flagged `stuck` is NO LONGER pending (the bar re-opens so the player can retry).
+  // ScreenTable just calls into it. `pendingActive`/`pendingStuck` are derived above (they feed the
+  // LOCKOUT P0 play gate); a turn the recovery timeout flagged `stuck` is NO LONGER pending — the bar
+  // re-opens (and `stuckRetryUnblocked` lets the retry probe the server even through an app-status latch).
   const armPending = session.armPending;
   const recordPlayerEcho = session.recordPlayerEcho;
-  const pendingActive = Boolean(pending && !pending.stuck);
-  const pendingStuck = Boolean(pending && pending.stuck);
   // #385: the COLD-OPEN (first beat) gets action-bar copy that reads as "the DM is taking its turn"
   // (alive) rather than the generic "Narrating…" — so the locked bar matches the obviously-alive
   // chronicle indicator and never looks like the app is wedged.
@@ -694,9 +745,17 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     if (!pending) stuckNotified.current = false;
   }, [pendingStuck, pending, toast]);
 
-  const postMove = async (move, label, actionId) => {
+  const postMove = async (move, label, actionId, { probe = false } = {}) => {
     const enabledAction = actionId ? enabledActionById(actionId) : null;
-    if (!move || !canAct || livePlayBlocked || pendingActive || (actionId && !enabledAction)) {
+    // `probe` is the stuck-turn retry: the client gate (canAct/livePlayBlocked, and the per-action
+    // enabled flag, which all derive from the same possibly-stale surface) is a hint, so we let the
+    // retry PROBE the server /move gate (the real write authority). We still honor the truly hard
+    // local blockers — a missing move, or a turn already in flight — so a probe can't spam the lane
+    // or double-fire. The server's own validation (sanitize_move + the campaign-tag gate) is the
+    // backstop that refuses anything the surface would have correctly blocked.
+    const hardBlocked = !move || pendingActive;
+    const softBlocked = !canAct || livePlayBlocked || (actionId && !enabledAction);
+    if (hardBlocked || (softBlocked && !probe)) {
       toast({ kind: "danger", title: "Action unavailable", body: pendingActive ? "The Dungeon Master is still narrating — one move at a time." : livePlayBlocked ? livePlayBlockReason : readOnlyReason });
       return;
     }
@@ -737,7 +796,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     }
   };
 
-  const sendAction = async () => {
+  const sendAction = async ({ probe = false } = {}) => {
     if (pendingActive) return;
     const text = input.trim();
     if (!text) {
@@ -746,12 +805,15 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       return;
     }
     const action = actionById(composerMode.actionId);
-    if (!action?.available) {
+    // On a normal declare the surface's action-availability is the gate; on a stuck-turn `probe`
+    // (the retry path) the surface gate may be a stale latch, so we defer to the server /move gate
+    // instead of refusing locally — postMove({probe}) carries the bypass + the honest-failure toast.
+    if (!action?.available && !probe) {
       toast({ kind: "danger", title: `${composerMode.label} is unavailable`, body: action?.disabled_reason || readOnlyReason });
       return;
     }
     const echoText = composerModeId === "do" ? text : `${composerMode.label}: ${text}`;
-    await postMove({ kind: composerMode.kind, text }, echoText, composerMode.actionId);
+    await postMove({ kind: composerMode.kind, text }, echoText, composerMode.actionId, { probe });
     setInput("");
   };
 
@@ -763,8 +825,9 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const retryStuck = async () => {
     const typed = input.trim();
     if (typed) {
-      // Player rephrased — send the new text as a fresh `do` (this path already worked).
-      await sendAction();
+      // Player rephrased — send the new text as a fresh move, PROBING the server gate (the stuck
+      // retry path), so an app-status latch can't silently swallow the rephrase too.
+      await sendAction({ probe: true });
       return;
     }
     const last = lastMoveRef.current;
@@ -774,15 +837,23 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       inputRef.current?.focus();
       return;
     }
-    // Re-POST the stalled move verbatim. postMove re-arms pending + the recovery/backstop timers.
-    await postMove(last.move, last.label, last.actionId);
+    // Re-POST the stalled move verbatim, PROBING the server /move gate (the real write authority):
+    // a live sink takes it and the next surface poll recovers; a dead sink refuses and postMove
+    // surfaces the honest reason. postMove re-arms pending + the recovery/backstop timers.
+    await postMove(last.move, last.label, last.actionId, { probe: true });
   };
 
   // #344: the Declare button doubles as the stuck-recovery "Try again" button (same slot, relabeled).
   // Route the click to the right handler so a stuck turn actually retries instead of no-op'ing.
   const onDeclareClick = () => (pendingStuck ? retryStuck() : sendAction());
   const declareNeedsDraft = !pendingStuck && !draftText;
-  const declareDisabled = !composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft;
+  // The button is "Try again" when a turn is stuck — it must stay CLICKABLE through an app-status
+  // latch (`livePlayBlocked`) or a stale per-action flag so the recovery promise is real (see
+  // `stuckRetryUnblocked`). It still respects a genuine surface outage and the in-flight lock. On a
+  // normal declare, all the usual gates apply.
+  const declareDisabled = stuckRetryUnblocked
+    ? pendingActive
+    : (!composerAction?.available || pendingActive || livePlayBlocked || declareNeedsDraft);
   const declareTitle = !composerAction?.available
     ? `${composerMode.label} is unavailable: ${composerAction?.disabled_reason || readOnlyReason}`
     : pendingActive
@@ -896,7 +967,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             aria-live="assertive"
             data-worldos-testid="app-status-banner"
             data-worldos-status-scope="app-status"
-            data-worldos-status={appFailureBucket || "not-ready"}
+            data-worldos-status={playGate.failureBucket || "not-ready"}
             className="body-sm"
             style={{
               padding: "8px 12px",
@@ -905,7 +976,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
             }}
           >
-            {appStatusBlockReason} Start or resume a provider-backed session from Chronicles before sending moves.
+            {/* LOCKOUT P0: `blockReason` is already humane and tells the player to resume from
+                Chronicles — the old raw "Start or resume a provider-backed session …" jargon suffix
+                that leaked here is removed. */}
+            {playGate.blockReason}
           </div>
         )}
         {/* Scene plate */}
@@ -1098,7 +1172,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onDeclareClick()}
-                disabled={pendingActive || livePlayBlocked}
+                // On a stuck turn the composer must accept text + Enter so the player can rephrase
+                // and retry, even through an app-status latch (`stuckRetryUnblocked`) — the recovery
+                // copy promised an open box. A genuine surface outage / in-flight beat still freezes.
+                disabled={stuckRetryUnblocked ? false : (pendingActive || livePlayBlocked)}
                 title={composerMode.inputTitle || DECLARE_HINT}
                 placeholder={pendingFirstBeat ? "The Dungeon Master is composing your opening scene…" : pendingActive ? "The Dungeon Master is narrating…" : pendingStuck ? "The DM seemed stuck — try again." : livePlayBlocked ? "Reconnect the live session to play…" : (canAct ? composerMode.placeholder : `Read-only: ${readOnlyReason}`)}
                 style={{ ...inkInput, fontFamily: "var(--f-body)", fontSize: 16, opacity: pendingActive ? 0.6 : 1 }}

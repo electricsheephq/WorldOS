@@ -866,10 +866,23 @@ function App() {
   // the live campaign as `current`, follow it so the party/surface and can_act track the real
   // session (the chronicle already follows the live run via /chat). Outside a play session the
   // launcher's manual selection is left untouched.
+  //
+  // LOCKOUT P0 (detach-locks-the-action-bar): the OLD gate `!nativeState?.appStatus?.runningProvider`
+  // early-returned in a PLAIN BROWSER (scripts/play.sh — the exact env the sweep personas ran), so
+  // the client NEVER re-followed the live run when the catalog re-poll surfaced it, and kept posting
+  // a STALE ?campaign after navigating away and back. The catalog already carries the move-sink truth
+  // (`current` is the attached run, `live` folds in `move_sink_live`), so follow the live run whenever
+  // it is present — native runningProvider OR an in-browser current+live catalog row — and let the
+  // server-side heal (server.py `_live_play_view_campaign`) be the backstop if this ever lags.
   React.useEffect(() => {
-    if (!nativeState?.appStatus?.runningProvider) return;
     const list = Array.isArray(state?.campaigns) ? state.campaigns : [];
-    const liveCampaign = list.find((c) => c.current) || list.find((c) => c.live);
+    const nativeLive = Boolean(nativeState?.appStatus?.runningProvider);
+    // The in-browser play signal: a campaign the move sink is feeding (attached `current` AND `live`).
+    const browserLive = list.some((c) => c && c.current && c.live);
+    if (!nativeLive && !browserLive) return;
+    const liveCampaign = list.find((c) => c.current && c.live)
+      || list.find((c) => c.current)
+      || list.find((c) => c.live);
     if (liveCampaign && liveCampaign.id !== state?.activeCampaign) {
       setState((s) => ({ ...s, activeCampaign: liveCampaign.id }));
     }

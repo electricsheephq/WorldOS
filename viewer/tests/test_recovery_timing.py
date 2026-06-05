@@ -168,8 +168,10 @@ process.stdout.write(JSON.stringify(result));
 """
 
 
-@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX hook")
-class RecoveryTimingTests(unittest.TestCase):
+class _BabelHarness(unittest.TestCase):
+    """Shared Node+Babel harness: transpiles the real .jsx and runs a JS `script` against `h`/`win`.
+    A NON-test base (no `test_*` methods) so subclasses don't re-run each other's cases."""
+
     NODE_BIN = shutil.which("node")
 
     @classmethod
@@ -193,6 +195,11 @@ class RecoveryTimingTests(unittest.TestCase):
         if proc.returncode != 0:
             self.fail(f"node harness failed:\nSTDOUT:{proc.stdout}\nSTDERR:{proc.stderr}")
         return json.loads(proc.stdout)
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX hook")
+class RecoveryTimingTests(_BabelHarness):
+    pass
 
     # --- the timing CONTRACT: constants exported, correctly ordered -----------
     def test_constants_exported_and_ordered(self):
@@ -314,3 +321,78 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertTrue(out["survives"], "#648: a same-tick clear must NOT wipe the just-armed spinner")
         self.assertTrue(out["narrating"], "the protected turn stays in the narrating (not stuck) state")
         self.assertTrue(out["resolves_later"], "the protected turn still resolves on the real (post-grace) clear")
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX gate")
+class PlayGateLockoutTests(_BabelHarness):
+    """LOCKOUT P0 (detach-locks-the-action-bar) — the CLIENT play-gate contract.
+
+    `computePlayGate` (screen-table.jsx, module scope) is the single source of truth for every
+    derived play-gate flag + the player-facing block message. These tests transpile the REAL .jsx
+    and exercise that pure function (mirrors the `recoveryWindowMs` tests above), pinning the three
+    contracts the sweep blocked on:
+      B) the raw "live provider move sink is not ready" dev string NEVER reaches the player;
+      C) a STUCK turn re-opens the bar for a real retry through an app-status latch
+         (`stuckRetryUnblocked`) — but NOT through a genuine surface outage; and
+      -) the no-block happy path stays unblocked.
+    """
+
+    _NO_PROVIDER_STATUS = (
+        "{ readiness: { ready_for_play: false, failure_bucket: 'no_provider',"
+        " failure_detail: 'live provider move sink is not ready' } }"
+    )
+
+    def _gate(self, surface_status: str, app_status_js: str, pending_stuck: str):
+        return self._run(
+            f"win.computePlayGate({{ surfaceStatus: {json.dumps(surface_status)},"
+            f" appStatus: {app_status_js}, pendingStuck: {pending_stuck} }})"
+        )
+
+    # B) the raw dev string never reaches the player ---------------------------
+    def test_raw_move_sink_string_never_leaks_to_block_reason(self):
+        gate = self._gate("ready", self._NO_PROVIDER_STATUS, "false")
+        self.assertTrue(gate["appStatusBlocksPlay"])
+        self.assertTrue(gate["livePlayBlocked"])
+        # The humane copy is shown; the raw "move sink"/"provider-backed" jargon is gone.
+        self.assertNotIn("move sink", gate["blockReason"].lower())
+        self.assertNotIn("provider-backed", gate["blockReason"].lower())
+        self.assertIn("Chronicles", gate["blockReason"])
+        self.assertIn("Dungeon Master", gate["blockReason"])
+
+    def test_block_reason_maps_each_bucket_to_human_copy(self):
+        for bucket in ("no_provider", "no_launcher", "move_rejected"):
+            app = (
+                "{ readiness: { ready_for_play: false, failure_bucket: '" + bucket + "',"
+                " failure_detail: 'live provider move sink is not ready' } }"
+            )
+            gate = self._gate("ready", app, "false")
+            self.assertNotIn("move sink", gate["blockReason"].lower(), bucket)
+            self.assertIn("Chronicles", gate["blockReason"], bucket)
+
+    # C) a stuck turn re-opens the bar for a real retry through the app-status latch ----
+    def test_stuck_turn_unblocks_retry_through_app_status_latch(self):
+        # The lockout: app-status latched no_provider, the surface is fine, the turn is stuck.
+        gate = self._gate("ready", self._NO_PROVIDER_STATUS, "true")
+        self.assertTrue(gate["livePlayBlocked"], "the app-status latch still blocks normal play")
+        self.assertTrue(gate["stuckRetryUnblocked"],
+                        "a stuck turn MUST re-open the bar for a retry despite the app-status latch")
+
+    def test_stuck_turn_does_not_unblock_on_surface_outage(self):
+        # A genuine surface outage (the fetch failed/loading) → nothing to act on; stay frozen.
+        gate = self._gate("unavailable", "null", "true")
+        self.assertTrue(gate["surfaceStatusBlocksPlay"])
+        self.assertFalse(gate["stuckRetryUnblocked"],
+                         "a genuine surface outage must NOT be bypassed even on a stuck turn")
+
+    def test_not_stuck_turn_stays_blocked_under_latch(self):
+        # Not stuck + app-status latch → the bar stays blocked (no spurious unblock).
+        gate = self._gate("ready", self._NO_PROVIDER_STATUS, "false")
+        self.assertFalse(gate["stuckRetryUnblocked"])
+
+    # happy path ---------------------------------------------------------------
+    def test_ready_surface_and_status_is_unblocked(self):
+        ready = "{ readiness: { ready_for_play: true, failure_bucket: 'none', failure_detail: '' } }"
+        gate = self._gate("ready", ready, "false")
+        self.assertFalse(gate["surfaceStatusBlocksPlay"])
+        self.assertFalse(gate["appStatusBlocksPlay"])
+        self.assertFalse(gate["livePlayBlocked"])
