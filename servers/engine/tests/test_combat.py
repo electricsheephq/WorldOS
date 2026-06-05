@@ -2119,3 +2119,46 @@ def test_parry_does_not_fire_when_it_cannot_flip_or_on_a_crit_or_ranged(tmp_path
     monkeypatch.setattr(server.dice_mod, "roll", _attack_roll_stub(16))
     rr = server.attack(cid3, hr, cap3, attack_bonus=0, damage_dice="1d6+1", damage_type="piercing", is_ranged=True)
     assert rr["hit"] is True and rr["parry"] is None
+
+
+# --- combat ID-reconcile seam (dc0d625): re-staging a pristine foe must not leave a duplicate ---
+def test_respawn_pristine_monster_reconciles_id_so_end_combat_is_clean(tmp_path, monkeypatch):
+    """ROOT (dc0d625 sweep): a second spawn_monster for a creature already standing pristine on
+    the table used to mint a NEW combatant id. The DM kills the foe it tracked; the duplicate
+    (different id, never targeted) stays in the order at full HP, so end_combat reports a LIVING
+    hostile after a clean win and the behavioral gate goes RED — capping a real fight's score.
+
+    The reconcile: the re-spawn reuses the existing pristine record's id (reused=True) instead
+    of minting a duplicate. Deterministic — no dice; the assertion is on ids + HP state."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("ReconcileSeam")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=30, armor_class=12)["id"]
+
+    # The DM stages the ogre, narrates, then re-stages "the ogre" — the QA-observed mistake.
+    s1 = server.spawn_monster(cid, "Ogre")
+    ogre = s1["spawned"][0]["id"]
+    s2 = server.spawn_monster(cid, "Ogre")
+
+    # Reconcile: the re-spawn reuses the same id and flags reused — NOT a fresh duplicate.
+    assert s2["spawned"][0]["id"] == ogre, "re-spawn of a pristine foe must reuse the existing id"
+    assert s2["spawned"][0].get("reused") is True
+    monsters = [ch for ch in store.load_campaign(cid).characters.values() if ch.kind == "monster"]
+    assert len(monsters) == 1, "no duplicate monster record may exist after the reconcile"
+
+    # The real fight: start combat, drop the (single) ogre to 0 HP, end combat.
+    server.start_combat(cid, [hero, ogre])
+    out = server.apply_damage(cid, ogre, 999)  # overkill -> 0 HP, dead
+    assert out["current_hp"] == 0
+
+    res = server.end_combat(cid)
+    # The behavioral gate keys on warning_live_hostiles: it MUST be absent on a clean win.
+    assert "warning_live_hostiles" not in res, (
+        f"end_combat saw a living hostile after a clean kill: {res.get('warning_live_hostiles')!r}"
+    )
+    survivors = [
+        ch for ch in store.load_campaign(cid).characters.values()
+        if ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
+    ]
+    assert survivors == [], f"no living-hostile duplicate may remain: {[s.name for s in survivors]}"
