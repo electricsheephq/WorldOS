@@ -73,7 +73,12 @@ function ScreenForge({ onNavigate, state, setState }) {
     }
   }, [party, crafter]);
 
-  const recipes = RECIPES_LIST.filter((r) => r.category === category);
+  // Known recipes first, locked ("rumoured") last — so the list always groups cleanly under
+  // the "Rumoured" rule regardless of authoring order in RECIPES_LIST. Stable within each group.
+  const recipes = RECIPES_LIST
+    .filter((r) => r.category === category)
+    .slice()
+    .sort((a, b) => (a.locked ? 1 : 0) - (b.locked ? 1 : 0));
   const hero = party.find((p) => p.id === crafter) || party[0];
   // Derive the crafting bonus from the live hero's projected skills (the /character-surface
   // `skills`/`toolProficiencies` array of { name, mod }). The recipe's `skill` may be a tool
@@ -167,30 +172,41 @@ function ScreenForge({ onNavigate, state, setState }) {
         </div>
 
         <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-          {recipes.map((r) => (
-            <button key={r.id} onClick={() => setSelected(r)} style={{
-              display: "grid", gridTemplateColumns: "36px 1fr auto", gap: 8, alignItems: "center",
-              padding: "8px 10px",
-              background: selected?.id === r.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
-              boxShadow: selected?.id === r.id
-                ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
-                : "inset 0 -1px 0 rgba(140,100,60,0.15)",
-              cursor: "pointer", textAlign: "left",
-              opacity: r.locked ? 0.5 : 1,
-            }}>
-              {r.locked
-                ? <Placeholder label={r.glyph} w={36} h={36} framed />
-                : <Img scope={fItemScope(r.name)} label={r.glyph || r.name} w={36} h={36} fit="contain" framed />}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.05em", color: r.locked ? "var(--ink-600)" : "var(--ink-900)" }}>
-                  {r.locked ? "?????" : r.name}
+          {/* Known recipes render first; a "Rumoured" rule separates the locked ones below
+              so the "?????" blueprints read as a distinct group, not noise in the list. */}
+          {recipes.map((r, i) => (
+            <React.Fragment key={r.id}>
+              {r.locked && (i === 0 || !recipes[i - 1].locked) && (
+                <div className="eyebrow muted" style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 2px 2px", color: "var(--ink-600)" }}>
+                  <span style={{ flex: 1, height: 1, background: "rgba(140,100,60,0.3)" }} />
+                  <span style={{ fontSize: 10, letterSpacing: "0.12em" }}>Rumoured</span>
+                  <span style={{ flex: 1, height: 1, background: "rgba(140,100,60,0.3)" }} />
                 </div>
-                <div className="hand muted" style={{ fontSize: 10 }}>
-                  {r.locked ? "blueprint unknown" : "DC " + r.dc + " · " + r.time}
+              )}
+              <button onClick={() => setSelected(r)} title={r.locked ? (r.unlock || "Blueprint unknown — discover it in the world to unlock.") : undefined} style={{
+                display: "grid", gridTemplateColumns: "36px 1fr auto", gap: 8, alignItems: "center",
+                padding: "8px 10px",
+                background: selected?.id === r.id ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "transparent",
+                boxShadow: selected?.id === r.id
+                  ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
+                  : "inset 0 -1px 0 rgba(140,100,60,0.15)",
+                cursor: "pointer", textAlign: "left",
+                opacity: r.locked ? 0.5 : 1,
+              }}>
+                {r.locked
+                  ? <Placeholder label={r.glyph} w={36} h={36} framed />
+                  : <Img scope={fItemScope(r.name)} label={r.glyph || r.name} w={36} h={36} fit="contain" framed />}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.05em", color: r.locked ? "var(--ink-600)" : "var(--ink-900)" }}>
+                    {r.locked ? "?????" : r.name}
+                  </div>
+                  <div className="hand muted" style={{ fontSize: 10 }}>
+                    {r.locked ? "blueprint unknown" : "DC " + r.dc + " · " + r.time}
+                  </div>
                 </div>
-              </div>
-              <Pill>{r.tier}</Pill>
-            </button>
+                <TierPlate tier={r.tier} />
+              </button>
+            </React.Fragment>
           ))}
         </div>
 
@@ -245,13 +261,22 @@ function ScreenForge({ onNavigate, state, setState }) {
           </>
         ) : (
           <div style={{ display: "grid", placeItems: "center", height: "100%", textAlign: "center" }}>
-            <div>
+            <div style={{ maxWidth: 360 }}>
               <div style={{ fontSize: 48, color: "var(--crimson)", fontFamily: "var(--f-display)" }}>?</div>
               <h2 className="h1" style={{ fontSize: 20 }}>Blueprint unknown</h2>
-              <p className="hand muted" style={{ marginTop: 6 }}>
-                Read a tome. Apprentice a master. Find a scroll.<br/>
-                The chronicle will record the moment.
-              </p>
+              {selected && selected.unlock ? (
+                <>
+                  <div className="eyebrow" style={{ color: "var(--crimson)", marginTop: 8 }}>How it is learned</div>
+                  <p className="hand" style={{ marginTop: 6, fontSize: 14, color: "var(--ink-700)" }}>
+                    {selected.unlock}
+                  </p>
+                </>
+              ) : (
+                <p className="hand muted" style={{ marginTop: 6 }}>
+                  Read a tome. Apprentice a master. Find a scroll.<br/>
+                  The chronicle will record the moment.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -369,6 +394,21 @@ function ScreenForge({ onNavigate, state, setState }) {
   );
 }
 
+// Tier numeral plate — a crimson wax-seal disc mirroring ScreenActs' numeral block
+// (screen-acts.jsx:241-247) so the I/II/III/IV roman numeral reads as a forged tier mark,
+// not a generic pill. Carries an aria-label since the numeral alone is opaque to a reader.
+function TierPlate({ tier }) {
+  return (
+    <span role="img" aria-label={"Tier " + tier} style={{
+      width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
+      display: "grid", placeItems: "center",
+      background: "radial-gradient(circle at 30% 30%, var(--crimson), color-mix(in oklab, var(--crimson), black 40%))",
+      boxShadow: "inset 0 0 0 1px var(--w-500), 0 2px 4px rgba(0,0,0,0.3)",
+      fontFamily: "var(--f-display)", fontSize: 10, fontStyle: "italic", color: "var(--w-300)",
+    }}>{tier}</span>
+  );
+}
+
 function ComponentSlot({ component, have }) {
   const ok = have >= component.qty;
   return (
@@ -433,7 +473,7 @@ const RECIPES_LIST = [
     ],
     note: "Forged at the coldest hour of camp. The fire is for warmth, not for the work.",
   },
-  { id: "s4", category: "smith", tier: "IV", locked: true, name: "?????", glyph: "?" },
+  { id: "s4", category: "smith", tier: "IV", locked: true, name: "?????", glyph: "?", unlock: "Apprentice with Dammon at the Last Light Inn — he keeps the master smithing patterns close." },
 
   // Alchemy
   {
@@ -528,7 +568,7 @@ const RECIPES_LIST = [
     ],
     note: "One smith forges, another binds. They argue for an hour about whose name goes on it. Neither does.",
   },
-  { id: "e3", category: "enchant", tier: "IV", locked: true, name: "?????", glyph: "?" },
+  { id: "e3", category: "enchant", tier: "IV", locked: true, name: "?????", glyph: "?", unlock: "Read a tome in Candlekeep — the enchanting rites are sealed in the inner library." },
 ];
 
-Object.assign(window, { ScreenForge, ComponentSlot, RECIPES_LIST, CATEGORY_LABEL, fItemScope, fPortraitScope });
+Object.assign(window, { ScreenForge, ComponentSlot, TierPlate, RECIPES_LIST, CATEGORY_LABEL, fItemScope, fPortraitScope });
