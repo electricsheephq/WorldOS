@@ -21,6 +21,17 @@ if [ "${FAST_PROBE_DRYRUN:-0}" = 1 ]; then
   exit 0
 fi
 
+# The persona half needs the Playwright palette install (qa/playwright/node_modules — gitignored, so a
+# FRESH WORKTREE lacks it; the duo half doesn't, which is why a probe-from-worktree fails persona-only).
+# Reuse a shared install via symlink so Tier-1 runs from any worktree without a per-checkout npm install.
+PW="$ROOT/qa/playwright/node_modules"
+if [ ! -d "$PW" ]; then
+  for cand in "${WORLDOS_PLAYWRIGHT_DIR:-}" /root/worldos-qa/WorldOS/qa/playwright/node_modules "$HOME/ClawDnD-val/qa/playwright/node_modules"; do
+    [ -n "$cand" ] && [ -d "$cand" ] && { ln -s "$cand" "$PW" 2>/dev/null && echo "  (linked Playwright palette from $cand)"; break; }
+  done
+  [ -d "$PW" ] || echo "  ⚠ Playwright palette not found — persona half will skip. Install once: (cd qa/playwright && npm install && npx playwright install chromium)"
+fi
+
 echo "[1/2] persona $P (headless GUI lane, no .app rebuild) …"
 qa/ui_playtest.sh "$RUN-$P" baldurs-gate "$P" 12 1.50 >"$LOGD/$RUN-$P.log" 2>&1 || echo "  (persona returned nonzero — see $LOGD/$RUN-$P.log)"
 echo "[2/2] 6-beat duo (G5 story/mech; floors armed at >=6 beats) …"
