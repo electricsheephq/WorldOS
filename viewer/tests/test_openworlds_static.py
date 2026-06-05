@@ -710,6 +710,28 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('testId="modal-close"', launcher + character)
         self.assertIn('data-worldos-testid="modal-close"', camp)
 
+    def test_character_modals_close_on_escape_key(self):
+        # WCAG 2.1.2 (No Keyboard Trap): every role="dialog" modal on the character
+        # screen (Level Up, Rest & Prepare, Spellbook) must dismiss on Escape, mirroring
+        # the toast.jsx pattern (keydown effect: e.key === "Escape" && onClose()).
+        character = (server._OPENWORLDS_DIR / "screen-character.jsx").read_text(encoding="utf-8")
+        toast = (server._OPENWORLDS_DIR / "toast.jsx").read_text(encoding="utf-8")
+
+        # Sanity-check the canonical pattern still lives in toast.jsx (the source of truth).
+        self.assertIn('e.key === "Escape" && onClose()', toast)
+
+        dialog_count = character.count('role="dialog"')
+        escape_count = character.count('e.key === "Escape" && onClose()')
+        # Guards against a new modal shipping without an Escape handler (the regression
+        # this test exists to catch): one handler per dialog, no fewer.
+        self.assertEqual(3, dialog_count)
+        self.assertEqual(
+            dialog_count,
+            escape_count,
+            "every role=\"dialog\" modal in screen-character.jsx must wire an "
+            "Escape->onClose keydown handler (WCAG 2.1.2)",
+        )
+
     def test_launcher_shelf_filters_non_resumable_scratch_runs(self):
         launcher = (server._OPENWORLDS_DIR / "screen-launcher.jsx").read_text(encoding="utf-8")
         app = (server._OPENWORLDS_DIR / "app.jsx").read_text(encoding="utf-8")
