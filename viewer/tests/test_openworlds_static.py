@@ -252,6 +252,29 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("title: \"No active quests\"", source)
         self.assertNotIn("|| quests[0] ||", source)
 
+    def test_journal_all_caught_up_pill_is_gated_on_real_advisory(self):
+        """J-06: a clean campaign shows an 'All caught up' pill, but only when the advisory
+        came from a real snapshot (source != 'empty') — never fabricated on the demo
+        fallback."""
+        status, ctype, body = self._get("/openworlds/screen-journal.jsx")
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        self.assertIn("All caught up", source)
+        # The pill must be gated: a real source AND zero debts.
+        self.assertIn('advisory.source !== "empty"', source)
+        self.assertIn("advisory.total_debts === 0", source)
+
+    def test_journal_dropcap_skips_non_letter_entries(self):
+        """J-08: the floated drop-cap is only applied when the entry opens on a letter, so a
+        quest entry starting with a digit or punctuation does not get a broken cap."""
+        status, ctype, body = self._get("/openworlds/screen-journal.jsx")
+        self.assertEqual(status, 200)
+        source = body.decode("utf-8")
+        self.assertIn("function journalDropcap(entry)", source)
+        # The dropcap class is applied via the helper, not hardcoded on the <p>.
+        self.assertIn("className={journalDropcap(quest.entry)}", source)
+        self.assertNotIn('<p className="body dropcap"', source)
+
     def test_app_status_route_exposes_agent_probe_contract(self):
         campaign_dir = self._tmp / "campaigns" / "camp_live"
         self._write_snapshot(
