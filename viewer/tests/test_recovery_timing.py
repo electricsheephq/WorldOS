@@ -275,6 +275,9 @@ class RecoveryTimingTests(unittest.TestCase):
         out = self._run(
             "h.arm('do thing');"
             "var armed = h.pending();"
+            # advance past the #648 arm-grace so this exercises a GENUINE clear (a real resolution
+            # lands long after submit); the same-tick protection is covered by the #648 test below.
+            "h.advance(h.constants().armGraceMs + 1000);"
             "h.clear();"
             "var cleared = h.pending();"
             # advancing past every window after a manual clear must NOT resurrect a stuck flag —
@@ -286,3 +289,28 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertTrue(out["armed_present"])
         self.assertTrue(out["cleared_null"])
         self.assertTrue(out["no_resurrect"], "cleared timers must not fire after clearPending (clean #344 retry re-arm)")
+
+    # --- #648: a freshly-armed narrating turn survives a SPURIOUS same-tick clear -------------
+    def test_armpending_survives_a_same_tick_clear_then_resolves(self):
+        """#648 (the move-sink → pending-arm contract): after an Enter-submitted Do, a clearPending
+        can fire milliseconds later — the immediate post-armPending surface poll, a /chat cursor-reset
+        re-reading the prior resolved turn's line as a fresh resolution, or a transient campaignId
+        flip tripping the per-run reset. That MUST NOT wipe the just-armed narrating spinner (the
+        adversarial's '[MAJOR] no spinner, buttons enabled, no DM for 3+ min until I clicked
+        Continue'). The guard is bounded: a REAL resolution (~100–150s later, past the grace) still
+        clears the turn, so the spinner is never stuck on."""
+        out = self._run(
+            "h.arm('Stand down. That child is with me.');"
+            "var armed = !!h.pending();"
+            "h.clear();"                                     # the spurious same-tick clear (must be a no-op)
+            "var p = h.pending();"
+            "var survived = !!p;"
+            "var narrating = !!(p && !p.stuck);"
+            "h.advance(h.constants().armGraceMs + 1000);"    # the real DM beat lands well past the grace
+            "h.clear();"                                     # genuine resolution → clears
+            "({ armed: armed, survives: survived, narrating: narrating, resolves_later: h.pending() === null })"
+        )
+        self.assertTrue(out["armed"], "armPending should arm a narrating turn")
+        self.assertTrue(out["survives"], "#648: a same-tick clear must NOT wipe the just-armed spinner")
+        self.assertTrue(out["narrating"], "the protected turn stays in the narrating (not stuck) state")
+        self.assertTrue(out["resolves_later"], "the protected turn still resolves on the real (post-grace) clear")
