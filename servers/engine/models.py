@@ -846,6 +846,16 @@ class Location(_StrictModel):
     # (authored regions + ingested areas) to True so the atlas renders the shipped
     # nav graph from day one — see content.seed_world.
     discovered: bool = False
+    # Whether this place is RUMOURED -- heard-of but not yet a confirmed day-1
+    # destination (atlas fog-of-war middle tier, issue #380) -- ADDITIVE. This is the
+    # middle of a three-tier visibility model: KNOWN (discovered/visited) renders a
+    # solid pin, RUMOURED renders a fogged/dashed pin the player has heard of but not
+    # confirmed, and HIDDEN (neither) is fog-of-war. Like `discovered`, nothing in the
+    # engine reads this flag -- it only enriches the snapshot the viewer projects; the
+    # viewer treats a rumoured place as atlas-VISIBLE but styles it distinctly. Default
+    # False is additive: an old snapshot lacking the field round-trips to a non-rumoured
+    # Location, so a place that was KNOWN stays KNOWN and the atlas is byte-identical.
+    rumoured: bool = False
     # Optional axial-hex (q, r) coords — PRESENTATION ONLY (the viewer renders them).
     # The engine's adjacency/travel is governed solely by `connections`; coords are
     # never used for movement or distance.

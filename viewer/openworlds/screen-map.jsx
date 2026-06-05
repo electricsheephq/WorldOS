@@ -101,6 +101,12 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode, liveSession }) {
   }, [loadSurface]);
 
   const locations = Array.isArray(surface?.known_locations) ? surface.known_locations : [];
+  // Tier rollup for the pin footer (issue #380): prefer the server-computed split, but
+  // degrade gracefully for older surfaces that predate `tier_counts` by deriving it from
+  // the per-location `rumoured` flag (absent on legacy rows ⇒ everything counts as known).
+  const tierCounts = surface?.tier_counts && typeof surface.tier_counts === "object"
+    ? { known: surface.tier_counts.known || 0, rumoured: surface.tier_counts.rumoured || 0 }
+    : { known: locations.filter((l) => !l.rumoured).length, rumoured: locations.filter((l) => l.rumoured).length };
   const edges = Array.isArray(surface?.edges) ? surface.edges : [];
   const travelOptions = Array.isArray(surface?.travel_options) ? surface.travel_options : [];
   const quests = Array.isArray(surface?.quest_markers) ? surface.quest_markers : [];
@@ -265,7 +271,12 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode, liveSession }) {
           flex: "0 0 auto",
           alignItems: "center",
         }}>
-          <Pill dot>{locations.length} known</Pill>
+          <Pill dot>{tierCounts.known} known</Pill>
+          {tierCounts.rumoured > 0 && (
+            <Pill dot tone="" >
+              <span style={{ fontStyle: "italic", opacity: 0.85 }}>{tierCounts.rumoured} rumoured</span>
+            </Pill>
+          )}
           <button
             type="button"
             onClick={toggleUrgent}
@@ -692,7 +703,11 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>{selected.region || "Unknown reach"}</div>
             <h2 className="h1" style={{ fontSize: 22 }}>{selected.name}</h2>
             <div className="hand" style={{ fontSize: 14, marginTop: 2 }}>
-              {selected.current ? "Current location" : (travel?.minutes ? `${travel.minutes} minutes away` : "Known location")}
+              {selected.current
+                ? "Current location"
+                : (travel?.minutes
+                  ? `${travel.minutes} minutes away`
+                  : (selected.rumoured ? "Rumoured — heard of, not yet found" : "Known location"))}
             </div>
 
             {/* Route readout (BG3/PFK "do I dare take this road"): the engine ships
@@ -776,17 +791,24 @@ function AtlasSidebar({ selected, travel, currentId, busyTravel, canAct, quests,
         <Divider />
         <SectionTitle>Discovered</SectionTitle>
         <div className="body-sm" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {allLocations.map((loc) => (
-            <button key={loc.id} onClick={() => onSelect(loc.id)} style={{
-              display: "flex", justifyContent: "space-between", textAlign: "left",
-              padding: "8px 12px", cursor: "pointer",
-              background: selected?.id === loc.id ? "rgba(176,141,87,0.18)" : "transparent",
-              boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.2)",
-            }}>
-              <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)" }}>{loc.name}</span>
-              <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10 }}>{loc.current ? "here" : loc.region}</span>
-            </button>
-          ))}
+          {allLocations.map((loc) => {
+            // Rumoured places (issue #380) read distinctly in the gazetteer too — italic
+            // name + a "rumoured" meta in place of the region — so the fog-of-war tier is
+            // legible in the list, not only on the pins.
+            const isRumoured = Boolean(loc.rumoured) && !loc.current;
+            return (
+              <button key={loc.id} onClick={() => onSelect(loc.id)} style={{
+                display: "flex", justifyContent: "space-between", textAlign: "left",
+                padding: "8px 12px", cursor: "pointer",
+                background: selected?.id === loc.id ? "rgba(176,141,87,0.18)" : "transparent",
+                boxShadow: "inset 0 -1px 0 rgba(140,100,60,0.2)",
+                opacity: isRumoured ? 0.82 : 1,
+              }}>
+                <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.08em", color: "var(--ink-900)", fontStyle: isRumoured ? "italic" : "normal" }}>{loc.name}</span>
+                <span className="muted" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: isRumoured ? "var(--b-700)" : undefined }}>{loc.current ? "here" : isRumoured ? "rumoured" : loc.region}</span>
+              </button>
+            );
+          })}
         </div>
       </Panel>
     </div>
@@ -820,6 +842,12 @@ function ContextRow({ title, meta, urgent }) {
 function LocationPin({ loc, selected }) {
   const isCurrent = loc.current;
   const isVisited = loc.visited;
+  // Rumoured tier (issue #380): a place the party has HEARD of but not confirmed. The
+  // engine surfaces it as visible-but-fogged; here it gets a distinct fog-of-war
+  // affordance — a desaturated, dashed-outline label and a "?" badge on the dot — so it
+  // reads as a HORIZON, never confused with a solid known/visited pin. A current or
+  // selected pin always overrides the fog styling (you're looking right at it).
+  const isRumoured = Boolean(loc.rumoured) && !isCurrent;
   const [hover, setHover] = React.useState(false);
   // The full label is reserved for the node in focus (selected / current / hovered);
   // every other node shows a compact label so the dense city centre stays legible. The
@@ -840,16 +868,22 @@ function LocationPin({ loc, selected }) {
           ? "linear-gradient(180deg, var(--crimson) 0%, #5a1414 100%)"
           : isCurrent
           ? "linear-gradient(180deg, var(--royal), var(--royal-deep))"
+          : isRumoured
+          ? "linear-gradient(180deg, rgba(214,200,176,0.62), rgba(176,158,128,0.62))"
           : "linear-gradient(180deg, var(--p-100), var(--p-300))",
-        color: selected || isCurrent ? "var(--p-100)" : "var(--ink-800)",
+        color: selected || isCurrent ? "var(--p-100)" : isRumoured ? "var(--ink-600)" : "var(--ink-800)",
         fontFamily: "var(--f-display)",
         fontSize: active ? 10 : 9,
         letterSpacing: active ? "0.12em" : "0.06em",
         textTransform: "uppercase",
-        opacity: active ? 1 : 0.92,
+        fontStyle: isRumoured && !selected ? "italic" : "normal",
+        opacity: isRumoured && !active ? 0.72 : active ? 1 : 0.92,
         boxShadow: selected
           ? "inset 0 0 0 1px #3a0e0e, 0 0 16px -2px rgba(244, 100, 100, 0.6)"
+          : isRumoured
+          ? "inset 0 0 0 1px var(--b-400), 0 1px 3px rgba(0,0,0,0.25)"
           : "inset 0 0 0 1px var(--b-500), 0 2px 4px rgba(0,0,0,0.4)",
+        border: isRumoured && !selected ? "1px dashed rgba(90,60,30,0.7)" : "none",
         whiteSpace: "nowrap",
         zIndex: active ? 6 : 1,
       }}>
@@ -859,18 +893,25 @@ function LocationPin({ loc, selected }) {
             return window.OpenWorldsIcon?.has?.(iconId) ? <window.OpenWorldsIcon id={iconId} size={11} /> : null;
           })()}
           {labelText}
+          {isRumoured && <span title="Rumoured — heard of, not yet found" style={{ fontSize: 9, opacity: 0.8 }}>?</span>}
         </span>
       </div>
       <div style={{
+        position: "relative",
         width: 12, height: 12, borderRadius: "50%",
         background: isCurrent
           ? "radial-gradient(circle at 30% 30%, var(--gold-glow), var(--b-500))"
           : isVisited
           ? "radial-gradient(circle at 30% 30%, var(--b-200), var(--b-500))"
+          : isRumoured
+          ? "radial-gradient(circle at 30% 30%, rgba(190,176,150,0.85), rgba(120,100,70,0.85))"
           : "radial-gradient(circle at 30% 30%, var(--p-300), var(--ink-700))",
         boxShadow: isCurrent
           ? "0 0 0 1px var(--w-500), 0 0 20px rgba(244, 210, 123, 0.8)"
+          : isRumoured
+          ? "0 0 0 1px rgba(120,100,70,0.7)"
           : "0 0 0 1px var(--w-500)",
+        border: isRumoured ? "1px dashed rgba(90,60,30,0.8)" : "none",
         animation: isCurrent ? "flicker 2.4s ease-in-out infinite" : "none",
       }} />
 
@@ -894,8 +935,8 @@ function LocationPin({ loc, selected }) {
           <div style={{ fontFamily: "var(--f-display)", fontSize: 12, color: "var(--ink-900)", letterSpacing: "0.06em", marginTop: 2 }}>
             {loc.name}
           </div>
-          <div className="hand" style={{ fontSize: 12, color: "var(--ink-600)", marginTop: 2 }}>
-            {loc.current ? "Current location" : "Known route"}
+          <div className="hand" style={{ fontSize: 12, color: isRumoured ? "var(--b-700)" : "var(--ink-600)", marginTop: 2 }}>
+            {loc.current ? "Current location" : isRumoured ? "Rumoured — heard of, not yet found" : "Known route"}
           </div>
           {loc.tags && loc.tags.length > 0 && (
             <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>

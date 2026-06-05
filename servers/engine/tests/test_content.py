@@ -276,28 +276,39 @@ def test_seed_world_seeds_world_graph_metadata_without_authorizing_travel(capsys
 
 
 def test_baldurs_gate_ships_route_kind_world_graph_edges(capsys):
-    # Regression guard for #381: the shipped baldurs-gate world must seed its
-    # full 6-edge world_graph with route_kind metadata. This breaks if (a) the
-    # world.json world_graph block is dropped, (b) any edge stops matching a
-    # canonical Location.connection, or (c) the WorldGraphEdge.route_kind Literal
-    # loses one of the kinds used here ("street"/"bridge"/"road") — in which case
-    # the loader silently drops that edge and the count/kinds assertions fail.
+    # Regression guard for #381 + #380: the shipped baldurs-gate world must seed its
+    # full world_graph with route_kind metadata. This breaks if (a) the world.json
+    # world_graph block is dropped, (b) any edge stops matching a canonical
+    # Location.connection, or (c) the WorldGraphEdge.route_kind Literal loses one of the
+    # kinds used here ("street"/"bridge"/"road"/"underground"/"portal") — in which case
+    # the loader silently drops that edge and the count/kinds assertions fail. #380 added
+    # the Sword Coast regional edge + the 5 rumoured-POI routes (underground/portal).
     w = content.load_world_data("baldurs-gate")
     c = content.seed_world(w)
 
     edges = c.world_graph.edges
     pairs = {(e.from_id, e.to_id): e for e in edges}
     expected = {
+        # original #381 graph
         ("loc-lower-city", "loc-upper-city"): "street",
         ("loc-lower-city", "loc-outer-city"): "street",
         ("loc-outer-city", "loc-wyrms-crossing"): "bridge",
         ("loc-wyrms-crossing", "loc-elturel"): "road",
         ("loc-wyrms-crossing", "loc-reithwin"): "road",
         ("loc-wyrms-crossing", "loc-candlekeep"): "road",
+        # #380: Sword Coast regional pin + rumoured-POI routes
+        ("loc-wyrms-crossing", "loc-sword-coast"): "road",
+        ("loc-upper-city", "loc-steel-watch-foundry"): "underground",
+        ("loc-lower-city", "loc-undercity"): "underground",
+        ("loc-undercity", "loc-bhaal-temple"): "underground",
+        ("loc-undercity", "loc-underdark"): "underground",
+        ("loc-reithwin", "loc-underdark"): "underground",
+        ("loc-wyrms-crossing", "loc-avernus-portal"): "portal",
+        ("loc-elturel", "loc-avernus-portal"): "portal",
     }
-    # Exactly these 6 edges land (no edge silently dropped, none spuriously added).
+    # Exactly these edges land (no edge silently dropped, none spuriously added).
     assert set(pairs) == set(expected)
-    assert len(edges) == 6
+    assert len(edges) == 14
     for pair, kind in expected.items():
         assert pairs[pair].route_kind == kind, (pair, pairs[pair].route_kind)
 
@@ -1702,45 +1713,64 @@ def test_start_character_lia_battlemaster_template_no_spells(tmp_path, monkeypat
 def _atlas_is_visible(loc) -> bool:
     """Mirror of the viewer's known-location predicate (viewer/server.py
     _atlas_visible_location_ids): a place shows on the atlas when it is visited OR
-    discovered; it is hidden only when explicitly undiscovered-and-unvisited (or
-    flagged hidden). Inlined here so the engine test locks the day-1 contract
-    without importing the viewer."""
+    discovered OR explicitly RUMOURED (issue #380); it is hidden only when it is
+    undiscovered-and-unvisited-and-not-rumoured (or flagged hidden). Inlined here so
+    the engine test locks the day-1 contract without importing the viewer."""
     if getattr(loc, "hidden", False):
         return False
     if loc.visited:
+        return True
+    if getattr(loc, "rumoured", False):
         return True
     return loc.discovered is True or loc.discovered is None
 
 
 def test_seed_world_marks_known_regions_discovered_day_one():
-    # Issue #261: a fresh baldurs-gate seed must mark the world's shipped nav graph as
-    # discovered so the atlas renders the known regions on day 1 (not just the single
-    # start location). The BG world ships 7 authored regions and declares none as
-    # discovered, so every one should come back discovered=True.
+    # Issue #261 + #380: a fresh baldurs-gate seed renders the shipped nav graph on day 1
+    # as a TWO-tier atlas — KNOWN regions (discovered, solid pins) and RUMOURED horizons
+    # (visible-but-fogged, heard-of but not yet a confirmed destination). The BG world now
+    # ships 13 authored regions: 5 known (the city districts + Wyrm's Crossing + the Sword
+    # Coast regional pin) and 8 rumoured (Elturel, Reithwin, Candlekeep, Steel Watch
+    # Foundry, Undercity, Bhaal Temple, Underdark, Avernus portal).
     w = content.load_world_data("baldurs-gate")
     region_ids = {str(r["id"]) for r in w["regions"]}
-    assert len(region_ids) == 7  # guards the fixture: 7 known regions ship day-1
+    assert len(region_ids) == 13  # guards the fixture: 5 known + 8 rumoured ship day-1
+    rumoured_source_ids = {str(r["id"]) for r in w["regions"] if r.get("rumoured")}
+    assert len(rumoured_source_ids) == 8, "8 BG regions are authored as rumoured horizons"
 
     c = content.seed_world(w)
 
-    # every authored region the world ships is KNOWN day-1
+    # every authored region the world ships is atlas-VISIBLE day-1 (known OR rumoured)
     seeded_regions = {lid: loc for lid, loc in c.locations.items() if lid in region_ids}
     assert seeded_regions.keys() == region_ids
-    assert all(loc.discovered is True for loc in seeded_regions.values()), (
-        "fresh seed_world must mark all known BG regions discovered (day-1 atlas)"
+    assert all(_atlas_is_visible(loc) for loc in seeded_regions.values()), (
+        "fresh seed_world must surface all shipped BG regions on the day-1 atlas"
     )
+
+    # the KNOWN tier is discovered + not-rumoured; the RUMOURED tier is rumoured + opted
+    # out of discovered (so the all-regions-visible default never overrides the fog flag).
+    known_regions = {lid: loc for lid, loc in seeded_regions.items() if lid not in rumoured_source_ids}
+    rumoured_regions = {lid: loc for lid, loc in seeded_regions.items() if lid in rumoured_source_ids}
+    assert all(loc.discovered is True and loc.rumoured is False for loc in known_regions.values()), (
+        "known BG regions stay discovered (solid pins) and are not rumoured"
+    )
+    assert all(loc.rumoured is True and loc.discovered is False for loc in rumoured_regions.values()), (
+        "rumoured BG regions are visible-but-fogged: rumoured True, discovered False"
+    )
+    assert len(known_regions) == 5 and len(rumoured_regions) == 8
 
     # the start is additionally VISITED (today's behavior, unchanged) — and is one of
     # the now-discovered known regions, not the only visible place.
     start = c.locations[c.current_location_id]
     assert start.visited is True
     assert start.discovered is True
+    assert start.rumoured is False
     assert sum(1 for loc in c.locations.values() if loc.visited) == 1
 
     # every seeded location (regions + any ingested areas) is atlas-visible day-1, so the
     # known nav graph shows immediately rather than collapsing to ~1 location.
     assert all(_atlas_is_visible(loc) for loc in c.locations.values())
-    assert sum(1 for loc in c.locations.values() if _atlas_is_visible(loc)) >= 7
+    assert sum(1 for loc in c.locations.values() if _atlas_is_visible(loc)) >= 13
 
 
 def test_location_discovered_defaults_false_and_is_additive():
@@ -1777,3 +1807,55 @@ def test_seed_world_honors_explicit_region_discovered_opt_out():
     # the opted-out, unvisited region is fog-of-war in the atlas; the known one shows
     assert _atlas_is_visible(c.locations["loc-known"]) is True
     assert _atlas_is_visible(c.locations["loc-fog"]) is False
+
+
+def test_location_rumoured_defaults_false_and_round_trips_legacy_snapshot():
+    # Issue #380 AC1/AC8: the new `rumoured` field is ADDITIVE. A bare Location defaults
+    # to rumoured=False, and a LEGACY snapshot that predates the field (carries only
+    # `discovered`) round-trips to a non-rumoured Location — so an old KNOWN place stays
+    # KNOWN and the atlas is byte-identical to its pre-PR rendering.
+    from models import Location
+
+    bare = Location(name="Nowhere")
+    assert bare.rumoured is False
+    assert json.loads(bare.model_dump_json())["rumoured"] is False
+
+    # A pre-#380 snapshot row: discovered known place, no `rumoured` key at all.
+    legacy = Location.model_validate({"id": "loc-old", "name": "Old Known", "discovered": True})
+    assert legacy.rumoured is False
+    assert legacy.discovered is True
+    assert _atlas_is_visible(legacy) is True  # still KNOWN, unchanged
+
+
+def test_seed_world_propagates_rumoured_and_never_overrides_with_discovered_default():
+    # Issue #380 AC5: seed_world must propagate `rumoured` from the source JSON for BOTH
+    # regions AND ingested areas, and an explicit `rumoured: true` must NOT be overridden
+    # by the all-places-visible `discovered` default. A rumoured place defaults discovered
+    # to False (visible-but-fogged), while a plain place stays discovered=True (known).
+    world = {
+        "id": "rumour-test",
+        "name": "Rumour Test",
+        "premise": "rumoured-tier propagation fixture",
+        "era": "now",
+        "regions": [
+            {"id": "loc-here", "name": "Home", "description": "start", "connections": []},
+            # rumoured with NO explicit discovered → must come back rumoured + NOT discovered
+            {"id": "loc-horizon", "name": "Far Horizon", "description": "heard of", "connections": [], "rumoured": True},
+            # rumoured AND explicitly discovered=True → author wins on both flags
+            {"id": "loc-both", "name": "Seen Rumour", "description": "both", "connections": [], "rumoured": True, "discovered": True},
+        ],
+        "starting_options": [{"location_id": "loc-here", "framing": "Start home."}],
+    }
+
+    c = content.seed_world(world)
+
+    assert c.locations["loc-here"].rumoured is False
+    assert c.locations["loc-here"].discovered is True  # plain place stays KNOWN
+
+    horizon = c.locations["loc-horizon"]
+    assert horizon.rumoured is True
+    assert horizon.discovered is False, "rumoured default must NOT be overridden by discovered=True"
+    assert _atlas_is_visible(horizon) is True  # visible-but-fogged
+
+    both = c.locations["loc-both"]
+    assert both.rumoured is True and both.discovered is True  # explicit author values both honored

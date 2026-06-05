@@ -2330,6 +2330,15 @@ def _atlas_visible_location_ids(snapshot: dict) -> list[str]:
             continue
         if bool(row.get("hidden")):
             continue
+        # RUMOURED tier (issue #380): a place explicitly marked rumoured is atlas-VISIBLE
+        # even when it is undiscovered-and-unvisited — the player has HEARD of it. It is
+        # still gated by `hidden` above (a secret stays secret), so this only un-fogs
+        # places the world deliberately surfaces as a horizon. The known/rumoured split
+        # is carried per-row downstream by _atlas_known_locations so the viewer can style
+        # the two tiers distinctly; here we only widen the visibility set.
+        if bool(row.get("rumoured")):
+            visible.append(lid)
+            continue
         discovered = row.get("discovered")
         if discovered is False and not bool(row.get("visited")):
             continue
@@ -2382,13 +2391,21 @@ def _atlas_known_locations(snapshot: dict) -> list[dict]:
         name = _text(row.get("name"), loc_id)
         connections = row.get("connections")
         connections = connections if isinstance(connections, list) else []
+        is_visited = bool(row.get("visited")) or loc_id == current_id
+        # RUMOURED tier (issue #380): a place is rumoured only while it is still a
+        # HORIZON — heard of but neither visited nor the current location. Once the
+        # party has been there (or stands there now) it is KNOWN, so the fog affordance
+        # clears even if the source row still carries rumoured=True. The viewer styles
+        # rumoured pins distinctly (desaturated, dashed, "?" badge) from known pins.
+        rumoured = bool(row.get("rumoured")) and not is_visited
         item = {
             "id": loc_id,
             "name": name,
             "description": _text(row.get("description")),
             "region": _text(row.get("region"), _text(snapshot.get("world_id"), "World")),
-            "visited": bool(row.get("visited")) or loc_id == current_id,
+            "visited": is_visited,
             "current": loc_id == current_id,
+            "rumoured": rumoured,
             "x": x,
             "y": y,
             "tags": _atlas_tags(row),
@@ -2686,6 +2703,15 @@ def build_atlas_surface(
     settlements = _atlas_settlements(snapshot, visible_ids)
     current_tags = set(current.get("tags", [])) if current else set()
     camp_available = bool(current and current_tags.intersection({"rest", "town", "safe", "camp"}))
+    # Tier rollup for the atlas pin footer (issue #380): rumoured pins are visible-but-
+    # fogged horizons, known pins are confirmed destinations. Counted server-side so the
+    # footer reads "N known · M rumoured" without the viewer re-deriving the split.
+    rumoured_count = sum(1 for loc in locations if loc.get("rumoured"))
+    tier_counts = {
+        "known": len(locations) - rumoured_count,
+        "rumoured": rumoured_count,
+        "total": len(locations),
+    }
     return {
         "campaign_id": campaign_id,
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
@@ -2696,6 +2722,7 @@ def build_atlas_surface(
         "calendar": _openworlds_calendar(snapshot),
         "current_location": current or {"id": "", "name": "Unknown location", "tags": []},
         "known_locations": locations,
+        "tier_counts": tier_counts,
         "edges": _atlas_edges(locations, snapshot),
         "travel_options": travel_options,
         "quest_markers": _atlas_quest_markers(snapshot, visible_ids),

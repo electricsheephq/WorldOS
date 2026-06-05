@@ -1614,9 +1614,14 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             hex=reg.get("hex"),
             # The world's authored regions are KNOWN day-1 — they are the shipped nav
             # graph the player can already see in the atlas (issue #261). A world MAY
-            # opt a region OUT of day-1 visibility (fog-of-war) by declaring
-            # discovered=False; default True restores the prior all-regions-visible map.
-            discovered=bool(reg.get("discovered", True)),
+            # opt a region OUT of day-1 visibility by declaring discovered=False, and
+            # MAY mark it RUMOURED (issue #380) — visible-but-fogged, "heard of, not
+            # yet a confirmed destination". The default for `discovered` is True ONLY
+            # for a place that is NOT rumoured; a rumoured region defaults discovered
+            # to False so an explicit `rumoured: true` is never overridden by the
+            # all-regions-visible default. Both flags propagate from the source JSON.
+            discovered=bool(reg.get("discovered", not bool(reg.get("rumoured", False)))),
+            rumoured=bool(reg.get("rumoured", False)),
         )
         if reg.get("id"):
             if reg["id"] in c.locations:
@@ -1663,7 +1668,11 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             # stay visible in the atlas exactly as before (issue #261). Marking them
             # discovered=True keeps the projected map byte-for-byte today's behavior while
             # making the engine the explicit writer; an area MAY opt out via discovered=False.
-            discovered=bool(area.get("discovered", True)),
+            # An area MAY also be RUMOURED (issue #380); like regions, a rumoured area
+            # defaults discovered to False so an explicit `rumoured: true` is never
+            # overridden by the all-areas-visible default, and both flags propagate.
+            discovered=bool(area.get("discovered", not bool(area.get("rumoured", False)))),
+            rumoured=bool(area.get("rumoured", False)),
         )
         if aid:
             location.id = aid
