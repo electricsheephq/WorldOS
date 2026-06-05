@@ -1680,7 +1680,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("human", race_keys)  # sanity: parser found real keys
 
         # Parse PORTRAIT_GALLERY rows into (race, alive) pairs.
-        gallery_match = re.search(r"const PORTRAIT_GALLERY = \[(.*?)\n\];", source, re.S)
+        gallery_match = re.search(r"(?:const|let) PORTRAIT_GALLERY = \[(.*?)\n\];", source, re.S)
         self.assertIsNotNone(gallery_match, "PORTRAIT_GALLERY array not found")
         rows = re.findall(
             r'\{\s*slug:\s*"[a-z0-9-]+",\s*name:[^,]+,\s*race:\s*"([a-z-]+)",\s*alive:\s*(true|false)',
@@ -1780,6 +1780,101 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # #315 AC5 — the portrait filter ANDs in subrace but degrades to race-only (never empty).
         self.assertIn("function portraitChoicesForRace(race, subrace)", source)
         self.assertIn("portraitChoicesForRace(hero.race, hero.subrace)", source)
+
+    def test_openworlds_create_portrait_gallery_manifest_is_curated_and_appended(self):
+        # #378 / #315 AC3: the Face step's gallery is widened at runtime by appending a curated
+        # canon-face manifest (portrait-gallery.json) AFTER the stable 12-entry base. This guard
+        # pins the contract that makes that safe + non-fabricating:
+        #   * the manifest is served as JSON with the v1 schema;
+        #   * base_prefix exactly mirrors the hard-coded PORTRAIT_GALLERY base (stable indices
+        #     0..11 — no manifest entry may re-include a base slug or hero.portrait would shift);
+        #   * every entry tags a real RACES key, is non-synthetic, and resolves to a scope of the
+        #     shape portrait-<slug> (no _private path / binary leakage — scope only);
+        #   * the screen actually wires the loader (fetch + in-place append) and keeps the
+        #     index-stable portraitScope / heroPortraitScope helpers.
+        status, ctype, body = self._get("/openworlds/portrait-gallery.json")
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        manifest = json.loads(body.decode("utf-8"))
+        self.assertEqual(manifest["schema"], "worldos.portrait-gallery.v1")
+        entries = manifest["entries"]
+        self.assertIsInstance(entries, list)
+        self.assertGreater(len(entries), 0)
+
+        # Pull the hard-coded base gallery slugs (indices 0..11) straight from the screen.
+        _s, _c, create_body = self._get("/openworlds/screen-create.jsx")
+        create_src = create_body.decode("utf-8")
+        gallery_match = re.search(r"let PORTRAIT_GALLERY = \[(.*?)\n\];", create_src, re.S)
+        self.assertIsNotNone(gallery_match, "base PORTRAIT_GALLERY not found in screen-create.jsx")
+        base_slugs = re.findall(r'slug:\s*"([a-z0-9-]+)"', gallery_match.group(1))
+        # The base gallery is the stable append-only prefix (originally 12; #379/#667 appended
+        # lineage-correct faces, so it may now be longer). What must hold is index stability:
+        # the manifest's base_prefix mirrors the screen's base EXACTLY, so no manifest entry
+        # re-includes a base slug and shifts hero.portrait.
+        self.assertGreaterEqual(len(base_slugs), 12, "base gallery must keep the original stable prefix")
+
+        # base_prefix in the manifest mirrors the screen's base exactly (drift would shift indices).
+        self.assertEqual(manifest["base_prefix"], base_slugs)
+
+        # Collect the valid RACES keys the same way the sibling test does.
+        races_body = re.search(r"const RACES = \{(.*?)\n\};", create_src, re.S).group(1)
+        race_keys = {
+            quoted or bare
+            for quoted, bare in re.findall(r'^\s{2}(?:"([a-z-]+)"|([a-z-]+)):\s*\{', races_body, re.M)
+        }
+
+        base_set = set(base_slugs)
+        seen = set()
+        for e in entries:
+            slug = e["slug"]
+            # No appended entry may collide with the stable base prefix (AC3 index stability).
+            self.assertNotIn(slug, base_set, f"appended slug '{slug}' collides with the base prefix")
+            # No duplicate appended slug (a face carries exactly one canon race).
+            self.assertNotIn(slug, seen, f"duplicate appended slug '{slug}'")
+            seen.add(slug)
+            # Race is a real, player-selectable lineage (AC2/AC5 — never an unreachable tag).
+            self.assertIn(e["race"], race_keys, f"'{slug}' tags unknown race '{e['race']}'")
+            # Curation policy: only canon-rendered faces by default; synthetic stays opt-in.
+            self.assertNotEqual(e.get("synthetic"), True, f"'{slug}' is synthetic in the default set")
+            # Scope-only reference shape (no _private path, no binary): portrait-<slug>.
+            self.assertRegex(slug, r"^[a-z0-9-]+$")
+            scope = "portrait-" + slug
+            self.assertNotIn("/", scope)
+            self.assertNotIn("_private", scope)
+
+        # The screen wires the manifest loader additively and keeps the index-stable helpers.
+        self.assertIn("function loadPortraitGallery()", create_src)
+        self.assertIn('fetch("portrait-gallery.json"', create_src)
+        self.assertIn("function mergePortraitManifest(", create_src)
+        self.assertIn("PORTRAIT_GALLERY.push(", create_src)  # APPEND, never insert/splice
+        self.assertNotIn("PORTRAIT_GALLERY.unshift(", create_src)
+        self.assertNotIn("PORTRAIT_GALLERY.splice(", create_src)
+        self.assertIn("function portraitScope(i)", create_src)
+        self.assertIn("function heroPortraitScope(hero)", create_src)
+        self.assertIn("loadPortraitGallery().then(", create_src)
+
+    def test_openworlds_create_portrait_gallery_widens_thin_races(self):
+        # #378: the headline win — races that previously rendered an EMPTY or 1-face grid now have
+        # additional curated faces. Assert the manifest meaningfully widens lineage coverage beyond
+        # the base (combining base + appended), without claiming a per-race count the local pool
+        # cannot honestly support (dragonborn/half-orc have no canon face in the pool yet, so they
+        # keep the graceful full-living-gallery fallback rather than a fabricated race tag).
+        _s, _c, body = self._get("/openworlds/portrait-gallery.json")
+        manifest = json.loads(body.decode("utf-8"))
+        per_race = {}
+        for e in manifest["entries"]:
+            per_race[e["race"]] = per_race.get(e["race"], 0) + 1
+        # Lineages that were stuck at 0 curated faces in the base now have ≥1 appended.
+        for race in ("dwarf", "gnome"):
+            self.assertGreaterEqual(
+                per_race.get(race, 0), 1,
+                f"{race} had an empty gallery and must gain at least one curated face",
+            )
+        # The best-covered lineages gain a substantial set (proves real wire-up, not a token row).
+        self.assertGreaterEqual(per_race.get("human", 0), 10)
+        self.assertGreaterEqual(per_race.get("tiefling", 0), 5)
+        # The total appended set is large enough to be a real gallery expansion.
+        self.assertGreaterEqual(len(manifest["entries"]), 40)
 
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
