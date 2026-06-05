@@ -115,10 +115,15 @@ def test_alias_sweep_social_check_missing_target_and_skill_raise(campaign):
 
 def test_alias_sweep_attack_target_and_attacker_aliases(campaign):
     atk = _pc(campaign, "Fighter")
-    tgt = _npc(campaign, "Orc", max_hp=10, armor_class=1)  # AC 1 => always hits
+    tgt = _npc(campaign, "Orc", max_hp=10, armor_class=1)
     out = server.attack(campaign, character_id=atk, npc_id=tgt, attack_bonus=5, damage_dice="1d6+3")
-    assert out["hit"] is True
-    assert server.get_character(campaign, tgt)["current_hp"] < 10  # real damage applied
+    # The point of THIS test is ALIAS RESOLUTION (character_id->attacker_id, npc_id->target_id), NOT the
+    # random d20. AC 1 hits on anything but a natural 1 (an auto-miss the engine implements), so the old
+    # `assert out["hit"] is True` was ~5% flaky and randomly blocked merges. Assert the aliases resolved
+    # to the RIGHT combatants, roll-independently (mirrors test_alias_sweep_attack_canonical_wins).
+    assert out["target"] == "Orc"  # npc_id -> target_id resolved to the right target
+    assert out["attacker"] == server.get_character(campaign, atk)["name"]  # character_id -> attacker_id
+    assert isinstance(out.get("hit"), bool)  # the attack was processed (aliases accepted), hit OR miss
 
 
 def test_alias_sweep_attack_canonical_wins(campaign):
