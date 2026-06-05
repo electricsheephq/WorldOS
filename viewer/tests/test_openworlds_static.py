@@ -1576,6 +1576,41 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertFalse(surface["can_act"])
         self.assertFalse(surface["is_live_view"])
 
+    def test_openworlds_create_portrait_gallery_races_are_valid_races_keys(self):
+        # #375: PORTRAIT_GALLERY tags each face with a `race`, and the portrait filter
+        # (`p.race === hero.race`) can only ever match a race the player can actually pick —
+        # i.e. a key in RACES (StepRace renders Object.entries(RACES)). Dame Aylin was tagged
+        # race:"aasimar" with no matching RACES key, so she was unreachable from the picker.
+        # This guard keeps every gallery race tag resolvable to a RACES key (drift would make a
+        # canon face silently un-selectable for any lineage) and pins aasimar as a real key.
+        status, ctype, body = self._get("/openworlds/screen-create.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+
+        # Extract the RACES object body and collect its top-level keys (bare ident or "quoted").
+        races_match = re.search(r"const RACES = \{(.*?)\n\};", source, re.S)
+        self.assertIsNotNone(races_match, "RACES object not found in screen-create.jsx")
+        races_body = races_match.group(1)
+        race_keys = set(
+            re.findall(r'^\s{2}(?:"([a-z-]+)"|([a-z-]+)):\s*\{', races_body, re.M)
+        )
+        race_keys = {quoted or bare for quoted, bare in race_keys}
+        self.assertIn("human", race_keys)  # sanity: parser found real keys
+        self.assertIn("aasimar", race_keys, "aasimar must be a RACES key (closes #375)")
+
+        # Every PORTRAIT_GALLERY race tag must be a key the player can actually select.
+        gallery_races = set(re.findall(r'race:\s*"([a-z-]+)"', source))
+        self.assertIn("aasimar", gallery_races)  # sanity: Dame Aylin's tag is present
+        unknown = sorted(gallery_races - race_keys)
+        self.assertEqual(unknown, [], f"PORTRAIT_GALLERY race tags missing from RACES: {unknown}")
+
+        # Dame Aylin specifically is now reachable: her tag resolves to a real RACES key.
+        aylin_match = re.search(r'slug:\s*"dame-aylin"[^}]*?race:\s*"([a-z-]+)"', source)
+        self.assertIsNotNone(aylin_match, "Dame Aylin gallery row not found")
+        self.assertIn(aylin_match.group(1), race_keys)
+
     def _write_snapshot(self, campaign_dir: Path, payload: dict) -> None:
         campaign_dir.mkdir(parents=True)
         (campaign_dir / "snapshot.json").write_text(json.dumps(payload), encoding="utf-8")
