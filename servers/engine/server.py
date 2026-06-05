@@ -769,6 +769,7 @@ def add_location(
     travel_times: Optional[dict] = None,
     make_current: bool = False,
     advance_time: bool = False,
+    discovered: bool = True,
 ) -> dict:
     """Create — or update — a location in the world DURING live play. The key
     world-building primitive for generated / sandbox campaigns.
@@ -790,6 +791,16 @@ def add_location(
     while your prose describes the new room. This is the common live-gen pattern: create the
     Siltwharf Steps and step onto them in a single move. `advance_time=True` also rolls the
     clock one phase (a journey, not a step next door) and stirs a standing thread.
+
+    `discovered` (default True) controls Atlas visibility for the new place. The Location
+    model defaults `discovered=False` so a fog-of-war seed must opt IN (#261/#371), but a
+    place the DM names into the world mid-play is, by that act, KNOWN — so the runtime
+    default here is True, matching `seed_world`'s day-1 regions and the pre-#371 behavior
+    where add_location'd places appeared on the Atlas immediately. Pass `discovered=False`
+    to add a RUMOURED/far-off place that stays fog-of-war until the party visits it. (Use
+    the separate `hidden` flag to suppress a place from the Atlas entirely.) On the UPDATE
+    path — when `location_id` matches an existing place — the existing `discovered` state is
+    PRESERVED, never clobbered by this default; reveal a hidden place through its own path.
     """
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -818,7 +829,12 @@ def add_location(
                     f"a location named {name!r} already exists ({dup.id!r}) — pass "
                     f"location_id={dup.id!r} to update it instead of creating a duplicate"
                 )
-            loc = Location(name=name, description=description, hex=coords, region=region, travel_times=tt)
+            # discovered: default True so a runtime-named place is visible on the Atlas
+            # immediately (the model default is False for fog-of-war seeds — see #261/#371;
+            # add_location'd places were visible pre-#371, and seed_world's day-1 regions
+            # are discovered=True). Pass discovered=False for a rumoured/far-off place.
+            loc = Location(name=name, description=description, hex=coords, region=region,
+                           travel_times=tt, discovered=discovered)
             if location_id:
                 loc.id = location_id  # honor a caller-chosen id (e.g. a generated skeleton's)
             c.locations[loc.id] = loc
