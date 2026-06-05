@@ -1227,6 +1227,8 @@ def create_character(
     location_id: str = "",
     add_to_party: bool = True,
     met: bool = False,
+    house: str = "",
+    biography: str = "",
 ) -> dict:
     """Create a character (player, companion, npc, or monster) and persist it.
 
@@ -1278,6 +1280,12 @@ def create_character(
             armor_class=armor_class,
             initiative_bonus=scores.modifier(Ability.DEX),
             met=bool(met) or kind in ("player", "companion"),  # PC/companion are always "met"
+            # Loop-10 #383: player-authored identity prose threaded from the
+            # Creation wizard's house + biography inputs. Empty strings are
+            # today's behavior — the projection drops them through too, so the
+            # /character-surface payload only carries them when set.
+            house=house,
+            biography=biography,
         )
         if skills:  # explicit skill choices win over the class default-fill
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]

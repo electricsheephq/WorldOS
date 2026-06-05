@@ -3645,6 +3645,14 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "raceTraits": [_text(t) for t in (ch.get("racial_traits") or ch.get("race_traits") or []) if _text(t)],
         "lineageNote": _text(ch.get("backstory")) or _text(ch.get("personality")),
         "lineage": _text(ch.get("backstory")) or _text(ch.get("personality")) or "No lineage recorded.",
+        # Loop-10 #383: player-authored identity from the Creation wizard. PR
+        # #369 wired both into the bindHero spec; this projection is the read-
+        # model the Character screen renders from. Empty strings are honest —
+        # an authored hero with blank Family/House + Biography renders the
+        # screen with no House line and no Biography paragraph (today's UX for
+        # any unset narrative field, e.g. concentration, backstory).
+        "house": _text(ch.get("house")),
+        "biography": _text(ch.get("biography")),
     }
 
 
