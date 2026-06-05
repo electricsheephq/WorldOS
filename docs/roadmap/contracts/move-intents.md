@@ -76,3 +76,11 @@ field is required, which keeps the anti-injection field-allowlist untouched.
 - Drag-to-zone *gestures* and ability-bar *verbs* beyond the kinds above (Shove/Dash/Hide as
   first-class buttons) — Branch B; ride in `do` until then.
 - Any kind that asserts world state (only the DM/engine writes the world; players send intents).
+
+## Companion contracts (the M0 freeze, layered)
+
+This vocabulary is the **write lane** of the M0 contract freeze. Its read-side counterpart is the
+**Action-Replay envelope** ([`action-replay-envelope.md`](./action-replay-envelope.md)): a move
+`kind` is a *request*; the envelope's `verb` is the engine's *resolved, ordered* outcome (one
+intent may resolve into several `seq`-ordered beats). Frame state lives in
+[`render-profile.md`](./render-profile.md).

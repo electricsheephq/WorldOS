@@ -84,3 +84,11 @@ backdrop per `scene_kind`). Place each `core.actors[]` entry by its engine `zone
 derived client-side). Poll `/combat-surface` + `/events` and **replay** engine-decided combat
 (zero client rules). The only write is a constrained **intent** to `POST /move` (see
 `move-intents.md`). The engine snapshot always overrides optimistic UI.
+
+## Companion contracts (the M0 freeze, layered)
+
+This profile is the **frame-state** leg of the M0 contract freeze. Its siblings in this dir:
+the **write lane** ([`move-intents.md`](./move-intents.md) — the intents a renderer sends) and the
+**time axis** ([`action-replay-envelope.md`](./action-replay-envelope.md) — the ordered, replayable
+`/events` beats a renderer animates; its `actor_fk`/`target_fk` join to this profile's
+`core.actors[].engine_actor_id` / `core.locations[].engine_location_id`).
