@@ -63,6 +63,35 @@ handoff.json) at the **SAME SHA**; `qa/release_readiness.py --handoff-json <mac.
 combines them. Mixed-SHA / missing `run.json`/`score.json`/`network.ndjson` ⇒ `partial`/`harness_contaminated`
 (never a clean release). Copy VM `results/` back under `/Volumes/LEXAR/Codex/...` for the rollup + ledger.
 
+### RRI evidence-path contract (don't false-mask the gate)
+**`release_readiness.py` requires EVIDENCE-PATH flags, not just value flags** — a gate that has the
+*value* but not a *path that EXISTS* is an `evidence_gap`, which RED-caps the gate and **understates the
+RRI**. A VM part-B-only sweep that passes only value flags reads a FALSE-LOW number (real 2026-06-05: an
+honest **~4.5/11** masked as **1.8/11**). Each gate needs BOTH halves (see `release_readiness.py` ~709–731):
+- **behavioral:** `--behavioral GREEN` **AND** `--behavioral-path <file-that-exists>`.
+- **ui_audit:** `--ui-audit PASS` **AND** `--ui-audit-log <file-that-exists>`.
+- **palette_live:** `--palette-live true` **AND** `--palette-source <file-or-label>` (a label is fine;
+  only a path-looking value is existence-checked).
+- **native_gate:** needs `--handoff-json <mac-handoff>` (the Mac Part-A) — **structurally absent on a
+  VM-only sweep**, so that gate is *expected* to be a gap until the Mac part-A rolls in at the same SHA.
+  Don't read its absence as a regression; read it as "Part-A not yet joined."
+
+**The other half of the same bug — behavioral read the WRONG path → false RED.** The sweep computed
+behavioral from `$DCOMB=qa/transcripts/vm2-duo.combined.jsonl`, which doesn't exist (empty ⇒ defaulted
+RED) — even though `run_duo.sh` runs `assert_behavioral.py` itself and **prints `behavioral=GREEN` in its
+own log**. **Fix (in `qa/vm/sweep_v2.sh`): read behavioral from the duo-log verdict, and pass the three
+evidence-path flags:**
+```bash
+behav=RED; grep -q 'behavioral=GREEN' "$RES/duo.log" && behav=GREEN   # NOT the nonexistent combined.jsonl
+python3 qa/release_readiness.py --runs … --story … --mech … \
+  --behavioral $behav     --behavioral-path "$RES/duo.log" \
+  --ui-audit  $audit      --ui-audit-log    "$RES/ui_audit.log" \
+  --palette-live true     --palette-source  "$RES/ui_audit.log" \
+  --build-sha "$SHA" --out "$RES/RRI.json" --scorecard-row
+```
+That single change took the VM sweep's RRI from **1.8 → 4.5** with no behavior/score change — it was
+pure harness-evidence plumbing. The corrected reference harness is checked in at `qa/vm/sweep_v2.sh`.
+
 ## Load-bearing INVARIANTS (never violate)
 1. **Engine = SOLE WRITER.** State is `snapshot.json` written under `campaign_lock` via
    atomic temp-file + `os.replace` (`servers/engine/store.py`). The player facade
