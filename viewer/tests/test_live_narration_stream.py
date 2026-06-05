@@ -241,6 +241,10 @@ const h = {
   caps: () => sandbox.window.__LIVE_TAIL_CAPS__,
   beatCount: () => (reactHost.api().chatBeats || []).length,
   drain,
+  // #648: advance the fake clock (Date.now reads NOW) so a test can resolve a turn AFTER the
+  // armPending grace window — a real DM beat lands ~100–150s post-submit, far past the guard, so a
+  // same-tick resolve is unrealistic (and now intentionally a no-op for the freshly-armed spinner).
+  advance: (ms) => { NOW += ms || 0; },
 };
 
 // Each test's `script` is a sequence of statements ending in `return (<resultExpr>)`. The scripts
@@ -477,6 +481,9 @@ class LiveNarrationStreamTests(unittest.TestCase):
             # Turn 1: arm, then resolve it with a turn-END /chat DM line (bumps the internal beat count).
             "h.arm('open the scene');"
             "h.enqueue('/chat', { items: [{ role: 'dm', text: 'You stand at the gates of Baldur\\u2019s Gate.' }], next: 1 });"
+            # a real DM beat lands ~120s post-submit — advance past the #648 armPending grace so the
+            # turn-END line resolves the pending turn (a same-tick resolve is unrealistic + now guarded).
+            "h.advance(121000);"
             "await h.tick();"
             "var afterTurn1 = h.pending();"  # JS string; afterTurn1 should be null (turn resolved)
             # Turn 2: arm again — this pending must be a LATER beat (firstBeat:false).
@@ -906,6 +913,9 @@ class LiveNarrationStreamTests(unittest.TestCase):
         out = self._run(
             "h.arm('ask the sergeant');"
             "h.enqueue('/chat', { items: [{ role: 'dm', text: 'The sergeant refuses to name the captain.', engine_logged: true }], next: 1 });"
+            # advance past the #648 armPending grace (a real beat is ~120s) so the engine-logged
+            # turn-END line resolves the pending turn.
+            "h.advance(121000);"
             "await h.tick();"
             "var afterChat = h.narrationTexts();"
             "var pendingAfterChat = h.pending();"

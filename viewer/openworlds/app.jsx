@@ -209,6 +209,15 @@ window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(r
 const PENDING_RECOVERY_MS = 180 * 1000;           // #399: later-beat stall window (worst-case DM turns run ~90–120s; was 90s/#342).
 const PENDING_RECOVERY_FIRST_MS = 4 * 60 * 1000;  // #348: first-beat (Act-opening) window — fits the multi-minute cold open.
 const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard backstop as a final net.
+// #648: a JUST-armed narrating turn is protected from a SPURIOUS same-tick clear (the immediate
+// post-armPending surface poll, a /chat cursor-reset re-reading the prior resolved turn's line as a
+// fresh resolution, or a transient campaignId flip tripping the per-run reset) for this long — so the
+// spinner can't be wiped milliseconds after submit, stranding the player with an enabled bar + no DM
+// feedback for the whole ~150s beat (the #648 report). Far below a real DM beat (~100–150s) → a
+// genuine resolution is never swallowed; above the 4s poll cycle → the one-shot post-arm clear can't
+// beat it. Once /events prose streams (`streaming`) the guard lifts, and the 12-min backstop bypasses
+// it entirely (it calls setPendingState(null) directly).
+const PENDING_ARM_GRACE_MS = 10 * 1000;
 // #348: the single source of truth for the recovery window, by turn position. Pure + exported
 // (window.__PENDING_TIMING__ below) so the timing contract is unit-testable without reaching into
 // the hook's internal beat counter. firstBeat ⇒ the longer cold-open window; else the snappy one.
@@ -365,7 +374,20 @@ function useLiveSession(state) {
     });
   }, []);
 
-  const clearPending = React.useCallback(() => { clearTimers(); setPendingState(null); }, [clearTimers, setPendingState]);
+  const clearPending = React.useCallback(() => {
+    // #648: keep a FRESHLY-armed, not-yet-streaming turn alive through a spurious same-tick clear
+    // (see PENDING_ARM_GRACE_MS). The real "Try again" retry path re-arms via armPending (which calls
+    // clearTimers itself), NOT clearPending, so this never blocks a legitimate re-arm; it only stops a
+    // poll/reset/flip from wiping the narrating spinner before the DM's first line could land. A real
+    // resolution arrives long past the grace (or after /events streamed), so it still clears normally.
+    const p = pendingRef.current;
+    if (p && !p.streaming && typeof p.since === "number"
+        && (Date.now() - p.since) < PENDING_ARM_GRACE_MS) {
+      return;
+    }
+    clearTimers();
+    setPendingState(null);
+  }, [clearTimers, setPendingState]);
 
   // #342 + #348: arm the narrating indicator + a recovery timeout. If a DM beat doesn't arrive within
   // the recovery window the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
@@ -650,6 +672,7 @@ window.__PENDING_TIMING__ = {
   recoveryMs: PENDING_RECOVERY_MS,
   recoveryFirstMs: PENDING_RECOVERY_FIRST_MS,
   backstopMs: PENDING_BACKSTOP_MS,
+  armGraceMs: PENDING_ARM_GRACE_MS,  // #648: the just-armed-turn protection window
 };
 // #402: expose the live-tail bound for tests/devtools introspection (purely additive — the hook
 // closes over the consts directly; nothing in the running app reads these off window).
