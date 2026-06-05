@@ -124,7 +124,14 @@ function ScreenBestiary({ onNavigate, state, setState }) {
         state,
       )
     : "";
-  const [tab, setTab] = React.useState("creatures");
+  // BE-04 (UI audit, issue #254): the codex is Creatures-only. The Persons + Lore tabs were
+  // wired to NO live read-model — there is no /persons-surface or /lore-surface projection
+  // (the engine is the sole writer and emits neither), so they only ever rendered an empty
+  // state. Per the audit's option (b) — "hide the tabs and document the deferment; don't ship
+  // dead tabs" — the tab strip is removed and `tab` is pinned to "creatures". The downstream
+  // `tab === ...` branches in BestiaryEntry are kept intact so reintroducing Persons/Lore is a
+  // render-only change once an engine projection exists. Deferred under epic:wire-prototypes.
+  const tab = "creatures";
   const [selected, setSelected] = React.useState(null);
   const [filter, setFilter] = React.useState("");
   // BE-depth (optimizer #1): "Browse all" reference mode. The intel codex (#263) is
@@ -221,20 +228,9 @@ function ScreenBestiary({ onNavigate, state, setState }) {
         </button>
         <Divider />
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
-          {[
-            { id: "creatures", label: "Creatures" },
-            { id: "people", label: "Persons" },
-            { id: "lore", label: "Lore" },
-          ].map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className="pill" style={{
-              cursor: "pointer", flex: 1, textAlign: "center",
-              background: tab === t.id ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "rgba(176,141,87,0.08)",
-              color: tab === t.id ? "var(--w-300)" : "var(--ink-700)",
-              boxShadow: tab === t.id ? "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
-            }}>{t.label}</button>
-          ))}
-        </div>
+        {/* BE-04: the Persons + Lore tab pills were removed (no live read-model behind them).
+            This is a single-purpose creatures codex; the tab strip would only ever show one
+            live tab plus two dead ones. */}
 
         <input
           value={filter}
@@ -334,7 +330,21 @@ function BestiaryEntry({ entry, tab }) {
              tab === "people" ? entry.role :
              "Lore entry"}
           </div>
-          <h1 className="h1" style={{ marginTop: 2 }}>{entry.name}</h1>
+          <h1 className="h1" style={{ marginTop: 2 }}>
+            {entry.name}
+            {/* BE-07 (UI audit, issue #254): disclose the content source consistently. Authored
+                creatures already credit source/license below; SRD creatures now carry a small
+                "[SRD]" badge by the name so the player sees where every codex entry comes from.
+                Driven entirely by the read-model's content_origin (no fabricated data). */}
+            {tab === "creatures" && entry.contentOrigin === "srd" && (
+              <span className="pill" style={{
+                marginLeft: 8, verticalAlign: "middle", display: "inline-block",
+                fontSize: 10, letterSpacing: "0.08em",
+                background: "rgba(176,141,87,0.14)", boxShadow: "inset 0 0 0 1px var(--b-500)",
+                color: "var(--ink-700)",
+              }} title="Open Game Content — SRD 5.2 (CC-BY-4.0)">SRD</span>
+            )}
+          </h1>
           {entry.subtitle && <div className="hand" style={{ fontSize: 15, color: "var(--ink-700)" }}>{entry.subtitle}</div>}
           {/* Intel-tier chip (#263): the party's standing knowledge of this foe —
               Sighted / Engaged / Slain. Shown only when the surface is campaign-scoped. */}
@@ -464,6 +474,25 @@ function BestiaryEntry({ entry, tab }) {
               </div>
             </>
           )}
+
+          {/* BE-06 (UI audit, issue #254): the four prose sections (Body/Tactics/Loot/Marginalia)
+              are each hidden when blank. When ALL of them are absent — the common case for a
+              freshly-sighted creature whose lore the chronicle hasn't recorded yet — show one
+              small honest line instead of a silent gap, so the entry never reads as broken.
+              The trim() guard also covers a body=" " whitespace-only value (BE-06 note). */}
+          {tab === "creatures"
+            && !(entry.body && String(entry.body).trim())
+            && !(entry.tactics && String(entry.tactics).trim())
+            && !(entry.loot && entry.loot.length)
+            && !(entry.marginalia && String(entry.marginalia).trim())
+            && (
+              <>
+                <Divider />
+                <div className="hand muted" style={{ fontSize: 13, marginTop: 6, color: "var(--ink-600)" }}>
+                  Lore not yet recorded for this creature.
+                </div>
+              </>
+            )}
         </div>
       </div>
     </Panel>
