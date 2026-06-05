@@ -390,6 +390,111 @@ class AtlasSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["calendar"]["moons"][0]["phase"], "waning")
         self.assertTrue(surface["camp_available"])
 
+    def test_atlas_surface_projects_rumoured_tier_visible_but_fogged(self):
+        # Issue #380: a RUMOURED place (rumoured=True, discovered=False, unvisited) is
+        # atlas-VISIBLE — the player has heard of it — but is tagged rumoured so the
+        # viewer renders a fog-of-war affordance distinct from a solid known pin. The
+        # tier_counts rollup splits known vs rumoured for the pin footer.
+        snapshot = {
+            "id": "camp_rumour",
+            "title": "Horizons",
+            "world_id": "baldurs-gate",
+            "current_location_id": "gate",
+            "locations": {
+                "gate": {
+                    "id": "gate", "name": "Basilisk Gate", "visited": True,
+                    "connections": ["foundry", "candlekeep"], "tags": ["town"],
+                },
+                "foundry": {
+                    "id": "foundry", "name": "Steel Watch Foundry",
+                    "description": "A wrecked manufactory.",
+                    "connections": ["gate"], "visited": False,
+                    "discovered": False, "rumoured": True, "tags": ["ruins"],
+                },
+                "candlekeep": {
+                    "id": "candlekeep", "name": "Candlekeep",
+                    "connections": ["gate"], "visited": False,
+                    "discovered": False, "rumoured": True, "tags": ["lore"],
+                },
+            },
+        }
+
+        surface = server.build_atlas_surface(
+            snapshot, campaign_id="camp_rumour", live=True, is_live_view=True
+        )
+
+        by_id = {loc["id"]: loc for loc in surface["known_locations"]}
+        # all three are atlas-visible (the rumoured pair are NOT fog-of-war-hidden)
+        self.assertEqual(set(by_id), {"gate", "foundry", "candlekeep"})
+        # the known/visited pin is NOT rumoured; the two horizons ARE
+        self.assertFalse(by_id["gate"]["rumoured"])
+        self.assertTrue(by_id["foundry"]["rumoured"])
+        self.assertTrue(by_id["candlekeep"]["rumoured"])
+        # tier rollup splits the footer counts
+        self.assertEqual(surface["tier_counts"], {"known": 1, "rumoured": 2, "total": 3})
+        # an edge to a rumoured-but-visible node is still drawn (it's in the visible set)
+        self.assertIn({"from": "candlekeep", "to": "gate"}, surface["edges"])
+
+    def test_atlas_surface_rumoured_clears_once_visited(self):
+        # A rumoured source row that has since been VISITED (or is the current location)
+        # is KNOWN now — the fog affordance must clear even though rumoured=True persists
+        # in the snapshot. Guards the "horizon becomes a destination" transition.
+        snapshot = {
+            "current_location_id": "gate",
+            "locations": {
+                "gate": {"id": "gate", "name": "Gate", "visited": True, "connections": ["seen"]},
+                # rumoured in the data, but the party has been here → projects as KNOWN
+                "seen": {
+                    "id": "seen", "name": "Seen Place", "visited": True,
+                    "discovered": False, "rumoured": True, "connections": ["gate"],
+                },
+            },
+        }
+
+        surface = server.build_atlas_surface(snapshot, campaign_id="c", live=True, is_live_view=True)
+        by_id = {loc["id"]: loc for loc in surface["known_locations"]}
+        self.assertFalse(by_id["seen"]["rumoured"], "a visited place is KNOWN, not rumoured")
+        self.assertEqual(surface["tier_counts"], {"known": 2, "rumoured": 0, "total": 2})
+
+    def test_atlas_surface_legacy_snapshot_without_rumoured_is_byte_identical(self):
+        # Issue #380 AC8 (round-trip): a PRE-PR snapshot whose Location rows carry only
+        # `discovered` (no `rumoured` key) must project EXACTLY as before — every visible
+        # pin is KNOWN (rumoured False), tier_counts has zero rumoured, and the visible
+        # set / edges are unchanged. This locks the additive guarantee.
+        snapshot = {
+            "id": "camp_legacy",
+            "title": "Old Save",
+            "world_id": "baldurs-gate",
+            "current_location_id": "gate",
+            "locations": {
+                "gate": {
+                    "id": "gate", "name": "Gate", "visited": True,
+                    "connections": ["market"], "tags": ["town"],
+                },
+                "market": {
+                    "id": "market", "name": "Market", "visited": False,
+                    "discovered": True, "connections": ["gate"], "tags": ["danger"],
+                },
+                "fog": {
+                    "id": "fog", "name": "Fogged", "visited": False,
+                    "discovered": False, "connections": ["gate"],
+                },
+            },
+        }
+
+        surface = server.build_atlas_surface(
+            snapshot, campaign_id="camp_legacy", live=True, is_live_view=True
+        )
+
+        # legacy discovered/visited places are visible; the undiscovered-unvisited one is hidden
+        self.assertEqual([loc["id"] for loc in surface["known_locations"]], ["gate", "market"])
+        # NOTHING is rumoured on a legacy snapshot — every projected pin is KNOWN
+        self.assertTrue(all(loc["rumoured"] is False for loc in surface["known_locations"]))
+        self.assertEqual(surface["tier_counts"], {"known": 2, "rumoured": 0, "total": 2})
+        self.assertEqual(surface["edges"], [{"from": "gate", "to": "market"}])
+        # the fogged place never leaks
+        self.assertNotIn("Fogged", json.dumps(surface))
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",
