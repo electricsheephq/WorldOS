@@ -80,11 +80,64 @@ function heroPortraitScope(hero) {
   return portraitScope(hero.portrait);
 }
 
-function portraitChoicesForRace(race) {
+// #377 (#315 AC5): subrace is an OPTIONAL second-tier lineage choice. The RACES table below
+// declares an optional `subraces` map per race; these helpers read it without assuming any race
+// has one (homebrew base-race-only heroes must stay un-blocked). The merge is additive: a subrace
+// contributes its own `bonus` deltas ON TOP of the base race bonus (e.g. Mountain Dwarf = base
+// CON +2 + subrace STR +2 → STR+2 / CON+2). A missing/null subrace contributes nothing.
+function subracesForRace(race) {
+  const map = RACES[race]?.subraces;
+  return map && typeof map === "object" ? map : null;
+}
+function hasSubraces(race) {
+  const map = subracesForRace(race);
+  return !!map && Object.keys(map).length > 0;
+}
+// Merge two ability-bonus maps additively (later deltas stack onto the base, never replace it).
+function mergeBonus(base, extra) {
+  const out = { ...(base || {}) };
+  if (extra) {
+    for (const k of Object.keys(extra)) out[k] = (out[k] || 0) + (extra[k] || 0);
+  }
+  return out;
+}
+// The race's effective ability bonus for a hero = base race bonus + chosen subrace bonus (if any).
+// Single source of truth so StepAbilities, StepReview, and any future surface agree.
+function effectiveRaceBonus(hero) {
+  const race = RACES[hero?.race];
+  if (!race) return {};
+  const sub = hero?.subrace && subracesForRace(hero.race)?.[hero.subrace];
+  return mergeBonus(race.bonus, sub?.bonus);
+}
+// Display name for the chosen lineage, preferring the subrace name when one is selected
+// (e.g. "Wood Elf"), falling back to the base race name ("Elf").
+function subraceLineageName(hero) {
+  const race = RACES[hero?.race];
+  const sub = hero?.subrace && subracesForRace(hero.race)?.[hero.subrace];
+  return sub?.name || race?.name || "";
+}
+
+// #315 AC5 — when the player has picked a subrace AND the gallery actually carries faces tagged
+// with that subrace, AND-in the subrace filter so a Wood Elf isn't shown High Elf faces. If no
+// gallery face carries the chosen subrace tag (the curated 12-face pool is still race-only today),
+// fall back to the race-level lineage filter rather than an empty grid — character creation must
+// stay playable (mirrors the #379/#390 race-fallback policy).
+function portraitChoicesForRace(race, subrace) {
   const livingChoices = PORTRAIT_GALLERY.filter((p) => p.alive !== false);
   const lineageChoices = livingChoices.filter((p) => !race || p.race === race);
+  // Race-level base pool: the lineage faces, or the full living gallery when a selectable lineage
+  // has no curated faces yet (#379/#390 — keep the grid non-empty / creation playable).
+  const raceChoices = lineageChoices.length ? lineageChoices : livingChoices;
+  // #315 AC5: when a subrace is chosen AND the gallery actually carries faces tagged with it,
+  // narrow to those; otherwise keep the race-level pool (the curated 12-face set is race-only
+  // today, so a Wood Elf still sees Elf faces rather than an empty grid).
+  let choices = raceChoices;
+  if (subrace) {
+    const subraceTagged = raceChoices.filter((p) => p.subrace === subrace);
+    if (subraceTagged.length) choices = subraceTagged;
+  }
   return {
-    choices: lineageChoices.length ? lineageChoices : livingChoices,
+    choices,
     usingFallback: !!race && lineageChoices.length === 0,
   };
 }
@@ -96,6 +149,8 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
     house: "",
     biography: "",
     race: "human",
+    // #377: optional subrace slug (null = "Standard"/base race only). Reset whenever race changes.
+    subrace: null,
     class: "fighter",
     background: "wanderer",
     portrait: 0,
@@ -143,6 +198,10 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
       house: (hero.house || "").trim(),
       biography: (hero.biography || "").trim(),
       race: hero.race,
+      // #377: carry the subrace across the startProviderSession seam (empty string when none
+      // chosen) so the seeded PC keeps the lineage the player authored. Engine-side wiring of the
+      // subrace into mechanics is out of scope here (filed separately if needed).
+      subrace: hero.subrace || "",
       class: hero.class,
       level: 1,
       abilities: hero.abilities,
@@ -283,7 +342,8 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
           {hero.name || <span className="hand" style={{ fontStyle: "italic", color: "var(--ink-600)", fontSize: 16 }}>Unnamed</span>}
         </h2>
         <div className="hand" style={{ fontSize: 13, color: "var(--ink-700)" }}>
-          {RACES[hero.race]?.name} · {CLASSES[hero.class]?.name}
+          {/* #377: live summary mirrors the chosen subrace (e.g. "Wood Elf · Wizard"). */}
+          {subraceLineageName(hero)} · {CLASSES[hero.class]?.name}
         </div>
 
         <Img scope={heroPortraitScope(hero)} label={hero.portraitMode === "gen" ? "your unique face" : (PORTRAIT_GALLERY[hero.portrait]?.name || "portrait")} h={160} fit="cover" framed style={{ width: "100%", marginTop: 12 }} />
@@ -293,7 +353,8 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
         <div className="eyebrow">Aptitudes</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginTop: 8 }}>
           {["str","dex","con","int","wis","cha"].map((a) => {
-            const total = hero.abilities[a] + (RACES[hero.race]?.bonus?.[a] || 0);
+            // #377: live summary stacks base race + chosen subrace, matching the review screen.
+            const total = hero.abilities[a] + (effectiveRaceBonus(hero)[a] || 0);
             return (
               <div key={a} style={{
                 padding: "6px 0", textAlign: "center",
@@ -347,7 +408,9 @@ function StepRace({ hero, setHero }) {
           <SelectCard
             key={id}
             selected={hero.race === id}
-            onClick={() => setHero({ ...hero, race: id })}
+            // #377: switching race clears any prior subrace choice (a Wood Elf pick must not linger
+            // onto Dwarf). Re-picking the same race keeps the current subrace selection.
+            onClick={() => setHero({ ...hero, race: id, subrace: id === hero.race ? hero.subrace : null })}
             label={r.name}
             sublabel={r.size + " · " + r.life}
             portrait={r.glyph}
@@ -356,6 +419,70 @@ function StepRace({ hero, setHero }) {
             tags={Object.entries(r.bonus || {}).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k.toUpperCase()}`)}
           />
         ))}
+      </div>
+
+      {/* #377 (#315 AC5): subrace chips appear only when the chosen race declares a non-empty
+          `subraces` map. "Standard" (subrace: null) is always offered and is the default so a
+          base-race-only / homebrew hero is never blocked. Chips reuse the brass/sketch tile style. */}
+      {hasSubraces(hero.race) && (
+        <SubracePicker hero={hero} setHero={setHero} />
+      )}
+    </div>
+  );
+}
+
+function SubracePicker({ hero, setHero }) {
+  const race = RACES[hero.race];
+  const subs = subracesForRace(hero.race) || {};
+  // The "Standard" option (no subrace) sits first; its ability tags reflect the base race only.
+  const options = [["", { name: "Standard", body: race?.body, bonus: null }], ...Object.entries(subs)];
+  return (
+    <div style={{ marginTop: 18 }} data-worldos-testid="subrace-picker">
+      <SectionTitle>Subrace</SectionTitle>
+      <p className="body-sm muted" style={{ marginTop: -4, marginBottom: 10, lineHeight: 1.4 }}>
+        A narrower heritage within your lineage. Optional — Standard keeps the base {race?.name} alone.
+      </p>
+      <div role="radiogroup" aria-label="Subrace" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {options.map(([id, sub]) => {
+          const selected = (hero.subrace || "") === id;
+          // Tags show the FULL effective bonus this choice grants (base race + this subrace's delta),
+          // so the player sees the real stacked numbers on the chip before committing.
+          const effective = mergeBonus(race?.bonus, sub?.bonus);
+          const tags = Object.entries(effective).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k.toUpperCase()}`);
+          return (
+            <button
+              key={id || "standard"}
+              type="button"
+              role="radio"
+              aria-checked={selected ? "true" : "false"}
+              data-worldos-testid="subrace-chip"
+              data-worldos-subrace={id || "standard"}
+              onClick={() => setHero({ ...hero, subrace: id || null })}
+              style={{
+                textAlign: "left",
+                padding: 14,
+                background: selected ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.06)",
+                boxShadow: selected
+                  ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 16px -4px var(--gold-glow)"
+                  : "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                cursor: "pointer",
+                transition: "all 140ms",
+              }}
+            >
+              <div style={{ fontFamily: "var(--f-display)", fontSize: 13, letterSpacing: "0.08em", color: "var(--ink-900)" }}>
+                {sub?.name || id}
+              </div>
+              {sub?.body && (
+                <div className="body-sm" style={{ color: "var(--ink-700)", marginTop: 4, lineHeight: 1.4 }}>{sub.body}</div>
+              )}
+              {tags.length > 0 && (
+                <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {tags.map((t) => <Pill key={t}>{t}</Pill>)}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -473,7 +600,8 @@ function StepAbilities({ hero, setHero }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {["str", "dex", "con", "int", "wis", "cha"].map((k) => {
-          const racial = RACES[hero.race]?.bonus?.[k] || 0;
+          // #377: racial bonus = base race + chosen subrace (e.g. Mountain Dwarf STR +2 / CON +2).
+          const racial = effectiveRaceBonus(hero)[k] || 0;
           const total = hero.abilities[k] + racial;
           const mod = Math.floor((total - 10) / 2);
           return (
@@ -628,7 +756,9 @@ function StepPortrait({ hero, setHero }) {
     }
   };
 
-  const portraitChoiceState = portraitChoicesForRace(hero.race);
+  // #315 AC5: filter portraits by lineage AND subrace; degrades to race-only when the curated
+  // gallery carries no subrace-tagged faces yet (keeps the grid non-empty / creation playable).
+  const portraitChoiceState = portraitChoicesForRace(hero.race, hero.subrace);
   const galleryChoices = portraitChoiceState.choices;
   const usingGalleryFallback = portraitChoiceState.usingFallback;
   const raceName = RACES[hero.race]?.name || "this lineage";
@@ -888,7 +1018,8 @@ function StepReview({ hero }) {
       <div className="eyebrow" style={{ color: "var(--crimson)" }}>VII. The Binding</div>
       <h1 className="h1">{hero.name || "Unnamed"}</h1>
       <div className="hand" style={{ fontSize: 16, color: "var(--ink-700)", marginTop: 2 }}>
-        {RACES[hero.race]?.name} · {CLASSES[hero.class]?.name} · {BACKGROUNDS[hero.background]?.name}
+        {/* #377: surface the chosen subrace in the binding line (e.g. "Wood Elf · Wizard · …"). */}
+        {subraceLineageName(hero)} · {CLASSES[hero.class]?.name} · {BACKGROUNDS[hero.background]?.name}
       </div>
       <Divider />
 
@@ -906,7 +1037,8 @@ function StepReview({ hero }) {
           <SectionTitle>Aptitudes</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
             {["str","dex","con","int","wis","cha"].map((a) => {
-              const total = hero.abilities[a] + (RACES[hero.race]?.bonus?.[a] || 0);
+              // #377: stack base race + chosen subrace, matching the StepAbilities preview.
+              const total = hero.abilities[a] + (effectiveRaceBonus(hero)[a] || 0);
               const mod = Math.floor((total - 10) / 2);
               return (
                 <div key={a} style={{
@@ -1009,6 +1141,10 @@ const RACES = {
     body: "Adaptive, ambitious, and overrepresented in chronicles. Heroes from the south road to the Old Hills count themselves human by habit.",
     bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
   },
+  // #377 (#315 AC5): an optional `subraces` map declares the SRD-correct second-tier lineages.
+  // Each subrace carries its own `name`, optional `body`, and `bonus` DELTA that stacks ON TOP of
+  // the base race bonus (see effectiveRaceBonus / mergeBonus). Subrace choice is always optional —
+  // a "Standard" option (no subrace) is synthesized in the UI and is the default.
   halfling: {
     name: "Halfling",
     size: "Small",
@@ -1016,6 +1152,10 @@ const RACES = {
     glyph: "halfling · sketch",
     body: "Footloose, footsure, and oddly hard to startle. Scribes, scouts, and second daughters of failed dynasties.",
     bonus: { dex: 2 },
+    subraces: {
+      lightfoot: { name: "Lightfoot Halfling", bonus: { cha: 1 }, body: "Easy to like and easier to lose track of; slips into a crowd and out the other side." },
+      stout: { name: "Stout Halfling", bonus: { con: 1 }, body: "Dwarf-blooded and hard to poison; the kind that finishes the march and the meal." },
+    },
   },
   dwarf: {
     name: "Dwarf",
@@ -1024,6 +1164,10 @@ const RACES = {
     glyph: "dwarf · sketch",
     body: "Slow to leave, slower to anger, slowest to forget. Stonecunning, ironwise, and oddly reliable.",
     bonus: { con: 2 },
+    subraces: {
+      mountain: { name: "Mountain Dwarf", bonus: { str: 2 }, body: "Raised on high stone and armoured young. Carries weight the way others carry opinions." },
+      hill: { name: "Hill Dwarf", bonus: { wis: 1 }, body: "Long-memoried and longer-lived; the toughness shows up the morning after the fight." },
+    },
   },
   elf: {
     name: "Elf",
@@ -1032,6 +1176,14 @@ const RACES = {
     glyph: "elf · sketch",
     body: "Older than several wars they were not in. Sharp eyes, sharp words, sharper at the wrong times.",
     bonus: { dex: 2 },
+    // Drow DECISION: drow stays a STANDALONE top-level race (see `drow` below), NOT folded into
+    // elf.subraces — this matches the existing data fork (drow has its own RACES entry, its own
+    // CHA delta, and a Minthara gallery face tagged race:"drow"). Only High/Wood live here so the
+    // gallery filter + race tags stay consistent with what's already shipped.
+    subraces: {
+      high: { name: "High Elf", bonus: { int: 1 }, body: "Schooled in the old arcana; a cantrip comes as readily as a remark." },
+      wood: { name: "Wood Elf", bonus: { wis: 1 }, body: "Of the deep green, fleet and unseen until chosen. Keener senses, lighter feet." },
+    },
   },
   half: {
     name: "Half-Elf",
@@ -1080,6 +1232,10 @@ const RACES = {
     glyph: "gnome",
     body: "Small, sharp, and endlessly curious about how the latch works. Tinkers, illusionists, and keepers of inventions no one asked for.",
     bonus: { int: 2, con: 1 },
+    subraces: {
+      forest: { name: "Forest Gnome", bonus: { dex: 1 }, body: "Quiet among the roots, on speaking terms with small beasts and minor illusions." },
+      rock: { name: "Rock Gnome", bonus: { con: 1 }, body: "Tinker-blooded; builds clockwork that mostly works and occasionally explodes on schedule." },
+    },
   },
   "half-orc": {
     name: "Half-Orc",
@@ -1285,4 +1441,4 @@ const BACKGROUNDS = {
   spy: { name: "Spy", brief: "Was paid for nine years to be elsewhere.", skills: ["Stealth", "Insight"] },
 };
 
-Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, portraitChoicesForRace, PORTRAIT_GALLERY });
+Object.assign(window, { ScreenCreate, RACES, CLASSES, BACKGROUNDS, SelectCard, abilityCost, raceScope, classScope, portraitScope, heroPortraitScope, portraitChoicesForRace, PORTRAIT_GALLERY, subracesForRace, hasSubraces, mergeBonus, effectiveRaceBonus, subraceLineageName });
