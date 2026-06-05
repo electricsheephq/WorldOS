@@ -239,6 +239,19 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('.catch((e) => toast({ kind: "danger"', source)
         self.assertIn('title: "Move not sent"', source)
 
+    def test_bestiary_renders_reference_action_mechanics(self):
+        # #674: the 'Browse all' public reference projection (bestiary.public_reference_projection) ships
+        # a structured actions[] (name + desc carrying the to-hit/damage MECHANICS, e.g. "Scimitar … +4 …
+        # 1d6+2"). The theorycrafter optimizer needs the numbers, not just the names in knownActions — and
+        # the projection data was previously shipped but the screen never rendered it. Guard the wire-up.
+        status, ctype, body = self._get("/openworlds/screen-bestiary.jsx")
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        self.assertIn("item?.actions", source)                         # entry builder maps the structured actions
+        self.assertIn("<SectionTitle>Actions</SectionTitle>", source)  # the render section exists
+        self.assertIn("entry.actions.map", source)                     # each action's name + desc (mechanics) rendered
+
     def test_journal_detail_matches_selected_tab_not_first_rumor(self):
         status, ctype, body = self._get("/openworlds/screen-journal.jsx")
 
