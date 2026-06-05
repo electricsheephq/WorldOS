@@ -6344,6 +6344,95 @@ def _portrait_gen(payload: dict) -> dict:
     return res
 
 
+# --- POST /portrait-upload — "Bring your own" face for a player-created PC (#376, #315 AC4).
+# The Create wizard's StepPortrait advertised "Bring your own — drop a PNG onto any frame" but
+# had no implementation behind it. This is the honest write lane: the client uploads the chosen
+# image's bytes and we land them as a derived-cache descriptor under a PROVISIONAL content-scope
+# (portrait-pc-<hash>, the SAME shape /portrait-gen mints), so:
+#   1. the wizard renders the upload immediately via <Img scope=…> (GET /image reads bytes_b64), and
+#   2. bindHero threads {mode:"gen", scope} through the seam — play.sh ALREADY re-keys any
+#      provisional portrait-pc-<hash> onto portrait-<char_id> via imagegen.copy_scope at PC-mint
+#      time, so the upload persists across save/reload exactly like a generated face.
+# This is a DERIVED-cache write only (a JSON descriptor matching imagegen's on-disk shape) — the
+# engine remains the sole writer of campaign state; snapshot.json is never touched. We write the
+# descriptor in pure stdlib so this reader still imports nothing from the engine.
+_PORTRAIT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024  # 5 MB cap on the decoded image (matches the UI copy).
+# Accepted image MIME types -> the magic-byte signature we require so a renamed .txt/.exe can't
+# masquerade as an image. PNG: 89 50 4E 47; JPEG: FF D8 FF.
+_PORTRAIT_UPLOAD_SIGNATURES = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+}
+
+
+def _portrait_upload(payload: dict) -> dict:
+    """Land a user-uploaded portrait into the derived cache; return a UI-ready verdict.
+
+    Contract (always 200, never raises, mirrors _portrait_gen):
+    - a valid PNG/JPEG within the size cap -> {"ok": True, "scope": "portrait-pc-…"}
+    - oversize / wrong MIME / not-actually-an-image / bad base64 -> {"ok": False, "reason": …}
+
+    The verdict's ``scope`` is the provisional content-scope the wizard renders + threads through
+    bindHero (then play.sh re-keys it onto the real PC). Bytes are stored inline (bytes_b64) so the
+    descriptor is self-contained and survives the copy_scope re-key verbatim."""
+    mime = str(payload.get("mime") or payload.get("mime_type") or "").strip().lower()
+    if mime not in _PORTRAIT_UPLOAD_SIGNATURES:
+        return {"ok": False, "reason": "unsupported image type — use a PNG or JPEG"}
+    b64 = payload.get("bytes") or payload.get("bytes_b64")
+    if not isinstance(b64, str) or not b64.strip():
+        return {"ok": False, "reason": "no image data"}
+    # Strip an optional data-URL prefix ("data:image/png;base64,…") the browser FileReader may add.
+    if "," in b64 and b64.lstrip().lower().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    # Bound the work BEFORE decoding: base64 inflates ~4/3, so a payload whose decoded size would
+    # exceed the cap is rejected without ever materializing the bytes.
+    if (len(b64) // 4) * 3 > _PORTRAIT_UPLOAD_MAX_BYTES + 3:
+        return {"ok": False, "reason": "image too large — keep it under 5 MB"}
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        return {"ok": False, "reason": "could not read image data"}
+    if not data:
+        return {"ok": False, "reason": "no image data"}
+    if len(data) > _PORTRAIT_UPLOAD_MAX_BYTES:
+        return {"ok": False, "reason": "image too large — keep it under 5 MB"}
+    # Magic-byte guard: the bytes must actually be the image kind they claim (a renamed
+    # .txt/.exe/.psd is rejected here, never silently cached as a face).
+    if not any(data.startswith(sig) for sig in _PORTRAIT_UPLOAD_SIGNATURES[mime]):
+        return {"ok": False, "reason": "that file is not a valid image"}
+    # Provisional scope keyed by the SAME inputs /portrait-gen uses, plus a per-upload seed so two
+    # different uploads for the same hero never collide on one scope dir.
+    seed = payload.get("seed")
+    scope = _portrait_gen_scope(
+        str(payload.get("race") or ""),
+        str(payload.get("class") or payload.get("class_") or ""),
+        str(payload.get("name") or ""),
+        seed if seed not in (None, "") else hashlib.sha256(data).hexdigest()[:12],
+    )
+    # Write a descriptor matching imagegen's on-disk shape so GET /image serves it unchanged and
+    # copy_scope re-keys it verbatim. A hash over the bytes keys the file so a repeat upload of the
+    # same image is idempotent (one descriptor, not a pile).
+    digest = hashlib.sha256(data).hexdigest()
+    descriptor = {
+        "kind": "portrait",
+        "provider": "byo",  # bring-your-own — distinguishes an uploaded face from a generated one.
+        "mime_type": mime,
+        "bytes_b64": base64.b64encode(data).decode("ascii"),
+        "hash": digest,
+        "cached_at": time.time(),
+    }
+    try:
+        cache_dir = _images_dir(scope)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        tmp = cache_dir / (digest + ".json.tmp")
+        final = cache_dir / (digest + ".json")
+        tmp.write_text(json.dumps(descriptor, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, final)
+    except OSError as exc:
+        return {"ok": False, "reason": f"could not store image: {exc}"}
+    return {"ok": True, "scope": scope, "mime": mime, "bytes": len(data)}
+
+
 def _openworlds_config() -> dict:
     """Browser-safe metadata for the OpenWorlds shell.
 
@@ -7121,6 +7210,9 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/portrait-gen":
             self._do_portrait_gen()
             return
+        if route == "/portrait-upload":
+            self._do_portrait_upload()
+            return
         if route == "/ugc/profile":
             self._do_ugc_save()
             return
@@ -7255,6 +7347,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "reason": "bad portrait-gen payload"})
             return
         self._json(_portrait_gen(payload))
+
+    def _do_portrait_upload(self) -> None:
+        """POST /portrait-upload — "Bring your own" face for a player-created PC (#376, #315 AC4).
+
+        Reads {mime, bytes(base64), race?, class?, name?, seed?} and lands the uploaded image as a
+        derived-cache descriptor under a provisional content-scope (returned as ``scope``). Always
+        200 with a JSON verdict (stored-or-rejected); a bad/oversize/non-image upload is rejected
+        with a reason the UI surfaces as an inline toast — never a console throw, never a silent
+        no-op. This is a DERIVED-cache write only (the engine remains the sole writer of campaign
+        state; snapshot.json is never touched). The scope threads through bindHero as a
+        {mode:"gen", scope} choice, which play.sh already re-keys onto the real PC at mint time."""
+        # Refuse an over-budget body BEFORE reading it into memory. The decoded image is capped at
+        # 5 MB; the base64 envelope + JSON framing inflate ~4/3, so an 8 MB body is generous
+        # headroom and bounds a malicious Content-Length to a small read.
+        try:
+            declared = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            declared = 0
+        if declared > 8 * 1024 * 1024:
+            self._json({"ok": False, "reason": "image too large — keep it under 5 MB"})
+            return
+        payload = self._read_post_json()
+        if payload is ... or not isinstance(payload, dict):
+            self._json({"ok": False, "reason": "bad portrait-upload payload"})
+            return
+        self._json(_portrait_upload(payload))
 
     def _do_slot(self, action: str) -> None:
         """POST /save-slot | /load-slot — quicksave / quickload of the live campaign.
