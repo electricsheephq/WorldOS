@@ -82,6 +82,14 @@ compute the **correlation** between the fast-gate verdict and the full-RRI verdi
 "~80% signal" is *measured*, not asserted. Never write `pass=1` to `scores.db` from a fast run, and
 label every fast verdict **"INNER-LOOP — not a release verdict."**
 
+> **⚠ Tier-2 RRI evidence-path contract — don't false-mask the number.** When you roll the sweep up to
+> an RRI, `qa/release_readiness.py` requires *evidence-path* flags, not just value flags: each of
+> behavioral / ui_audit / palette_live needs BOTH the value AND a path that EXISTS (and `native_gate`
+> needs the Mac `--handoff-json`), or the gate is RED-capped as an `evidence_gap` and the RRI reads
+> **falsely low** (a real ~4.5/11 once masked as 1.8/11). The exact flag list + the behavioral-from-duo-log
+> fix live in the `worldos-dev` skill (§ "RRI evidence-path contract"); the corrected VM harness is
+> `qa/vm/sweep_v2.sh`.
+
 ---
 
 ## What the fast loop intentionally DEFERS to the milestone sweep (the honest ~20%)
