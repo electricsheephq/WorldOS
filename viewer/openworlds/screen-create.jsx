@@ -908,6 +908,18 @@ const RACES = {
     body: "Strong enough to end the argument and stubborn enough to outlast it. Refuses to fall when a lesser frame would, and rises angrier.",
     bonus: { str: 2, con: 1 },
   },
+  // Aasimar — added to make Dame Aylin's PORTRAIT_GALLERY entry
+  // (race: "aasimar") validate. Per 5e canon (Protector tradition): CHA +2,
+  // WIS +1. Closes #375 (the race-tag drift where the gallery filter never
+  // matches because no RACES key equals "aasimar"). Subraces deferred.
+  aasimar: {
+    name: "Aasimar",
+    size: "Medium",
+    life: "160 years",
+    glyph: "aasimar",
+    body: "Touched by something brighter once. Bears a heritage older than empires, and the unsettling habit of catching candle-light at the wrong angles. Born to the Upper Planes' echo; walks the world unsure whether to atone or to lead.",
+    bonus: { cha: 2, wis: 1 },
+  },
 };
 
 const CLASSES = {
