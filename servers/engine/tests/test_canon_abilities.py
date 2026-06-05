@@ -94,6 +94,29 @@ def test_canon_wizard_loads_with_derived_int_not_flat_ten(tmp_path, monkeypatch)
     assert res["warnings"] == []
 
 
+def test_canon_wizard_seat_yields_proficient_skill_bonus(tmp_path, monkeypatch):
+    """SEAT-PATH skill correctness — the deterministic ($0, CI) substitute for an expensive optimizer
+    playtest sweep. The 2026-06-03 optimizer crit was a SEATED canon caster showing Arcana +3 not +6:
+    skill_proficiencies that didn't match the lowercase SKILL_ABILITIES keys, so skill_bonus dropped
+    the proficiency. This exercises load_canon_character END-TO-END (the seat path AND the model's
+    _normalize_skill_case), asserting the seated PC's proficiencies are normalized and each skill_bonus
+    actually ADDS the proficiency bonus. Would have caught the crit in CI with zero LLM / zero sweep —
+    the fast-gate Tier-0 deterministic catch (see docs/qa/FAST_GATE.md)."""
+    from models import SKILL_ABILITIES
+    c = _seed(tmp_path, monkeypatch)
+    res = server.load_canon_character(c.id, "Charming Latham", kind="player", add_to_party=True)
+    assert "error" not in res
+    ch = server._require(c.id).characters[res["id"]]
+    assert ch.skill_proficiencies, "a seated canon Wizard must have skill proficiencies (SRD defaults if none in canon)"
+    for sk in ch.skill_proficiencies:
+        # normalized to the lowercase-underscore SKILL_ABILITIES keys (no capitalized canon names)
+        assert sk == sk.lower().replace(" ", "_"), f"un-normalized skill proficiency: {sk!r}"
+        assert sk in SKILL_ABILITIES, f"skill {sk!r} is not a valid SKILL_ABILITIES key"
+        # the bonus ADDS the proficiency (ability mod + proficiency_bonus), not the bare ability mod
+        assert ch.skill_bonus(sk) == ch.ability_modifier(SKILL_ABILITIES[sk]) + ch.proficiency_bonus, \
+            f"{sk}: skill_bonus must include the proficiency bonus (the +3-not-+6 crit)"
+
+
 def test_explicit_canon_abilities_are_preserved_unchanged(tmp_path, monkeypatch):
     # The Withers-style case: a canon record that DOES carry an `abilities` block must keep it
     # verbatim (a hand-authored sheet wins over derivation). No record ships one today, so inject
