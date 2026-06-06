@@ -208,7 +208,13 @@ Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, o
 clawdnd_dm_effort_arg() {
   local first="$1" level
   if [ "$first" != "0" ]; then
-    level="$(worldos_env DM_EFFORT_COLDOPEN max)"
+    # Cold-open effort is model-aware. Opus's max-effort world-build is generation-bound and overruns
+    # the cold-open timeout (measured 2026-06-06: Opus --effort max never finishes <400s; --effort HIGH
+    # finishes ~300s WITH a full, BG-caliber opening). Opus-high ≈ Sonnet-max world-build quality but
+    # lands in time, so Opus defaults to high; Sonnet keeps max (it finishes in ~280–400s at max).
+    local _co_default=max
+    case "${CLAWDND_DM_MODEL:-}" in *opus*) _co_default=high ;; esac
+    level="$(worldos_env DM_EFFORT_COLDOPEN "$_co_default")"
   else
     level="$(worldos_env DM_EFFORT_ROUTINE medium)"
   fi
@@ -243,7 +249,11 @@ clawdnd_dm_effort_arg() {
 clawdnd_dm_timeout() {
   local first="$1"
   if [ "$first" != "0" ]; then
-    worldos_env COLDOPEN_TIMEOUT 400
+    # Cold-open deadline is model-aware. Opus-high cold-open measured ~300s; give it margin (500s) for
+    # per-world/per-run variance so it is never killed mid-build. Sonnet keeps 400s (max runs ~280–400s).
+    local _co_timeout=400
+    case "${CLAWDND_DM_MODEL:-}" in *opus*) _co_timeout=500 ;; esac
+    worldos_env COLDOPEN_TIMEOUT "$_co_timeout"
   else
     worldos_env BEAT_TIMEOUT 200
   fi

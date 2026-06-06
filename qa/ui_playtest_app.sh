@@ -619,6 +619,10 @@ run_part_b() {
   # the narration instead of grace-proceeding into an empty scene (3s per poll).
   local ready_polls="${WOS_APP_PLAYER_READY_POLLS:-120}"
   local grace_polls="${WOS_APP_NARRATION_GRACE_POLLS:-50}"
+  # An Opus cold-open finishes its narration ~300s (vs Sonnet ~280s at the wire); the Sonnet-tuned
+  # 50-poll (~150s) grace would grace-proceed into an empty scene. Default an Opus DM to a longer
+  # wait so the persona sees the real opening (env still overrides either tier).
+  case "$DM_MODEL" in *opus*) ready_polls="${WOS_APP_PLAYER_READY_POLLS:-200}"; grace_polls="${WOS_APP_NARRATION_GRACE_POLLS:-130}" ;; esac
   for i in $(seq 1 "$ready_polls"); do   # up to ~ready_polls*3s for the full cold-open
     if [ "$(curl -s -o /dev/null -w '%{http_code}' "$b_url" 2>/dev/null)" = "200" ]; then
       ca="$(curl -s --max-time 2 "http://127.0.0.1:$b_port/session-surface" 2>/dev/null | jq -r '.can_act // false' 2>/dev/null)"
