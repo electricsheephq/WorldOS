@@ -49,7 +49,7 @@ SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for 
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
 # The DM model is an env var (default sonnet) so Opus-vs-sonnet structural-adherence testing
 # is a one-flag flip — mirrors qa/run_duo.sh (decision-dm-driver.md §3).
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 DM_TURNS=0
 
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------

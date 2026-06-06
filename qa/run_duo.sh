@@ -40,8 +40,8 @@ if [ "$(id -u)" = "0" ] && [ -z "${IS_SANDBOX:-}" ]; then
 fi
 
 # The DM model is an env var so A/B-testing Opus vs sonnet for structural adherence is a
-# one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default sonnet.
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
+# one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default opus (DECIDED 2026-06-06).
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"

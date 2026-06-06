@@ -50,7 +50,7 @@
 #                               an operator can continue a short built-app gameplay playtest.
 #                               Also waits for first-turn readiness: seated actor, enabled actions,
 #                               and visible narration/chat, not merely can_act:true.
-#   WORLDOS_DM_MODEL           DM model (default sonnet). CLAWDND_PLAY_BUDGET caps each DM turn.
+#   WORLDOS_DM_MODEL           DM model (default opus — DECIDED 2026-06-06, see docs/MODEL-TIERING-STRATEGY.md). CLAWDND_PLAY_BUDGET caps each DM turn.
 #
 # Produces under qa/ui_playtest_runs/<run>/:
 #   native/  before.png after.png transition.json transition.log       (part A)
@@ -84,7 +84,7 @@ fi
 PW_DIR="$ROOT/qa/playwright"
 APP_BUNDLE="$ROOT/dist/WorldOS.app"
 PREFERRED_PORT="${WOS_APP_PREFERRED_PORT:-8765}"   # matches RootView.swift @AppStorage("preferredPort") default
-DM_MODEL="$(worldos_env DM_MODEL sonnet)"
+DM_MODEL="$(worldos_env DM_MODEL opus)"
 PLAYER_MODEL="$(worldos_env UIPT_PLAYER_MODEL sonnet)"
 PERSONA_FILE="$ROOT/qa/play_player_browser_${PERSONA}.txt"
 

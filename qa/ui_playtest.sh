@@ -34,7 +34,7 @@ BEATS="${4:-30}"          # max player palette actions (soft cap)
 BUDGET="${5:-3.00}"       # USD cap for the PLAYER agent
 PW_DIR="$ROOT/qa/playwright"
 PW_CHANNEL="$(worldos_env UIPT_CHANNEL "")"   # "" = bundled chromium; "chrome" = system Chrome
-DM_MODEL="$(worldos_env DM_MODEL sonnet)"
+DM_MODEL="$(worldos_env DM_MODEL opus)"
 PLAYER_MODEL="$(worldos_env UIPT_PLAYER_MODEL sonnet)"
 DM_BUDGET="$(worldos_env UIPT_DM_BUDGET 1.50)"        # per DM turn
 PERSONA_FILE="$ROOT/qa/play_player_browser_${PERSONA}.txt"
