@@ -50,10 +50,43 @@ worldos_env() {
 # the LARGEST non-empty snapshot under <state_dir>/campaigns (never a blind head -1, which a
 # fat-fingered campaign_id could point at a lock-only orphan dir). Echoes the path or nothing.
 # $1 = STATE_DIR
+#
+# CAUTION (issue #640): "largest snapshot" is a SCORING-state heuristic (find the fattest save
+# to grade) — it is the WRONG selector for the LEAN RE-GROUND campaign id. When two campaigns
+# coexist in one state dir (a cold-open start_world retry, or a stale leftover), the largest may
+# be the STALE/PARALLEL one, and pointing a transcript-free lean beat at it folds a DIFFERENT
+# save's opening scene into the re-ground (cross-chronicle contamination). For the LEAN id, use
+# clawdnd_live_campaign_id below (the engine's authoritative most-recently-played save), NOT this.
 clawdnd_snapshot_path() {
   local state_dir="$1"
   find "$state_dir/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c \
     -exec ls -S {} + 2>/dev/null | head -1
+}
+
+# Resolve the LIVE campaign id for the lean re-ground — the ENGINE-authoritative answer to
+# "which save is being played right now", so a fast/transcript-free beat re-grounds against the
+# RIGHT campaign and can never fold a parallel save's opening scene into scene_context (#640).
+#
+# The engine is the sole source of truth for which campaign is live; it returns the
+# MOST-RECENTLY-UPDATED campaign (the one the harness is actively writing each beat), optionally
+# scoped to the launched world so a stale save from another world can't shadow it. This REPLACES
+# the old per-harness guesses (clawdnd_snapshot_path = largest, or `find … | head -1` = first dir)
+# that the #640 A/B proved could select the wrong campaign. Read-only (active_campaign never
+# mutates). Echoes the campaign id, or NOTHING when no campaign exists / the engine errors — in
+# which case the caller's lean branch no-ops (clawdnd_dm_lean_args returns 0 on an empty id) and
+# the normal --resume path is used (no regression). $1 = ROOT (repo root)  $2 = STATE_DIR
+# $3 = world_id (optional; scopes the resolution to the launched world)
+clawdnd_live_campaign_id() {
+  local root="$1" state_dir="$2" world="${3:-}"
+  [ -d "$state_dir/campaigns" ] || return 0
+  WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" \
+    uv run --directory "$root/servers/engine" python - "$world" 2>/dev/null <<'PY'
+import sys
+import store
+cid = store.active_campaign_id(sys.argv[1] if len(sys.argv) > 1 else "")
+if cid:
+    print(cid)
+PY
 }
 
 # EMPTY-NARRATION FALLBACK (issue #357). The play/QA loops record the DM turn's FINAL reply

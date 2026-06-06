@@ -391,7 +391,13 @@ chatlog dm "$DMSG"; DM_TURNS=1
 # normal --resume path (dm_turn no-ops lean when the id is unknown).
 CAMPAIGN_ID="$HERO_CAMP"
 if [ -z "$CAMPAIGN_ID" ] && [ -d "$STATE_DIR/campaigns" ]; then
-  CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+  # No pre-seeded hero → ask the ENGINE which save is live (the most-recently-played
+  # campaign in this world), NOT a blind first-dir pick — so a parallel campaign (a
+  # cold-open start_world retry) can't mis-point the lean re-ground at a DIFFERENT save's
+  # opening scene (#640 cross-chronicle contamination). Falls back to the first subdir only
+  # if the engine can't answer (unreachable / no world match) — no regression vs today.
+  CAMPAIGN_ID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+  [ -z "$CAMPAIGN_ID" ] && CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
 fi
 if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
   if [ -n "$CAMPAIGN_ID" ]; then
