@@ -26,8 +26,19 @@ MD="$1"; STATE="$2"; RUBRIC="$3"; SCHEMA="$4"; OUT="$5"
 # budget ($6) accepted for API parity but unused — OpenClaw manages quota
 BUDGET="${6:-1.50}"
 
-AGENT="${CLAWDND_SCORER_AGENT:-clawdnd-qa}"
-MODEL="${CLAWDND_SCORER_MODEL:-openai/gpt-5.4}"
+# Default agent = `main` (the canonical gateway agent; the old `clawdnd-qa` default isn't configured on
+# every host). By DEFAULT pass NO --model override (use the agent's native model, e.g. main=gpt-5.5) —
+# many gateway agents REJECT a foreign model override ("Model override … is not allowed for agent").
+# Only pass one when CLAWDND_SCORER_MODEL is explicitly set AND allowed for the agent.
+AGENT="${CLAWDND_SCORER_AGENT:-main}"
+MODEL="${CLAWDND_SCORER_MODEL:-}"
+MODEL_ARGS=(); [ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
+# A fresh session id per scoring run so a scorer turn never pollutes the agent's main session.
+SESSION_ID="${CLAWDND_SCORER_SESSION:-qa-score-$(basename "${OUT%.json}")}"
+# openclaw agent has NO stdin/file message input — the prompt is a single --message argv, bounded by
+# MAX_ARG_STRLEN (~128KB). The state.json alone can be ~140KB, so cap it (the distilled transcript
+# carries the prose; the state is supplementary ground-truth). Tune via CLAWDND_SCORER_STATE_CAP.
+STATE_CAP="${CLAWDND_SCORER_STATE_CAP:-75000}"
 # 600s: large rubrics (angry_dm ~32KB) + long transcripts (~100KB) need the room
 GATEWAY_TIMEOUT="${CLAWDND_SCORER_TIMEOUT:-600}"
 
@@ -41,6 +52,9 @@ r = open(sys.argv[1]).read()
 s = open(sys.argv[2]).read()
 m = open(sys.argv[3]).read()
 st = open(sys.argv[4]).read()
+cap = int(sys.argv[5])
+if len(st) > cap:
+    st = st[:cap] + '\n…[FINAL STATE truncated to fit the gateway message size limit]…\n'
 prompt = (r + '\n\n# ===== OUTPUT FORMAT =====\n'
           'Respond with ONLY a single JSON object conforming to this schema'
           ' — no prose, no markdown, no code fences:\n'
@@ -48,7 +62,7 @@ prompt = (r + '\n\n# ===== OUTPUT FORMAT =====\n'
           + m + '\n\n# ===== FINAL ENGINE STATE (ground truth) =====\n'
           + st + '\n')
 sys.stdout.write(prompt)
-" "$RUBRIC" "$SCHEMA" "$MD" "$STATE" > "$PROMPT_FILE"
+" "$RUBRIC" "$SCHEMA" "$MD" "$STATE" "$STATE_CAP" > "$PROMPT_FILE"
 
 attempt=0
 while [ "$attempt" -lt 3 ]; do
@@ -57,7 +71,8 @@ while [ "$attempt" -lt 3 ]; do
   # Call the OpenClaw gateway.  Reply text is at .result.payloads[0].text
   RAW_REPLY="$(openclaw agent \
     --agent "$AGENT" \
-    --model "$MODEL" \
+    ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
+    --session-id "${SESSION_ID}-${attempt}" \
     --message "$(cat "$PROMPT_FILE")" \
     --json \
     --timeout "$GATEWAY_TIMEOUT" \

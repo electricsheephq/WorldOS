@@ -11,6 +11,10 @@
 set -uo pipefail
 
 MD="$1"; STATE="$2"; RUBRIC="$3"; SCHEMA="$4"; OUT="$5"; BUDGET="${6:-1.50}"
+# The scorer model is held CONSTANT at sonnet by default (the gate baseline; never flip it casually).
+# Overridable via CLAWDND_SCORER_MODEL ONLY for a deliberate scorer-calibration probe / re-baseline
+# (e.g. "does a stronger scorer read Opus craft higher than sonnet does?") — see docs/MODEL-TIERING.
+SCORER_MODEL="${CLAWDND_SCORER_MODEL:-sonnet}"
 
 INPUT="$(printf '%s\n\n# ===== OUTPUT FORMAT =====\nRespond with ONLY a single JSON object conforming to this schema — no prose, no markdown, no code fences:\n%s\n\n# ===== DISTILLED TRANSCRIPT =====\n%s\n\n# ===== FINAL ENGINE STATE (ground truth) =====\n%s\n' \
   "$(cat "$RUBRIC")" "$(cat "$SCHEMA")" "$(cat "$MD")" "$(cat "$STATE")")"
@@ -33,7 +37,7 @@ while [ "$attempt" -lt 3 ]; do
   # --json-schema was found to suppress the result text in this CLI; we rely on the
   # JSON-only instruction in the prompt and strip any stray code fences.
   printf '%s' "$INPUT" | claude -p \
-    --model sonnet --permission-mode bypassPermissions \
+    --model "$SCORER_MODEL" --permission-mode bypassPermissions \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
 
