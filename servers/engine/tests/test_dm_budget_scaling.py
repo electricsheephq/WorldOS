@@ -79,6 +79,15 @@ class DmBudgetScalingTests(unittest.TestCase):
         self.assertRegex(src, r"CS_BUDGET=\"\$\{CLAWDND_PLAY_BUDGET:-5\.00\}\"", "Opus combat budget must be >= $5")
         self.assertIn('--max-budget-usd "$CS_BUDGET"', src, "must consume the model-aware combat budget")
 
+    def test_auxiliary_harnesses_scale_budget_to_model(self):
+        """ui_playtest.sh (per-DM-turn) + run_party.sh (per-call) must scale their Opus budgets too."""
+        uipt = self._read("qa/ui_playtest.sh")
+        self.assertIn("*opus*)", uipt, "ui_playtest must branch the DM budget on an opus model")
+        self.assertRegex(uipt, r"_uipt_dm_def=12\.00", "ui_playtest Opus per-DM-turn default must be >= $12")
+        party = self._read("qa/run_party.sh")
+        self.assertIn("*opus*)", party, "run_party must branch/floor the per-call budget on an opus model")
+        self.assertRegex(party, r"BUDGET=4\.00", "run_party must floor the Opus per-call budget")
+
 
 if __name__ == "__main__":
     unittest.main()

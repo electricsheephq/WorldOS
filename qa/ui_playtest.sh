@@ -36,7 +36,10 @@ PW_DIR="$ROOT/qa/playwright"
 PW_CHANNEL="$(worldos_env UIPT_CHANNEL "")"   # "" = bundled chromium; "chrome" = system Chrome
 DM_MODEL="$(worldos_env DM_MODEL opus)"
 PLAYER_MODEL="$(worldos_env UIPT_PLAYER_MODEL sonnet)"
-DM_BUDGET="$(worldos_env UIPT_DM_BUDGET 1.50)"        # per DM turn
+# Per-DM-turn budget scales to the model: the Opus cold-open world-build needs ~$12; the Sonnet-tuned
+# $1.50 cap trips error_max_budget_usd on the Opus cold-open (the PC never seats). Sonnet unchanged.
+case "$DM_MODEL" in *opus*) _uipt_dm_def=12.00 ;; *) _uipt_dm_def=1.50 ;; esac
+DM_BUDGET="$(worldos_env UIPT_DM_BUDGET "$_uipt_dm_def")"        # per DM turn (model-aware)
 PERSONA_FILE="$ROOT/qa/play_player_browser_${PERSONA}.txt"
 
 [ -f "$PERSONA_FILE" ] || { echo "[uipt] no persona brief at $PERSONA_FILE" >&2; exit 2; }

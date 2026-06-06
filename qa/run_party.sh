@@ -57,6 +57,9 @@ MAX_TURNS="${CLAWDND_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (
 # adherence lever (decision §3); the actor model drives the player/companion facade agents.
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+# Opus needs more than the Sonnet-tuned $0.80 per-call cap (the DM cold-open alone is ~$2.4); floor it
+# for an Opus DM so the cold-open lands. CAP, not spend; the Sonnet companion facade spends far less.
+case "$CLAWDND_DM_MODEL" in *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then BUDGET=4.00; fi ;; esac
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
