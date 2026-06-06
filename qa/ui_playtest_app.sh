@@ -559,7 +559,11 @@ run_part_b() {
         export PATH="$PATH_NOOPEN"
         export WORLDOS_DM_MODEL="$DM_MODEL" CLAWDND_DM_MODEL="$DM_MODEL"
         export CLAWDND_PLAY_PORT="$b_port"
-        export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
+        # Per-turn cap scales to the DM model: the Opus max-effort cold-open world-build needs ~$12;
+        # the Sonnet-tuned $1.50 cap trips error_max_budget_usd on the Opus cold-open → no PC seated.
+        # CAP, not spend — routine beats spend far less; sess_cap still bounds total DM spend.
+        case "$DM_MODEL" in *opus*) : "${CLAWDND_PLAY_BUDGET:=12.00}" ;; *) : "${CLAWDND_PLAY_BUDGET:=1.50}" ;; esac
+        export CLAWDND_PLAY_BUDGET
         export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
         export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
         export CLAWDND_PLAY_MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-600}"
@@ -609,7 +613,17 @@ run_part_b() {
   local b_state="$ROOT/play-state/$b_run"
   log "[B] waiting for the backend to be player-ready (can_act + seated PC + opening narration)…"
   local ready=0 ca pc chat_lines saw_canact=0 saw_pc=0
-  for i in $(seq 1 120); do   # up to ~6 min for the full cold-open
+  # Slow DMs (e.g. an Opus max-effort cold-open) seat the PC well before the opening narration
+  # finishes — so the wait + the no-narration grace are env-configurable. Defaults preserve the
+  # historic ~6min cap / ~2.5min grace; raise them for an Opus cold-open so the harness waits for
+  # the narration instead of grace-proceeding into an empty scene (3s per poll).
+  local ready_polls="${WOS_APP_PLAYER_READY_POLLS:-120}"
+  local grace_polls="${WOS_APP_NARRATION_GRACE_POLLS:-50}"
+  # An Opus cold-open finishes its narration ~300s (vs Sonnet ~280s at the wire); the Sonnet-tuned
+  # 50-poll (~150s) grace would grace-proceed into an empty scene. Default an Opus DM to a longer
+  # wait so the persona sees the real opening (env still overrides either tier).
+  case "$DM_MODEL" in *opus*) ready_polls="${WOS_APP_PLAYER_READY_POLLS:-200}"; grace_polls="${WOS_APP_NARRATION_GRACE_POLLS:-130}" ;; esac
+  for i in $(seq 1 "$ready_polls"); do   # up to ~ready_polls*3s for the full cold-open
     if [ "$(curl -s -o /dev/null -w '%{http_code}' "$b_url" 2>/dev/null)" = "200" ]; then
       ca="$(curl -s --max-time 2 "http://127.0.0.1:$b_port/session-surface" 2>/dev/null | jq -r '.can_act // false' 2>/dev/null)"
       [ "$ca" = "true" ] && saw_canact=1
@@ -627,7 +641,7 @@ run_part_b() {
       fi
       # Grace fallback: can_act + seated PC but STILL no narration after ~2.5min → proceed anyway
       # (the persona will report the empty opening scene — a real finding, e.g. #357).
-      if [ "$saw_canact" = "1" ] && [ "$saw_pc" = "1" ] && [ "$i" -ge 50 ]; then
+      if [ "$saw_canact" = "1" ] && [ "$saw_pc" = "1" ] && [ "$i" -ge "$grace_polls" ]; then
         ready=1; log "[B] proceeding without opening narration after $((i*3))s (chat empty — persona will judge it; possible #357)."; break
       fi
     fi

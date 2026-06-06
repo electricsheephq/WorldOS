@@ -45,6 +45,13 @@ CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+# Opus's high-effort cold-open world-build costs ~$2.4 on its first turn (measured 2026-06-06); a low
+# caller per-turn budget (sweep $2.00, fast_probe $0.80) would trip error_max_budget_usd on the duo
+# cold-open the same way the .app backend did. Floor the per-turn cap for an Opus DM so the cold-open
+# always lands. A CAP, not a spend — routine duo turns spend far less.
+case "$CLAWDND_DM_MODEL" in
+  *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then echo "[duo] opus: flooring per-turn budget \$$BUDGET -> \$4.00 (cold-open headroom)"; BUDGET=4.00; fi ;;
+esac
 
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
 # MIRRORS scripts/play.sh exactly (and shares its ONE implementation via the
