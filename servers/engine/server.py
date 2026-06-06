@@ -94,6 +94,7 @@ _AB3_TO_FULL = {
 # (how the SRD records spell saving_throw_ability, e.g. "wisdom") and resolve to an Ability.
 _FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
 from store import append_log, campaign_lock, campaigns_for_world, read_log_all
+from store import active_campaign_id as _active_campaign_id
 from store import list_campaigns as _list_campaigns
 from store import list_slots as _list_slots
 from store import load_campaign, save_campaign
@@ -403,6 +404,24 @@ def create_campaign(title: str, summary: str = "") -> dict:
 def list_campaigns() -> list[dict]:
     """List all saved campaigns (id, title, last-updated time)."""
     return _list_campaigns()
+
+
+@mcp.tool()
+def active_campaign(world_id: str = "") -> dict:
+    """The LIVE campaign in this state dir — the one a harness must re-ground a
+    lean/fast beat against (issue #640). Resolved deterministically by the engine
+    (the sole source of truth for which save is live) as the MOST-RECENTLY-UPDATED
+    campaign, optionally scoped to ``world_id``.
+
+    Harnesses previously picked the lean re-ground ``campaign_id`` by the LARGEST
+    snapshot on disk; when a parallel campaign coexists in the state dir (a cold-open
+    ``start_world`` retry, or a stale prior save) that can be the WRONG campaign, and
+    because ``scene_context`` is strictly campaign-pure it then faithfully folds a
+    DIFFERENT save's opening scene into the fast re-ground (cross-chronicle
+    contamination). Ask the engine which save is live instead of guessing from file
+    sizes. Read-only. Returns ``{"campaign_id": <id> | None}`` (None when no matching
+    campaign exists yet)."""
+    return {"campaign_id": _active_campaign_id(world_id)}
 
 
 @mcp.tool()

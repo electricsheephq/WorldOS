@@ -277,6 +277,54 @@ def campaigns_for_world(world_id: str) -> list[dict]:
     return out
 
 
+def active_campaign_id(world_id: str = "") -> Optional[str]:
+    """The campaign a harness should re-ground a LEAN beat against — the LIVE save,
+    resolved deterministically as the MOST-RECENTLY-UPDATED campaign (largest
+    ``updated_at``), optionally scoped to ``world_id``.
+
+    Why this exists (issue #640 — lean re-ground cross-chronicle contamination):
+    the play/QA harnesses used to pick the lean re-ground ``campaign_id`` by the
+    LARGEST snapshot on disk (``qa/lib_beat_driver.sh:clawdnd_snapshot_path`` ->
+    ``ls -S | head -1``). When TWO campaigns coexist in one state dir — a cold-open
+    ``start_world`` retry minting a parallel campaign, or a stale prior save — the
+    largest snapshot can be the WRONG (parallel) campaign. The engine's
+    ``scene_context`` is strictly campaign-pure (it only ever reads
+    ``campaigns/<id>/…`` for the id it is GIVEN), so pointing a fast/transcript-free
+    lean beat at the wrong id faithfully folds a DIFFERENT save's opening scene
+    (wrong HP, wrong day, wrong scene art) into the re-ground — the A/B-proven
+    contamination. "Largest" is a fiction-volume proxy; "live" is **who wrote last**.
+
+    The engine is the SOLE source of truth for which campaign is live, so the
+    resolver lives here (the writer) and the harness asks the engine rather than
+    guessing from file sizes. Read-only; returns the campaign id, or ``None`` when no
+    matching campaign exists. Ties (equal ``updated_at``) break on the id for
+    determinism. ``world_id`` filters to one world seed (the harness always knows the
+    world it launched), so a stale save from a DIFFERENT world can never be selected.
+    """
+    root = state_dir() / "campaigns"
+    if not root.exists():
+        return None
+    best_id: Optional[str] = None
+    best_updated: float = float("-inf")
+    for d in sorted(root.iterdir()):
+        snap = d / "snapshot.json"
+        if not snap.exists():
+            continue
+        try:
+            c = Campaign.model_validate_json(snap.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if world_id and c.world_id != world_id:
+            continue
+        updated = c.updated_at or 0.0
+        # Strict > keeps the FIRST seen on a tie; sorted(iterdir()) makes that the
+        # lexicographically-smallest id, so the choice is fully deterministic.
+        if updated > best_updated:
+            best_updated = updated
+            best_id = c.id
+    return best_id
+
+
 def append_log(campaign_id: str, session_id: str, entry: SessionLogEntry) -> None:
     path = _campaign_dir(campaign_id) / "sessions" / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)

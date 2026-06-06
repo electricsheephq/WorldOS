@@ -243,16 +243,23 @@ chatlog dm "$DMSG"
 
 # Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
 # CLAWDND_LEAN_BEATS=0). D1's start_world wrote the snapshot to
-# $STATE_DIR/campaigns/<id>/snapshot.json — read the id back from that dir. Mirrors
-# scripts/play.sh:347-363. The run wipes $STATE_DIR/campaigns at setup, so there is exactly
-# one campaign here; prefer the largest non-empty snapshot's parent (via the shared helper,
-# robust against a lock-only orphan dir), falling back to the sole campaign subdir. Empty ⇒
-# the DM turn's lean branch no-ops and the normal --resume path is used.
-CAMPAIGN_SNAP="$(clawdnd_snapshot_path "$STATE_DIR")"
-if [ -n "$CAMPAIGN_SNAP" ]; then
-  CAMPAIGN_ID="$(basename "$(dirname "$CAMPAIGN_SNAP")")"
-elif [ -d "$STATE_DIR/campaigns" ]; then
-  CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+# $STATE_DIR/campaigns/<id>/snapshot.json. The run wipes $STATE_DIR/campaigns at setup, so one
+# campaign is EXPECTED — but a cold-open start_world RETRY (or the DM mistakenly re-calling
+# start_world) can mint a SECOND, PARALLEL campaign in the same state dir. The old largest-
+# snapshot / first-dir heuristics could then select the WRONG one, and a transcript-free lean
+# beat re-grounding against it folds a DIFFERENT save's opening scene into scene_context — the
+# #640 cross-chronicle contamination. So pin the LEAN id to the ENGINE-authoritative LIVE save
+# (the most-recently-played campaign in this world), not a file-size/dir-order guess. Empty ⇒
+# the DM turn's lean branch no-ops and the normal --resume path is used (no regression).
+CAMPAIGN_ID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+if [ -z "$CAMPAIGN_ID" ]; then
+  # Defensive fallback (engine unreachable / no world_id match): the sole campaign subdir.
+  CAMPAIGN_SNAP="$(clawdnd_snapshot_path "$STATE_DIR")"
+  if [ -n "$CAMPAIGN_SNAP" ]; then
+    CAMPAIGN_ID="$(basename "$(dirname "$CAMPAIGN_SNAP")")"
+  elif [ -d "$STATE_DIR/campaigns" ]; then
+    CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+  fi
 fi
 if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
   if [ -n "$CAMPAIGN_ID" ]; then
