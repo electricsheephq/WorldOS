@@ -436,8 +436,6 @@ codex_dm_turn() {
   : > "$LAST_MESSAGE"
   local status=0
   codex exec \
-    --ignore-user-config \
-    --ignore-rules \
     --sandbox read-only \
     --json \
     ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
