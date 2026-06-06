@@ -44,12 +44,19 @@ PORT_EXPLICIT=0
 if declare -F clawdnd_choose_port >/dev/null 2>&1; then
   PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
 fi
-BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per DM turn
-SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
-MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
-# The DM model is an env var (default sonnet) so Opus-vs-sonnet structural-adherence testing
-# is a one-flag flip — mirrors qa/run_duo.sh (decision-dm-driver.md §3).
+# The DM model is an env var (default opus, owner 2026-06-06) — one-flag flip; mirrors qa/run_duo.sh.
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+# Budgets scale to the DM model: an Opus turn — especially the max-effort cold-open world-build —
+# costs ~5x a Sonnet turn, so the Sonnet-tuned $1.50/$15 caps trip error_max_budget_usd on the Opus
+# cold-open and the backend never seats a PC. These are CAPS, not spends — routine beats spend far
+# less than the cap; the session ceiling bounds any runaway turn.
+case "$CLAWDND_DM_MODEL" in
+  *opus*) _PT_DEF=12.00; _SESS_DEF=30.00 ;;
+  *)      _PT_DEF=1.50;  _SESS_DEF=15.00 ;;
+esac
+BUDGET="${CLAWDND_PLAY_BUDGET:-$_PT_DEF}"                    # per DM turn (model-aware default)
+SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-$_SESS_DEF}"  # aggregate session ceiling (model-aware)
+MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"              # hard turn cap (worst case = MAX_TURNS×BUDGET)
 DM_TURNS=0
 
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------

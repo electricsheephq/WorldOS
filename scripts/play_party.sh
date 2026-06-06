@@ -109,8 +109,16 @@ fi
 # companion-alive + relay machinery. The human is the player (acts via the dashboard,
 # NOT a claude -p agent); the companions are the claude -p peers.
 # ===========================================================================
-BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"                   # per agent turn (DM or companion)
-SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # aggregate ceiling for the whole session
+# Budgets scale to the DM model (resolved above): an Opus turn — especially the max-effort cold-open
+# world-build — costs ~5x a Sonnet turn, so the Sonnet-tuned $1.50/$15 caps trip error_max_budget_usd
+# on the Opus cold-open → the backend never seats a PC. CAPS, not spends — routine beats (and the
+# Sonnet companion facade) spend far less than the cap; the session ceiling bounds any runaway turn.
+case "$CLAWDND_DM_MODEL" in
+  *opus*) _PT_DEF=12.00; _SESS_DEF=30.00 ;;
+  *)      _PT_DEF=1.50;  _SESS_DEF=15.00 ;;
+esac
+BUDGET="${CLAWDND_PLAY_BUDGET:-$_PT_DEF}"                    # per agent turn (DM or companion; model-aware)
+SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-$_SESS_DEF}"  # aggregate session ceiling (model-aware)
 MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"               # hard cap on agent turns (DM + companions)
 if declare -F clawdnd_choose_port >/dev/null 2>&1; then
   PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1

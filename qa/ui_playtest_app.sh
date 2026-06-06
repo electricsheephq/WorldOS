@@ -559,7 +559,11 @@ run_part_b() {
         export PATH="$PATH_NOOPEN"
         export WORLDOS_DM_MODEL="$DM_MODEL" CLAWDND_DM_MODEL="$DM_MODEL"
         export CLAWDND_PLAY_PORT="$b_port"
-        export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
+        # Per-turn cap scales to the DM model: the Opus max-effort cold-open world-build needs ~$12;
+        # the Sonnet-tuned $1.50 cap trips error_max_budget_usd on the Opus cold-open → no PC seated.
+        # CAP, not spend — routine beats spend far less; sess_cap still bounds total DM spend.
+        case "$DM_MODEL" in *opus*) : "${CLAWDND_PLAY_BUDGET:=12.00}" ;; *) : "${CLAWDND_PLAY_BUDGET:=1.50}" ;; esac
+        export CLAWDND_PLAY_BUDGET
         export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
         export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
         export CLAWDND_PLAY_MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-600}"
