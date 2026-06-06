@@ -248,6 +248,46 @@ critical/high** adversarial defects.
   defect** — both AI player and DM drift to roleplay, so combat is rarely formally run.
   The wandering-encounter system + combat-seeking personas force real fights.
 
+### Codex GPT-DM Fair-Test Lane (Mac)
+
+Use this lane only to answer the provider decision question: **can GPT, when run through
+Codex's native tool loop, match the Opus DM quality bar?** It is not an RRI/release gate and
+does not use the OpenClaw gateway. The release Opus sweep remains the release signal unless
+fresh scored evidence explicitly changes that decision.
+
+Preflight, from the Mac where Codex CLI is logged in:
+
+```bash
+cd /Users/lume/ClawDnD-val
+scripts/codex_qa_home.sh ~/.codex-worldos-qa /Users/lume/ClawDnD-val
+CODEX_HOME=~/.codex-worldos-qa codex login status
+CODEX_HOME=~/.codex-worldos-qa codex --version
+```
+
+Codex CLI `>=0.128.0` rejects stale `service_tier = "default"` in `config.toml`; the value
+must be absent, `fast`, or `flex`. `qa/support_vm_preflight.py` now records this as
+`tools.codex_auth.config` and blocks Codex persona readiness when the effective config is
+stale. The effective config is `CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise
+`~/.codex/config.toml`.
+
+Fair-test shape:
+
+- DM provider: `CODEX_HOME=~/.codex-worldos-qa WORLDOS_CODEX_MODEL=gpt-5.5` or `gpt-5.4`
+  through `scripts/play_codex_dm.sh`, which wires engine/rules/voice MCP per `codex exec -c`.
+- Player: Sonnet via the constrained `clawdnd-player` facade, using a combat-seeking persona
+  when the question is mechanical viability.
+- Scoring: Sonnet `qa/score.sh` on Tolkien story and Angry-DM 5e fidelity, plus
+  `qa/assert_behavioral.py` on the transcoded Codex tool stream.
+- Evidence stays private under `/Volumes/LEXAR/Codex`; do not commit raw transcripts,
+  private art, or credentials.
+
+Current #691 result on `93df5d2` (private Lexar evidence, 2026-06-07): native Codex GPT is
+mechanically capable enough to use real tools, but the scored fair-test runs did **not**
+green-light the OpenClaw gateway plugin build. `gpt-5.5` scored Tolkien `3.1`, Angry-DM
+`3.5`, behavioral `RED`; `gpt-5.4` scored Tolkien `2.4`, Angry-DM `3.3`, behavioral `RED`.
+Therefore #690 remains gated off unless a later same-method rerun reaches the Opus comparison
+bar with a GREEN behavioral gate.
+
 ---
 
 ## AGENT DELEGATION

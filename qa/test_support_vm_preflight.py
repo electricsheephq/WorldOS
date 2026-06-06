@@ -166,6 +166,48 @@ class SupportVMPreflightTests(unittest.TestCase):
         self.assertTrue(preflight.build_sha_matches("deadbeefcafebabe", "deadbee"))
         self.assertTrue(preflight.build_sha_matches("deadbee", "deadbeefcafebabe"))
 
+    def test_codex_service_tier_parser_ignores_commented_default(self):
+        text = '\n# service_tier = "default"\nservice_tier = "fast"\n'
+        self.assertEqual(preflight.parse_codex_service_tier(text), "fast")
+
+    def test_codex_cli_0128_blocks_stale_default_service_tier(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            codex_home = Path(td) / "codex-home"
+            codex_home.mkdir()
+            (codex_home / "config.toml").write_text('service_tier = "default"\n', encoding="utf-8")
+
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(config.repo, codex_version="codex-cli 0.128.0"),
+                which=fake_which,
+                env={"CODEX_HOME": str(codex_home)},
+            )
+
+            self.assertFalse(report["ready_for_rri"])
+            self.assertFalse(report["readiness"]["codex_config_ready"])
+            self.assertIn("codex_config", report["readiness"]["blocking_categories"])
+            self.assertIn("service_tier", "\n".join(report["blockers"]))
+            self.assertEqual(report["tools"]["codex_auth"]["config"]["service_tier"], "default")
+
+    def test_codex_cli_0128_allows_fast_or_unset_service_tier(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = make_config(Path(td))
+            codex_home = Path(td) / "codex-home"
+            codex_home.mkdir()
+            (codex_home / "config.toml").write_text('service_tier = "flex"\n', encoding="utf-8")
+
+            report = preflight.build_report(
+                config,
+                runner=FakeRunner(config.repo, codex_version="codex-cli 0.128.0"),
+                which=fake_which,
+                env={"CODEX_HOME": str(codex_home)},
+            )
+
+            self.assertTrue(report["ready_for_rri"])
+            self.assertTrue(report["readiness"]["codex_config_ready"])
+            self.assertEqual(report["tools"]["codex_auth"]["config"]["service_tier"], "flex")
+
     def test_private_art_required_blocks_and_optional_warns(self):
         with tempfile.TemporaryDirectory() as td:
             missing_root = Path(td) / "missing-art"
@@ -261,6 +303,7 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertTrue(readiness["same_sha_ready"])
             self.assertTrue(readiness["provider_auth_ready"])
             self.assertTrue(readiness["player_agent_auth_ready"])
+            self.assertTrue(readiness["codex_config_ready"])
             self.assertTrue(readiness["required_tools_ready"])
             self.assertTrue(readiness["persona_briefs_ready"])
             self.assertTrue(readiness["private_art_ready"])

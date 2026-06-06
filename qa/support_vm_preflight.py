@@ -29,6 +29,8 @@ SCHEMA = "worldos.support-vm-preflight.v1"
 CANONICAL_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
 MIN_SHA_MATCH_CHARS = 7
 MIN_CODEX_MCP_OVERRIDE_VERSION = (0, 120, 0)
+MIN_CODEX_CONFIG_DRIFT_VERSION = (0, 128, 0)
+ALLOWED_CODEX_SERVICE_TIERS = ("fast", "flex")
 BASE_REQUIRED_TOOLS = [
     "git",
     "python3",
@@ -167,6 +169,55 @@ def parse_semver(text: str) -> tuple[int, int, int] | None:
 def supports_codex_mcp_overrides(version_text: str) -> bool:
     version = parse_semver(version_text)
     return bool(version and version >= MIN_CODEX_MCP_OVERRIDE_VERSION)
+
+
+def codex_config_path(env: dict[str, str] | None = None) -> Path:
+    """Return the effective Codex config path without reading or printing secrets."""
+    env = env or os.environ
+    home = (env.get("CODEX_HOME") or "").strip()
+    if home:
+        return Path(home).expanduser() / "config.toml"
+    return Path.home() / ".codex" / "config.toml"
+
+
+def parse_codex_service_tier(config_text: str) -> str:
+    """Best-effort top-level service_tier parse for the 0.128 config-drift guard."""
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r"""service_tier\s*=\s*(['"]?)([^'"\s#]+)\1""", stripped)
+        if match:
+            return match.group(2).strip()
+    return ""
+
+
+def inspect_codex_config(version_text: str, env: dict[str, str] | None = None) -> dict:
+    """Guard Codex CLI >=0.128 against stale service_tier='default' config drift."""
+    version = parse_semver(version_text)
+    path = codex_config_path(env)
+    info = {
+        "checked": bool(version and version >= MIN_CODEX_CONFIG_DRIFT_VERSION),
+        "min_version": ".".join(str(part) for part in MIN_CODEX_CONFIG_DRIFT_VERSION),
+        "path": str(path),
+        "source": "CODEX_HOME/config.toml" if (env or os.environ).get("CODEX_HOME") else "~/.codex/config.toml",
+        "present": path.exists(),
+        "service_tier": "",
+        "service_tier_allowed": True,
+        "blocking": False,
+    }
+    if not info["checked"] or not path.exists():
+        return info
+    try:
+        service_tier = parse_codex_service_tier(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError as exc:
+        info.update({"read_error": redact(str(exc)), "service_tier_allowed": False, "blocking": True})
+        return info
+    info["service_tier"] = service_tier
+    if service_tier and service_tier not in ALLOWED_CODEX_SERVICE_TIERS:
+        info["service_tier_allowed"] = False
+        info["blocking"] = True
+    return info
 
 
 def run_command(cmd: Sequence[str], cwd: Path | None = None, timeout: int = 8) -> dict:
@@ -395,6 +446,7 @@ def inspect_tools(
     runner: CommandRunner,
     which: WhichFn,
     required_tools: Sequence[str],
+    env: dict[str, str] | None = None,
 ) -> tuple[dict, list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -472,9 +524,22 @@ def inspect_tools(
     codex_version = tools.get("codex", {}).get("version") or ""
     codex["mcp_override_min_version"] = ".".join(str(part) for part in MIN_CODEX_MCP_OVERRIDE_VERSION)
     codex["mcp_override_supported"] = supports_codex_mcp_overrides(codex_version) if codex_path else False
+    codex["config"] = inspect_codex_config(codex_version, env) if codex_path else {
+        "checked": False,
+        "present": False,
+        "service_tier": "",
+        "service_tier_allowed": True,
+        "blocking": False,
+    }
     if codex_required and codex_path and not codex["mcp_override_supported"]:
         blockers.append(
             "Codex CLI version does not prove support for codex exec -c mcp_servers.* overrides; require >= 0.120.0"
+        )
+    if codex_required and codex_path and codex["config"].get("blocking"):
+        tier = codex["config"].get("service_tier") or "<unreadable>"
+        blockers.append(
+            "Codex CLI config drift: service_tier must be unset, 'fast', or 'flex' for codex-cli >=0.128.0 "
+            f"(found {tier!r})"
         )
     if codex_path:
         codex["auth_status"] = "not_proven"
@@ -712,6 +777,9 @@ def readiness_summary(
     artifact_return_ready = bool(config.artifact_return_target.strip())
     provider_auth_ready = lane_auth_ready(config.provider, tools)
     player_agent_auth_ready = lane_auth_ready(config.player_agent, tools)
+    codex_config_ready = True
+    if config.provider == "codex" or config.player_agent == "codex":
+        codex_config_ready = not bool((tools.get("codex_auth") or {}).get("config", {}).get("blocking"))
     host_memory = host.get("memory_total_gb")
     host_capacity_ready = config.min_memory_gb <= 0 or (
         host_memory is not None and host_memory >= config.min_memory_gb
@@ -722,6 +790,7 @@ def readiness_summary(
         "required_tools": required_tools_ready,
         "provider_auth": provider_auth_ready,
         "player_agent_auth": player_agent_auth_ready,
+        "codex_config": codex_config_ready,
         "persona_briefs": persona_briefs_ready,
         "private_art": private_art_ready,
         "artifact_return": artifact_return_ready,
@@ -737,6 +806,7 @@ def readiness_summary(
         "player_agent": config.player_agent,
         "provider_auth_ready": provider_auth_ready,
         "player_agent_auth_ready": player_agent_auth_ready,
+        "codex_config_ready": codex_config_ready,
         "required_tools_ready": required_tools_ready,
         "persona_briefs_ready": persona_briefs_ready,
         "private_art_ready": private_art_ready,
@@ -765,7 +835,8 @@ def build_report(
 
     required_tools = required_tools_for(config)
     repo, repo_blockers, repo_warnings = inspect_repo(config.repo, config.expected_sha, runner)
-    tools, tool_blockers, tool_warnings = inspect_tools(config.repo, runner, which, required_tools)
+    effective_env = env or dict(os.environ)
+    tools, tool_blockers, tool_warnings = inspect_tools(config.repo, runner, which, required_tools, effective_env)
     art, art_blockers, art_warnings = inspect_private_art(config.art_root, config.private_art_mode)
     repo_files, file_blockers, file_warnings = inspect_required_repo_files(
         config.repo,
@@ -810,7 +881,7 @@ def build_report(
             host=host,
             required_tools=required_tools,
         ),
-        "environment": env_snapshot(env or dict(os.environ)),
+        "environment": env_snapshot(effective_env),
         "rri_plan": {
             "expected_personas": config.personas,
             "canonical_personas": CANONICAL_PERSONAS,
@@ -879,6 +950,7 @@ def markdown_report(report: dict) -> str:
         "## Readiness",
         "",
         f"- Safe to run personas: `{str(report.get('readiness', {}).get('safe_to_run_personas')).lower()}`",
+        f"- Codex config ready: `{str(report.get('readiness', {}).get('codex_config_ready')).lower()}`",
         f"- Blocking categories: `{','.join(report.get('readiness', {}).get('blocking_categories') or []) or 'none'}`",
         "",
         "## Blockers",
