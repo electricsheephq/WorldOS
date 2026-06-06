@@ -497,6 +497,7 @@ choose_move_progress_text() {
   local count="${#MOVE_PROGRESS_TEXTS[@]}"
   printf '%s\n' "${MOVE_PROGRESS_TEXTS[$((idx % count))]}"
 }
+CLAWDND_PLAY_COMPANIONS="${CLAWDND_PLAY_COMPANIONS:-}"   # default empty — the codex/solo lane (ui_playtest_app) doesn't set it; set -u would otherwise abort
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
