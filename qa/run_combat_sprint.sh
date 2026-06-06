@@ -17,6 +17,10 @@ cd "$ROOT" || exit 1
 
 RUN="${1:-cs-$(date +%H%M%S)}"
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+# Combat runs the whole multi-round fight on ONE budget (pre-seeded, no cold-open). An Opus combat
+# costs ~5x a Sonnet one, so the Sonnet-tuned $1.50 cap cut it off mid-fight (observed 2026-06-06:
+# error_max_budget_usd at num_turns=26 / mid-Round 2 -> low coverage, mech 3.1). Scale to the model.
+case "$CLAWDND_DM_MODEL" in *opus*) CS_BUDGET="${CLAWDND_PLAY_BUDGET:-5.00}" ;; *) CS_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}" ;; esac
 T="$ROOT/qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"
@@ -74,7 +78,7 @@ claude -p "$PROMPT" \
   --mcp-config "$DM_CFG" --strict-mcp-config \
   --model "$CLAWDND_DM_MODEL" \
   --permission-mode bypassPermissions \
-  --max-budget-usd 1.50 \
+  --max-budget-usd "$CS_BUDGET" \
   --output-format stream-json --verbose \
   > "$T/$RUN.jsonl" 2>"$T/$RUN.err"
 echo "[cs] play exit=$? ($(wc -l < "$T/$RUN.jsonl") events)"
