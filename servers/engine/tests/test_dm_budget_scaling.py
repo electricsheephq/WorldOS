@@ -60,6 +60,16 @@ class DmBudgetScalingTests(unittest.TestCase):
         export = window.find("export CLAWDND_PLAY_BUDGET")
         self.assertTrue(0 <= branch < export, "the opus branch must set the cap before it is exported")
 
+    def test_run_duo_floors_opus_per_turn_budget(self):
+        """run_duo must floor a low per-turn budget for an Opus DM so the cold-open survives.
+
+        The sweep passes \\$2.00 and fast_probe \\$0.80 to run_duo; the Opus cold-open costs ~\\$2.4,
+        so without a floor the duo cold-open trips error_max_budget_usd just like the .app backend did.
+        """
+        src = self._read("qa/run_duo.sh")
+        self.assertIn("*opus*)", src, "run_duo must branch the per-turn budget on an opus model")
+        self.assertRegex(src, r"BUDGET=4\.00", "run_duo must floor the Opus per-turn budget >= the cold-open cost")
+
 
 if __name__ == "__main__":
     unittest.main()
