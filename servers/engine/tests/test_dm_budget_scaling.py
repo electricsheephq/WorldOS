@@ -70,6 +70,15 @@ class DmBudgetScalingTests(unittest.TestCase):
         self.assertIn("*opus*)", src, "run_duo must branch the per-turn budget on an opus model")
         self.assertRegex(src, r"BUDGET=4\.00", "run_duo must floor the Opus per-turn budget >= the cold-open cost")
 
+    def test_combat_sprint_scales_budget_to_model(self):
+        """run_combat_sprint runs the whole multi-round fight on ONE budget (no cold-open); the Opus
+        combat needs >$1.50 (observed: error_max_budget_usd mid-Round 2 cut coverage and the mech score).
+        """
+        src = self._read("qa/run_combat_sprint.sh")
+        self.assertIn("*opus*)", src, "run_combat_sprint must branch the combat budget on an opus model")
+        self.assertRegex(src, r"CS_BUDGET=\"\$\{CLAWDND_PLAY_BUDGET:-5\.00\}\"", "Opus combat budget must be >= $5")
+        self.assertIn('--max-budget-usd "$CS_BUDGET"', src, "must consume the model-aware combat budget")
+
 
 if __name__ == "__main__":
     unittest.main()
