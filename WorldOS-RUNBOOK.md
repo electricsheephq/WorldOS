@@ -281,7 +281,8 @@ Fair-test shape:
 - Evidence stays private under `/Volumes/LEXAR/Codex`; do not commit raw transcripts,
   private art, or credentials.
 
-Current #691 result on `93df5d2` (private Lexar evidence, 2026-06-07): native Codex GPT is
+Current #691 result on `93df5d2` (private Lexar evidence from 2026-06-06 UTC / 2026-06-07
+local): native Codex GPT is
 mechanically capable enough to use real tools, but the scored fair-test runs did **not**
 green-light the OpenClaw gateway plugin build. `gpt-5.5` scored Tolkien `3.1`, Angry-DM
 `3.5`, behavioral `RED`; `gpt-5.4` scored Tolkien `2.4`, Angry-DM `3.3`, behavioral `RED`.

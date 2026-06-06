@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import qa.support_vm_preflight as preflight
 
@@ -170,6 +172,16 @@ class SupportVMPreflightTests(unittest.TestCase):
         text = '\n# service_tier = "default"\nservice_tier = "fast"\n'
         self.assertEqual(preflight.parse_codex_service_tier(text), "fast")
 
+    def test_codex_service_tier_parser_stops_at_first_table(self):
+        text = '\n[profiles.default]\nservice_tier = "default"\n'
+        self.assertEqual(preflight.parse_codex_service_tier(text), "")
+
+    def test_codex_config_path_respects_explicit_empty_env(self):
+        with tempfile.TemporaryDirectory() as td:
+            host_home = Path(td) / "host-codex-home"
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(host_home)}, clear=False):
+                self.assertEqual(preflight.codex_config_path({}), Path.home() / ".codex" / "config.toml")
+
     def test_codex_cli_0128_blocks_stale_default_service_tier(self):
         with tempfile.TemporaryDirectory() as td:
             config = make_config(Path(td))
@@ -190,23 +202,30 @@ class SupportVMPreflightTests(unittest.TestCase):
             self.assertIn("service_tier", "\n".join(report["blockers"]))
             self.assertEqual(report["tools"]["codex_auth"]["config"]["service_tier"], "default")
 
-    def test_codex_cli_0128_allows_fast_or_unset_service_tier(self):
-        with tempfile.TemporaryDirectory() as td:
-            config = make_config(Path(td))
-            codex_home = Path(td) / "codex-home"
-            codex_home.mkdir()
-            (codex_home / "config.toml").write_text('service_tier = "flex"\n', encoding="utf-8")
+    def test_codex_cli_0128_allows_fast_flex_or_unset_service_tier(self):
+        cases = (
+            ("fast", 'service_tier = "fast"\n'),
+            ("flex", 'service_tier = "flex"\n'),
+            ("", ""),
+        )
+        for expected_tier, config_text in cases:
+            with self.subTest(expected_tier=expected_tier or "unset"):
+                with tempfile.TemporaryDirectory() as td:
+                    config = make_config(Path(td))
+                    codex_home = Path(td) / "codex-home"
+                    codex_home.mkdir()
+                    (codex_home / "config.toml").write_text(config_text, encoding="utf-8")
 
-            report = preflight.build_report(
-                config,
-                runner=FakeRunner(config.repo, codex_version="codex-cli 0.128.0"),
-                which=fake_which,
-                env={"CODEX_HOME": str(codex_home)},
-            )
+                    report = preflight.build_report(
+                        config,
+                        runner=FakeRunner(config.repo, codex_version="codex-cli 0.128.0"),
+                        which=fake_which,
+                        env={"CODEX_HOME": str(codex_home)},
+                    )
 
-            self.assertTrue(report["ready_for_rri"])
-            self.assertTrue(report["readiness"]["codex_config_ready"])
-            self.assertEqual(report["tools"]["codex_auth"]["config"]["service_tier"], "flex")
+                    self.assertTrue(report["ready_for_rri"])
+                    self.assertTrue(report["readiness"]["codex_config_ready"])
+                    self.assertEqual(report["tools"]["codex_auth"]["config"]["service_tier"], expected_tier)
 
     def test_private_art_required_blocks_and_optional_warns(self):
         with tempfile.TemporaryDirectory() as td:

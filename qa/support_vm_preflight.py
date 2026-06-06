@@ -173,7 +173,8 @@ def supports_codex_mcp_overrides(version_text: str) -> bool:
 
 def codex_config_path(env: dict[str, str] | None = None) -> Path:
     """Return the effective Codex config path without reading or printing secrets."""
-    env = env or os.environ
+    if env is None:
+        env = os.environ
     home = (env.get("CODEX_HOME") or "").strip()
     if home:
         return Path(home).expanduser() / "config.toml"
@@ -186,6 +187,8 @@ def parse_codex_service_tier(config_text: str) -> str:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        if re.match(r"^\s*\[.*\]", line):
+            break
         match = re.match(r"""service_tier\s*=\s*(['"]?)([^'"\s#]+)\1""", stripped)
         if match:
             return match.group(2).strip()
@@ -195,12 +198,13 @@ def parse_codex_service_tier(config_text: str) -> str:
 def inspect_codex_config(version_text: str, env: dict[str, str] | None = None) -> dict:
     """Guard Codex CLI >=0.128 against stale service_tier='default' config drift."""
     version = parse_semver(version_text)
+    effective_env = os.environ if env is None else env
     path = codex_config_path(env)
     info = {
         "checked": bool(version and version >= MIN_CODEX_CONFIG_DRIFT_VERSION),
         "min_version": ".".join(str(part) for part in MIN_CODEX_CONFIG_DRIFT_VERSION),
         "path": str(path),
-        "source": "CODEX_HOME/config.toml" if (env or os.environ).get("CODEX_HOME") else "~/.codex/config.toml",
+        "source": "CODEX_HOME/config.toml" if effective_env.get("CODEX_HOME") else "~/.codex/config.toml",
         "present": path.exists(),
         "service_tier": "",
         "service_tier_allowed": True,
@@ -835,7 +839,7 @@ def build_report(
 
     required_tools = required_tools_for(config)
     repo, repo_blockers, repo_warnings = inspect_repo(config.repo, config.expected_sha, runner)
-    effective_env = env or dict(os.environ)
+    effective_env = dict(os.environ) if env is None else env
     tools, tool_blockers, tool_warnings = inspect_tools(config.repo, runner, which, required_tools, effective_env)
     art, art_blockers, art_warnings = inspect_private_art(config.art_root, config.private_art_mode)
     repo_files, file_blockers, file_warnings = inspect_required_repo_files(
