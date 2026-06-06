@@ -71,7 +71,7 @@ COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
 # Model knobs (default sonnet → unchanged behavior). The DM model is the structural-adherence
 # lever (decision §3); the actor model drives the companion facade agents. The solo path below
 # delegates to play.sh, which honors CLAWDND_DM_MODEL on its own (the env var carries through).
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}"
+CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-opus}"
 CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
 # Lean-beat re-ground depth: how many recent player-facing beats the LEAN RE-GROUND directive
 # asks scene_context to fold in (default 8 — SAME as scripts/play.sh + qa/run_duo.sh). Used by

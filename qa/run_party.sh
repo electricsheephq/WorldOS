@@ -55,7 +55,7 @@ SESSION_BUDGET="${CLAWDND_PARTY_SESSION_BUDGET:-30.00}"  # aggregate ceiling for
 MAX_TURNS="${CLAWDND_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (safety net)
 # Model knobs (default sonnet, so behavior is unchanged): the DM model is the structural-
 # adherence lever (decision §3); the actor model drives the player/companion facade agents.
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL sonnet)"
+CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null

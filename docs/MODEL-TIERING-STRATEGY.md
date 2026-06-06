@@ -1,8 +1,8 @@
 # WorldOS Model & Effort Strategy
 
-Status: **MEASURED (2026-06-02)** for the latency/effort mechanics; the **model choice itself remains an
-open owner decision** (see below). Supersedes the 2026-05-31 "proposal/to-test" whiteboard. Companion:
-the `worldos-latency-forensics` skill (the measurement method + full lever taxonomy).
+Status: **DECIDED (2026-06-06): the DM runs Opus** (owner's call, below) — flipped the default sonnet→opus
+across production + gate + QA; latency mitigation in progress. The latency/effort mechanics were **MEASURED
+(2026-06-02)**. Companion: the `worldos-latency-forensics` skill (the measurement method + full lever taxonomy).
 
 ## What was measured (not recollection)
 - **The DM is generation-bound.** Per-beat `claude -p` time is ~90–100% `duration_api_ms` (model thinking +
@@ -25,11 +25,24 @@ the `worldos-latency-forensics` skill (the measurement method + full lever taxon
    digest (durable threads + recent-narration tail) off the snapshot+session-log, NOT the ~690K transcript.
 4. **`alwaysLoad` the engine MCP tools** (un-defer) — neutral latency win on the cold-open, cache-stable.
 
-## The OPEN decision (owner's call — do not assume)
-**Which model the DM runs is not settled.** The measured trade: **Opus = higher story (4.4–4.5)**;
-**Sonnet = faster + cheaper + already the default** and its story (4.2) is near the 4.3 bar. Pick ONE and
-hold it for the campaign; expose it as `WORLDOS_DM_MODEL` (option, not a hardcode). Do NOT unilaterally flip
-the default to Opus — that would create a config mismatch the codebase doesn't currently have.
+## The DECISION (made 2026-06-06 by the owner — Opus)
+**The DM runs Opus.** A fresh same-build A/B (lean-OFF craft duo, veteran, current scorer) confirmed the lift:
+**story-craft 3.6 → 4.0** with EVERY weak dimension lifted 3→4 (scene_craft / character_depth /
+dramatic_momentum / thematic_resonance), and the duo mech (angry-dm) 3.4 → 3.9 — same direction as the prior
+4.2→4.4 read. The dungeon-master prompts were already MAXIMAL (the NPC-speak-back non-negotiable + the per-beat
+gate), so **Sonnet was the ceiling, not the prompt.** Owner decision: **"Full Opus + attack latency"** — flip
+the default to Opus everywhere (production `play.sh` / `play_party.sh`, the gate `ui_playtest_app.sh`, the QA
+duos/sprints), keep the **player facade on Sonnet** (near-free no-tool agent), and **mitigate latency rather
+than trade the model**. Cheap iteration can still opt out via `WORLDOS_DM_MODEL=sonnet`.
+
+**Latency mitigation** (Opus = slower beats; the narrative already failed the latency gate at Sonnet):
+(1) `alwaysLoad` the engine tools — ON. (2) **streaming** — the live-progress rule + `log_event` narration-first
+make the scene appear *as it composes* (a slow Opus beat is *felt-OK* if the prose streams). (3) the **#679
+recovery** — a stuck beat no longer bricks the bar. (4) **THE KEY ENABLER: fix the #640 lean re-ground root**
+so lean-ON is safe again (it currently CONTAMINATES — see latency-forensics "lean is broken"), restoring
+invariant #3's compact `scene_context` re-ground = fast Opus beats instead of the full-transcript replay
+lean-OFF forces. Until #640 lands, Opus runs lean-OFF (correct but slow); the re-measure gate is a same-SHA
+Opus sweep confirming story ≥4.3 AND no latency give-up.
 
 ## REFUTED — do not re-chase
 - **A Haiku (or any small-model) "research-packet" helper to prefetch for the DM** — the beat is
@@ -43,6 +56,7 @@ digest-correctness (1 engine call, no LLM) → cache-stability (1 two-beat run) 
 VM part-B sweep; see the Support VM lane). Hold the scorer constant during any A/B.
 
 ## Still open
-- The exact Opus model id valid in the current CLI/runtime.
-- Whether a lower routine effort holds story ≥ 4.3 (needs the quality A/B).
+- **The #640 lean re-ground root** — the key Opus-latency enabler (re-enable lean safely; repro-first).
+- The exact Opus model id valid in the current CLI/runtime (confirm `claude --model opus` resolves on the gate path).
+- The same-SHA Opus re-measure sweep: does Opus + streaming hold story ≥4.3 AND keep cross-persona sat ≥7 (no latency give-up)?
 - Scorer-to-Opus re-baseline as a later one-time calibration.

@@ -184,7 +184,7 @@ npx playwright install chromium  # ONLY if chromium isn't already cached (it oft
 ### Env knobs (optional)
 
 - `WORLDOS_UIPT_CHANNEL=chrome` — reuse system Chrome instead of bundled Chromium.
-- `WORLDOS_DM_MODEL` / `WORLDOS_UIPT_PLAYER_MODEL` — model per agent (default `sonnet`).
+- `WORLDOS_DM_MODEL` / `WORLDOS_UIPT_PLAYER_MODEL` — model per agent (DM default `opus`; player `sonnet`).
 - `WORLDOS_UIPT_DM_BUDGET` — USD per DM turn (default `1.50`).
 
 ## Scope notes
