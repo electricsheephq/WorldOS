@@ -436,8 +436,6 @@ codex_dm_turn() {
   : > "$LAST_MESSAGE"
   local status=0
   codex exec \
-    --ignore-user-config \
-    --ignore-rules \
     --sandbox read-only \
     --json \
     ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
@@ -497,6 +495,7 @@ choose_move_progress_text() {
   local count="${#MOVE_PROGRESS_TEXTS[@]}"
   printf '%s\n' "${MOVE_PROGRESS_TEXTS[$((idx % count))]}"
 }
+CLAWDND_PLAY_COMPANIONS="${CLAWDND_PLAY_COMPANIONS:-}"   # default empty — the codex/solo lane (ui_playtest_app) doesn't set it; set -u would otherwise abort
 if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
   COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else

@@ -214,8 +214,6 @@ export CLAWDND_ACTOR_ID="${CLAWDND_ACTOR_ID:-}"
 export CLAWDND_ACTOR_ROLE="${CLAWDND_ACTOR_ROLE:-player}"
 
 codex exec \
-  --ignore-user-config \
-  --ignore-rules \
   --sandbox read-only \
   --json \
   ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
