@@ -22,17 +22,19 @@
 #      qa/transcripts/vm2-duo.combined.jsonl, which defaulted RED. These two fixes
 #      took the sweep's RRI from 1.8 -> 4.5 with no behavior/score change.
 #
-# LEAN IS INTENTIONALLY OFF. Do not enable CLAWDND_LEAN_BEATS here: lean-ON
-# re-grounds the continuing beat from scene_context and CONTAMINATES the chronicle
-# (pulls a parallel save's content) + drops beats (proven 2026-06-05 A/B; same
-# root as #640). Address the 3-5 min latency via effort / streaming, NOT lean.
-# See the `worldos-latency-forensics` skill (sec. REFUTED).
+# LEAN IS ON (2026-06-06) — the 2026-06-05 lean-OFF decision is SUPERSEDED. #683 fixed the
+# cross-campaign contamination (the lean re-ground was selecting the WRONG campaign by largest-
+# snapshot; now resolves the engine-authoritative live campaign) and #685 added the lean output-
+# discipline (clean prose). lean-ON matches the PRODUCTION default (CLAWDND_LEAN_BEATS:-1) and gives
+# FAST routine beats — lean-OFF would replay the growing Opus transcript (3-5+ min/beat), risking
+# latency give-ups / per-persona timeouts (the wasted-sweep vector). Set explicitly below.
 # -----------------------------------------------------------------------------
 # v2 VM gate sweep: canary-first, then PARALLEL personas (the 30GB/16vCPU advantage).
-# lean stays OFF: the lean-ON re-ground from scene_context CONTAMINATES the chronicle (pulls a parallel saves content) + drops beats (proven 2026-06-05 A/B). Address latency via effort/streaming, NOT lean.
+# lean is ON (production-matching; #683/#685-fixed) — see the header block for the supersession rationale.
 # no set -e (one persona failing must not abort the batch). Explicit PATH + IS_SANDBOX.
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$PATH
 export IS_SANDBOX=1
+export CLAWDND_LEAN_BEATS=1   # lean-ON (production-matching; #683/#685-fixed; fast Opus beats). See header.
 cd /root/worldos-qa/WorldOS || { echo "NO REPO"; exit 1; }
 RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
@@ -47,12 +49,14 @@ pkill -f 'play.sh baldurs-gate vm-' 2>/dev/null; pkill -f 'play_party.sh baldurs
 pkill -f 'play.sh baldurs-gate leanchk' 2>/dev/null
 for p in $(seq 8810 8830) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 2>/dev/null; done
 sleep 4
-note "start build=$SHA (parallel mode, lean OFF for the sweep - direct G3 measure)"
+note "start build=$SHA (parallel mode, lean ON — production-matching, fast Opus beats)"
 
 run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
   local persona="$1" port="$2"
+  # Opus de-risk: longer per-persona deadline (Opus cold-open ~300s + slower beats) + a bigger run
+  # budget (Opus cold-open ~$2.4 + beats + player). The harnesses cap per-turn model-aware (#684/#686).
   WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT=$port \
-    timeout 1500 bash qa/ui_playtest_app.sh "vm2-$persona" baldurs-gate "$persona" 40 12.00 \
+    timeout 2400 bash qa/ui_playtest_app.sh "vm2-$persona" baldurs-gate "$persona" 40 18.00 \
     > "$RES/vm2-$persona.log" 2>&1
   local rc=$?
   lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null
@@ -89,7 +93,7 @@ note "all 5 personas done."
 
 # 3) duo (story/mech) + behavioral + audit - run after personas (sequential, cheap-ish)
 note "3-lens duo..."
-timeout 2700 bash qa/run_duo.sh vm2-duo baldurs-gate veteran 8 2.00 > "$RES/duo.log" 2>&1
+timeout 3600 bash qa/run_duo.sh vm2-duo baldurs-gate veteran 8 5.00 > "$RES/duo.log" 2>&1
 for f in tolkien angrydm; do s="qa/transcripts/vm2-duo.$f.json"; [ -f "$s" ] && cp "$s" "$RES/duo-$f.json" && note "  $f overall=$(python3 -c "import json;print(json.load(open('$s')).get('overall'))" 2>/dev/null)"; done
 DCOMB="qa/transcripts/vm2-duo.combined.jsonl"; DSTATE="qa/transcripts/vm2-duo.state.json"
 [ -f "$DCOMB" ] && { python3 qa/assert_behavioral.py "$DCOMB" "$DSTATE" > "$RES/behavioral.log" 2>&1; echo "rc=$?" >> "$RES/behavioral.log"; note "behavioral rc=$(tail -1 "$RES/behavioral.log")"; }
