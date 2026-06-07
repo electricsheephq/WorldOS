@@ -55,7 +55,7 @@ containers, not work items).
 
 ## Label taxonomy (so it stops being tribal knowledge)
 - **Priority:** `severity:critical/major/minor/trivial`.
-- **Stage:** `tier-1` (the Claude Code plugin — current product) · `tier-2` (OpenClaw integration) · `foundation`.
+- **Stage:** `tier-1` (provider-backed app/engine — current product) · `tier-2` (OpenClaw integration) · `foundation`.
 - **Family:** `epic` + `epic:*` (per-page-polish, wire-prototypes, portraits, renderer, contract, ai-loop, ugc, atlas, …).
 - **Surface:** `screen:*` (launcher/table/combat/dialogue/map/character/forge/inventory/relations/bestiary/journal/acts/create/merchant/seed/settings) · `area:engine` · `area:viewer`.
 - **Renderer matrix:** `graphics` + `gt0/gt1/gt2` (game type) + `branch:a/b` (maturity) + `cap:c1–c10` (capability).

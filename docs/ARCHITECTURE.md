@@ -3,8 +3,10 @@
 > Architecture map only. For current agent routing, GUI/native app proof, and QA commands, start with
 > `WorldOS-OPERATING-GOAL.md`, `WorldOS-GUI-RUNBOOK.md`, and `qa/QA_TOOLS.md`.
 
-WorldOS is a Claude Code plugin: an **AI Dungeon Master + voiced AI companion** that
-plays D&D 5e. Its center of gravity is a **living-world engine** — the DM *generates*
+WorldOS is a playable living-world D&D 5e engine plus OpenWorlds app. An **AI Dungeon Master
+plus optional companion** narrates and drives play through provider lanes such as Claude
+Code/Anthropic and Codex/OpenAI, while the deterministic SRD 5.2 engine owns rules and
+campaign state. Its center of gravity is the **living-world engine**: the DM *generates*
 an epic, mature story live inside a persistent, canon-anchored world, with deterministic
 rules and a memory that keeps it consistent. Story quality is the north star (scored on
 a "Tolkien" story-craft lens).
@@ -12,7 +14,7 @@ a "Tolkien" story-craft lens).
 ## The shape
 
 ```
-Player ⇄ DM skill (+ companion) ── orchestrates ──▶ 3 MCP servers (uv) ──▶ on-disk truth
+Player ⇄ OpenWorlds/app ⇄ provider DM (+ companion) ─▶ MCP servers (uv) ─▶ on-disk truth
                                           │
    engine  (SOLE WRITER, ~58 tools) ──────┤   start_world / create_campaign / start_adventure ─┐
      get_state · look_around · get_scene  │   add_location · travel_to · create_character       ├─▶ snapshot.json  (atomic, campaign_lock)
@@ -25,7 +27,7 @@ Player ⇄ DM skill (+ companion) ── orchestrates ──▶ 3 MCP servers (u
 
    content/worlds/<id>/  world.json (regions·factions·roster·era·threads) + lore/*.md (authored) + lore/wiki/*.md (ingested CC-BY-SA)
                           ▲ tools/ingest/ (offline MediaWiki → lore corpus)
-   QA: qa/run_parallel.sh → claude -p --plugin-dir (plays the REAL plugin) → distill → score ×2 (mechanical + Tolkien lens)
+   QA: provider wrappers + app gates → distill → score (mechanical + Tolkien lens + RRI gates)
 ```
 
 ## Load-bearing invariant
@@ -78,9 +80,8 @@ they seed locations/NPCs/quests, expose authored beats via `get_scene`, and can 
 
 ## QA — the fitness function
 
-`qa/run_qa.sh` plays the **real plugin** headless (`claude -p --plugin-dir`, null voice,
-sandboxed state) and scores the transcript on **two lenses**: the mechanical rubric
-(tool-sourced, rules, state, robustness) and the **Tolkien story-craft lens** (grandeur,
-character, prose, momentum, theme, memorability). `run_parallel.sh` runs several at once.
-Targets: story-craft ≥ 4.3, mechanical ≥ 4.5, zero critical/high defects. Living-world
-play currently scores ~4.1–4.2 (prestige fantasy).
+WorldOS QA has several lanes. Provider wrappers play the engine through the real DM tool
+contract; OpenWorlds/app gates prove GUI wiring through `/app-status`, `/session-surface`,
+and `/move`; scoring lenses grade mechanical fidelity and story craft; the Release
+Readiness Index bundles persona, UI, image, palette, behavior, and same-SHA evidence.
+Targets: story-craft ≥ 4.3, mechanical ≥ 4.5, zero critical/high defects.

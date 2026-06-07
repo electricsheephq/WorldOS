@@ -163,7 +163,7 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 - **Canonical:** this file (`docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`) + GitHub Milestones/Issues + the WorldOS runbook (engine invariants, dev loop, QA gates).
 - **Execution:** each epic → a GitHub milestone; each issue → a GitHub issue with the `graphics` + `epic:*` + game-type (`gt0/gt1/gt2`) + capability (`cap:c1…c10`) labels, so the matrix is queryable.
 - **Mirror (optional):** a read-only Notion roadmap view generated FROM this file + GitHub — never edited directly. Canonical stays GitHub.
-- **Maintenance:** this file is updated as capabilities advance levels; the decision log (LEXAR `worldos-graphics-roadmap/`) records *why* each level moved.
+- **Maintenance:** this file is updated as capabilities advance levels; local decision logs can record *why* each level moved.
 
 ## 7. Open decisions deferred to owner (genuinely need you)
 1. Self-hosted open image model vs commercially-indemnified API for UGC assets (affects M3).

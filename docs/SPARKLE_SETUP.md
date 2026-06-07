@@ -1,6 +1,6 @@
 # Sparkle auto-update setup for WorldOS
 
-Sparkle (https://sparkle-project.org) is the de-facto macOS auto-update framework. It pairs cleanly with the **Developer ID signing** that `script/build_and_run.sh` already prefers (commit 78645a3) and ends the "popup every rebuild" pattern for good: every published release inherits the same Developer ID identity, so users approve once and never see another security re-evaluation.
+Sparkle (https://sparkle-project.org) is the de-facto macOS auto-update framework. It pairs cleanly with **Developer ID signing** and ends the "popup every rebuild" pattern for good: every published release inherits the same signing identity, so users approve once and never see another security re-evaluation.
 
 This guide is the step-by-step to enable Sparkle on the existing WorldOS app. It is intentionally **not** wired in `Package.swift` yet — bundled XPC services require careful signing/notarization, and the first build with Sparkle live should be a deliberate one-off. Everything below is a one-time setup.
 
@@ -8,10 +8,10 @@ This guide is the step-by-step to enable Sparkle on the existing WorldOS app. It
 
 ## Prerequisites
 
-You already have these (verified 2026-05-28):
+You already need these:
 
-- A **Developer ID Application** identity in your login keychain (`security find-identity -v -p codesigning` shows `Andrew Ryan (TC6MS3T6NN)`).
-- The build script auto-uses it when the keychain ACL allows. After one Keychain "Always Allow" click, every rebuild signs silently.
+- A **Developer ID Application** identity available to the release operator.
+- A build/signing path that can use that identity once the keychain ACL allows it. After one Keychain "Always Allow" click, repeat rebuilds can sign silently.
 
 You will need (one-time):
 
@@ -159,7 +159,7 @@ Upload `appcast.xml` to the corresponding GitHub Release (matching the SUFeedURL
 For Sparkle to verify and install an update, the new `.zip` must be **notarized** by Apple. This is the same notarization that's currently "deferred to 1.0.1" in the project plan — Sparkle is a natural prompt to finish it.
 
 ```bash
-xcrun notarytool submit WorldOS-1.0.2.zip --apple-id <you@example.com> --team-id TC6MS3T6NN --wait
+xcrun notarytool submit WorldOS-1.0.2.zip --apple-id <apple-id@example.com> --team-id <TEAM_ID> --wait
 xcrun stapler staple WorldOS-1.0.2.zip
 ```
 
@@ -174,13 +174,13 @@ xcrun stapler staple WorldOS-1.0.2.zip
 ## What this does NOT give you
 
 - A way around the **first-ever** TCC / security-scanner prompt on the very first install of a brand-new identity. That's still one click — but only one, ever.
-- An auto-update path for **plugin** distribution. WorldOS ships as both a desktop app and a Claude Code plugin; Sparkle handles the app side only.
+- An auto-update path for provider CLI/plugin distribution. Sparkle handles the macOS app side only.
 
 ---
 
 ## Status flags (as of v1.0.1)
 
-- [x] Developer ID signing in the build script (commit 78645a3).
+- [x] Developer ID signing support in the build script.
 - [ ] Sparkle SPM dep added to Package.swift.
 - [ ] `SparkleUpdater.swift` wrapper.
 - [ ] `Check for Updates…` menu item.
