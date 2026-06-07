@@ -177,6 +177,8 @@ print(json.dumps({
     "ok": True,
     "mode": mode,
     "provider": "codex",
+    "provider_family": "codex-openai",
+    "auth_surface": "codex-cli",
     "repo": root,
     "state_root": state_root,
     "world": world,

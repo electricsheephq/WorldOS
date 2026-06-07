@@ -62,6 +62,11 @@ enum Diagnostics {
         return """
         Provider launch:
         Kind: \(metadata.kind.rawValue)
+        Provider family: \(metadata.providerFamily)
+        Auth surface: \(metadata.authSurface)
+        DM model: \(metadata.dmModel.isEmpty ? "default" : metadata.dmModel)
+        Player/test model: \(metadata.playerModel.isEmpty ? "default" : metadata.playerModel)
+        Scorer model: \(metadata.scorerModel.isEmpty ? "default" : metadata.scorerModel)
         Process: \(metadata.processName)
         PID: \(metadata.processID.map(String.init) ?? "none")
         Run ID: \(metadata.runId)

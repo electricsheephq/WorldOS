@@ -9,6 +9,15 @@ struct SettingsView: View {
     @Binding var defaultWorld: String
     @Binding var codexProviderCommand: String
     @Binding var openClawProviderCommand: String
+    @Binding var claudeDMModel: String
+    @Binding var codexDMModel: String
+    @Binding var openClawDMModel: String
+    @Binding var claudePlayerModel: String
+    @Binding var codexPlayerModel: String
+    @Binding var openClawPlayerModel: String
+    @Binding var claudeScorerModel: String
+    @Binding var codexScorerModel: String
+    @Binding var openClawScorerModel: String
     @Binding var budget: String
     @Binding var sessionBudget: String
     @Binding var maxTurns: String
@@ -50,6 +59,33 @@ struct SettingsView: View {
                     Text("ElevenLabs").tag("elevenlabs")
                 }
                 .pickerStyle(.segmented)
+            }
+
+            Section("Provider models") {
+                ProviderModelFields(
+                    title: "Claude CLI",
+                    family: "anthropic",
+                    authSurface: "claude-cli",
+                    dmModel: $claudeDMModel,
+                    playerModel: $claudePlayerModel,
+                    scorerModel: $claudeScorerModel
+                )
+                ProviderModelFields(
+                    title: "Codex CLI",
+                    family: "codex-openai",
+                    authSurface: "codex-cli",
+                    dmModel: $codexDMModel,
+                    playerModel: $codexPlayerModel,
+                    scorerModel: $codexScorerModel
+                )
+                ProviderModelFields(
+                    title: "OpenClaw",
+                    family: "openclaw",
+                    authSurface: "openclaw-cli",
+                    dmModel: $openClawDMModel,
+                    playerModel: $openClawPlayerModel,
+                    scorerModel: $openClawScorerModel
+                )
             }
 
             Section("Caps") {
@@ -183,6 +219,38 @@ struct SettingsView: View {
         }
 
         return port
+    }
+}
+
+private struct ProviderModelFields: View {
+    let title: String
+    let family: String
+    let authSurface: String
+    @Binding var dmModel: String
+    @Binding var playerModel: String
+    @Binding var scorerModel: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Text(family)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                Text(authSurface)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("DM model", text: $dmModel)
+                TextField("QA player model", text: $playerModel)
+                TextField("QA scorer model", text: $scorerModel)
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+        .padding(.vertical, 4)
     }
 }
 

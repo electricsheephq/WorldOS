@@ -392,6 +392,16 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
             gaps.append(handoff_gap(str(manifest_path), "manifest was recorded from a dirty worktree"))
         if manifest.get("evidence_gaps"):
             gaps.append(handoff_gap(str(manifest_path), "manifest evidence_gaps is not empty"))
+        for field in (
+            "provider_family",
+            "dm_model",
+            "player_agent",
+            "player_model",
+            "scorer_provider",
+            "scorer_model",
+        ):
+            if not str(manifest.get(field) or "").strip():
+                gaps.append(handoff_gap(str(manifest_path), f"manifest missing {field}"))
         manifest_failure = manifest.get("failure") if isinstance(manifest.get("failure"), dict) else {}
         has_failure_fields = (
             ("failure_bucket" in manifest and "failure_detail" in manifest)

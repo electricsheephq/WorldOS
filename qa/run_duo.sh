@@ -45,6 +45,7 @@ CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Opus's high-effort cold-open world-build costs ~$2.4 on its first turn (measured 2026-06-06); a low
 # caller per-turn budget (sweep $2.00, fast_probe $0.80) would trip error_max_budget_usd on the duo
 # cold-open the same way the .app backend did. Floor the per-turn cap for an Opus DM so the cold-open
@@ -351,9 +352,9 @@ if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"
 # Mechanical + Angry-DM (5e rules-fidelity) score the DM distill `$RUN.md` — the tool
 # stream (→ tool / ← result) where the MECHANICS live; Tolkien scores the two-sided $PLAY
 # (scene-craft must be judged on the actual back-and-forth).
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
-[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
+[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
+[ -s "$PLAY" ] && "$SCORE_SCRIPT" "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
+[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
 wait
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
 python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}

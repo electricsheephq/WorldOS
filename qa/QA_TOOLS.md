@@ -80,8 +80,15 @@ finding broken buttons and confusing flows, but the product is still `dist/World
 | `qa/run_duo.sh` | AI player + DM duo for story/mechanical quality | Heavy local run; prefer narrow or remote execution |
 | `qa/run_combat_sprint.sh` | Fast bug-finder for combat fidelity | Good for finding engine/adherence issues, not broad story score |
 | `qa/run_party.sh` | Player + companion agents + DM ensemble | Exercises companion and betrayal lanes |
-| `qa/score.sh` | Primary story/mechanical/5e scoring | Uses the repo rubrics and schemas |
+| `qa/score.sh` | Anthropic/Sonnet story/mechanical/5e scoring | Current Opus-lane baseline; do not require it for Codex-only proof |
+| `qa/score_codex.sh` | Codex/GPT same-family scoring | Drop-in signature; set `WORLDOS_SCORE_SCRIPT=qa/score_codex.sh` for GPT-only lanes |
 | `qa/score_openclaw.sh` | Stricter gpt-5.4 cross-check | Cross-check only, not the primary score baseline |
+
+Same-family product proof means provider, player/test agent, and scorer all come from the
+same provider family: Anthropic-only or Codex/OpenAI-only. Mixed Sonnet/GPT scoring is useful
+as a benchmark, but it must be labeled as cross-provider evidence and is not a release verdict.
+Evidence manifests now carry `provider_family`, `dm_model`, `player_agent`, `player_model`,
+`scorer_provider`, and `scorer_model`; missing values make the handoff/RRI evidence partial.
 
 ## Evidence Reading Order
 

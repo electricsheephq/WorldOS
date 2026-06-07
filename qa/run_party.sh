@@ -57,6 +57,7 @@ MAX_TURNS="${CLAWDND_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (
 # adherence lever (decision §3); the actor model drives the player/companion facade agents.
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Opus needs more than the Sonnet-tuned $0.80 per-call cap (the DM cold-open alone is ~$2.4); floor it
 # for an Opus DM so the cold-open lands. CAP, not spend; the Sonnet companion facade spends far less.
 case "$CLAWDND_DM_MODEL" in *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then BUDGET=4.00; fi ;; esac
@@ -345,9 +346,9 @@ SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json 
 if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
 # Three lenses, run CONCURRENTLY (background + wait): mechanical + Angry-DM (5e rules-
 # fidelity) on the DM distill `$RUN.md` (the tool stream), Tolkien on the two-sided $PLAY.
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
-[ -s "$PLAY" ] && qa/score.sh "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
-[ -f "$T/$RUN.md" ] && qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
+[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
+[ -s "$PLAY" ] && "$SCORE_SCRIPT" "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
+[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
 wait
 # Behavioral gate runs on ALL actor moves — player AND each companion. Merging them is what
 # lets the gate see an IGNORED companion move (a saboteur's [attack] the DM never resolves):

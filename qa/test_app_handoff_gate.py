@@ -225,6 +225,12 @@ class AppHandoffGateTests(unittest.TestCase):
     def test_evidence_manifest_blockers_include_handoff_gate_reasons(self):
         payload = {
             "evidence_gaps": [],
+            "provider_family": "codex-openai",
+            "dm_model": "gpt-5.5",
+            "player_agent": "codex",
+            "player_model": "gpt-5.5",
+            "scorer_provider": "codex-openai",
+            "scorer_model": "gpt-5.5",
             "handoff_gate": {
                 "ok": False,
                 "blocking_reasons": ["can_act not true", "no enabled actions"],
@@ -234,6 +240,21 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(
             gate.evidence_manifest_blockers(payload),
             ["can_act not true", "no enabled actions"],
+        )
+
+    def test_evidence_manifest_blockers_include_missing_provider_metadata(self):
+        payload = {"evidence_gaps": [], "handoff_gate": {"ok": True}}
+
+        self.assertEqual(
+            gate.evidence_manifest_blockers(payload),
+            [
+                "manifest missing provider_family",
+                "manifest missing dm_model",
+                "manifest missing player_agent",
+                "manifest missing player_model",
+                "manifest missing scorer_provider",
+                "manifest missing scorer_model",
+            ],
         )
 
     def test_run_web_scripted_fails_on_smoke_evidence_gaps(self):

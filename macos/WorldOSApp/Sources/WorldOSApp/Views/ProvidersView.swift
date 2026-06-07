@@ -7,6 +7,15 @@ struct ProvidersView: View {
     @Binding var artRepoPath: String
     @Binding var codexProviderCommand: String
     @Binding var openClawProviderCommand: String
+    @Binding var claudeDMModel: String
+    @Binding var codexDMModel: String
+    @Binding var openClawDMModel: String
+    @Binding var claudePlayerModel: String
+    @Binding var codexPlayerModel: String
+    @Binding var openClawPlayerModel: String
+    @Binding var claudeScorerModel: String
+    @Binding var codexScorerModel: String
+    @Binding var openClawScorerModel: String
     @Binding var budget: String
     @Binding var sessionBudget: String
     @Binding var maxTurns: String
@@ -51,9 +60,23 @@ struct ProvidersView: View {
                                 .textFieldStyle(.roundedBorder)
                             TextField("OpenClaw launch command", text: $openClawProviderCommand)
                                 .textFieldStyle(.roundedBorder)
-                            Text("Configured commands receive CLAWDND_PROVIDER, CLAWDND_WORLD, CLAWDND_RUN_ID, CLAWDND_PLAY_PORT, and CLAWDND_PLAY_COMPANIONS. They must route moves through existing engine/player contracts.")
+                            Text("Configured commands receive both WORLDOS_* and CLAWDND_* provider, world, run, port, companion, model, auth-surface, and budget variables. They must route moves through existing engine/player contracts.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    GroupBox("Provider model defaults") {
+                        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                            GridRow {
+                                Text("Family").font(.caption.weight(.semibold))
+                                Text("DM").font(.caption.weight(.semibold))
+                                Text("QA player").font(.caption.weight(.semibold))
+                                Text("QA scorer").font(.caption.weight(.semibold))
+                            }
+                            providerModelRow("Claude", dm: $claudeDMModel, player: $claudePlayerModel, scorer: $claudeScorerModel)
+                            providerModelRow("Codex", dm: $codexDMModel, player: $codexPlayerModel, scorer: $codexScorerModel)
+                            providerModelRow("OpenClaw", dm: $openClawDMModel, player: $openClawPlayerModel, scorer: $openClawScorerModel)
                         }
                     }
 
@@ -74,6 +97,31 @@ struct ProvidersView: View {
         .onChange(of: artRepoPath) { _ in refresh() }
         .onChange(of: codexProviderCommand) { _ in refresh() }
         .onChange(of: openClawProviderCommand) { _ in refresh() }
+        .onChange(of: claudeDMModel) { _ in refresh() }
+        .onChange(of: codexDMModel) { _ in refresh() }
+        .onChange(of: openClawDMModel) { _ in refresh() }
+        .onChange(of: claudePlayerModel) { _ in refresh() }
+        .onChange(of: codexPlayerModel) { _ in refresh() }
+        .onChange(of: openClawPlayerModel) { _ in refresh() }
+        .onChange(of: claudeScorerModel) { _ in refresh() }
+        .onChange(of: codexScorerModel) { _ in refresh() }
+        .onChange(of: openClawScorerModel) { _ in refresh() }
+    }
+
+    @ViewBuilder
+    private func providerModelRow(
+        _ label: String,
+        dm: Binding<String>,
+        player: Binding<String>,
+        scorer: Binding<String>
+    ) -> some View {
+        GridRow {
+            Text(label)
+            TextField("DM model", text: dm)
+            TextField("QA player", text: player)
+            TextField("QA scorer", text: scorer)
+        }
+        .textFieldStyle(.roundedBorder)
     }
 
     private func refresh() {
@@ -82,6 +130,15 @@ struct ProvidersView: View {
             preferences: ProviderPreferences(
                 codexCommand: codexProviderCommand,
                 openClawCommand: openClawProviderCommand,
+                claudeDMModel: claudeDMModel,
+                codexDMModel: codexDMModel,
+                openClawDMModel: openClawDMModel,
+                claudePlayerModel: claudePlayerModel,
+                codexPlayerModel: codexPlayerModel,
+                openClawPlayerModel: openClawPlayerModel,
+                claudeScorerModel: claudeScorerModel,
+                codexScorerModel: codexScorerModel,
+                openClawScorerModel: openClawScorerModel,
                 budget: budget,
                 sessionBudget: sessionBudget,
                 maxTurns: maxTurns,
@@ -118,6 +175,10 @@ struct ProviderCard: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
+                Text("\(status.providerFamily) · \(status.authSurface) · DM \(status.dmModel.isEmpty ? "default" : status.dmModel) · QA player \(status.playerModel.isEmpty ? "default" : status.playerModel) · scorer \(status.scorerModel.isEmpty ? "default" : status.scorerModel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             Spacer()
         }

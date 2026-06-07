@@ -28,6 +28,7 @@ MAX_LOCAL_FILE_BYTES = 64 * 1024 * 1024
 RUN_DIR_PATTERNS = (
     "run.json",
     "smoke.json",
+    "meta.json",
     "provider_playtest.json",
     "RRI.json",
     "score.json",
@@ -156,6 +157,26 @@ def build_info(app_status: dict[str, Any]) -> dict[str, str]:
         "sha": str(build.get("sha") or ""),
         "version": str(build.get("version") or ""),
     }
+
+
+def provider_family_for(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    return {
+        "claude": "anthropic",
+        "codex": "codex-openai",
+        "openclaw": "openclaw",
+        "scripted": "scripted",
+    }.get(provider, "")
+
+
+def provider_auth_surface_for(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    return {
+        "claude": "claude-cli",
+        "codex": "codex-cli",
+        "openclaw": "openclaw-cli",
+        "scripted": "dev-scripted",
+    }.get(provider, "")
 
 
 def local_path_from_status(value: Any) -> Path | None:
@@ -511,6 +532,82 @@ def first_bundle_json(bundle: Path, patterns: tuple[str, ...]) -> tuple[dict[str
     return {}, ""
 
 
+def provider_metadata(app_status: dict[str, Any], bundle: Path, fallback_provider: str) -> dict[str, str]:
+    viewer = app_status.get("viewer") if isinstance(app_status.get("viewer"), dict) else {}
+    provider_status = viewer.get("provider_status") if isinstance(viewer.get("provider_status"), dict) else {}
+    run_json, _ = first_bundle_json(bundle, ("run.json",))
+    meta_json, _ = first_bundle_json(bundle, ("meta.json",))
+    part_b = run_json.get("part_b") if isinstance(run_json.get("part_b"), dict) else {}
+
+    def first_string(*values: Any) -> str:
+        for value in values:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    provider = first_string(
+        viewer.get("provider"),
+        provider_status.get("provider"),
+        part_b.get("provider"),
+        meta_json.get("provider"),
+        fallback_provider,
+    )
+    provider_family = first_string(
+        provider_status.get("provider_family"),
+        viewer.get("provider_family"),
+        part_b.get("provider_family"),
+        meta_json.get("provider_family"),
+        provider_family_for(provider),
+    )
+    auth_surface = first_string(
+        provider_status.get("auth_surface"),
+        viewer.get("auth_surface"),
+        part_b.get("auth_surface"),
+        meta_json.get("auth_surface"),
+        provider_auth_surface_for(provider),
+    )
+    dm_model = first_string(
+        provider_status.get("model"),
+        viewer.get("dm_model"),
+        part_b.get("dm_model"),
+        meta_json.get("dm_model"),
+    )
+    player_agent = first_string(part_b.get("player_agent"), meta_json.get("player_agent"))
+    player_model = first_string(
+        provider_status.get("player_model"),
+        viewer.get("player_model"),
+        part_b.get("player_model"),
+        meta_json.get("player_model"),
+    )
+    scorer_provider = first_string(part_b.get("scorer_provider"), meta_json.get("scorer_provider"))
+    scorer_model = first_string(
+        provider_status.get("scorer_model"),
+        viewer.get("scorer_model"),
+        part_b.get("scorer_model"),
+        meta_json.get("scorer_model"),
+    )
+    if provider == "scripted":
+        dm_model = dm_model or "scripted"
+        player_agent = player_agent or "scripted"
+        player_model = player_model or "scripted"
+        scorer_provider = scorer_provider or "deterministic-scripted"
+        scorer_model = scorer_model or "scripted"
+    if not player_agent:
+        player_agent = "direct-move-harness"
+    if not scorer_provider and scorer_model:
+        scorer_provider = provider_family or provider
+    return {
+        "provider": provider,
+        "provider_family": provider_family,
+        "auth_surface": auth_surface,
+        "dm_model": dm_model,
+        "player_agent": player_agent,
+        "player_model": player_model,
+        "scorer_provider": scorer_provider,
+        "scorer_model": scorer_model,
+    }
+
+
 def review_verdict(handoff_gate: dict[str, Any], failure: dict[str, str], gaps: list[dict[str, str]]) -> str:
     if failure.get("failure_bucket"):
         return "failed"
@@ -536,7 +633,7 @@ def build_review_entrypoint(
 ) -> dict[str, Any]:
     repo = repo_snapshot()
     index = evidence_index(copied_files, sources)
-    provider = args.provider or str(live.get("provider") or "")
+    provider = str(live.get("provider") or "") or args.provider
     verdict = args.verdict or review_verdict(handoff_gate, failure, gaps)
     return {
         "schema": "worldos.app-evidence-review-entrypoint.v1",
@@ -724,6 +821,7 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
             clear_http_gap("session_surface")
 
     live = app_status.get("live") if isinstance(app_status.get("live"), dict) else {}
+    provider_meta = provider_metadata(app_status, bundle, args.provider)
     failure = {
         "failure_bucket": "",
         "failure_detail": "",
@@ -740,6 +838,7 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
     build = build_info(app_status)
     art = art_status(app_status)
     live_summary = {
+        "provider": provider_meta["provider"],
         "campaign_id": str(live.get("campaign_id") or ""),
         "attached_campaign_id": str(live.get("attached_campaign_id") or ""),
         "run_id": str(live.get("run_id") or ""),
@@ -779,6 +878,13 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
         "dirty": review_entrypoint["dirty"],
         "app_build_sha": review_entrypoint["app_build_sha"],
         "provider": review_entrypoint["provider"],
+        "provider_family": provider_meta["provider_family"],
+        "auth_surface": provider_meta["auth_surface"],
+        "dm_model": provider_meta["dm_model"],
+        "player_agent": provider_meta["player_agent"],
+        "player_model": provider_meta["player_model"],
+        "scorer_provider": provider_meta["scorer_provider"],
+        "scorer_model": provider_meta["scorer_model"],
         "gate_kind": review_entrypoint["gate_kind"],
         "run_id": review_entrypoint["run_id"],
         "started_at": review_entrypoint["started_at"],
@@ -786,6 +892,7 @@ def exporter_manifest(args: argparse.Namespace, bundle: Path) -> tuple[dict[str,
         "verdict": review_entrypoint["verdict"],
         "failure_bucket": review_entrypoint["failure_bucket"],
         "build": build,
+        "provider_metadata": provider_meta,
         "art": art,
         "live": live_summary,
         "failure": failure,

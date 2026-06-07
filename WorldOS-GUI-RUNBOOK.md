@@ -79,6 +79,16 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
   not loaded app status yet, it omits `provider` and lets Swift's `selectedProviderRaw` setting decide.
 - The Codex path now has two wrappers: `scripts/play_codex_dm.sh` for the selected provider's DM loop,
   and `scripts/play_codex_actor.sh` for constrained player/companion actor work. Do not swap them.
+- Provider configuration is model-family aware. Settings and `/app-status` expose provider family,
+  auth surface, DM model, QA player model, QA scorer model, command override, readiness, and detected
+  CLI path. Claude keeps `opus`/`sonnet` defaults; Codex keeps `gpt-5.5` defaults. A missing unselected
+  provider is not a product blocker.
+- Same-family proof is required for provider claims: Anthropic provider/player/scorer for Anthropic
+  proof, Codex/OpenAI provider/player/scorer for Codex proof. Mixed Sonnet/GPT runs are cross-provider
+  benchmarks only, not release evidence.
+- App evidence manifests must include `provider_family`, `dm_model`, `player_agent`, `player_model`,
+  `scorer_provider`, and `scorer_model`. Missing provider/model fields make the handoff/RRI result
+  partial until the evidence is rerun.
 - Do not treat the wrapper as release proof by itself. The 2026-06-01T04:39:09+07:00 pre-merge built-app proof
   (`/Volumes/LEXAR/Codex/worldos-built-app-playtest/codex-app-headproof-20260601T043909/`) showed the Codex-DM
   path could mint a live native session, load private BG art, seat Alfira, show narration, expose five enabled

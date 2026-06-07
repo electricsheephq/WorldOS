@@ -5618,11 +5618,41 @@ def _chat_file_summary(path: str) -> dict:
     return summary
 
 
+def _provider_family_for(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    return {
+        "claude": "anthropic",
+        "codex": "codex-openai",
+        "openclaw": "openclaw",
+        "scripted": "scripted",
+    }.get(provider, "")
+
+
+def _provider_auth_surface_for(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    return {
+        "claude": "claude-cli",
+        "codex": "codex-cli",
+        "openclaw": "openclaw-cli",
+        "scripted": "dev-scripted",
+    }.get(provider, "")
+
+
 def _provider_status_summary() -> dict:
     """Read the provider lifecycle sidecar without mutating campaign state."""
     path = _state_dir() / "provider_status.json"
+    env_provider = env_var("PROVIDER", "") or ""
+    env_family = env_var("PROVIDER_FAMILY", "") or _provider_family_for(env_provider)
+    env_auth_surface = env_var("AUTH_SURFACE", "") or _provider_auth_surface_for(env_provider)
+    env_dm_model = env_var("DM_MODEL", "") or env_var("CODEX_MODEL", "")
     fallback = {
         "schema": "worldos.provider-status.v1",
+        "provider": env_provider,
+        "provider_family": env_family,
+        "auth_surface": env_auth_surface,
+        "model": env_dm_model,
+        "player_model": env_var("ACTOR_MODEL", ""),
+        "scorer_model": env_var("SCORER_MODEL", ""),
         "status": "unknown",
         "reason": "",
         "detail": "",
@@ -5633,9 +5663,17 @@ def _provider_status_summary() -> dict:
         return fallback
     if not isinstance(payload, dict):
         return fallback
+    provider = str(payload.get("provider") or env_provider)
     return {
         "schema": str(payload.get("schema") or "worldos.provider-status.v1"),
-        "provider": str(payload.get("provider") or ""),
+        "provider": provider,
+        "provider_family": str(payload.get("provider_family") or env_family or _provider_family_for(provider)),
+        "auth_surface": str(payload.get("auth_surface") or env_auth_surface or _provider_auth_surface_for(provider)),
+        "model": str(payload.get("model") or env_dm_model),
+        "player_model": str(payload.get("player_model") or env_var("ACTOR_MODEL", "")),
+        "scorer_model": str(payload.get("scorer_model") or env_var("SCORER_MODEL", "")),
+        "wrapper": str(payload.get("wrapper") or ""),
+        "fixture": payload.get("fixture") if isinstance(payload.get("fixture"), dict) else {},
         "status": str(payload.get("status") or "unknown"),
         "reason": str(payload.get("reason") or ""),
         "detail": str(payload.get("detail") or ""),
@@ -5846,6 +5884,8 @@ def _app_status_payload(*, port: int, attached_campaign_id: str, viewed_campaign
     art_root = _ingested_images_root()
     state_root = _state_dir()
     provider = env_var("PROVIDER", "") or ""
+    provider_family = env_var("PROVIDER_FAMILY", "") or _provider_family_for(provider)
+    auth_surface = env_var("AUTH_SURFACE", "") or _provider_auth_surface_for(provider)
     chat_summary = _chat_file_summary(chat_path)
     chat_lines = int(chat_summary.get("line_count") or 0)
     pending_player_turn = bool(chat_summary.get("pending_player_turn"))
@@ -5888,6 +5928,11 @@ def _app_status_payload(*, port: int, attached_campaign_id: str, viewed_campaign
             "repo_root": _resolved(_REPO_ROOT),
             "state_root": _resolved(state_root),
             "provider": provider,
+            "provider_family": provider_family,
+            "auth_surface": auth_surface,
+            "dm_model": env_var("DM_MODEL", "") or env_var("CODEX_MODEL", ""),
+            "player_model": env_var("ACTOR_MODEL", ""),
+            "scorer_model": env_var("SCORER_MODEL", ""),
             "transcript_path": transcript_path,
             "chat_path": chat_path,
             "chat_lines": chat_lines,

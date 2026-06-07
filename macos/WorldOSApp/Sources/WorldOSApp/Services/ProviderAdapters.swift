@@ -26,7 +26,8 @@ struct ClaudeProvider: ProviderAdapter {
                 kind: kind,
                 availability: .missing,
                 detail: "Install the Claude CLI to run the existing plugin play path.",
-                detectedPath: nil
+                detectedPath: nil,
+                preferences: preferences
             )
         }
         let plugin = repoPath.appendingPathComponent(".claude-plugin/plugin.json").path
@@ -35,14 +36,16 @@ struct ClaudeProvider: ProviderAdapter {
                 kind: kind,
                 availability: .error,
                 detail: "Claude CLI is installed, but .claude-plugin/plugin.json is missing from this repo.",
-                detectedPath: claudePath
+                detectedPath: claudePath,
+                preferences: preferences
             )
         }
         return ProviderStatus(
             kind: kind,
             availability: .installed,
             detail: "Ready. Uses scripts/play_party.sh and the existing Claude plugin path.",
-            detectedPath: claudePath
+            detectedPath: claudePath,
+            preferences: preferences
         )
     }
 
@@ -71,6 +74,7 @@ struct ClaudeProvider: ProviderAdapter {
         let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedHero.isEmpty {
             environment["CLAWDND_PLAY_HERO"] = trimmedHero
+            environment["WORLDOS_PLAY_HERO"] = trimmedHero
         }
 
         // Tell the move-sink viewer which provider is driving the run. The viewer's
@@ -84,6 +88,7 @@ struct ClaudeProvider: ProviderAdapter {
         // back to, mirroring how the other lanes (and budgetEnvironment) carry both prefixes.
         environment["WORLDOS_PROVIDER"] = kind.rawValue
         environment["CLAWDND_PROVIDER"] = kind.rawValue
+        setProviderModelEnvironment(kind: kind, preferences: preferences, environment: &environment)
 
         return ProviderLaunchRequest(
             name: "Claude game",
@@ -116,7 +121,9 @@ struct CodexProvider: ProviderAdapter {
                 kind: kind,
                 availability: .missing,
                 detail: "Codex CLI was not found. The Codex provider fails closed until codex is available.",
-                detectedPath: nil
+                detectedPath: nil,
+                preferences: preferences,
+                commandOverride: configuredCommand
             )
         }
 
@@ -126,7 +133,8 @@ struct CodexProvider: ProviderAdapter {
                     kind: kind,
                     availability: .error,
                     detail: "Codex CLI found, but scripts/play_codex_dm.sh is missing from this checkout.",
-                    detectedPath: cli
+                    detectedPath: cli,
+                    preferences: preferences
                 )
             }
         }
@@ -137,7 +145,9 @@ struct CodexProvider: ProviderAdapter {
             detail: configuredCommand.isEmpty
                 ? "Ready. Launches the checked-in Codex DM wrapper with the WorldOS provider environment. Actor helper: \(actorHelper.path)."
                 : "Ready. Launches your configured Codex command with the WorldOS provider environment.",
-            detectedPath: configuredCommand.isEmpty ? wrapper.path : configuredCommand
+            detectedPath: configuredCommand.isEmpty ? wrapper.path : configuredCommand,
+            preferences: preferences,
+            commandOverride: configuredCommand
         )
     }
 
@@ -203,7 +213,8 @@ struct OpenClawProvider: ProviderAdapter {
                     kind: kind,
                     availability: .installed,
                     detail: "OpenClaw CLI found. Configure a local WorldOS launch command before starting sessions.",
-                    detectedPath: cli
+                    detectedPath: cli,
+                    preferences: preferences
                 )
             }
             if config {
@@ -211,21 +222,25 @@ struct OpenClawProvider: ProviderAdapter {
                     kind: kind,
                     availability: .installed,
                     detail: "OpenClaw config detected. Configure a local launch command to enable game starts.",
-                    detectedPath: "~/.openclaw"
+                    detectedPath: "~/.openclaw",
+                    preferences: preferences
                 )
             }
             return ProviderStatus(
                 kind: kind,
                 availability: .missing,
                 detail: "OpenClaw was not found. This adapter fails closed until a valid local command exists.",
-                detectedPath: nil
+                detectedPath: nil,
+                preferences: preferences
             )
         }
         return ProviderStatus(
             kind: kind,
             availability: .configured,
             detail: "Configured. The app will launch your command with WorldOS provider environment variables.",
-            detectedPath: cli
+            detectedPath: cli,
+            preferences: preferences,
+            commandOverride: preferences.openClawCommand
         )
     }
 
@@ -276,7 +291,8 @@ struct ScriptedProvider: ProviderAdapter {
                 kind: kind,
                 availability: .missing,
                 detail: "Hidden. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 to expose deterministic smoke.",
-                detectedPath: nil
+                detectedPath: nil,
+                preferences: preferences
             )
         }
         let script = repoPath.appendingPathComponent("scripts/play_scripted_dm.sh")
@@ -285,7 +301,8 @@ struct ScriptedProvider: ProviderAdapter {
                 kind: kind,
                 availability: .error,
                 detail: "Scripted provider helper is missing: scripts/play_scripted_dm.sh",
-                detectedPath: nil
+                detectedPath: nil,
+                preferences: preferences
             )
         }
         guard Shell.which("python3") != nil else {
@@ -293,7 +310,8 @@ struct ScriptedProvider: ProviderAdapter {
                 kind: kind,
                 availability: .missing,
                 detail: "python3 is required for deterministic scripted smoke.",
-                detectedPath: script.path
+                detectedPath: script.path,
+                preferences: preferences
             )
         }
         guard Shell.which("uv") != nil else {
@@ -301,14 +319,16 @@ struct ScriptedProvider: ProviderAdapter {
                 kind: kind,
                 availability: .missing,
                 detail: "uv is required for deterministic scripted smoke.",
-                detectedPath: script.path
+                detectedPath: script.path,
+                preferences: preferences
             )
         }
         return ProviderStatus(
             kind: kind,
             availability: .configured,
             detail: "Ready. Dev/test-only deterministic smoke provider; no Claude, Codex, or OpenClaw required.",
-            detectedPath: script.path
+            detectedPath: script.path,
+            preferences: preferences
         )
     }
 
@@ -383,12 +403,15 @@ private func budgetEnvironment(_ preferences: ProviderPreferences) -> [String: S
     var env: [String: String] = [:]
     if !preferences.budget.isEmpty {
         env["CLAWDND_PLAY_BUDGET"] = preferences.budget
+        env["WORLDOS_PLAY_BUDGET"] = preferences.budget
     }
     if !preferences.sessionBudget.isEmpty {
         env["CLAWDND_PLAY_SESSION_BUDGET"] = preferences.sessionBudget
+        env["WORLDOS_PLAY_SESSION_BUDGET"] = preferences.sessionBudget
     }
     if !preferences.maxTurns.isEmpty {
         env["CLAWDND_PLAY_MAX_TURNS"] = preferences.maxTurns
+        env["WORLDOS_PLAY_MAX_TURNS"] = preferences.maxTurns
     }
     if !preferences.artRepoPath.isEmpty {
         env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath
@@ -408,13 +431,50 @@ private func providerEnvironment(
 ) -> [String: String] {
     var env = budgetEnvironment(preferences)
     env["CLAWDND_PROVIDER"] = kind.rawValue
+    env["WORLDOS_PROVIDER"] = kind.rawValue
     env["CLAWDND_WORLD"] = world
+    env["WORLDOS_WORLD"] = world
     env["CLAWDND_RUN_ID"] = runId
+    env["WORLDOS_RUN_ID"] = runId
     env["CLAWDND_PLAY_PORT"] = String(port)
+    env["WORLDOS_PLAY_PORT"] = String(port)
     env["CLAWDND_PLAY_COMPANIONS"] = companions
+    env["WORLDOS_PLAY_COMPANIONS"] = companions
     let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
     if !trimmedHero.isEmpty {
         env["CLAWDND_PLAY_HERO"] = trimmedHero
+        env["WORLDOS_PLAY_HERO"] = trimmedHero
     }
+    setProviderModelEnvironment(kind: kind, preferences: preferences, environment: &env)
     return env
+}
+
+private func setProviderModelEnvironment(
+    kind: ProviderKind,
+    preferences: ProviderPreferences,
+    environment: inout [String: String]
+) {
+    let dmModel = preferences.dmModel(for: kind)
+    let playerModel = preferences.playerModel(for: kind)
+    let scorerModel = preferences.scorerModel(for: kind)
+    environment["WORLDOS_PROVIDER_FAMILY"] = kind.providerFamily
+    environment["CLAWDND_PROVIDER_FAMILY"] = kind.providerFamily
+    environment["WORLDOS_AUTH_SURFACE"] = kind.authSurface
+    environment["CLAWDND_AUTH_SURFACE"] = kind.authSurface
+    if !dmModel.isEmpty {
+        environment["WORLDOS_DM_MODEL"] = dmModel
+        environment["CLAWDND_DM_MODEL"] = dmModel
+        if kind == .codex {
+            environment["WORLDOS_CODEX_MODEL"] = dmModel
+            environment["CLAWDND_CODEX_MODEL"] = dmModel
+        }
+    }
+    if !playerModel.isEmpty {
+        environment["WORLDOS_ACTOR_MODEL"] = playerModel
+        environment["CLAWDND_ACTOR_MODEL"] = playerModel
+    }
+    if !scorerModel.isEmpty {
+        environment["WORLDOS_SCORER_MODEL"] = scorerModel
+        environment["CLAWDND_SCORER_MODEL"] = scorerModel
+    }
 }

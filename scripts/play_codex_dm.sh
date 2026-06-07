@@ -187,6 +187,8 @@ print(json.dumps({
     "ok": True,
     "mode": mode,
     "provider": "codex",
+    "provider_family": "codex-openai",
+    "auth_surface": "codex-cli",
     "role": "dm",
     "repo": root,
     "state_root": state_root,
@@ -490,14 +492,14 @@ PY
 
 write_provider_status() {
   local status="$1" reason="$2" detail="$3"
-  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" "${HERO_SEED_JSON:-}" <<'PY'
+  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "${WORLDOS_ACTOR_MODEL:-${CLAWDND_ACTOR_MODEL:-}}" "${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" "${HERO_SEED_JSON:-}" <<'PY'
 import json
 import os
 import sys
 import time
 from pathlib import Path
 
-path, status, reason, detail, provider, max_turns, turns, model, lean_beats, lean_tail, sha, seed_json = sys.argv[1:]
+path, status, reason, detail, provider, max_turns, turns, model, player_model, scorer_model, lean_beats, lean_tail, sha, seed_json = sys.argv[1:]
 path = Path(path)
 fixture = {}
 if seed_json.strip():
@@ -514,7 +516,11 @@ if seed_json.strip():
 payload = {
     "schema": "worldos.provider-status.v1",
     "provider": provider,
+    "provider_family": "codex-openai",
+    "auth_surface": "codex-cli",
     "model": model,
+    "player_model": player_model,
+    "scorer_model": scorer_model,
     "wrapper": "scripts/play_codex_dm.sh",
     "sha": sha,
     "fixture": fixture,
