@@ -70,6 +70,8 @@ PART="$(worldos_env APP_PART "${WOS_APP_PART:-AB}")"
 KEEP_MINTED_BACKEND="${WOS_APP_KEEP_MINTED_BACKEND:-0}"
 SELECTED_PROVIDER="${WOS_APP_SELECTED_PROVIDER:-}"
 PLAYER_AGENT="${WOS_APP_PLAYER_AGENT:-claude}"
+NATIVE_AUTOSTART="${WOS_APP_NATIVE_AUTOSTART:-0}"
+CODEX_HOME_FOR_APP="${WOS_APP_CODEX_HOME:-${CODEX_HOME:-}}"
 # Part-A cold-open mint deadline (seconds). The #356 banner spawns the DM cold open, whose
 # --effort max world-build runs ~280–400s (qa/lib_beat_driver.sh WORLDOS_COLDOPEN_TIMEOUT=400);
 # the old 210s poll (70 × 3s) was SHORTER than a max-effort cold open, so a slow-but-healthy
@@ -93,6 +95,36 @@ NATIVE_DIR="$RUNDIR/native"
 PLAYERDIR="$RUNDIR/player"
 rm -rf "$RUNDIR" 2>/dev/null
 mkdir -p "$NATIVE_DIR" "$PLAYERDIR/screenshots" "$PLAYERDIR/a11y"
+NATIVE_LAUNCHER_STATE_DIR="$RUNDIR/native-launcher-state"
+
+_DEFAULTS_SENTINEL="__worldos_defaults_missing__"
+ORIGINAL_SELECTED_PROVIDER="$(defaults read dev.clawdnd.app selectedProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_STATE_DIR="$(defaults read dev.clawdnd.app stateDir 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_DEFAULT_WORLD="$(defaults read dev.clawdnd.app defaultWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_CODEX_HOME="$(defaults read dev.clawdnd.app codexHome 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_PROVIDER="$(defaults read dev.clawdnd.app qaAutoStartProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_WORLD="$(defaults read dev.clawdnd.app qaAutoStartWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_RUN_ID="$(defaults read dev.clawdnd.app qaAutoStartRunID 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+
+restore_app_default() {
+  local key="$1" value="$2"
+  if [ "$value" = "$_DEFAULTS_SENTINEL" ]; then
+    defaults delete dev.clawdnd.app "$key" >/dev/null 2>&1 || true
+  else
+    defaults write dev.clawdnd.app "$key" "$value" >/dev/null 2>&1 || true
+  fi
+}
+
+restore_app_defaults() {
+  restore_app_default selectedProvider "$ORIGINAL_SELECTED_PROVIDER"
+  restore_app_default stateDir "$ORIGINAL_STATE_DIR"
+  restore_app_default defaultWorld "$ORIGINAL_DEFAULT_WORLD"
+  restore_app_default codexHome "$ORIGINAL_CODEX_HOME"
+  restore_app_default qaAutoStartProvider "$ORIGINAL_QA_AUTOSTART_PROVIDER"
+  restore_app_default qaAutoStartWorld "$ORIGINAL_QA_AUTOSTART_WORLD"
+  restore_app_default qaAutoStartRunID "$ORIGINAL_QA_AUTOSTART_RUN_ID"
+}
+trap restore_app_defaults EXIT
 
 BUILD_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 VERSION="$( ([ -f "$ROOT/VERSION" ] && cat "$ROOT/VERSION") \
@@ -247,6 +279,53 @@ dm_spend() {
 # PART A — NATIVE-TRANSITION GATE (re-verifies #356)
 ###############################################################################################
 PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""; PART_A_KEPT_BACKEND="false"; PART_A_FIRST_TURN_READY="false"; PART_A_FAILURE_BUCKET=""; PART_A_FAILURE_DETAIL=""
+seed_native_launcher_state() {
+  rm -rf "$NATIVE_LAUNCHER_STATE_DIR"
+  mkdir -p "$NATIVE_LAUNCHER_STATE_DIR"
+  CLAWDND_STATE_DIR="$NATIVE_LAUNCHER_STATE_DIR" WORLDOS_STATE_DIR="$NATIVE_LAUNCHER_STATE_DIR" \
+    uv run --directory "$ROOT/servers/engine" python - "$WORLD" > "$NATIVE_DIR/launcher-state-seed.json" <<'PY'
+import json
+import sys
+
+import server
+
+world = sys.argv[1]
+started = server.start_world(world)
+campaign_id = started.get("campaign_id") if isinstance(started, dict) else ""
+if not campaign_id:
+    raise SystemExit("start_world did not return a campaign_id")
+server.start_session(campaign_id, title="Built-app handoff launcher seed")
+
+pc = {}
+try:
+    roster = server.list_canon_characters(campaign_id, playable_only=True).get("available") or []
+except Exception:
+    roster = []
+names = [str(row.get("name") or "").strip() for row in roster if isinstance(row, dict)]
+for name in [n for n in names if n] + ["Charming Latham", "Alfira"]:
+    try:
+        candidate = server.load_canon_character(campaign_id, name, kind="player", add_to_party=True)
+    except Exception:
+        continue
+    if isinstance(candidate, dict) and not candidate.get("error") and candidate.get("id"):
+        pc = candidate
+        break
+
+opening = "The table is lit, the road is waiting, and the next real choice belongs to you."
+server.log_event(campaign_id, "narration", opening)
+print(json.dumps({
+    "schema": "worldos.native-launcher-seed.v1",
+    "world": world,
+    "campaign_id": campaign_id,
+    "player": {
+        "id": pc.get("id") if isinstance(pc, dict) else "",
+        "name": pc.get("name") if isinstance(pc, dict) else "",
+        "kind": pc.get("kind") if isinstance(pc, dict) else "",
+    },
+    "opening": opening,
+}, indent=2, sort_keys=True))
+PY
+}
 write_part_a_transition() {
   local result="$1" run="${2:-}" port="${3:-}" can_act="${4:-false}" surf="${5:-{}}" kept="${6:-$PART_A_KEPT_BACKEND}" first_turn_ready="${7:-$PART_A_FIRST_TURN_READY}" app_status="${8:-{}}"
   python3 - "$NATIVE_DIR/transition.json" "$result" "$BUILD_SHA" "$VERSION" \
@@ -281,6 +360,8 @@ PY
 run_part_a() {
   log "=== PART A: native-transition gate (re-verifies #356) ==="
   local tlog="$NATIVE_DIR/transition.log"; : > "$tlog"
+  local before_dirs; before_dirs="$(ls -1 "$ROOT/play-state" 2>/dev/null | sort || true)"
+  local autostart_run=""
   a_log() { printf '%s\n' "$*" | tee -a "$tlog"; }
 
   # Raise WorldOS to front (AppKit activate — NOT System Events, no TCC dialog), verify it is
@@ -289,6 +370,18 @@ run_part_a() {
   click_play_cta() {
     python3 - "$tlog" "$APP_BUNDLE" <<'PY' || echo "[A] CGEvent click attempt FAILED" >> "$tlog"
 import os, sys, time, Quartz
+from collections import deque
+from ApplicationServices import (
+    AXUIElementCopyAttributeValue,
+    AXUIElementCreateApplication,
+    AXUIElementPerformAction,
+    kAXChildrenAttribute,
+    kAXDescriptionAttribute,
+    kAXPressAction,
+    kAXRoleAttribute,
+    kAXTitleAttribute,
+    kAXValueAttribute,
+)
 from ApplicationServices import AXIsProcessTrusted
 from AppKit import (NSRunningApplication, NSWorkspace,
                     NSApplicationActivateIgnoringOtherApps, NSApplicationActivateAllWindows)
@@ -339,8 +432,45 @@ if win is None:
 front, win = front_owner_and_win()
 if not (front and "WorldOS" in front):
     say(f"[A] WARN: WorldOS slipped from front (front={front!r}) just before click — clicking anyway.")
+
+def ax_attr(el, attr):
+    try:
+        err, value = AXUIElementCopyAttributeValue(el, attr, None)
+    except Exception:
+        return None
+    return value if err == 0 else None
+
+def find_resume_button(pid):
+    app_el = AXUIElementCreateApplication(pid)
+    roots = ax_attr(app_el, "AXWindows") or []
+    queue = deque(roots)
+    seen = 0
+    deadline = time.monotonic() + 4.0
+    while queue and seen < 5000 and time.monotonic() < deadline:
+        el = queue.popleft()
+        seen += 1
+        role = str(ax_attr(el, kAXRoleAttribute) or "")
+        title = str(ax_attr(el, kAXTitleAttribute) or "")
+        desc = str(ax_attr(el, kAXDescriptionAttribute) or "")
+        value = str(ax_attr(el, kAXValueAttribute) or "")
+        haystack = " ".join([title, desc, value]).lower()
+        if "button" in role.lower() and ("resume" in haystack or "continue" in haystack) and "play" in haystack:
+            return el, title or desc or value, seen
+        children = ax_attr(el, kAXChildrenAttribute)
+        if children:
+            queue.extend(children)
+    return None, "", seen
+
+target, label, scanned = find_resume_button(app.processIdentifier())
+if target is not None:
+    err = AXUIElementPerformAction(target, kAXPressAction)
+    if err == 0:
+        say(f"[A] AX pressed Resume → play button ({label!r}; scanned {scanned} nodes).")
+        sys.exit(0)
+    say(f"[A] WARN: AX found Resume → play ({label!r}) but press returned {err}; falling back to CGEvent click.")
+
 b = win["kCGWindowBounds"]; X, Y, W, H = b["X"], b["Y"], b["Width"], b["Height"]
-cx, cy = X + W - 219, Y + 204          # calibrated CTA center (right-aligned button)
+cx, cy = X + W - 319, Y + 204          # fallback CTA center (right-aligned button)
 say(f"[A] window X={X} Y={Y} W={W} H={H}; front={front!r}; click=({cx:.0f},{cy:.0f})")
 def post(ev): Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
 post(Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (cx, cy), Quartz.kCGMouseButtonLeft)); time.sleep(0.10)
@@ -351,6 +481,29 @@ PY
   }
 
   if [ "${WOS_APP_SKIP_BUILD:-0}" != "1" ]; then
+    a_log "[A] seeding isolated launcher state ($WORLD) at ${NATIVE_LAUNCHER_STATE_DIR}..."
+    if seed_native_launcher_state >> "$tlog" 2>&1; then
+      defaults write dev.clawdnd.app stateDir "$NATIVE_LAUNCHER_STATE_DIR" >/dev/null 2>&1 || true
+      defaults write dev.clawdnd.app defaultWorld "$WORLD" >/dev/null 2>&1 || true
+      if [ "$NATIVE_AUTOSTART" = "1" ]; then
+        autostart_run="play-$(date +%Y%m%d%H%M%S)"
+        defaults write dev.clawdnd.app qaAutoStartProvider "${SELECTED_PROVIDER:-claude}" >/dev/null 2>&1 || true
+        defaults write dev.clawdnd.app qaAutoStartWorld "$WORLD" >/dev/null 2>&1 || true
+        defaults write dev.clawdnd.app qaAutoStartRunID "$autostart_run" >/dev/null 2>&1 || true
+        if [ "${SELECTED_PROVIDER:-claude}" = "codex" ] && [ -n "${CODEX_HOME_FOR_APP//[[:space:]]/}" ]; then
+          defaults write dev.clawdnd.app codexHome "$CODEX_HOME_FOR_APP" >/dev/null 2>&1 || true
+          a_log "[A] native QA auto-start will launch Codex with CODEX_HOME=$CODEX_HOME_FOR_APP."
+        fi
+        a_log "[A] native QA auto-start requested: provider=${SELECTED_PROVIDER:-claude} run=$autostart_run."
+      fi
+      a_log "[A] launcher state seeded; native app will not depend on old local saves."
+    else
+      a_log "[A] launcher-state seed FAILED — see $NATIVE_DIR/launcher-state-seed.json and $tlog"
+      PART_A_RESULT="seed_failed"
+      set_bucket_pair A "$(classify_native_failure "$PART_A_RESULT" false '{}' '{}')"
+      write_part_a_transition "$PART_A_RESULT"
+      return 1
+    fi
     a_log "[A] pkill WorldOSApp + THIS checkout's stale viewers, rm -rf $APP_BUNDLE, fresh build…"
     if [ "${WOS_APP_NO_GLOBAL_KILL:-0}" = "1" ]; then
       a_log "[A] WOS_APP_NO_GLOBAL_KILL=1 — preserving other WorldOSApp processes."
@@ -359,8 +512,9 @@ PY
     fi
     # ONLY reap viewers spawned from THIS repo root — NEVER a blanket `pkill -f viewer/server.py`
     # (that would kill unrelated services on this host, e.g. the evaOS desktop-bridge squatting
-    # 8765 on the Tailscale iface, or another checkout's viewer). Match the absolute repo path.
-    pkill -f "$ROOT/viewer/server.py" >/dev/null 2>&1 || true
+    # 8765 on the Tailscale iface, or another checkout's viewer). This includes provider viewers
+    # launched as relative `python3 viewer/server.py` with CWD=$ROOT.
+    kill_repo_viewers "$ROOT"
     sleep 1
     rm -rf "$APP_BUNDLE"
     # Fresh build off the CURRENT checkout's HEAD (must include #356). build_and_run.sh sets
@@ -397,9 +551,9 @@ PY
   curl -s --max-time 3 "http://127.0.0.1:$launcher_port/app-status" \
     | jq . > "$NATIVE_DIR/app-status.launcher.json" 2>/dev/null || printf '{}\n' > "$NATIVE_DIR/app-status.launcher.json"
 
-  # BEFORE screenshot + baseline play-state set (so a NEW run dir is detectable post-click).
+  # BEFORE screenshot. The baseline play-state set is captured before launch so native
+  # auto-start sessions that mint immediately are still detectable.
   screenshot "$NATIVE_DIR/before.png" && a_log "[A] before.png captured" || a_log "[A] before.png deferred to orchestrator"
-  local before_dirs; before_dirs="$(ls -1 "$ROOT/play-state" 2>/dev/null | sort || true)"
 
   # CGEvent-click the launcher's primary play CTA.
   #  - RAISE WorldOS to front first. A synthetic CGEvent click is delivered to whatever window is
@@ -413,8 +567,12 @@ PY
   #    (button center ≈ window_right-219pt, window_top+204pt; corroborated by the baseline
   #    agent's (1692,340) and re-observed at (1701,344) here). AXIsProcessTrusted is True so the
   #    synthetic click lands.
-  a_log "[A] raising WorldOS to front + CGEvent-clicking the RESUME → PLAY CTA (with retries)…"
-  click_play_cta   # first attempt (the poll re-clicks if the focus-race ate it)
+  if [ "$NATIVE_AUTOSTART" = "1" ]; then
+    a_log "[A] native QA auto-start is driving startProviderSession; skipping desktop click."
+  else
+    a_log "[A] raising WorldOS to front + CGEvent-clicking the RESUME → PLAY CTA (with retries)…"
+    click_play_cta   # first attempt (the poll re-clicks if the focus-race ate it)
+  fi
 
   # ASSERT the mint. Poll up to PART_A_DEADLINE (default 420s, env WOS_APP_PART_A_DEADLINE) for
   # BOTH: (i) a NEW play-state run dir AND (ii) a NEW viewer (a DIFFERENT port than the launcher)
@@ -432,9 +590,12 @@ PY
     local now_dirs new_dir
     now_dirs="$(ls -1 "$ROOT/play-state" 2>/dev/null | sort || true)"
     new_dir="$(comm -13 <(printf '%s\n' "$before_dirs") <(printf '%s\n' "$now_dirs") 2>/dev/null | head -1)"
+    if [ -n "$autostart_run" ] && [ -d "$ROOT/play-state/$autostart_run" ]; then
+      new_dir="$autostart_run"
+    fi
     # Re-click if nothing has started after ~24s and ~48s (idempotent: clicking RESUME→PLAY again
     # before the mint just re-issues startPlay; once a run dir exists we stop clicking).
-    if [ -z "$new_dir" ] && { [ "$i" = "6" ] || [ "$i" = "12" ]; }; then
+    if [ "$NATIVE_AUTOSTART" != "1" ] && [ -z "$new_dir" ] && { [ "$i" = "6" ] || [ "$i" = "12" ]; }; then
       a_log "[A] no mint yet after $((i*4))s — re-clicking the CTA (focus-race recovery)…"
       click_play_cta
     fi
@@ -443,7 +604,9 @@ PY
     # PortFinder chose) instead of guessing a fixed range.
     local p surf ca
     for p in $(repo_viewer_ports "$ROOT"); do
-      [ "$p" = "$launcher_port" ] && continue
+      [ "$p" = "$launcher_port" ] && [ "$NATIVE_AUTOSTART" != "1" ] && continue
+      [ -n "$new_dir" ] || continue
+      port_matches_run "$p" "$new_dir" || continue
       surf="$(curl -s --max-time 2 "http://127.0.0.1:$p/session-surface" 2>/dev/null)" || continue
       [ -z "$surf" ] && continue
       ca="$(printf '%s' "$surf" | jq -r '.can_act // false' 2>/dev/null)"
@@ -866,6 +1029,32 @@ repo_viewer_ports() {
       printf '%s\n' "$cmd" | grep -oE '[0-9]{4,5}' | tail -1
     fi
   done | sort -un
+}
+
+kill_repo_viewers() {
+  local root="$1" rootp pid cwd cmd
+  rootp="$(cd "$root" 2>/dev/null && pwd -P)"; rootp="${rootp:-$root}"
+  for pid in $(pgrep -f 'viewer/server.py' 2>/dev/null); do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+    if printf '%s' "$cmd" | grep -qF "$rootp/viewer/server.py" \
+       || printf '%s' "$cmd" | grep -qF "$root/viewer/server.py" \
+       || [ "$cwd" = "$rootp" ] || [ "$cwd" = "$root" ]; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+port_matches_run() {
+  local port="$1" run="$2" status
+  [ -n "${port//[[:space:]]/}" ] || return 1
+  [ -n "${run//[[:space:]]/}" ] || return 1
+  status="$(curl -s --max-time 2 "http://127.0.0.1:$port/app-status" 2>/dev/null)" || return 1
+  [ -n "$status" ] || return 1
+  printf '%s' "$status" | jq -e --arg run "$run" '
+    (.live.run_id // "") == $run
+    or ((.viewer.state_root // "") | endswith("/play-state/" + $run))
+  ' >/dev/null 2>&1
 }
 
 # The launcher viewer's port = the LOWEST repo-viewer port (the .app starts the read-only

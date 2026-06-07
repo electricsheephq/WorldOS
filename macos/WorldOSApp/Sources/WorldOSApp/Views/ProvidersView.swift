@@ -6,6 +6,7 @@ struct ProvidersView: View {
     @Binding var repoPath: String
     @Binding var artRepoPath: String
     @Binding var codexProviderCommand: String
+    @Binding var codexHome: String
     @Binding var openClawProviderCommand: String
     @Binding var claudeDMModel: String
     @Binding var codexDMModel: String
@@ -58,6 +59,8 @@ struct ProvidersView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("Codex launch command", text: $codexProviderCommand)
                                 .textFieldStyle(.roundedBorder)
+                            TextField("Codex home", text: $codexHome)
+                                .textFieldStyle(.roundedBorder)
                             TextField("OpenClaw launch command", text: $openClawProviderCommand)
                                 .textFieldStyle(.roundedBorder)
                             Text("Configured commands receive both WORLDOS_* and CLAWDND_* provider, world, run, port, companion, model, auth-surface, and budget variables. They must route moves through existing engine/player contracts.")
@@ -96,6 +99,7 @@ struct ProvidersView: View {
         .onChange(of: repoPath) { _ in refresh() }
         .onChange(of: artRepoPath) { _ in refresh() }
         .onChange(of: codexProviderCommand) { _ in refresh() }
+        .onChange(of: codexHome) { _ in refresh() }
         .onChange(of: openClawProviderCommand) { _ in refresh() }
         .onChange(of: claudeDMModel) { _ in refresh() }
         .onChange(of: codexDMModel) { _ in refresh() }
@@ -129,6 +133,7 @@ struct ProvidersView: View {
             repoPath: repoPath,
             preferences: ProviderPreferences(
                 codexCommand: codexProviderCommand,
+                codexHome: codexHome,
                 openClawCommand: openClawProviderCommand,
                 claudeDMModel: claudeDMModel,
                 codexDMModel: codexDMModel,

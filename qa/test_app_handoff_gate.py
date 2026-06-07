@@ -134,7 +134,7 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(bucket, "no_narration")
         self.assertIn("session-surface", detail)
 
-    def test_codex_provider_trace_cancellations_fail_summary(self):
+    def test_codex_provider_trace_validation_errors_fail_summary(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             provider = root / "codex-provider"
@@ -145,6 +145,36 @@ class AppHandoffGateTests(unittest.TestCase):
 
         self.assertEqual(summary["provider"], "codex")
         self.assertGreater(summary["failed_or_error_count"], 0)
+
+    def test_codex_provider_trace_tool_call_policy_cancel_is_warning(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            provider = root / "codex-provider"
+            provider.mkdir()
+            (provider / "codex-dm.stdout.jsonl").write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "mcp_tool_call",
+                            "status": "failed",
+                            "error": {
+                                "message": "Tool call was cancelled because of safety risks: wrapper ordering guard rejected log_event."
+                            },
+                        },
+                    }
+                )
+                + "\n"
+                + json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "You can continue."}})
+                + "\n",
+                encoding="utf-8",
+            )
+
+            summary = gate.provider_trace_summary(root, "codex")
+
+        self.assertEqual(summary["failed_or_error_count"], 0)
+        self.assertEqual(summary["provider_policy_warning_count"], 1)
+        self.assertEqual(gate.provider_trace_failure_detail(summary), "")
 
     def test_codex_provider_trace_ignores_failed_word_inside_command_output(self):
         with tempfile.TemporaryDirectory() as td:
@@ -187,6 +217,29 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(summary["failed_or_error_count"], 0)
         self.assertEqual(summary["provider_infra_warning_count"], 1)
         self.assertIn("safety monitor returned non-success", summary["provider_infra_samples"][0])
+
+    def test_codex_provider_trace_classifies_usage_limit_as_failure_detail(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            provider = root / "codex-provider"
+            provider.mkdir()
+            (provider / "codex-dm.stdout.jsonl").write_text(
+                json.dumps(
+                    {
+                        "type": "turn.failed",
+                        "error": {
+                            "message": "You've hit your usage limit. Visit settings or try again later."
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            summary = gate.provider_trace_summary(root, "codex")
+
+        self.assertGreater(summary["failed_or_error_count"], 0)
+        self.assertEqual(gate.provider_trace_failure_detail(summary), "Codex CLI usage limit")
 
     def test_codex_provider_trace_missing_is_explicit(self):
         with tempfile.TemporaryDirectory() as td:
@@ -472,6 +525,82 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertIn("busy status probe", network)
         self.assertEqual(beat_status["viewer"]["last_chat_role"], "dm")
         self.assertEqual(details["provider_trace"]["trace_exists"], True)
+
+    def test_drive_moves_reports_provider_trace_on_post_move_surface_failure(self):
+        status_initial = {
+            "schema": "worldos.app-status.v1",
+            "build": {"sha": "abc1234"},
+            "viewer": {"port": 8899, "chat_lines": 1, "last_chat_role": "dm"},
+            "art": {"private_root_present": True},
+            "live": {
+                "can_act": True,
+                "actor": {"id": "char_1", "name": "Alfira"},
+                "enabled_action_count": 6,
+            },
+            "readiness": {"ready_for_smoke": True, "ready_for_play": True, "failure_bucket": "none"},
+            "health": {"failure_bucket": "none"},
+        }
+        status_after = {
+            **status_initial,
+            "viewer": {"port": 8899, "chat_lines": 3, "last_chat_role": "dm"},
+        }
+        surface = {"recentEvents": [{"kind": "narration", "text": "Opening."}]}
+        trace = {
+            "trace_exists": True,
+            "failed_or_error_count": 1,
+            "samples": ['{"type":"turn.failed","error":{"message":"usage limit"}}'],
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            gate_dir = Path(td)
+            with mock.patch.object(
+                gate.smoke,
+                "wait_for_status",
+                side_effect=[status_initial, status_after],
+            ), mock.patch.object(
+                gate.smoke,
+                "fetch_json",
+                side_effect=[(surface, 200), RuntimeError("viewer gone")],
+            ), mock.patch.object(
+                gate.smoke,
+                "html_text",
+                return_value="<main>WorldOS</main>",
+            ), mock.patch.object(
+                gate.smoke,
+                "capture_openworlds_screenshot",
+                return_value=None,
+            ), mock.patch.object(
+                gate.smoke,
+                "post_json",
+                return_value=({"ok": True}, 200),
+            ), mock.patch.object(
+                gate.smoke,
+                "copy_play_state",
+                return_value=None,
+            ), mock.patch.object(
+                gate,
+                "run_hook_probe",
+                return_value=(True, "", {"ok": True}),
+            ), mock.patch.object(
+                gate,
+                "provider_trace_summary",
+                return_value=trace,
+            ):
+                ok, bucket, detail, details = gate.drive_moves(
+                    base_url="http://127.0.0.1:8899",
+                    gate_dir=gate_dir,
+                    run_id="fixture-run",
+                    provider="codex",
+                    beats=1,
+                    timeout=5,
+                    expected_sha="abc1234",
+                    expected_port=8899,
+                )
+
+        self.assertFalse(ok)
+        self.assertEqual(bucket, "no_provider")
+        self.assertIn("Codex CLI usage limit", detail)
+        self.assertEqual(details["provider_trace"], trace)
 
 
 if __name__ == "__main__":

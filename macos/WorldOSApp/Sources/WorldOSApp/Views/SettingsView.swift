@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Binding var selectedProviderRaw: String
     @Binding var defaultWorld: String
     @Binding var codexProviderCommand: String
+    @Binding var codexHome: String
     @Binding var openClawProviderCommand: String
     @Binding var claudeDMModel: String
     @Binding var codexDMModel: String
@@ -96,6 +97,7 @@ struct SettingsView: View {
 
             Section("Provider commands") {
                 ValidatedTextField("Codex command", text: $codexProviderCommand, error: commandError(for: codexProviderCommand, label: "Codex command"))
+                ValidatedTextField("Codex home", text: $codexHome, error: optionalAbsolutePathError(for: codexHome, label: "Codex home"))
                 ValidatedTextField("OpenClaw command", text: $openClawProviderCommand, error: commandError(for: openClawProviderCommand, label: "OpenClaw command"))
             }
         }
@@ -207,6 +209,20 @@ struct SettingsView: View {
 
         guard value.rangeOfCharacter(from: .controlCharacters) == nil else {
             return "\(label) contains an unsupported control character."
+        }
+
+        return nil
+    }
+
+    private func optionalAbsolutePathError(for rawValue: String, label: String) -> String? {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            return nil
+        }
+
+        let expanded = (value as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else {
+            return "\(label) must be an absolute path."
         }
 
         return nil

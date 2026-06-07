@@ -10,6 +10,7 @@ struct PlayView: View {
     @Binding var selectedProviderRaw: String
     @Binding var defaultWorld: String
     @Binding var codexProviderCommand: String
+    @Binding var codexHome: String
     @Binding var openClawProviderCommand: String
     @Binding var claudeDMModel: String
     @Binding var codexDMModel: String
@@ -177,6 +178,7 @@ struct PlayView: View {
     private var providerPreferences: ProviderPreferences {
         ProviderPreferences(
             codexCommand: codexProviderCommand,
+            codexHome: codexHome,
             openClawCommand: openClawProviderCommand,
             claudeDMModel: claudeDMModel,
             codexDMModel: codexDMModel,

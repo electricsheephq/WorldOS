@@ -132,6 +132,7 @@ struct ProviderPreferences {
     static let defaultOpenClawScorerModel = ""
 
     let codexCommand: String
+    let codexHome: String
     let openClawCommand: String
     let claudeDMModel: String
     let codexDMModel: String
