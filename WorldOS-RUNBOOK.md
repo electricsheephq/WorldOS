@@ -231,8 +231,10 @@ is LEGACY narrative; don't hand-edit it.)
 - **5e-fidelity / "The Angry DM"** (`rubric_angry_dm.md`) — adversarial SRD 5.2.1 checklist
   (d20 tests, ~15 action types, all 14 conditions). Reads the DM tool-stream + a behavioral
   scoped-B gate.
-- Scorers: `qa/score.sh` (claude — the PRIMARY baseline) or `qa/score_openclaw.sh` (gpt-5.4,
-  grades **~1.5 pts HARSHER** — a strict cross-check, NOT the headline).
+- Scorers: `qa/score.sh` (Anthropic/Sonnet — the current Opus-lane baseline),
+  `qa/score_codex.sh` (Codex/GPT same-family proof; set `WORLDOS_SCORE_SCRIPT=qa/score_codex.sh`),
+  or `qa/score_openclaw.sh` (gateway gpt-5.4, grades **~1.5 pts HARSHER** — a strict
+  cross-check, NOT the headline).
 
 **Targets (the loop's exit bar):** **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0
 critical/high** adversarial defects.
@@ -279,20 +281,25 @@ Fair-test shape:
   or `CLAWDND_PLAY_CANON_HERO=template:rolan-evoker`, seating `Rolan - Tiefling Evoker`
   through the engine's `start_character(origin="template:rolan-evoker")` path so subclass,
   level, ability scores, and spell list are preserved in evidence.
-- Player: Sonnet via the constrained `clawdnd-player` facade, using a combat-seeking persona
-  when the question is mechanical viability.
-- Scoring: Sonnet `qa/score.sh` on Tolkien story and Angry-DM 5e fidelity, plus
-  `qa/assert_behavioral.py` on the transcoded Codex tool stream.
+- Same-family Codex proof: Codex DM + Codex/GPT player/test agent + `qa/score_codex.sh`.
+  This is the lane to use when proving that a user with only Codex/OpenAI auth can play and
+  evaluate WorldOS.
+- Anthropic proof: Claude/Opus DM + Claude/Sonnet player/scorer through `qa/score.sh`.
+  This remains the Opus release-comparison baseline and must not require Codex auth.
+- Mixed-provider benchmark: a GPT DM scored by Sonnet, or an Opus DM scored by GPT, is allowed
+  only as a labeled comparison. It is **not** same-family product proof and must not be used as
+  a release verdict.
+- Behavioral gate: always run `qa/assert_behavioral.py` on the provider's tool stream. A RED
+  behavioral gate still caps story/mechanical scorecards to INVALID.
 - Evidence stays private under `/Volumes/LEXAR/Codex`; do not commit raw transcripts,
   private art, or credentials.
 
-Current #691 result on `93df5d2` (private Lexar evidence from 2026-06-06 UTC / 2026-06-07
-local): native Codex GPT is
-mechanically capable enough to use real tools, but the scored fair-test runs did **not**
-green-light the OpenClaw gateway plugin build. `gpt-5.5` scored Tolkien `3.1`, Angry-DM
-`3.5`, behavioral `RED`; `gpt-5.4` scored Tolkien `2.4`, Angry-DM `3.3`, behavioral `RED`.
-Therefore #690 remains gated off unless a later same-method rerun reaches the Opus comparison
-bar with a GREEN behavioral gate.
+Current #691 result after #700 on `f228815`: native Codex GPT is mechanically capable enough
+to use real tools, but the clean GPT-5.5 run still stalled on world-motion behavior
+(Tolkien `3.2`, Angry-DM `3.7`, behavioral `RED`: no time advance, 1/27 locations). The
+GPT-5.4 attempt was partial/harness-contaminated because the Sonnet player/scorer quota failed.
+Therefore #690 remains gated until a same-family Codex proof reaches GREEN behavioral and
+Opus-comparable story/mechanical scores.
 
 ---
 
@@ -463,6 +470,10 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   Keep `scripts/play_codex_actor.sh` as the constrained player/companion actor helper through
   `player_server.py`; it is not the native provider's DM loop. OpenClaw still requires an explicit
   configured command before it can be treated as a startable provider.
+- The native app exposes provider-family settings: auth surface, DM model, QA player model,
+  QA scorer model, command override, and readiness. Defaults intentionally remain Anthropic
+  `opus`/`sonnet` for the Claude lane and Codex `gpt-5.5` for the Codex lane. Unselected
+  providers may be missing; only the selected provider should block launch.
 - Agents and app harnesses should read `GET /app-status` before trying to infer state from pixels or
   process lists. It is a read-only contract for the live OpenWorlds surface: provider, run/state roots,
   private-art presence, active campaign/session, move sink, actor, enabled actions, and canonical endpoints.

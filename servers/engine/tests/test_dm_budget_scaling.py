@@ -50,8 +50,12 @@ class DmBudgetScalingTests(unittest.TestCase):
     def test_no_unconditional_sonnet_cap_in_claude_lane(self):
         """The claude backend lane must not pin the per-turn cap to $1.50 unconditionally."""
         src = self._read("qa/ui_playtest_app.sh")
-        # locate the claude lane block and assert the model-aware branch precedes the export
-        claude_idx = src.find("    claude)")
+        # locate the Part B provider launch block and assert the model-aware
+        # Claude branch precedes the export. Earlier helper case statements may
+        # also contain a `claude)` label for metadata mapping.
+        play_party_idx = src.find('exec "$ROOT/scripts/play_party.sh"')
+        self.assertGreater(play_party_idx, -1, "Claude play_party launch not found")
+        claude_idx = src.rfind("    claude)", 0, play_party_idx)
         self.assertGreater(claude_idx, -1, "claude backend lane not found")
         # within ~600 chars of the claude lane, the opus branch must appear before the export
         window = src[claude_idx:claude_idx + 700]

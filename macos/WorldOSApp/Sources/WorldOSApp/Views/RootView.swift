@@ -14,6 +14,15 @@ struct RootView: View {
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
     @AppStorage("openClawProviderCommand") private var openClawProviderCommand: String = ""
+    @AppStorage("claudeDMModel") private var claudeDMModel: String = ProviderPreferences.defaultClaudeDMModel
+    @AppStorage("codexDMModel") private var codexDMModel: String = ProviderPreferences.defaultCodexDMModel
+    @AppStorage("openClawDMModel") private var openClawDMModel: String = ProviderPreferences.defaultOpenClawDMModel
+    @AppStorage("claudePlayerModel") private var claudePlayerModel: String = ProviderPreferences.defaultClaudePlayerModel
+    @AppStorage("codexPlayerModel") private var codexPlayerModel: String = ProviderPreferences.defaultCodexPlayerModel
+    @AppStorage("openClawPlayerModel") private var openClawPlayerModel: String = ProviderPreferences.defaultOpenClawPlayerModel
+    @AppStorage("claudeScorerModel") private var claudeScorerModel: String = ProviderPreferences.defaultClaudeScorerModel
+    @AppStorage("codexScorerModel") private var codexScorerModel: String = ProviderPreferences.defaultCodexScorerModel
+    @AppStorage("openClawScorerModel") private var openClawScorerModel: String = ProviderPreferences.defaultOpenClawScorerModel
     @AppStorage("budget") private var budget: String = "1.50"
     @AppStorage("sessionBudget") private var sessionBudget: String = "15.00"
     @AppStorage("maxTurns") private var maxTurns: String = "40"
@@ -298,6 +307,7 @@ struct RootView: View {
             "preferredPort": preferredPort,
             "defaultWorld": defaultWorld,
             "selectedProvider": selectedProviderRaw,
+            "selectedProviderFamily": (ProviderKind(rawValue: selectedProviderRaw) ?? .claude).providerFamily,
             "voiceBackend": voiceBackend,
             "viewer": endpointPayload(processService.viewerEndpoint) as Any,
             "activeCampaign": processService.activeCampaignID ?? "",
@@ -311,13 +321,16 @@ struct RootView: View {
                 "preferredPort": preferredPort,
                 "stateDir": stateDir,
                 "selectedProvider": selectedProviderRaw,
+                "selectedProviderFamily": (ProviderKind(rawValue: selectedProviderRaw) ?? .claude).providerFamily,
                 "defaultWorld": defaultWorld,
+                "models": providerModelPreferencesPayload(),
                 "budget": budget,
                 "sessionBudget": sessionBudget,
                 "maxTurns": maxTurns,
                 "voiceBackend": voiceBackend,
             ],
             "providers": providerStatusesPayload(),
+            "providerFamilyConfig": providerFamilyConfigPayload(),
             "dependencies": dependencyPayload(),
             "providerDiagnostics": Diagnostics.providerLaunchSummary(processService.providerLaunchMetadata),
         ]
@@ -357,6 +370,12 @@ struct RootView: View {
             [
                 "kind": $0.kind.rawValue,
                 "displayName": $0.kind.displayName,
+                "providerFamily": $0.providerFamily,
+                "authSurface": $0.authSurface,
+                "dmModel": $0.dmModel,
+                "playerModel": $0.playerModel,
+                "scorerModel": $0.scorerModel,
+                "commandOverride": $0.commandOverride,
                 "availability": $0.availability.rawValue,
                 "detail": $0.detail,
                 "detectedPath": $0.detectedPath ?? "",
@@ -369,11 +388,53 @@ struct RootView: View {
         ProviderPreferences(
             codexCommand: codexProviderCommand,
             openClawCommand: openClawProviderCommand,
+            claudeDMModel: claudeDMModel,
+            codexDMModel: codexDMModel,
+            openClawDMModel: openClawDMModel,
+            claudePlayerModel: claudePlayerModel,
+            codexPlayerModel: codexPlayerModel,
+            openClawPlayerModel: openClawPlayerModel,
+            claudeScorerModel: claudeScorerModel,
+            codexScorerModel: codexScorerModel,
+            openClawScorerModel: openClawScorerModel,
             budget: budget,
             sessionBudget: sessionBudget,
             maxTurns: maxTurns,
             artRepoPath: activeArtRepoPath
         )
+    }
+
+    private func providerModelPreferencesPayload() -> [String: Any] {
+        [
+            "claude": [
+                "dmModel": providerPreferences.dmModel(for: .claude),
+                "playerModel": providerPreferences.playerModel(for: .claude),
+                "scorerModel": providerPreferences.scorerModel(for: .claude),
+            ],
+            "codex": [
+                "dmModel": providerPreferences.dmModel(for: .codex),
+                "playerModel": providerPreferences.playerModel(for: .codex),
+                "scorerModel": providerPreferences.scorerModel(for: .codex),
+            ],
+            "openclaw": [
+                "dmModel": providerPreferences.dmModel(for: .openclaw),
+                "playerModel": providerPreferences.playerModel(for: .openclaw),
+                "scorerModel": providerPreferences.scorerModel(for: .openclaw),
+            ],
+        ]
+    }
+
+    private func providerFamilyConfigPayload() -> [String: Any] {
+        let selected = ProviderKind(rawValue: selectedProviderRaw) ?? .claude
+        return [
+            "selectedProvider": selected.rawValue,
+            "selectedProviderFamily": selected.providerFamily,
+            "selectedAuthSurface": selected.authSurface,
+            "selectedDMModel": providerPreferences.dmModel(for: selected),
+            "selectedPlayerModel": providerPreferences.playerModel(for: selected),
+            "selectedScorerModel": providerPreferences.scorerModel(for: selected),
+            "providers": providerStatusesPayload(),
+        ]
     }
 
     private func stringPayload(_ payload: [String: Any], _ key: String) -> String? {
@@ -495,6 +556,15 @@ struct DebugControlCenterView: View {
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
     @AppStorage("openClawProviderCommand") private var openClawProviderCommand: String = ""
+    @AppStorage("claudeDMModel") private var claudeDMModel: String = ProviderPreferences.defaultClaudeDMModel
+    @AppStorage("codexDMModel") private var codexDMModel: String = ProviderPreferences.defaultCodexDMModel
+    @AppStorage("openClawDMModel") private var openClawDMModel: String = ProviderPreferences.defaultOpenClawDMModel
+    @AppStorage("claudePlayerModel") private var claudePlayerModel: String = ProviderPreferences.defaultClaudePlayerModel
+    @AppStorage("codexPlayerModel") private var codexPlayerModel: String = ProviderPreferences.defaultCodexPlayerModel
+    @AppStorage("openClawPlayerModel") private var openClawPlayerModel: String = ProviderPreferences.defaultOpenClawPlayerModel
+    @AppStorage("claudeScorerModel") private var claudeScorerModel: String = ProviderPreferences.defaultClaudeScorerModel
+    @AppStorage("codexScorerModel") private var codexScorerModel: String = ProviderPreferences.defaultCodexScorerModel
+    @AppStorage("openClawScorerModel") private var openClawScorerModel: String = ProviderPreferences.defaultOpenClawScorerModel
     @AppStorage("budget") private var budget: String = "1.50"
     @AppStorage("sessionBudget") private var sessionBudget: String = "15.00"
     @AppStorage("maxTurns") private var maxTurns: String = "40"
@@ -571,6 +641,15 @@ struct DebugControlCenterView: View {
                 defaultWorld: $defaultWorld,
                 codexProviderCommand: $codexProviderCommand,
                 openClawProviderCommand: $openClawProviderCommand,
+                claudeDMModel: $claudeDMModel,
+                codexDMModel: $codexDMModel,
+                openClawDMModel: $openClawDMModel,
+                claudePlayerModel: $claudePlayerModel,
+                codexPlayerModel: $codexPlayerModel,
+                openClawPlayerModel: $openClawPlayerModel,
+                claudeScorerModel: $claudeScorerModel,
+                codexScorerModel: $codexScorerModel,
+                openClawScorerModel: $openClawScorerModel,
                 budget: $budget,
                 sessionBudget: $sessionBudget,
                 maxTurns: $maxTurns,
@@ -597,6 +676,15 @@ struct DebugControlCenterView: View {
                 artRepoPath: activeArtRepoPathBinding,
                 codexProviderCommand: $codexProviderCommand,
                 openClawProviderCommand: $openClawProviderCommand,
+                claudeDMModel: $claudeDMModel,
+                codexDMModel: $codexDMModel,
+                openClawDMModel: $openClawDMModel,
+                claudePlayerModel: $claudePlayerModel,
+                codexPlayerModel: $codexPlayerModel,
+                openClawPlayerModel: $openClawPlayerModel,
+                claudeScorerModel: $claudeScorerModel,
+                codexScorerModel: $codexScorerModel,
+                openClawScorerModel: $openClawScorerModel,
                 budget: $budget,
                 sessionBudget: $sessionBudget,
                 maxTurns: $maxTurns
@@ -611,6 +699,15 @@ struct DebugControlCenterView: View {
                 defaultWorld: $defaultWorld,
                 codexProviderCommand: $codexProviderCommand,
                 openClawProviderCommand: $openClawProviderCommand,
+                claudeDMModel: $claudeDMModel,
+                codexDMModel: $codexDMModel,
+                openClawDMModel: $openClawDMModel,
+                claudePlayerModel: $claudePlayerModel,
+                codexPlayerModel: $codexPlayerModel,
+                openClawPlayerModel: $openClawPlayerModel,
+                claudeScorerModel: $claudeScorerModel,
+                codexScorerModel: $codexScorerModel,
+                openClawScorerModel: $openClawScorerModel,
                 budget: $budget,
                 sessionBudget: $sessionBudget,
                 maxTurns: $maxTurns,

@@ -17,6 +17,7 @@ cd "$ROOT" || exit 1
 
 RUN="${1:-cs-$(date +%H%M%S)}"
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Combat runs the whole multi-round fight on ONE budget (pre-seeded, no cold-open). An Opus combat
 # costs ~5x a Sonnet one, so the Sonnet-tuned $1.50 cap cut it off mid-fight (observed 2026-06-06:
 # error_max_budget_usd at num_turns=26 / mid-Round 2 -> low coverage, mech 3.1). Scale to the model.
@@ -109,7 +110,7 @@ GATE=${PIPESTATUS[0]}
 
 # ── 8. Angry-DM score ────────────────────────────────────────────────────────
 echo "[cs] scoring (Angry-DM 5e rules-fidelity)…"
-qa/score.sh "$T/$RUN.md" "$T/$RUN.state.json" \
+"$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" \
   qa/rubric_angry_dm.md qa/score_schema_angry_dm.json \
   "$T/$RUN.angrydm.json" 1.00
 

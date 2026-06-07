@@ -11,6 +11,15 @@ struct PlayView: View {
     @Binding var defaultWorld: String
     @Binding var codexProviderCommand: String
     @Binding var openClawProviderCommand: String
+    @Binding var claudeDMModel: String
+    @Binding var codexDMModel: String
+    @Binding var openClawDMModel: String
+    @Binding var claudePlayerModel: String
+    @Binding var codexPlayerModel: String
+    @Binding var openClawPlayerModel: String
+    @Binding var claudeScorerModel: String
+    @Binding var codexScorerModel: String
+    @Binding var openClawScorerModel: String
     @Binding var budget: String
     @Binding var sessionBudget: String
     @Binding var maxTurns: String
@@ -169,6 +178,15 @@ struct PlayView: View {
         ProviderPreferences(
             codexCommand: codexProviderCommand,
             openClawCommand: openClawProviderCommand,
+            claudeDMModel: claudeDMModel,
+            codexDMModel: codexDMModel,
+            openClawDMModel: openClawDMModel,
+            claudePlayerModel: claudePlayerModel,
+            codexPlayerModel: codexPlayerModel,
+            openClawPlayerModel: openClawPlayerModel,
+            claudeScorerModel: claudeScorerModel,
+            codexScorerModel: codexScorerModel,
+            openClawScorerModel: openClawScorerModel,
             budget: budget,
             sessionBudget: sessionBudget,
             maxTurns: maxTurns,

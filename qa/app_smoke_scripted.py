@@ -286,6 +286,18 @@ def run_smoke(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     env.update({
         "WORLDOS_ENABLE_SCRIPTED_PROVIDER": "1",
+        "WORLDOS_PROVIDER": "scripted",
+        "CLAWDND_PROVIDER": "scripted",
+        "WORLDOS_PROVIDER_FAMILY": "scripted",
+        "CLAWDND_PROVIDER_FAMILY": "scripted",
+        "WORLDOS_AUTH_SURFACE": "dev-scripted",
+        "CLAWDND_AUTH_SURFACE": "dev-scripted",
+        "WORLDOS_DM_MODEL": "scripted",
+        "CLAWDND_DM_MODEL": "scripted",
+        "WORLDOS_ACTOR_MODEL": "scripted",
+        "CLAWDND_ACTOR_MODEL": "scripted",
+        "WORLDOS_SCORER_MODEL": "scripted",
+        "CLAWDND_SCORER_MODEL": "scripted",
         "CLAWDND_RUN_ID": run_id,
         "CLAWDND_WORLD": args.world,
         "CLAWDND_PLAY_PORT": str(args.port),

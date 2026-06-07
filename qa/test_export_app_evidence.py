@@ -141,6 +141,13 @@ class ExportAppEvidenceTests(unittest.TestCase):
             self.assertEqual(payload["command"], ["python3", "qa/app_smoke_scripted.py", "--beats", "5"])
             self.assertEqual(payload["gate_kind"], "web_scripted_smoke")
             self.assertEqual(payload["provider"], "scripted")
+            self.assertEqual(payload["provider_family"], "scripted")
+            self.assertEqual(payload["auth_surface"], "dev-scripted")
+            self.assertEqual(payload["dm_model"], "scripted")
+            self.assertEqual(payload["player_agent"], "scripted")
+            self.assertEqual(payload["player_model"], "scripted")
+            self.assertEqual(payload["scorer_provider"], "deterministic-scripted")
+            self.assertEqual(payload["scorer_model"], "scripted")
             self.assertEqual(payload["run_id"], "run_test")
             self.assertEqual(payload["app_build_sha"], "abc1234")
             self.assertEqual(payload["verdict"], "passed")
@@ -196,6 +203,50 @@ class ExportAppEvidenceTests(unittest.TestCase):
             self.assertEqual(payload["handoff_gate"]["evidence_gap_count"], len(payload["evidence_gaps"]))
             self.assertIn("private art not proven present", payload["handoff_gate"]["blocking_reasons"])
             self.assertIn(f"evidence gaps: {len(payload['evidence_gaps'])}", payload["handoff_gate"]["blocking_reasons"])
+
+    def test_live_provider_metadata_overrides_stale_provider_argument(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            moves = tmp / "player_moves.jsonl"
+            moves.write_text('{"text":"Continue."}\n', encoding="utf-8")
+            app_status = {
+                "schema": "worldos.app-status.v1",
+                "build": {"sha": "codex123", "version": "v1-provider"},
+                "viewer": {
+                    "provider": "codex",
+                    "provider_family": "codex-openai",
+                    "auth_surface": "codex-cli",
+                    "dm_model": "gpt-5.5",
+                    "player_model": "gpt-5.5",
+                    "scorer_model": "gpt-5.5",
+                },
+                "live": {
+                    "moves_path": str(moves),
+                    "campaign_id": "camp_codex",
+                    "run_id": "run_codex",
+                    "can_act": True,
+                    "enabled_action_count": 2,
+                },
+                "art": {"private_root": str(tmp / "art"), "private_root_present": True},
+                "endpoints": {"session_surface": "/session-surface"},
+            }
+            server, url = self.serve(app_status, {"campaign_id": "camp_codex"})
+            out = tmp / "bundle"
+            try:
+                rc, text, payload = self.run_exporter(out, url, ["--provider", "scripted"])
+            finally:
+                server.shutdown()
+
+            self.assertEqual(rc, 0, text)
+            self.assertEqual(payload["provider"], "codex")
+            self.assertEqual(payload["provider_family"], "codex-openai")
+            self.assertEqual(payload["auth_surface"], "codex-cli")
+            self.assertEqual(payload["dm_model"], "gpt-5.5")
+            self.assertEqual(payload["player_agent"], "direct-move-harness")
+            self.assertEqual(payload["player_model"], "gpt-5.5")
+            self.assertEqual(payload["scorer_provider"], "codex-openai")
+            self.assertEqual(payload["scorer_model"], "gpt-5.5")
+            self.assertEqual(payload["provider_metadata"]["provider"], "codex")
 
     def test_run_dir_mode_copies_allowlisted_artifacts_and_failure_bucket(self):
         with tempfile.TemporaryDirectory() as td:

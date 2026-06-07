@@ -99,6 +99,11 @@ path, campaign_id, player_name, world, run_id, port, processed = sys.argv[1:8]
 payload = {
     "schema": "worldos.scripted-provider-summary.v1",
     "provider": "scripted",
+    "provider_family": "scripted",
+    "auth_surface": "dev-scripted",
+    "model": "scripted",
+    "player_model": "scripted",
+    "scorer_model": "scripted",
     "deterministic": True,
     "model_free": True,
     "world": world,
@@ -205,6 +210,11 @@ viewer_supervisor() {
     WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
     WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
     WORLDOS_PROVIDER=scripted CLAWDND_PROVIDER=scripted \
+    WORLDOS_PROVIDER_FAMILY=scripted CLAWDND_PROVIDER_FAMILY=scripted \
+    WORLDOS_AUTH_SURFACE=dev-scripted CLAWDND_AUTH_SURFACE=dev-scripted \
+    WORLDOS_DM_MODEL=scripted CLAWDND_DM_MODEL=scripted \
+    WORLDOS_ACTOR_MODEL=scripted CLAWDND_ACTOR_MODEL=scripted \
+    WORLDOS_SCORER_MODEL=scripted CLAWDND_SCORER_MODEL=scripted \
     WORLDOS_BROWSER_CONSOLE_LOG="${WORLDOS_BROWSER_CONSOLE_LOG:-}" \
     WORLDOS_BROWSER_NETWORK_LOG="${WORLDOS_BROWSER_NETWORK_LOG:-}" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &

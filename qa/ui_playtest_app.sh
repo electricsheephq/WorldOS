@@ -99,6 +99,24 @@ VERSION="$( ([ -f "$ROOT/VERSION" ] && cat "$ROOT/VERSION") \
             || git -C "$ROOT" describe --tags --always 2>/dev/null \
             || echo "unknown")"
 log() { printf '[uipt-app] %s\n' "$*"; }
+provider_family() {
+  case "${1:-}" in
+    claude) echo "anthropic" ;;
+    codex) echo "codex-openai" ;;
+    openclaw) echo "openclaw" ;;
+    scripted) echo "scripted" ;;
+    *) echo "" ;;
+  esac
+}
+provider_auth_surface() {
+  case "${1:-}" in
+    claude) echo "claude-cli" ;;
+    codex) echo "codex-cli" ;;
+    openclaw) echo "openclaw-cli" ;;
+    scripted) echo "dev-scripted" ;;
+    *) echo "" ;;
+  esac
+}
 case "$PLAYER_AGENT" in
   claude|codex) ;;
   *)
@@ -553,6 +571,25 @@ run_part_b() {
   local sess_cap; sess_cap="$(awk -v r="$player_budget" 'BEGIN{c=r-0.20; if(c<0.50)c=0.50; printf "%.2f", c}')"
   local codex_default_model
   codex_default_model="${CLAWDND_CODEX_MODEL:-}"
+  local part_b_provider_family part_b_auth_surface part_b_dm_model part_b_player_model part_b_scorer_provider part_b_scorer_model
+  part_b_provider_family="$(provider_family "$PART_B_PROVIDER")"
+  part_b_auth_surface="$(provider_auth_surface "$PART_B_PROVIDER")"
+  part_b_scorer_provider="deterministic-ui-playtest"
+  part_b_scorer_model="qa/ui_playtest_score.py"
+  case "$PART_B_PROVIDER" in
+    claude)
+      part_b_dm_model="$DM_MODEL"
+      part_b_player_model="$PLAYER_MODEL"
+      ;;
+    codex)
+      part_b_dm_model="${WOS_APP_CODEX_DM_MODEL:-${codex_default_model:-gpt-5.5}}"
+      part_b_player_model="${WOS_APP_CODEX_PLAYER_MODEL:-${codex_default_model:-gpt-5.5}}"
+      ;;
+    *)
+      part_b_dm_model=""
+      part_b_player_model=""
+      ;;
+  esac
   case "$PART_B_PROVIDER" in
     claude)
       (
@@ -580,7 +617,8 @@ run_part_b() {
         export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
         export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
         export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-        export CLAWDND_CODEX_MODEL="${WOS_APP_CODEX_DM_MODEL:-$codex_default_model}"
+        export CLAWDND_CODEX_MODEL="$part_b_dm_model"
+        export WORLDOS_CODEX_MODEL="$part_b_dm_model"
         exec "$ROOT/scripts/play_codex_dm.sh" >> "$RUNDIR/backend.log" 2>&1
       ) &
       ;;
@@ -693,7 +731,7 @@ EOF
       export CLAWDND_UIPT_CHANNEL="$uipt_channel"
       export CLAWDND_UIPT_PERSONA="$PERSONA"
       local codex_player_model
-      codex_player_model="${WOS_APP_CODEX_PLAYER_MODEL:-$codex_default_model}"
+      codex_player_model="$part_b_player_model"
       local codex_player_model_args=()
       if [ -n "${codex_player_model//[[:space:]]/}" ]; then
         codex_player_model_args=(--model "$codex_player_model")
@@ -747,15 +785,22 @@ EOF
   b_cleanup; trap - RETURN
 
   # meta.json (the scorer reads it) + score + summary via the EXISTING scorer (unchanged).
-  python3 - "$RUNDIR/meta.json" "$RUN" "$WORLD" "$PERSONA" "$b_port" "$BEATS" "$BUDGET" "$player_cost" "$player_rc" "$BUILD_SHA" "$VERSION" "$PART_B_PROVIDER" "$PLAYER_AGENT" <<'PY'
+  python3 - "$RUNDIR/meta.json" "$RUN" "$WORLD" "$PERSONA" "$b_port" "$BEATS" "$BUDGET" "$player_cost" "$player_rc" "$BUILD_SHA" "$VERSION" "$PART_B_PROVIDER" "$PLAYER_AGENT" "$part_b_provider_family" "$part_b_auth_surface" "$part_b_dm_model" "$part_b_player_model" "$part_b_scorer_provider" "$part_b_scorer_model" <<'PY'
 import json, sys, datetime
-out, run, world, persona, port, beats, budget, cost, rc, sha, ver, provider, player_agent = sys.argv[1:14]
+(
+    out, run, world, persona, port, beats, budget, cost, rc, sha, ver,
+    provider, player_agent, provider_family, auth_surface, dm_model,
+    player_model, scorer_provider, scorer_model,
+) = sys.argv[1:20]
 json.dump({
     "run": run, "world": world, "persona": persona, "port": int(port),
     "beats_cap": int(beats), "budget_usd": float(budget),
     "player_cost_usd": round(float(cost or 0), 4), "player_rc": int(rc),
     "build_sha": sha, "version": ver,
     "provider": provider, "player_agent": player_agent,
+    "provider_family": provider_family, "auth_surface": auth_surface,
+    "dm_model": dm_model, "player_model": player_model,
+    "scorer_provider": scorer_provider, "scorer_model": scorer_model,
     "surface": f"built-app-faithful-backend ({provider} provider, {player_agent} player)",
     "session_surface_path": "session_surface.final.json",
     "finished_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
@@ -868,17 +913,28 @@ esac
 # Top-level run.json — the structured truth (P0): tagged {build_sha, version}, both parts, $spend.
 FINAL_DM_SPEND="$(dm_spend)"
 TOTAL_SPEND="$(awk -v a="${FINAL_DM_SPEND:-0}" -v b="${PART_B_PLAYER_COST:-0}" 'BEGIN{printf "%.4f", a+b}')"
+TOP_PROVIDER_FAMILY="$(provider_family "$PART_B_PROVIDER")"
+TOP_AUTH_SURFACE="$(provider_auth_surface "$PART_B_PROVIDER")"
+TOP_DM_MODEL="$DM_MODEL"
+TOP_PLAYER_MODEL="$PLAYER_MODEL"
+if [ "$PART_B_PROVIDER" = "codex" ]; then
+  _codex_default="${CLAWDND_CODEX_MODEL:-}"
+  TOP_DM_MODEL="${WOS_APP_CODEX_DM_MODEL:-${_codex_default:-gpt-5.5}}"
+  TOP_PLAYER_MODEL="${WOS_APP_CODEX_PLAYER_MODEL:-${_codex_default:-gpt-5.5}}"
+fi
 python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUILD_SHA" "$VERSION" \
           "$PART" "$PART_A_RESULT" "${PART_A_RUNDIR:-}" "${PART_A_MINTED_PORT:-}" \
           "$PART_A_KEPT_BACKEND" "$PART_A_FIRST_TURN_READY" "$PART_B_RESULT" "$PART_B_SCORE_PASS" \
           "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" \
           "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" "$PART_B_FAILURE_BUCKET" "$PART_B_FAILURE_DETAIL" \
-          "$PART_B_PROVIDER" "$PLAYER_AGENT" <<'PY'
+          "$PART_B_PROVIDER" "$PLAYER_AGENT" "$TOP_PROVIDER_FAMILY" "$TOP_AUTH_SURFACE" "$TOP_DM_MODEL" "$TOP_PLAYER_MODEL" \
+          "deterministic-ui-playtest" "qa/ui_playtest_score.py" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
  a_kept, a_first_turn_ready, b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:20]
 a_bucket, a_detail, b_bucket, b_detail = sys.argv[20:24]
 provider, player_agent = sys.argv[24:26]
+provider_family, auth_surface, dm_model, player_model, scorer_provider, scorer_model = sys.argv[26:32]
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
@@ -891,6 +947,9 @@ json.dump({
                "first_turn_ready": a_first_turn_ready == "true"},
     "part_b": {"persona_loop": b_res, "score_pass": b_score_pass == "true",
                "provider": provider, "player_agent": player_agent,
+               "provider_family": provider_family, "auth_surface": auth_surface,
+               "dm_model": dm_model, "player_model": player_model,
+               "scorer_provider": scorer_provider, "scorer_model": scorer_model,
                "original_result": b_res,
                "failure_bucket": b_bucket or None,
                "failure_detail": b_detail or None},

@@ -275,6 +275,16 @@ def evidence_manifest_blockers(payload: dict[str, Any]) -> list[str]:
     gap_count = evidence_gap_count(payload)
     if gap_count:
         blockers.append(f"evidence gaps: {gap_count}")
+    for field in (
+        "provider_family",
+        "dm_model",
+        "player_agent",
+        "player_model",
+        "scorer_provider",
+        "scorer_model",
+    ):
+        if not str(payload.get(field) or "").strip():
+            blockers.append(f"manifest missing {field}")
     handoff_gate = payload.get("handoff_gate") if isinstance(payload.get("handoff_gate"), dict) else {}
     if handoff_gate.get("ok") is False:
         reasons = handoff_gate.get("blocking_reasons")
