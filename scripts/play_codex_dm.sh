@@ -68,6 +68,13 @@ for budget_name in CLAWDND_PLAY_BUDGET CLAWDND_PLAY_SESSION_BUDGET; do
   [[ "${!budget_name}" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "$budget_name must be a positive decimal"
 done
 [[ "$CLAWDND_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail "CLAWDND_RUN_ID may only contain letters, numbers, '.', '_' and '-'"
+CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
+CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+[[ "$CLAWDND_LEAN_BEATS" =~ ^[01]$ ]] || fail "CLAWDND_LEAN_BEATS must be 0 or 1"
+if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
+  [[ "$CLAWDND_LEAN_TAIL" =~ ^[0-9]+$ ]] || fail "CLAWDND_LEAN_TAIL must be an integer when CLAWDND_LEAN_BEATS=1"
+  [ "$CLAWDND_LEAN_TAIL" -ge 1 ] || fail "CLAWDND_LEAN_TAIL must be >= 1 when CLAWDND_LEAN_BEATS=1"
+fi
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 command -v uv >/dev/null 2>&1 || fail "uv is required"
@@ -149,12 +156,15 @@ Path(out).write_text("\n".join(lines), encoding="utf-8")
 PY
 
 summary() {
-  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$CLAWDND_WORLD" "$CLAWDND_RUN_ID" "$CLAWDND_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${CLAWDND_PLAY_HERO:-}" <<'PY'
+  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$CLAWDND_WORLD" "$CLAWDND_RUN_ID" "$CLAWDND_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${CLAWDND_PLAY_HERO:-}" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$CLAWDND_PLAY_MAX_TURNS" "$GIT_SHA" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-mode, root, state_root, world, run_id, port, config, moves, chat, viewer_url, hero_raw = sys.argv[1:]
+(
+    mode, root, state_root, world, run_id, port, config, moves, chat, viewer_url,
+    hero_raw, model, lean_beats, lean_tail, max_turns, sha,
+) = sys.argv[1:]
 hero = {}
 if hero_raw.strip():
     try:
@@ -176,6 +186,12 @@ print(json.dumps({
     "run_id": run_id,
     "port": int(port),
     "viewer_url": viewer_url,
+    "model": model,
+    "wrapper": "scripts/play_codex_dm.sh",
+    "sha": sha,
+    "lean_beats": lean_beats == "1",
+    "lean_tail": int(lean_tail) if str(lean_tail).isdigit() else lean_tail,
+    "turn_cap": int(max_turns) if str(max_turns).isdigit() else max_turns,
     "config": str(Path(config).resolve(strict=False)),
     "moves": str(Path(moves).resolve(strict=False)),
     "chat": str(Path(chat).resolve(strict=False)),
@@ -223,33 +239,53 @@ PY
 campaign_tool_hint() {
   local cid="${1:-}"
   if [ -n "${cid//[[:space:]]/}" ]; then
-    printf 'Live campaign_id: "%s". Call scene_context("%s") first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid"
+    if [ "${CLAWDND_LEAN_BEATS:-1}" = "1" ]; then
+      printf 'Live campaign_id: "%s". Call scene_context(campaign_id="%s", recent_narration=%s) first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid" "$CLAWDND_LEAN_TAIL"
+    else
+      printf 'Live campaign_id: "%s". Call scene_context(campaign_id="%s") first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid"
+    fi
   else
     printf 'If the live campaign_id is unknown, call list_campaigns once, then scene_context for the active campaign. Do not discover campaign state with shell commands, rg, find, or filesystem reads.\n'
   fi
 }
 
-echo "[codex-dm-provider] run=$CLAWDND_RUN_ID world=$CLAWDND_WORLD port=$CLAWDND_PLAY_PORT mode=$MODE"
-echo "[codex-dm-provider] config=$CONFIG"
-echo "[codex-dm-provider] moves=$MOVES"
-echo "[codex-dm-provider] chat=$CHAT"
+codex_lean_reground_rule() {
+  local cid="${1:-}"
+  if [ "${CLAWDND_LEAN_BEATS:-1}" != "1" ]; then
+    printf 'Codex lean re-ground rule: lean mode is disabled for this run, but still use clawdnd-engine state as truth and do not infer campaign state from transcript memory.\n'
+    return 0
+  fi
+  if [ -n "${cid//[[:space:]]/}" ]; then
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST clawdnd-engine call after this prompt MUST be scene_context(campaign_id="%s", recent_narration=%s); resolve the player move from that live state plus rules tools, not from replaying chat history or reading files.\n' "$cid" "$CLAWDND_LEAN_TAIL"
+  else
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST clawdnd-engine calls MUST discover the active campaign with list_campaigns once, then scene_context(recent_narration=%s); resolve the player move from live state plus rules tools, not from replaying chat history or reading files.\n' "$CLAWDND_LEAN_TAIL"
+  fi
+}
 
-if [ "$MODE" != "run" ]; then
-  summary
-  exit 0
-fi
-
-# codex exec intentionally ignores user config so app/provider proofs do not
-# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported
-# provider model unless the operator explicitly selects another one. The Codex
-# CLI account default can drift to a model this auth surface rejects, so app
-# playability should not depend on that ambient default.
+# codex exec is pinned to the repo cwd and explicit per-run MCP overrides so
+# app/provider proofs do not depend on ambient project config. Pin a
+# ChatGPT-account-supported provider model unless the operator explicitly
+# selects another one. The Codex CLI account default can drift to a model this
+# auth surface rejects, so app playability should not depend on that default.
 CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
 MODEL_ARGS=()
 case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in
   ""|auto|default|cli-default) ;;
   *) MODEL_ARGS=(--model "$CODEX_MODEL") ;;
 esac
+GIT_SHA="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
+
+echo "[codex-dm-provider] run=$CLAWDND_RUN_ID world=$CLAWDND_WORLD port=$CLAWDND_PLAY_PORT mode=$MODE"
+echo "[codex-dm-provider] config=$CONFIG"
+echo "[codex-dm-provider] moves=$MOVES"
+echo "[codex-dm-provider] chat=$CHAT"
+echo "[codex-dm-provider] lean_beats=$CLAWDND_LEAN_BEATS recent_narration=$CLAWDND_LEAN_TAIL"
+
+if [ "$MODE" != "run" ]; then
+  summary
+  exit 0
+fi
+
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"
 export CLAWDND_RULES_OFFLINE=1
@@ -368,18 +404,23 @@ PY
 
 write_provider_status() {
   local status="$1" reason="$2" detail="$3"
-  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" <<'PY'
+  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" <<'PY'
 import json
 import os
 import sys
 import time
 from pathlib import Path
 
-path, status, reason, detail, provider, max_turns, turns = sys.argv[1:]
+path, status, reason, detail, provider, max_turns, turns, model, lean_beats, lean_tail, sha = sys.argv[1:]
 path = Path(path)
 payload = {
     "schema": "worldos.provider-status.v1",
     "provider": provider,
+    "model": model,
+    "wrapper": "scripts/play_codex_dm.sh",
+    "sha": sha,
+    "lean_beats": lean_beats == "1",
+    "lean_tail": int(lean_tail) if str(lean_tail).isdigit() else lean_tail,
     "status": status,
     "reason": reason,
     "detail": detail,
@@ -624,6 +665,7 @@ while true; do
     chatlog player "$PMSG"
     ACTIVE_CAMPAIGN_ID="$(discover_active_campaign_id)"
     CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
+    CODEX_LEAN_REGROUND_RULE="$(codex_lean_reground_rule "$ACTIVE_CAMPAIGN_ID")"
     MOVE_PROGRESS_TEXT="$(choose_move_progress_text "$DM_TURNS")"
     log_engine_narration "$ACTIVE_CAMPAIGN_ID" "$MOVE_PROGRESS_TEXT" \
       || echo "[codex-dm-provider] warning: could not record immediate move progress narration" >&2
@@ -636,6 +678,7 @@ $LIVE_PROGRESS_LOG_RULE
 $LIVE_DIALOGUE_LOG_RULE
 $STATE_DISCOVERY_RULE
 $CAMPAIGN_TOOL_HINT
+$CODEX_LEAN_REGROUND_RULE
 $SOCIAL_CHECK_TARGET_RULE
 $RULES_LOOKUP_RULE
 $PARLEY_TOOL_RULE

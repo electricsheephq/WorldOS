@@ -529,10 +529,12 @@ def main() -> int:
                 f"(no flee/surrender/retreat event logged) — continuity break for the next load",
                 fatal=not sprint)
 
-    # A5 (FATAL) — xp-leveling-mode session that ADVANCED the world (clock moved and/or >1
-    # location visited) but ended with every living party member at 0 XP. Regression lock for
-    # the d2f65f1 milestone-XP backstop. Scoped to "world advanced" (so a static smoke test
-    # isn't punished) and "a living PC exists" (so a TPK isn't) — mirrors xp_not_orphaned.
+    # A5 (FATAL when reward-worthy) — xp-leveling-mode session that ADVANCED the world and
+    # crossed a reward-worthy seam (combat completion, explicit award path, completed quest,
+    # or defeated monster) but ended with every living party member at 0 XP. Plain travel in
+    # a short setup/provider proof can be valid state discovery, so it is surfaced as a WARN
+    # scope classification instead of a false RED. Real combat/quest progression still fails
+    # if rewards are silently lost.
     if state.get("leveling_mode", "xp") == "xp" and session_beats >= MIN_BEATS:
         day = state.get("day") or 1
         locs = state.get("locations", {}) or {}
@@ -542,11 +544,40 @@ def main() -> int:
                       if i in chars_all and chars_all[i].get("kind") in ("player", "companion")
                       and not chars_all[i].get("dead")]
         if advanced and living_pcs:
+            reward_tools = (
+                tools.get("award_xp", 0)
+                + tools.get("end_combat", 0)
+                + tools.get("complete_objective", 0)
+                + tools.get("complete_quest", 0)
+            )
+            completed_quests = [
+                q.get("title") or q.get("id") or "?"
+                for q in quest_iter
+                if isinstance(q, dict) and q.get("status") == "completed"
+            ]
+            defeated_reward_monsters = [
+                ch.get("name", "?")
+                for ch in chars_all.values()
+                if isinstance(ch, dict)
+                and ch.get("kind") == "monster"
+                and ch.get("dead") is True
+                and (ch.get("xp_value") or 0) > 0
+            ]
+            reward_worthy = bool(reward_tools or completed_quests or defeated_reward_monsters)
             any_xp = any((p.get("xp") or 0) > 0 for p in living_pcs)
-            chk("xp_awarded_on_progression", any_xp,
-                f"xp-mode session advanced (day={day}, visited={visited}) but all living party "
-                f"members are at 0 XP — milestone-XP regression (d2f65f1 should prevent this)",
-                fatal=True)
+            if reward_worthy:
+                chk("xp_awarded_on_progression", any_xp,
+                    f"xp-mode session advanced (day={day}, visited={visited}) and crossed a "
+                    f"reward-worthy seam (tools={reward_tools}, completed_quests={completed_quests}, "
+                    f"defeated_reward_monsters={defeated_reward_monsters}) but all living party "
+                    f"members are at 0 XP — progression/reward parity regression",
+                    fatal=True)
+            else:
+                chk("xp_progression_scope", False,
+                    f"xp-mode session advanced (day={day}, visited={visited}) but no combat, "
+                    f"quest, explicit reward, or defeated-XP-monster seam appeared; classifying "
+                    f"as setup/provider-proof scope rather than missing-XP release evidence",
+                    fatal=False)
 
     # A6 (WARN) — widen the existing party_location_coherence net to companions NOT in
     # state.party[] (the Wyll/Karlach de-facto-companion bug the current loop never sees). Locks

@@ -142,6 +142,12 @@ def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
     assert summary["provider"] == "codex"
     assert summary["role"] == "dm"
     assert summary["viewer_url"].endswith(":8765/openworlds/")
+    assert summary["model"] == "gpt-5.5"
+    assert summary["wrapper"] == "scripts/play_codex_dm.sh"
+    assert summary["lean_beats"] is True
+    assert summary["lean_tail"] == 8
+    assert summary["turn_cap"] == 1
+    assert summary["sha"]
     assert summary["config"].endswith("/dm-layout/codex-provider/codex-dm.toml")
     assert summary["moves"].endswith("/dm-layout/player_moves.jsonl")
     assert summary["chat"].endswith("/dm-layout/chat.jsonl")
@@ -233,6 +239,25 @@ def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
     assert "Live campaign_id:" in source
     assert "Do not use shell commands, rg, find" in source
     assert "CAMPAIGN_TOOL_HINT" in source
+
+
+def test_codex_dm_wrapper_honors_lean_reground_contract():
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"' in source
+    assert 'CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"' in source
+    assert "CLAWDND_LEAN_TAIL must be an integer when CLAWDND_LEAN_BEATS=1" in source
+    assert "codex_lean_reground_rule()" in source
+    assert 'scene_context(campaign_id="%s", recent_narration=%s)' in source
+    assert "each Codex provider turn is a fresh invocation" in source
+    assert "not from replaying chat history or reading files" in source
+    assert "CODEX_LEAN_REGROUND_RULE" in source
+    assert 'lean_beats=$CLAWDND_LEAN_BEATS recent_narration=$CLAWDND_LEAN_TAIL' in source
+
+    start = source.index("You are the Dungeon Master mid-session")
+    move_prompt = source[start : source.index("Player move:", start)]
+    assert "$CAMPAIGN_TOOL_HINT" in move_prompt
+    assert "$CODEX_LEAN_REGROUND_RULE" in move_prompt
 
 
 def test_codex_dm_wrapper_prompts_are_self_contained_for_live_app_turns():

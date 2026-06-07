@@ -3653,6 +3653,38 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         return _combat_view(c)
 
 
+def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
+    """Return the AC the attack resolver should use, including engine-tracked buffs."""
+    base_ac = int(ch.armor_class or 10)
+    mage_armor = next(
+        (
+            eff
+            for eff in (ch.active_effects or [])
+            if (getattr(eff, "name", "") or "").lower() == "mage armor"
+        ),
+        None,
+    )
+    if mage_armor is None:
+        return base_ac, None
+    dex_mod = ch.ability_modifier(Ability.DEX)
+    mage_ac = 13 + dex_mod
+    if mage_ac <= base_ac:
+        return base_ac, {
+            "source": "Mage Armor",
+            "base_ac": base_ac,
+            "formula_ac": mage_ac,
+            "dex_modifier": dex_mod,
+            "applied": False,
+        }
+    return mage_ac, {
+        "source": "Mage Armor",
+        "base_ac": base_ac,
+        "formula_ac": mage_ac,
+        "dex_modifier": dex_mod,
+        "applied": True,
+    }
+
+
 @mcp.tool()
 def attack(
     campaign_id: str,
@@ -3788,7 +3820,8 @@ def attack(
         adv = advantage or cadv
         dis = disadvantage or cdis
         atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
-        hit = atk.crit or (not atk.fumble and atk.total >= target.armor_class)
+        target_ac, target_ac_detail = _effective_armor_class(target)
+        hit = atk.crit or (not atk.fumble and atk.total >= target_ac)
         # PARRY (#218): a defender with an available defensive reaction (+N AC vs one melee
         # attack it can see) turns the blow aside — but ONLY when doing so FLIPS this hit to a
         # miss. The engine never wastes the reaction on a crit it can't stop or a blow that
@@ -3802,7 +3835,7 @@ def attack(
             and c.combat.active
             and not combat.is_incapacitated(target)
             and Condition.BLINDED not in target.conditions
-            and atk.total < target.armor_class + target.parry
+            and atk.total < target_ac + target.parry
         ):
             target_cb = next(
                 (cb for cb in c.combat.order if cb.character_id == target_id), None
@@ -3810,7 +3843,7 @@ def attack(
             if target_cb is not None and not target_cb.reaction_used:
                 hit = False
                 target_cb.reaction_used = True
-                eff_ac = target.armor_class + target.parry
+                eff_ac = target_ac + target.parry
                 parry_info = {
                     "defender": target.name,
                     "ac_bonus": target.parry,
@@ -3835,9 +3868,12 @@ def attack(
             "crit_source": crit_why,
             "parry": parry_info,
             "hit": hit,
-            "target_ac": target.armor_class,
+            "target_ac": target_ac,
+            "target_base_ac": target.armor_class,
             "damage": None,
         }
+        if target_ac_detail is not None:
+            result["target_ac_detail"] = target_ac_detail
         # Commit the action economy now — an attack spends its action/reaction whether
         # or not it lands (a missed swing still used your action). The gate above already
         # proved it legal; record it so a second attack this turn is judged correctly.
@@ -4070,7 +4106,7 @@ def attack(
                     (cb for cb in c.combat.order if cb.character_id == target_id), None
                 )
                 if target_cb is not None and not target_cb.reaction_used:
-                    eff_ac = target.armor_class + target.parry
+                    eff_ac = target_ac + target.parry
                     result["parry_available"] = {
                         "defender": target.name,
                         "ac_bonus": target.parry,
@@ -4101,7 +4137,12 @@ def attack(
                 "event": "attack",
                 "outcome": outcome_label,
                 "actor": _combatant_ref(attacker),
-                "target": {**_combatant_ref(target), "ac": target.armor_class},
+                "target": {
+                    **_combatant_ref(target),
+                    "ac": target_ac,
+                    "base_ac": target.armor_class,
+                    "ac_detail": target_ac_detail,
+                },
                 "roll": {
                     "total": atk.total,
                     "natural": atk.natural,
