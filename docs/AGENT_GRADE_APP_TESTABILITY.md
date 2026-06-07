@@ -193,9 +193,10 @@ Minimum hook set for #484:
 
 ## Evidence Bundle
 
-Every built-app smoke or playtest writes one bundle under:
+Every built-app smoke or playtest writes one bundle under a local artifact root,
+for example:
 
-`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/`
+`<artifact-root>/worldos-agent-grade-app-testability/<run-id>/`
 
 The run id should include date/time, short SHA, provider, and gate kind. The
 harness should write to a temporary directory first and atomically promote the
@@ -234,8 +235,8 @@ session-surface snapshots, moves, provider trace, console logs, network logs,
 and action logs.
 
 Bundles are evidence, not source. Do not commit them. Screenshots may contain
-private art and must remain in `/Volumes/LEXAR/Codex` unless the owner explicitly
-chooses to publish a redacted excerpt.
+private art and must remain in the local artifact root unless the owner
+explicitly chooses to publish a redacted excerpt.
 
 ## Gate Split
 
@@ -251,12 +252,12 @@ longer exploratory/persona playtests.
 Default local invocation:
 
 ```bash
-cd /Users/lume/ClawDnD-val
+cd /path/to/WorldOS
 python3 qa/app_handoff_gate.py \
   --web-beats 5 \
   --built-beats 5 \
   --codex-moves 1 \
-  --art-root /Users/lume/ClawDnD-val \
+  --art-root /path/to/WorldOS \
   --scripted-budget 1.00 \
   --codex-budget 3.00 \
   --timeout 90 \
@@ -264,7 +265,7 @@ python3 qa/app_handoff_gate.py \
 ```
 
 The handoff gate writes
-`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/handoff.json`
+`<artifact-root>/worldos-agent-grade-app-testability/<run-id>/handoff.json`
 with `schema: worldos.app-handoff.v1`. `handoff_score` is `100` only when every
 mandatory gate passes on the same clean commit SHA:
 
@@ -334,11 +335,12 @@ Pass requires #466 conditions:
   session-surface evidence.
 - RRI returns non-partial release-ready status.
 
-Before using the 32GB support VM for this gate, run
-`python3 qa/support_vm_preflight.py` on that VM checkout with the exact target
-SHA. The preflight artifact must prove the VM repo SHA, Codex CLI/auth status,
-`uv`, Node/npm/Playwright/Chromium availability, private-art classification,
-env-var redaction, budget/concurrency cap, teardown commands, and artifact return path.
+Before using a high-memory remote QA host for this gate, run
+`python3 qa/support_vm_preflight.py` on that host's checkout with the exact target
+SHA. The preflight artifact must prove the host repo SHA, selected provider
+CLI/auth status, `uv`, Node/npm/Playwright/Chromium availability, art
+classification, env-var redaction, budget/concurrency cap, teardown commands,
+and artifact return path.
 It is a readiness check, not release evidence; the release verdict still comes
 only from `qa/release_readiness.py` over complete same-SHA artifacts plus the
 Mac built-app handoff proof.
@@ -354,15 +356,15 @@ failures as product evidence, not as a reason to build more proxy machinery.
 - No replacement for #324 or #466.
 - No treating dev viewer, proxy port, deterministic provider, or one-turn
   provider proof as release truth.
-- No broad local persona sweeps on the 16 GB Mac when CI or the support VM is the
-  safer validation surface.
+- No broad local persona sweeps on a memory-constrained local machine when CI or
+  a high-memory remote QA host is the safer validation surface.
 
 ## Invariants
 
 - Engine is the sole writer of campaign state.
 - OpenWorlds/native app is a thin reader plus `/move` intent submitter.
 - `dist/WorldOS.app` is the product surface and release truth.
-- Private art stays outside git; evidence routes to `/Volumes/LEXAR/Codex`.
+- Private art stays outside git; evidence routes to the configured local artifact root.
 - Deterministic test providers are gated and never silently active in normal
   player mode.
 - Harness failures use crisp reason buckets; missing evidence never counts as a
