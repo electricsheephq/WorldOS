@@ -60,7 +60,7 @@ Important fields:
 
 The scripted provider is a deterministic test provider. Use it to prove app wiring before spending model time.
 
-It is not release proof by itself. It should still exercise the same app/engine shape: visible narration, enabled actions, accepted moves, and actionable final state.
+It is not release-proof by itself. It should still exercise the same app/engine shape: visible narration, enabled actions, accepted moves, and actionable final state.
 
 ## Evidence Bundles
 

@@ -13,7 +13,7 @@ a "Tolkien" story-craft lens).
 
 ## The shape
 
-```
+```text
 Player ⇄ OpenWorlds/app ⇄ provider DM (+ companion) ─▶ MCP servers (uv) ─▶ on-disk truth
                                           │
    engine  (SOLE WRITER, ~58 tools) ──────┤   start_world / create_campaign / start_adventure ─┐
