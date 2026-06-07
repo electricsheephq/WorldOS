@@ -172,6 +172,7 @@ final class AppProcessService: ObservableObject {
         let resolvedArtRepo = try resolvedArtRepoPath(requestedArtRepoPath, repoURL: repoURL)
         let launchPreferences = ProviderPreferences(
             codexCommand: preferences.codexCommand,
+            codexHome: preferences.codexHome,
             openClawCommand: preferences.openClawCommand,
             claudeDMModel: preferences.claudeDMModel,
             codexDMModel: preferences.codexDMModel,

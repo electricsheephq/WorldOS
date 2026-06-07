@@ -167,23 +167,40 @@ def validate_app_status(
     return "", ""
 
 
+def normalize_provider_trace_summary(payload: dict[str, Any], provider: str, provider_dir: Path) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized.setdefault("schema", "worldos.provider-trace-summary.v1")
+    normalized.setdefault("provider", provider)
+    normalized.setdefault("trace_dir", str(provider_dir))
+    for key in ("failed_or_error_count", "provider_infra_warning_count", "provider_policy_warning_count", "line_count"):
+        normalized.setdefault(key, 0)
+    for key in ("samples", "provider_infra_samples", "provider_policy_samples"):
+        if not isinstance(normalized.get(key), list):
+            normalized[key] = []
+    normalized.setdefault(
+        "trace_exists",
+        provider_dir.is_dir()
+        or bool(normalized["samples"])
+        or int(normalized.get("failed_or_error_count") or 0) > 0,
+    )
+    return normalized
+
+
 def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
     provider_dir = play_state / f"{provider}-provider"
     summary_path = provider_dir / "summary.json"
     if summary_path.exists():
         payload = read_json(summary_path)
         if payload:
-            payload.setdefault("provider", provider)
-            payload.setdefault("failed_or_error_count", 0)
-            payload.setdefault("provider_infra_warning_count", 0)
-            payload.setdefault("provider_infra_samples", [])
-            return payload
+            return normalize_provider_trace_summary(payload, provider, provider_dir)
 
     failed = 0
     infra_warnings = 0
+    policy_warnings = 0
     parsed = 0
     samples: list[str] = []
     infra_samples: list[str] = []
+    policy_samples: list[str] = []
     patterns = ("*stdout*.jsonl", "*stderr*.log", "*.ndjson", "*.jsonl", "*.log", "*.txt")
     seen: set[Path] = set()
     for pattern in patterns:
@@ -212,6 +229,23 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
                     status = str(item.get("status") or parsed_payload.get("status") or "").lower()
                     error = item.get("error") if "error" in item else parsed_payload.get("error")
                     event_type = str(parsed_payload.get("type") or item.get("type") or "").lower()
+                    item_type = str(item.get("type") or "").lower()
+                    error_message = ""
+                    if isinstance(error, dict):
+                        error_message = str(error.get("message") or "")
+                    elif error:
+                        error_message = str(error)
+                    error_lower = error_message.lower()
+                    is_policy_cancel = (
+                        event_type == "item.completed"
+                        and item_type == "mcp_tool_call"
+                        and "tool call was cancelled" in error_lower
+                    )
+                    if is_policy_cancel:
+                        policy_warnings += 1
+                        if len(policy_samples) < 5:
+                            policy_samples.append(line[:300])
+                        continue
                     is_bad = bool(error) or status in {"failed", "error", "cancelled", "canceled"} or event_type in {"turn.failed", "turn.error"}
                     if is_bad:
                         failed += 1
@@ -239,17 +273,50 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
                     failed += 1
                     if len(samples) < 5:
                         samples.append(line[:300])
-    return {
-        "schema": "worldos.provider-trace-summary.v1",
-        "provider": provider,
-        "trace_dir": str(provider_dir),
-        "trace_exists": provider_dir.is_dir(),
-        "line_count": parsed,
-        "failed_or_error_count": failed,
-        "provider_infra_warning_count": infra_warnings,
-        "samples": samples,
-        "provider_infra_samples": infra_samples,
-    }
+    return normalize_provider_trace_summary(
+        {
+            "line_count": parsed,
+            "failed_or_error_count": failed,
+            "provider_infra_warning_count": infra_warnings,
+            "provider_policy_warning_count": policy_warnings,
+            "samples": samples,
+            "provider_infra_samples": infra_samples,
+            "provider_policy_samples": policy_samples,
+        },
+        provider,
+        provider_dir,
+    )
+
+
+def provider_trace_failure_detail(trace: dict[str, Any]) -> str:
+    if not trace.get("trace_exists"):
+        return "provider trace missing"
+    samples = trace.get("samples") if isinstance(trace.get("samples"), list) else []
+    sample_text = "\n".join(str(sample) for sample in samples).lower()
+    if "usage limit" in sample_text or "try again" in sample_text:
+        return "Codex CLI usage limit"
+    if int(trace.get("failed_or_error_count") or 0) > 0:
+        return "provider trace reported failed/error/cancellation events"
+    return ""
+
+
+def traced_failure_details(
+    *,
+    gate_dir: Path,
+    run_id: str,
+    provider: str,
+    screenshots: list[str],
+    gaps: list[dict[str, str]],
+) -> dict[str, Any]:
+    details: dict[str, Any] = {"screenshots": screenshots, "evidence_gaps": gaps}
+    try:
+        smoke.copy_play_state(run_id, gate_dir)
+    except Exception as exc:  # noqa: BLE001
+        details["copy_play_state_error"] = str(exc)
+    trace = provider_trace_summary(ROOT / "play-state" / run_id, provider)
+    json_dump(gate_dir / "provider-trace-summary.json", trace)
+    details["provider_trace"] = trace
+    return details
 
 
 def summarize_hook_probe(path: Path) -> tuple[bool, str, dict[str, Any]]:
@@ -595,12 +662,19 @@ def drive_moves(
             surface, _ = smoke.fetch_json(smoke.surface_url(base_url, status))
             json_dump(gate_dir / f"session-surface.beat-{beat}.json", surface)
         except Exception as exc:  # noqa: BLE001
-            return False, "no_provider", f"session-surface fetch failed after beat {beat}: {exc}", {"screenshots": screenshots, "evidence_gaps": gaps}
+            details = traced_failure_details(gate_dir=gate_dir, run_id=run_id, provider=provider, screenshots=screenshots, gaps=gaps)
+            trace_detail = provider_trace_failure_detail(details.get("provider_trace") or {})
+            prefix = f"{trace_detail}; " if trace_detail else ""
+            return False, "no_provider", f"{prefix}session-surface fetch failed after beat {beat}: {exc}", details
         smoke.write_text_snapshot(gate_dir / "a11y" / f"beat-{beat}.html", smoke.html_text(base_url))
         smoke.capture_openworlds_screenshot(base_url=base_url, out=gate_dir, port=expected_port, label=f"beat-{beat:03d}", gaps=gaps, screenshots=screenshots)
         if not advanced:
             suffix = f"; last app-status error: {last_status_error}" if last_status_error else ""
-            return False, "no_narration", f"narration did not advance after {provider} beat {beat}{suffix}", {"screenshots": screenshots, "evidence_gaps": gaps}
+            details = traced_failure_details(gate_dir=gate_dir, run_id=run_id, provider=provider, screenshots=screenshots, gaps=gaps)
+            trace_detail = provider_trace_failure_detail(details.get("provider_trace") or {})
+            if trace_detail:
+                return False, "no_provider", f"{trace_detail}; narration did not advance after {provider} beat {beat}{suffix}", details
+            return False, "no_narration", f"narration did not advance after {provider} beat {beat}{suffix}", details
 
     final_status = smoke.wait_for_status(base_url, gate_dir, timeout=5)
     json_dump(gate_dir / "app-status.final.json", final_status)
@@ -608,7 +682,10 @@ def drive_moves(
         final_surface, _ = smoke.fetch_json(smoke.surface_url(base_url, final_status))
         json_dump(gate_dir / "session-surface.final.json", final_surface)
     except Exception as exc:  # noqa: BLE001
-        return False, "no_provider", f"final session-surface fetch failed: {exc}", {"screenshots": screenshots, "evidence_gaps": gaps}
+        details = traced_failure_details(gate_dir=gate_dir, run_id=run_id, provider=provider, screenshots=screenshots, gaps=gaps)
+        trace_detail = provider_trace_failure_detail(details.get("provider_trace") or {})
+        prefix = f"{trace_detail}; " if trace_detail else ""
+        return False, "no_provider", f"{prefix}final session-surface fetch failed: {exc}", details
     smoke.write_text_snapshot(gate_dir / "a11y" / "final.html", smoke.html_text(base_url))
     smoke.capture_openworlds_screenshot(base_url=base_url, out=gate_dir, port=expected_port, label="final", gaps=gaps, screenshots=screenshots)
     smoke.copy_play_state(run_id, gate_dir)
@@ -698,6 +775,7 @@ def run_native_provider_gate(
         "WOS_APP_PART": "A",
         "WOS_APP_KEEP_MINTED_BACKEND": "1",
         "WOS_APP_SELECTED_PROVIDER": provider,
+        "WOS_APP_NATIVE_AUTOSTART": "1",
     })
     if args.art_root:
         env["WORLDOS_ART_REPO_ROOT"] = args.art_root

@@ -445,6 +445,13 @@ private func providerEnvironment(
         env["CLAWDND_PLAY_HERO"] = trimmedHero
         env["WORLDOS_PLAY_HERO"] = trimmedHero
     }
+    let trimmedCodexHome = preferences.codexHome.trimmingCharacters(in: .whitespacesAndNewlines)
+    if kind == .codex && !trimmedCodexHome.isEmpty {
+        let expandedCodexHome = (trimmedCodexHome as NSString).expandingTildeInPath
+        if expandedCodexHome.hasPrefix("/") {
+            env["CODEX_HOME"] = expandedCodexHome
+        }
+    }
     setProviderModelEnvironment(kind: kind, preferences: preferences, environment: &env)
     return env
 }

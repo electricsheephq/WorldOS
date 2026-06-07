@@ -24,6 +24,55 @@ command -v codex >/dev/null 2>&1 || {
   exit 127
 }
 
+codex_config_path() {
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s/config.toml\n' "$CODEX_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    printf '%s/.codex/config.toml\n' "$HOME"
+  fi
+}
+
+codex_top_level_service_tier() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    text = path.read_text(encoding="utf-8", errors="replace")
+except OSError:
+    raise SystemExit(0)
+for raw in text.splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("["):
+        break
+    match = re.match(r"""service_tier\s*=\s*(['"]?)([^'"\s#]+)\1""", line)
+    if match:
+        print(match.group(2))
+        break
+PY
+}
+
+validate_codex_service_tier() {
+  local config tier
+  config="$(codex_config_path)"
+  [ -n "${config//[[:space:]]/}" ] || return 0
+  [ -f "$config" ] || return 0
+  tier="$(codex_top_level_service_tier "$config")"
+  case "$tier" in
+    ""|fast|flex) return 0 ;;
+    *)
+      echo "[score_codex] Codex CLI config drift: service_tier must be unset, 'fast', or 'flex' in $config for codex-cli >=0.128.0; found '$tier'. Run scripts/codex_qa_home.sh and set CODEX_HOME, or update the selected Codex config." >&2
+      exit 2
+      ;;
+  esac
+}
+
+validate_codex_service_tier
+
 PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/worldos-score-codex.XXXXXX.prompt")"
 LAST="${OUT%.json}.last.txt"
 RAW="${OUT%.json}.codex.raw.jsonl"

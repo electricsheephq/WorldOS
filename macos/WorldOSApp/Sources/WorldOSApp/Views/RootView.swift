@@ -13,6 +13,7 @@ struct RootView: View {
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
+    @AppStorage("codexHome") private var codexHome: String = ""
     @AppStorage("openClawProviderCommand") private var openClawProviderCommand: String = ""
     @AppStorage("claudeDMModel") private var claudeDMModel: String = ProviderPreferences.defaultClaudeDMModel
     @AppStorage("codexDMModel") private var codexDMModel: String = ProviderPreferences.defaultCodexDMModel
@@ -27,6 +28,9 @@ struct RootView: View {
     @AppStorage("sessionBudget") private var sessionBudget: String = "15.00"
     @AppStorage("maxTurns") private var maxTurns: String = "40"
     @AppStorage("voiceBackend") private var voiceBackend: String = "null"
+    @AppStorage("qaAutoStartProvider") private var qaAutoStartProvider: String = ""
+    @AppStorage("qaAutoStartWorld") private var qaAutoStartWorld: String = ""
+    @AppStorage("qaAutoStartRunID") private var qaAutoStartRunID: String = ""
 
     @State private var webURL: URL?
     @State private var webViewErrorMessage: String?
@@ -75,7 +79,9 @@ struct RootView: View {
         }
         .onAppear {
             refresh()
-            startOpenWorlds()
+            if !startQAAutoProviderIfRequested() {
+                startOpenWorlds()
+            }
         }
         .onChange(of: repoPath) { _ in
             refresh()
@@ -142,6 +148,54 @@ struct RootView: View {
         isStarting = false
         webURL = url
         launchMessage = "Provider session active"
+        return true
+    }
+
+    private func startQAAutoProviderIfRequested() -> Bool {
+        let providerRaw = qaAutoStartProvider.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !providerRaw.isEmpty else { return false }
+        qaAutoStartProvider = ""
+        let world = qaAutoStartWorld.trimmingCharacters(in: .whitespacesAndNewlines)
+        let runID = qaAutoStartRunID.trimmingCharacters(in: .whitespacesAndNewlines)
+        qaAutoStartWorld = ""
+        qaAutoStartRunID = ""
+
+        guard let provider = ProviderKind(rawValue: providerRaw), provider.isLaunchEnabled else {
+            launchError = "QA auto-start provider is unavailable: \(providerRaw)"
+            return true
+        }
+
+        launchTask?.cancel()
+        launchTask = Task { @MainActor in
+            isStarting = true
+            launchError = nil
+            webViewErrorMessage = nil
+            webURL = nil
+            launchMessage = "Starting \(provider.displayName)"
+            do {
+                let url = try processService.startProviderSession(
+                    kind: provider,
+                    repoPath: activeRepoPath,
+                    world: world.isEmpty ? defaultWorld : world,
+                    runId: runID.isEmpty ? Self.newRunID() : runID,
+                    preferredPort: preferredPort,
+                    companions: "",
+                    stateDir: stateDir,
+                    artRepoPath: activeArtRepoPath,
+                    preferences: providerPreferences
+                )
+                launchMessage = "Waiting for provider viewer"
+                try await waitForOpenWorlds(url)
+                guard !Task.isCancelled else { return }
+                processService.markProviderViewerReady()
+                webURL = url
+                launchMessage = "Provider session active"
+            } catch {
+                guard !Task.isCancelled else { return }
+                launchError = error.localizedDescription
+            }
+            isStarting = false
+        }
         return true
     }
 
@@ -387,6 +441,7 @@ struct RootView: View {
     private var providerPreferences: ProviderPreferences {
         ProviderPreferences(
             codexCommand: codexProviderCommand,
+            codexHome: codexHome,
             openClawCommand: openClawProviderCommand,
             claudeDMModel: claudeDMModel,
             codexDMModel: codexDMModel,
@@ -555,6 +610,7 @@ struct DebugControlCenterView: View {
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
+    @AppStorage("codexHome") private var codexHome: String = ""
     @AppStorage("openClawProviderCommand") private var openClawProviderCommand: String = ""
     @AppStorage("claudeDMModel") private var claudeDMModel: String = ProviderPreferences.defaultClaudeDMModel
     @AppStorage("codexDMModel") private var codexDMModel: String = ProviderPreferences.defaultCodexDMModel
@@ -640,6 +696,7 @@ struct DebugControlCenterView: View {
                 selectedProviderRaw: $selectedProviderRaw,
                 defaultWorld: $defaultWorld,
                 codexProviderCommand: $codexProviderCommand,
+                codexHome: $codexHome,
                 openClawProviderCommand: $openClawProviderCommand,
                 claudeDMModel: $claudeDMModel,
                 codexDMModel: $codexDMModel,
@@ -675,6 +732,7 @@ struct DebugControlCenterView: View {
                 repoPath: activeRepoPathBinding,
                 artRepoPath: activeArtRepoPathBinding,
                 codexProviderCommand: $codexProviderCommand,
+                codexHome: $codexHome,
                 openClawProviderCommand: $openClawProviderCommand,
                 claudeDMModel: $claudeDMModel,
                 codexDMModel: $codexDMModel,
@@ -698,6 +756,7 @@ struct DebugControlCenterView: View {
                 selectedProviderRaw: $selectedProviderRaw,
                 defaultWorld: $defaultWorld,
                 codexProviderCommand: $codexProviderCommand,
+                codexHome: $codexHome,
                 openClawProviderCommand: $openClawProviderCommand,
                 claudeDMModel: $claudeDMModel,
                 codexDMModel: $codexDMModel,

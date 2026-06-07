@@ -14,6 +14,52 @@ fail() {
   exit 2
 }
 
+codex_config_path() {
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s/config.toml\n' "$CODEX_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    printf '%s/.codex/config.toml\n' "$HOME"
+  fi
+}
+
+codex_top_level_service_tier() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    text = path.read_text(encoding="utf-8", errors="replace")
+except OSError:
+    raise SystemExit(0)
+for raw in text.splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("["):
+        break
+    match = re.match(r"""service_tier\s*=\s*(['"]?)([^'"\s#]+)\1""", line)
+    if match:
+        print(match.group(2))
+        break
+PY
+}
+
+validate_codex_service_tier() {
+  local config tier
+  config="$(codex_config_path)"
+  [ -n "${config//[[:space:]]/}" ] || return 0
+  [ -f "$config" ] || return 0
+  tier="$(codex_top_level_service_tier "$config")"
+  case "$tier" in
+    ""|fast|flex) return 0 ;;
+    *)
+      fail "Codex CLI config drift: service_tier must be unset, 'fast', or 'flex' in $config for codex-cli >=0.128.0; found '$tier'. Run scripts/codex_qa_home.sh and set CODEX_HOME, or update the selected Codex config."
+      ;;
+  esac
+}
+
 MODE="run"
 case "${1:-}" in
   --dry-run) MODE="dry-run"; shift ;;
@@ -112,6 +158,8 @@ PROVIDER_STATUS="$RUN_DIR/provider_status.json"
 
 mkdir -p "$PROVIDER_DIR"
 touch "$MOVES" "$CHAT"
+exec > >(tee -a "$PROVIDER_DIR/provider-wrapper.stdout.log") \
+  2> >(tee -a "$PROVIDER_DIR/provider-wrapper.stderr.log" >&2)
 
 python3 - "$ROOT" "$RUN_DIR" "$CONFIG" <<'PY'
 import json
@@ -295,6 +343,7 @@ if [ "$MODE" = "dry-run" ] || [ "$MODE" = "smoke" ]; then
   summary
   exit 0
 fi
+validate_codex_service_tier
 
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"

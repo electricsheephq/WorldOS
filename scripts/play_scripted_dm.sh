@@ -46,6 +46,8 @@ mkdir -p "$TRACE_DIR"
 : > "$MOVES"
 : > "$CHAT"
 : > "$TRACE"
+exec > >(tee -a "$TRACE_DIR/provider-wrapper.stdout.log") \
+  2> >(tee -a "$TRACE_DIR/provider-wrapper.stderr.log" >&2)
 
 json_append() {
   python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
