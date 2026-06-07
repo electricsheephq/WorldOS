@@ -274,6 +274,11 @@ Fair-test shape:
 
 - DM provider: `CODEX_HOME=~/.codex-worldos-qa WORLDOS_CODEX_MODEL=gpt-5.5` or `gpt-5.4`
   through `scripts/play_codex_dm.sh`, which wires engine/rules/voice MCP per `codex exec -c`.
+- Fixture: use an explicit origin template, not a loose canon-name pickup, when comparing providers.
+  The Codex provider accepts `CLAWDND_PLAY_HERO='{"origin":"template:rolan-evoker"}'`
+  or `CLAWDND_PLAY_CANON_HERO=template:rolan-evoker`, seating `Rolan - Tiefling Evoker`
+  through the engine's `start_character(origin="template:rolan-evoker")` path so subclass,
+  level, ability scores, and spell list are preserved in evidence.
 - Player: Sonnet via the constrained `clawdnd-player` facade, using a combat-seeking persona
   when the question is mechanical viability.
 - Scoring: Sonnet `qa/score.sh` on Tolkien story and Angry-DM 5e fidelity, plus
