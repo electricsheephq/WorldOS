@@ -197,11 +197,11 @@ if [ "$MODE" != "run" ]; then
   exit 0
 fi
 
-# codex exec intentionally ignores user config so app/provider proofs do not
-# inherit local prompts or sandbox policy. Pin a ChatGPT-account-supported
-# provider model unless the operator explicitly selects another one. The Codex
-# CLI account default can drift to a model this auth surface rejects, so app
-# playability should not depend on that ambient default.
+# codex exec is pinned to the repo cwd and explicit per-run MCP overrides so
+# app/provider proofs do not depend on ambient project config. Pin a
+# ChatGPT-account-supported provider model unless the operator explicitly
+# selects another one. The Codex CLI account default can drift to a model this
+# auth surface rejects, so app playability should not depend on that default.
 CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
 MODEL_ARGS=()
 case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in

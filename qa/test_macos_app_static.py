@@ -99,7 +99,8 @@ class MacOSAppStaticContractTests(unittest.TestCase):
             self.assertIn("auto|default|cli-default", script)
             self.assertNotIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"', script)
             self.assertIn('MODEL_ARGS=(--model "$CODEX_MODEL")', script)
-            self.assertIn("--ignore-user-config", script)
+            self.assertIn('--cd "$ROOT"', script)
+            self.assertIn("-c \"mcp_servers.", script)
 
     def test_codex_dm_provider_feeds_live_progress_events(self):
         script = self.read("scripts/play_codex_dm.sh")

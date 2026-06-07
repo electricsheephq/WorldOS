@@ -876,6 +876,41 @@ def test_mage_armor_survives_combat_but_expires_on_long_rest():
     assert _effects(cid, w) == []
 
 
+def test_mage_armor_effective_ac_is_used_for_attack_resolution(monkeypatch):
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(
+        cid, "Gale", kind="player", class_name="Wizard", armor_class=12,
+        apply_srd_defaults=True,
+        abilities={"dexterity": 13, "intelligence": 16, "constitution": 12},
+    )["id"]
+    server.learn_spells(cid, w, ["Mage Armor"])
+    server.prepare_spells(cid, w, ["Mage Armor"])
+    server.cast_spell(cid, w, "Mage Armor")  # AC should be 13 + DEX(1) = 14
+    effect = _effects(cid, w)[0]
+    assert effect["armor_base_ac"] == 12
+    assert effect["armor_formula_ac"] == 14
+    attacker = server.create_character(
+        cid, "Goblin", kind="monster", max_hp=20, armor_class=12,
+    )["id"]
+
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(13))
+    res = server.attack(cid, attacker, w, attack_bonus=0, damage_dice="1d6",
+                        damage_type="slashing")
+
+    assert res["attack_roll"]["total"] == 13
+    assert res["hit"] is False
+    assert res["target_ac"] == 14
+    assert res["target_base_ac"] == 12
+    assert res["target_ac_detail"] == {
+        "source": "Mage Armor",
+        "base_ac": 12,
+        "formula_ac": 14,
+        "dex_modifier": 1,
+        "applied": True,
+    }
+    assert server.get_character(cid, w)["current_hp"] == server.get_character(cid, w)["max_hp"]
+
+
 def test_short_rest_expires_sub_hour_but_keeps_mage_armor():
     cid = server.create_campaign("S")["id"]
     w = server.create_character(

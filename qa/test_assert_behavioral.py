@@ -215,7 +215,7 @@ def test_a3_downgraded_to_warn_in_combat_sprint(tmp_path):
     assert rc == 0, out  # sprint lane → WARN, not RED
 
 
-# ── A5: xp-mode advanced but PC at 0 XP (FATAL) ────────────────────────────────
+# ── A5: xp-mode advanced + reward-worthy but PC at 0 XP (FATAL) ────────────────
 
 def _advanced_xp_state(party_xp: int) -> dict:
     return {
@@ -242,7 +242,7 @@ def _enough_beats_chat(tmp_path) -> str:
     return str(chat)
 
 
-def test_a5_advanced_zero_xp_is_red(tmp_path):
+def test_a5_setup_travel_zero_xp_is_warn_not_red(tmp_path):
     run = tmp_path / "run.jsonl"
     run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"
                    + json.dumps(_user_tool_result("r1", json.dumps({"total": 12}))), encoding="utf-8")
@@ -251,8 +251,57 @@ def test_a5_advanced_zero_xp_is_red(tmp_path):
     chat = _enough_beats_chat(tmp_path)
     proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
                           capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "xp_progression_scope" in out
+    assert "xp_awarded_on_progression" not in out
+
+
+def test_a5_completed_quest_zero_xp_is_red(tmp_path):
+    run = tmp_path / "run.jsonl"
+    run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"
+                   + json.dumps(_user_tool_result("r1", json.dumps({"total": 12}))), encoding="utf-8")
+    st = tmp_path / "state.json"
+    state = _advanced_xp_state(0)
+    state["quests"] = {
+        "q1": {
+            "title": "Rescue the Courier",
+            "status": "completed",
+            "objectives": ["Find the courier"],
+            "completed_objectives": ["Find the courier"],
+        }
+    }
+    st.write_text(json.dumps(state), encoding="utf-8")
+    chat = _enough_beats_chat(tmp_path)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
+                          capture_output=True, text=True)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "xp_awarded_on_progression" in (proc.stdout + proc.stderr)
+
+
+def test_a5_already_awarded_completed_quest_zero_xp_is_warn_not_red(tmp_path):
+    run = tmp_path / "run.jsonl"
+    run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"
+                   + json.dumps(_user_tool_result("r1", json.dumps({"total": 12}))), encoding="utf-8")
+    st = tmp_path / "state.json"
+    state = _advanced_xp_state(0)
+    state["quests"] = {
+        "q1": {
+            "title": "Rescue the Courier",
+            "status": "completed",
+            "objectives": ["Find the courier"],
+            "completed_objectives": ["Find the courier"],
+            "milestone_awarded": True,
+        }
+    }
+    st.write_text(json.dumps(state), encoding="utf-8")
+    chat = _enough_beats_chat(tmp_path)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
+                          capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "xp_progression_scope" in out
+    assert "xp_awarded_on_progression" not in out
 
 
 def test_a5_clean_when_party_has_xp(tmp_path):
@@ -260,7 +309,16 @@ def test_a5_clean_when_party_has_xp(tmp_path):
     run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"
                    + json.dumps(_user_tool_result("r1", json.dumps({"total": 12}))), encoding="utf-8")
     st = tmp_path / "state.json"
-    st.write_text(json.dumps(_advanced_xp_state(300)), encoding="utf-8")
+    state = _advanced_xp_state(300)
+    state["quests"] = {
+        "q1": {
+            "title": "Rescue the Courier",
+            "status": "completed",
+            "objectives": ["Find the courier"],
+            "completed_objectives": ["Find the courier"],
+        }
+    }
+    st.write_text(json.dumps(state), encoding="utf-8")
     chat = _enough_beats_chat(tmp_path)
     proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
                           capture_output=True, text=True)
