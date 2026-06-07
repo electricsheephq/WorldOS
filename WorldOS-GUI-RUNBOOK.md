@@ -10,8 +10,9 @@
 >
 > Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
 > and the default place to build/run/test the GUI and native app. The latest same-SHA app proof is
-> `9545383` after #508; later docs-only commits may sit above that proof without becoming new product
-> proof. Verify `origin/main` before acting, and rerun the handoff gate before pairing newer persona artifacts.
+> `da05101` from the 2026-06-07 current-main handoff rerun; later commits may sit above that proof
+> without becoming new product proof. Verify `origin/main` before acting, and rerun the handoff gate
+> before pairing newer persona artifacts.
 > Lexar is for evidence/snapshots/logs, not the default runtime tree, because macOS permission prompts
 > can break AI/browser tests when assets live on the external drive. For tracked GUI edits, prefer a
 > same-disk local worktree; use Lexar worktrees only for non-GUI slices that will not launch against art.
@@ -121,17 +122,29 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
   accessibility review showed the chronicle with one opening narration row and one follow-up narration row,
   not duplicate chat/event prose. This closes the #479 diagnostic blocker, but release still requires #466's
   full non-partial RRI gate.
+- The current-main handoff gate
+  (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`,
+  build `da05101`) is the current fastest GUI trust proof. It scored `handoff_score=100` with web-scripted
+  smoke 5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built `dist/WorldOS.app`
+  Codex-provider playtest 1 move. All three evidence manifests passed with zero gaps, private art present,
+  screenshots, app-status/session-surface snapshots, move logs, provider trace, console/network/action logs,
+  and failure bucket fields. The Codex trace summary reported `trace_exists=true`, `line_count=350`, and
+  `failed_or_error_count=0`. `validate_handoff_json(..., "da05101")` returned `valid=True`, `gaps=0`.
+  The first canonical checkout attempt
+  (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main/`)
+  passed the product gates but is not accepted as release evidence because unrelated local untracked files
+  made the checkout dirty. The clean same-disk worktree proof above supersedes the `9545383`, `fd9dba5`,
+  and `4a0efe1` handoffs as current proof. If #466 persona artifacts are produced from a newer SHA, rerun
+  the Mac handoff on that same SHA before RRI rollup. It is the fast GUI velocity gate, not the release verdict.
 - The post-#508 handoff gate
   (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T100304Z-9545383/`, build
-  `9545383`) is the current fastest GUI trust proof. It scored `handoff_score=100` with web-scripted smoke
+  `9545383`) was the prior fastest GUI trust proof. It scored `handoff_score=100` with web-scripted smoke
   5 moves, built `dist/WorldOS.app` scripted smoke 5 moves, and built `dist/WorldOS.app` Codex-provider
   playtest 1 move. All three evidence manifests passed with zero gaps, private art present, screenshots,
   app-status/session-surface snapshots, move logs, provider trace, console/network/action logs, and failure
   bucket fields. The Codex trace summary reported `trace_exists=true`, `line_count=80`, and
   `failed_or_error_count=0`. `validate_handoff_json(..., "9545383")` returned `valid=True`, `gaps=0`.
-  This supersedes the `fd9dba5` and `4a0efe1` handoffs as current proof. If #466 persona artifacts are
-  produced from a newer SHA, rerun the Mac handoff on that same SHA before RRI rollup.
-  It is the fast GUI velocity gate, not the release verdict.
+  This is now historical and superseded by the `da05101` current-main handoff above.
 
 ## Agent-facing app contract
 
@@ -142,7 +155,7 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
   campaign, can the player act, where is the move sink, and is private art configured?"
 - `qa/ui_playtest_app.sh` captures launcher and minted-provider `app-status` JSON into the native evidence
   folder. A built-app proof that cannot produce this status object is a harness/product observability failure.
-- Agent-grade testing progress as of `9545383`: #481 app-status is closed, #482 deterministic scripted
+- Agent-grade testing progress as of `da05101`: #481 app-status is closed, #482 deterministic scripted
   provider is merged, #483 failure buckets are merged, #484 stable accessibility/DOM hooks are merged,
   #504's hybrid handoff gate is merged and green on `main`, #505's RRI handoff bridge is merged, and
   #508's support-VM preflight artifact gate is merged. #485 evidence bundle completion and #486 gate-split
@@ -278,13 +291,13 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   ```bash
   python3 qa/support_vm_preflight.py \
     --repo /root/worldos-qa/WorldOS \
-    --expected-sha 9545383 \
+    --expected-sha da05101 \
     --provider codex \
     --player-agent codex \
     --art-root /root/worldos-qa/WorldOS \
     --private-art-mode required \
-    --artifact-dir /tmp/worldos-support-vm-preflight-9545383 \
-    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/9545383-preflight
+    --artifact-dir /tmp/worldos-support-vm-preflight-da05101 \
+    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight
   ```
   The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
   `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/origin/tool/auth/private-art
@@ -301,6 +314,12 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   from origin WORKS now (the old "could not read Username" failure is resolved), claude 2.1.158 is authed,
   codex 0.120.0 present, art present, ~28 GB free. The 2026-06-01 "stale `4524b3e` / sync-failed / Lexar-absent"
   blockers no longer hold; the heavy part-B `sweep_v2.sh` lane is runnable.
+- **VM status UPDATE (2026-06-07 — current `da05101` staging):** the repo-owned preflight artifact at
+  `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/` returned `verdict=blocked`, so no
+  personas were run. The VM could query GitHub `origin/main` as `da05101`, but its local repo HEAD/local
+  `origin/main` were still `e5c0a5f`; Codex CLI auth/profile was not proven; and #466 release-RRI readiness
+  requires rerunning with `--private-art-mode required`. Sync/fetch the VM checkout, prove Codex auth/profile,
+  rerun the preflight with required art, then run the five-persona sweep only if that artifact says ready.
 - Read-only VM scout (2026-06-01): an operator-only endpoint note can reach `evaos-support` without printing
   the endpoint. Capacity/tooling look suitable for heavy sweeps: ~32 GB RAM, 16 CPUs, ~537 GB free disk, `git`,
   `python3`, `uv 0.11.17`, Node `v22.22.1`, npm `10.9.4`, `codex-cli 0.120.0`, Playwright modules, and private
@@ -314,8 +333,8 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   `session_surface.final.json`, `network.ndjson`, and build SHA are present. Missing or mixed-SHA artifacts
   must remain `partial` / `harness_contaminated`.
 - Split Mac/VM rollup command shape: pass the Mac proof into RRI as
-  `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260601T100304Z-9545383/handoff.json`
-  alongside VM persona run dirs from the same `9545383` SHA. RRI should satisfy the native gate from the
+  `--handoff-json /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/handoff.json`
+  alongside VM persona run dirs from the same `da05101` SHA. RRI should satisfy the native gate from the
   Mac handoff bundle only if all required handoff gates and manifests are same-SHA, clean,
   private-art-present, and gap-free. If the VM runs a newer SHA, rerun `qa/app_handoff_gate.py` on that
   newer SHA first.
