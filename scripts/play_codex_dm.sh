@@ -18,9 +18,10 @@ MODE="run"
 case "${1:-}" in
   --dry-run) MODE="dry-run"; shift ;;
   --smoke) MODE="smoke"; shift ;;
+  --seed-smoke) MODE="seed-smoke"; shift ;;
   -h|--help)
     cat <<'EOF'
-Usage: scripts/play_codex_dm.sh [--dry-run|--smoke]
+Usage: scripts/play_codex_dm.sh [--dry-run|--smoke|--seed-smoke]
 
 Required environment:
   CLAWDND_PROVIDER=codex
@@ -84,7 +85,7 @@ if [ "$MODE" = "run" ]; then
   command -v codex >/dev/null 2>&1 || fail "codex CLI is required for real provider runs"
 fi
 
-if [ "$MODE" = "smoke" ]; then
+if [ "$MODE" = "smoke" ] || [ "$MODE" = "seed-smoke" ]; then
   STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/clawdnd-codex-dm-smoke.XXXXXX")}"
 else
   STATE_ROOT="${CLAWDND_STATE_ROOT:-$ROOT/play-state}"
@@ -288,7 +289,7 @@ echo "[codex-dm-provider] moves=$MOVES"
 echo "[codex-dm-provider] chat=$CHAT"
 echo "[codex-dm-provider] lean_beats=$CLAWDND_LEAN_BEATS recent_narration=$CLAWDND_LEAN_TAIL"
 
-if [ "$MODE" != "run" ]; then
+if [ "$MODE" = "dry-run" ] || [ "$MODE" = "smoke" ]; then
   summary
   exit 0
 fi
@@ -405,15 +406,22 @@ pc_id = str(rec.get("id") or "")
 pc_full = {}
 if pc_id:
     try:
-        state = server.get_state(camp)
-        pc_full = ((state.get("campaign") or {}).get("characters") or {}).get(pc_id) or {}
+        pc_full = server.get_character(camp, pc_id)
     except Exception:
+        pc_full = {}
+    if not isinstance(pc_full, dict) or pc_full.get("error"):
         pc_full = {}
 classes = pc_full.get("classes") if isinstance(pc_full, dict) else []
 head_class = classes[0] if isinstance(classes, list) and classes and isinstance(classes[0], dict) else {}
 spells = []
 if isinstance(pc_full, dict):
-    spells = [str(s) for s in (pc_full.get("spells_known") or pc_full.get("spells_prepared") or []) if str(s).strip()]
+    seen = set()
+    for spell_list in (pc_full.get("spells_known") or [], pc_full.get("spells_prepared") or []):
+        for spell in spell_list:
+            name = str(spell).strip()
+            if name and name.lower() not in seen:
+                spells.append(name)
+                seen.add(name.lower())
 
 print(json.dumps({
     "campaign_id": camp,
@@ -441,6 +449,24 @@ HERO_PC_SUBCLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.subclass // ""')"
 HERO_PC_SPELLS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '(.pc.spells // []) | join(", ")')"
 [ -n "$HERO_CAMP" ] || fail "solo player pre-seed returned no campaign"
 echo "[codex-dm-provider] seeded solo player: $HERO_PC_NAME ($HERO_PC_RACE level $HERO_PC_LEVEL $HERO_PC_CLASS ${HERO_PC_SUBCLASS:+/$HERO_PC_SUBCLASS}) in campaign $HERO_CAMP"
+
+if [ "$MODE" = "seed-smoke" ]; then
+  python3 - "$HERO_SEED_JSON" "$GIT_SHA" <<'PY'
+import json
+import sys
+
+seed_json, sha = sys.argv[1], sys.argv[2]
+print(json.dumps({
+    "ok": True,
+    "mode": "seed-smoke",
+    "provider": "codex",
+    "role": "dm",
+    "sha": sha,
+    "seed": json.loads(seed_json),
+}, indent=2, sort_keys=True))
+PY
+  exit 0
+fi
 
 chatlog() {
   python3 - "$CHAT" "$1" "$2" "${3:-}" <<'PY'

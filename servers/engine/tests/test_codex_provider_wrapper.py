@@ -198,13 +198,37 @@ def test_codex_dm_wrapper_dry_run_surfaces_fallback_origin_template_hero(tmp_pat
     assert summary["hero"] == {"origin": "template:rolan-evoker"}
 
 
+def test_codex_dm_wrapper_seed_smoke_surfaces_origin_template_sheet(tmp_path):
+    result = _run_dm(
+        ["--seed-smoke"],
+        _env(tmp_path, CLAWDND_PLAY_CANON_HERO="template:rolan-evoker"),
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    assert summary["ok"] is True
+    assert summary["mode"] == "seed-smoke"
+    seed = summary["seed"]
+    assert seed["seed_source"] == "origin"
+    assert seed["origin"] == "template:rolan-evoker"
+    pc = seed["pc"]
+    assert pc["class"] == "Wizard"
+    assert pc["level"] == 3
+    assert pc["subclass"] == "Evocation"
+    assert "Magic Missile" in pc["spells"]
+    assert "Mage Armor" in pc["spells"]
+
+
 def test_codex_dm_wrapper_honors_native_selected_hero():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "CLAWDND_PLAY_HERO" in source
     assert "CLAWDND_PLAY_CANON_HERO" in source
+    assert "--seed-smoke" in source
     assert "origin_spec" in source
     assert 'server.start_character(camp, origin=origin_spec, name=name_override)' in source
+    assert "server.get_character(camp, pc_id)" in source
     assert 'server.load_canon_character(camp, name, kind="player", add_to_party=True)' in source
     assert "Native-selected hero already seated" in source
     assert "HERO_PC_SUBCLASS" in source
