@@ -167,17 +167,32 @@ def validate_app_status(
     return "", ""
 
 
+def normalize_provider_trace_summary(payload: dict[str, Any], provider: str, provider_dir: Path) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized.setdefault("schema", "worldos.provider-trace-summary.v1")
+    normalized.setdefault("provider", provider)
+    normalized.setdefault("trace_dir", str(provider_dir))
+    for key in ("failed_or_error_count", "provider_infra_warning_count", "provider_policy_warning_count", "line_count"):
+        normalized.setdefault(key, 0)
+    for key in ("samples", "provider_infra_samples", "provider_policy_samples"):
+        if not isinstance(normalized.get(key), list):
+            normalized[key] = []
+    normalized.setdefault(
+        "trace_exists",
+        provider_dir.is_dir()
+        or bool(normalized["samples"])
+        or int(normalized.get("failed_or_error_count") or 0) > 0,
+    )
+    return normalized
+
+
 def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
     provider_dir = play_state / f"{provider}-provider"
     summary_path = provider_dir / "summary.json"
     if summary_path.exists():
         payload = read_json(summary_path)
         if payload:
-            payload.setdefault("provider", provider)
-            payload.setdefault("failed_or_error_count", 0)
-            payload.setdefault("provider_infra_warning_count", 0)
-            payload.setdefault("provider_infra_samples", [])
-            return payload
+            return normalize_provider_trace_summary(payload, provider, provider_dir)
 
     failed = 0
     infra_warnings = 0
@@ -258,19 +273,19 @@ def provider_trace_summary(play_state: Path, provider: str) -> dict[str, Any]:
                     failed += 1
                     if len(samples) < 5:
                         samples.append(line[:300])
-    return {
-        "schema": "worldos.provider-trace-summary.v1",
-        "provider": provider,
-        "trace_dir": str(provider_dir),
-        "trace_exists": provider_dir.is_dir(),
-        "line_count": parsed,
-        "failed_or_error_count": failed,
-        "provider_infra_warning_count": infra_warnings,
-        "provider_policy_warning_count": policy_warnings,
-        "samples": samples,
-        "provider_infra_samples": infra_samples,
-        "provider_policy_samples": policy_samples,
-    }
+    return normalize_provider_trace_summary(
+        {
+            "line_count": parsed,
+            "failed_or_error_count": failed,
+            "provider_infra_warning_count": infra_warnings,
+            "provider_policy_warning_count": policy_warnings,
+            "samples": samples,
+            "provider_infra_samples": infra_samples,
+            "provider_policy_samples": policy_samples,
+        },
+        provider,
+        provider_dir,
+    )
 
 
 def provider_trace_failure_detail(trace: dict[str, Any]) -> str:

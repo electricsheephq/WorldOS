@@ -82,6 +82,10 @@ if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
   printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
   exit 2
 fi
+if [ "$NATIVE_AUTOSTART" = "1" ] && [ "${WOS_APP_SKIP_BUILD:-0}" = "1" ]; then
+  printf '[uipt-app] WOS_APP_NATIVE_AUTOSTART=1 requires a fresh app launch; disable WOS_APP_SKIP_BUILD or use the click path.\n' >&2
+  exit 2
+fi
 
 PW_DIR="$ROOT/qa/playwright"
 APP_BUNDLE="$ROOT/dist/WorldOS.app"
@@ -163,6 +167,10 @@ if [ -n "$SELECTED_PROVIDER" ]; then
     claude|codex|openclaw|scripted)
       defaults write dev.clawdnd.app selectedProvider "$SELECTED_PROVIDER" >/dev/null 2>&1 || true
       log "selected provider preference set to $SELECTED_PROVIDER"
+      if [ "$SELECTED_PROVIDER" = "codex" ] && [ -n "${CODEX_HOME_FOR_APP//[[:space:]]/}" ]; then
+        defaults write dev.clawdnd.app codexHome "$CODEX_HOME_FOR_APP" >/dev/null 2>&1 || true
+        log "native app Codex home seeded to $CODEX_HOME_FOR_APP"
+      fi
       ;;
     *)
       printf '[uipt-app] WOS_APP_SELECTED_PROVIDER must be claude, codex, openclaw, or scripted (got %s)\n' "$SELECTED_PROVIDER" >&2
@@ -490,10 +498,6 @@ PY
         defaults write dev.clawdnd.app qaAutoStartProvider "${SELECTED_PROVIDER:-claude}" >/dev/null 2>&1 || true
         defaults write dev.clawdnd.app qaAutoStartWorld "$WORLD" >/dev/null 2>&1 || true
         defaults write dev.clawdnd.app qaAutoStartRunID "$autostart_run" >/dev/null 2>&1 || true
-        if [ "${SELECTED_PROVIDER:-claude}" = "codex" ] && [ -n "${CODEX_HOME_FOR_APP//[[:space:]]/}" ]; then
-          defaults write dev.clawdnd.app codexHome "$CODEX_HOME_FOR_APP" >/dev/null 2>&1 || true
-          a_log "[A] native QA auto-start will launch Codex with CODEX_HOME=$CODEX_HOME_FOR_APP."
-        fi
         a_log "[A] native QA auto-start requested: provider=${SELECTED_PROVIDER:-claude} run=$autostart_run."
       fi
       a_log "[A] launcher state seeded; native app will not depend on old local saves."

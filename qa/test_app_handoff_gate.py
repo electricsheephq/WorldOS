@@ -146,6 +146,23 @@ class AppHandoffGateTests(unittest.TestCase):
         self.assertEqual(summary["provider"], "codex")
         self.assertGreater(summary["failed_or_error_count"], 0)
 
+    def test_provider_trace_summary_backfills_defaults_when_summary_exists(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            provider = root / "codex-provider"
+            provider.mkdir()
+            (provider / "summary.json").write_text(
+                json.dumps({"provider": "codex", "failed_or_error_count": 0}),
+                encoding="utf-8",
+            )
+
+            summary = gate.provider_trace_summary(root, "codex")
+
+        self.assertEqual(summary["trace_exists"], True)
+        self.assertEqual(summary["provider_policy_warning_count"], 0)
+        self.assertEqual(summary["provider_policy_samples"], [])
+        self.assertEqual(gate.provider_trace_failure_detail(summary), "")
+
     def test_codex_provider_trace_tool_call_policy_cancel_is_warning(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
