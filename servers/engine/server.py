@@ -3667,18 +3667,19 @@ def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
     if mage_armor is None:
         return base_ac, None
     dex_mod = ch.ability_modifier(Ability.DEX)
-    mage_ac = 13 + dex_mod
+    mage_ac = mage_armor.armor_formula_ac or (13 + dex_mod)
+    stored_base_ac = mage_armor.armor_base_ac or base_ac
     if mage_ac <= base_ac:
         return base_ac, {
             "source": "Mage Armor",
-            "base_ac": base_ac,
+            "base_ac": stored_base_ac,
             "formula_ac": mage_ac,
             "dex_modifier": dex_mod,
             "applied": False,
         }
     return mage_ac, {
         "source": "Mage Armor",
-        "base_ac": base_ac,
+        "base_ac": stored_base_ac,
         "formula_ac": mage_ac,
         "dex_modifier": dex_mod,
         "applied": True,
@@ -4140,6 +4141,7 @@ def attack(
                 "target": {
                     **_combatant_ref(target),
                     "ac": target_ac,
+                    "armor_class": target_ac,
                     "base_ac": target.armor_class,
                     "ac_detail": target_ac_detail,
                 },
@@ -5208,6 +5210,9 @@ def cast_spell(
                     rounds_remaining=duration["rounds"],
                     until_long_rest=(duration["scale"] == "hours"),
                 )
+                if canonical.lower() == "mage armor":
+                    eff.armor_base_ac = int(effect_holder.armor_class or 10)
+                    eff.armor_formula_ac = 13 + effect_holder.ability_modifier(Ability.DEX)
                 if duration["scale"] in ("hours", "days"):
                     eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
                         c, duration["hours"], duration["days"]

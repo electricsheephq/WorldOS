@@ -279,6 +279,31 @@ def test_a5_completed_quest_zero_xp_is_red(tmp_path):
     assert "xp_awarded_on_progression" in (proc.stdout + proc.stderr)
 
 
+def test_a5_already_awarded_completed_quest_zero_xp_is_warn_not_red(tmp_path):
+    run = tmp_path / "run.jsonl"
+    run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"
+                   + json.dumps(_user_tool_result("r1", json.dumps({"total": 12}))), encoding="utf-8")
+    st = tmp_path / "state.json"
+    state = _advanced_xp_state(0)
+    state["quests"] = {
+        "q1": {
+            "title": "Rescue the Courier",
+            "status": "completed",
+            "objectives": ["Find the courier"],
+            "completed_objectives": ["Find the courier"],
+            "milestone_awarded": True,
+        }
+    }
+    st.write_text(json.dumps(state), encoding="utf-8")
+    chat = _enough_beats_chat(tmp_path)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
+                          capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "xp_progression_scope" in out
+    assert "xp_awarded_on_progression" not in out
+
+
 def test_a5_clean_when_party_has_xp(tmp_path):
     run = tmp_path / "run.jsonl"
     run.write_text(json.dumps(_assistant_tool_use("r1", "mcp__engine__roll", {})) + "\n"

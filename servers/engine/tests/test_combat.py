@@ -333,6 +333,7 @@ def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
     assert attack_entry.payload["outcome"] == "hit"
     assert attack_entry.payload["actor"] == {"id": hero, "name": "Hero"}
     assert attack_entry.payload["target"]["id"] == gob
+    assert attack_entry.payload["target"]["armor_class"] == 15
     assert attack_entry.payload["damage"]["total"] == 6
 
 

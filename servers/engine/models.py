@@ -530,6 +530,11 @@ class ActiveEffect(_StrictModel):
     # the effect imposes no engine-tracked condition (a pure buff like Bless). Mainly read
     # alongside repeat_save; only a condition-imposing effect sets it.
     imposes_condition: Optional[Condition] = None
+    # AC formula metadata for armor-setting effects such as Mage Armor. These default to 0 so
+    # old snapshots and non-AC effects deserialize unchanged; attack() can still fall back to
+    # live sheet values when an older Mage Armor effect lacks the metadata.
+    armor_base_ac: int = 0
+    armor_formula_ac: int = 0
 
 
 class PendingDamageBonus(_StrictModel):

@@ -491,6 +491,9 @@ def main() -> int:
     chars_all = state.get("characters", {}) or {}
     party_ids = state.get("party", []) or []
 
+    def _quest_reward_already_awarded(q: dict) -> bool:
+        return any(bool(q.get(k)) for k in ("milestone_awarded", "awarded", "rewarded", "xp_awarded"))
+
     # A8 (FATAL) — any tool call REJECTED with a schema/validation error (extra_forbidden ⇒
     # version-skew or a wrong field). The DM's intent silently did not take effect; this is the
     # class of failure that has produced 2 RED-capped runs historically. Benign engine guards
@@ -553,7 +556,9 @@ def main() -> int:
             completed_quests = [
                 q.get("title") or q.get("id") or "?"
                 for q in quest_iter
-                if isinstance(q, dict) and q.get("status") == "completed"
+                if isinstance(q, dict)
+                and q.get("status") == "completed"
+                and not _quest_reward_already_awarded(q)
             ]
             defeated_reward_monsters = [
                 ch.get("name", "?")

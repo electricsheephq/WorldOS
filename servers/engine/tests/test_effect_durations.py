@@ -886,6 +886,9 @@ def test_mage_armor_effective_ac_is_used_for_attack_resolution(monkeypatch):
     server.learn_spells(cid, w, ["Mage Armor"])
     server.prepare_spells(cid, w, ["Mage Armor"])
     server.cast_spell(cid, w, "Mage Armor")  # AC should be 13 + DEX(1) = 14
+    effect = _effects(cid, w)[0]
+    assert effect["armor_base_ac"] == 12
+    assert effect["armor_formula_ac"] == 14
     attacker = server.create_character(
         cid, "Goblin", kind="monster", max_hp=20, armor_class=12,
     )["id"]
