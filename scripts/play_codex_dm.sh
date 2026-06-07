@@ -34,6 +34,7 @@ Required environment:
 Optional:
   CLAWDND_PLAY_COMPANIONS
   CLAWDND_PLAY_HERO
+  CLAWDND_PLAY_CANON_HERO (canon name, or origin spec such as template:rolan-evoker)
   WORLDOS_CODEX_MODEL (default: gpt-5.5; set to auto/default/cli-default to let Codex CLI choose)
   CLAWDND_CODEX_MODEL (legacy fallback)
   CLAWDND_STATE_ROOT
@@ -156,14 +157,14 @@ Path(out).write_text("\n".join(lines), encoding="utf-8")
 PY
 
 summary() {
-  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$CLAWDND_WORLD" "$CLAWDND_RUN_ID" "$CLAWDND_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${CLAWDND_PLAY_HERO:-}" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$CLAWDND_PLAY_MAX_TURNS" "$GIT_SHA" <<'PY'
+  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$CLAWDND_WORLD" "$CLAWDND_RUN_ID" "$CLAWDND_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${CLAWDND_PLAY_HERO:-}" "${CLAWDND_PLAY_CANON_HERO:-}" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$CLAWDND_PLAY_MAX_TURNS" "$GIT_SHA" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 (
     mode, root, state_root, world, run_id, port, config, moves, chat, viewer_url,
-    hero_raw, model, lean_beats, lean_tail, max_turns, sha,
+    hero_raw, fallback_hero, model, lean_beats, lean_tail, max_turns, sha,
 ) = sys.argv[1:]
 hero = {}
 if hero_raw.strip():
@@ -175,6 +176,12 @@ if hero_raw.strip():
             hero = {"raw": hero_raw}
     except json.JSONDecodeError:
         hero = {"raw": hero_raw}
+elif fallback_hero.strip():
+    fallback = fallback_hero.strip()
+    if fallback.startswith(("template:", "pickup:")) or fallback in {"nobody_l1", "veteran_l5"}:
+        hero = {"origin": fallback}
+    else:
+        hero = {"canon": True, "name": fallback}
 print(json.dumps({
     "ok": True,
     "mode": mode,
@@ -296,6 +303,9 @@ HERO_PC_ID=""
 HERO_PC_NAME=""
 HERO_PC_RACE=""
 HERO_PC_CLASS=""
+HERO_PC_SUBCLASS=""
+HERO_PC_LEVEL=""
+HERO_PC_SPELLS=""
 HERO_SEED_JSON="$(CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" uv run --directory "$ROOT/servers/engine" python - "$CLAWDND_WORLD" "${CLAWDND_PLAY_HERO:-}" "${CLAWDND_PLAY_CANON_HERO:-Alfira}" <<'PY'
 import json
 import sys
@@ -305,6 +315,8 @@ import server
 world, spec_raw, fallback_name = sys.argv[1], sys.argv[2], sys.argv[3]
 explicit = False
 canon_name = ""
+origin_spec = ""
+name_override = ""
 if spec_raw.strip():
     explicit = True
     try:
@@ -315,61 +327,106 @@ if spec_raw.strip():
     if not isinstance(spec, dict):
         sys.stderr.write("native hero spec must be a JSON object\n")
         sys.exit(1)
-    if not spec.get("canon"):
-        sys.stderr.write("Codex DM provider currently supports native roster canon hero specs only\n")
-        sys.exit(1)
-    canon_name = str(spec.get("name") or "").strip()
-    if not canon_name:
-        sys.stderr.write("native roster canon hero spec is missing name\n")
+    origin_raw = str(spec.get("origin") or spec.get("template") or "").strip()
+    if origin_raw:
+        if spec.get("template") and ":" not in origin_raw:
+            origin_raw = f"template:{origin_raw}"
+        origin_spec = origin_raw
+        name_override = str(spec.get("name") or "").strip()
+    elif spec.get("canon"):
+        canon_name = str(spec.get("name") or "").strip()
+        if not canon_name:
+            sys.stderr.write("native roster canon hero spec is missing name\n")
+            sys.exit(1)
+    else:
+        sys.stderr.write("Codex DM provider hero spec must include canon=true or origin/template\n")
         sys.exit(1)
 else:
-    canon_name = fallback_name.strip() or "Alfira"
+    fallback = fallback_name.strip() or "Alfira"
+    if fallback.startswith(("template:", "pickup:")) or fallback in {"nobody_l1", "veteran_l5"}:
+        origin_spec = fallback
+    else:
+        canon_name = fallback
 
 started = server.start_world(world)
 camp = started.get("campaign_id") if isinstance(started, dict) else ""
 if not camp:
     sys.stderr.write("start_world did not return a campaign_id\n")
     sys.exit(1)
-server.start_session(camp, title=f"Codex DM: {canon_name}")
-
-names = [canon_name]
-if not explicit:
-    try:
-        roster = server.list_canon_characters(camp, playable_only=True).get("available") or []
-    except Exception:
-        roster = []
-    for row in roster:
-        if not isinstance(row, dict):
-            continue
-        name = str(row.get("name") or "").strip()
-        if name and name not in names:
-            names.append(name)
+title_name = origin_spec or canon_name
+server.start_session(camp, title=f"Codex DM: {title_name}")
 
 rec = {}
+seed_source = "canon"
 errors = []
-for name in names:
+if origin_spec:
+    seed_source = "origin"
     try:
-        candidate = server.load_canon_character(camp, name, kind="player", add_to_party=True)
+        candidate = server.start_character(camp, origin=origin_spec, name=name_override)
     except Exception as exc:
-        errors.append(f"{name}: {exc}")
-        continue
+        sys.stderr.write(f"origin pickup failed for {origin_spec!r}: {exc}\n")
+        sys.exit(1)
     if isinstance(candidate, dict) and not candidate.get("error") and candidate.get("id"):
         rec = candidate
-        canon_name = name
-        break
-    errors.append(f"{name}: {(candidate or {}).get('error') if isinstance(candidate, dict) else candidate}")
+    else:
+        sys.stderr.write(f"origin pickup failed for {origin_spec!r}: {candidate}\n")
+        sys.exit(1)
+else:
+    names = [canon_name]
+    if not explicit:
+        try:
+            roster = server.list_canon_characters(camp, playable_only=True).get("available") or []
+        except Exception:
+            roster = []
+        for row in roster:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or "").strip()
+            if name and name not in names:
+                names.append(name)
 
-if not isinstance(rec, dict) or rec.get("error"):
-    sys.stderr.write("canon pickup failed: " + "; ".join(errors[:5]) + "\n")
-    sys.exit(1)
+    for name in names:
+        try:
+            candidate = server.load_canon_character(camp, name, kind="player", add_to_party=True)
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+        if isinstance(candidate, dict) and not candidate.get("error") and candidate.get("id"):
+            rec = candidate
+            canon_name = name
+            break
+        errors.append(f"{name}: {(candidate or {}).get('error') if isinstance(candidate, dict) else candidate}")
+
+    if not isinstance(rec, dict) or rec.get("error"):
+        sys.stderr.write("canon pickup failed: " + "; ".join(errors[:5]) + "\n")
+        sys.exit(1)
+
+pc_id = str(rec.get("id") or "")
+pc_full = {}
+if pc_id:
+    try:
+        state = server.get_state(camp)
+        pc_full = ((state.get("campaign") or {}).get("characters") or {}).get(pc_id) or {}
+    except Exception:
+        pc_full = {}
+classes = pc_full.get("classes") if isinstance(pc_full, dict) else []
+head_class = classes[0] if isinstance(classes, list) and classes and isinstance(classes[0], dict) else {}
+spells = []
+if isinstance(pc_full, dict):
+    spells = [str(s) for s in (pc_full.get("spells_known") or pc_full.get("spells_prepared") or []) if str(s).strip()]
 
 print(json.dumps({
     "campaign_id": camp,
+    "seed_source": seed_source,
+    "origin": origin_spec,
     "pc": {
-        "id": rec.get("id") or "",
-        "name": rec.get("name") or canon_name,
-        "race": str(rec.get("race") or ""),
-        "class": str(rec.get("class") or ""),
+        "id": pc_id,
+        "name": rec.get("name") or pc_full.get("name") or canon_name or name_override,
+        "race": str(rec.get("race") or pc_full.get("race") or ""),
+        "class": str(rec.get("class") or head_class.get("name") or ""),
+        "level": rec.get("level") or head_class.get("level") or "",
+        "subclass": head_class.get("subclass") or "",
+        "spells": spells,
     },
 }))
 PY
@@ -379,8 +436,11 @@ HERO_PC_ID="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.id // ""')"
 HERO_PC_NAME="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.name // ""')"
 HERO_PC_RACE="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.race // ""')"
 HERO_PC_CLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.class // ""')"
+HERO_PC_LEVEL="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.level // ""')"
+HERO_PC_SUBCLASS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '.pc.subclass // ""')"
+HERO_PC_SPELLS="$(printf '%s' "$HERO_SEED_JSON" | jq -r '(.pc.spells // []) | join(", ")')"
 [ -n "$HERO_CAMP" ] || fail "solo player pre-seed returned no campaign"
-echo "[codex-dm-provider] seeded solo player: $HERO_PC_NAME ($HERO_PC_RACE $HERO_PC_CLASS) in campaign $HERO_CAMP"
+echo "[codex-dm-provider] seeded solo player: $HERO_PC_NAME ($HERO_PC_RACE level $HERO_PC_LEVEL $HERO_PC_CLASS ${HERO_PC_SUBCLASS:+/$HERO_PC_SUBCLASS}) in campaign $HERO_CAMP"
 
 chatlog() {
   python3 - "$CHAT" "$1" "$2" "${3:-}" <<'PY'
@@ -404,21 +464,34 @@ PY
 
 write_provider_status() {
   local status="$1" reason="$2" detail="$3"
-  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" <<'PY'
+  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" "${HERO_SEED_JSON:-}" <<'PY'
 import json
 import os
 import sys
 import time
 from pathlib import Path
 
-path, status, reason, detail, provider, max_turns, turns, model, lean_beats, lean_tail, sha = sys.argv[1:]
+path, status, reason, detail, provider, max_turns, turns, model, lean_beats, lean_tail, sha, seed_json = sys.argv[1:]
 path = Path(path)
+fixture = {}
+if seed_json.strip():
+    try:
+        seed = json.loads(seed_json)
+    except json.JSONDecodeError:
+        seed = {}
+    if isinstance(seed, dict):
+        fixture = {
+            "seed_source": seed.get("seed_source"),
+            "origin": seed.get("origin"),
+            "pc": seed.get("pc") if isinstance(seed.get("pc"), dict) else {},
+        }
 payload = {
     "schema": "worldos.provider-status.v1",
     "provider": provider,
     "model": model,
     "wrapper": "scripts/play_codex_dm.sh",
     "sha": sha,
+    "fixture": fixture,
     "lean_beats": lean_beats == "1",
     "lean_tail": int(lean_tail) if str(lean_tail).isdigit() else lean_tail,
     "status": status,
@@ -597,13 +670,14 @@ $REWARD_MUTATION_RULE
 $OPENING_PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
-Native-selected canon hero already seated:
+Native-selected hero already seated:
 - campaign_id: "$HERO_CAMP"
-- player: "$HERO_PC_NAME" ($HERO_PC_RACE $HERO_PC_CLASS), id "$HERO_PC_ID"
+- player: "$HERO_PC_NAME" ($HERO_PC_RACE level $HERO_PC_LEVEL $HERO_PC_CLASS${HERO_PC_SUBCLASS:+ / $HERO_PC_SUBCLASS}), id "$HERO_PC_ID"
+${HERO_PC_SPELLS:+- known/prepared spells from engine sheet: $HERO_PC_SPELLS}
 
 Start from that already-seated player:
 - call get_state("$HERO_CAMP") FIRST to read the campaign;
-- do NOT call start_world, start_session, or load_canon_character for the player;
+- do NOT call start_world, start_session, start_character, or load_canon_character for the player;
 - open a 2nd-person, player-facing scene centered on "$HERO_PC_NAME" with real sensory details, at least one quoted NPC line, and a clear open moment.
 
 Your final reply must be non-empty opening narration for the player, not a setup note and not a tool-only ending.

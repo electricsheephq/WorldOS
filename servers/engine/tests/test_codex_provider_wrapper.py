@@ -178,13 +178,40 @@ def test_codex_dm_wrapper_dry_run_surfaces_native_selected_hero(tmp_path):
     assert summary["hero"] == {"canon": True, "name": "Abby"}
 
 
+def test_codex_dm_wrapper_dry_run_surfaces_origin_template_hero(tmp_path):
+    hero = json.dumps({"origin": "template:rolan-evoker"})
+    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_PLAY_HERO=hero))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    assert summary["hero"] == {"origin": "template:rolan-evoker"}
+
+
+def test_codex_dm_wrapper_dry_run_surfaces_fallback_origin_template_hero(tmp_path):
+    result = _run_dm(
+        ["--dry-run"],
+        _env(tmp_path, CLAWDND_PLAY_CANON_HERO="template:rolan-evoker"),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    assert summary["hero"] == {"origin": "template:rolan-evoker"}
+
+
 def test_codex_dm_wrapper_honors_native_selected_hero():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
     assert "CLAWDND_PLAY_HERO" in source
     assert "CLAWDND_PLAY_CANON_HERO" in source
+    assert "origin_spec" in source
+    assert 'server.start_character(camp, origin=origin_spec, name=name_override)' in source
     assert 'server.load_canon_character(camp, name, kind="player", add_to_party=True)' in source
-    assert "Native-selected canon hero already seated" in source
+    assert "Native-selected hero already seated" in source
+    assert "HERO_PC_SUBCLASS" in source
+    assert "HERO_PC_SPELLS" in source
+    assert '"fixture": fixture' in source
+    assert "known/prepared spells from engine sheet" in source
+    assert "do NOT call start_world, start_session, start_character, or load_canon_character" in source
     assert "seeded solo player" in source
 
 
