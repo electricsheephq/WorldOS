@@ -1143,6 +1143,47 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         pass  # unknown class -> keep the explicit values
 
 
+def _recompute_level_scaled_stats(ch, patch: dict) -> None:
+    """OVERWRITE the purely level-derived stats — proficiency bonus, hit dice, max HP, and
+    extra attacks — to match ``ch.classes`` after a class/level change, so a DOWN-level retier
+    (a canon L12 Fighter patched to L3) does NOT keep the higher tier's inflated math.
+    ``_apply_srd_class_defaults`` is FILL-EMPTY (it only computes max_hp at the ``max_hp<=1``
+    stub and accumulates extra_attacks via ``max()``), so it can only RAISE those and cannot
+    correct a down-level; this resets the level-scaled stats from the new ``total_level``.
+    Any of these the SAME ``patch`` set EXPLICITLY is honored (a DM-chosen HP wins). hit_dice /
+    max_hp / extra_attacks are recomputed for SINGLE-class sheets only (the SRD formulae are
+    single-class; a multiclass sheet keeps its values). Spell slots + class resources are
+    re-derived with ``used`` preserved (mirrors level_up). The caller gates this on an actual
+    class/level-signature change, so a non-class patch never disturbs these stats."""
+    keys = set(patch or {})
+    total = ch.total_level
+    if "proficiency_bonus" not in keys:
+        ch.proficiency_bonus = srd_tables.proficiency_bonus(total)  # by total level (multiclass-safe)
+    cname = ch.classes[0].name.lower()
+    single_class = len({cl.name.lower() for cl in ch.classes}) == 1
+    try:
+        if single_class and "hit_dice" not in keys:
+            ch.hit_dice = f"{total}d{srd_tables.hit_die(cname)}"
+            if "hit_dice_remaining" not in keys:
+                ch.hit_dice_remaining = min(ch.hit_dice_remaining, total)
+        if single_class and "max_hp" not in keys:
+            recomputed = _class_level_hp(cname, total, ch.ability_modifier(Ability.CON))
+            if recomputed:
+                ch.max_hp = recomputed
+                ch.current_hp = min(ch.current_hp, ch.max_hp)
+        if single_class and "extra_attacks" not in keys:
+            # RESET then re-derive from features: fill-empty's max() can't LOWER a stale higher tier
+            # (a L12 Fighter's extra_attacks=2 must drop to 0 at L3).
+            ch.extra_attacks = 0
+            for f in srd_tables.features_through(cname, total):
+                if "extra_attacks" in f:
+                    ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
+    except ValueError:
+        pass  # unknown class -> leave explicit values (mirrors _apply_srd_class_defaults)
+    _recompute_spellcasting(ch)
+    _recompute_class_resources(ch)
+
+
 # Class -> a minimal, internally-consistent starting kit. The ARMOR matches the AC the SRD
 # default sets (Chain Mail = 16 for the heavy martials; light armor for the AC-13/14 classes)
 # so AC and inventory AGREE; Unarmored Defense classes (Barbarian/Monk) and the non-armored
@@ -2464,10 +2505,12 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
     CLASS / LEVEL: level lives inside `classes` (a list of {name, level, subclass}),
     so the canonical retier patch is `{"classes":[{"name":"Wizard","level":3}]}`. As a
     convenience the flat aliases `level`, `class_name`, and `subclass` are also accepted
-    and folded into the head class entry; when level/class change this way the engine
-    recomputes proficiency bonus, saves, and features for the new level (an existing
-    sheet's HP and a DM-chosen AC are preserved). A genuine unknown field (a typo) is
-    still rejected.
+    and folded into the head class entry. When the class/level changes — by EITHER form —
+    the engine recomputes the level-scaled SRD math for the new level: proficiency bonus,
+    saves, hit dice, max HP, and extra attacks (so a down-level retier doesn't keep the old
+    tier's inflated stats). Any stat the SAME patch sets explicitly is honored (a DM-chosen
+    HP/AC wins), and a DM-chosen AC is never auto-clobbered. A genuine unknown field (a typo)
+    is still rejected.
 
     WARNING: list fields (conditions, inventory, spells_known, classes) are
     REPLACED wholesale by the patch, not merged. To change a single condition
@@ -2522,15 +2565,23 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         if flat_expertise is not None:
             data["skill_expertise"] = flat_expertise
         new_ch = Character.model_validate(data)
-        # Recompute derived class math when level/class changed via the aliases (today even a
-        # correct `classes` patch leaves prof_bonus/saves/features stale — this finishes the
-        # canon-load fix's downstream story). Idempotent fill: skill_proficiencies are only
-        # seeded if empty (a DM-set list is respected), HP is only computed at the max_hp<=1
-        # stub (an existing sheet's HP is preserved), and set_base_ac=False so a DM-chosen AC
-        # is never clobbered. prof_bonus is always recomputed from the new total_level.
-        if (flat_level is not None or flat_class is not None) and new_ch.classes:
+        # Recompute derived class math when the class/level SIGNATURE changed — via EITHER the flat
+        # aliases OR a direct `classes` patch. (RRI 2026-06-09: a canon L12 Fighter "Gravedigger
+        # Karcen" was patched to L3 via the canonical {"classes":[{"name":"Fighter","level":3}]}
+        # form — the OLD guard fired only on the flat aliases, so this skipped recompute entirely and
+        # he fought with L12 prof_bonus(+4)/max_hp(100)/12d10/extra_attacks(2): the angry-dm
+        # "correctly-wrong numbers" that capped the mech score.) _apply_srd_class_defaults fills
+        # saves/skills/features and resets prof_bonus + the hit-dice string, but it is FILL-EMPTY for
+        # max_hp (only at the <=1 stub) and accumulates extra_attacks via max(), so it cannot LOWER
+        # them on a down-level — _recompute_level_scaled_stats overwrites those from the new
+        # total_level. Any of these the SAME patch set EXPLICITLY wins (a DM-chosen HP/AC); a typo
+        # still trips extra="forbid". A non-class patch (set_hp, conditions, ...) is untouched.
+        old_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in ch.classes]
+        new_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in new_ch.classes]
+        if old_sig != new_sig and new_ch.classes:
             _apply_srd_class_defaults(new_ch, new_ch.classes[0].name,
                                       new_ch.total_level, set_base_ac=False)
+            _recompute_level_scaled_stats(new_ch, patch or {})
         c.characters[character_id] = new_ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")

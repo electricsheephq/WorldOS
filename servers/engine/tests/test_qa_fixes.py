@@ -1015,6 +1015,43 @@ def test_update_character_flat_level_only_keeps_existing_class(tmp_path, monkeyp
     assert ch["proficiency_bonus"] == 3                   # L6 -> +3
 
 
+def test_update_character_canonical_classes_patch_recomputes_down_level(tmp_path, monkeypatch):
+    """RRI 2026-06-09: a high-tier sheet retiered DOWN via the canonical {"classes":[...]} form
+    (NOT the flat alias) must recompute the level-scaled stats — prof bonus, hit dice, max HP,
+    extra attacks — instead of keeping the higher tier's inflated math. The Tuesday Opus sweep
+    seated a canon L12 Fighter then patched him to L3 this way; the old flat-alias-only guard
+    skipped recompute, so he fought with PB+4 / 100 HP / 12d10 / extra_attacks=2 (the angry-dm
+    'correctly-wrong numbers' that capped mech)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pid = server.create_character(bg, "Brick", kind="player")["id"]
+    # UP to L12 via the canonical classes form (PB +4, 2nd Extra Attack at L11, big HP, 12d10).
+    hi = server.update_character(bg, pid, {"classes": [{"name": "Fighter", "level": 12}]})
+    assert hi["proficiency_bonus"] == 4
+    assert hi["extra_attacks"] == 2
+    assert hi["hit_dice"] == "12d10"
+    hi_hp = hi["max_hp"]
+    assert hi_hp > 30
+    # DOWN to L3 via the SAME canonical form — the bug was: no recompute, stale L12 stats.
+    lo = server.update_character(bg, pid, {"classes": [{"name": "Fighter", "level": 3}]})
+    assert lo["proficiency_bonus"] == 2          # was staying +4 -> inflated every attack
+    assert lo["hit_dice"] == "3d10"              # was staying 12d10
+    assert lo["extra_attacks"] == 0              # Fighter Extra Attack is L5 -> 0 at L3 (was 2)
+    assert lo["max_hp"] < hi_hp and lo["max_hp"] <= 30   # recomputed down (was staying L12 HP)
+
+
+def test_update_character_explicit_stat_wins_over_classes_recompute(tmp_path, monkeypatch):
+    """A stat the SAME class/level patch sets EXPLICITLY is honored — the recompute only fills the
+    stats the patch didn't pin, so a custom-HP elite keeps its HP while prof bonus still recomputes."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    pid = server.create_character(bg, "Elite", kind="player")["id"]
+    ch = server.update_character(bg, pid, {"classes": [{"name": "Fighter", "level": 3}], "max_hp": 75})
+    assert ch["classes"][0]["level"] == 3
+    assert ch["proficiency_bonus"] == 2          # still recomputed from the new level
+    assert ch["max_hp"] == 75                    # explicit HP honored, not overwritten
+
+
 def test_session_close_tops_up_zero_xp_companion(tmp_path, monkeypatch):
     """B4 / mech2 #3A: when the DM awards XP to the PC only, a companion who fought all
     session must not close at 0 while the PC banked XP. The per-member backstop tops the
