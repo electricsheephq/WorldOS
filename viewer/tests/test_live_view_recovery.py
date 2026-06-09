@@ -366,6 +366,20 @@ class LiveViewRecoveryTests(unittest.TestCase):
         self.assertFalse(body.get("ok"), "a dead sink must refuse the move")
         self.assertIn("read-only", str(body.get("reason", "")))
 
+    # -- the monotonic surface clock (wall-of-text rollback) -------------------
+    def test_session_surface_exposes_updated_at_clock(self):
+        """build_session_surface carries the snapshot's monotonic `updated_at` so the client's
+        shouldApplySurface guard can reject a backward-in-time mid-beat re-fetch (the wall-of-text
+        rollback). Absent on an older save -> None, so the guard no-ops and behaves exactly as
+        today."""
+        snap = dict(_snap("Clocked"))
+        snap["updated_at"] = 1780995303.0
+        surf = server.build_session_surface(snap, campaign_id="c", live=True, is_live_view=True)
+        self.assertEqual(surf["updated_at"], 1780995303.0)
+        surf2 = server.build_session_surface(_snap("NoClock"), campaign_id="c",
+                                             live=True, is_live_view=True)
+        self.assertIsNone(surf2["updated_at"], "an older snapshot with no clock -> None (guard no-ops)")
+
 
 if __name__ == "__main__":
     unittest.main()

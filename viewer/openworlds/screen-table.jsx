@@ -500,6 +500,22 @@ function computeColdOpenAwaiting({ surfaceStatus, live, isLiveView, pendingActiv
 }
 if (typeof window !== "undefined") window.computeColdOpenAwaiting = computeColdOpenAwaiting;
 
+// Monotonic surface freshness guard (RRI 2026-06-09 wall-of-text rollback). Apply an incoming
+// session surface UNLESS it is a strictly-OLDER snapshot of the SAME campaign already shown — that
+// is a backward-in-time header regression (a mid-beat re-fetch projected an older snapshot, so
+// day/HP/location reverted while the live chronicle held). A different campaign (a real switch), a
+// newer-or-equal snapshot, a first surface, or a payload with no monotonic clock all apply (so older
+// saves without `updated_at` behave exactly as today).
+function shouldApplySurface(prev, next) {
+  if (!prev || !next) return true;
+  if (prev.campaign_id !== next.campaign_id) return true;
+  const a = Number(prev.updated_at);
+  const b = Number(next.updated_at);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+  return b >= a;
+}
+if (typeof window !== "undefined") window.shouldApplySurface = shouldApplySurface;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -625,7 +641,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         statusPayload = null;
       }
       if (isCancelled()) return;
-      setSurface(payload);
+      // Reject a strictly-older same-campaign snapshot (the wall-of-text rollback): keep the newer
+      // surface already rendered rather than regress the header backward in time. A later poll lands
+      // the caught-up snapshot. app-status (live/can_act) is independent of the header, so it updates.
+      setSurface((prev) => (shouldApplySurface(prev, payload) ? payload : prev));
       setAppStatus(statusPayload);
       setSurfaceStatus("ready");
     } catch (error) {
