@@ -367,5 +367,34 @@ class LiveViewRecoveryTests(unittest.TestCase):
         self.assertIn("read-only", str(body.get("reason", "")))
 
 
+    # -- the cold-open-retry party-less orphan must not win auto-follow (hero-bind party-wipe) --
+    # RRI 2026-06-09: a timed-out cold-open retry re-ran start_world and minted a SECOND, party-less
+    # campaign (NPCs only, no seated PC) NEWER than the real run. The recency-only `_pick_campaign`
+    # followed the empty orphan, so the table projected a "wiped" empty party while the seated run
+    # sat right there in the same store. The pick must DEMOTE a party-less orphan below any seated
+    # run; recency only tie-breaks AMONG real runs.
+    def test_empty_party_orphan_loses_to_seated_run_despite_newer_recency(self):
+        self._enable_move_sink()
+        # The real run: a seated PLAYER, but OLDER (the timed-out attempt's beats froze).
+        self._write("seated_run", _snap("Rolan's Tale"), age_seconds=240)
+        # The orphan: NEWER, but party-less (start_world minted it; load_canon_character never ran).
+        self._write("empty_orphan",
+                    {"title": "Orphan", "party": [],
+                     "characters": {"npc1": {"id": "npc1", "name": "Aldra", "kind": "npc"}}},
+                    age_seconds=0)
+        self.assertEqual(server._pick_campaign(None), "seated_run",
+                         "a party-less orphan must not win auto-follow over a seated run")
+
+    def test_all_party_less_falls_back_to_recency(self):
+        """When NO campaign has a seated PC yet (a brand-new game between start_world and the seat),
+        the pick falls back to recency — the demotion only matters when a SEATED run exists to
+        prefer, so a legitimate fresh game is at most briefly demoted, never stranded."""
+        self._enable_move_sink()
+        self._write("fresh_a", {"title": "A", "party": [], "characters": {}}, age_seconds=10)
+        self._write("fresh_b", {"title": "B", "party": [], "characters": {}}, age_seconds=0)
+        self.assertEqual(server._pick_campaign(None), "fresh_b",
+                         "with no seated run, recency still decides among the party-less")
+
+
 if __name__ == "__main__":
     unittest.main()
