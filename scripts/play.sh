@@ -126,7 +126,9 @@ json.dump(cfg, open(out, "w"))
 PY
 
 DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
-chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+# chatlog + log_engine_narration + record_dm_reply are shared helpers in qa/lib_beat_driver.sh
+# (sourced above); they read $CHAT/$STATE_DIR/$ROOT from this scope. record_dm_reply (#720)
+# stamps engine_logged on DM-reply rows so the OpenWorlds client de-dups the cold-open opening.
 
 # --- OPTIONAL: pre-seed a PLAYER-authored hero before the DM's first turn. ---------------
 # When the Creation wizard's "Bind" runs, it passes the authored hero through the native
@@ -397,14 +399,15 @@ fi
 # #357: same empty-reply fallback as the beat loop — recover the engine's logged opening
 # narration if the DM's first turn ended on a tool call rather than prose.
 DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
-chatlog dm "$DMSG"; DM_TURNS=1
 
-# Resolve the campaign id the DM just minted (for the lean re-ground; harmless when
-# CLAWDND_LEAN_BEATS=0). The opening beat called start_world/get_state, which writes the
-# snapshot to $STATE_DIR/campaigns/<id>/snapshot.json — read the id back from that dir.
-# A solo launch uses a brand-new state dir, so there is exactly one campaign here. When a
-# hero was pre-seeded we already know it ($HERO_CAMP). Empty ⇒ lean falls back to the
-# normal --resume path (dm_turn no-ops lean when the id is unknown).
+# Resolve the campaign id the DM just minted, BEFORE writing the opening to the chronicle —
+# record_dm_reply (#720) needs it to log the opening narration to the engine session log so the
+# OpenWorlds client can de-dup the /chat opening blob against /events. The campaign already
+# exists here (the cold-open dm_turn ran start_world/get_state, writing the snapshot to
+# $STATE_DIR/campaigns/<id>/snapshot.json). A solo launch uses a brand-new state dir, so there
+# is exactly one campaign. When a hero was pre-seeded we already know it ($HERO_CAMP). Empty ⇒
+# record_dm_reply falls back to an unflagged row AND lean falls back to the normal --resume path
+# (both are byte-identical to the pre-#720 behavior when the id is unknown).
 CAMPAIGN_ID="$HERO_CAMP"
 if [ -z "$CAMPAIGN_ID" ] && [ -d "$STATE_DIR/campaigns" ]; then
   # No pre-seeded hero → ask the ENGINE which save is live (the most-recently-played
@@ -415,6 +418,9 @@ if [ -z "$CAMPAIGN_ID" ] && [ -d "$STATE_DIR/campaigns" ]; then
   CAMPAIGN_ID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
   [ -z "$CAMPAIGN_ID" ] && CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
 fi
+# #720: write the opening through record_dm_reply — stamps engine_logged:true on the chat row
+# IFF the opening prose is also logged to the engine session log, so the client renders it ONCE.
+record_dm_reply "$CAMPAIGN_ID" "$DMSG" opening; DM_TURNS=1
 if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
   if [ -n "$CAMPAIGN_ID" ]; then
     echo "[play] lean-beats ON — beats 2+ re-ground via scene_context (campaign=$CAMPAIGN_ID), no transcript replay"
@@ -470,7 +476,8 @@ $RUNBOOK" "$CAMPAIGN_ID")"
     # empty — fall back to the player-facing narration the engine logged this beat so the chat is
     # never blank on a resolved move (engine stays the sole writer; this only READS its log).
     DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
-    chatlog dm "$DMSG"; DM_TURNS=$((DM_TURNS + 1))
+    # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
+    record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; DM_TURNS=$((DM_TURNS + 1))
     # C — soft clock-tick backstop: advance one phase via the engine only if the DM left the
     # clock frozen this beat (engine stays the sole writer; defers to the DM's in-fiction pacing).
     clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"

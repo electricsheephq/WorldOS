@@ -126,6 +126,129 @@ clawdnd_dm_narration_or_fallback() {
   fi
 }
 
+# CHRONICLE WRITE + ENGINE-LOG TRUTHFULNESS GUARD (issue #720 — the ONE shared impl).
+#
+# The cold-open opening prose lands in TWO viewer-read sources: the engine per-session log
+# (per-paragraph, fed to the viewer's /events) AND chat.jsonl (the whole opening as one blob,
+# written here by `chatlog`). The OpenWorlds client de-dups mid-session via
+# eventsStreamedThisTurnRef, but that backstop assumes "/events lands a turn's paragraphs
+# before its /chat blob" — true mid-session, FALSE on cold-open (the opening is complete
+# pre-mount). So the opening rendered TWICE. The client already honors an `engine_logged:true`
+# marker on a /chat row (viewer/openworlds/app.jsx: `if (it.engine_logged === true) return
+# null;`) to drop the blob when its prose is also in /events. These helpers stamp that marker —
+# but ONLY when the prose was truly logged to the engine session log, so the client never drops
+# a legitimately /chat-only beat (which would render it to zero rows).
+#
+# Ported verbatim-in-intent from scripts/play_codex_dm.sh (the codex DM path already solved this
+# with the same three pieces); factored here ONCE so the two CLAUDE-DM viewer-backed wrappers
+# (scripts/play.sh + scripts/play_party.sh) share it and can't drift — mirroring how
+# clawdnd_dm_remint_session_on_retry is shared. These read the caller's ambient globals (exactly
+# as the codex versions read $CHAT/$RUN_DIR/$ROOT): $CHAT (the chat.jsonl path), $STATE_DIR (the
+# play state dir), and $ROOT (the repo root). Both wrappers define all three before sourcing.
+#
+# BASH 3.2 SAFETY: chatlog + log_engine_narration carry quoted heredocs, which macOS bash 3.2
+# mis-parses when nested inside $(...). They are ALWAYS called DIRECTLY (never in a command
+# substitution) — keep it that way.
+
+# chatlog ROLE TEXT [EXTRA_JSON] — append one row to $CHAT. The optional 3rd arg is a JSON
+# object merged into the {role,text} row (e.g. '{"engine_logged":true}'). Empty/absent → a
+# plain {role,text} row, byte-identical to the pre-#720 one-liner.
+chatlog() {
+  python3 - "$CHAT" "$1" "$2" "${3:-}" <<'PY'
+import json
+import sys
+
+path, role, text, extra_json = sys.argv[1:]
+row = {"role": role, "text": text}
+if extra_json:
+    try:
+        extra = json.loads(extra_json)
+    except ValueError as exc:
+        raise SystemExit(f"invalid chatlog extra_json: {exc}") from exc
+    if not isinstance(extra, dict):
+        raise SystemExit(f"invalid chatlog extra_json: expected object, got {type(extra).__name__}")
+    row.update(extra)
+with open(path, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(row) + "\n")
+PY
+}
+
+# log_engine_narration CAMPAIGN_ID TEXT — ensure the reply is in the engine's session log as a
+# `narration` beat (the /events + recap/memory source), then return 0 so record_dm_reply stamps
+# engine_logged. Returns non-zero (WITHOUT touching the engine) on a blank campaign id or blank
+# text, OR if the engine call fails — that is the signal record_dm_reply uses to fall back to an
+# unflagged chat row.
+#
+# IDEMPOTENT (#720, adversarial-review fix): the CLAUDE DM often ALREADY logs the opening/beat
+# narration to the session log DURING its turn. An unconditional append would put the prose in
+# the log TWICE → a SECOND /events row (the viewer keys /events by line-index seq, not by text)
+# → the duplicate would be RELOCATED (/events-vs-/events), not fixed. So we append ONLY when the
+# prose is not already in the recent session-log narration. Either way the prose ends up in the
+# engine log EXACTLY ONCE and we return 0 → the redundant /chat blob is dropped → rendered once.
+# The CODEX DM (which does not self-log narration) still gets the canonical append. Whitespace-
+# normalized substring match covers both the single-blob and per-paragraph logging shapes.
+log_engine_narration() {
+  local campaign_id="$1" text="$2"
+  [ -n "${campaign_id//[[:space:]]/}" ] || return 1
+  [ -n "${text//[[:space:]]/}" ] || return 1
+  CLAWDND_STATE_DIR="$STATE_DIR" WORLDOS_STATE_DIR="$STATE_DIR" \
+    uv run --directory "$ROOT/servers/engine" python - "$campaign_id" "$text" <<'PY'
+import glob
+import json
+import os
+import sys
+
+import server
+
+campaign_id, text = sys.argv[1], sys.argv[2]
+norm = " ".join(text.split())
+
+already = False
+try:
+    state = os.environ.get("CLAWDND_STATE_DIR") or os.environ.get("WORLDOS_STATE_DIR") or "."
+    files = sorted(
+        glob.glob(os.path.join(state, "campaigns", campaign_id, "sessions", "*.jsonl")),
+        key=os.path.getmtime,
+    )
+    if files:
+        recent = []
+        with open(files[-1], encoding="utf-8") as fh:
+            for ln in fh:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    entry = json.loads(ln)
+                except ValueError:
+                    continue
+                if entry.get("kind") == "narration":
+                    recent.append(" ".join((entry.get("text") or "").split()))
+        blob = " ".join(recent[-8:])
+        if norm and norm in blob:
+            already = True  # the DM already logged this prose this turn — do NOT double-log
+except Exception:
+    already = False  # any read failure → fall through to a normal append (no regression)
+
+if not already:
+    server.log_event(campaign_id, "narration", text)
+PY
+}
+
+# record_dm_reply CAMPAIGN_ID TEXT PHASE — write a DM reply to the chronicle, stamping
+# engine_logged:true IFF the prose was also logged to the engine session log (so the client can
+# de-dup the /chat blob against /events). On failure → an UNFLAGGED row (byte-identical to the
+# pre-#720 behavior; the client's eventsStreamedThisTurnRef backstop still applies). NEVER stamp
+# the flag unconditionally — that would suppress a legitimately /chat-only beat to zero rows.
+record_dm_reply() {
+  local campaign_id="$1" text="$2" phase="$3"
+  if log_engine_narration "$campaign_id" "$text"; then
+    chatlog dm "$text" '{"engine_logged":true}'
+  else
+    echo "[worldos] warning: could not record ${phase} narration through engine — chat row written without engine_logged" >&2
+    chatlog dm "$text"
+  fi
+}
+
 # LEAN-BEAT DM-TURN ARGS (the ONE shared implementation of the CLAWDND_LEAN_BEATS path).
 #
 # Both play loops (scripts/play.sh AND qa/run_duo.sh) drive a DM turn through `claude -p`,
