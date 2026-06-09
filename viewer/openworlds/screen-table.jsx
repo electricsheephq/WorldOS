@@ -1403,8 +1403,44 @@ function ConditionRow({ icon, name, who, detail, tone }) {
   );
 }
 
+// #732 (v1.0.4-rc1 RRI — chronicle hygiene): the engine's INTERNAL session-log kind names
+// (SessionLogEntry.kind = narration | dialogue | roll | system | combat) and a stray bare
+// label are bookkeeping, NEVER a player-facing attribution. A recentEvents history row carries
+// its raw kind, and before this guard a `dialogue`/`combat` row fell to LogEntry's default branch
+// and rendered the literal "dialogue"/"combat" string as an uppercase label. `cleanRowLabel`
+// returns a label ONLY when it is a real in-world speaker name, dropping any internal kind token
+// (and the trivial "You", whose attribution the prose carries — see the action branch below).
+const _INTERNAL_KIND_LABELS = new Set([
+  "narration", "dialogue", "dialog", "roll", "system", "combat", "action",
+  "began", "meeting", "arrival", "faction_move",
+]);
+function cleanRowLabel(label) {
+  const s = String(label == null ? "" : label).trim();
+  if (!s) return "";
+  if (_INTERNAL_KIND_LABELS.has(s.toLowerCase())) return "";
+  return s;
+}
+
 function LogEntry({ entry }) {
   const kind = entry.kind || "narration";
+  // #732: an engine `dialogue` row (recentEvents history band) is DM-authored speech — render it as
+  // sanitized in-world prose through the same guard as narration, so it can't (a) surface its raw
+  // kind label via the default branch nor (b) leak story-craft scaffolding the narration path strips.
+  if (entry.kind === "dialogue") {
+    const text = sanitizeNarration(entry.text);
+    if (!text) return null;
+    const speaker = cleanRowLabel(entry.who || entry.label);
+    return (
+      <div style={{ margin: "10px 0" }}>
+        {speaker ? (
+          <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--royal)" }}>
+            {speaker}
+          </span>
+        ) : null}
+        <span className="body" style={{ marginLeft: speaker ? 8 : 0, fontStyle: "italic" }}>{text}</span>
+      </div>
+    );
+  }
   if (entry.kind === "narration") {
     // #335: render-path-complete guard. Every narration source (the /chat tail AND
     // engine recentEvents) flows through this one branch, so sanitizing here means a
@@ -1429,10 +1465,22 @@ function LogEntry({ entry }) {
     );
   }
   if (entry.kind === "action") {
+    // #732: the player's OWN action ("You") rendered "You—I draw my sword." — the "You—" prefix is a
+    // formatting artifact that reads like DM narration scaffolding. The player already knows they are
+    // the actor, so render their action as clean second-person prose with no attribution chrome.
+    // A non-self actor (an NPC the engine names) keeps its styled "Name — action" attribution.
+    const rawWho = String(entry.who == null ? "" : entry.who).trim().toLowerCase();
+    const isSelf = rawWho === "you" || rawWho === "";
+    const actorLabel = isSelf ? "" : cleanRowLabel(entry.who);
+    if (!actorLabel) {
+      return (
+        <div className="body" style={{ margin: "10px 0", color: "var(--ink-800)" }}>{entry.text}</div>
+      );
+    }
     return (
       <div style={{ margin: "10px 0" }}>
         <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)" }}>
-          {entry.who}
+          {actorLabel}
         </span>
         <span className="hand" style={{ marginLeft: 8, color: "var(--ink-700)" }}>—</span>
         <span className="body" style={{ marginLeft: 8, color: "var(--ink-800)" }}>{entry.text}</span>
@@ -1459,12 +1507,20 @@ function LogEntry({ entry }) {
       </div>
     );
   }
+  // #732: the catch-all for any other (e.g. future) kind. NEVER fall back to rendering the raw
+  // internal `kind` string as a label — that is exactly the "dialogue"/"combat" leak. Show a real
+  // in-world label only (cleanRowLabel drops internal kind tokens), and the row text otherwise.
+  const fallbackLabel = cleanRowLabel(entry.label);
+  const fallbackText = entry.text || entry.detail;
+  if (!fallbackText) return null;
   return (
     <div style={{ margin: "8px 0" }}>
-      <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)" }}>
-        {entry.label || kind}
-      </span>
-      <span className="body" style={{ marginLeft: 8, color: "var(--ink-800)" }}>{entry.text || entry.detail}</span>
+      {fallbackLabel ? (
+        <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-700)" }}>
+          {fallbackLabel}
+        </span>
+      ) : null}
+      <span className="body" style={{ marginLeft: fallbackLabel ? 8 : 0, color: "var(--ink-800)" }}>{fallbackText}</span>
     </div>
   );
 }
