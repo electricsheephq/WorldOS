@@ -469,6 +469,41 @@ def infer_persona(run_dir: Path) -> str:
     return name
 
 
+def build_sha_evidence_gaps(persona_scores: list[dict], build_sha: str,
+                            release_personas: list[str]) -> list[dict]:
+    """native_gate's build-SHA contract, SCOPED to the canonical release personas.
+
+    The release verdict is about the canonical five (REQUIRED_RELEASE_PERSONAS) + the Mac handoff,
+    all at ONE SHA. Extra DIAGNOSTIC personas (opus-high / lean variants outside the release set)
+    may run at other SHAs without invalidating the release — so they must NOT trip the "single
+    build_sha" / "same-build" gates. (RRI 2026-06-09: 3 narrative variants stamped stale SHAs while
+    newbie/veteran/adversarial/narrative/optimizer were all at the candidate SHA, falsely failing
+    native_gate even though the Mac handoff + the 5 release personas were same-build.)
+    """
+    release = [p for p in persona_scores if str(p.get("persona") or "") in set(release_personas)]
+    build_shas = sorted({str(p["run_build_sha"]) for p in release if p.get("run_build_sha")})
+    missing = [p for p in release if not p.get("run_build_sha")]
+    gaps: list[dict] = []
+    if not build_sha:
+        gaps.append({"gate": "native_gate", "missing": "--build-sha",
+                     "detail": "release verdict requires the measured build SHA"})
+    if missing:
+        gaps.append({"gate": "native_gate", "missing": "per-run build_sha",
+                     "detail": "missing run build_sha for: "
+                     + ", ".join(str(p.get("persona") or p.get("run")) for p in missing)})
+    if build_sha:
+        mismatched = [p for p in release
+                      if p.get("run_build_sha") and not build_sha_matches(str(p.get("run_build_sha")), build_sha)]
+        if mismatched:
+            gaps.append({"gate": "native_gate", "missing": "same-build persona evidence",
+                         "detail": "run build_sha mismatch: "
+                         + ", ".join(f"{p['persona']}={p['run_build_sha']}" for p in mismatched)})
+    if len(build_shas) > 1:
+        gaps.append({"gate": "native_gate", "missing": "single build_sha",
+                     "detail": "mixed release-persona build_sha values: " + ", ".join(build_shas)})
+    return gaps
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", required=True, help="comma-separated persona run dirs")
@@ -619,35 +654,9 @@ def main() -> int:
         native_detail = f"handoff_json={args.handoff_json} gates={','.join(REQUIRED_HANDOFF_GATES)}"
     split_vm_handoff_evidence = bool(persona_scores and native_source == args.handoff_json and args.handoff_json)
 
-    evidence_gaps = []
-    build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
-    missing_build_sha = [p for p in persona_scores if not p.get("run_build_sha")]
-    if not args.build_sha:
-        evidence_gaps.append({
-            "gate": "native_gate",
-            "missing": "--build-sha",
-            "detail": "release verdict requires the measured build SHA",
-        })
-    if missing_build_sha:
-        evidence_gaps.append({
-            "gate": "native_gate",
-            "missing": "per-run build_sha",
-            "detail": "missing run build_sha for: " + ", ".join(str(p.get("persona") or p.get("run")) for p in missing_build_sha),
-        })
-    if args.build_sha:
-        mismatched = [p for p in persona_scores if p.get("run_build_sha") and not build_sha_matches(str(p.get("run_build_sha")), args.build_sha)]
-        if mismatched:
-            evidence_gaps.append({
-                "gate": "native_gate",
-                "missing": "same-build persona evidence",
-                "detail": "run build_sha mismatch: " + ", ".join(f"{p['persona']}={p['run_build_sha']}" for p in mismatched),
-            })
-    if len(build_shas) > 1:
-        evidence_gaps.append({
-            "gate": "native_gate",
-            "missing": "single build_sha",
-            "detail": "mixed persona build_sha values: " + ", ".join(build_shas),
-        })
+    # native_gate build-SHA contract — SCOPED to the canonical release personas (extra diagnostic
+    # variants may run at other SHAs without invalidating the release verdict). See the helper.
+    evidence_gaps = build_sha_evidence_gaps(persona_scores, args.build_sha, REQUIRED_RELEASE_PERSONAS)
     missing_release_personas = [p for p in REQUIRED_RELEASE_PERSONAS if p not in completed_set]
     if missing_release_personas:
         missing_detail = f"missing release persona(s): {', '.join(missing_release_personas)}"
