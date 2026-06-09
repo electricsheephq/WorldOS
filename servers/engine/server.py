@@ -1113,7 +1113,21 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 ch.armor_class = 10 + dex + ch.abilities.modifier(Ability.WIS)
             else:
                 ch.armor_class = srd_tables.class_base_ac(cname)
-        for f in srd_tables.features_through(cname, level):
+        through = list(srd_tables.features_through(cname, level))
+        # #624: a character created directly at/above its subclass-choice level WITH a
+        # subclass also gets that subclass's choice-level features (normalize loose
+        # names — 'Evocation' -> 'Evoker' — and persist the canonical form).
+        sub = next((cl.subclass for cl in ch.classes if cl.name.lower() == cname), None)
+        if sub:
+            canonical = srd_tables.resolve_subclass(cname, sub)
+            if canonical:
+                for cl in ch.classes:
+                    if cl.name.lower() == cname:
+                        cl.subclass = canonical
+                slvl = srd_tables.subclass_level(cname)
+                if slvl is not None and level >= slvl:
+                    through += srd_tables.subclass_features_at(cname, canonical, slvl)
+        for f in through:
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
             if "extra_attacks" in f:
@@ -4755,6 +4769,12 @@ def level_up(
             base = srd_tables.average_hp(die)
         gain = max(1, base + con)
 
+        # Normalize a chosen subclass to its canonical SRD name when the table knows
+        # it ('Evocation' -> 'Evoker'); an unknown/world-canon name passes through
+        # verbatim (additive — the DM still finalizes a homebrew tradition by name).
+        if subclass:
+            subclass = srd_tables.resolve_subclass(cname, subclass) or subclass
+
         if existing:
             existing.level += 1
             if subclass:
@@ -4788,6 +4808,13 @@ def level_up(
         # grants real features (and the mechanical hints the engine references),
         # not just HP and slots.
         gained = srd_tables.features_at(cname, new_class_level)
+        # #624: if the character chose a subclass and this is the subclass-choice
+        # level, also grant that subclass's choice-level features (e.g. an Evoker's
+        # Evocation Savant + Sculpt Spells) — not just the generic placeholder.
+        cur_subclass = next(
+            (cl.subclass for cl in ch.classes if cl.name.lower() == cname), None
+        )
+        gained = gained + srd_tables.subclass_features_at(cname, cur_subclass, new_class_level)
         for f in gained:
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
@@ -5002,6 +5029,25 @@ def _build_option_from_preview(preview: dict, feats_allowed: bool, multiclass_al
     }
 
 
+def _subclass_block_for(cname: str, next_class_level: int, current_subclass: Optional[str]) -> Optional[dict]:
+    """#624: the subclass-choice block a build option carries when leveling INTO a
+    class's subclass-choice level without a subclass already set — the legal SRD
+    options (each with a brief feature preview) so the surface renders a real list
+    instead of a free-text box. None when no choice is due at this level."""
+    slvl = srd_tables.subclass_level(cname)
+    if slvl is None or next_class_level != slvl:
+        return None
+    options = srd_tables.subclass_options(cname)
+    if not options:
+        return None
+    return {
+        "required": not bool((current_subclass or "").strip()),
+        "group_label": srd_tables.subclass_group_label(cname),
+        "current": current_subclass,
+        "options": options,
+    }
+
+
 @mcp.tool()
 def build_options(campaign_id: str, character_id: str) -> dict:
     """Return legal one-level build paths for a character without mutating state.
@@ -5022,6 +5068,9 @@ def build_options(campaign_id: str, character_id: str) -> dict:
     options: list[dict] = []
     blocked_options: list[dict] = []
 
+    existing_subclass = {
+        cl.name.lower(): cl.subclass for cl in before.classes
+    }
     for cname in class_names:
         preview = preview_level_up(campaign_id, character_id, cname)
         option = _build_option_from_preview(
@@ -5029,6 +5078,12 @@ def build_options(campaign_id: str, character_id: str) -> dict:
             c.house_rules.feats_allowed,
             c.house_rules.multiclass_allowed,
         )
+        # #624: surface the subclass picker (options + previews) when this path
+        # levels into the class's subclass-choice level without one chosen yet.
+        next_class_level = preview["to"]["class_level"]
+        sub_block = _subclass_block_for(cname, next_class_level, existing_subclass.get(cname))
+        if sub_block is not None:
+            option["subclass"] = sub_block
         if option["legal"]:
             options.append(option)
         else:

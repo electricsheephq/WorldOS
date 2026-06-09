@@ -215,7 +215,9 @@ def test_codex_dm_wrapper_seed_smoke_surfaces_origin_template_sheet(tmp_path):
     pc = seed["pc"]
     assert pc["class"] == "Wizard"
     assert pc["level"] == 3
-    assert pc["subclass"] == "Evocation"
+    # #624: the origin template's loose "Evocation" is normalized to the canonical SRD
+    # subclass "Evoker" (and Rolan now actually gains its level-3 features at seed time).
+    assert pc["subclass"] == "Evoker"
     assert "Magic Missile" in pc["spells"]
     assert "Mage Armor" in pc["spells"]
 

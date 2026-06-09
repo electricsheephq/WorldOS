@@ -13,8 +13,9 @@ start fabricating data the engine does not assert:
      an always-on button;
   2. the modal reads the engine planner (/build-options) — real HP/features, nothing faked;
   3. the confirm WRITES for real (POST /move kind:"do") and is never permanently disabled;
-  4. the subclass is a NAMED input the DM finalizes — NOT a hardcoded dropdown (the engine does not
-     enumerate world-canon subclasses).
+  4. the subclass picker presents the engine-exposed SRD options (with feature previews) AND keeps a
+     named free-text input for any world-canon tradition the engine's SRD table doesn't enumerate
+     (#624: the options come FROM the engine planner — never a JSX-hardcoded list).
 """
 
 import re
@@ -78,13 +79,19 @@ class LevelUpPickerGuard(unittest.TestCase):
         self.assertIn("if (submittingRef.current) return;", self.modal)
         self.assertIn("submittingRef.current = true;", self.modal)
 
-    def test_subclass_is_named_input_not_a_fabricated_dropdown(self):
-        """The engine does not enumerate world-canon subclasses, so the picker must take a NAMED
-        subclass (player types it, DM finalizes) — never a hardcoded list the engine doesn't assert."""
+    def test_subclass_presents_engine_options_and_keeps_named_input(self):
+        """#624: the picker presents the engine-exposed SRD subclass options (with previews) when the
+        planner provides them, AND keeps a named free-text input for world-canon traditions the engine
+        doesn't enumerate. The options come FROM the planner (option.subclass) — never JSX-hardcoded."""
         self.assertIn('data-worldos-testid="levelup-subclass-input"', self.modal)
         self.assertIn("subclassDue", self.modal)
         # confirm is blocked until a due subclass is named (honest required-field, not silent default)
         self.assertIn("subclassDue && !subclassName.trim()", self.modal)
+        # the options list is sourced from the engine planner option, not a hardcoded JSX array
+        self.assertIn("option.subclass", self.modal)
+        self.assertIn('data-worldos-testid="levelup-subclass-options"', self.modal)
+        # selecting an exposed option fills the named subclass (so confirm relays the chosen name)
+        self.assertIn("setSubclassName(opt.name)", self.modal)
 
 
 if __name__ == "__main__":
