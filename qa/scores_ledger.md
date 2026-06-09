@@ -6,10 +6,11 @@
 
 > **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files). Rows under DIFFERENT Ruler values are **NOT directly comparable as a quality trend** — the ruler changed (a rubric recalibration or a new gate moves the number with no change in play quality). Use `python3 qa/scores_db.py --compare` for a ruler-fenced trend; comparing across rulers requires re-scoring an archived transcript under the current ruler. **RC** = the release candidate a run scored (e.g. `v1.0.4-rc1`).
 
-> Rows: **63** · rendered 2026-06-09T13:18:02+00:00
+> Rows: **64** · rendered 2026-06-09T13:53:41+00:00
 
 | Run | When | SHA | Build date | Surface | DM model | Actor model | Scorer | Ruler | RC | Methodology | Story | Mech | AngryDM | Behav | Sat | RRI | Crit | Img% | Pass | Source | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| reorient-leanON-e2c0da4 | 2026-06-09T13:53:41+00:00 | e2c0da4 | 2026-06-09 | engine-duo | opus | opus | claude | sc_52a5cbd26775 |  | 3-lens duo 8-beat lean-ON (CLAWDND_LEAN_BEATS); reorient post-fix baseline | 4.1 | 3.7 | 3.4 | GREEN |  |  |  |  |  | /Volumes/LEXAR/Codex/session-notes/2026-06-05/worldos-release-grind/reorient-leanON-duo-e2c0da4.log | First ruler-stamped baseline (#722). Lean-ON Opus healthy → confirms the lean-ON dip was transient (patched lean re-ground bug). Lens files identical e2c0da4↔52e74e2; only release_readiness.py changed (#723), which does NOT affect engine-duo lens scoring. |
 | handoff-20260607-da05101-current-main-clean | 2026-06-07 | da05101 |  | GUI-built-app | scripted+codex | scripted |  |  |  | hybrid handoff gate (web smoke 5 + built smoke 5 + built Codex 1) |  |  |  |  |  |  |  |  | PASS | /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/ | handoff_score=100/100 on current origin/main da05101; clean same-disk worktree, dirty=false, release_verdict=false. Supersedes 9545383 as GUI velocity proof. Full #466 five-persona RRI still required. No quality lens. |
 | opus-lean-armB | 2026-06-02 | efb4f29 |  | engine-duo | claude-opus-4-8 | sonnet | sonnet |  |  | lean A/B lean arm (pre-#543 buggy lean path) |  |  |  |  |  |  |  |  | FAIL |  | ERRORED exit 1; quality VOID; ~24min; superseded by the #543 fix |
 | opus-base | 2026-06-02 | efb4f29 |  | engine-duo | claude-opus-4-8 | sonnet | sonnet |  |  | lean A/B baseline arm, 8 beats | 4.1 | 3.9 | 3.1 | GREEN |  |  |  |  |  |  | lean off; ~196s/beat; DM cost $11.32; scorer re-scored via stdin after E2BIG |
