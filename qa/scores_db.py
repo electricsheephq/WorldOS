@@ -52,6 +52,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# Sibling helper (qa/scoring_config_version.py): the content hash of the scoring RULER (rubrics +
+# schemas + gates). Stamped on every scored run so a number is always tagged with which ruler
+# produced it — the fix for "we used to hit 4.5, now 3.6" (different rulers, silently compared).
+try:
+    from scoring_config_version import scoring_config_version, scoring_config_label
+except ImportError:  # imported from a different cwd / as a package
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from scoring_config_version import scoring_config_version, scoring_config_label
+
 # ---------------------------------------------------------------------------
 # Locations
 # ---------------------------------------------------------------------------
@@ -74,6 +84,12 @@ COLUMNS: tuple[str, ...] = (
     "actor_model",        # model driving the AI player/persona (often == dm_model)
     "scorer_model",       # model that produced the lens scores (claude / gpt-5.4 / derived)
     "methodology",        # free text, e.g. "3-lens duo 8-beat", "5-persona part-B", "handoff smoke"
+    # --- comparability provenance (the missing stamps that broke cross-time comparison) ---
+    "scoring_config_version",  # content hash of the scoring RULER (rubrics+schemas+gates); see
+                               # qa/scoring_config_version.py. Two runs are a comparable QUALITY
+                               # TREND only when this matches — across versions it's a re-baseline.
+    "rubric_label",       # human label for the ruler, e.g. "ruler@sc_a1b2c3d4e5f6 (9/9 files)"
+    "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
     "mech_overall",       # Mechanical lens (0-5), NULL if not scored
     "angrydm_overall",    # 5e-fidelity / Angry-DM lens (0-5), NULL if not scored
@@ -159,6 +175,14 @@ def add_run(
     if fields.get("ts") is None:
         fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # Auto-stamp the scoring RULER unless the caller pinned it, so no scored run is ever recorded
+    # without the ruler that produced it (the comparability fix). When BACKFILLING an old re-scored
+    # transcript, pass scoring_config_version/rubric_label explicitly to record the ruler used THEN.
+    if fields.get("scoring_config_version") is None:
+        fields["scoring_config_version"] = scoring_config_version()
+    if fields.get("rubric_label") is None:
+        fields["rubric_label"] = scoring_config_label()
+
     # JSON-encode structured per-persona payloads.
     ppj = fields.get("per_persona_json")
     if ppj is not None and not isinstance(ppj, str):
@@ -218,6 +242,8 @@ _MD_COLS = [
     ("dm_model", "DM model"),
     ("actor_model", "Actor model"),
     ("scorer_model", "Scorer"),
+    ("scoring_config_version", "Ruler"),
+    ("rc_label", "RC"),
     ("methodology", "Methodology"),
     ("story_overall", "Story"),
     ("mech_overall", "Mech"),
@@ -254,6 +280,15 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
         "0–10. `*` in notes = RED-capped / partial / suspect — not a clean quality reading."
     )
     out.append("")
+    out.append(
+        "> **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files). "
+        "Rows under DIFFERENT Ruler values are **NOT directly comparable as a quality trend** — the "
+        "ruler changed (a rubric recalibration or a new gate moves the number with no change in play "
+        "quality). Use `python3 qa/scores_db.py --compare` for a ruler-fenced trend; comparing across "
+        "rulers requires re-scoring an archived transcript under the current ruler. **RC** = the "
+        "release candidate a run scored (e.g. `v1.0.4-rc1`)."
+    )
+    out.append("")
     out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
     out.append("")
 
@@ -277,6 +312,55 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
     return text
 
 
+def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None) -> str:
+    """The release-candidate quality view: engine-duo lens/RRI scores, FENCED by scoring ruler so
+    numbers are only lined up when they're actually comparable. This resolves the "we used to hit
+    4.5, now 3.6" confusion — rows scored under different rulers (a rubric recalibration or an added
+    gate) appear in separate blocks (a re-baseline, not a trend). With ``rc`` set, restrict to runs
+    that scored that release candidate (e.g. ``v1.0.4-rc1``)."""
+    rows = [r for r in fetch_rows(db_path) if r.get("surface") == "engine-duo"]
+    if rc:
+        rows = [r for r in rows if (r.get("rc_label") or "") == rc]
+    groups: dict[str, list] = {}
+    order: list[str] = []
+    for r in rows:
+        key = r.get("scoring_config_version") or "(unstamped — pre-versioning)"
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(r)
+
+    cur = scoring_config_version()
+    out = ["WorldOS quality trend — surface=engine-duo, FENCED by scoring ruler.",
+           "Only compare numbers WITHIN a block; across blocks the ruler changed."]
+    if rc:
+        out.append(f"release candidate filter: {rc}")
+    out.append("")
+
+    def _g(r: dict, k: str) -> str:
+        v = r.get(k)
+        return "" if v is None else (f"{v:.1f}" if isinstance(v, float) else str(v))
+
+    for key in order:
+        grp = groups[key]
+        tag = "   <<< CURRENT ruler" if key == cur else ""
+        out.append(f"=== ruler {key}{tag}  ({len(grp)} run(s)) ===")
+        out.append(f"  {'rc / build':<24}{'dm_model':<16}{'story':>6}{'mech':>6}{'angry':>6}{'beh':>5}{'rri':>5}")
+        for r in reversed(grp):  # fetch_rows is newest-first → chronological
+            lbl = r.get("rc_label") or str(r.get("build_sha") or "?")
+            out.append(
+                f"  {str(lbl)[:23]:<24}{str(r.get('dm_model') or '')[:15]:<16}"
+                f"{_g(r,'story_overall'):>6}{_g(r,'mech_overall'):>6}{_g(r,'angrydm_overall'):>6}"
+                f"{str(r.get('behavioral') or '')[:4]:>5}{_g(r,'rri'):>5}"
+            )
+        out.append("")
+    if len([k for k in order]) > 1:
+        out += ["NOTE: the blocks above used DIFFERENT rulers — a number in one block is NOT directly",
+                "comparable to one in another. To anchor across rulers, re-score an archived transcript",
+                "under the current ruler (qa/score.sh is generic over <transcript> <state> <rubric> <schema>)."]
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -287,6 +371,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--render", action="store_true", help="regenerate qa/scores_ledger.md from the db")
     p.add_argument("--list", action="store_true", help="print rows (newest first) as JSON")
     p.add_argument("--add", action="store_true", help="append one run from the --field flags below")
+    p.add_argument("--compare", action="store_true",
+                   help="print the engine-duo quality trend, FENCED by scoring ruler (the honest rc1-vs-rc2-vs-4.5-era view)")
+    p.add_argument("--rc", default=None,
+                   help="with --compare: restrict to runs that scored this release candidate (e.g. v1.0.4-rc1)")
     p.add_argument("--run-id")
     for col in COLUMNS:
         p.add_argument(f"--{col.replace('_', '-')}", dest=col, default=None)
@@ -322,7 +410,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         render_markdown(db)
         print(f"rendered {MD_PATH} ({len(fetch_rows(db))} rows)")
 
-    if not any([args.init, args.add, args.list, args.render]):
+    if args.compare:
+        print(compare_rc(db, rc=args.rc))
+
+    if not any([args.init, args.add, args.list, args.render, args.compare]):
         _build_parser().print_help()
     return 0
 
