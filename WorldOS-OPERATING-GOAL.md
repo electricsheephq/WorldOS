@@ -5,13 +5,15 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-07T20:08:13+07:00 current-main Mac handoff proof refresh.
+     AS OF:        2026-06-09 — v1.0.4-rc1 RRI re-baseline (honest non-partial sweep + 9-agent audit + roadmap).
      MAIN BASELINE:
-                   Current release-candidate proof SHA is `da05101`
-                   (`da05101139850f3491243f6b5c5cf84534501152`). `origin/main` and the proof
-                   worktree both resolved to this SHA before the Mac handoff rerun. Earlier
-                   handoffs at `9545383`, `fd9dba5`, and `4a0efe1` remain preserved as historical
-                   evidence, but they are no longer current-main proof.
+                   `origin/main` = `a104f1e`. The RC-under-test SHA was `fa97b34` (8 PRs merged since
+                   da05101: #719/#720/#722/#723/#724/#726/#727/#728). RELEASE MODEL is now RRI-FIRST:
+                   v1.0.x tags = semver feature-labels; RRI 10/10 = release-authority; tag-after-proof
+                   ("Player-Ready Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity).
+                   Milestone v1.0.4 (#27) is the version-scoped ledger (22 issues) for the Beta push.
+                   Plan: `/Users/lume/.claude/plans/continue-lets-update-the-wild-lecun.md`. The
+                   da05101/9545383/fd9dba5/4a0efe1 handoffs are preserved history, not current proof.
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
@@ -30,10 +32,15 @@
                    release-RRI readiness requires `--private-art-mode required`. Artifact:
                    `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/`.
      LAST MEASURED GATE BUILD:
-                   f5500ac produced qa/RRI.json = 2.7/10, but this is PARTIAL /
-                   HARNESS-CONTAMINATED evidence: only newbie wrote score.json; the other
-                   personas failed around port/backend harness setup; behavioral/UI/palette/image
-                   evidence was not a valid five-persona release verdict.
+                   v1.0.4-rc1 RRI = 3.6/10 (4/11) @`fa97b34` — HONEST, non-partial 5-persona sweep
+                   (Mac part-A handoff 100/100 + VM part-B), ruler-stamped sc_5ac7a1d9103c, in
+                   qa/scores.db (run_id v1.0.4-rc1-fa97b34). PASS: native_gate(signal), arc, no_give_up,
+                   behavioral GREEN, palette. FAIL: cross_persona_sat 4.8(need 7); zero_critical (the 4
+                   "criticals" = ONE root: active-PC silent-switch #735, 4/5 personas); story 3.9(need
+                   4.3); mechanical 3.2(need 4.5; one-duo sampling-understated); ui_audit (STALE fa97b34
+                   snapshot, pre the v1.0.2 axe-0 merges — re-proof on a104f1e likely PASS); image_render
+                   0% (VM-gateway gap, Mac authoritative). Superseded f5500ac(2.7) + da05101. NB: caught+
+                   fixed #728, a #723 regression that crashed EVERY rollup — CI gap #729 let it ship.
      LAST BUILT-APP PLAY PROOF:
                    Last built-app handoff proof is `da05101`
                    (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`):
@@ -57,24 +64,16 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  #479 is closed; #504 gives a fast GUI velocity gate; #505 lets RRI consume
-                   Mac handoff proof through `--handoff-json`.
-                   Do not claim release. Run #466 for a trustworthy clean RRI failure list/result.
-                   For same-SHA RRI, sync/fetch the support VM checkout to `da05101`, prove Codex
-                   auth/profile, rerun
-                   `python3 qa/support_vm_preflight.py --expected-sha da05101 --provider codex --player-agent codex --private-art-mode required ...`,
-                   and pair
-                   the VM persona artifacts with the `da05101` Mac handoff JSON above. If a
-                   newer release-candidate SHA is used instead, rerun the Mac handoff on that
-                   same SHA before rollup. The 32GB support VM runs heavy backend/persona sweeps
-                   only after the preflight writes a redacted ready-for-RRI artifact. The latest
-                   preflight can query GitHub `origin/main` successfully, but the local VM checkout
-                   is still stale at `e5c0a5f`.
-                   If the VM route is still unavailable, record that as the blocker and
-                   file/fix repo-side RRI harness gaps only if found. #481/#482/#483/#484/#485/#486
-                   are closed; #466 remains the release-gate issue and #467 remains the UX-first sprint.
-                   Keep sprint work UX-first (#467): first-turn playability, clickability/chrome,
-                   launcher clarity, live-response feel, and CRPG depth before more hardening/proxy/security work.
+     NEXT ACTION:  Execute the v1.0.4 Player-Ready-Beta plan — 3 gate-flip sprints → RRI 10/10, all
+                   gaps tracked under milestone v1.0.4 (#27). Sprint 1 (reliability/cheap-gates): #735
+                   active-PC silent-switch (THE zero_critical root, 4/5 personas), #731 XSS, #732
+                   chronicle-leak, #623 DM-hang + heartbeat, #624 subclass, #306 + ui_audit re-proof on
+                   a104f1e (likely stale-PASS), #721, #353. Sprint 2: sat→7 (latency telemetry +
+                   display-only screen wiring #602/#604/#607 + #358). Sprint 3: story 4.3 / mech 4.5
+                   (companion-system depth #612-616/#593 + engine-audit #733/#696). VELOCITY: #729 (CI
+                   gate qa/ tests), `qa/cut_rc.sh` one-command RC harness, support_vm_preflight (#730).
+                   Provider parity (#696/#701) is vNext — Opus is the Beta DM. Do NOT tag v1.0.4 until a
+                   clean non-partial RRI 10/10. Drive sprints as ultracode workflows + verify on a build.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
