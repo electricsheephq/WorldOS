@@ -146,19 +146,38 @@ function openWorldsSyncHashForScreen(id, opts) {
   }
 }
 
-// #342: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into the
-// chronicle. The adversarial run (#324 v2) found that submitting "<script>…</script>", "{{ }}", or
+// #342 + #731: neutralize markup in player free-text BEFORE it is sent to the engine or echoed into
+// the chronicle. The #324 v2 adversarial run found that submitting "<script>…</script>", "{{ }}", or
 // "<b>…</b>" sent the raw markup straight to the DM (it stalled 35s+) and rode along in the local
-// echo. React already escapes on *display* (it never renders raw HTML), so this is NOT an XSS fix —
-// it is a robustness fix: a hostile/odd free-text turn must not be able to wedge the DM or the loop.
-// We strip angle-bracket tags and defang template-style "{{ … }}" / "}}" runs to plain text, collapse
-// whitespace, and cap absurd length — keeping ordinary apostrophes, quotes, punctuation, and emoji
-// intact so a normal in-character line is untouched. Viewer-side only; the engine stays sole writer.
+// echo. React escapes on *display*, but #342's tag-only strip still leaked the script BODY as text:
+// "<script>alert(1)</script>" → "alert(1)" rendered as the player's action — an injection/spoofing
+// surface (#731, v1.0.4-rc1 RRI). The fix below excises the BODIES of script-class / embedded-content
+// tags (their content is never in-world prose), then strips remaining angle-bracket tags and defangs
+// template-style "{{ … }}" / "}}" runs to plain text, collapses whitespace, and caps absurd length —
+// keeping ordinary apostrophes, quotes, punctuation, emoji, and benign emphasis prose intact so a
+// normal in-character line is untouched. Viewer-side only; the engine stays sole writer.
 window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(raw) {
   if (typeof raw !== "string") return "";
   let t = raw;
-  // Drop anything that looks like an HTML/XML tag (incl. <script>…</script> bodies are kept as text
-  // once their tags are removed). Do it twice so "<<b>>" style nesting can't leave a stray bracket.
+  // #731 (v1.0.4-rc1 adversarial RRI): excise the *bodies* of script-class / embedded-content tags
+  // FIRST — before the generic tag strip below. Previously only the tags were removed, so
+  // "<script>alert(1)</script>" left "alert(1)" as text, which rode into the chronicle as a player
+  // action (an injection/spoofing surface). For these elements the CONTENT is never in-world prose,
+  // so drop the whole "<tag …>…</tag>" span — open tag, body, and close tag — leaving nothing.
+  // Also catch a self-closed/orphaned open tag of the same class. Case-insensitive; the `[\s\S]`
+  // body match spans newlines. Ordinary emphasis tags (<b>/<i>/…) are NOT in this list — their text
+  // is legitimate prose and is preserved by the generic tag strip that follows.
+  t = t.replace(
+    /<(script|style|iframe|object|embed|svg|math|template|noscript|xml|applet|frame|frameset)\b[\s\S]*?<\/\1\s*>/gi,
+    " ",
+  );
+  t = t.replace(
+    /<\/?(script|style|iframe|object|embed|svg|math|template|noscript|xml|applet|frame|frameset)\b[^>]*>/gi,
+    " ",
+  );
+  // Drop anything that looks like an HTML/XML tag (incl. <b>…</b> bodies are kept as text once their
+  // tags are removed — that is legitimate emphasis prose). Do it twice so "<<b>>" style nesting can't
+  // leave a stray bracket.
   t = t.replace(/<\/?[a-zA-Z][^>]*>/g, " ").replace(/<\/?[a-zA-Z][^>]*>/g, " ");
   // Defang stray angle brackets that weren't part of a full tag.
   t = t.replace(/[<>]/g, " ");
