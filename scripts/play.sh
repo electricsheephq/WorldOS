@@ -247,6 +247,13 @@ fi
 # keep CLAWDND_BEAT_TIMEOUT (default 200s). Echoes the DM's final text.
 dm_turn() {
   local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc beat_timeout
+  # #623: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE in
+  # qa/lib_beat_driver.sh — parity with scripts/play_party.sh + scripts/play_codex_dm.sh) so the DM
+  # logs an EARLY /events narration beat. Its ABSENCE in this SOLO path was the #623 bug: the DM
+  # emitted nothing to /events until the full 85-157s beat completed, so the viewer showed blank and
+  # the persona perceived a 'dropped'/'hung' beat. This is the MODEL-COOPERATIVE half; the harness
+  # also emits a model-INDEPENDENT heartbeat (clawdnd_emit_progress_heartbeat) before each beat below.
+  msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
   # The lean-beat path (fresh session + re-ground directive) is the ONE shared implementation
   # in qa/lib_beat_driver.sh — qa/run_duo.sh drives the SAME helper, so the two harnesses can't
   # drift. It populates CLAWDND_DM_LEAN_{SESSION,EXTRA} when this is a continuing beat AND
@@ -369,6 +376,13 @@ echo "  Save dir: $STATE_DIR"
 # above), so the DM must NOT start_world and must NOT create a character — it re-grounds via
 # get_state and opens a scene around the EXISTING authored PC.
 if [ -n "$HERO_CAMP" ]; then
+  # #623 (model-INDEPENDENT heartbeat): the authored-hero campaign ALREADY EXISTS ($HERO_CAMP, pre-
+  # seeded above), so write a wrapper-authored opening progress beat to its engine log BEFORE the long
+  # cold-open turn — /events renders it within ~1s and the viewer's opening spinner flips to "the scene
+  # is arriving above" instead of staying blank for the ~280-500s world-build. (The DEFAULT cold open
+  # below mints its campaign INSIDE the turn, so it has no pre-turn campaign to target — it relies on
+  # the #718 cold-open spinner + the live-progress rule the DM turn carries.) first=1 → opening teaser.
+  clawdnd_emit_progress_heartbeat "$HERO_CAMP" 1 0
   DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a SOLO session in a living world for a single human player who will act through the dashboard. The player AUTHORED their own character in the Creation wizard, so the world AND the player's character ALREADY EXIST — they were pre-seeded for you:
@@ -465,6 +479,13 @@ while true; do
     BEAT_NO=$((DM_TURNS + 1))
     RUNBOOK="$(clawdnd_runbook_for_beat "$BEAT_NO" "$MAX_TURNS" "$PREV_LOC" "$STATE_DIR")"
     echo "[play] beat $BEAT_NO runbook: ${RUNBOOK%% (*}…"
+    # #623 (model-INDEPENDENT heartbeat): write a wrapper-authored progress beat to the engine NOW,
+    # before the DM's long think, so /events has a row to render within ~1s and the viewer flips its
+    # spinner to "the scene is arriving above" — the player is never left staring at a blank chronicle
+    # for the full 85-157s beat (the perceived 'drop'/'hang' #623 filed). Best-effort + non-fatal; the
+    # engine stays the sole writer (it routes through log_engine_narration). DM_TURNS = the 0-based beat
+    # index → the heartbeat text rotates so a long session never repeats the same teaser.
+    clawdnd_emit_progress_heartbeat "$CAMPAIGN_ID" 0 "$DM_TURNS"
     DMSG="$(dm_turn 0 "The player does:
 
 $PMSG
