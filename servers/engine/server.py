@@ -235,6 +235,45 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
     return moved
 
 
+def _party_xp_recipients(c: Campaign, include_companions: bool = True) -> list[str]:
+    """The ids that share a PARTY XP award — the LIVING travelling group, in a stable
+    order. Mirrors `_move_party_to`'s membership rule: the PC(s) plus every
+    kind='companion', whether or not the DM remembered to add them to `c.party`.
+
+    This is the XP twin of the relocate sweep (#353): a de-facto companion (kind=
+    'companion' but absent from c.party — e.g. loaded via
+    load_canon_character(add_to_party=False) and never recruited) walks WITH the party,
+    so it must also EARN with the party. Gating XP on `c.party` membership while the
+    relocate path gated on KIND left such a companion co-located in every scene yet
+    silently stuck at its starting XP (the audit's "award_party_xp does not increment
+    companion XP" symptom; the Wyll-froze-at-the-checkpoint family).
+
+    Order: c.party first (preserving the existing remainder-to-first-recipient payout so
+    the PC still takes any odd XP), then any de-facto companion not already in c.party.
+    Excludes the dead and, when `include_companions=False`, every companion. Standalone
+    NPCs / monsters never earn (they aren't part of the group)."""
+    party_set = set(c.party)
+    kinds = {"player", "companion"} if include_companions else {"player"}
+    recipients: list[str] = []
+    seen: set[str] = set()
+
+    def _eligible(cid: str) -> bool:
+        m = c.characters.get(cid)
+        return m is not None and m.kind in kinds and not m.dead
+
+    for cid in c.party:  # c.party order first — keeps the PC as the remainder taker
+        if cid not in seen and _eligible(cid):
+            recipients.append(cid)
+            seen.add(cid)
+    if include_companions:  # then de-facto companions the DM never added to c.party
+        for cid, member in c.characters.items():
+            if cid not in seen and cid not in party_set and member.kind == "companion" \
+                    and not member.dead:
+                recipients.append(cid)
+                seen.add(cid)
+    return recipients
+
+
 def _party_levels(c: Campaign) -> list[int]:
     """The total-level of every LIVING party member (PC + companion) — the input the
     encounter sizing (`encounter.py` / `wander.pick_encounter`) needs to budget a fight
@@ -4476,7 +4515,9 @@ def _award_kill_xp(c, monster) -> "dict | None":
         return None
     if getattr(monster, "kind", "") != "monster" or not monster.dead or monster.xp_value <= 0:
         return None
-    recipients = [c.characters[i] for i in c.party if i in c.characters and not c.characters[i].dead]
+    # The whole travelling group earns (PC + de-facto companions), #353 — mirrors the
+    # relocate sweep so a companion that co-locates also levels.
+    recipients = [c.characters[i] for i in _party_xp_recipients(c)]
     if not recipients:
         return None
     total = monster.xp_value
@@ -4501,8 +4542,8 @@ def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
     empty/dead party. Caller persists (sole-writer) and guards idempotency."""
     if c.leveling_mode != "xp" or amount <= 0:
         return None
-    recipients = [c.characters[i] for i in c.party
-                  if i in c.characters and not c.characters[i].dead]
+    # The whole travelling group earns (PC + de-facto companions), #353.
+    recipients = [c.characters[i] for i in _party_xp_recipients(c)]
     if not recipients:
         return None
     each, rem = divmod(amount, len(recipients))
@@ -4683,12 +4724,10 @@ def award_party_xp(
     by hand and calling award_xp repeatedly."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        kinds = {"player", "companion"} if include_companions else {"player"}
-        recipients = [
-            cid
-            for cid in c.party
-            if (m := c.characters.get(cid)) and m.kind in kinds and not m.dead
-        ]
+        # The travelling group earns together (#353): include de-facto companions —
+        # kind='companion' but not in c.party — the same set the relocate sweep co-locates,
+        # unless the caller opts out with include_companions=False.
+        recipients = _party_xp_recipients(c, include_companions=include_companions)
         if not recipients:
             raise ValueError("no eligible party members to award XP to")
         each, extra = divmod(max(0, amount), len(recipients))
@@ -6988,8 +7027,11 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
         # party is at 0) fall back to the original modest milestone grant.
         award = None
         if c.leveling_mode == "xp":
-            living = [c.characters[i] for i in c.party
-                      if i in c.characters and not c.characters[i].dead]
+            # The travelling group (PC + de-facto companions) shares the parity top-up, #353 —
+            # a companion that fought all session but was never added to c.party closed at 0
+            # while the PC banked XP; the relocate sweep already walks it, so the reward
+            # backstop must too.
+            living = [c.characters[i] for i in _party_xp_recipients(c)]
             advanced = (c.day > 1 or c.time_of_day != "morning"
                         or sum(1 for loc in c.locations.values() if loc.visited) > 1)
             if living and advanced:
