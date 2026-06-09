@@ -60,6 +60,28 @@ jobs:
         # -p no:xdist keeps this single-process (no parallel workers) — lean by design.
         run: python -m pytest viewer/tests -q -p no:xdist
 
+  qa-release-gate-tests:
+    # #729: the qa/ release-gate + scoring + wrapper-contract tests were NEVER in CI — the `test`
+    # job only collects servers/*/tests/. A *tested* crash (#723 `build_shas`, caught by
+    # test_release_readiness.py's 4 build_sha tests) shipped because CI never ran them. Gate the
+    # release-authority surface (release_readiness.py, scores_db.py, the play-wrapper contracts) so
+    # a regression there can no longer merge green.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: QA release-gate + scoring + wrapper-contract tests
+        # Run from the engine venv (pydantic etc. on path) with cwd=servers/engine, so the qa tests'
+        # `import server/store` resolves and release_readiness.py subprocesses use the same interpreter.
+        run: |
+          uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist \
+            ../../qa/test_release_readiness.py \
+            ../../qa/test_release_readiness_scope.py \
+            ../../qa/test_scores_db_comparability.py \
+            ../../qa/test_scores_db.py \
+            ../../qa/test_release_gate_static.py
+
   license-check:
     runs-on: ubuntu-latest
     steps:
