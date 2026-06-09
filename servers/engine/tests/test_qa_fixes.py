@@ -996,7 +996,9 @@ def test_update_character_accepts_flat_level_class_aliases(tmp_path, monkeypatch
     ch = server.update_character(bg, cidp, {
         "level": 3, "class_name": "Wizard", "subclass": "School of Evocation"})
     assert ch["classes"][0]["level"] == 3
-    assert ch["classes"][0]["subclass"] == "School of Evocation"
+    # #624: a known loose subclass name is normalized to its canonical SRD form
+    # ("School of Evocation" -> "Evoker"); an unknown/world-canon name passes through.
+    assert ch["classes"][0]["subclass"] == "Evoker"
     assert ch["proficiency_bonus"] == 2          # L3 -> +2 recomputed from the new level
     # A genuine typo is still rejected (the model's strict-typo guard is untouched).
     with pytest.raises(Exception):

@@ -375,6 +375,13 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   // already flagged one pending (created above the choose-level). Either way the player names it.
   const subclassDue = !!hero.pendingSubclass ||
     featuresGained.some((f) => /subclass/i.test((f && f.name) || ""));
+  // #624: the engine now exposes the legal SRD subclass options (with a feature preview) for the
+  // chosen class at its subclass level. Present them as a pickable list instead of a blind text box —
+  // selecting one fills `subclassName`. The free-text input REMAINS for any world-canon tradition the
+  // engine's SRD table doesn't enumerate (additive: the DM still finalizes a homebrew name).
+  const subclassBlock = (option && option.subclass) || null;
+  const subclassOptions = (subclassBlock && Array.isArray(subclassBlock.options)) ? subclassBlock.options : [];
+  const subclassGroupLabel = (subclassBlock && subclassBlock.group_label) || "subclass";
   const asiRequired = !!(option && option.choices && option.choices.asi_required);
   const featAllowed = !!(option && option.choices && option.choices.feat_allowed);
   const toLevel = (option && option.to && option.to.level) || (Number(hero.level) + 1);
@@ -490,13 +497,43 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
               )}
 
               {subclassDue && (
-                <div style={{ marginTop: 16 }}>
-                  <SectionTitle>Choose your subclass</SectionTitle>
-                  <p className="body-sm muted" style={{ marginTop: 0 }}>
-                    This level grants a subclass. Name the one your character takes — the DM confirms it against the world's options.
-                  </p>
+                <div style={{ marginTop: 16 }} data-worldos-testid="levelup-subclass-section">
+                  <SectionTitle>Choose your {subclassGroupLabel}</SectionTitle>
+                  {subclassOptions.length > 0 ? (
+                    <>
+                      <p className="body-sm muted" style={{ marginTop: 0 }}>
+                        This level grants a {subclassGroupLabel}. Pick one of the options below (each shows what it grants),
+                        or name a different one your world offers — the DM finalizes it.
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}
+                        data-worldos-testid="levelup-subclass-options">
+                        {subclassOptions.map((opt) => {
+                          const selected = subclassName.trim().toLowerCase() === (opt.name || "").toLowerCase();
+                          return (
+                            <button key={opt.name} type="button"
+                              onClick={() => setSubclassName(opt.name)}
+                              data-worldos-testid={"levelup-subclass-option-" + (opt.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}
+                              style={{
+                                textAlign: "left", padding: "8px 12px", cursor: "pointer",
+                                background: selected ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+                                boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                                color: selected ? "var(--w-300)" : "var(--ink-800)",
+                                fontFamily: "var(--f-body)", fontSize: 13,
+                              }}>
+                              <div style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>{opt.name}</div>
+                              {opt.desc && <div className="body-sm" style={{ opacity: 0.85, marginTop: 2 }}>{opt.desc}</div>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="body-sm muted" style={{ marginTop: 0 }}>
+                      This level grants a subclass. Name the one your character takes — the DM confirms it against the world's options.
+                    </p>
+                  )}
                   <input type="text" value={subclassName} onChange={(e) => setSubclassName(e.target.value)}
-                    placeholder="e.g. School of Evocation"
+                    placeholder={subclassOptions.length > 0 ? "…or type another tradition your world offers" : "e.g. School of Evocation"}
                     data-worldos-testid="levelup-subclass-input"
                     style={{
                       width: "100%", padding: "8px 10px", boxSizing: "border-box",

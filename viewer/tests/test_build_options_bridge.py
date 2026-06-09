@@ -59,6 +59,29 @@ class BuildOptionsBridgeTests(unittest.TestCase):
         self.assertEqual(response["code"], "invalid_campaign")
         self.assertIn("campaign", response["errors"][0])
 
+    def test_build_options_surfaces_subclass_options_at_subclass_level(self):
+        # #624: a Wizard one level below its subclass-choice level (L2 -> L3) must see
+        # the legal Arcane Tradition options (with previews) on its continue-wizard path,
+        # so the /character picker renders a real list instead of a free-text box.
+        engine = server._engine_server()
+        campaign_id = engine.create_campaign("Subclass")["id"]
+        character_id = engine.create_character(
+            campaign_id, "Gale", kind="player", class_name="Wizard", level=2,
+            apply_srd_defaults=True,
+            abilities={"intelligence": 16, "constitution": 14, "dexterity": 12},
+        )["id"]
+        response = server.build_options_response(campaign_id, character_id)
+        self.assertTrue(response["ok"])
+        wizard = next(o for o in response["planner"]["options"] if o["class_name"] == "wizard")
+        sub = wizard.get("subclass")
+        self.assertIsNotNone(sub, "wizard at L2->L3 must carry a subclass-choice block")
+        self.assertTrue(sub["required"])
+        self.assertEqual(sub["group_label"], "Arcane Tradition")
+        names = {o["name"] for o in sub["options"]}
+        self.assertIn("Evoker", names)
+        self.assertTrue(all(o.get("desc") for o in sub["options"]))
+        self.assertTrue(all(o.get("features") for o in sub["options"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,313 @@
+{
+  "_attribution": "Subclass options & choice-level features curated from SRD 5.2.4 (CC-BY-4.0, Wizards of the Coast). One canonical subclass per class per the SRD subset; additive — the DM may still confirm a world-canon tradition by name.",
+  "subclass_level": {
+    "druid": 3,
+    "fighter": 3,
+    "bard": 3,
+    "sorcerer": 3,
+    "wizard": 3,
+    "warlock": 3,
+    "ranger": 3,
+    "cleric": 3,
+    "paladin": 3,
+    "barbarian": 3,
+    "rogue": 3,
+    "monk": 3
+  },
+  "classes": {
+    "barbarian": {
+      "group_label": "Primal Path",
+      "options": [
+        {
+          "name": "Path of the Berserker",
+          "desc": "Primal Path: gains Frenzy at level 3.",
+          "aliases": [
+            "Berserker",
+            "Path of Berserker"
+          ],
+          "features": [
+            {
+              "name": "Frenzy",
+              "desc": "If you use Reckless Attack while your Rage is active, you deal extra damage to the first target you hit on your turn with a Strength-based attack. To determine the extra damage, roll a number of d6s equal to your Rage Damage bonus, and add them together. The damage has the same type as the weapon or Unarmed Strike used for the attack."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Berserker": "Path of the Berserker",
+        "Path of Berserker": "Path of the Berserker"
+      }
+    },
+    "bard": {
+      "group_label": "Bard College",
+      "options": [
+        {
+          "name": "College of Lore",
+          "desc": "Bard College: gains Bonus Proficiencies, Cutting Words at level 3.",
+          "aliases": [
+            "Lore"
+          ],
+          "features": [
+            {
+              "name": "Bonus Proficiencies",
+              "desc": "You gain proficiency with three skills of your choice."
+            },
+            {
+              "name": "Cutting Words",
+              "desc": "You learn to use your wit to supernaturally distract, confuse, and otherwise sap the confidence and competence of others. When a creature that you can see within 60 feet of yourself makes a damage roll or succeeds on an ability check or attack roll, you can take a Reaction to expend one use of your Bardic Inspiration; roll your Bardic Inspiration die, and subtract the number rolled from the creature's roll, reducing the damage or potentially turning the success into a failure."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Lore": "College of Lore"
+      }
+    },
+    "cleric": {
+      "group_label": "Divine Domain",
+      "options": [
+        {
+          "name": "Life Domain",
+          "desc": "Divine Domain: gains Disciple of Life, Life Domain Spells, Preserve Life at level 3.",
+          "aliases": [
+            "Life"
+          ],
+          "features": [
+            {
+              "name": "Disciple of Life",
+              "desc": "When a spell you cast with a spell slot restores Hit Points to a creature, that creature regains additional Hit Points on the turn you cast the spell. The additional Hit Points equal 2 plus the spell slot's level."
+            },
+            {
+              "name": "Life Domain Spells",
+              "desc": "Your connection to this divine domain ensures you always have certain spells ready. When you reach a Cleric level specified in the Life Domain Spells table, you thereafter always have the listed spells prepared."
+            },
+            {
+              "name": "Preserve Life",
+              "desc": "As a Magic action, you present your Holy Symbol and expend a use of your Channel Divinity to evoke healing energy that can restore a number of Hit Points equal to five times your Cleric level. Choose Bloodied creatures within 30 feet of yourself (which can include you), and divide those Hit Points among them. This feature can restore a creature to no more than half its Hit Point maximum."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Life": "Life Domain"
+      }
+    },
+    "druid": {
+      "group_label": "Druid Circle",
+      "options": [
+        {
+          "name": "Circle of the Land",
+          "desc": "Druid Circle: gains Circle of the Land Spells, Land's Aid at level 3.",
+          "aliases": [
+            "Land"
+          ],
+          "features": [
+            {
+              "name": "Circle of the Land Spells",
+              "desc": "Whenever you finish a Long Rest, choose one type of land: arid, polar, temperate, or tropical. Consult the table below that corresponds to the chosen type; you have the spells listed for your Druid level and lower prepared."
+            },
+            {
+              "name": "Land's Aid",
+              "desc": "As a Magic action, you can expend a use of your Wild Shape and choose a point within 60 feet of yourself. Vitality-giving flowers and life-draining thorns appear for a moment in a 10-foot-radius Sphere centered on that point. Each creature of your choice in the Sphere must make a Constitution saving throw against your spell save DC, taking 2d6 Necrotic damage on a failed save or half as much damage on a successful one. One creature of your choice in that area regains 2d6 Hit Points."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Land": "Circle of the Land"
+      }
+    },
+    "fighter": {
+      "group_label": "Martial Archetype",
+      "options": [
+        {
+          "name": "Champion",
+          "desc": "Martial Archetype: gains Improved Critical, Remarkable Athlete at level 3.",
+          "aliases": [],
+          "features": [
+            {
+              "name": "Improved Critical",
+              "desc": "Your attack rolls with weapons and Unarmed Strikes can score a Critical Hit on a roll of 19 or 20 on the d20."
+            },
+            {
+              "name": "Remarkable Athlete",
+              "desc": "Thanks to your athleticism, you have Advantage on Initiative rolls and Strength (Athletics) checks."
+            }
+          ]
+        }
+      ],
+      "aliases": {}
+    },
+    "monk": {
+      "group_label": "Monastic Tradition",
+      "options": [
+        {
+          "name": "Warrior of the Open Hand",
+          "desc": "Monastic Tradition: gains Open Hand Technique at level 3.",
+          "aliases": [
+            "Open Hand"
+          ],
+          "features": [
+            {
+              "name": "Open Hand Technique",
+              "desc": "Whenever you hit a creature with an attack granted by your Flurry of Blows, you can impose one of the following effects on that target."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Open Hand": "Warrior of the Open Hand"
+      }
+    },
+    "paladin": {
+      "group_label": "Sacred Oath",
+      "options": [
+        {
+          "name": "Oath of Devotion",
+          "desc": "Sacred Oath: gains Oath of Devotion Spells, Sacred Weapon at level 3.",
+          "aliases": [
+            "Devotion"
+          ],
+          "features": [
+            {
+              "name": "Oath of Devotion Spells",
+              "desc": "The magic of your oath ensures you always have certain spells ready; when you reach a Paladin level specified in the Oath of Devotion Spells table, you thereafter always have the listed spells prepared."
+            },
+            {
+              "name": "Sacred Weapon",
+              "desc": "When you take the Attack action, you can expend one use of your Channel Divinity to imbue one Melee weapon that you are holding with positive energy. For 10 minutes or until you use this feature again, you add your Charisma modifier to attack rolls you make with that weapon (minimum bonus of +1), and each time you hit with it, you cause it to deal its normal damage type or Radiant damage."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Devotion": "Oath of Devotion"
+      }
+    },
+    "ranger": {
+      "group_label": "Ranger Archetype",
+      "options": [
+        {
+          "name": "Hunter",
+          "desc": "Ranger Archetype: gains Hunter's Lore, Hunter's Prey at level 3.",
+          "aliases": [],
+          "features": [
+            {
+              "name": "Hunter's Lore",
+              "desc": "You can call on the forces of nature to reveal certain strengths and weaknesses of your prey. While a creature is marked by your *Hunter's Mark*, you know whether that creature has any Immunities, Resistances, or Vulnerabilities, and if the creature has any, you know what they are."
+            },
+            {
+              "name": "Hunter's Prey",
+              "desc": "You gain one of the following feature options of your choice. Whenever you finish a Short or Long Rest, you can replace the chosen option with the other one."
+            }
+          ]
+        }
+      ],
+      "aliases": {}
+    },
+    "rogue": {
+      "group_label": "Roguish Archetype",
+      "options": [
+        {
+          "name": "Thief",
+          "desc": "Roguish Archetype: gains Fast Hands, Second-Story Work at level 3.",
+          "aliases": [],
+          "features": [
+            {
+              "name": "Fast Hands",
+              "desc": "As a Bonus Action, you can do one of the following."
+            },
+            {
+              "name": "Second-Story Work",
+              "desc": "You've trained to get into especially hard-to-reach places, granting you these benefits."
+            }
+          ]
+        }
+      ],
+      "aliases": {}
+    },
+    "sorcerer": {
+      "group_label": "Sorcerous Origin",
+      "options": [
+        {
+          "name": "Draconic Sorcery",
+          "desc": "Sorcerous Origin: gains Draconic Resilience, Draconic Spells at level 3.",
+          "aliases": [
+            "Draconic",
+            "Draconic Bloodline"
+          ],
+          "features": [
+            {
+              "name": "Draconic Resilience",
+              "desc": "The magic in your body manifests physical traits of your draconic gift. Your Hit Point maximum increases by 3, and it increases by 1 whenever you gain another Sorcerer level."
+            },
+            {
+              "name": "Draconic Spells",
+              "desc": "When you reach a Sorcerer level specified in the Draconic Spells table, you thereafter always have the listed spells prepared."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Draconic": "Draconic Sorcery",
+        "Draconic Bloodline": "Draconic Sorcery"
+      }
+    },
+    "warlock": {
+      "group_label": "Otherworldly Patron",
+      "options": [
+        {
+          "name": "Fiend Patron",
+          "desc": "Otherworldly Patron: gains Dark One's Blessing, Fiend Spells at level 3.",
+          "aliases": [
+            "Fiend",
+            "The Fiend"
+          ],
+          "features": [
+            {
+              "name": "Dark One's Blessing",
+              "desc": "When you reduce an enemy to 0 Hit Points, you gain Temporary Hit Points equal to your Charisma modifier plus your Warlock level (minimum of 1 Temporary Hit Point). You also gain this benefit if someone else reduces an enemy within 10 feet of you to 0 Hit Points."
+            },
+            {
+              "name": "Fiend Spells",
+              "desc": "The magic of your patron ensures you always have certain spells ready; when you reach a Warlock level specified in the Fiend Spells table, you thereafter always have the listed spells prepared."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Fiend": "Fiend Patron",
+        "The Fiend": "Fiend Patron"
+      }
+    },
+    "wizard": {
+      "group_label": "Arcane Tradition",
+      "options": [
+        {
+          "name": "Evoker",
+          "desc": "Arcane Tradition: gains Evocation Savant, Sculpt Spells at level 3.",
+          "aliases": [
+            "Evocation",
+            "Evocation Wizard",
+            "School of Evocation"
+          ],
+          "features": [
+            {
+              "name": "Evocation Savant",
+              "desc": "Choose two Wizard spells from the Evocation school, each of which must be no higher than level 2, and add them to your spellbook for free."
+            },
+            {
+              "name": "Sculpt Spells",
+              "desc": "You can create pockets of relative safety within the effects of your evocations. When you cast an Evocation spell that affects other creatures that you can see, you can choose a number of them equal to 1 plus the spell's level. The chosen creatures automatically succeed on their saving throws against the spell, and they take no damage if they would normally take half damage on a successful save."
+            }
+          ]
+        }
+      ],
+      "aliases": {
+        "Evocation": "Evoker",
+        "School of Evocation": "Evoker",
+        "Evocation Wizard": "Evoker"
+      }
+    }
+  }
+}

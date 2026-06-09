@@ -105,6 +105,77 @@ def features_through(class_name: str, level: int) -> list[dict]:
     return out
 
 
+# ── Subclass (Arcane Tradition / Domain / Archetype …) options — #624 ────────────
+#
+# SRD 5.2 every class picks its subclass at a fixed level (3). The engine OWNS the
+# legal options + their choice-level features so the level-up surface can present a
+# real list with previews instead of a free-text box, and so choosing one applies
+# its features. Additive: a class/subclass the table doesn't know still round-trips
+# (subclass stays a free string; nothing is forced).
+
+
+def _subclasses() -> dict:
+    return _load("subclasses")
+
+
+def subclass_level(class_name: str) -> int | None:
+    """The character level at which `class_name` chooses its subclass (SRD 5.2: 3),
+    or None if the class is unknown to the subclass table."""
+    return _subclasses().get("subclass_level", {}).get(class_name.lower())
+
+
+def subclass_group_label(class_name: str) -> str:
+    """The in-world name for this class's subclass category (e.g. 'Arcane Tradition'
+    for wizard, 'Divine Domain' for cleric). Empty if unknown."""
+    return _subclasses().get("classes", {}).get(class_name.lower(), {}).get("group_label", "")
+
+
+def subclass_options(class_name: str) -> list[dict]:
+    """Legal SRD subclass options for a class, each ``{name, desc, aliases, features}``
+    where `features` are the choice-level (level-3) features that subclass grants.
+    Empty if the class has no SRD subclass entry."""
+    entry = _subclasses().get("classes", {}).get(class_name.lower())
+    if not entry:
+        return []
+    return [dict(o) for o in entry.get("options", [])]
+
+
+def resolve_subclass(class_name: str, name: str | None) -> str | None:
+    """Resolve a (possibly loose) subclass name to its canonical SRD name for a
+    class. Matches the canonical name case-insensitively and a curated alias map
+    ('Evocation' -> 'Evoker'). Returns None if the name doesn't match any option."""
+    if not name:
+        return None
+    entry = _subclasses().get("classes", {}).get(class_name.lower())
+    if not entry:
+        return None
+    want = name.strip().lower()
+    for opt in entry.get("options", []):
+        if opt["name"].lower() == want:
+            return opt["name"]
+    for alias, canonical in entry.get("aliases", {}).items():
+        if alias.lower() == want:
+            return canonical
+    return None
+
+
+def subclass_features_at(class_name: str, subclass: str | None, class_level: int) -> list[dict]:
+    """The chosen subclass's features gained AT this class level. Currently the
+    curated table carries the choice-level (level-3) features; later-level subclass
+    features remain represented by the generic 'Subclass Feature' placeholders in
+    class_features.json. Empty if no subclass, an unknown subclass, or no features
+    at this level."""
+    canonical = resolve_subclass(class_name, subclass)
+    if not canonical:
+        return []
+    if class_level != subclass_level(class_name):
+        return []
+    for opt in subclass_options(class_name):
+        if opt["name"] == canonical:
+            return [dict(f) for f in opt.get("features", [])]
+    return []
+
+
 def caster_type(name: str) -> str:
     return class_data(name)["caster_type"]
 

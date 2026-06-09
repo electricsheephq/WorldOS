@@ -53,3 +53,81 @@ def test_rogue_sneak_attack_scales_on_level_up(cid):
     assert server.get_character(cid, rid)["sneak_attack_dice"] == "1d6"
     server.level_up(cid, rid, "Rogue")  # -> level 3
     assert server.get_character(cid, rid)["sneak_attack_dice"] == "2d6"
+
+
+# ── #624: subclass (Arcane Tradition) options are EXPOSED, not free-text ──────────
+
+
+def test_subclass_level_table():
+    # Every SRD class chooses its subclass at a known level (most at 3; warlock at 3
+    # too in SRD 5.2). The engine knows WHEN, so the surface can flag the choice.
+    assert srd_tables.subclass_level("wizard") == 3
+    assert srd_tables.subclass_level("cleric") == 3
+    assert srd_tables.subclass_level("fighter") == 3
+
+
+def test_wizard_subclass_options_exposed_with_preview():
+    opts = srd_tables.subclass_options("wizard")
+    assert opts, "wizard must expose at least one Arcane Tradition option"
+    names = {o["name"] for o in opts}
+    assert "Evoker" in names  # the SRD 5.2 Arcane Tradition
+    evoker = next(o for o in opts if o["name"] == "Evoker")
+    # The option carries a brief feature preview so the picker isn't a blind text box.
+    assert evoker.get("desc"), "subclass option must carry a description/preview"
+    assert evoker.get("features"), "subclass option must list the features it grants"
+    assert any("Evocation Savant" in f["name"] or "Sculpt Spells" in f["name"]
+               for f in evoker["features"])
+
+
+def test_subclass_options_match_by_alias():
+    # The player/DM may name the tradition loosely ("Evocation") — the engine
+    # resolves it to the canonical SRD subclass ("Evoker").
+    resolved = srd_tables.resolve_subclass("wizard", "Evocation")
+    assert resolved == "Evoker"
+    assert srd_tables.resolve_subclass("wizard", "Evoker") == "Evoker"
+    assert srd_tables.resolve_subclass("wizard", "not-a-real-tradition") is None
+
+
+def test_level_up_to_subclass_level_applies_subclass_features(cid):
+    # A Wizard reaching L3 and choosing the Evocation tradition gains its L3
+    # features (Evocation Savant, Sculpt Spells) — not just the generic placeholder.
+    wid = server.create_character(
+        cid, "Gale", kind="player", class_name="Wizard", level=2,
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.level_up(cid, wid, "Wizard", subclass="Evocation")  # -> level 3
+    assert out["classes"][0]["subclass"] == "Evoker"  # normalized to canonical SRD name
+    gained = {f["name"] for f in out["_features_gained"]}
+    assert "Evocation Savant" in gained and "Sculpt Spells" in gained
+    sheet = server.get_character(cid, wid)
+    assert "Evocation Savant" in sheet["features"]
+    assert "Sculpt Spells" in sheet["features"]
+
+
+def test_create_wizard_at_subclass_level_applies_subclass_features(cid):
+    # A Wizard CREATED directly at L3 with a subclass gets its subclass features too
+    # (features_through, the from-scratch path).
+    wid = server.create_character(
+        cid, "Tara", kind="player", class_name="Wizard", level=3, subclass="Evoker",
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    sheet = server.get_character(cid, wid)
+    assert "Evocation Savant" in sheet["features"]
+    assert "Sculpt Spells" in sheet["features"]
+
+
+def test_build_options_exposes_subclass_choice_at_subclass_level(cid):
+    # The build planner the /character surface reads must surface the legal subclass
+    # options (with previews) when the next level grants a subclass — so the picker
+    # presents a real list instead of a free-text box.
+    wid = server.create_character(
+        cid, "Nyx", kind="player", class_name="Wizard", level=2,
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, wid)
+    wiz_opt = next(o for o in planner["options"] if o["class_name"] == "wizard")
+    sub = wiz_opt.get("subclass")
+    assert sub and sub["required"] is True
+    names = {o["name"] for o in sub["options"]}
+    assert "Evoker" in names
+    assert all(o.get("desc") for o in sub["options"])
