@@ -155,6 +155,46 @@ async function probeScreen(browser, screen) {
       // because the dev server's hot-reload pings keep the network busy.
       await page.waitForFunction(() => !!document.querySelector('.title-bar'), { timeout: 10000 });
       await page.waitForTimeout(1200);
+      // #306: the default dev seed renders a SHORT title ("Open Worlds") with no
+      // location and no day pill, so the bare title-bar never approaches the
+      // nav-rail / right-band collision the owner sees in real play. Loop-7's
+      // "fixed" claim was contradicted by playtests for exactly this reason — the
+      // gate measured a title that could not collide. Stress the title-bar with a
+      // WORST-CASE loaded-campaign payload (long campaign name + long location +
+      // a real "DAY N · PHASE" pill, matching TitleBar's DOM in chrome.jsx) before
+      // we measure, so titleNavOverlap / titleEndOverlap / titleLineCount /
+      // titleDayReadable assert the layout under the content that actually breaks.
+      // This is additive: it only stresses the geometry the gate already reads.
+      await page.evaluate(() => {
+        const tt = document.querySelector('.title-text');
+        if (tt) {
+          tt.innerHTML =
+            '<span>Open Worlds</span><em>·</em>'
+            + '<span>The Shattered Crown of Embergloom and the Pact of Ashen Veils Eternal</span>'
+            + '<em>·</em>'
+            + '<span>The Drowned Cathedral of Saint Voren-by-the-Tide</span>';
+        }
+        const te = document.querySelector('.title-end');
+        if (te) {
+          // The day pill is the trailing span that is NOT the capability badge
+          // (TitleBar renders `<CapabilityBadge/>` then `<span>{day}</span>`). If a
+          // real day pill is already present, force a worst-case label on it so
+          // width/readability is measured against text; otherwise synthesize one
+          // matching the inline style chrome.jsx gives it — never clobber the badge.
+          const last = te.querySelector('span:last-child');
+          const dayPill = last && !last.classList.contains('capability-badge') ? last : null;
+          if (dayPill) {
+            dayPill.textContent = 'DAY 1 · MORNING';
+          } else {
+            const s = document.createElement('span');
+            s.style.fontSize = '13px';
+            s.style.letterSpacing = '0.06em';
+            s.textContent = 'DAY 1 · MORNING';
+            te.appendChild(s);
+          }
+        }
+      });
+      await page.waitForTimeout(150);
     } catch (e) {
       errs.push('NAV ' + String(e).slice(0, 220));
     }
