@@ -194,3 +194,97 @@ def test_non_dm_chat_rows_are_left_untouched():
     assert "chatlog player " in play, "play.sh player row must stay a plain chatlog call"
     assert "chatlog player " in party, "play_party.sh player row must stay a plain chatlog call"
     assert 'chatlog "companion:' in party, "play_party.sh companion rows must stay plain chatlog"
+
+
+# --- #720 IDEMPOTENCY (adversarial-review fix) -------------------------------------------------
+# The CLAUDE DM (the release path) frequently logs the opening/beat narration to the engine
+# session log DURING its turn (confirmed across real VM runs). An UNCONDITIONAL re-log in
+# record_dm_reply would then put the prose in the log TWICE → a SECOND /events row (the viewer
+# keys /events by line-index seq, not by text) → the duplicate is RELOCATED (/events-vs-/events),
+# not fixed. So log_engine_narration appends ONLY when the prose is not already in the recent
+# session-log narration, but ALWAYS returns success so the flag is stamped: the prose ends up in
+# the engine log EXACTLY ONCE and the redundant /chat blob is dropped → rendered once.
+
+def _narration_texts(state_dir: Path, campaign_id: str) -> list:
+    out = []
+    sdir = state_dir / "campaigns" / campaign_id / "sessions"
+    for p in sorted(sdir.glob("*.jsonl")) if sdir.is_dir() else []:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            e = json.loads(line)
+            if e.get("kind") == "narration":
+                out.append(e.get("text", ""))
+    return out
+
+
+def test_record_dm_reply_does_not_double_log_when_dm_already_logged(tmp_path, monkeypatch):
+    """The CLAUDE-path bug: the DM already logged the opening this turn. record_dm_reply must NOT
+    append a SECOND copy (which would render twice in /events) — it detects the prose is present,
+    skips the append, and STILL stamps engine_logged so the /chat blob is dropped → single render."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    campaign_id = server.start_world("sundered-reach")["campaign_id"]
+    opening = "You stand at the gate as rain hisses on the cobbles and a guard eyes your blade."
+    server.log_event(campaign_id, "narration", opening)  # the DM logs it during its own turn
+
+    def n_opening():
+        return sum(1 for t in _narration_texts(tmp_path, campaign_id) if t == opening)
+
+    assert n_opening() == 1, "precondition: the DM logged the opening exactly once"
+    chat = tmp_path / "chat.jsonl"
+    r = _bash(_record_dm_reply_script(tmp_path, chat, campaign_id, opening, "opening"))
+    assert r.returncode == 0, r.stderr
+    assert n_opening() == 1, "record_dm_reply must NOT double-log the already-logged opening"
+    assert _rows(chat) == [{"role": "dm", "text": opening, "engine_logged": True}], _rows(chat)
+
+
+def test_record_dm_reply_idempotent_across_per_paragraph_logging(tmp_path, monkeypatch):
+    """The DM may log the opening as SEPARATE paragraph beats while record_dm_reply gets the whole
+    reply. The whitespace-normalized membership check must still see it as already-logged and skip
+    the append (no extra full-blob narration row added)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    campaign_id = server.start_world("sundered-reach")["campaign_id"]
+    para1 = "Morning in the Lower City arrives loud."
+    para2 = "Temple bells clash with crier calls over cracked cobbles."
+    server.log_event(campaign_id, "narration", para1)
+    server.log_event(campaign_id, "narration", para2)
+    before = _narration_texts(tmp_path, campaign_id)
+
+    chat = tmp_path / "chat.jsonl"
+    full = f"{para1}\n\n{para2}"  # the DM's final reply = the paragraphs concatenated (REAL newlines)
+    # Pass the reply with REAL newlines via ANSI-C $'...' quoting — exactly as play.sh passes a
+    # double-quoted $DMSG (the repr-based shared helper would escape \n to a literal backslash-n and
+    # defeat the whitespace normalization that production never hits).
+    full_ansi = "$'" + full.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+    script = (
+        f'set -u; ROOT="{ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
+        f"record_dm_reply {campaign_id!r} {full_ansi} opening\n"
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    after = _narration_texts(tmp_path, campaign_id)
+    assert after == before, f"per-paragraph already-logged prose must not be re-appended: {after}"
+    assert full not in after, "the full-blob copy must NOT be added"
+    assert _rows(chat)[0].get("engine_logged") is True
+
+
+def test_record_dm_reply_appends_canonical_when_not_already_logged(tmp_path, monkeypatch):
+    """The CODEX-path / DM-didn't-self-log case: the prose is NOT in the engine log yet, so
+    record_dm_reply MUST append it (the canonical /events + recap/memory copy) exactly once,
+    then flag — keeping the engine_logged stamp truthful."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    campaign_id = server.start_world("sundered-reach")["campaign_id"]
+    prose = "A lantern gutters in the gatehouse; the sergeant waves you through without a word."
+
+    def n_prose():
+        return sum(1 for t in _narration_texts(tmp_path, campaign_id) if t == prose)
+
+    assert n_prose() == 0, "precondition: prose not yet in the engine log"
+    chat = tmp_path / "chat.jsonl"
+    r = _bash(_record_dm_reply_script(tmp_path, chat, campaign_id, prose, "opening"))
+    assert r.returncode == 0, r.stderr
+    assert n_prose() == 1, "absent prose must be appended exactly once (canonical copy)"
+    assert _rows(chat) == [{"role": "dm", "text": prose, "engine_logged": True}]

@@ -173,22 +173,64 @@ with open(path, "a", encoding="utf-8") as handle:
 PY
 }
 
-# log_engine_narration CAMPAIGN_ID TEXT — append the reply to the engine's session log as a
-# `narration` beat (the /events source). Returns non-zero (WITHOUT touching the engine) on a
-# blank campaign id or blank text, OR if the engine call fails — that is the signal
-# record_dm_reply uses to fall back to an unflagged chat row.
+# log_engine_narration CAMPAIGN_ID TEXT — ensure the reply is in the engine's session log as a
+# `narration` beat (the /events + recap/memory source), then return 0 so record_dm_reply stamps
+# engine_logged. Returns non-zero (WITHOUT touching the engine) on a blank campaign id or blank
+# text, OR if the engine call fails — that is the signal record_dm_reply uses to fall back to an
+# unflagged chat row.
+#
+# IDEMPOTENT (#720, adversarial-review fix): the CLAUDE DM often ALREADY logs the opening/beat
+# narration to the session log DURING its turn. An unconditional append would put the prose in
+# the log TWICE → a SECOND /events row (the viewer keys /events by line-index seq, not by text)
+# → the duplicate would be RELOCATED (/events-vs-/events), not fixed. So we append ONLY when the
+# prose is not already in the recent session-log narration. Either way the prose ends up in the
+# engine log EXACTLY ONCE and we return 0 → the redundant /chat blob is dropped → rendered once.
+# The CODEX DM (which does not self-log narration) still gets the canonical append. Whitespace-
+# normalized substring match covers both the single-blob and per-paragraph logging shapes.
 log_engine_narration() {
   local campaign_id="$1" text="$2"
   [ -n "${campaign_id//[[:space:]]/}" ] || return 1
   [ -n "${text//[[:space:]]/}" ] || return 1
   CLAWDND_STATE_DIR="$STATE_DIR" WORLDOS_STATE_DIR="$STATE_DIR" \
     uv run --directory "$ROOT/servers/engine" python - "$campaign_id" "$text" <<'PY'
+import glob
+import json
+import os
 import sys
 
 import server
 
 campaign_id, text = sys.argv[1], sys.argv[2]
-server.log_event(campaign_id, "narration", text)
+norm = " ".join(text.split())
+
+already = False
+try:
+    state = os.environ.get("CLAWDND_STATE_DIR") or os.environ.get("WORLDOS_STATE_DIR") or "."
+    files = sorted(
+        glob.glob(os.path.join(state, "campaigns", campaign_id, "sessions", "*.jsonl")),
+        key=os.path.getmtime,
+    )
+    if files:
+        recent = []
+        with open(files[-1], encoding="utf-8") as fh:
+            for ln in fh:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    entry = json.loads(ln)
+                except ValueError:
+                    continue
+                if entry.get("kind") == "narration":
+                    recent.append(" ".join((entry.get("text") or "").split()))
+        blob = " ".join(recent[-8:])
+        if norm and norm in blob:
+            already = True  # the DM already logged this prose this turn — do NOT double-log
+except Exception:
+    already = False  # any read failure → fall through to a normal append (no regression)
+
+if not already:
+    server.log_event(campaign_id, "narration", text)
 PY
 }
 
