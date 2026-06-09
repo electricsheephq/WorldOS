@@ -604,6 +604,44 @@ def main() -> int:
                 stray.append(f"{ch.get('name', cid)}@{loc}{tag}")
         chk("companion_location_synced", not stray,
             f"party/companion not at current_location_id={cur!r}: {stray}", fatal=False)
+        # #353 explicit travel-scoped alias of the same invariant: the relocate sweep
+        # (_move_party_to / travel_to) must leave EVERY de-facto companion at the party's
+        # current location once travel has occurred (day>1 OR ≥2 visited locations). Same
+        # `stray` set; named so the audit's "companion absent after travel_to" assertion has
+        # a first-class key (the duo smoke keeps asserting on companion_location_synced).
+        locs_a6 = state.get("locations", {}) or {}
+        traveled = (state.get("day") or 1) > 1 or sum(
+            1 for l in locs_a6.values() if isinstance(l, dict) and l.get("visited")) >= 2
+        if traveled:
+            chk("companion_location_synced_on_travel", not stray,
+                f"after travel, party/companion not at current_location_id={cur!r}: {stray}",
+                fatal=False)
+
+    # #353 (WARN) — companion XP-sync on award. The relocate sweep co-locates every
+    # kind='companion' (incl. de-facto companions not in c.party); the XP-award paths must
+    # keep that group in step. When a reward seam paid the PC up (the PC's XP > 0) but a
+    # LIVING co-located companion is still stuck at 0, the companion was excluded from the
+    # split — the asymmetry this fix closes. Scope-guarded so a companion that joined mid-run
+    # (still legitimately at 0) or a pre-reward setup beat never false-REDs:
+    #   • only fires in xp leveling mode, and
+    #   • only flags companions at the party's CURRENT location (co-located = should-have-earned).
+    if state.get("leveling_mode", "xp") == "xp":
+        cur_xp = state.get("current_location_id")
+        pc_xp_max = max(
+            (ch.get("xp") or 0)
+            for ch in chars_all.values()
+            if isinstance(ch, dict) and ch.get("kind") == "player"
+        ) if any(isinstance(ch, dict) and ch.get("kind") == "player" for ch in chars_all.values()) else 0
+        lagging = []
+        if pc_xp_max > 0 and cur_xp:
+            for ch in chars_all.values():
+                if not isinstance(ch, dict) or ch.get("kind") != "companion" or ch.get("dead"):
+                    continue
+                if ch.get("location_id") == cur_xp and (ch.get("xp") or 0) == 0:
+                    lagging.append(ch.get("name") or "?")
+        chk("companion_xp_synced_on_award", not lagging,
+            f"PC earned XP (max={pc_xp_max}) but co-located companion(s) still at 0 XP "
+            f"(excluded from the party split): {lagging}", fatal=False)
 
     # A7 (WARN) — a leveled caster/martial with a signature skill but a COMPLETELY EMPTY
     # skill_proficiencies list (the load_canon_character gap: it skips _apply_srd_class_defaults).
