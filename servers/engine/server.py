@@ -1143,6 +1143,47 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         pass  # unknown class -> keep the explicit values
 
 
+def _recompute_level_scaled_stats(ch, patch: dict) -> None:
+    """OVERWRITE the purely level-derived stats — proficiency bonus, hit dice, max HP, and
+    extra attacks — to match ``ch.classes`` after a class/level change, so a DOWN-level retier
+    (a canon L12 Fighter patched to L3) does NOT keep the higher tier's inflated math.
+    ``_apply_srd_class_defaults`` is FILL-EMPTY (it only computes max_hp at the ``max_hp<=1``
+    stub and accumulates extra_attacks via ``max()``), so it can only RAISE those and cannot
+    correct a down-level; this resets the level-scaled stats from the new ``total_level``.
+    Any of these the SAME ``patch`` set EXPLICITLY is honored (a DM-chosen HP wins). hit_dice /
+    max_hp / extra_attacks are recomputed for SINGLE-class sheets only (the SRD formulae are
+    single-class; a multiclass sheet keeps its values). Spell slots + class resources are
+    re-derived with ``used`` preserved (mirrors level_up). The caller gates this on an actual
+    class/level-signature change, so a non-class patch never disturbs these stats."""
+    keys = set(patch or {})
+    total = ch.total_level
+    if "proficiency_bonus" not in keys:
+        ch.proficiency_bonus = srd_tables.proficiency_bonus(total)  # by total level (multiclass-safe)
+    cname = ch.classes[0].name.lower()
+    single_class = len({cl.name.lower() for cl in ch.classes}) == 1
+    try:
+        if single_class and "hit_dice" not in keys:
+            ch.hit_dice = f"{total}d{srd_tables.hit_die(cname)}"
+            if "hit_dice_remaining" not in keys:
+                ch.hit_dice_remaining = min(ch.hit_dice_remaining, total)
+        if single_class and "max_hp" not in keys:
+            recomputed = _class_level_hp(cname, total, ch.ability_modifier(Ability.CON))
+            if recomputed:
+                ch.max_hp = recomputed
+                ch.current_hp = min(ch.current_hp, ch.max_hp)
+        if single_class and "extra_attacks" not in keys:
+            # RESET then re-derive from features: fill-empty's max() can't LOWER a stale higher tier
+            # (a L12 Fighter's extra_attacks=2 must drop to 0 at L3).
+            ch.extra_attacks = 0
+            for f in srd_tables.features_through(cname, total):
+                if "extra_attacks" in f:
+                    ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
+    except ValueError:
+        pass  # unknown class -> leave explicit values (mirrors _apply_srd_class_defaults)
+    _recompute_spellcasting(ch)
+    _recompute_class_resources(ch)
+
+
 # Class -> a minimal, internally-consistent starting kit. The ARMOR matches the AC the SRD
 # default sets (Chain Mail = 16 for the heavy martials; light armor for the AC-13/14 classes)
 # so AC and inventory AGREE; Unarmored Defense classes (Barbarian/Monk) and the non-armored
@@ -2464,10 +2505,12 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
     CLASS / LEVEL: level lives inside `classes` (a list of {name, level, subclass}),
     so the canonical retier patch is `{"classes":[{"name":"Wizard","level":3}]}`. As a
     convenience the flat aliases `level`, `class_name`, and `subclass` are also accepted
-    and folded into the head class entry; when level/class change this way the engine
-    recomputes proficiency bonus, saves, and features for the new level (an existing
-    sheet's HP and a DM-chosen AC are preserved). A genuine unknown field (a typo) is
-    still rejected.
+    and folded into the head class entry. When the class/level changes — by EITHER form —
+    the engine recomputes the level-scaled SRD math for the new level: proficiency bonus,
+    saves, hit dice, max HP, and extra attacks (so a down-level retier doesn't keep the old
+    tier's inflated stats). Any stat the SAME patch sets explicitly is honored (a DM-chosen
+    HP/AC wins), and a DM-chosen AC is never auto-clobbered. A genuine unknown field (a typo)
+    is still rejected.
 
     WARNING: list fields (conditions, inventory, spells_known, classes) are
     REPLACED wholesale by the patch, not merged. To change a single condition
@@ -2522,15 +2565,23 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         if flat_expertise is not None:
             data["skill_expertise"] = flat_expertise
         new_ch = Character.model_validate(data)
-        # Recompute derived class math when level/class changed via the aliases (today even a
-        # correct `classes` patch leaves prof_bonus/saves/features stale — this finishes the
-        # canon-load fix's downstream story). Idempotent fill: skill_proficiencies are only
-        # seeded if empty (a DM-set list is respected), HP is only computed at the max_hp<=1
-        # stub (an existing sheet's HP is preserved), and set_base_ac=False so a DM-chosen AC
-        # is never clobbered. prof_bonus is always recomputed from the new total_level.
-        if (flat_level is not None or flat_class is not None) and new_ch.classes:
+        # Recompute derived class math when the class/level SIGNATURE changed — via EITHER the flat
+        # aliases OR a direct `classes` patch. (RRI 2026-06-09: a canon L12 Fighter "Gravedigger
+        # Karcen" was patched to L3 via the canonical {"classes":[{"name":"Fighter","level":3}]}
+        # form — the OLD guard fired only on the flat aliases, so this skipped recompute entirely and
+        # he fought with L12 prof_bonus(+4)/max_hp(100)/12d10/extra_attacks(2): the angry-dm
+        # "correctly-wrong numbers" that capped the mech score.) _apply_srd_class_defaults fills
+        # saves/skills/features and resets prof_bonus + the hit-dice string, but it is FILL-EMPTY for
+        # max_hp (only at the <=1 stub) and accumulates extra_attacks via max(), so it cannot LOWER
+        # them on a down-level — _recompute_level_scaled_stats overwrites those from the new
+        # total_level. Any of these the SAME patch set EXPLICITLY wins (a DM-chosen HP/AC); a typo
+        # still trips extra="forbid". A non-class patch (set_hp, conditions, ...) is untouched.
+        old_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in ch.classes]
+        new_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in new_ch.classes]
+        if old_sig != new_sig and new_ch.classes:
             _apply_srd_class_defaults(new_ch, new_ch.classes[0].name,
                                       new_ch.total_level, set_base_ac=False)
+            _recompute_level_scaled_stats(new_ch, patch or {})
         c.characters[character_id] = new_ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")
@@ -2918,6 +2969,7 @@ def start_combat(
         c = _require(campaign_id)
         if c.combat.active:
             raise ValueError("combat already active; call end_combat first")
+        c.last_combat_resolution = ""  # a fresh fight -> any prior disposition no longer applies
         rolled = []
         for cid in combatant_ids:
             ch = _char(c, cid)
@@ -4453,7 +4505,7 @@ def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
 
 
 @mcp.tool()
-def end_combat(campaign_id: str) -> dict:
+def end_combat(campaign_id: str, resolution: str = "") -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
     conditions persist past the encounter.
 
@@ -4461,7 +4513,16 @@ def end_combat(campaign_id: str) -> dict:
     defeated THIS encounter is auto-awarded to the party, split evenly — so
     progression isn't a manual chore. Returns `xp_awarded` + per-character `grants`
     (with `can_level_up`) when any was granted. "milestone" mode leaves leveling to
-    the DM (no auto-XP)."""
+    the DM (no auto-XP).
+
+    `resolution`: REQUIRED when you end combat while hostile monsters are still alive
+    (a flee / surrender / capture / retreat / parley) — a short clause naming HOW they
+    left, e.g. "the surviving bandits flee into the alley" / "the captain surrenders".
+    It is recorded into the combat_end event so the save isn't a continuity break (a
+    fight left with enemies standing and no reason logged). If every hostile was brought
+    to 0 HP, omit it. When hostiles remain and you pass nothing, the result carries
+    `needs_resolution: true` + `warning_live_hostiles` — resolve them or narrate the
+    disengagement and pass `resolution`."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result: dict = {"active": False}
@@ -4496,33 +4557,46 @@ def end_combat(campaign_id: str) -> dict:
             if (ch := c.characters.get(cb.character_id)) is not None
             and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
         ]
+        res = (resolution or "").strip()
+        if res:
+            # Persist the DM-declared disposition so the end_combat_no_living_hostiles gate can tell
+            # a legitimate flee/surrender from a continuity break (the combat chronicle is NOT in the
+            # snapshot the gate reads). Only set when a reason is given; cleared at start_combat.
+            c.last_combat_resolution = res
         if live_hostiles:
             result["warning_live_hostiles"] = {
                 "count": len(live_hostiles),
                 "hostiles": live_hostiles,
+                "resolved": bool(res),
                 "note": (
                     f"combat ended with {len(live_hostiles)} hostile(s) still alive at >0 HP "
                     "— if they didn't flee/surrender/die, this leaves them standing in state. "
-                    "Bring them to 0 via attack/apply_damage, or log a flee/parley/surrender "
-                    "event, before ending."
+                    "Bring them to 0 via attack/apply_damage, or pass `resolution=` naming how "
+                    "they left (fled/surrendered/captured/retreated), before ending."
                 ),
             }
+            if not res:
+                # Continuity nudge the DM-wrapper surfaces: a fight cannot end with enemies
+                # standing and no logged reason (the end_combat_no_living_hostiles gate).
+                result["needs_resolution"] = True
         if was_active or c.combat.order:
             ended_order = [
                 _combatant_ref(c.characters[cb.character_id])
                 for cb in c.combat.order
                 if cb.character_id in c.characters
             ]
-            _log_combat_event(
-                c,
-                "Combat ends.",
-                {
-                    "event": "combat_end",
-                    "round": c.combat.round,
-                    "combatants": ended_order,
-                    "xp_awarded": result.get("xp_awarded", 0),
-                },
-            )
+            end_text = f"Combat ends — {res}" if res else "Combat ends."
+            payload = {
+                "event": "combat_end",
+                "round": c.combat.round,
+                "combatants": ended_order,
+                "xp_awarded": result.get("xp_awarded", 0),
+            }
+            if res:
+                # Record the DM-authored disposition into the event so the save explains why a
+                # fight ended with foes alive (resolves the continuity-break behavioral gate).
+                payload["resolution"] = res
+            _log_combat_event(c, end_text, payload)
         c.combat = Combat()
         save_campaign(c)
         return result

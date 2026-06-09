@@ -168,6 +168,28 @@ def test_a3_end_combat_with_living_hostile_is_red(tmp_path):
     assert "end_combat_no_living_hostiles" in out
 
 
+def test_a3_clean_when_resolution_declared(tmp_path):
+    """A DM-declared disposition (end_combat(resolution=...)) passes A3 even with a foe still
+    alive — a legitimate flee/surrender/capture is not a continuity break. The engine persists it
+    to last_combat_resolution because the combat chronicle isn't in the snapshot the gate reads."""
+    events = [
+        _assistant_tool_use("e1", "mcp__engine__end_combat", {"resolution": "the bandits flee"}),
+        _user_tool_result("e1", json.dumps({"ok": True})),
+    ]
+    state = {
+        "leveling_mode": "milestone",
+        "combat": {"active": False},
+        "characters": {
+            "m1": {"name": "Bandit Captain", "kind": "monster", "current_hp": 34,
+                   "max_hp": 52, "dead": False},
+        },
+        "events": [],
+        "last_combat_resolution": "the surviving bandits break and flee the alley",
+    }
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+
+
 def test_a3_clean_when_hostile_dead(tmp_path):
     events = [
         _assistant_tool_use("e1", "mcp__engine__end_combat", {}),

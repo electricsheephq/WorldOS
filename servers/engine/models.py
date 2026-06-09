@@ -1575,6 +1575,13 @@ class Campaign(_StrictModel):
     # World-state boolean flags the DM/engine set to gate events — e.g. "prize_seized"
     # drives a companion's prize_seized agenda (S4). Additive: empty == today's behavior.
     flags: dict[str, bool] = Field(default_factory=dict)
+    # The disposition of the MOST RECENT combat that ended with hostiles still alive — a
+    # flee/surrender/capture/retreat the DM declared via end_combat(resolution=...). The behavioral
+    # end_combat_no_living_hostiles gate reads it to tell a legitimate disengagement from a
+    # continuity break (a fight abandoned with enemies standing and no reason) — the combat
+    # chronicle is NOT in the snapshot the gate reads. Cleared at start_combat so each fight's
+    # disposition is fresh. Additive: "" == today's behavior.
+    last_combat_resolution: str = Field(default="")
     # The replayability layer (S6): each MAJOR world quest's resolved outcome, picked once
     # at world-gen (ending-tied when the chosen ending's world_state.facts match, else a
     # seeded random roll) — maps quest_id -> the resolved outcome_id. The resolved outcome's

@@ -2163,3 +2163,32 @@ def test_respawn_pristine_monster_reconciles_id_so_end_combat_is_clean(tmp_path,
         if ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
     ]
     assert survivors == [], f"no living-hostile duplicate may remain: {[s.name for s in survivors]}"
+
+
+def test_end_combat_resolution_records_disposition_for_living_hostiles(tmp_path, monkeypatch):
+    """RRI 2026-06-09 (behavioral): a fight that ends with foes still ALIVE (flee/surrender) must
+    record a disposition so the save isn't a continuity break. end_combat(resolution=...) stamps
+    last_combat_resolution (the gate's reliable signal — the combat chronicle is NOT in the snapshot)
+    and clears the needs_resolution nudge; start_combat resets it for the next fight."""
+    import server
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Flee")["id"]
+    server.add_location(cid, "Alley")
+    pid = server.create_character(cid, "Hero", kind="player", max_hp=30, armor_class=12)["id"]
+    server.spawn_monster(cid, "Ogre")
+    mid = next(ch.id for ch in store.load_campaign(cid).characters.values() if ch.kind == "monster")
+    # ended WITHOUT a reason while the ogre is alive -> the engine flags the continuity break
+    server.start_combat(cid, [pid, mid])
+    bare = server.end_combat(cid)
+    assert bare.get("needs_resolution") is True
+    assert bare["warning_live_hostiles"]["resolved"] is False
+    assert store.load_campaign(cid).last_combat_resolution == ""
+    # a fresh fight, ended WITH a declared disposition
+    server.start_combat(cid, [pid, mid])
+    res = server.end_combat(cid, resolution="the surviving ogre flees into the alley")
+    assert "needs_resolution" not in res
+    assert res["warning_live_hostiles"]["resolved"] is True
+    assert "flees into the alley" in store.load_campaign(cid).last_combat_resolution
+    # start_combat clears the prior disposition so a later clean kill never inherits it
+    server.start_combat(cid, [pid, mid])
+    assert store.load_campaign(cid).last_combat_resolution == ""

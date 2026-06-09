@@ -255,6 +255,31 @@ def test_guiding_bolt_hit_applies_rider(monkeypatch):
     assert server.get_character(cid, cleric)["pending_on_hit_riders"] == []  # rider consumed
 
 
+def test_mage_armor_effective_ac_gates_the_attack_roll(monkeypatch):
+    """#697: an attack vs a Mage-Armored target must resolve against the BOOSTED AC (13 + DEX),
+    not the base AC — the effective-AC fix (#698) has to actually gate the to-hit. A to-hit total
+    of 14 — which clears the base AC 12 — MISSES the warded target (effective AC 16), and the
+    result's target_ac reflects the boosted value with its breakdown."""
+    cid = server.create_campaign("S")["id"]
+    mage = server.create_character(
+        cid, "Gale", kind="player", class_name="Wizard",
+        apply_srd_defaults=True, abilities={"intelligence": 16},
+    )["id"]
+    server.learn_spells(cid, mage, ["Mage Armor"])
+    server.prepare_spells(cid, mage, ["Mage Armor"])
+    warded = server.create_character(cid, "Warded", kind="monster", max_hp=30,
+                                     armor_class=12, abilities={"dexterity": 16})["id"]
+    server.cast_spell(cid, mage, "Mage Armor", target_id=warded)  # 13 + DEX(+3) = 16 > base 12
+    server.start_combat(cid, [mage, warded])
+    _advance_to(cid, mage)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(9))  # natural 9 + bonus 5 = total 14
+    res = server.attack(cid, mage, warded, attack_bonus=5, damage_dice="1d6",
+                        damage_type="fire", is_ranged=True)
+    assert res["target_ac"] == 16, res          # effective AC = 13 + DEX(+3), NOT the base 12
+    assert res["hit"] is False, res             # 14 clears base 12 but not the warded 16
+    assert res.get("target_ac_detail")          # the boosted-AC breakdown is surfaced
+
+
 def test_guiding_bolt_recast_does_not_phantom_stack_pending():
     """Re-casting Guiding Bolt at the same target replaces the pending rider (one record),
     so a second cast can't leave a phantom marker (the re-cast half of the bug)."""

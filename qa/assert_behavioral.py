@@ -522,8 +522,13 @@ def main() -> int:
                           if isinstance(c, dict) and c.get("kind") == "monster" and not c.get("dead")
                           and (c.get("current_hp") or 0) > 0]
         state_events = state.get("events", []) or []
-        resolved = any(re.search(r"flee|retreat|surrender|captured|driven off|routed|escap",
-                                 json.dumps(e), re.I) for e in state_events)
+        # The DM-declared disposition (end_combat(resolution=...)) is the RELIABLE signal: the combat
+        # chronicle is NOT in the snapshot, so the legacy events-scan below can't actually see a
+        # flee/surrender. A non-empty resolution means the DM explained how the fight ended.
+        declared = str(state.get("last_combat_resolution") or "").strip()
+        resolved = bool(declared) or any(
+            re.search(r"flee|retreat|surrender|captured|driven off|routed|escap",
+                      json.dumps(e), re.I) for e in state_events)
         sprint = bool(os.environ.get("CLAWDND_GATE_COMBAT_SPRINT"))
         if alive_hostiles:
             chk("end_combat_no_living_hostiles",
