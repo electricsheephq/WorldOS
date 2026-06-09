@@ -101,6 +101,18 @@ rm -rf "$RUNDIR" 2>/dev/null
 mkdir -p "$NATIVE_DIR" "$PLAYERDIR/screenshots" "$PLAYERDIR/a11y"
 NATIVE_LAUNCHER_STATE_DIR="$RUNDIR/native-launcher-state"
 
+# #735: each persona REUSES its play-state store (play-state/$RUN and the Part-B store
+# play-state/${RUN}-b). The ': >' truncations in play.sh only reset the sidecars — never the
+# campaigns/ tree — so a RE-RUN mints a SECOND seated campaign on top of the prior run's save.
+# Two seated saves with equal recency in one store was the precondition for the active-PC flip
+# (the engine/viewer live-campaign resolvers then disagreed on the tie). Wipe BOTH stores for
+# this run prefix before launch so each persona mints into a CLEAN store -> exactly one seated
+# campaign. Guarded: only fire when $RUN is non-empty so the glob can never widen to all of
+# play-state/. bash 3.2-clean (no globstar / no arrays needed).
+if [ -n "$RUN" ]; then
+  rm -rf "$ROOT"/play-state/"$RUN" "$ROOT"/play-state/"$RUN"-b 2>/dev/null
+fi
+
 _DEFAULTS_SENTINEL="__worldos_defaults_missing__"
 ORIGINAL_SELECTED_PROVIDER="$(defaults read dev.clawdnd.app selectedProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
 ORIGINAL_STATE_DIR="$(defaults read dev.clawdnd.app stateDir 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"

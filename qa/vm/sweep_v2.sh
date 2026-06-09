@@ -53,6 +53,15 @@ note "start build=$SHA (parallel mode, lean ON — production-matching, fast Opu
 
 run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
   local persona="$1" port="$2"
+  # #735: wipe THIS persona's reused play-state stores (the solo run + the Part-B `-b` store)
+  # before launch so each run mints into a CLEAN campaigns/ tree -> exactly one seated campaign.
+  # A re-run otherwise stacks a 2nd seated save in the same store (the ': >' truncations reset
+  # only the sidecars, never campaigns/), and two equal-recency seated saves were the precondition
+  # for the active-PC silent-switch (the live-campaign resolvers disagreed on the tie). cwd is the
+  # repo (line 38). Guarded on a non-empty persona so the glob can never widen to all of play-state/.
+  if [ -n "$persona" ]; then
+    rm -rf "play-state/vm2-$persona" "play-state/vm2-$persona-b" 2>/dev/null
+  fi
   # Opus de-risk: longer per-persona deadline (Opus cold-open ~300s + slower beats) + a bigger run
   # budget (Opus cold-open ~$2.4 + beats + player). The harnesses cap per-turn model-aware (#684/#686).
   WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT=$port \

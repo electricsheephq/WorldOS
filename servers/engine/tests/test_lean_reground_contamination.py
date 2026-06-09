@@ -212,3 +212,34 @@ def test_active_campaign_none_when_empty(state):
     """No campaigns yet → None (the harness then no-ops lean, today's behavior)."""
     assert store.active_campaign_id() is None
     assert server.active_campaign()["campaign_id"] is None
+
+
+# ── 3) THE TIEBREAK: equal updated_at must resolve DETERMINISTICALLY (#735) ────────
+
+
+def test_active_campaign_id_breaks_updated_at_tie_on_smallest_id(state):
+    """The keystone determinism guard behind #735 (active PC flips between beats).
+
+    When TWO seated campaigns coexist in one state dir and tie on ``updated_at`` (the
+    real precondition the QA harness manufactured — two re-run mints with the same
+    wall-clock save), the resolver MUST still return ONE id every call. ``active_campaign_id``
+    iterates ``sorted(iterdir())`` and keeps the FIRST-seen on a strict ``>`` tie, so the
+    lexicographically-SMALLEST id wins — fully deterministic. The viewer's
+    ``_pick_campaign`` mirrors this exact rule so the live campaign (and thus the active PC)
+    can never flip between beats on a recency tie. This pins the engine half of that contract.
+    """
+    one = _seed_campaign(["First save."])
+    two = _seed_campaign(["Second save."])
+    assert one != two
+    # EXACT-equal updated_at on both → a pure tie that ONLY the id tiebreak can resolve.
+    _set_updated_at(one, 5_000.0)
+    _set_updated_at(two, 5_000.0)
+
+    smallest = min(one, two)  # the deterministic winner the resolver must return
+    picked = store.active_campaign_id("baldurs-gate")
+    assert picked == smallest, (
+        f"the lexicographically-smallest id must win on an updated_at tie "
+        f"(got {picked!r}, expected {smallest!r} of {sorted((one, two))})")
+    # Stable across repeated calls — no iteration-order jitter, regardless of mint order.
+    for _ in range(20):
+        assert store.active_campaign_id("baldurs-gate") == smallest
