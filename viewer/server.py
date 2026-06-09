@@ -544,15 +544,43 @@ def _campaign_has_player(snap: dict) -> bool:
     return any(isinstance(c, dict) and c.get("kind") == "player" for c in chars.values())
 
 
+def _snapshot_updated_at(snap: dict, snap_path: Path) -> float:
+    """The campaign's monotonic 'last written' clock for the auto-follow pick (#735).
+
+    Prefer the snapshot BODY's ``updated_at`` — the engine (the sole writer) re-stamps it on
+    EVERY save (``store.save_campaign`` -> ``Campaign.updated_at = time.time()``), so it advances
+    exactly when the run's story moves and is identical to the key the engine's authoritative
+    ``store.active_campaign_id`` resolves on. That makes the viewer pick agree with the engine
+    and, crucially, IMMUNE to filesystem mtime jitter (an unrelated touch, a copy, a poisoned
+    save time) that the old ``_campaign_recency`` heuristic followed. Fall back to the filesystem
+    ``_campaign_recency`` only for a LEGACY snapshot that predates the body clock, so older saves
+    still round-trip and resolve by their session/snapshot mtime exactly as before."""
+    body = snap.get("updated_at")
+    if isinstance(body, (int, float)) and not isinstance(body, bool):
+        return float(body)
+    return _campaign_recency(snap_path)
+
+
 def _pick_campaign(arg: str | None) -> str | None:
     """Resolve which campaign to project. An explicit arg wins; otherwise pick the
-    most-recently-ACTIVE campaign by recency (#38) so launching the viewer follows
-    whatever run is live without a relaunch. Snapshots that fail to parse are
-    skipped so a half-written/corrupt one can't win the race and blank the view.
-    A campaign with a SEATED PLAYER is preferred over a party-less orphan (a cold-open
-    retry's second mint, or a fresh start_world before the PC seats); recency only
-    tie-breaks AMONG real runs, so a just-orphaned empty sibling can never win the
-    auto-follow and blank the table while a seated run is live (the hero-bind party-wipe)."""
+    most-recently-ACTIVE campaign (#38) so launching the viewer follows whatever run is
+    live without a relaunch. Snapshots that fail to parse are skipped so a
+    half-written/corrupt one can't win the race and blank the view.
+
+    DETERMINISTIC + STICKY (#735): a campaign with a SEATED PLAYER is preferred over a
+    party-less orphan (a cold-open retry's second mint, or a fresh start_world before the PC
+    seats). Among real runs the pick is the largest BODY ``updated_at`` (the engine's
+    sole-writer clock — see ``_snapshot_updated_at``), and a remaining tie breaks on the
+    lexicographically-SMALLEST campaign id. This mirrors ``store.active_campaign_id`` EXACTLY
+    (largest ``updated_at``, smallest-id tiebreak), so the viewer's auto-follow and the engine
+    resolve to the SAME live campaign every read. The old key was ``(has_player, filesystem
+    recency)`` with NO tiebreak, so two equal-recency seated saves resolved to whichever
+    ``glob`` yielded first — filesystem-order-dependent, so the attached campaign (and thus the
+    active PC) FLIPPED between beats. The deterministic key is the stickiness: on a recency tie
+    the SAME id wins every time, so the pick only moves when a genuinely STRICTLY-newer campaign
+    is written — never on jitter. recency only tie-breaks AMONG real runs, so a just-orphaned
+    empty sibling can never win the auto-follow and blank the table while a seated run is live
+    (the hero-bind party-wipe)."""
     if arg:
         return arg
     cdir = _campaigns_dir()
@@ -566,11 +594,19 @@ def _pick_campaign(arg: str | None) -> str | None:
                 continue  # empty/`{}` snapshot — nothing to show; don't let it win
         except (json.JSONDecodeError, OSError):
             continue
-        snaps.append((p.parent.name, _campaign_has_player(snap), _campaign_recency(p)))
-    # Prefer a seated run (has_player True > False), then recency. A party-less orphan only wins
-    # when EVERY candidate is party-less (a brand-new game between start_world and the PC seat),
-    # so a legitimate fresh game is at most briefly demoted, never stranded.
-    return max(snaps, key=lambda x: (x[1], x[2]))[0] if snaps else None
+        snaps.append((p.parent.name, _campaign_has_player(snap), _snapshot_updated_at(snap, p)))
+    if not snaps:
+        return None
+    # Prefer a seated run (has_player True > False), then the largest body updated_at. The id
+    # tiebreak is the SMALLEST id (mirrors store.active_campaign_id, which keeps the first of
+    # sorted(iterdir()) on a `>` tie): max() picks the largest key, so negate the ordering by
+    # selecting the min id among the recency winners. A party-less orphan only wins when EVERY
+    # candidate is party-less (a brand-new game between start_world and the PC seat), so a
+    # legitimate fresh game is at most briefly demoted, never stranded.
+    best_has_player, best_updated = max((x[1], x[2]) for x in snaps)
+    contenders = [cid for cid, has_player, updated in snaps
+                  if has_player == best_has_player and updated == best_updated]
+    return min(contenders)
 
 
 def _campaign_dir(campaign_id: str) -> Path:
