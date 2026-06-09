@@ -292,6 +292,15 @@ dm_turn() {
       clawdnd_dm_remint_session_on_retry ${resume[@]+"${resume[@]}"}
       [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_RETRY_SESSION[@]}")
     fi
+    # #719: a DEFAULT cold-open (first=1) retry must RESUME attempt-1's minted campaign, not re-seed
+    # a SECOND party-less one (the cold-open prompt instructs start_world / "start fresh"). The helper
+    # returns $msg UNCHANGED for continuing beats, an authored hero, or a fresh first attempt with no
+    # live campaign — byte-identical except on the one bug. Read-only (asks the engine for the live
+    # save) and only on the slow retry path.
+    if [ "$first" = "1" ]; then
+      local _live_cid; _live_cid="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+      msg="$(clawdnd_coldopen_retry_msg "$first" "${HERO_CAMP:-}" "$_live_cid" "$WORLD" "$msg")"
+    fi
     out="$DM_LOG.$(date +%s%N).jsonl"
     _dm_invoke; rc=$?
     [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2
