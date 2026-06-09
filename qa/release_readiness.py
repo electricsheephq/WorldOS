@@ -792,6 +792,11 @@ def main() -> int:
         failed.insert(0, "missing_personas")
     release_ready = passed == total_gates and not evidence_gaps and not missing_personas and not harness_failures
 
+    # Distinct build SHAs across ALL persona runs (diagnostic output field; the native_gate CONTRACT is
+    # release-persona-scoped via build_sha_evidence_gaps). Restored in main()'s scope after #723 factored
+    # the gate logic into the helper and left this output reference dangling -> NameError at rollup time.
+    build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
+
     result = {
         "rri": rri,
         "release_ready": release_ready,
