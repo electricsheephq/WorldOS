@@ -532,25 +532,45 @@ def _campaign_recency(snap_path: Path) -> float:
     return best
 
 
+def _campaign_has_player(snap: dict) -> bool:
+    """True when the snapshot has a seated PLAYER character — the signal that a campaign is a real,
+    playable run rather than a half-minted orphan (start_world ran but load_canon_character never
+    seated a PC). RRI 2026-06-09: a timed-out cold-open RETRY re-ran start_world and minted a
+    SECOND, party-less campaign; this lets the auto-follow pick demote that empty orphan below the
+    seated run so the viewer never projects a 'wiped' party while a real run exists."""
+    chars = snap.get("characters")
+    if not isinstance(chars, dict):
+        return False
+    return any(isinstance(c, dict) and c.get("kind") == "player" for c in chars.values())
+
+
 def _pick_campaign(arg: str | None) -> str | None:
     """Resolve which campaign to project. An explicit arg wins; otherwise pick the
     most-recently-ACTIVE campaign by recency (#38) so launching the viewer follows
     whatever run is live without a relaunch. Snapshots that fail to parse are
-    skipped so a half-written/corrupt one can't win the race and blank the view."""
+    skipped so a half-written/corrupt one can't win the race and blank the view.
+    A campaign with a SEATED PLAYER is preferred over a party-less orphan (a cold-open
+    retry's second mint, or a fresh start_world before the PC seats); recency only
+    tie-breaks AMONG real runs, so a just-orphaned empty sibling can never win the
+    auto-follow and blank the table while a seated run is live (the hero-bind party-wipe)."""
     if arg:
         return arg
     cdir = _campaigns_dir()
     if not cdir.is_dir():
         return None
-    snaps: list[tuple[str, float]] = []
+    snaps: list[tuple[str, bool, float]] = []
     for p in cdir.glob("*/snapshot.json"):
         try:
-            if not json.loads(p.read_text(encoding="utf-8")):
+            snap = json.loads(p.read_text(encoding="utf-8"))
+            if not snap:
                 continue  # empty/`{}` snapshot — nothing to show; don't let it win
         except (json.JSONDecodeError, OSError):
             continue
-        snaps.append((p.parent.name, _campaign_recency(p)))
-    return max(snaps, key=lambda x: x[1])[0] if snaps else None
+        snaps.append((p.parent.name, _campaign_has_player(snap), _campaign_recency(p)))
+    # Prefer a seated run (has_player True > False), then recency. A party-less orphan only wins
+    # when EVERY candidate is party-less (a brand-new game between start_world and the PC seat),
+    # so a legitimate fresh game is at most briefly demoted, never stranded.
+    return max(snaps, key=lambda x: (x[1], x[2]))[0] if snaps else None
 
 
 def _campaign_dir(campaign_id: str) -> Path:
