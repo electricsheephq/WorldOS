@@ -2582,6 +2582,18 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
             _apply_srd_class_defaults(new_ch, new_ch.classes[0].name,
                                       new_ch.total_level, set_base_ac=False)
             _recompute_level_scaled_stats(new_ch, patch or {})
+        # #733: keep initiative_bonus == DEX modifier when a patch changes the DEX score.
+        # Every engine write derives initiative_bonus from the DEX modifier (create_character,
+        # level_up's ASI path, the canon-load derivation), but update_character — the path a DM
+        # uses to correct/raise a stat directly — only recomputed the level-scaled class math, so
+        # a DEX edit left initiative_bonus FROZEN (optimizer RRI: "+1 shown vs +2 expected" — the
+        # combat roll 1d20+initiative_bonus and the heroes-screen `initiative` both read the stale
+        # value). Recompute from the new modifier when DEX moved, UNLESS the same patch set
+        # initiative_bonus EXPLICITLY (a DM Alert-feat/house-rule override wins). Purely additive:
+        # a non-DEX patch leaves the field exactly as before.
+        dex_changed = ch.ability_modifier(Ability.DEX) != new_ch.ability_modifier(Ability.DEX)
+        if dex_changed and "initiative_bonus" not in (patch or {}):
+            new_ch.initiative_bonus = new_ch.ability_modifier(Ability.DEX)
         c.characters[character_id] = new_ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")

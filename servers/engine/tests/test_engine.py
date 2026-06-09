@@ -176,3 +176,103 @@ def test_pacing_mode_default_set_and_invalid():
 
     with pytest.raises(Exception):
         server.set_pacing(cid, "leisurely")  # not a valid mode
+
+
+def test_initiative_bonus_equals_dex_modifier_on_create():
+    # #733: a freshly created character's initiative_bonus must equal its DEX modifier.
+    # DEX 14 -> +2 (the optimizer report: "+1 shown vs +2 expected").
+    import server
+
+    cid = server.create_campaign("Init Create")["id"]
+    pid = server.create_character(
+        cid, "Tav", kind="player", class_name="Rogue", level=1,
+        apply_srd_defaults=True, abilities={"dexterity": 14},
+    )["id"]
+    sheet = server.get_character(cid, pid)
+    assert sheet["abilities"]["dexterity"] == 14
+    assert sheet["initiative_bonus"] == 2  # == DEX modifier
+
+
+def test_initiative_bonus_recomputes_after_dex_patch():
+    # #733 root cause: update_character changed the DEX score but left initiative_bonus
+    # STALE (it only recomputed level-scaled stats on a class/level change). A DM stat
+    # correction / ASI-by-patch therefore left initiative wrong (e.g. +2 frozen while the
+    # DEX modifier became +4 or +1) — the exact "+1 shown vs +2 expected" divergence.
+    import server
+
+    cid = server.create_campaign("Init Patch")["id"]
+    pid = server.create_character(
+        cid, "Tav", kind="player", class_name="Rogue", level=1,
+        apply_srd_defaults=True, abilities={"dexterity": 14},
+    )["id"]
+    assert server.get_character(cid, pid)["initiative_bonus"] == 2  # baseline DEX 14 -> +2
+
+    # DEX up: 14 -> 18 (+4). initiative_bonus must track the new modifier.
+    server.update_character(cid, pid, patch={"abilities": {"dexterity": 18}})
+    sheet = server.get_character(cid, pid)
+    assert sheet["abilities"]["dexterity"] == 18
+    assert sheet["initiative_bonus"] == 4  # was stale +2 before the fix
+
+    # DEX down: 18 -> 12 (+1). A down-change must also be honored (not floored at the old value).
+    server.update_character(cid, pid, patch={"abilities": {"dexterity": 12}})
+    sheet = server.get_character(cid, pid)
+    assert sheet["abilities"]["dexterity"] == 12
+    assert sheet["initiative_bonus"] == 1
+
+    # round-trips through the snapshot the viewer reads
+    assert store.load_campaign(cid).characters[pid].initiative_bonus == 1
+
+
+def test_initiative_bonus_untouched_by_non_dex_patch():
+    # The recompute is scoped to DEX-affecting patches: a non-DEX edit (HP, or even a
+    # different ability) must NOT disturb a DM-set initiative_bonus.
+    import server
+
+    cid = server.create_campaign("Init NonDex")["id"]
+    pid = server.create_character(
+        cid, "Tav", kind="player", class_name="Fighter", level=1,
+        apply_srd_defaults=True, abilities={"dexterity": 14},
+    )["id"]
+    # DM hand-sets a higher initiative (e.g. an Alert-feat house rule): +7.
+    server.update_character(cid, pid, patch={"initiative_bonus": 7})
+    assert server.get_character(cid, pid)["initiative_bonus"] == 7
+
+    # A non-DEX patch must leave that explicit value alone.
+    server.update_character(cid, pid, patch={"current_hp": 5})
+    assert server.get_character(cid, pid)["initiative_bonus"] == 7
+
+    # An explicit initiative_bonus in the SAME patch wins even alongside a DEX change.
+    server.update_character(cid, pid, patch={"abilities": {"dexterity": 18}, "initiative_bonus": 9})
+    sheet = server.get_character(cid, pid)
+    assert sheet["abilities"]["dexterity"] == 18
+    assert sheet["initiative_bonus"] == 9  # DM override wins over the DEX-derived +4
+
+
+def test_start_combat_rolls_with_fresh_initiative_after_dex_patch(monkeypatch):
+    # End-to-end: after a DEX patch the COMBAT roll (1d20 + initiative_bonus) must use the
+    # fresh modifier, not the stale one. Pin the d20 to a known natural so the modifier is
+    # the only variable.
+    import server
+    import dice as dice_mod
+
+    def _fixed(expression, advantage=False, disadvantage=False, seed=None):
+        from dice import DiceRoll
+        bonus = 0
+        if "+" in expression:
+            bonus = int(expression.split("+", 1)[1])
+        return DiceRoll(expression=expression, total=10 + bonus, rolls=[10],
+                        modifier=bonus, is_d20=True, natural=10)
+
+    cid = server.create_campaign("Init Combat")["id"]
+    pid = server.create_character(
+        cid, "Tav", kind="player", class_name="Rogue", level=1,
+        apply_srd_defaults=True, abilities={"dexterity": 14},
+    )["id"]
+    gob = server.create_character(cid, "Goblin", kind="monster", abilities={"dexterity": 8})["id"]
+
+    server.update_character(cid, pid, patch={"abilities": {"dexterity": 18}})  # +2 -> +4
+
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed)
+    view = server.start_combat(cid, [pid, gob])
+    tav_init = next(o["initiative"] for o in view["order"] if o["character_id"] == pid)
+    assert tav_init == 14  # natural 10 + fresh DEX modifier +4 (would be 12 with the stale +2)
