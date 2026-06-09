@@ -310,6 +310,39 @@ clawdnd_report_attempt_failure() {
   return 0
 }
 
+# COLD-OPEN RETRY: RESUME the minted campaign instead of re-seeding (#719). The DEFAULT cold-open
+# prompt (scripts/play.sh) says start_world + "if it returns existing_campaigns, start fresh", so a
+# timed-out attempt-1 that ALREADY minted+seeded a campaign gets a retry that mints a SECOND,
+# party-less campaign — the viewer auto-follows the empty orphan ⇒ party-wipe + frozen/input-locked
+# screen (the adversarially-verified engine root of two criticals, RRI 2026-06-09). This returns a
+# RESUME directive (get_state on the existing id, DO NOT start_world, seat a canon PC only if the
+# party is empty) when — and ONLY when — this is a DEFAULT cold-open RETRY (first=1, no authored
+# hero) AND attempt-1 left a live campaign. Otherwise it echoes the base message UNCHANGED:
+#   - first=0 (a continuing beat) — never a cold-open re-seed risk;
+#   - hero_camp set — the AUTHORED-hero opener already opens on the existing campaign;
+#   - live_cid empty — attempt-1 minted nothing, so the normal cold-open MUST run.
+# Byte-identical on every path except the one bug. Read-only; 3.2-safe (printf, no heredoc-in-$()).
+# $1=first  $2=hero_camp  $3=live_campaign_id  $4=world  $5=base_msg ; echoes the message to use.
+clawdnd_coldopen_retry_msg() {
+  local first="$1" hero_camp="$2" live_cid="$3" world="$4" base_msg="$5"
+  if [ "$first" != "1" ] || [ -n "$hero_camp" ] || [ -z "$live_cid" ]; then
+    printf '%s' "$base_msg"
+    return 0
+  fi
+  printf '%s' "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+
+A previous cold-open attempt already minted THIS session's campaign, so the world ALREADY EXISTS — RESUME it, do NOT start over:
+- This session's campaign ALREADY EXISTS: use campaign_id=$live_cid for EVERY engine call. DO NOT call start_world(\"$world\") — it would mint a NEW campaign id and ORPHAN this save (the player's seated party would vanish).
+- call get_state(\"$live_cid\") FIRST to read the world bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster) AND the current party.
+- start_session only if get_state shows no active session.
+- If get_state shows the party is EMPTY (no PC seated yet), choose the player's hero by SELECTING a real canon NPC — NEVER invent a custom character: list_canon_characters(playable_only=true) (the 7 BG3 origin heroes are excluded), pick a fitting MID-TIER canon figure with an ingested portrait + real backstory, then load_canon_character(that name, kind=\"player\", add_to_party=true). If a PC is ALREADY in the party, KEEP them — do NOT reroll or replace.
+- This is a SOLO session: the player begins ALONE. Do NOT recruit a companion at cold-open and do NOT seat anyone but the player. A roster legend may APPEAR as a face in the world (voiced, with a real wound), but they are MET, not recruited.
+
+CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, written as 2nd-person player-facing prose (addressed to \"you\"): where the player IS, what they see/hear/smell, who is present and a real quoted line, ending on a clear open moment + choice. Re-ground via the tools FIRST, then CLOSE the turn by writing the scene. NEVER end this turn on a tool call, and NEVER let your reply be a 3rd-person setup brief or game-system notation.
+
+Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard."
+}
+
 # Read the run's progression facts from the snapshot in ONE python pass. Echoes a single
 # TAB-separated line:  day <TAB> time_of_day <TAB> visited_count <TAB> npcs_met <TAB>
 # current_location_id <TAB> current_location_visited(0/1) <TAB> combat_active(0/1)

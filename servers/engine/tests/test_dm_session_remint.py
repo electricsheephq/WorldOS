@@ -172,3 +172,77 @@ def test_play_party_drives_the_arc_runbook():
     # (2026-06-05 narrative crit: the DM rendered its scaffolding notes verbatim instead of a lived scene).
     assert "do NOT quote, echo, or render this line" in party.lower() or "Do NOT quote, echo, or render this line" in party
     assert "terse scaffolding" in party, "must forbid scaffolding-note output (prose-only rule)"
+
+
+# --- #719: the cold-open RETRY must RESUME the minted campaign, not re-seed a second one ------
+# Distinct from the session-id re-mint above (a 401 collision) AND from #640's play_party launch
+# reuse: here play.sh's DEFAULT cold-open prompt says start_world + "if existing_campaigns, start
+# fresh", so a timed-out attempt-1 (which already minted+seeded a campaign) gets a retry that mints
+# a SECOND, party-less campaign — the viewer auto-follows the empty orphan ⇒ party-wipe + input-lock.
+# The fix swaps the retry $msg to a resume directive (get_state, NO start_world) via a sourceable
+# helper, so it's deterministically testable with no LLM/engine/network.
+
+def test_coldopen_retry_resumes_existing_campaign_not_reseed():
+    """first=1 (cold-open) + no authored hero + attempt-1 ALREADY minted a campaign ⇒ the retry
+    message must RESUME that campaign (get_state + DO NOT start_world), NOT re-issue the fresh
+    cold-open start_world prompt (which would orphan the seated save)."""
+    script = (
+        f'set -u; . "{LIB}"\n'
+        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 "" camp-EXISTING baldurs-gate '
+        '"FRESH_COLDOPEN_SENTINEL call start_world here")"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "camp-EXISTING" in out, out
+    assert "DO NOT call start_world" in out, out
+    assert "get_state" in out, out
+    assert "FRESH_COLDOPEN_SENTINEL" not in out, "the retry must NOT re-issue the fresh cold-open prompt"
+    # the default-opener semantics survive: a canon PC is seated ONLY if the party is empty (never invent).
+    assert "load_canon_character" in out, out
+    assert "NEVER invent" in out or "never invent" in out.lower(), out
+
+
+def test_coldopen_retry_unchanged_when_no_prior_campaign():
+    """first=1 but attempt-1 minted NOTHING (live id empty) ⇒ nothing to resume → run the normal
+    cold-open verbatim (byte-unchanged)."""
+    script = (
+        f'set -u; . "{LIB}"\n'
+        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 "" "" baldurs-gate "BASEMSG_SENTINEL")"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "BASEMSG_SENTINEL", r.stdout
+
+
+def test_coldopen_retry_unchanged_for_continuing_beat():
+    """first=0 (a continuing beat) ⇒ never a cold-open re-seed risk → base message unchanged even
+    if a campaign exists."""
+    script = (
+        f'set -u; . "{LIB}"\n'
+        'printf "%s" "$(clawdnd_coldopen_retry_msg 0 "" camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "BASEMSG_SENTINEL", r.stdout
+
+
+def test_coldopen_retry_unchanged_for_authored_hero():
+    """An AUTHORED hero (HERO_CAMP set) already uses the clean existing-campaign opener — the helper
+    must not interfere (that branch owns its own resume directive)."""
+    script = (
+        f'set -u; . "{LIB}"\n'
+        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 hero-camp-123 camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "BASEMSG_SENTINEL", r.stdout
+
+
+def test_play_sh_wires_the_coldopen_resume_helper():
+    """Anti-drift: the helper must exist in the shared lib AND play.sh's retry must reassign $msg
+    through it (so the cold-open retry resumes instead of re-seeding)."""
+    lib = _src("qa/lib_beat_driver.sh")
+    play = _src("scripts/play.sh")
+    assert "clawdnd_coldopen_retry_msg()" in lib, "the resume-directive helper must exist in the lib"
+    assert 'msg="$(clawdnd_coldopen_retry_msg "$first"' in play, "play.sh retry must reassign msg via the helper"
