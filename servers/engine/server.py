@@ -2969,6 +2969,7 @@ def start_combat(
         c = _require(campaign_id)
         if c.combat.active:
             raise ValueError("combat already active; call end_combat first")
+        c.last_combat_resolution = ""  # a fresh fight -> any prior disposition no longer applies
         rolled = []
         for cid in combatant_ids:
             ch = _char(c, cid)
@@ -4504,7 +4505,7 @@ def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
 
 
 @mcp.tool()
-def end_combat(campaign_id: str) -> dict:
+def end_combat(campaign_id: str, resolution: str = "") -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
     conditions persist past the encounter.
 
@@ -4512,7 +4513,16 @@ def end_combat(campaign_id: str) -> dict:
     defeated THIS encounter is auto-awarded to the party, split evenly — so
     progression isn't a manual chore. Returns `xp_awarded` + per-character `grants`
     (with `can_level_up`) when any was granted. "milestone" mode leaves leveling to
-    the DM (no auto-XP)."""
+    the DM (no auto-XP).
+
+    `resolution`: REQUIRED when you end combat while hostile monsters are still alive
+    (a flee / surrender / capture / retreat / parley) — a short clause naming HOW they
+    left, e.g. "the surviving bandits flee into the alley" / "the captain surrenders".
+    It is recorded into the combat_end event so the save isn't a continuity break (a
+    fight left with enemies standing and no reason logged). If every hostile was brought
+    to 0 HP, omit it. When hostiles remain and you pass nothing, the result carries
+    `needs_resolution: true` + `warning_live_hostiles` — resolve them or narrate the
+    disengagement and pass `resolution`."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result: dict = {"active": False}
@@ -4547,33 +4557,46 @@ def end_combat(campaign_id: str) -> dict:
             if (ch := c.characters.get(cb.character_id)) is not None
             and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
         ]
+        res = (resolution or "").strip()
+        if res:
+            # Persist the DM-declared disposition so the end_combat_no_living_hostiles gate can tell
+            # a legitimate flee/surrender from a continuity break (the combat chronicle is NOT in the
+            # snapshot the gate reads). Only set when a reason is given; cleared at start_combat.
+            c.last_combat_resolution = res
         if live_hostiles:
             result["warning_live_hostiles"] = {
                 "count": len(live_hostiles),
                 "hostiles": live_hostiles,
+                "resolved": bool(res),
                 "note": (
                     f"combat ended with {len(live_hostiles)} hostile(s) still alive at >0 HP "
                     "— if they didn't flee/surrender/die, this leaves them standing in state. "
-                    "Bring them to 0 via attack/apply_damage, or log a flee/parley/surrender "
-                    "event, before ending."
+                    "Bring them to 0 via attack/apply_damage, or pass `resolution=` naming how "
+                    "they left (fled/surrendered/captured/retreated), before ending."
                 ),
             }
+            if not res:
+                # Continuity nudge the DM-wrapper surfaces: a fight cannot end with enemies
+                # standing and no logged reason (the end_combat_no_living_hostiles gate).
+                result["needs_resolution"] = True
         if was_active or c.combat.order:
             ended_order = [
                 _combatant_ref(c.characters[cb.character_id])
                 for cb in c.combat.order
                 if cb.character_id in c.characters
             ]
-            _log_combat_event(
-                c,
-                "Combat ends.",
-                {
-                    "event": "combat_end",
-                    "round": c.combat.round,
-                    "combatants": ended_order,
-                    "xp_awarded": result.get("xp_awarded", 0),
-                },
-            )
+            end_text = f"Combat ends — {res}" if res else "Combat ends."
+            payload = {
+                "event": "combat_end",
+                "round": c.combat.round,
+                "combatants": ended_order,
+                "xp_awarded": result.get("xp_awarded", 0),
+            }
+            if res:
+                # Record the DM-authored disposition into the event so the save explains why a
+                # fight ended with foes alive (resolves the continuity-break behavioral gate).
+                payload["resolution"] = res
+            _log_combat_event(c, end_text, payload)
         c.combat = Combat()
         save_campaign(c)
         return result
