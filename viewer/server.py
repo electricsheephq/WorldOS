@@ -1741,6 +1741,12 @@ def build_session_surface(
 
     return {
         "campaign_id": campaign_id,
+        # Monotonic snapshot clock (RRI 2026-06-09 wall-of-text rollback): the client's
+        # shouldApplySurface guard rejects a strictly-OLDER same-campaign surface so a transient
+        # mid-beat re-fetch can't regress the header backward in time (day/HP/location reverting
+        # while the live chronicle held). None when the snapshot predates the field — the guard
+        # then no-ops (applies) so older saves behave exactly as today.
+        "updated_at": snapshot.get("updated_at"),
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "day": snapshot.get("day") if isinstance(snapshot.get("day"), int) else None,

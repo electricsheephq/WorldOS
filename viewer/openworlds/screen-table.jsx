@@ -481,6 +481,41 @@ function computePlayGate({ surfaceStatus, appStatus, pendingStuck }) {
 // Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
 if (typeof window !== "undefined") window.computePlayGate = computePlayGate;
 
+// The cold-open wait affordance gate (RRI 2026-06-09 input-lock give-up). True when the session is
+// LIVE (a DM is attached) but NOTHING has landed yet — no chronicle beats, no seated party, and no
+// in-flight/stuck pending beat already showing a spinner. The disabled action bar + empty chronicle
+// otherwise read as a frozen crash through the minutes-long cold-open (newbie: "input locked 9+ min,
+// no feedback"); this lets the table render the existing first-beat DmNarratingBeat so the wait is
+// watchable. Pure read-model derivation; clears the instant a beat or the party arrives, or a player
+// move arms a pending beat. NOTE the live-OR-isLiveView: the real frame is live=true with
+// is_live_view=false (a desync the heal hasn't caught), which is exactly when the bar locks.
+function computeColdOpenAwaiting({ surfaceStatus, live, isLiveView, pendingActive, pendingStuck, visibleLogLength, partyEmpty }) {
+  return Boolean(
+    surfaceStatus === "ready" &&
+    (live || isLiveView) &&
+    !pendingActive && !pendingStuck &&
+    visibleLogLength === 0 &&
+    partyEmpty
+  );
+}
+if (typeof window !== "undefined") window.computeColdOpenAwaiting = computeColdOpenAwaiting;
+
+// Monotonic surface freshness guard (RRI 2026-06-09 wall-of-text rollback). Apply an incoming
+// session surface UNLESS it is a strictly-OLDER snapshot of the SAME campaign already shown — that
+// is a backward-in-time header regression (a mid-beat re-fetch projected an older snapshot, so
+// day/HP/location reverted while the live chronicle held). A different campaign (a real switch), a
+// newer-or-equal snapshot, a first surface, or a payload with no monotonic clock all apply (so older
+// saves without `updated_at` behave exactly as today).
+function shouldApplySurface(prev, next) {
+  if (!prev || !next) return true;
+  if (prev.campaign_id !== next.campaign_id) return true;
+  const a = Number(prev.updated_at);
+  const b = Number(next.updated_at);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+  return b >= a;
+}
+if (typeof window !== "undefined") window.shouldApplySurface = shouldApplySurface;
+
 function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
@@ -606,7 +641,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         statusPayload = null;
       }
       if (isCancelled()) return;
-      setSurface(payload);
+      // Reject a strictly-older same-campaign snapshot (the wall-of-text rollback): keep the newer
+      // surface already rendered rather than regress the header backward in time. A later poll lands
+      // the caught-up snapshot. app-status (live/can_act) is independent of the header, so it updates.
+      setSurface((prev) => (shouldApplySurface(prev, payload) ? payload : prev));
       setAppStatus(statusPayload);
       setSurfaceStatus("ready");
     } catch (error) {
@@ -726,6 +764,23 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // (alive) rather than the generic "Narrating…" — so the locked bar matches the obviously-alive
   // chronicle indicator and never looks like the app is wedged.
   const pendingFirstBeat = Boolean(pendingActive && pending.firstBeat);
+  // The cold-open wait: render a watchable "DM is opening your world" beat instead of a frozen
+  // empty chronicle + locked bar (the input-lock give-up). Derived from the read-model only.
+  const coldOpenAwaiting = computeColdOpenAwaiting({
+    surfaceStatus,
+    live: Boolean(surface && surface.live),
+    isLiveView: Boolean(surface && surface.is_live_view),
+    pendingActive,
+    pendingStuck,
+    visibleLogLength: visibleLog.length,
+    partyEmpty: !surface || !Array.isArray(surface.party) || surface.party.length === 0,
+  });
+  const coldOpenSinceRef = React.useRef(null);
+  if (coldOpenAwaiting) {
+    if (coldOpenSinceRef.current == null) coldOpenSinceRef.current = Date.now();
+  } else {
+    coldOpenSinceRef.current = null;
+  }
   // #344: remember the move that is currently in flight so the "Try again" recovery (shown when a
   // turn goes `stuck`) can actually RE-POST it. The first submit clears the input box (setInput("")),
   // so by the time the bar re-opens stuck the box is empty — without the original move stored, the
@@ -1061,7 +1116,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               >
                 <LogEntry entry={entry} />
               </div>
-            )) : <div className="body-sm muted">No moves yet</div>}
+            )) : coldOpenAwaiting ? null : <div className="body-sm muted">No moves yet</div>}
             {pendingActive && (
               <div ref={pendingBeatRef} data-worldos-testid="chronicle-pending-beat" style={{ scrollMarginBlock: 12 }}>
                 {/* #G3-UX: `streaming` (set by useLiveSession's notePendingProgress the moment live
@@ -1076,6 +1131,15 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             {pendingStuck && (
               <div ref={pendingBeatRef} data-worldos-testid="chronicle-stuck-beat" style={{ scrollMarginBlock: 12 }}>
                 <DmStuckBeat />
+              </div>
+            )}
+            {coldOpenAwaiting && (
+              /* The cold-open wait: the DM is composing the opening but nothing has landed and the
+                 bar is locked — render the first-beat narrating affordance so the minutes-long wait
+                 reads as a turn-in-progress, not a crash (the input-lock give-up). Mutually exclusive
+                 with the pending beats above (the selector excludes pendingActive/pendingStuck). */
+              <div data-worldos-testid="chronicle-coldopen-beat" style={{ scrollMarginBlock: 12 }}>
+                <DmNarratingBeat since={coldOpenSinceRef.current} firstBeat={true} streaming={false} onNavigate={onNavigate} />
               </div>
             )}
           </div>

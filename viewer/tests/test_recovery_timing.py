@@ -396,3 +396,83 @@ class PlayGateLockoutTests(_BabelHarness):
         self.assertFalse(gate["surfaceStatusBlocksPlay"])
         self.assertFalse(gate["appStatusBlocksPlay"])
         self.assertFalse(gate["livePlayBlocked"])
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX selector")
+class ColdOpenAwaitingTests(_BabelHarness):
+    """The cold-open wait affordance gate (RRI 2026-06-09 input-lock give-up): computeColdOpenAwaiting
+    fires the watchable 'DM is opening your world' first-beat affordance ONLY in the cold-open frame —
+    a LIVE session with nothing landed yet (no chronicle, no seated party) and no pending/stuck beat
+    already spinning. Pure selector; the render block in ScreenTable just gates on it."""
+
+    def _awaiting(self, **over):
+        base = dict(surfaceStatus="ready", live=True, isLiveView=False, pendingActive=False,
+                    pendingStuck=False, visibleLogLength=0, partyEmpty=True)
+        base.update(over)
+        return self._run("win.computeColdOpenAwaiting(%s)" % json.dumps(base))
+
+    def test_fires_at_the_real_coldopen_frame(self):
+        # The exact bug frame: live=true, is_live_view=false (a desync the heal hasn't caught), the
+        # bar locked, empty chronicle + empty party, no pending beat. RED today (no affordance).
+        self.assertTrue(self._awaiting())
+
+    def test_isliveview_only_also_fires(self):
+        self.assertTrue(self._awaiting(live=False, isLiveView=True))
+
+    def test_not_live_does_not_fire(self):
+        self.assertFalse(self._awaiting(live=False, isLiveView=False),
+                         "a read-only / dead session must not show a cold-open spinner")
+
+    def test_seated_party_does_not_fire(self):
+        self.assertFalse(self._awaiting(partyEmpty=False),
+                         "once the PC is seated the cold-open affordance must clear")
+
+    def test_existing_log_does_not_fire(self):
+        self.assertFalse(self._awaiting(visibleLogLength=1),
+                         "once a beat has landed the chronicle carries it; no cold-open spinner")
+
+    def test_pending_beat_takes_precedence(self):
+        self.assertFalse(self._awaiting(pendingActive=True),
+                         "a player-move pending beat shows its own spinner")
+        self.assertFalse(self._awaiting(pendingStuck=True),
+                         "a stuck beat shows its own affordance")
+
+    def test_surface_not_ready_does_not_fire(self):
+        self.assertFalse(self._awaiting(surfaceStatus="loading"),
+                         "don't mask a real surface outage with a cold-open spinner")
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX selector")
+class SurfaceFreshnessTests(_BabelHarness):
+    """shouldApplySurface monotonic guard (RRI 2026-06-09 wall-of-text rollback): a strictly-OLDER
+    same-campaign surface is REJECTED so a mid-beat re-fetch can't regress the header backward in
+    time (day/HP/location reverting while the live chronicle held). Everything else applies."""
+
+    def _apply(self, prev, nxt):
+        return self._run("win.shouldApplySurface(%s, %s)" % (json.dumps(prev), json.dumps(nxt)))
+
+    def test_strictly_older_same_campaign_is_rejected(self):
+        self.assertFalse(self._apply({"campaign_id": "c", "updated_at": 200},
+                                     {"campaign_id": "c", "updated_at": 100}),
+                         "an older same-campaign snapshot must not regress the header")
+
+    def test_newer_same_campaign_applies(self):
+        self.assertTrue(self._apply({"campaign_id": "c", "updated_at": 100},
+                                    {"campaign_id": "c", "updated_at": 200}))
+
+    def test_equal_same_campaign_applies(self):
+        self.assertTrue(self._apply({"campaign_id": "c", "updated_at": 100},
+                                    {"campaign_id": "c", "updated_at": 100}))
+
+    def test_different_campaign_always_applies(self):
+        # A real campaign switch is never a 'regression' — apply even if the new one is older.
+        self.assertTrue(self._apply({"campaign_id": "live", "updated_at": 200},
+                                    {"campaign_id": "other", "updated_at": 100}))
+
+    def test_first_surface_applies(self):
+        self.assertTrue(self._apply(None, {"campaign_id": "c", "updated_at": 100}))
+
+    def test_missing_clock_no_ops(self):
+        # No monotonic signal (an older save without updated_at) -> apply, exactly as today.
+        self.assertTrue(self._apply({"campaign_id": "c"}, {"campaign_id": "c", "updated_at": 100}))
+        self.assertTrue(self._apply({"campaign_id": "c", "updated_at": 100}, {"campaign_id": "c"}))
