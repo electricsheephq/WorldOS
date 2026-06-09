@@ -794,6 +794,92 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn("font-size: 13px", title_end_css)
         self.assertIn("min-width: 240px", title_end_css)
 
+    def test_openworlds_title_bar_clearance_contract_is_self_consistent(self):
+        # #306 (closes #260): the prior guard above asserts the three reserved-band
+        # values exist *as literal strings* — but Loop-7 still shipped a title bar that
+        # playtests called "broken" because nothing proved the values are MUTUALLY
+        # CONSISTENT or that a one-line title stays clear of the nav rail. A 1fr/200px
+        # grid with a `calc(100% - 240px)` title cap, or a title-bar tall enough to drop
+        # the title into the rail row, would slip past the string check yet collide on
+        # screen. This test mirrors the `qa/ui_gate_probe.js` title_bar_clearance
+        # invariant (titleNavOverlap / titleEndOverlap / titleLineCount /
+        # titleDayReadable) at the CSS-contract level so the fast lane catches a
+        # regression without standing up a browser.
+        styles = (server._OPENWORLDS_DIR / "styles.css").read_text(encoding="utf-8")
+        chrome = (server._OPENWORLDS_DIR / "chrome.jsx").read_text(encoding="utf-8")
+
+        def _block(selector: str) -> str:
+            m = re.search(re.escape(selector) + r"\s*\{([^}]+)\}", styles, re.S)
+            self.assertIsNotNone(m, f"missing CSS rule for {selector}")
+            return m.group(1)
+
+        title_bar = _block(".title-bar")
+        title_text = _block(".title-text")
+        title_end = _block(".title-end")
+
+        # (1) Right-band consistency — the value the title cell reserves on the right
+        #     MUST equal the grid's right column AND the right band's own min-width.
+        #     If they drift, a long title can slide under the day/capability pills
+        #     (titleEndOverlap) or the band can be squeezed (titleDayReadable=false).
+        grid = re.search(r"grid-template-columns:\s*1fr\s+(\d+)px", title_bar)
+        self.assertIsNotNone(grid, "title-bar must use a `1fr <band>px` grid")
+        band_px = int(grid.group(1))
+
+        reserve = re.search(r"max-width:\s*calc\(100%\s*-\s*(\d+)px\)", title_text)
+        self.assertIsNotNone(reserve, "title-text must cap its width to reserve the right band")
+        reserve_px = int(reserve.group(1))
+
+        end_min = re.search(r"min-width:\s*(\d+)px", title_end)
+        self.assertIsNotNone(end_min, "title-end must hold a fixed minimum band")
+        end_min_px = int(end_min.group(1))
+
+        self.assertEqual(
+            band_px, reserve_px,
+            f"title cell reserves {reserve_px}px but the grid right column is {band_px}px — "
+            "a long title can collide with the day/capability band (titleEndOverlap)",
+        )
+        self.assertEqual(
+            band_px, end_min_px,
+            f"right band min-width is {end_min_px}px but the grid reserves {band_px}px — "
+            "the day pill can be squeezed below readability (titleDayReadable=false)",
+        )
+        self.assertGreaterEqual(
+            band_px, 200,
+            "the right band must be wide enough to hold `CAPABILITY` + `DAY N · PHASE` without wrapping",
+        )
+
+        # (2) One-line guarantee (titleLineCount == 1): nowrap + ellipsis is what keeps
+        #     a long campaign name from wrapping its bottom edge down into the nav rail
+        #     row (the original #260 vertical collision).
+        self.assertIn("white-space: nowrap", title_text)
+        self.assertIn("text-overflow: ellipsis", title_text)
+        self.assertIn("overflow: hidden", title_text)
+
+        # (3) Vertical clearance (titleNavOverlap == false): the title bar is a fixed,
+        #     center-aligned single row, so a one-line title cannot reach the nav rail
+        #     which lives in the `.app` row below it. Lock the bounded height + the
+        #     center alignment that, together with nowrap, make that true.
+        height = re.search(r"height:\s*(\d+)px", title_bar)
+        self.assertIsNotNone(height, "title-bar must declare a bounded height")
+        self.assertLessEqual(
+            int(height.group(1)), 48,
+            "title-bar height grew — a centered one-line title could drop into the nav rail row",
+        )
+        self.assertIn("align-items: center", title_bar)
+
+        # (4) Day-pill readability (titleDayReadable == true) + the owner's "time of day
+        #     is way too small" report: the day span must declare a concrete font size of
+        #     at least 13px. Guard both the inline render (chrome.jsx) and the band base.
+        day_span = re.search(r"day\s*&&\s*<span[^>]*fontSize:\s*(\d+)", chrome)
+        self.assertIsNotNone(day_span, "the day pill must render with an explicit fontSize")
+        self.assertGreaterEqual(
+            int(day_span.group(1)), 13,
+            "day pill font dropped below 13px — playtests already flagged it as 'way too small'",
+        )
+        end_font = re.search(r"font-size:\s*(\d+)px", title_end)
+        self.assertIsNotNone(end_font)
+        self.assertGreaterEqual(int(end_font.group(1)), 13)
+
     def test_openworlds_combat_screen_binds_viewer_combat_surface(self):
         status, ctype, body = self._get("/openworlds/screen-combat.jsx")
 
