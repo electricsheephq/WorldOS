@@ -246,3 +246,119 @@ def test_play_sh_wires_the_coldopen_resume_helper():
     play = _src("scripts/play.sh")
     assert "clawdnd_coldopen_retry_msg()" in lib, "the resume-directive helper must exist in the lib"
     assert 'msg="$(clawdnd_coldopen_retry_msg "$first"' in play, "play.sh retry must reassign msg via the helper"
+
+
+# --- #623: the SOLO play.sh path needs the SAME live-progress signal the party/codex paths have --
+# The sweep_v8 run that filed #623 used the SOLO scripts/play.sh path. Forensics (Eva, on the run's
+# own dm.*.jsonl): all four beats ran cleanly at ttft 2-5s and 85-157s wall — NO real drop/hang. The
+# defect is PERCEIVED latency: play.sh had NEITHER the live-progress rule NOR the wrapper-authored
+# heartbeat the party (#623) + codex paths already carry, so /events stayed blank for the whole beat
+# (the viewer's notePendingProgress streaming-flip never fired) → the player stared at a static
+# spinner and called it a dropped/hung beat. The fix is two-layer, both PERCEIVED-latency, neither
+# touching wall-clock: a model-INDEPENDENT wrapper heartbeat (a guaranteed early /events row) + the
+# model-cooperative live-progress rule. The existing bounded timeout+retry+#357 fallback is unchanged.
+
+
+def test_live_progress_rule_is_shared_in_the_lib():
+    """Anti-drift: factor the live-progress rule into the ONE shared lib so the harnesses can't drift.
+    The string must be defined in lib_beat_driver.sh and carry its load-bearing intent."""
+    lib = _src("qa/lib_beat_driver.sh")
+    assert "CLAWDND_LIVE_PROGRESS_RULE=" in lib, "the live-progress rule must live in the shared lib"
+    assert "Live progress rule" in lib and "log_event" in lib and "narration" in lib
+
+
+def test_play_sh_applies_the_live_progress_rule_to_the_beat_turn():
+    """#623: scripts/play.sh (the SOLO claude DM path that filed #623) must apply the live-progress
+    rule to its per-beat DM turn — parity with play_party.sh + play_codex_dm.sh. Its ABSENCE is the
+    bug: the solo DM emitted nothing to /events until the full 85-157s beat completed."""
+    play = _src("scripts/play.sh")
+    assert "CLAWDND_LIVE_PROGRESS_RULE" in play, "play.sh must reference the shared live-progress rule"
+    assert "$CLAWDND_LIVE_PROGRESS_RULE" in play, "the rule must be spliced into the DM beat prompt"
+
+
+def test_progress_heartbeat_helpers_exist_in_the_lib():
+    """The model-INDEPENDENT heartbeat: a wrapper-authored progress beat the harness logs to /events
+    itself, BEFORE the model runs — so the viewer flips off the generic spinner within ~1s no matter
+    how long the model thinks (or whether it skips the cooperative early log_event). Mirrors the codex
+    DM wrapper's proven OPENING_PROGRESS_TEXT / MOVE_PROGRESS_TEXTS pattern, factored to the shared lib."""
+    lib = _src("qa/lib_beat_driver.sh")
+    assert "clawdnd_progress_beat_text()" in lib, "the heartbeat-text chooser must exist in the lib"
+    assert "clawdnd_emit_progress_heartbeat()" in lib, "the heartbeat emitter must exist in the lib"
+    # the emitter routes through the shared engine-log helper (engine stays the sole writer).
+    assert "log_engine_narration" in lib
+
+
+def test_progress_beat_text_is_second_person_and_rotates():
+    """The heartbeat text must be a SHORT 2nd-person player-facing teaser (it renders straight into
+    the Chronicle), and continuing beats must ROTATE so a multi-beat session doesn't repeat one line.
+    The cold open (first=1) gets its own opening teaser; continuing beats (first=0) cycle by index."""
+    script = (
+        f'set -u; . "{LIB}"\n'
+        'echo "open:$(clawdnd_progress_beat_text 1 0)"\n'
+        'echo "b0:$(clawdnd_progress_beat_text 0 0)"\n'
+        'echo "b1:$(clawdnd_progress_beat_text 0 1)"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    lines = {ln.split(":", 1)[0]: ln.split(":", 1)[1] for ln in r.stdout.splitlines() if ":" in ln}
+    # every teaser is non-empty 2nd-person prose addressed to "you"
+    for key in ("open", "b0", "b1"):
+        assert lines.get(key, "").strip(), f"{key} progress teaser must be non-empty"
+        assert "you" in lines[key].lower(), f"{key} teaser must be 2nd-person (address 'you')"
+    # continuing beats rotate (index 0 != index 1) so a long session never repeats the same line
+    assert lines["b0"] != lines["b1"], "continuing-beat teasers must rotate by index"
+
+
+def test_emit_progress_heartbeat_logs_a_narration_event(tmp_path, monkeypatch):
+    """End-to-end: the emitter must write a real `narration` row to the engine session log for the
+    given campaign — the row the viewer's /events poll reads to flip the spinner to 'streaming'. Mints
+    a real campaign via the engine, then drives the bash helper against the SAME state dir; a blank
+    campaign id must no-op (no crash, no row) since the heartbeat is best-effort, never fatal."""
+    import json as _json
+    import sys as _sys
+
+    state = tmp_path / "state"
+    state.mkdir()
+    # Mint a real campaign + a session through the engine (the heartbeat needs a real campaign to log
+    # into; an empty dir makes log_event raise — which the helper swallows, but then there's no row).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(state))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
+    _sys.path.insert(0, str(ROOT / "servers" / "engine"))
+    import server  # the engine module (servers/engine on sys.path)
+
+    camp = server.create_campaign("Heartbeat")["id"]
+    server.start_session(camp)
+
+    script = (
+        f'set -u; . "{LIB}"\n'
+        f'export ROOT="{ROOT}"; export STATE_DIR="{state}"\n'
+        f'export CLAWDND_STATE_DIR="{state}"; export WORLDOS_STATE_DIR="{state}"\n'
+        # blank campaign id must no-op (the heartbeat is best-effort, never fatal)
+        'clawdnd_emit_progress_heartbeat "" 1 0; echo "blank-rc=$?"\n'
+        # a real campaign id must log a narration progress beat
+        f'clawdnd_emit_progress_heartbeat "{camp}" 0 0; echo "real-rc=$?"\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, r.stderr
+    assert "blank-rc=0" in r.stdout, ("blank id must no-op cleanly", r.stdout, r.stderr)
+    assert "real-rc=0" in r.stdout, ("a real heartbeat must return 0", r.stdout, r.stderr)
+    # the engine must have appended at least one narration row for the campaign
+    sess_dir = state / "campaigns" / camp / "sessions"
+    rows = []
+    for f in sess_dir.glob("*.jsonl"):
+        for ln in f.read_text().splitlines():
+            ln = ln.strip()
+            if ln:
+                rows.append(_json.loads(ln))
+    narr = [x for x in rows if x.get("kind") == "narration" and (x.get("text") or "").strip()]
+    assert narr, ("the heartbeat must log a player-facing narration row to the engine", r.stdout, r.stderr)
+    assert "you" in narr[-1]["text"].lower(), "the logged heartbeat must be 2nd-person prose"
+
+
+def test_play_sh_emits_the_heartbeat_before_each_dm_turn():
+    """Anti-drift: play.sh must call the heartbeat emitter on BOTH its openers and the per-beat turn,
+    so a guaranteed /events row precedes the model's long think on every beat type."""
+    play = _src("scripts/play.sh")
+    assert play.count("clawdnd_emit_progress_heartbeat") >= 2, (
+        "play.sh must emit the heartbeat on the cold-open AND per-beat paths"
+    )

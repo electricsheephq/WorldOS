@@ -249,6 +249,75 @@ record_dm_reply() {
   fi
 }
 
+# LIVE-PROGRESS + WRAPPER HEARTBEAT (#623 — the ONE shared implementation of the perceived-latency fix).
+#
+# The bug #623 ("beat silently DROPPED / HUNG >10min, no recovery") was a PERCEIVED-latency defect, not
+# real DM unreliability: forensics on the filing run showed all beats ran cleanly at ttft 2-5s / 85-157s
+# wall with ZERO timeouts/retries/empty-fallbacks. The defect is that /events stayed BLANK for the whole
+# beat → the OpenWorlds viewer's notePendingProgress streaming-flip never fired → the player stared at a
+# static "weaving the next beat" spinner and called a healthy 157s beat a "drop"/"hang". Two layers close
+# the gap (BOTH perceived-latency — neither touches wall-clock; the bounded timeout+retry+#357 fallback
+# are unchanged):
+#
+#   1. WRAPPER HEARTBEAT (model-INDEPENDENT, the guarantee): clawdnd_emit_progress_heartbeat writes a
+#      short wrapper-authored `narration` row to the engine session log via log_engine_narration BEFORE
+#      the DM `claude -p` even starts. That row lands in /events within ~1s, so the viewer flips its
+#      spinner to "the scene is arriving above" no matter how long the model thinks — and crucially, even
+#      when the model SKIPS the cooperative early log_event (Eva measured exactly that: a run with the rule
+#      present but streaming refs = 0). This is the same proven pattern the Codex DM wrapper already uses
+#      (scripts/play_codex_dm.sh: OPENING_PROGRESS_TEXT / MOVE_PROGRESS_TEXTS), factored here so every
+#      harness shares it. The player is NEVER staring at nothing.
+#
+#   2. CLAWDND_LIVE_PROGRESS_RULE (model-COOPERATIVE, the richer signal): prepended to the DM beat prompt
+#      so the model ALSO logs an early in-voice progress beat. Was already in scripts/play_party.sh +
+#      scripts/play_codex_dm.sh but MISSING from scripts/play.sh (the SOLO path that filed #623) — that
+#      absence is the bug. Factored here verbatim so the three harnesses can never drift again.
+#
+# The heartbeat is best-effort: a blank campaign id or an engine error no-ops (return 0) — it is a
+# perceived-latency nicety, never allowed to fail a beat. The engine stays the SOLE WRITER (this only
+# routes through log_engine_narration, which appends a narration event exactly as the DM's own would).
+CLAWDND_LIVE_PROGRESS_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") ONCE with a short, non-duplicate, player-facing progress beat BEFORE any longer resolution work. This is how /events shows visible story progress while your turn is still running. The progress beat MUST be 2nd-person prose addressed to \"you\" (a vivid one-line teaser of where the player stands or what they sense) — it is rendered STRAIGHT into the player's Chronicle. NEVER log a 3rd-person scene summary, a \"Cold open —\"/\"Scene:\"/\"Setup:\" header, a \"Choice: X or Y\" branch list, bracketed stage directions, or any director/planning note: that scaffolding is your private scratchpad and shatters immersion if it reaches the player. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+
+# The wrapper-authored heartbeat texts. SHORT 2nd-person teasers (they render straight into the player's
+# Chronicle). The cold open (first=1) gets the opening teaser; continuing beats (first=0) ROTATE by index
+# so a multi-beat session never repeats the same line. Mirrors play_codex_dm.sh's two text banks.
+CLAWDND_OPENING_PROGRESS_TEXT="The first scene gathers around you; voices, risks, and choices come into focus."
+CLAWDND_MOVE_PROGRESS_TEXTS=(
+  "Your choice takes hold; nearby voices, risks, and consequences begin to answer."
+  "The world turns with your action; the scene shifts toward its answer."
+  "Your move lands; attention gathers around what changes next."
+  "Momentum carries through the scene; consequences are beginning to surface."
+)
+
+# clawdnd_progress_beat_text FIRST BEAT_INDEX — echo the heartbeat teaser for this beat. $1=first?(1/0)
+# (the same cold-open signal as the effort/timeout tiers); $2=a 0-based beat index used to ROTATE the
+# continuing-beat bank. Cold open → the opening teaser; continuing beat → MOVE_PROGRESS_TEXTS[idx % N].
+clawdnd_progress_beat_text() {
+  local first="$1" idx="${2:-0}"
+  if [ "$first" != "0" ]; then
+    printf '%s' "$CLAWDND_OPENING_PROGRESS_TEXT"
+    return 0
+  fi
+  [[ "$idx" =~ ^[0-9]+$ ]] || idx=0
+  local count="${#CLAWDND_MOVE_PROGRESS_TEXTS[@]}"
+  printf '%s' "${CLAWDND_MOVE_PROGRESS_TEXTS[$((idx % count))]}"
+}
+
+# clawdnd_emit_progress_heartbeat CAMPAIGN_ID FIRST BEAT_INDEX — write the wrapper-authored progress beat
+# to the engine session log (via log_engine_narration) so /events has a row to render BEFORE the model's
+# long think. Best-effort + idempotent: a blank campaign id no-ops; log_engine_narration's substring guard
+# (it already de-dups against the recent narration tail) means a heartbeat the DM happens to echo isn't
+# double-logged. ALWAYS returns 0 — a heartbeat failure must never fail a beat. Reads ambient $STATE_DIR /
+# $ROOT exactly as log_engine_narration / record_dm_reply do. $1=campaign_id $2=first?(1/0) $3=beat index.
+clawdnd_emit_progress_heartbeat() {
+  local campaign_id="$1" first="${2:-0}" idx="${3:-0}" text
+  [ -n "${campaign_id//[[:space:]]/}" ] || return 0
+  text="$(clawdnd_progress_beat_text "$first" "$idx")"
+  log_engine_narration "$campaign_id" "$text" \
+    || printf '%s\n' "[worldos] note: could not record progress heartbeat (non-fatal)" >&2
+  return 0
+}
+
 # LEAN-BEAT DM-TURN ARGS (the ONE shared implementation of the CLAWDND_LEAN_BEATS path).
 #
 # Both play loops (scripts/play.sh AND qa/run_duo.sh) drive a DM turn through `claude -p`,
