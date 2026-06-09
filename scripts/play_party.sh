@@ -273,7 +273,9 @@ PY
 done
 
 DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
-chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+# chatlog + log_engine_narration + record_dm_reply are shared helpers in qa/lib_beat_driver.sh
+# (sourced above); they read $CHAT/$STATE_DIR/$ROOT from this scope. record_dm_reply (#720)
+# stamps engine_logged on DM-reply rows so the OpenWorlds client de-dups the cold-open opening.
 echo "[play-party] run=$RUN world=$WORLD port=$PORT companions=$NUM_COMP dm=$DSID"
 
 # --- one agent turn (DM full plugin, or a companion via its facade only) ----------------
@@ -471,7 +473,9 @@ Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an at
 # call rather than prose — BEFORE the abort check, so a tool-final-but-narrated opener stands.
 DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
 [ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
-chatlog dm "$DMSG"; AGENT_TURNS=1
+# #720: route the opening through record_dm_reply — engine_logged stamp on success so the
+# OpenWorlds client renders the cold-open opening ONCE (this is the dup source on the VM sweep).
+record_dm_reply "$CAMPAIGN_ID" "$DMSG" opening; AGENT_TURNS=1
 echo "[play-party] DM opened: ${DMSG:0:120}…"
 
 # --- SEATING GUARD: the cold open MUST seat a player PC ----------------------------------
@@ -518,7 +522,8 @@ if ! pc_seated; then
 - Then CLOSE the turn by writing the opening SCENE as 2nd-person player-facing prose addressed to \"you\" (where the player IS, what they see/hear/smell, who is present + a real quoted line), ending on a clear open moment + choice. NEVER end on a tool call or a 3rd-person setup brief.")"
   RESEAT_DMSG="$(clawdnd_dm_narration_or_fallback "$RESEAT_DMSG" "$STATE_DIR")"
   AGENT_TURNS=$((AGENT_TURNS + 1))
-  if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; chatlog dm "$DMSG"; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
+  # #720: the reseat turn re-writes the opening scene — route it through record_dm_reply too.
+  if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; record_dm_reply "$CAMPAIGN_ID" "$DMSG" reseat; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
   if ! pc_seated; then
     echo "[play-party] COLD-OPEN SEATED NO PC: after a retry the party still has no kind=\"player\" member — aborting rather than hand the player a no_actor session (see $COMBINED)." >&2
     exit 1
@@ -563,7 +568,8 @@ $INTRO_BLOCK
 Narrate the RESULT of each declared move (never invent a companion's internal choice), then weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
   # #357: recover engine-logged narration if this DM turn ended on a tool call.
   DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
-  [ -n "$DMSG" ] && { chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
+  # #720: route the after-intros DM beat through record_dm_reply (engine_logged stamp on success).
+  [ -n "$DMSG" ] && { record_dm_reply "$CAMPAIGN_ID" "$DMSG" after_intros; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
 fi
 
 # --- session ceiling (aggregate cost + turn cap), mirrors play.sh + run_party.sh --------
@@ -643,7 +649,8 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     # #357: if the DM turn ended on a tool call / 3rd-person status line, recover the
     # player-facing narration the engine logged this beat so the chat is never blank.
     DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
-    chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
+    # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
+    record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; AGENT_TURNS=$((AGENT_TURNS + 1))
     # Remember this beat's location so the next beat's runbook can detect a stuck party (travel cue).
     PREV_LOC="$(printf '%s' "$(clawdnd_read_progress "$STATE_DIR")" | cut -f5)"
   else
