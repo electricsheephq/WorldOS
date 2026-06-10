@@ -387,11 +387,18 @@ def test_ui_playtest_dm_turn_wraps_claude_in_a_bounded_timeout():
 
 
 def test_ui_playtest_dm_turn_falls_back_to_engine_narration_on_a_stalled_beat():
-    """A killed/empty beat must still RESOLVE on /chat: dm_turn routes its result through the shared
-    clawdnd_dm_narration_or_fallback so the engine-logged narration tail becomes the turn-END line."""
+    """A killed/empty beat must still RESOLVE on /chat: each dm_turn result routes through the shared
+    fallback front door (#749c: clawdnd_resolve_dm_reply — a DIRECT call wrapping
+    clawdnd_dm_narration_or_fallback, so the recovery flag survives) and the engine-logged narration
+    tail becomes the turn-END line, with a recovered reply stamped fallback_recovered on the chat row."""
     src = _src("qa/ui_playtest.sh")
-    assert "clawdnd_dm_narration_or_fallback" in src, (
-        "ui_playtest.sh dm_turn must recover via the shared narration fallback so a stalled beat still resolves"
+    assert src.count('clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"') >= 2, (
+        "ui_playtest.sh must recover BOTH the opening and per-beat turns via the shared fallback "
+        "front door so a stalled beat still resolves"
+    )
+    assert "clawdnd_chatlog_dm" in src, (
+        "ui_playtest.sh must write dm rows via clawdnd_chatlog_dm so a recovered reply carries "
+        "the fallback_recovered honesty stamp (#749c)"
     )
 
 

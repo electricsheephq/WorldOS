@@ -143,9 +143,10 @@ chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({
 # never RESOLVED on the client, leaving the player on the (now-fixed-but-slower) client stall path with
 # no backend recovery at all. Here we (1) wall-clock the beat with `timeout` (tiered off the cold-open
 # `first` signal via the shared clawdnd_dm_timeout; a frozen process is KILLED at the deadline so the
-# turn returns), and (2) if the killed/failed beat left empty result text, stitch the engine-logged
-# narration tail as a fallback reply (clawdnd_dm_narration_or_fallback) so `chatlog dm` always writes a
-# real turn-END line → the client's pending clears + the bar re-enables. CLAWDND_DM_MODEL lets the
+# turn returns), and (2) if the killed/failed beat left empty result text, the CALLER stitches the
+# engine-logged narration tail as a fallback reply (clawdnd_resolve_dm_reply, which also flags the
+# recovery — #749c) so the dm chat row always carries a real turn-END line → the client's pending
+# clears + the bar re-enables. CLAWDND_DM_MODEL lets the
 # timeout helper pick the opus cold-open tier. Bash 3.2-safe (timeout(1) from coreutils; ${arr[@]+…}).
 CLAWDND_DM_MODEL="$DM_MODEL"
 dm_turn() {
@@ -160,9 +161,11 @@ dm_turn() {
   rc=$?
   [ "$rc" -ne 0 ] && echo "[uipt] DM turn rc=$rc (timeout=${beat_timeout}s) — relying on engine-logged narration fallback" >&2
   cat "$out" >> "$COMBINED"
-  # If the beat was killed/failed with no final result text, recover the engine-logged narration tail so
-  # the turn STILL resolves on /chat (never an indefinite hang). A healthy beat returns its result verbatim.
-  clawdnd_dm_narration_or_fallback "$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null)" "$STATE_DIR"
+  # Echo the beat's RAW final result text. The #357 fallback (recover the engine-logged narration
+  # tail when a killed/failed beat left this empty, so the turn STILL resolves on /chat) is applied
+  # by the CALLER via clawdnd_resolve_dm_reply — a direct call, because dm_turn runs in a command
+  # substitution where the #749c fallback_recovered flag (a global) could never escape the subshell.
+  jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
 }
 
 # --- DM opens the scene so a LIVE, playable game exists (the launcher's Chronicles
@@ -174,8 +177,11 @@ echo "[uipt] DM opening the scene…"
 DMSG="$(dm_turn 1 "$DM_BRIEF
 
 Begin a SOLO session for a brand-new human player in this world: start_world(\"$WORLD\"), start_session, seat a fitting level-3 PLAYER CHARACTER (a LIVING canon figure via load_canon_character(kind=\"player\", add_to_party=true) — NEVER a dead/fallen character; apply sensible skills/spells), and bring in ONE roster companion the player meets in the scene. Then open a human-scale, personal scene with real quoted dialogue and hand the player an open moment + a clear choice. Their actions will arrive next as tagged moves.")"
+# #357/#749c: recover the engine-logged narration tail when the turn died with no result text;
+# a recovered reply stamps fallback_recovered:true on the dm chat row (clawdnd_chatlog_dm).
+clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 [ -z "$DMSG" ] && echo "[uipt] WARN: DM produced no opening (see $RUNDIR/dm/dm.err) — the player may land in a thin scene." >&2
-chatlog dm "${DMSG:-The scene is set. What do you do?}"
+clawdnd_chatlog_dm "${DMSG:-The scene is set. What do you do?}"
 
 # --- background DM-resolver loop: tail $MOVES, resolve each new move, append narration
 # to $CHAT (the UI shows it via /chat). Identical shape to play_human.sh's loop. Runs
@@ -194,7 +200,9 @@ chatlog dm "${DMSG:-The scene is set. What do you do?}"
 $PMSG
 
 Resolve it through the engine (roll checks, apply casts/attacks, voice NPCs) and narrate the next beat as a played scene. Hand the moment back to the player.")"
-      chatlog dm "${DMSG:-...}"
+      # #357/#749c: same recovery + honesty stamp as the opening turn (direct call, see dm_turn).
+      clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+      clawdnd_chatlog_dm "${DMSG:-...}"
     else
       sleep 2
     fi

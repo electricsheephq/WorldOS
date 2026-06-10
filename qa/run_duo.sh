@@ -244,10 +244,10 @@ $PMSG
 Do the setup now: start_world(\"$WORLD\"), start_session, then seat THEIR character as the PLAYER CHARACTER (the PC). The player ALWAYS plays a REAL, LIVING CANON NPC — their persona names one (e.g. Aubree, a Flaming Fist ranger). Seat that exact figure via load_canon_character(their canon name, kind=\"player\", add_to_party=true) so they get a real backstory + ingested portrait — NEVER create_character / invent a custom PC, NEVER seat the player's own character as a companion or NPC, and NEVER a canon-DEAD figure (a corpse like Dal Lightspark is rejected as a PC; if the seat returns an error, pick a living canon NPC instead). A companion is a DIFFERENT character the player MEETS. Then OPEN the scene — human-scale and personal — grounded in the world's canon, responding to their stated intent. A companion should ENTER as part of that opening scene: someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together) — recruit_companion / load_canon_character(kind=\"companion\") as that meeting lands, NOT a silent name dropped into the party before the player has met anyone. End by handing the moment to the player. OUTPUT DISCIPLINE — your final reply IS the opening scene: write it as 2nd-person in-fiction PROSE + quoted dialogue ONLY. NEVER narrate your own setup/process — no \"State is grounded\", no \"the cold open is on the dashboard\", no \"Closing my turn on the scene\", no 3rd-person status line. The very first words the player reads must be INSIDE the fiction.")"
 # #357: recover the engine's logged narration if the DM turn ended on a tool call / status
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
-DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 [ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
-chatlog dm "$DMSG"
+clawdnd_chatlog_dm "$DMSG"
 
 # Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
 # CLAWDND_LEAN_BEATS=0). D1's start_world wrote the snapshot to
@@ -324,10 +324,10 @@ $DIRECTOR
 $EVENT_ADV")"
   # #357: recover engine-logged narration before the silence check, so a turn that ended on a
   # tool call but logged real prose isn't mis-flagged as a silent DM (and isn't blank in chat).
-  DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+  clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
-  chatlog dm "$DMSG"
+  clawdnd_chatlog_dm "$DMSG"
 
   # C — soft clock-tick backstop: if the DM didn't move the clock this beat, advance one
   # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.

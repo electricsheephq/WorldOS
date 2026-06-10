@@ -45,6 +45,7 @@ import scene_debt as _scene_debt_mod
 import travel
 import wander
 import worldsim
+import wrapper_progress as _wrapper_progress_mod
 from models import (
     SKILL_ABILITIES,
     Ability,
@@ -9040,7 +9041,14 @@ def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
     if limit <= 0:
         return []
     entries = read_log_all(c.id, getattr(c, "session_ids", None))
-    facing = [e for e in entries if e.kind in ("narration", "dialogue")]
+    # #749: drop the wrapper progress heartbeat (exact-match) — it is the QA/play wrappers'
+    # mid-turn liveness filler, not the DM's prose. Feeding it back here told a lean
+    # (transcript-free) DM that canned filler was its own canon.
+    facing = [
+        e for e in entries
+        if e.kind in ("narration", "dialogue")
+        and not _wrapper_progress_mod.is_wrapper_progress_line(e.text)
+    ]
     return [
         {"text": e.text, **({"speaker": e.speaker} if e.speaker else {})}
         for e in facing[-limit:]

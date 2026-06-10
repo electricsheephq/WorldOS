@@ -11,6 +11,7 @@ front door used by the server's recap tool.
 from __future__ import annotations
 
 from models import SessionLogEntry
+from wrapper_progress import is_wrapper_progress_line
 
 # Kinds that carry the story. Rolls and system messages are bookkeeping noise we
 # leave out of a "Previously on..." recap.
@@ -52,7 +53,13 @@ def format_recap(entries: list[SessionLogEntry], max_entries: int = 12) -> str:
         max_entries = 1
 
     # Keep only story beats, then take the most recent `max_entries` of them.
-    story = [e for e in entries if e.kind in _STORY_KINDS]
+    # #749: the wrapper progress heartbeat ("Your move lands; attention gathers…") is a
+    # liveness signal the QA/play wrappers log mid-turn, not story — reciting it in a
+    # "Previously on…" recap reads as canned filler. Exact-match excluded.
+    story = [
+        e for e in entries
+        if e.kind in _STORY_KINDS and not is_wrapper_progress_line(e.text)
+    ]
     recent = story[-max_entries:]
 
     lines = [b for b in (_beat(e) for e in recent) if b]

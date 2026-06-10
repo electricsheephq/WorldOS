@@ -175,6 +175,16 @@ const _WRAPPER_PROGRESS_LINES = new Set([
 function _isWrapperProgressLine(line) {
   return _WRAPPER_PROGRESS_LINES.has((line || "").trim());
 }
+// #749: share the wrapper-line predicate + constant (window-guarded globals, like
+// sanitizeNarration). app.jsx's /events ingest needs the predicate BEFORE its sanitize-drop:
+// a heartbeat row must flip the live-progress state (notePendingProgress) and never render —
+// sanitize alone silently swallowed the row, making the #743 heartbeat a no-op for the player.
+// The strings themselves are pinned byte-identical to servers/engine/wrapper_progress.py and
+// the two sh emit rotations by servers/engine/tests/test_wrapper_progress_sync.py.
+if (typeof window !== "undefined") {
+  window.WRAPPER_PROGRESS_LINES = Array.from(_WRAPPER_PROGRESS_LINES);
+  window.isWrapperProgressLine = _isWrapperProgressLine;
+}
 function sanitizeNarration(text) {
   if (typeof text !== "string" || !text) return "";
   const kept = text

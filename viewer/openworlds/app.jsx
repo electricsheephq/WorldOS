@@ -693,7 +693,22 @@ function useLiveSession(state) {
             .map((e) => {
               const kind = (e && (e.kind || e.type)) || "narration";
               if (kind !== "narration" && kind !== "dialogue") return null;
-              const clean = sanitize(e && (e.text || e.detail));
+              const raw = e && (e.text || e.detail);
+              // #749: the wrapper progress heartbeat (#743) — a canned "the scene is arriving"
+              // row the play/QA wrappers log BEFORE the DM model starts — is a LIVENESS signal,
+              // not prose. It must flip the pending turn's streaming/progress state and NEVER
+              // render. This check runs BEFORE the sanitize-drop below (sanitize excises the
+              // exact wrapper lines, so the old order silently swallowed the row and the
+              // heartbeat was a no-op for the player). Deliberately NOT setting
+              // eventsStreamedThisTurnRef / dmBeatCountRef here: no prose streamed, so a
+              // dead-DM beat's recovered /chat text must still render (it would otherwise be
+              // suppressed to zero rows). Shared predicate from screen-table.jsx (loaded
+              // first); if absent we fall through to sanitize — today's drop, no regression.
+              if (typeof window.isWrapperProgressLine === "function" && window.isWrapperProgressLine(raw)) {
+                notePendingProgress();
+                return null;
+              }
+              const clean = sanitize(raw);
               if (!clean) return null;
               // #405/BUG2: dedup by the STABLE, SESSION-SCOPED composite key `${sid}:${seq}` — NOT by
               // prose. So a paragraph re-ingested by a windowing re-mount or a session-rotation cursor
