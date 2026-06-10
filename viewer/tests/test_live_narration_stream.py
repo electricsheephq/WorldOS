@@ -352,6 +352,52 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertFalse(out["stuck"],
                          "fresh streamed prose proves the turn is alive — it must not be stuck")
 
+    # --- #749 FIX 1: a wrapper heartbeat row flips the progress state WITHOUT rendering --------
+    # The #743 wrapper heartbeat writes a canned "the scene is arriving" narration row to the
+    # session log BEFORE the DM model starts, precisely so the player's spinner flips within ~1s.
+    # But sanitize() drops those exact lines (screen-table's _isWrapperProgressLine), and the old
+    # ingest sanitized BEFORE notePendingProgress — so the heartbeat was a complete no-op for the
+    # player. Now the ingest special-cases the wrapper lines first: flip streaming, never render.
+    def test_wrapper_heartbeat_flips_progress_without_rendering(self):
+        out = self._run(
+            "h.arm('I push open the door');"
+            # The wrapper heartbeat row, exactly as lib_beat_driver emits it (read from the SHARED
+            # window constant so this test can never drift from the real rotation).
+            "var hb = sandbox.window.WRAPPER_PROGRESS_LINES[1];"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: hb, seq: 0 }], next: 1 });"
+            "await h.tick();"
+            "var p = h.pending();"
+            "return ({ texts: h.narrationTexts(), pending_present: !!p, streaming: !!(p && p.streaming), stuck: !!(p && p.stuck) });"
+        )
+        self.assertEqual(out["texts"], [],
+                         "the wrapper heartbeat is a liveness signal — it must NEVER render as prose")
+        self.assertTrue(out["pending_present"],
+                        "the heartbeat must not resolve the turn — the bar stays gated")
+        self.assertTrue(out["streaming"],
+                        "the heartbeat's whole purpose: flip the pending turn to `streaming` (the "
+                        "spinner reads 'the scene is arriving') — it must call notePendingProgress")
+        self.assertFalse(out["stuck"], "a heartbeat proves the turn is alive")
+
+    # --- #749 GUARD: a heartbeat must NOT count as 'this turn streamed prose' -------------------
+    # eventsStreamedThisTurnRef suppresses the turn-END /chat copy of ALREADY-STREAMED prose. A
+    # heartbeat streams no prose — if it set that flag, a dead-DM beat whose only /events row was
+    # the heartbeat would suppress the recovered /chat text to ZERO rendered rows.
+    def test_wrapper_heartbeat_does_not_suppress_chat_only_prose(self):
+        out = self._run(
+            "h.arm('I push open the door');"
+            "var hb = sandbox.window.WRAPPER_PROGRESS_LINES[2];"
+            "h.enqueue('/events', { entries: [{ kind: 'narration', text: hb, seq: 0 }], next: 1 });"
+            "await h.tick();"
+            # turn-END: the beat's prose arrives ONLY on /chat (nothing real streamed).
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'You awaken to birdsong.' }], next: 1 });"
+            "await h.tick();"
+            "return ({ texts: h.narrationTexts(), pending: h.pending() });"
+        )
+        self.assertEqual(out["texts"], ["You awaken to birdsong."],
+                         "a heartbeat-only stream must not mark the turn as 'streamed' — the "
+                         "/chat-only prose would be suppressed to zero rows")
+        self.assertIsNone(out["pending"], "the /chat DM line still resolves the turn")
+
     # A fresh turn must NOT inherit the prior turn's `streaming` flag — armPending starts a clean
     # pending object, so the affordance re-derives "the scene is arriving" from THIS turn's own
     # /events arrivals (otherwise every later turn would falsely claim it's already streaming).

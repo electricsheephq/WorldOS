@@ -25,6 +25,7 @@ import time
 from typing import Optional
 
 import store
+from wrapper_progress import is_wrapper_progress_line
 
 KINDS = ("events", "dialogue", "decision", "npc_fact", "quest_milestone", "consequence", "lore")
 
@@ -188,6 +189,10 @@ def backfill(campaign_id: str) -> int:
         for sid in campaign.session_ids:
             for e in store.read_log(campaign_id, sid):
                 if e.kind in ("narration", "dialogue", "combat", "system"):
+                    # #749: never index the wrapper progress heartbeat — it is mid-turn
+                    # liveness filler, not campaign memory; recall must never surface it.
+                    if is_wrapper_progress_line(e.text):
+                        continue
                     _ins("dialogue" if e.kind == "dialogue" else "events", e.text, who=e.speaker or "")
         for ch in campaign.characters.values():
             for fact in ch.memory:

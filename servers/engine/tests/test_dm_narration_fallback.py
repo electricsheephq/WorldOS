@@ -204,3 +204,51 @@ def test_real_2nd_person_prose_with_innocent_parens_survives(tmp_path, monkeypat
     out = _run(snap)
     assert out.startswith("You duck beneath the awning")
     assert "hooded figure" in out
+
+
+# --- #749: the wrapper progress heartbeat is a liveness signal, never recoverable prose -------
+
+
+def _wrapper_lines():
+    import wrapper_progress
+    return wrapper_progress.WRAPPER_OPENING_PROGRESS_LINE, list(
+        wrapper_progress.WRAPPER_MOVE_PROGRESS_LINES
+    )
+
+
+def test_wrapper_heartbeat_breaks_block_so_a_dead_beat_recovers_nothing(tmp_path, monkeypatch):
+    """A fully-DEAD beat logs ONLY the wrapper heartbeat after the prior beat's prose. The
+    heartbeat must break the trailing block like bookkeeping — recovering the PRIOR beat's
+    stale prose (+ filler) would mask the dead beat as 'resolved' (#749 root 2)."""
+    opening, moves = _wrapper_lines()
+    entries = [
+        SessionLogEntry(t=1.0, kind="narration", text="You slip through the postern gate."),
+        SessionLogEntry(t=2.0, kind="narration", text=moves[0]),   # the dead beat's only row
+    ]
+    snap = _seed(tmp_path, monkeypatch, campaign_id="camp_k", session_id="sess_k", entries=entries)
+    out = _run(snap)
+    assert out == "", (
+        "a heartbeat-only (dead) beat must recover NOTHING — stale prose + filler masks the "
+        f"failure. Recovered: {out!r}"
+    )
+
+
+def test_prose_after_wrapper_heartbeat_survives(tmp_path, monkeypatch):
+    """The normal healthy shape: heartbeat first (pre-turn), then the DM's real prose. Only
+    the prose is recovered; the filler never reaches the chat."""
+    opening, moves = _wrapper_lines()
+    entries = [
+        SessionLogEntry(t=1.0, kind="narration", text=opening),
+        SessionLogEntry(
+            t=2.0, kind="narration",
+            text="You step off the gangplank into the riot of the Gray Harbor fishmarket.",
+        ),
+        SessionLogEntry(t=3.0, kind="dialogue", text="Mind the eels.", speaker="Dockhand"),
+    ]
+    snap = _seed(tmp_path, monkeypatch, campaign_id="camp_l", session_id="sess_l", entries=entries)
+    out = _run(snap)
+    assert out == (
+        "You step off the gangplank into the riot of the Gray Harbor fishmarket.\n\n"
+        "Dockhand: Mind the eels."
+    )
+    assert opening not in out

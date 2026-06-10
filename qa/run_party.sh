@@ -304,9 +304,9 @@ $beat0_block
 
 Resolve each declared move through the engine; voice the world and any NPC; let the companions be PRESENT (the player and companions are separate people with their own agency — you narrate the RESULT of their declared moves, never invent a companion's internal choice). End by handing the open moment to the PLAYER.")"
 # #357: recover engine-logged narration if the DM turn ended on a tool call (empty reply).
-DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 [ -z "$DMSG" ] && { echo "[party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
-chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
+clawdnd_chatlog_dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
 echo "[party] DM opened: ${DMSG:0:120}…"
 
 # --- main loop: player + each living companion act, then the DM resolves the beat ---
@@ -327,10 +327,10 @@ $PARTY_BLOCK
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the PLAYER inside the scene — never a bare 'Your move.'")"
   # #357: recover engine-logged narration before the silence check (tool-final-but-narrated
   # turn ≠ silence; keeps the chat non-blank on a resolved beat).
-  DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+  clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
   echo "[party] beat $b DM: ${DMSG:0:120}…"
   [ -z "$DMSG" ] && { echo "[party] DM went silent at beat $b; stopping early"; break; }
-  chatlog dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
+  clawdnd_chatlog_dm "$DMSG"; AGENT_TURNS=$((AGENT_TURNS + 1))
 done
 
 # --- wrap + score (same artifacts as run_duo) ---------------------------------------

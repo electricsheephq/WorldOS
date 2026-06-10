@@ -38,6 +38,18 @@ import os
 import re
 import sys
 
+# #749: the wrapper progress heartbeat ("Your move lands; attention gathers…") is a canned
+# liveness row the play/QA wrappers log BEFORE the DM turn — never recoverable prose. The
+# shared constants live in servers/engine/wrapper_progress.py (re-exported by the sibling
+# qa/wrapper_progress_lines.py). This script is best-effort plumbing in the beat path, so a
+# missing shim degrades to "no wrapper filtering" rather than a crash; the engine test suite
+# (tests/test_dm_narration_fallback.py) proves the import works in-repo.
+try:
+    from wrapper_progress_lines import is_wrapper_progress_line
+except Exception:  # pragma: no cover - only on a broken checkout
+    def is_wrapper_progress_line(_text):
+        return False
+
 # Engine session-log kinds (SessionLogEntry.kind): narration | dialogue | roll | system | combat.
 # Only narration + dialogue are player-facing prose; the rest are bookkeeping the player never reads.
 PROSE_KINDS = {"narration", "dialogue"}
@@ -123,7 +135,14 @@ def _recover(snap_path):
                 # scratchpad, not a scene — treat it like bookkeeping: it breaks the trailing
                 # block and is never recovered (showing the player notation is worse than blank).
                 # Dialogue rows are always a quoted character line, so they're never system-notation.
-                if kind == "narration" and text and _is_system_notation(text):
+                # #749: the wrapper progress heartbeat gets the SAME treatment — it is canned
+                # liveness filler logged BEFORE the DM turn. Crucially it BREAKS the block (it is
+                # not transparently skipped): a heartbeat-only (dead) beat must recover NOTHING,
+                # because stitching the PRIOR beat's stale prose under a fresh heartbeat would
+                # mask the dead beat as 'resolved'.
+                if kind == "narration" and text and (
+                    _is_system_notation(text) or is_wrapper_progress_line(text)
+                ):
                     block = []
                     continue
                 if kind in PROSE_KINDS and text:

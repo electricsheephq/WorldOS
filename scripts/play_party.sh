@@ -471,7 +471,7 @@ CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, writt
 Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — from the HUMAN (their PC) and from each companion (banner-tagged with the companion's name). Resolve EACH actor's moves through the engine.")"
 # #357: recover the engine's logged opening narration if the DM's first turn ended on a tool
 # call rather than prose — BEFORE the abort check, so a tool-final-but-narrated opener stands.
-DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 [ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 # #720: route the opening through record_dm_reply — engine_logged stamp on success so the
 # OpenWorlds client renders the cold-open opening ONCE (this is the dup source on the VM sweep).
@@ -520,7 +520,7 @@ if ! pc_seated; then
 - use campaign_id=$CAMPAIGN_ID for EVERY engine call. DO NOT call start_world (it would mint a NEW campaign id and ORPHAN the pre-seeded companions). The companions already present are: $COMP_NAME_LIST.
 - SEAT THE PLAYER CHARACTER: generate_ability_scores + create_character with kind=\"player\" and add_to_party=true, apply_srd_defaults, sensible skills/spells. Pick a fitting concept and tell the player who they are. This is the ONLY character you create. The party MUST contain the human's kind=\"player\" PC when this turn ends.
 - Then CLOSE the turn by writing the opening SCENE as 2nd-person player-facing prose addressed to \"you\" (where the player IS, what they see/hear/smell, who is present + a real quoted line), ending on a clear open moment + choice. NEVER end on a tool call or a 3rd-person setup brief.")"
-  RESEAT_DMSG="$(clawdnd_dm_narration_or_fallback "$RESEAT_DMSG" "$STATE_DIR")"
+  clawdnd_resolve_dm_reply "$RESEAT_DMSG" "$STATE_DIR"; RESEAT_DMSG="$CLAWDND_DM_REPLY"
   AGENT_TURNS=$((AGENT_TURNS + 1))
   # #720: the reseat turn re-writes the opening scene — route it through record_dm_reply too.
   if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; record_dm_reply "$CAMPAIGN_ID" "$DMSG" reseat; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
@@ -567,7 +567,7 @@ $INTRO_BLOCK
 
 Narrate the RESULT of each declared move (never invent a companion's internal choice), then weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
   # #357: recover engine-logged narration if this DM turn ended on a tool call.
-  DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+  clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
   # #720: route the after-intros DM beat through record_dm_reply (engine_logged stamp on success).
   [ -n "$DMSG" ] && { record_dm_reply "$CAMPAIGN_ID" "$DMSG" after_intros; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
 fi
@@ -648,7 +648,7 @@ For EACH companion this beat, call check_companion_arc(companion_id) — the eng
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.' ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it. Your reply IS the scene: write FLOWING 2nd-person PROSE, NEVER your planning notes or terse scaffolding. (Wrong — internal shorthand the player must never see: \"Devella presses Renn on the seal. Renn: the rangers made that call — no log filed.\" Right — render it lived: her jaw tightening, the quoted line in her own voice, the weight of the answer in the room.)")"
     # #357: if the DM turn ended on a tool call / 3rd-person status line, recover the
     # player-facing narration the engine logged this beat so the chat is never blank.
-    DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+    clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
     # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
     record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; AGENT_TURNS=$((AGENT_TURNS + 1))
     # Remember this beat's location so the next beat's runbook can detect a stuck party (travel cue).

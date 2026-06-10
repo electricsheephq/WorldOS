@@ -412,7 +412,7 @@ Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an a
 fi
 # #357: same empty-reply fallback as the beat loop — recover the engine's logged opening
 # narration if the DM's first turn ended on a tool call rather than prose.
-DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 
 # Resolve the campaign id the DM just minted, BEFORE writing the opening to the chronicle —
 # record_dm_reply (#720) needs it to log the opening narration to the engine session log so the
@@ -496,7 +496,7 @@ $RUNBOOK" "$CAMPAIGN_ID")"
     # #357: if the DM turn ended on a tool call / 3rd-person status line, its final reply text is
     # empty — fall back to the player-facing narration the engine logged this beat so the chat is
     # never blank on a resolved move (engine stays the sole writer; this only READS its log).
-    DMSG="$(clawdnd_dm_narration_or_fallback "$DMSG" "$STATE_DIR")"
+    clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
     # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
     record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; DM_TURNS=$((DM_TURNS + 1))
     # C — soft clock-tick backstop: advance one phase via the engine only if the DM left the

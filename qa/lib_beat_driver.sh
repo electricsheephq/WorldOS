@@ -126,6 +126,24 @@ clawdnd_dm_narration_or_fallback() {
   fi
 }
 
+# clawdnd_resolve_dm_reply REPLY STATE_DIR — the DIRECT-call front door over
+# clawdnd_dm_narration_or_fallback (#749c fallback honesty). Sets:
+#   CLAWDND_DM_REPLY            — the resolved reply text (the DM's own, or the recovered prose)
+#   CLAWDND_FALLBACK_RECOVERED  — 1 IFF the #357 fallback recovered the prose (the DM's reply was
+#                                 blank and the engine log supplied it), else 0
+# Call it DIRECTLY (never in a command substitution — a subshell would drop both globals), then
+# read CLAWDND_DM_REPLY. The flag is consumed (and reset) by the next record_dm_reply /
+# clawdnd_chatlog_dm, which stamps {"fallback_recovered":true} on the dm chat row so behavioral
+# tallies can later discount a masked-dead beat that was "resolved" with recovered prose.
+clawdnd_resolve_dm_reply() {
+  local original="$1"
+  CLAWDND_DM_REPLY="$(clawdnd_dm_narration_or_fallback "$1" "$2")"
+  CLAWDND_FALLBACK_RECOVERED=0
+  if [ -z "${original//[[:space:]]/}" ] && [ -n "${CLAWDND_DM_REPLY//[[:space:]]/}" ]; then
+    CLAWDND_FALLBACK_RECOVERED=1
+  fi
+}
+
 # CHRONICLE WRITE + ENGINE-LOG TRUTHFULNESS GUARD (issue #720 — the ONE shared impl).
 #
 # The cold-open opening prose lands in TWO viewer-read sources: the engine per-session log
@@ -199,6 +217,7 @@ import os
 import sys
 
 import server
+import wrapper_progress
 
 campaign_id, text = sys.argv[1], sys.argv[2]
 norm = " ".join(text.split())
@@ -229,6 +248,16 @@ try:
 except Exception:
     already = False  # any read failure → fall through to a normal append (no regression)
 
+# #749(d): the wrapper progress heartbeat legitimately REPEATS — the 4-line rotation means
+# beat N+4 re-emits beat N's exact text, and a run of DEAD beats logs ONLY heartbeats, so the
+# repeat always sits inside the last-8 tail scanned above. It is a liveness signal, never
+# duplicated prose: dedup-dropping it silently stops the player's spinner from flipping on
+# cadence-aligned beats (exactly when the heartbeat is the only life sign). The extra rows are
+# inert — they never render (app.jsx flips progress and returns null) and every engine memory
+# consumer exact-match filters them (recap / FTS ledger / lean tail / narration fallback).
+if wrapper_progress.is_wrapper_progress_line(text):
+    already = False
+
 if not already:
     server.log_event(campaign_id, "narration", text)
 PY
@@ -239,14 +268,35 @@ PY
 # de-dup the /chat blob against /events). On failure → an UNFLAGGED row (byte-identical to the
 # pre-#720 behavior; the client's eventsStreamedThisTurnRef backstop still applies). NEVER stamp
 # the flag unconditionally — that would suppress a legitimately /chat-only beat to zero rows.
+# #749(c): when the preceding clawdnd_resolve_dm_reply recovered this prose from the engine log
+# (CLAWDND_FALLBACK_RECOVERED=1), BOTH branches additionally stamp fallback_recovered:true so
+# behavioral tallies can discount masked-dead beats. Consume-once: the flag resets here.
 record_dm_reply() {
-  local campaign_id="$1" text="$2" phase="$3"
+  local campaign_id="$1" text="$2" phase="$3" extra='{"engine_logged":true}' plain_extra=''
+  if [ "${CLAWDND_FALLBACK_RECOVERED:-0}" = "1" ]; then
+    extra='{"engine_logged":true,"fallback_recovered":true}'
+    plain_extra='{"fallback_recovered":true}'
+  fi
   if log_engine_narration "$campaign_id" "$text"; then
-    chatlog dm "$text" '{"engine_logged":true}'
+    chatlog dm "$text" "$extra"
   else
     echo "[worldos] warning: could not record ${phase} narration through engine — chat row written without engine_logged" >&2
-    chatlog dm "$text"
+    chatlog dm "$text" "$plain_extra"
   fi
+  CLAWDND_FALLBACK_RECOVERED=0
+}
+
+# clawdnd_chatlog_dm TEXT — `chatlog dm TEXT` for the runners that write the dm row directly
+# (run_duo / run_party / ui_playtest), stamping {"fallback_recovered":true} when the preceding
+# clawdnd_resolve_dm_reply recovered the prose (#749c). Consume-once, mirroring record_dm_reply.
+# With the flag unset the row is byte-identical to the plain `chatlog dm` it replaces.
+clawdnd_chatlog_dm() {
+  if [ "${CLAWDND_FALLBACK_RECOVERED:-0}" = "1" ]; then
+    chatlog dm "$1" '{"fallback_recovered":true}'
+  else
+    chatlog dm "$1"
+  fi
+  CLAWDND_FALLBACK_RECOVERED=0
 }
 
 # LIVE-PROGRESS + WRAPPER HEARTBEAT (#623 — the ONE shared implementation of the perceived-latency fix).
@@ -304,11 +354,15 @@ clawdnd_progress_beat_text() {
 }
 
 # clawdnd_emit_progress_heartbeat CAMPAIGN_ID FIRST BEAT_INDEX — write the wrapper-authored progress beat
-# to the engine session log (via log_engine_narration) so /events has a row to render BEFORE the model's
-# long think. Best-effort + idempotent: a blank campaign id no-ops; log_engine_narration's substring guard
-# (it already de-dups against the recent narration tail) means a heartbeat the DM happens to echo isn't
-# double-logged. ALWAYS returns 0 — a heartbeat failure must never fail a beat. Reads ambient $STATE_DIR /
-# $ROOT exactly as log_engine_narration / record_dm_reply do. $1=campaign_id $2=first?(1/0) $3=beat index.
+# to the engine session log (via log_engine_narration) so /events has a row for the viewer to flip its
+# live-progress state on BEFORE the model's long think (the row itself never renders — app.jsx returns
+# null on the exact wrapper lines). Best-effort: a blank campaign id no-ops. #749(d): heartbeats are
+# EXEMPT from log_engine_narration's #727 substring dedup (the 4-line rotation legitimately repeats on
+# cadence-aligned beats, and a run of dead beats logs ONLY heartbeats — dropping the repeat would kill
+# the only liveness signal); the repeated rows are inert (never rendered, filtered from recap/FTS/lean
+# tail/fallback). ALWAYS returns 0 — a heartbeat failure must never fail a beat. Reads ambient
+# $STATE_DIR / $ROOT exactly as log_engine_narration / record_dm_reply do. $1=campaign_id $2=first?(1/0)
+# $3=beat index.
 clawdnd_emit_progress_heartbeat() {
   local campaign_id="$1" first="${2:-0}" idx="${3:-0}" text
   [ -n "${campaign_id//[[:space:]]/}" ] || return 0
