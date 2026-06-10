@@ -141,7 +141,12 @@ sleep 6
 # WORLDOS_STATE_DIR on the audit call too: ui_audit_health.sh's --ui-gate seed step needs the
 # SAME state dir the audit viewer serves, so an empty auditstate gets one resumable campaign
 # (play_reachable can never pass against an empty launcher).
-WORLDOS_STATE_DIR=/root/worldos-qa/auditstate timeout 600 bash qa/ui_audit_health.sh --port $aport --quick --axe --ui-gate > "$RES/ui_audit.log" 2>&1
+# NO --axe on the VM lane (deliberate): the axe driver detection is Mac-pathed (mac_arm-*
+# chromedriver dirs + /Applications Chrome) and would HARD-FAIL here by the honest-gate
+# calibration — historically it silently WARN-skipped, so axe NEVER actually ran on the VM
+# and rc1's "FAIL(axe)" was a misattribution. axe coverage rides the Mac lane until Linux
+# driver support lands (tracked); the VM ui_audit verdict = the structural + ui-gate checks.
+WORLDOS_STATE_DIR=/root/worldos-qa/auditstate timeout 600 bash qa/ui_audit_health.sh --port $aport --quick --ui-gate > "$RES/ui_audit.log" 2>&1
 note "ui_audit rc=$?"; [ -f "$RES/av.pid" ] && kill "$(cat "$RES/av.pid")" 2>/dev/null
 
 # 4) RRI
