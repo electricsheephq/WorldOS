@@ -228,6 +228,22 @@ window.neutralizeMarkup = window.neutralizeMarkup || function neutralizeMarkup(r
 const PENDING_RECOVERY_MS = 180 * 1000;           // #399: later-beat stall window (worst-case DM turns run ~90–120s; was 90s/#342).
 const PENDING_RECOVERY_FIRST_MS = 4 * 60 * 1000;  // #348: first-beat (Act-opening) window — fits the multi-minute cold open.
 const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard backstop as a final net.
+// #745 (the newbie mid-stream-stall give-up): a HARD stuck ceiling from submit that flags `stuck` (the
+// recoverable "Try again" affordance) and — unlike the per-progress recovery timer — is NOT reset by
+// streamed progress. Root cause it fixes: notePendingProgress re-arms the FULL recovery window (180s/240s)
+// AND clears `stuck` on EVERY streamed /events paragraph. So a beat that streams several partial paragraphs
+// ("You give the sergeant your own name… The charcoal touches the paper… That's the arithmetic o—") and
+// then FREEZES mid-generation keeps pushing the stuck deadline forward with each partial; with partials
+// <window apart, `stuck` never fires and recovery is deferred to the 12-min PENDING_BACKSTOP_MS — which
+// CLEARS pending to null (a plain re-enabled bar, NO "Try again", the partial narration stranded). That is
+// the ~12–15-min lockout the newbie gave up on. This ceiling bounds TOTAL stall from submit regardless of
+// how many partials trickle in (progress does not reset it), and resolves to the SAME recoverable `stuck`
+// state (the bar re-opens as "Try again"). It is generous enough to clear a worst-case HEALTHY beat (which
+// RESOLVES on /chat → clearPending cancels every timer long before this fires), so it never false-positives
+// on a slow-but-alive turn; it only ever fires on a genuine freeze. Strictly between the position windows
+// and the 12-min null-backstop, so the ordering is: position recovery (resettable) < stuck-backstop (hard,
+// recoverable) < null-backstop (hard, last-resort clear).
+const PENDING_STUCK_BACKSTOP_MS = 5 * 60 * 1000;  // #745: hard stuck ceiling from submit (progress does NOT reset it).
 // #648: a JUST-armed narrating turn is protected from a SPURIOUS same-tick clear (the immediate
 // post-armPending surface poll, a /chat cursor-reset re-reading the prior resolved turn's line as a
 // fresh resolution, or a transient campaignId flip tripping the per-run reset) for this long — so the
@@ -336,6 +352,7 @@ function useLiveSession(state) {
   const eventsStreamedThisTurnRef = React.useRef(false);
   const recoveryTimer = React.useRef(null);
   const backstopTimer = React.useRef(null);
+  const stuckBackstopTimer = React.useRef(null);  // #745: hard stuck ceiling from submit (not reset by progress)
 
   // sanitizeNarration lives in screen-table.jsx (loaded first); fall back to identity if absent.
   const sanitize = (txt) => (typeof window.sanitizeNarration === "function" ? window.sanitizeNarration(txt) : (txt || ""));
@@ -378,6 +395,10 @@ function useLiveSession(state) {
   const clearTimers = React.useCallback(() => {
     clearRecoveryTimer();
     if (backstopTimer.current) { window.clearTimeout(backstopTimer.current); backstopTimer.current = null; }
+    // #745: the hard stuck-backstop is disarmed alongside the others — a real resolution (clearPending →
+    // clearTimers) or a retry re-arm (armPending → clearTimers) must cancel it so it can't fire on a turn
+    // that already resolved/re-armed.
+    if (stuckBackstopTimer.current) { window.clearTimeout(stuckBackstopTimer.current); stuckBackstopTimer.current = null; }
   }, [clearRecoveryTimer]);
 
   // #393: a ref mirror of `pending` so a poll callback (whose effect deps deliberately EXCLUDE
@@ -428,6 +449,16 @@ function useLiveSession(state) {
     recoveryTimer.current = window.setTimeout(() => {
       setPendingState((p) => (p ? { ...p, stuck: true } : p));
     }, recoveryMs);
+    // #745: a HARD stuck ceiling from submit. Unlike recoveryTimer (re-armed by every streamed paragraph
+    // in notePendingProgress), this is armed ONCE here and progress does NOT reset it — so a beat that
+    // streams a partial trickle and then FREEZES mid-stream still surfaces the recoverable `stuck` "Try
+    // again" affordance within a bounded time, instead of the trickle deferring recovery to the 12-min
+    // null-backstop (which strands the partial narration behind a plain re-enabled bar). It is generous
+    // enough that a healthy turn always RESOLVES (clearPending → clearTimers) first, so it never trips a
+    // slow-but-alive beat. Fires only when nothing has resolved by its deadline.
+    stuckBackstopTimer.current = window.setTimeout(() => {
+      setPendingState((p) => (p ? { ...p, stuck: true } : p));
+    }, PENDING_STUCK_BACKSTOP_MS);
     backstopTimer.current = window.setTimeout(() => setPendingState(null), PENDING_BACKSTOP_MS);
   }, [clearTimers, setPendingState]);
 
@@ -450,6 +481,11 @@ function useLiveSession(state) {
     // long-but-healthy streaming turn keeps resetting 'stuck' (it's plainly alive) while the
     // absolute cap still fires at its original deadline.
     clearRecoveryTimer();
+    // The per-progress recovery timer re-arms to the FULL position window on each streamed paragraph —
+    // a long-but-healthy streaming turn (prose landing every few seconds) is plainly alive, so it must
+    // NOT be falsely flagged stuck. The mid-stream-FREEZE case (a trickle that pushes this window forward
+    // forever) is caught instead by the #745 stuck-backstop armed ONCE in armPending — a hard ceiling
+    // from submit that progress does NOT reset (so it can't be deferred by a trickle). See armPending.
     const recoveryMs = recoveryWindowMs(Boolean(p.firstBeat));
     recoveryTimer.current = window.setTimeout(() => {
       setPendingState((q) => (q ? { ...q, stuck: true } : q));
@@ -681,7 +717,11 @@ function useLiveSession(state) {
     return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, [campaignId, source, runId, notePendingProgress, claimNarration]);
 
-  return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho };
+  // #745: expose notePendingProgress so the live-progress signal is part of the hook's public surface
+  // (consistent with armPending/clearPending; the /events poll calls the same ref). Purely additive —
+  // existing consumers destructure named fields, so nothing breaks; it also makes the mid-stream stall
+  // ceiling unit-testable without reaching into the hook's internals.
+  return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho, notePendingProgress };
 }
 window.useLiveSession = useLiveSession;
 // #348: expose the recovery-timing contract for tests (and devtools introspection). Purely
@@ -691,7 +731,8 @@ window.__PENDING_TIMING__ = {
   recoveryMs: PENDING_RECOVERY_MS,
   recoveryFirstMs: PENDING_RECOVERY_FIRST_MS,
   backstopMs: PENDING_BACKSTOP_MS,
-  armGraceMs: PENDING_ARM_GRACE_MS,  // #648: the just-armed-turn protection window
+  armGraceMs: PENDING_ARM_GRACE_MS,            // #648: the just-armed-turn protection window
+  stuckBackstopMs: PENDING_STUCK_BACKSTOP_MS,  // #745: hard stuck ceiling from submit (progress does NOT reset it)
 };
 // #402: expose the live-tail bound for tests/devtools introspection (purely additive — the hook
 // closes over the consts directly; nothing in the running app reads these off window).

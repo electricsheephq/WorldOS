@@ -362,3 +362,52 @@ def test_play_sh_emits_the_heartbeat_before_each_dm_turn():
     assert play.count("clawdnd_emit_progress_heartbeat") >= 2, (
         "play.sh must emit the heartbeat on the cold-open AND per-beat paths"
     )
+
+
+# --- #745: the GUI-sweep DM driver must BOUND every beat (the newbie mid-stream-stall give-up) ----
+# The lone v1.0.4-rc2 RRI holdout @c92a393 (newbie) hit a DM beat that STREAMED partial prose and then
+# FROZE mid-generation. qa/ui_playtest.sh's dm_turn ran `claude -p` with NO `timeout`, NO retry, and NO
+# fallback — unlike scripts/play.sh's dm_turn — so the frozen process hung forever: dm_turn never
+# returned -> `chatlog dm` (the turn-END /chat line) never fired -> the turn never RESOLVED on the
+# client, so the backend offered NO recovery (the client-side stall ceiling, #745 app.jsx, then had to
+# carry the whole burden). These guard that the GUI driver now wall-clocks the beat and falls back to
+# the engine-logged narration tail so a stalled beat always resolves on /chat.
+
+def test_ui_playtest_dm_turn_wraps_claude_in_a_bounded_timeout():
+    """The GUI-sweep dm_turn must wrap `claude -p` in `timeout` (tiered via the shared clawdnd_dm_timeout)
+    so a frozen beat is KILLED at a deadline and dm_turn returns — never an indefinite hang."""
+    src = _src("qa/ui_playtest.sh")
+    # the shared, tiered deadline helper is resolved…
+    assert 'clawdnd_dm_timeout "$first"' in src, "ui_playtest.sh must resolve the per-beat deadline via the shared helper"
+    # …and the claude invocation is wrapped in `timeout "$beat_timeout"` (the line continuation puts the
+    # `claude -p` on the following line, so assert both tokens are present near each other).
+    assert 'timeout "$beat_timeout"' in src, "ui_playtest.sh dm_turn must wall-clock `claude -p` with `timeout`"
+    # a bare, unbounded `claude -p \\` (no timeout on the same logical line) must NOT remain.
+    assert "\n  claude -p " not in src, "ui_playtest.sh must not invoke `claude -p` unbounded (no timeout wrapper)"
+
+
+def test_ui_playtest_dm_turn_falls_back_to_engine_narration_on_a_stalled_beat():
+    """A killed/empty beat must still RESOLVE on /chat: dm_turn routes its result through the shared
+    clawdnd_dm_narration_or_fallback so the engine-logged narration tail becomes the turn-END line."""
+    src = _src("qa/ui_playtest.sh")
+    assert "clawdnd_dm_narration_or_fallback" in src, (
+        "ui_playtest.sh dm_turn must recover via the shared narration fallback so a stalled beat still resolves"
+    )
+
+
+def test_ui_playtest_dm_timeout_is_bash32_clean_and_sourced():
+    """The driver sources the shared lib and clawdnd_dm_timeout resolves a positive integer under the
+    macOS system bash 3.2 — proving the new wiring is 3.2-clean and actually reachable from this script."""
+    lib = ROOT / "qa" / "lib_beat_driver.sh"
+    script = (
+        f'set -u; . "{lib}"\n'
+        # cold-open tier (first=1) and continuing tier (first=0) must both yield a positive integer.
+        'CLAWDND_DM_MODEL=opus; co="$(clawdnd_dm_timeout 1)"; bt="$(clawdnd_dm_timeout 0)"\n'
+        'echo "co=$co bt=$bt"\n'
+        'case "$co" in (*[!0-9]*|"") echo BAD_CO; exit 1;; esac\n'
+        'case "$bt" in (*[!0-9]*|"") echo BAD_BT; exit 1;; esac\n'
+        '[ "$co" -gt 0 ] && [ "$bt" -gt 0 ] && echo OK\n'
+    )
+    r = _bash(script)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "OK" in r.stdout, (r.stdout, r.stderr)
