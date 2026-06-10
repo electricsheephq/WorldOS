@@ -39,11 +39,14 @@ between tool calls" read — same conclusion, correct metric.)
   `"alwaysLoad": true` per-server in the generated `dm.mcp.json` + `.mcp.json`.
 - **Stream mid-turn narration** (#571) — perceived-latency win + nav-during-compose; doesn't cut
   wall-clock but stops give-ups on the wait.
-- **Compact `scene_context` digest** — re-ground each beat from a small digest (durable threads +
-  recent-narration tail) off the snapshot+session-log, NOT the ~690K transcript (~10–27× context drop;
-  lossless because the engine's FTS5 retrieves on demand). **⚠ NOT to be confused with LEAN-ON** —
-  the `CLAWDND_LEAN_BEATS` lean path that *replaces* the transcript with a scene_context re-ground is
-  BROKEN today (cross-chronicle contamination + dropped beats); see REFUTED below.
+- **Lean re-ground = the compact `scene_context` digest, SHIPPED (`CLAWDND_LEAN_BEATS=1`) — now the
+  PRODUCTION and QA default** — continuing beats start a FRESH session re-grounded from the engine's
+  persisted truth (durable threads + recent-narration tail) off the snapshot+session-log, NOT the ~690K
+  transcript (~10–27× context drop, story quality held at 4.4; lossless because the engine's FTS5
+  retrieves on demand). `qa/run_duo.sh` defaults `CLAWDND_LEAN_BEATS:-1`; the VM `qa/vm/sweep_v2.sh`
+  exports lean-ON (production-matching). Lean WAS broken — fixed by #683/#685 (2026-06-06); history in
+  SUPERSEDED below. **Do NOT turn lean OFF as a latency or "safety" move** — lean-OFF replays the
+  growing Opus transcript (3–5+ min/beat, the latency-give-up vector).
 - **Prose-trim** — cap narration length.
 
 **TRADING (quality cost — the OWNER's call, A/B first):**
@@ -54,20 +57,6 @@ between tool calls" read — same conclusion, correct metric.)
   speed) is an open owner decision — see `docs/MODEL-TIERING-STRATEGY.md`; do not assume it.
 
 ## REFUTED — do NOT re-chase
-- **lean-ON (`CLAWDND_LEAN_BEATS`) is BROKEN — do NOT enable it as a latency lever** (contradicts the
-  "lean is neutral" assumption above; the assumption was wrong). A/B on the **same build** with the ONLY
-  variable = `CLAWDND_LEAN_BEATS` (2026-06-05): lean-ON **regressed** — it introduced TWO new criticals
-  that the clean lean-OFF run did NOT have:
-  - **Cross-chronicle contamination** (100% reproducible): every DM beat appended a *different* save's
-    opening scene (e.g. Basilisk Gate with the wrong HP/day) — the lean continuing-beat re-grounds from
-    `scene_context` and pulls **wrong / parallel-campaign** content.
-  - **Dropped beats**: the spinner cleared and time advanced but **ZERO narration text** came back.
-
-  Same root as **#640** (multi-campaign divergence): `scripts/play_party.sh` mints a campaign per launch
-  with only a ~30-min reuse guard (L201), so the lean re-ground can latch onto a parallel campaign.
-  **lean stays OFF until the #640 re-ground root is fixed.** Address the 3–5 min latency via the
-  **effort / streaming / `scene_context`-digest** levers (above) — **NOT** lean. (The corrected VM
-  `qa/vm/sweep_v2.sh` runs with lean intentionally OFF and says so in its header.)
 - **A small/Haiku "research-packet" helper to prefetch for the DM** — touches ≤5% of the beat
   (generation-bound). Refuted.
 - **A headless `--fast` flag** — doesn't exist; use `--effort`.
@@ -76,6 +65,26 @@ between tool calls" read — same conclusion, correct metric.)
   (verified by binary-safe `grep -a` of the `claude` binary for `alwaysLoad`/`ENABLE_TOOL_SEARCH`/
   `shouldDefer` — real in 2.1.160). Lesson: a subagent's confident config claim is a HYPOTHESIS —
   verify against the binary/source before building on it.
+
+## SUPERSEDED — history kept so it isn't re-litigated (do NOT re-apply the old guidance)
+- **"lean-ON is BROKEN — keep lean OFF" (2026-06-05) → SUPERSEDED 2026-06-06 by #683/#685; lean-ON is
+  now the production AND QA default** (see LEVER TAXONOMY above). The 2026-06-05 findings were REAL —
+  an A/B on the **same build** with the ONLY variable = `CLAWDND_LEAN_BEATS` showed lean-ON introducing
+  TWO criticals the clean lean-OFF run did NOT have:
+  - **Cross-chronicle contamination** (100% reproducible): every DM beat appended a *different* save's
+    opening scene (e.g. Basilisk Gate with the wrong HP/day) — the lean re-ground selected its campaign
+    by largest-snapshot and pulled **wrong / parallel-campaign** content. Same root as **#640**
+    (multi-campaign divergence): `scripts/play_party.sh` mints a campaign per launch with only a
+    ~30-min reuse guard (L201), so the re-ground could latch onto a parallel campaign.
+  - **Dropped beats**: the spinner cleared and time advanced but **ZERO narration text** came back.
+
+  **Both fixed (merged 2026-06-06): #683** pins the lean re-ground to the engine-authoritative LIVE
+  campaign (kills the #640 contamination root); **#685** adds lean output-discipline (clean prose, no
+  empty beats). Since then lean-ON is STANDARD: `qa/run_duo.sh` defaults `CLAWDND_LEAN_BEATS:-1`
+  ("validated: ~10–27× context drop, story quality held at 4.4") and the VM `qa/vm/sweep_v2.sh`
+  exports `CLAWDND_LEAN_BEATS=1` ("production-matching; #683/#685-fixed" — its header records this
+  supersession). A future "lean is broken" report must first reproduce on a post-#683/#685 build
+  before anyone disables the flag.
 
 ## SEQUENCE — cheap → expensive (never skip ahead)
 1. **2-beat engine probe** → measure `duration_api_ms`, num_turns, ToolSearch count.
