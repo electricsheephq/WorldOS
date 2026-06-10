@@ -219,7 +219,16 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         palette.write_text(json.dumps({"can_act": True}), encoding="utf-8")
         return story, mech, behavioral, audit, palette
 
-    def write_persona_run(self, tmp: Path, persona: str, *, sha: str = "deadbee", include_part_a: bool = True) -> Path:
+    def write_persona_run(
+        self,
+        tmp: Path,
+        persona: str,
+        *,
+        sha: str = "deadbee",
+        include_part_a: bool = True,
+        include_image_traffic: bool = True,
+        image_status: int = 200,
+    ) -> Path:
         run = tmp / f"gate-{persona}"
         player = run / "player"
         player.mkdir(parents=True)
@@ -242,10 +251,15 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         if include_part_a:
             payload["part_a"] = {"result": "PASS"}
         (run / "run.json").write_text(json.dumps(payload), encoding="utf-8")
-        (player / "network.ndjson").write_text(
-            json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
-            encoding="utf-8",
-        )
+        if include_image_traffic:
+            (player / "network.ndjson").write_text(
+                json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": image_status}),
+                encoding="utf-8",
+            )
+        else:
+            # A VM sweep that never recorded /image traffic at all (the gitignored
+            # _private art case): network.ndjson exists but carries no image rows.
+            (player / "network.ndjson").write_text("", encoding="utf-8")
         return run
 
     def test_missing_expected_persona_score_marks_partial_and_fails_release(self):
@@ -501,6 +515,7 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertTrue(payload["partial"])
             self.assertIn("image_render", payload["failed_gates"])
             self.assertEqual(payload["signals"]["image_request_denominator"], 0)
+            self.assertEqual(payload["signals"]["image_render_source"], "none")
             self.assertIn(
                 {"gate": "image_render", "missing": "network.ndjson image denominator", "detail": "no /image requests recorded for: newbie"},
                 payload["evidence_gaps"],
@@ -1251,6 +1266,177 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             )
             self.assertEqual(payload["handoff_evidence"]["gates"]["built_app_codex_playtest"]["manifest_verdict"], "passed")
             self.assertIn("handoff_json=", payload["gate_detail"]["native_gate"])
+            self.assertEqual(payload["signals"]["image_render_source"], "vm-network")
+
+    def test_image_render_accepts_same_sha_mac_handoff_when_vm_has_no_denominator(self):
+        # The split VM+Mac lane: the VM cannot serve gitignored _private art, so its
+        # network.ndjson never records /image traffic. A valid same-SHA Mac handoff whose
+        # app-status snapshots prove health.image_probe_ok (and whose manifests prove the
+        # private art root) is accepted as the image_render gate source.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_part_a=False, include_image_traffic=False)
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(
+                tmp,
+                app_status_overrides={"health": {"image_probe_ok": True}},
+            )
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "mac-handoff")
+            self.assertEqual(payload["signals"]["image_request_denominator"], 0)
+            # Honest record: the per-persona VM gap is still visible in signals even
+            # though the Mac handoff carries the gate.
+            self.assertEqual(sorted(payload["signals"]["image_missing_personas"]), sorted(personas))
+            self.assertTrue(payload["handoff_evidence"]["image_evidence"]["image_probe_ok"])
+            self.assertTrue(payload["handoff_evidence"]["image_evidence"]["art_root_present"])
+            self.assertNotIn("image_render", {gap["gate"] for gap in payload["evidence_gaps"]})
+            self.assertIn("mac-handoff", payload["gate_detail"]["image_render"])
+
+    def test_image_render_handoff_without_image_probe_keeps_evidence_gap(self):
+        # A handoff that is valid for native_gate but whose app-status snapshots never
+        # proved health.image_probe_ok must NOT carry the image_render gate.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_part_a=False, include_image_traffic=False)
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(tmp)  # no health.image_probe_ok in app-status
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "none")
+            self.assertFalse(payload["handoff_evidence"]["image_evidence"]["image_probe_ok"])
+            self.assertIn("image_render", {gap["gate"] for gap in payload["evidence_gaps"]})
+            # native_gate is still allowed to ride the handoff — only image_render
+            # demanded the extra image evidence.
+            self.assertEqual(payload["signals"]["native_gate"], "PASS")
+
+    def test_vm_image_denominators_take_precedence_over_mac_handoff(self):
+        # When the VM DID record /image traffic, the real rate is the gate source —
+        # a same-SHA Mac handoff with image evidence cannot paper over recorded 404s.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_part_a=False, image_status=404)
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(
+                tmp,
+                app_status_overrides={"health": {"image_probe_ok": True}},
+            )
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "vm-network")
+            self.assertEqual(payload["signals"]["image_request_denominator"], 5)
+            self.assertEqual(payload["signals"]["image_render_rate"], 0.0)
 
     def test_split_vm_persona_evidence_requires_support_preflight(self):
         with tempfile.TemporaryDirectory() as td:

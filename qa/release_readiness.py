@@ -20,6 +20,16 @@ The two NEW signals the plan calls for — image-render-rate and palette-live �
 here (image rate from score.json/network.ndjson) and passed in (palette-live), so this stays
 a pure disk reader.
 
+image_render gate sources (signals.image_render_source):
+  - "vm-network"  : per-run network.ndjson /image rows exist -> the REAL rate is computed
+                    and is authoritative (recorded 404s can never be papered over).
+  - "mac-handoff" : no per-run /image denominator exists (the VM cannot serve gitignored
+                    _private art) AND a valid --handoff-json at the same --build-sha proved
+                    health.image_probe_ok:true + the private art root across every
+                    required handoff gate. This is a representative built-app image
+                    probe, NOT a render rate — weaker but real Mac evidence.
+  - "none"        : neither source -> the gate stays a HARD FAIL with an evidence gap.
+
 Usage:
   release_readiness.py --runs <run-dir>[,<run-dir>...] \
       [--story story.json] [--mech mech.json] \
@@ -318,6 +328,14 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
         "handoff_score": 0,
         "commit_sha": "",
         "gates": {},
+        # Image evidence is a SEPARATE, stricter signal than handoff validity: the
+        # handoff stays valid for native_gate even when its app-status snapshots never
+        # recorded health.image_probe_ok, but image_render may only ride the handoff
+        # when EVERY required gate proved the probe + the private art root. The probe
+        # is honest-but-weaker than a render rate: it proves the built app resolved a
+        # representative descriptor for the live scene's imageScope, not a percentage
+        # of all image requests.
+        "image_evidence": {"image_probe_ok": False, "art_root_present": False, "gates": {}},
     }
     if not handoff_json:
         return proof, []
@@ -352,6 +370,8 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
     by_name = {str(g.get("name") or ""): g for g in gates if isinstance(g, dict)}
     proof["gates"] = {}
     manifest_paths_seen: set[Path] = set()
+    gate_image_probe: dict[str, bool] = {}
+    gate_art_root: dict[str, bool] = {}
     for gate_name in REQUIRED_HANDOFF_GATES:
         gate = by_name.get(gate_name)
         if not gate:
@@ -414,6 +434,7 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
 
         handoff_gate = manifest.get("handoff_gate") if isinstance(manifest.get("handoff_gate"), dict) else {}
         art = manifest.get("art") if isinstance(manifest.get("art"), dict) else {}
+        gate_art_root[gate_name] = art.get("private_root_present") is True
         live = manifest.get("live") if isinstance(manifest.get("live"), dict) else {}
         evidence_files = manifest.get("evidence_files") if isinstance(manifest.get("evidence_files"), dict) else {}
         checks = {
@@ -448,6 +469,10 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
                     if app_status_error:
                         gaps.append(handoff_gap(str(evidence_file), f"app-status snapshot {app_status_error}"))
                         continue
+                    health = app_status.get("health") if isinstance(app_status.get("health"), dict) else {}
+                    gate_image_probe[gate_name] = (
+                        gate_image_probe.get(gate_name, True) and health.get("image_probe_ok") is True
+                    )
                     if app_status.get("schema") != "worldos.app-status.v1":
                         gaps.append(handoff_gap(str(evidence_file), "app-status schema is missing or wrong"))
                     if app_status.get("state_authority") != "engine":
@@ -457,6 +482,20 @@ def validate_handoff_json(handoff_json: str, expected_sha: str) -> tuple[dict, l
                     app_status_build = app_status.get("build") if isinstance(app_status.get("build"), dict) else {}
                     if expected_sha and not build_sha_matches(str(app_status_build.get("sha") or ""), expected_sha):
                         gaps.append(handoff_gap(str(evidence_file), f"app-status build.sha {app_status_build.get('sha') or 'missing'} does not match --build-sha {expected_sha}"))
+    proof["image_evidence"] = {
+        # True only when EVERY required gate parsed >=1 app-status snapshot and ALL of
+        # that gate's snapshots reported health.image_probe_ok:true. A gate with no
+        # parsed snapshots stays absent from gate_image_probe and fails the all().
+        "image_probe_ok": all(gate_image_probe.get(g) is True for g in REQUIRED_HANDOFF_GATES),
+        "art_root_present": all(gate_art_root.get(g) is True for g in REQUIRED_HANDOFF_GATES),
+        "gates": {
+            g: {
+                "image_probe_ok": gate_image_probe.get(g, False) is True,
+                "art_root_present": gate_art_root.get(g, False) is True,
+            }
+            for g in REQUIRED_HANDOFF_GATES
+        },
+    }
     proof["valid"] = not gaps
     return proof, gaps
 
@@ -617,6 +656,29 @@ def main() -> int:
     image_missing_personas = [str(p["persona"]) for p in persona_scores if p["image_total"] <= 0]
     image_evidence_complete = bool(persona_scores) and not image_missing_personas
     img_rate = (sum(p["image_ok"] for p in img_runs) / sum(p["image_total"] for p in img_runs)) if img_runs else 0.0
+    total_image_denominator = sum(p["image_total"] for p in img_runs)
+
+    # image_render source selection. The VM cannot serve gitignored _private art, so a
+    # split VM+Mac sweep structurally has NO per-run /image denominator; the Mac handoff
+    # is then the authoritative image evidence (built-app image_probe_ok + private art
+    # root across every required handoff gate, at the SAME --build-sha). Precedence is
+    # honest: any recorded VM image traffic computes the REAL rate (a handoff can never
+    # paper over recorded 404s), and when NEITHER source exists the gate stays a hard
+    # fail with an evidence gap — a VM-only sweep without a handoff still reports the gap.
+    handoff_image_evidence = handoff_proof.get("image_evidence") if isinstance(handoff_proof.get("image_evidence"), dict) else {}
+    handoff_image_ok = bool(
+        args.handoff_json
+        and args.build_sha
+        and handoff_proof.get("valid")
+        and handoff_image_evidence.get("image_probe_ok") is True
+        and handoff_image_evidence.get("art_root_present") is True
+    )
+    if total_image_denominator > 0:
+        image_render_source = "vm-network"
+    elif persona_scores and handoff_image_ok:
+        image_render_source = "mac-handoff"
+    else:
+        image_render_source = "none"
 
     story = read_json(Path(args.story)) if args.story else {}
     mech = read_json(Path(args.mech)) if args.mech else {}
@@ -736,11 +798,18 @@ def main() -> int:
         evidence_gaps.append({"gate": "ui_audit", "missing": "--ui-audit-log", "detail": "UI audit log path not supplied"})
     elif not Path(args.ui_audit_log).exists():
         evidence_gaps.append({"gate": "ui_audit", "missing": args.ui_audit_log, "detail": "UI audit log path missing"})
-    if image_missing_personas:
+    if image_missing_personas and image_render_source != "mac-handoff":
+        image_gap_detail = f"no /image requests recorded for: {', '.join(image_missing_personas)}"
+        if args.handoff_json and image_render_source == "none":
+            image_gap_detail += (
+                "; Mac handoff supplied but did not prove image evidence"
+                " (needs valid same-SHA handoff with health.image_probe_ok:true"
+                " + art root present across all required gates)"
+            )
         evidence_gaps.append({
             "gate": "image_render",
             "missing": "network.ndjson image denominator",
-            "detail": f"no /image requests recorded for: {', '.join(image_missing_personas)}",
+            "detail": image_gap_detail,
         })
     if not args.palette_live:
         evidence_gaps.append({"gate": "palette_live", "missing": "--palette-live", "detail": "palette-live result not supplied"})
@@ -753,6 +822,18 @@ def main() -> int:
     if split_vm_handoff_evidence:
         native_evidence_gap_gates.add("support_preflight")
     native_gate_detail = f"source={native_source or 'n/a'} {native_detail or 'part_a=' + (native or 'n/a')}".strip()
+    if image_render_source == "mac-handoff":
+        # The Mac handoff also rides the support-preflight contract on a split sweep:
+        # image_render must not pass off a handoff whose split rollup is unproven.
+        image_render_ok = not (evidence_gap_gates & ({"image_render"} | native_evidence_gap_gates))
+        image_render_detail = (
+            "source=mac-handoff; built-app image_probe_ok + private art root proven across "
+            f"{','.join(REQUIRED_HANDOFF_GATES)} at --build-sha {args.build_sha} "
+            "(representative built-app probe, NOT a VM render rate; vm denominator=0)"
+        )
+    else:
+        image_render_ok = image_evidence_complete and img_rate >= 0.95 and "image_render" not in evidence_gap_gates
+        image_render_detail = f"source={image_render_source}; rate={img_rate:.2%}; denominator={total_image_denominator}"
 
     # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
     gates = {
@@ -774,8 +855,7 @@ def main() -> int:
                                f"behavioral={args.behavioral or 'n/a'}"),
         "ui_audit":           (args.ui_audit == "PASS" and "ui_audit" not in evidence_gap_gates,
                                f"ui_audit={args.ui_audit or 'n/a'}"),
-        "image_render":       (image_evidence_complete and img_rate >= 0.95 and "image_render" not in evidence_gap_gates,
-                               f"rate={img_rate:.2%}; denominator={sum(p['image_total'] for p in img_runs)}"),
+        "image_render":       (image_render_ok, image_render_detail),
         "palette_live":       (args.palette_live == "true" and "palette_live" not in evidence_gap_gates,
                                f"palette_live={args.palette_live or 'n/a'}"),
     }
@@ -850,7 +930,8 @@ def main() -> int:
             "behavioral": args.behavioral,
             "ui_audit": args.ui_audit,
             "image_render_rate": round(img_rate, 4),
-            "image_request_denominator": sum(p["image_total"] for p in img_runs),
+            "image_render_source": image_render_source,
+            "image_request_denominator": total_image_denominator,
             "image_missing_personas": image_missing_personas,
             "palette_live": args.palette_live,
             "run_build_shas": build_shas,
