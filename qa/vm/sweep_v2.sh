@@ -51,6 +51,35 @@ for p in $(seq 8810 8830) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 
 sleep 4
 note "start build=$SHA (parallel mode, lean ON — production-matching, fast Opus beats)"
 
+# 0.5) SUPPORT-VM PREFLIGHT (#730) — run BEFORE any persona spend so a blocked host is
+# recorded up front, and so the split VM+Mac RRI rollup can prove same-SHA heavy-lane
+# readiness (release_readiness.py requires --support-preflight-json whenever VM persona
+# evidence relies on --handoff-json for the Mac native proof). The CLI writes
+# support_vm_preflight.json into --artifact-dir; we copy it to the stable rollup path.
+# --no-fail: a blocked preflight is RECORDED, not fatal — the sweep continues and the
+# rollup surfaces the gap honestly (verdict/ready_for_rri carry the blockers).
+# On this VM the private art IS rsynced into the repo at content/worlds/_private,
+# so --private-art-mode required with --art-root at the repo root is correct.
+note "support-VM preflight (artifact-first; failure tolerated + surfaced in the rollup)..."
+rm -f "$RES/support_preflight.json" 2>/dev/null
+mkdir -p "$RES/preflight"
+timeout 300 python3 qa/support_vm_preflight.py \
+  --repo "$PWD" \
+  --expected-sha "$SHA" \
+  --artifact-dir "$RES/preflight" \
+  --artifact-return-target "$RES" \
+  --art-root "$PWD" \
+  --private-art-mode required \
+  --no-fail \
+  > "$RES/preflight.log" 2>&1
+note "preflight rc=$? (rc is informational under --no-fail; see preflight.log)"
+if [ -f "$RES/preflight/support_vm_preflight.json" ]; then
+  cp "$RES/preflight/support_vm_preflight.json" "$RES/support_preflight.json"
+  note "preflight artifact -> $RES/support_preflight.json (ready_for_rri=$(python3 -c "import json;print(json.load(open('$RES/support_preflight.json')).get('ready_for_rri'))" 2>/dev/null))"
+else
+  note "preflight did NOT write support_vm_preflight.json — continuing; the RRI rollup will surface the support_preflight evidence gap honestly"
+fi
+
 run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
   local persona="$1" port="$2"
   # #735: wipe THIS persona's reused play-state stores (the solo run + the Part-B `-b` store)
@@ -109,7 +138,10 @@ DCOMB="qa/transcripts/vm2-duo.combined.jsonl"; DSTATE="qa/transcripts/vm2-duo.st
 aport=8861; lsof -ti:$aport 2>/dev/null | xargs kill -9 2>/dev/null
 ( WORLDOS_STATE_DIR=/root/worldos-qa/auditstate python3 viewer/server.py '' $aport >/dev/null 2>&1 & echo $! >"$RES/av.pid" )
 sleep 6
-timeout 600 bash qa/ui_audit_health.sh --port $aport --quick --axe --ui-gate > "$RES/ui_audit.log" 2>&1
+# WORLDOS_STATE_DIR on the audit call too: ui_audit_health.sh's --ui-gate seed step needs the
+# SAME state dir the audit viewer serves, so an empty auditstate gets one resumable campaign
+# (play_reachable can never pass against an empty launcher).
+WORLDOS_STATE_DIR=/root/worldos-qa/auditstate timeout 600 bash qa/ui_audit_health.sh --port $aport --quick --axe --ui-gate > "$RES/ui_audit.log" 2>&1
 note "ui_audit rc=$?"; [ -f "$RES/av.pid" ] && kill "$(cat "$RES/av.pid")" 2>/dev/null
 
 # 4) RRI
@@ -121,6 +153,7 @@ python3 qa/release_readiness.py \
   --behavioral $behav --behavioral-path "$RES/duo.log" \
   --ui-audit $audit --ui-audit-log "$RES/ui_audit.log" \
   --palette-live true --palette-source "$RES/ui_audit.log" \
+  --support-preflight-json "$RES/support_preflight.json" \
   --build-sha "$SHA" \
   --out "$RES/RRI.json" --scorecard-row > "$RES/rri.txt" 2>&1
 note "=== RRI ==="; cat "$RES/rri.txt" | tee -a "$LOG"

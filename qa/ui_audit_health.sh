@@ -255,16 +255,23 @@ fi
 # 12. Optional: axe-core a11y sweep. Off by default (needs browser-driver-manager
 # + a matching ChromeDriver). Loop-5 baseline (2026-05-29) recorded 11 violations
 # across 8 screens — 10 scrollable-region-focusable + 1 label. Filed as #291 + #292.
+#
+# HONEST-GATE calibration: when --axe is REQUESTED, a missing npx / driver is a HARD
+# FAIL, not a warn-skip. rc1's "FAIL(axe)" was misattributed — axe never actually ran
+# because browser-driver-manager was missing and the sweep silently skipped it. A
+# requested check that cannot run must fail loudly with the install command; the
+# path WITHOUT --axe is unchanged (still fully opt-in).
 if [ "$AXE" -eq 1 ]; then
   if ! command -v npx >/dev/null 2>&1; then
-    warn "npx not on PATH; skipping --axe"
+    fail "--axe requested but npx is not on PATH — axe did NOT run. Install Node, then: npx --yes browser-driver-manager install chrome=<major-version>"
   else
     CHROME_VER=$(/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version 2>/dev/null | awk '{print $3}' | awk -F. '{print $1}')
     DRIVER_DIR=$(ls -d "$HOME/.browser-driver-manager/chromedriver/mac_arm-${CHROME_VER}"* 2>/dev/null | head -1)
     CHROME_TEST_DIR=$(ls -d "$HOME/.browser-driver-manager/chrome/mac_arm-${CHROME_VER}"* 2>/dev/null | head -1)
-    if [ -z "$DRIVER_DIR" ] || [ -z "$CHROME_TEST_DIR" ]; then
-      warn "browser-driver-manager not installed for Chrome ${CHROME_VER}; install with:"
-      warn "  npx --yes browser-driver-manager install chrome=${CHROME_VER}"
+    if [ -z "$CHROME_VER" ]; then
+      fail "--axe requested but Chrome's major version could not be detected (is Google Chrome installed at /Applications?) — axe did NOT run. Install Chrome, then: npx --yes browser-driver-manager install chrome=<major-version>"
+    elif [ -z "$DRIVER_DIR" ] || [ -z "$CHROME_TEST_DIR" ]; then
+      fail "--axe requested but browser-driver-manager is not installed for Chrome ${CHROME_VER} — axe did NOT run. Install with: npx --yes browser-driver-manager install chrome=${CHROME_VER}"
     else
       CHROMEDRIVER="$DRIVER_DIR/chromedriver-mac-arm64/chromedriver"
       CHROME_TEST="$CHROME_TEST_DIR/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
@@ -311,6 +318,39 @@ if [ "$UI_GATE" -eq 1 ]; then
   elif [ ! -f qa/ui_gate_probe.js ]; then
     warn "qa/ui_gate_probe.js missing; --ui-gate skipped"
   else
+    # 13-pre. play_reachable seed — the launcher's Resume/Continue CTA only renders when
+    # a RESUMABLE campaign exists in the viewer's CURRENT state dir (canResume comes from
+    # root_is_current in viewer/server.py), so the probe can NEVER pass against an empty
+    # auditstate. Seed exactly one minimal resumable campaign (server.start_world — the
+    # smallest robust path; campaigns.json re-reads on snapshot mtime change so no viewer
+    # restart is needed). Guarded: an already-seeded state dir is never touched, and a
+    # failed/unavailable seed only WARNs — the probe then fails honestly on its own.
+    AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-}}"
+    if [ -n "$AUDIT_STATE_DIR" ]; then
+      if ls "$AUDIT_STATE_DIR"/campaigns/*/snapshot.json >/dev/null 2>&1; then
+        pass "ui-gate seed: state dir already has >=1 campaign ($AUDIT_STATE_DIR)"
+      elif ! command -v uv >/dev/null 2>&1; then
+        warn "ui-gate seed: uv not on PATH — cannot seed empty state dir $AUDIT_STATE_DIR; play_reachable will fail honestly"
+      else
+        SEED_LOG=/tmp/ow-ui-gate-seed.log
+        if WORLDOS_STATE_DIR="$AUDIT_STATE_DIR" CLAWDND_STATE_DIR="$AUDIT_STATE_DIR" \
+           uv run --directory servers/engine python - >"$SEED_LOG" 2>&1 <<'PY'
+import server
+result = server.start_world("baldurs-gate")
+cid = result.get("campaign_id") if isinstance(result, dict) else None
+if not cid and isinstance(result, dict):
+    cid = result.get("id") or (result.get("campaign") or {}).get("id")
+print("seeded campaign:", cid or result)
+PY
+        then
+          pass "ui-gate seed: minimal resumable campaign seeded into $AUDIT_STATE_DIR"
+        else
+          warn "ui-gate seed: server.start_world failed (see $SEED_LOG) — play_reachable will fail honestly against the empty state"
+        fi
+      fi
+    else
+      warn "ui-gate seed: WORLDOS_STATE_DIR/CLAWDND_STATE_DIR not set — cannot verify/seed the viewer's state dir; play_reachable needs a resumable campaign"
+    fi
     # Per-screen placeholder ceilings (Loop-9 baseline + 2 slack) — kept inline
     # in the python report block below (macOS ships bash 3.2 which has no
     # associative arrays; rather than gate the script on bash 4, we let python

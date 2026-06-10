@@ -112,6 +112,50 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn('[ "$PART_A_RESULT" = "PASS" ] || EXIT_OK=0', source)
         self.assertIn('[ "$PART_B_RESULT" = "PASS" ] && [ "$PART_B_SCORE_PASS" = "true" ] || EXIT_OK=0', source)
 
+    def test_sweep_v2_runs_support_preflight_before_personas_and_rolls_it_up(self):
+        # #730: the VM sweep never produced the support-preflight artifact, so split
+        # VM+Mac rollups always carried the support_preflight evidence gap.
+        source = (ROOT / "qa" / "vm" / "sweep_v2.sh").read_text(encoding="utf-8")
+
+        self.assertIn("qa/support_vm_preflight.py", source)
+        self.assertIn('--expected-sha "$SHA"', source)
+        self.assertIn("--private-art-mode required", source)
+        self.assertIn("--no-fail", source)
+        self.assertIn('"$RES/support_preflight.json"', source)
+        self.assertIn('--support-preflight-json "$RES/support_preflight.json"', source)
+        # The preflight must run BEFORE the personas (canary included) so a blocked
+        # host is recorded before any model spend.
+        self.assertLess(source.index("qa/support_vm_preflight.py"), source.index("CANARY: newbie"))
+        # The rollup invocation carries the artifact.
+        self.assertLess(source.index("qa/release_readiness.py"), source.index('--support-preflight-json "$RES/support_preflight.json"'))
+        # ui_audit gets the auditstate dir so its --ui-gate seed step can act on it.
+        self.assertIn("WORLDOS_STATE_DIR=/root/worldos-qa/auditstate timeout 600 bash qa/ui_audit_health.sh", source)
+
+    def test_ui_audit_health_axe_missing_driver_is_hard_fail(self):
+        # rc1 was misattributed as FAIL(axe) when axe never ran: a missing
+        # browser-driver-manager silently WARN-skipped the sweep. When --axe is
+        # requested, a missing driver must FAIL loudly with the install command.
+        source = (ROOT / "qa" / "ui_audit_health.sh").read_text(encoding="utf-8")
+
+        self.assertIn('fail "--axe requested but npx is not on PATH', source)
+        self.assertIn('fail "--axe requested but browser-driver-manager', source)
+        self.assertIn("npx --yes browser-driver-manager install chrome=", source)
+        self.assertNotIn('warn "browser-driver-manager not installed', source)
+        self.assertNotIn('warn "npx not on PATH; skipping --axe"', source)
+
+    def test_ui_audit_health_seeds_resumable_campaign_for_play_reachable(self):
+        # The play_reachable ui-gate probe can never pass against an EMPTY auditstate
+        # (no Resume/Continue CTA exists without a resumable campaign) — seed one
+        # minimal campaign first, guarded so an already-seeded state is untouched.
+        source = (ROOT / "qa" / "ui_audit_health.sh").read_text(encoding="utf-8")
+
+        self.assertIn('AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-}}"', source)
+        self.assertIn('campaigns/*/snapshot.json', source)
+        self.assertIn('server.start_world(', source)
+        self.assertIn("uv run --directory servers/engine python", source)
+        # Seeding must happen before the probe runs.
+        self.assertLess(source.index("AUDIT_STATE_DIR"), source.index("node qa/ui_gate_probe.js"))
+
     def test_solo_play_contract_does_not_silently_recruit_companion(self):
         play = (ROOT / "scripts" / "play.sh").read_text(encoding="utf-8")
         party = (ROOT / "scripts" / "play_party.sh").read_text(encoding="utf-8")
