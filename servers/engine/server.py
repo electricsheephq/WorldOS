@@ -4826,6 +4826,12 @@ def level_up(
         if subclass:
             subclass = srd_tables.resolve_subclass(cname, subclass) or subclass
 
+        # #624 backfill: is this level-up SETTING a subclass that was unset until
+        # now? (Captured before mutation — drives the missed-choice feature grant.)
+        subclass_newly_set = bool(
+            subclass and existing is not None and not (existing.subclass or "").strip()
+        )
+
         if existing:
             existing.level += 1
             if subclass:
@@ -4866,6 +4872,12 @@ def level_up(
             (cl.subclass for cl in ch.classes if cl.name.lower() == cname), None
         )
         gained = gained + srd_tables.subclass_features_at(cname, cur_subclass, new_class_level)
+        # #624 backfill: a subclass chosen LATE (the missed-choice case — set for
+        # the first time at a level PAST the choice level) still grants its
+        # choice-level features at the level-up that sets it, not nothing.
+        slvl = srd_tables.subclass_level(cname)
+        if subclass_newly_set and slvl is not None and new_class_level > slvl:
+            gained = gained + srd_tables.subclass_features_at(cname, cur_subclass, slvl)
         for f in gained:
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
@@ -5084,15 +5096,24 @@ def _subclass_block_for(cname: str, next_class_level: int, current_subclass: Opt
     """#624: the subclass-choice block a build option carries when leveling INTO a
     class's subclass-choice level without a subclass already set — the legal SRD
     options (each with a brief feature preview) so the surface renders a real list
-    instead of a free-text box. None when no choice is due at this level."""
+    instead of a free-text box. None when no choice is due at this level.
+
+    Backfill (rc2 audit): a character ALREADY PAST the choice level with the
+    subclass still unset (the pendingSubclass case — e.g. an L5 wizard with no
+    Arcane Tradition leveling to L6) is offered the missed choice at the next
+    level-up, matching common-practice 5e table rules. With a subclass already
+    set, nothing is offered past the choice level (unchanged)."""
     slvl = srd_tables.subclass_level(cname)
-    if slvl is None or next_class_level != slvl:
+    if slvl is None:
+        return None
+    unset = not bool((current_subclass or "").strip())
+    if next_class_level != slvl and not (unset and next_class_level > slvl):
         return None
     options = srd_tables.subclass_options(cname)
     if not options:
         return None
     return {
-        "required": not bool((current_subclass or "").strip()),
+        "required": unset,
         "group_label": srd_tables.subclass_group_label(cname),
         "current": current_subclass,
         "options": options,
