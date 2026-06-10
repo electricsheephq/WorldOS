@@ -158,6 +158,9 @@ const h = {
   pending: () => api.pending,
   arm: (text) => api.armPending(text || 'do something'),
   clear: () => api.clearPending(),
+  // #745: drive the live-progress signal exactly as the /events poll does (a streamed paragraph
+  // landed for the in-flight turn), so the mid-stream stall ceiling is exercised against the real code.
+  note: () => api.notePendingProgress(),
   recoveryWindowMs: (firstBeat) => win.recoveryWindowMs(firstBeat),
   constants: () => win.__PENDING_TIMING__,
 };
@@ -321,6 +324,132 @@ class RecoveryTimingTests(_BabelHarness):
         self.assertTrue(out["survives"], "#648: a same-tick clear must NOT wipe the just-armed spinner")
         self.assertTrue(out["narrating"], "the protected turn stays in the narrating (not stuck) state")
         self.assertTrue(out["resolves_later"], "the protected turn still resolves on the real (post-grace) clear")
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX hook")
+class MidStreamStallTests(_BabelHarness):
+    """#745 — the newbie mid-stream-stall give-up (the lone v1.0.4-rc2 RRI holdout @c92a393).
+
+    A DM beat that STREAMS partial prose via /events and then FREEZES mid-generation must STILL recover
+    to the recoverable `stuck` 'Try again' affordance within a BOUNDED time — independent of how many
+    partial paragraphs landed. Before #745, `notePendingProgress` re-armed the FULL position window
+    (180s/240s) AND cleared `stuck` on every streamed paragraph, so a multi-paragraph trickle that then
+    froze kept pushing the deadline forward; recovery was deferred to the silent 12-min null-backstop
+    (clears pending to null → a plain re-enabled bar, no 'Try again', the partial narration stranded) —
+    the ~12–15-min lockout the newbie gave up on.
+
+    The fix is a HARD stuck-backstop armed once in armPending that progress does NOT reset
+    (PENDING_STUCK_BACKSTOP_MS, ~5 min from submit). A trickle can no longer defer recovery past it, and
+    it resolves to the SAME recoverable `stuck` state (NOT a null clear). It is deliberately generous so
+    a long-but-HEALTHY streaming turn (which RESOLVES on /chat → clearPending cancels every timer) never
+    trips it — preserving the #348/#399/#623 live-progress behavior. These tests drive the REAL hook
+    (armPending + notePendingProgress + a fake clock) so they track the shipped behavior.
+    """
+
+    def test_stuck_backstop_constant_exported_and_strictly_ordered(self):
+        c = self._run("h.constants()")
+        self.assertIn("stuckBackstopMs", c)
+        # The hard stuck ceiling sits STRICTLY between the (resettable) position windows and the 12-min
+        # null-backstop: position recovery < stuck-backstop < null-backstop. So a frozen turn always
+        # surfaces the recoverable `stuck` affordance BEFORE the last-resort null clear.
+        self.assertLess(c["recoveryMs"], c["stuckBackstopMs"])
+        self.assertLess(c["recoveryFirstMs"], c["stuckBackstopMs"])
+        self.assertLess(c["stuckBackstopMs"], c["backstopMs"])
+        self.assertEqual(c["stuckBackstopMs"], 5 * 60 * 1000)
+
+    def test_multi_partial_trickle_then_freeze_recovers_to_stuck_not_null(self):
+        """The literal newbie scenario: SEVERAL paragraphs stream ('You give the sergeant your own
+        name… The charcoal touches the paper… That's the arithmetic o—') then it freezes mid-word. Each
+        partial used to reset the full window AND clear `stuck`, deferring recovery to the 12-min
+        null-backstop. Now the hard stuck-backstop (progress does NOT reset it) surfaces the recoverable
+        `stuck` 'Try again' affordance — bounded, and as `stuck` (pending non-null), not a silent clear."""
+        out = self._run(
+            "h.arm('give my own name');"
+            # eight partials, 30s apart (a plausibly-alive trickle) → 240s of streaming. Under the OLD code
+            # `stuck` never fired during this (every partial reset the full window AND cleared stuck), and
+            # recovery waited for the 12-min null-backstop. Capture that the trickle stays alive…
+            "for (var i = 0; i < 8; i++) { h.advance(30 * 1000); h.note(); }"
+            "var duringTrickle = h.pending();"
+            # …then the final paragraph FREEZES. Walk forward; capture when `stuck` first fires and the
+            # state at that moment (must be the recoverable stuck, NOT a null clear).
+            "var t = 240 * 1000; var stuckAt = null; var nulledFirst = false;"
+            "while (t < 11 * 60 * 1000) { h.advance(5 * 1000); t += 5 * 1000;"
+            "  var q = h.pending(); if (q === null) { nulledFirst = (stuckAt === null); break; }"
+            "  if (q && q.stuck) { stuckAt = t; break; } }"
+            "({ alive_during_trickle: !!(duringTrickle && !duringTrickle.stuck && duringTrickle.streaming),"
+            "   stuck_fired: stuckAt !== null, stuck_at_ms_from_submit: stuckAt,"
+            "   nulled_before_stuck: nulledFirst, still_pending_at_stuck: !!(h.pending()) })"
+        )
+        self.assertTrue(out["alive_during_trickle"],
+                        "a flowing trickle stays narrating (not stuck) — the live-progress feel is preserved")
+        self.assertTrue(out["stuck_fired"],
+                        "#745: a trickle-then-freeze MUST recover to `stuck`, not vanish via the 12-min null-backstop")
+        self.assertFalse(out["nulled_before_stuck"],
+                         "recovery must surface the RECOVERABLE `stuck` affordance, not a silent null clear")
+        # The give-up was a ~12–15-min lockout. The hard ceiling bounds total stall from submit well under
+        # that — it fires by PENDING_STUCK_BACKSTOP_MS regardless of how many partials trickled in.
+        self.assertIsNotNone(out["stuck_at_ms_from_submit"])
+        self.assertLessEqual(out["stuck_at_ms_from_submit"], 5 * 60 * 1000 + 5 * 1000,
+                             "the hard stuck-backstop must fire by ~5 min from submit, not the 12-min null-backstop")
+        self.assertTrue(out["still_pending_at_stuck"],
+                        "recovery surfaces the `stuck` 'Try again' affordance (pending stays non-null)")
+
+    def test_stuck_backstop_is_not_reset_by_progress(self):
+        """The crux: streamed progress re-arms the per-progress recovery timer but must NOT push the hard
+        stuck-backstop forward. So even a long, frequent trickle is bounded by the submit-anchored ceiling."""
+        out = self._run(
+            "h.arm('do');"
+            # frequent partials right up to just before the 5-min ceiling — each resets the position timer
+            # (proving the turn looks 'alive' to the per-progress path) but must NOT move the hard ceiling.
+            "for (var i = 0; i < 9; i++) { h.advance(30 * 1000); h.note(); }"   # 270s of streaming
+            "var at270 = h.pending();"
+            # cross the 5-min submit ceiling with NO further progress → the hard backstop fires `stuck`.
+            "h.advance(35 * 1000);"   # 305s from submit, past the 300s ceiling
+            "var at305 = h.pending();"
+            "({ alive_at_270s: !!(at270 && !at270.stuck), stuck_at_305s: !!(at305 && at305.stuck) })"
+        )
+        self.assertTrue(out["alive_at_270s"],
+                        "frequent progress keeps the turn narrating up to the ceiling (per-progress timer reset)")
+        self.assertTrue(out["stuck_at_305s"],
+                        "#745: the hard stuck-backstop is anchored to submit — progress must NOT defer it")
+
+    def test_healthy_streaming_turn_that_resolves_never_trips_the_stuck_backstop(self):
+        """A long-but-HEALTHY streaming turn RESOLVES on /chat (clearPending) before the hard ceiling, which
+        cancels every timer — so the stuck-backstop never false-positives on a slow-but-alive beat (the
+        #348/#399/#623 live-progress contract is preserved)."""
+        out = self._run(
+            "h.arm('open the scene');"
+            # 4 minutes of healthy streaming (well past the 240s first-beat window, UNDER the 5-min ceiling),
+            # then the turn resolves on /chat (clearPending) — exactly what a real completed beat does.
+            "for (var i = 0; i < 8; i++) { h.advance(30 * 1000); h.note(); }"   # 240s
+            "h.advance(h.constants().armGraceMs + 1000);"
+            "h.clear();"                                   # the turn RESOLVED on /chat
+            "var resolved = h.pending();"
+            # advance far past the 5-min stuck-backstop AND the 12-min null-backstop — a resolved turn must
+            # not resurrect any stuck/pending state (the timers were cancelled by clearPending).
+            "h.advance(13 * 60 * 1000);"
+            "var afterAll = h.pending();"
+            "({ resolved_null: resolved === null, no_resurrect: afterAll === null })"
+        )
+        self.assertTrue(out["resolved_null"], "a resolved healthy turn clears pending")
+        self.assertTrue(out["no_resurrect"],
+                        "a resolved turn must NOT later trip the stuck-backstop (clearPending cancelled it)")
+
+    def test_pre_stream_slow_open_still_uses_the_full_window(self):
+        """A slow cold-open that streams NOTHING yet keeps the generous first-beat window — the #348/#399
+        false-stuck guard. The stuck-backstop is a HARD additional ceiling, not a replacement: it does not
+        clip the legit pre-stream think (which is well under 5 min) to anything shorter."""
+        out = self._run(
+            "h.arm('open the scene');"
+            # 120s with NO streamed paragraph — neither the 240s first-beat window nor the 5-min ceiling
+            # has elapsed, so the turn is still narrating (no false stuck).
+            "h.advance(120 * 1000);"
+            "var p = h.pending();"
+            "({ stuck_at_120s_no_stream: !!(p && p.stuck), narrating: !!(p && !p.stuck) })"
+        )
+        self.assertFalse(out["stuck_at_120s_no_stream"],
+                         "the pre-stream slow open must keep the full window — no false stuck at 120s")
+        self.assertTrue(out["narrating"], "still narrating at 120s when nothing has streamed yet")
 
 
 @unittest.skipIf(shutil.which("node") is None, "node is required to transpile + run the JSX gate")

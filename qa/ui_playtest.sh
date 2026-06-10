@@ -136,15 +136,33 @@ echo "[uipt] viewer ready."
 DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 DM_BRIEF="$(cat "$ROOT/qa/play_dm_duo.txt")"
 chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+# #745 (the newbie mid-stream-stall give-up): the GUI-sweep DM driver MUST bound every beat exactly
+# like scripts/play.sh's dm_turn — previously this helper ran `claude -p` with NO `timeout`, NO retry,
+# and NO fallback, so a DM turn that streamed partial prose via /events and then FROZE mid-generation
+# hung FOREVER: dm_turn never returned → `chatlog dm` (the turn-END /chat line) never fired → the turn
+# never RESOLVED on the client, leaving the player on the (now-fixed-but-slower) client stall path with
+# no backend recovery at all. Here we (1) wall-clock the beat with `timeout` (tiered off the cold-open
+# `first` signal via the shared clawdnd_dm_timeout; a frozen process is KILLED at the deadline so the
+# turn returns), and (2) if the killed/failed beat left empty result text, stitch the engine-logged
+# narration tail as a fallback reply (clawdnd_dm_narration_or_fallback) so `chatlog dm` always writes a
+# real turn-END line → the client's pending clears + the bar re-enables. CLAWDND_DM_MODEL lets the
+# timeout helper pick the opus cold-open tier. Bash 3.2-safe (timeout(1) from coreutils; ${arr[@]+…}).
+CLAWDND_DM_MODEL="$DM_MODEL"
 dm_turn() {
-  local first="$1" msg="$2" out resume=()
+  local first="$1" msg="$2" out resume=() beat_timeout rc
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
+  beat_timeout="$(clawdnd_dm_timeout "$first")"
   out="$RUNDIR/dm/turn.$(date +%s%N).jsonl"
-  claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+  timeout "$beat_timeout" \
+    claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
     --model "$DM_MODEL" --permission-mode bypassPermissions --max-budget-usd "$DM_BUDGET" \
     --output-format stream-json --verbose > "$out" 2>> "$RUNDIR/dm/dm.err"
+  rc=$?
+  [ "$rc" -ne 0 ] && echo "[uipt] DM turn rc=$rc (timeout=${beat_timeout}s) — relying on engine-logged narration fallback" >&2
   cat "$out" >> "$COMBINED"
-  jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+  # If the beat was killed/failed with no final result text, recover the engine-logged narration tail so
+  # the turn STILL resolves on /chat (never an indefinite hang). A healthy beat returns its result verbatim.
+  clawdnd_dm_narration_or_fallback "$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null)" "$STATE_DIR"
 }
 
 # --- DM opens the scene so a LIVE, playable game exists (the launcher's Chronicles
