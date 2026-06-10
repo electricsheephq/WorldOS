@@ -37,6 +37,20 @@ clawdnd_missing_commands() {
   fi
 }
 
+# F12-8 (#787): `timeout(1)` is a GNU coreutils binary ABSENT on stock macOS — and the DM beat
+# wrappers used to invoke it bare, so on a non-coreutils Mac every beat died rc=127 in <1s,
+# silently. The play lanes now bound every DM call through worldos_timeout (qa/lib_beat_driver.sh),
+# which falls back to a python3 subprocess with the same rc=124 deadline semantics — so the binary
+# is no longer a HARD requirement and this check WARNS instead of failing the launch closed (a
+# fail would refuse a host the shim fully serves). The native tool is still preferred (no extra
+# interpreter per beat), hence the brew hint. Always returns 0.
+clawdnd_warn_if_no_timeout() {
+  command -v timeout >/dev/null 2>&1 && return 0
+  echo "[worldos] note: GNU timeout(1) not found — DM beat deadlines will use the built-in python3 fallback." >&2
+  echo "[worldos]       For the native tool: brew install coreutils" >&2
+  return 0
+}
+
 clawdnd_port_available() {
   local port="$1"
   case "$port" in

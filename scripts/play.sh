@@ -32,6 +32,12 @@ fi
 if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
   clawdnd_missing_commands python3 claude uv jq curl || exit 127
 fi
+# F12-8 (#787): timeout(1) is a coreutils binary stock macOS lacks. The DM beats are bounded via
+# the worldos_timeout shim (python3 fallback), so absence is non-fatal — but warn with the brew
+# hint so the native tool gets installed.
+if declare -F clawdnd_warn_if_no_timeout >/dev/null 2>&1; then
+  clawdnd_warn_if_no_timeout
+fi
 # Shared beat-driver helpers: the C soft clock-tick backstop + the A beat-aware runbooks —
 # the SAME implementation the QA duo loop sources, so the human-paced and QA loops can't drift.
 # shellcheck source=../qa/lib_beat_driver.sh
@@ -78,10 +84,13 @@ CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
 # the session. The deadline is TIERED off the cold-open `first` signal (clawdnd_dm_timeout in
 # qa/lib_beat_driver.sh, the sibling of the effort tier): the cold open's --effort max world-build
 # runs ~280–400s so it gets WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing/routine beats keep
-# CLAWDND_BEAT_TIMEOUT (default 200s, unchanged). Both knobs are read inside dm_turn via the helper;
-# this line documents the routine default. Applies in BOTH lean/legacy modes (it only wraps the
-# existing claude -p call) and ONLY to the DM turn.
-CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-200}"
+# CLAWDND_BEAT_TIMEOUT (default 360s — F12-1: the old flat 200s killed ~18% of HEALTHY routine
+# beats, measured routine max=360s). The ONE retry ESCALATES its deadline to the cold-open tier
+# via clawdnd_dm_retry_timeout (attempt 2 never reuses attempt 1's deadline verbatim). Both knobs
+# are read inside dm_turn via the helper; this line documents (and seeds) the routine default.
+# Applies in BOTH lean/legacy modes (it only wraps the existing claude -p call) and ONLY to the
+# DM turn.
+CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-360}"
 # Recent player-facing narration tail the lean re-ground asks scene_context for (generous by
 # default so continuity survives the lean boundary — named NPCs, prior choices, the scene).
 CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
@@ -243,8 +252,9 @@ fi
 # caller's #357 fallback recovers any prose the DM streamed live. The deadline is TIERED off the
 # SAME `first` cold-open signal as the effort tier (clawdnd_dm_timeout, qa/lib_beat_driver.sh): the
 # cold open (first=1) is the --effort max world-build that runs ~280–400s, so it gets a generous
-# WORLDOS_COLDOPEN_TIMEOUT (default 400s) instead of the 200s that was KILLING it; continuing beats
-# keep CLAWDND_BEAT_TIMEOUT (default 200s). Echoes the DM's final text.
+# WORLDOS_COLDOPEN_TIMEOUT (default 400s) instead of the routine deadline that was KILLING it;
+# continuing beats keep CLAWDND_BEAT_TIMEOUT (default 360s — F12-1). The ONE retry escalates its
+# deadline via clawdnd_dm_retry_timeout. Echoes the DM's final text.
 dm_turn() {
   local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc beat_timeout
   # #623: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE in
@@ -274,11 +284,14 @@ dm_turn() {
   clawdnd_dm_effort_arg "$first"
   # TIMEOUT TIER (shared helper, qa/lib_beat_driver.sh): the cold open's max-effort world-build runs
   # ~280–400s, so it gets WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats keep
-  # CLAWDND_BEAT_TIMEOUT (default 200s). Keyed off the SAME `first` signal as the effort tier above.
+  # CLAWDND_BEAT_TIMEOUT (default 360s). Keyed off the SAME `first` signal as the effort tier above.
   beat_timeout="$(clawdnd_dm_timeout "$first")"
   out="$DM_LOG.$(date +%s%N).jsonl"
+  # F12-8: worldos_timeout (qa/lib_beat_driver.sh) — timeout(1) when present, else a python3
+  # fallback with the same rc=124 semantics. A bare `timeout` died rc=127 on stock (non-coreutils)
+  # Macs, killing every beat in <1s with the failure masked.
   _dm_invoke() {
-    timeout "$beat_timeout" \
+    worldos_timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
@@ -293,7 +306,11 @@ dm_turn() {
     # in use." → 0-byte → empty narration. A lean beat re-mints via clawdnd_dm_lean_args; the
     # cold-open / legacy --resume path re-mints via clawdnd_dm_remint_session_on_retry. (The
     # re-ground directive $extra is unchanged — we only refresh the session id.)
-    echo "[play] DM turn rc=$rc (timeout=${beat_timeout}s) — retrying once with a fresh session" >&2
+    # F12-1: the retry must NOT reuse attempt 1's deadline verbatim — a healthy-but-long beat that
+    # tripped the routine deadline would just be killed again at the same mark. Escalate attempt 2
+    # to the model-aware cold-open tier (never de-escalating below attempt 1's).
+    beat_timeout="$(clawdnd_dm_retry_timeout "$beat_timeout")"
+    echo "[play] DM turn rc=$rc — retrying once with a fresh session (deadline escalated to ${beat_timeout}s)" >&2
     clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
     if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
@@ -413,6 +430,13 @@ fi
 # #357: same empty-reply fallback as the beat loop — recover the engine's logged opening
 # narration if the DM's first turn ended on a tool call rather than prose.
 clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+# F12-3 (#777): a cold open that produced NO opening (both attempts dead — the 401-class double
+# failure proven 2026-06-02) must ABORT NON-ZERO here, BEFORE the move loop. Recording the blank
+# unconditionally left an unflagged EMPTY chat row and an indefinitely-"running" session in which
+# every beat resumed a nonexistent DM session and masked — under a live viewer serving the empty
+# state. A non-zero exit surfaces through the native bridge instead. (play_party.sh has carried
+# this same abort since its ensemble landed; this is the play.sh port.)
+[ -z "$DMSG" ] && { echo "[play] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 
 # Resolve the campaign id the DM just minted, BEFORE writing the opening to the chronicle —
 # record_dm_reply (#720) needs it to log the opening narration to the engine session log so the
@@ -441,6 +465,42 @@ if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
   else
     echo "[play] lean-beats ON but campaign id not found under $STATE_DIR/campaigns — beats use the normal resume path" >&2
   fi
+fi
+
+# --- F12-3 (#777): the cold open MUST leave a PLAYABLE session ----------------------------------
+# (a) NO CAMPAIGN: a cold open that minted no campaign at all is unplayable — the heartbeat, lean
+# re-ground, and record_dm_reply all no-op on an empty id, and every beat would fail and mask.
+# Abort loudly instead of reporting "running" forever.
+if [ -z "$CAMPAIGN_ID" ]; then
+  echo "[play] COLD OPEN MINTED NO CAMPAIGN under $STATE_DIR/campaigns — aborting rather than leave a 'running' unplayable session (see $COMBINED)." >&2
+  exit 1
+fi
+# (b) SEATING GUARD: the DM creates/selects the PC live in the cold-open turn, which is
+# DM-STOCHASTIC — a forensic .app run built the world but ended the turn with party=[] (the
+# viewer's "no_actor" unplayable surface). Guard it the same way the DM turn itself is guarded
+# (the pattern play_party.sh proved; the check is the SHARED clawdnd_pc_seated in
+# qa/lib_beat_driver.sh — snapshot-read-only, the viewer's _action_actor contract): one reseat
+# retry on a FRESH session id (the consumed cold-open --session-id would collide), then a loud
+# non-zero abort. Covers BOTH opener paths — the authored-hero and DM-invents openers converge
+# here (the hero path pre-seeds the PC, so it normally passes on the first check).
+if ! clawdnd_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
+  echo "[play] cold open seated NO player PC (party has no kind=\"player\" member) — retrying the cold open ONCE on a fresh session…" >&2
+  DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+  RESEAT_DMSG="$(dm_turn 1 "Your previous cold-open turn for campaign $CAMPAIGN_ID did NOT seat the player's character — the party still has no kind=\"player\" member, so the game is UNPLAYABLE. Fix this NOW, before anything else.
+
+- use campaign_id=$CAMPAIGN_ID for EVERY engine call. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN this save.
+- SEAT THE PLAYER CHARACTER by SELECTING a real canon NPC — NEVER invent a custom character: list_canon_characters(playable_only=true), pick a fitting MID-TIER canon figure with an ingested portrait + real backstory, then load_canon_character(that name, kind=\"player\", add_to_party=true). The party MUST contain the player's kind=\"player\" PC when this turn ends.
+- This is a SOLO session: seat ONLY the player — do NOT recruit companions.
+- Then CLOSE the turn by writing the opening SCENE as 2nd-person player-facing prose addressed to \"you\" (where the player IS, what they see/hear/smell, who is present + a real quoted line), ending on a clear open moment + choice. NEVER end on a tool call or a 3rd-person setup brief." "$CAMPAIGN_ID")"
+  clawdnd_resolve_dm_reply "$RESEAT_DMSG" "$STATE_DIR"; RESEAT_DMSG="$CLAWDND_DM_REPLY"
+  DM_TURNS=$((DM_TURNS + 1))   # the reseat turn counts toward the cap (parity with play_party)
+  # #720: the reseat turn re-writes the opening scene — route it through record_dm_reply too.
+  if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; record_dm_reply "$CAMPAIGN_ID" "$DMSG" reseat; echo "[play] reseat turn opened: ${DMSG:0:120}…"; fi
+  if ! clawdnd_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
+    echo "[play] COLD-OPEN SEATED NO PC: after a retry the party still has no kind=\"player\" member — aborting rather than hand the player a no_actor session (see $COMBINED)." >&2
+    exit 1
+  fi
+  echo "[play] reseat OK — a player PC is now seated in the party."
 fi
 
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn
