@@ -5,15 +5,20 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-09 — v1.0.4-rc1 RRI re-baseline (honest non-partial sweep + 9-agent audit + roadmap).
+     AS OF:        2026-06-10 — Sprint-1 reliability + adversarial-audit fix-wave landed; rc3 is next.
      MAIN BASELINE:
-                   `origin/main` = `a104f1e`. The RC-under-test SHA was `fa97b34` (8 PRs merged since
-                   da05101: #719/#720/#722/#723/#724/#726/#727/#728). RELEASE MODEL is now RRI-FIRST:
-                   v1.0.x tags = semver feature-labels; RRI 10/10 = release-authority; tag-after-proof
+                   `origin/main` = `a245a2c`. Since rc1: the 8-fix Sprint-1 reliability wave
+                   (#735 keystone active-PC switch, #732/#733 chronicle, #734 initiative, #353
+                   companion-sync, #624 subclass, #623 heartbeat, #306/#744 title-bar, #745/#746
+                   stall recovery), then the AUDIT FIX-WAVE (#759 subclass-backfill, #760 ledger/
+                   ruler integrity + #725 lens-fence, #761 budget-aware stuck ceiling, #762
+                   image_render Mac-evidence path + support-preflight wiring + ui_audit calibration,
+                   #763 heartbeat repair — ingest unfilter + recap/FTS/lean-tail/fallback
+                   decontamination, #764 VM-lane no-axe). RELEASE MODEL is RRI-FIRST: v1.0.x tags =
+                   semver feature-labels; RRI 10/10 = release-authority; tag-after-proof
                    ("Player-Ready Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity).
-                   Milestone v1.0.4 (#27) is the version-scoped ledger (22 issues) for the Beta push.
-                   Plan: `/Users/lume/.claude/plans/continue-lets-update-the-wild-lecun.md`. The
-                   da05101/9545383/fd9dba5/4a0efe1 handoffs are preserved history, not current proof.
+                   Milestone v1.0.4 (#27) is the version-scoped ledger for the Beta push.
+                   A SIBLING fork runs a read-only full-engine audit (files issues, deduped vs #748+).
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
@@ -32,15 +37,17 @@
                    release-RRI readiness requires `--private-art-mode required`. Artifact:
                    `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/`.
      LAST MEASURED GATE BUILD:
-                   v1.0.4-rc1 RRI = 3.6/10 (4/11) @`fa97b34` — HONEST, non-partial 5-persona sweep
-                   (Mac part-A handoff 100/100 + VM part-B), ruler-stamped sc_5ac7a1d9103c, in
-                   qa/scores.db (run_id v1.0.4-rc1-fa97b34). PASS: native_gate(signal), arc, no_give_up,
-                   behavioral GREEN, palette. FAIL: cross_persona_sat 4.8(need 7); zero_critical (the 4
-                   "criticals" = ONE root: active-PC silent-switch #735, 4/5 personas); story 3.9(need
-                   4.3); mechanical 3.2(need 4.5; one-duo sampling-understated); ui_audit (STALE fa97b34
-                   snapshot, pre the v1.0.2 axe-0 merges — re-proof on a104f1e likely PASS); image_render
-                   0% (VM-gateway gap, Mac authoritative). Superseded f5500ac(2.7) + da05101. NB: caught+
-                   fixed #728, a #723 regression that crashed EVERY rollup — CI gap #729 let it ship.
+                   v1.0.4-rc2 RRI = 2.7/10 (3/11) @`c92a393` (run_id v1.0.4-rc2-c92a393, ruler
+                   sc_df34ecd02b4f — CROSS-RULER vs rc1's sc_5ac7a1d9103c because #739 changed
+                   assert_behavioral.py; the lens-fence #725 now prevents this class). The PRODUCT
+                   IMPROVED vs rc1: criticals 4→1 (the #735 keystone validated), sat 4.8→5.8,
+                   behavioral GREEN, 4/5 personas clean (adv/narr/vet sat=7, 0-crit). The RRI drop is
+                   two NON-product effects: -1 native_gate (Mac handoff skipped — disk) and -1
+                   no_give_up (newbie mid-stream stall #745; fixed post-sweep by #746 + the #761
+                   budget-aware ceiling). ui_audit FAIL = launcher-vs-empty-auditstate + merchant
+                   placeholders (axe NEVER ran on the VM — misattribution corrected in #760; the
+                   auditstate is now seeded + axe is Mac-lane per #762/#764). rc1 (3.6 @fa97b34)
+                   remains the prior row. NEXT MEASURE = rc3 @a245a2c with the FULL evidence stack.
      LAST BUILT-APP PLAY PROOF:
                    Last built-app handoff proof is `da05101`
                    (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`):
@@ -64,16 +71,18 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Execute the v1.0.4 Player-Ready-Beta plan — 3 gate-flip sprints → RRI 10/10, all
-                   gaps tracked under milestone v1.0.4 (#27). Sprint 1 (reliability/cheap-gates): #735
-                   active-PC silent-switch (THE zero_critical root, 4/5 personas), #731 XSS, #732
-                   chronicle-leak, #623 DM-hang + heartbeat, #624 subclass, #306 + ui_audit re-proof on
-                   a104f1e (likely stale-PASS), #721, #353. Sprint 2: sat→7 (latency telemetry +
-                   display-only screen wiring #602/#604/#607 + #358). Sprint 3: story 4.3 / mech 4.5
-                   (companion-system depth #612-616/#593 + engine-audit #733/#696). VELOCITY: #729 (CI
-                   gate qa/ tests), `qa/cut_rc.sh` one-command RC harness, support_vm_preflight (#730).
-                   Provider parity (#696/#701) is vNext — Opus is the Beta DM. Do NOT tag v1.0.4 until a
-                   clean non-partial RRI 10/10. Drive sprints as ultracode workflows + verify on a build.
+     NEXT ACTION:  Run rc3 @`a245a2c` with the FULL evidence stack: Mac part-A handoff
+                   (`CODEX_HOME=~/.codex-worldos-qa python3 qa/app_handoff_gate.py ...`, disk OK) +
+                   VM part-B sweep (sweep_v2.sh now runs support-preflight inline, cleans persona
+                   state, seeds auditstate, no-axe) → rollup with `--handoff-json` +
+                   `--support-preflight-json` → add_run ruler-stamped on ONE branch (scores.db is a
+                   committed binary — single-writer). EXPECT: zero_critical + no_give_up flip (the
+                   #745 stall fix + #761 ceiling get their product re-proof), native_gate + image_render
+                   credited (the #762 evidence paths). Then SPRINT 2 (audit-rescoped, task #30): sat→7
+                   = Rest&Prepare #610/#617, item-stats #756, spellbook pool #754, chronicle a11y #752,
+                   #358 launcher, #721 bind-hero, latency budget #753. Sprint 3: story 4.3 / mech 4.5
+                   (companion depth #612-616/#593; mech-gate redesign — combat-coverage floor).
+                   Provider parity stays vNext. Do NOT tag v1.0.4 until a clean non-partial RRI 10/10.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
