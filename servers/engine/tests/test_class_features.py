@@ -131,3 +131,54 @@ def test_build_options_exposes_subclass_choice_at_subclass_level(cid):
     names = {o["name"] for o in sub["options"]}
     assert "Evoker" in names
     assert all(o.get("desc") for o in sub["options"])
+
+
+# ── #624 backfill (rc2 audit): a MISSED subclass choice is offered at the NEXT
+# level-up — an L5 wizard with no Arcane Tradition (the pendingSubclass case) must
+# still get the options block, not the free-text fallback. ──────────────────────
+
+
+def test_build_options_backfills_missed_subclass_choice(cid):
+    # An L5 wizard with NO subclass set (already PAST the choice level) leveling to
+    # L6 must still get the subclass options block — a missed choice is offered at
+    # the next level-up (5e table-rules common practice).
+    wid = server.create_character(
+        cid, "Vex", kind="player", class_name="Wizard", level=5,
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, wid)
+    wiz_opt = next(o for o in planner["options"] if o["class_name"] == "wizard")
+    sub = wiz_opt.get("subclass")
+    assert sub and sub["required"] is True
+    names = {o["name"] for o in sub["options"]}
+    assert "Evoker" in names
+    assert all(o.get("desc") for o in sub["options"])
+
+
+def test_build_options_no_subclass_block_past_level_when_already_chosen(cid):
+    # An L5 wizard who ALREADY has a tradition gets NO subclass block past the
+    # choice level — the choice is not re-offered (unchanged behavior).
+    wid = server.create_character(
+        cid, "Gale", kind="player", class_name="Wizard", level=5, subclass="Evoker",
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, wid)
+    wiz_opt = next(o for o in planner["options"] if o["class_name"] == "wizard")
+    assert wiz_opt.get("subclass") is None
+
+
+def test_level_up_backfill_applies_choice_level_features(cid):
+    # Choosing the subclass on the backfill path (L5 wizard, no subclass, leveling
+    # to L6 with subclass named) still grants the CHOICE-LEVEL features — the
+    # missed L3 set (Evocation Savant + Sculpt Spells), not nothing.
+    wid = server.create_character(
+        cid, "Vex", kind="player", class_name="Wizard", level=5,
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.level_up(cid, wid, "Wizard", subclass="Evocation")  # -> level 6
+    assert out["classes"][0]["subclass"] == "Evoker"  # normalized to canonical SRD name
+    gained = {f["name"] for f in out["_features_gained"]}
+    assert "Evocation Savant" in gained and "Sculpt Spells" in gained
+    sheet = server.get_character(cid, wid)
+    assert "Evocation Savant" in sheet["features"]
+    assert "Sculpt Spells" in sheet["features"]
