@@ -238,12 +238,23 @@ const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard b
 // CLEARS pending to null (a plain re-enabled bar, NO "Try again", the partial narration stranded). That is
 // the ~12–15-min lockout the newbie gave up on. This ceiling bounds TOTAL stall from submit regardless of
 // how many partials trickle in (progress does not reset it), and resolves to the SAME recoverable `stuck`
-// state (the bar re-opens as "Try again"). It is generous enough to clear a worst-case HEALTHY beat (which
-// RESOLVES on /chat → clearPending cancels every timer long before this fires), so it never false-positives
-// on a slow-but-alive turn; it only ever fires on a genuine freeze. Strictly between the position windows
-// and the 12-min null-backstop, so the ordering is: position recovery (resettable) < stuck-backstop (hard,
-// recoverable) < null-backstop (hard, last-resort clear).
-const PENDING_STUCK_BACKSTOP_MS = 5 * 60 * 1000;  // #745: hard stuck ceiling from submit (progress does NOT reset it).
+// state (the bar re-opens as "Try again"). It must be generous enough to clear a worst-case HEALTHY beat
+// (which RESOLVES on /chat → clearPending cancels every timer long before this fires), so it never
+// false-positives on a slow-but-alive turn; it only ever fires on a genuine freeze. Strictly between the
+// position windows and the 12-min null-backstop, so the ordering is: position recovery (resettable) <
+// stuck-backstop (hard, recoverable) < null-backstop (hard, last-resort clear).
+// #746: the ceiling is BUDGET-AWARE by turn position, because the original flat 5-min value sat BELOW the
+// system's own healthy turn budgets and false-fired `stuck` on healthy slow turns: the cold open measures
+// ~300s with a 400–500s deadline (qa/lib_beat_driver.sh clawdnd_dm_timeout — 500s for Opus), and a healthy
+// CONTINUING beat can legitimately run ~400s (scripts/play.sh CLAWDND_BEAT_TIMEOUT=200s + ONE retry). When
+// the flat ceiling fired mid-flight on a working turn, pendingActive flipped false (the action bar
+// re-opened, screen-table.jsx), the "DM seems stuck" toast fired, and retryStuck re-POSTed the move — so
+// the SAME intent resolved TWICE once the in-flight beat landed. The fix: firstBeat (the cold open) ⇒
+// 9 min (≥ the 500s cold-open budget); later beats ⇒ 7 min (≥ the ~400s timeout+retry budget). Both stay
+// strictly under the 12-min null-backstop, preserving the #745 ordering above — a genuine
+// trickle-then-freeze still surfaces the recoverable `stuck` affordance well before the silent null clear.
+const PENDING_STUCK_BACKSTOP_MS = 7 * 60 * 1000;        // #745/#746: later-beat hard stuck ceiling from submit (progress does NOT reset it).
+const PENDING_STUCK_BACKSTOP_FIRST_MS = 9 * 60 * 1000;  // #746: first-beat (cold-open) hard stuck ceiling — clears the 400–500s cold-open budget.
 // #648: a JUST-armed narrating turn is protected from a SPURIOUS same-tick clear (the immediate
 // post-armPending surface poll, a /chat cursor-reset re-reading the prior resolved turn's line as a
 // fresh resolution, or a transient campaignId flip tripping the per-run reset) for this long — so the
@@ -258,6 +269,12 @@ const PENDING_ARM_GRACE_MS = 10 * 1000;
 // the hook's internal beat counter. firstBeat ⇒ the longer cold-open window; else the snappy one.
 function recoveryWindowMs(firstBeat) {
   return firstBeat ? PENDING_RECOVERY_FIRST_MS : PENDING_RECOVERY_MS;
+}
+// #746: the hard stuck-backstop ceiling by turn position, mirroring recoveryWindowMs — the single
+// source of truth armPending arms. Pure + exported (window.stuckBackstopMs below) so the
+// budget-aware ceiling contract is unit-testable without reaching into the hook's internals.
+function stuckBackstopMs(firstBeat) {
+  return firstBeat ? PENDING_STUCK_BACKSTOP_FIRST_MS : PENDING_STUCK_BACKSTOP_MS;
 }
 
 // #402: BOUND the live tail. `chatBeats` (every streamed/turn-end DM narration + dialogue beat) and
@@ -456,9 +473,13 @@ function useLiveSession(state) {
     // null-backstop (which strands the partial narration behind a plain re-enabled bar). It is generous
     // enough that a healthy turn always RESOLVES (clearPending → clearTimers) first, so it never trips a
     // slow-but-alive beat. Fires only when nothing has resolved by its deadline.
+    // #746: the ceiling is budget-aware by turn position (stuckBackstopMs): the cold open gets 9 min
+    // (its healthy budget is 400–500s), later beats 7 min (a healthy timeout+retry beat runs ~400s) —
+    // a flat 5 min sat INSIDE those budgets and false-fired on healthy slow turns (bar re-opened +
+    // "DM seems stuck" toast + retryStuck double-resolution while the beat was still in flight).
     stuckBackstopTimer.current = window.setTimeout(() => {
       setPendingState((p) => (p ? { ...p, stuck: true } : p));
-    }, PENDING_STUCK_BACKSTOP_MS);
+    }, stuckBackstopMs(firstBeat));
     backstopTimer.current = window.setTimeout(() => setPendingState(null), PENDING_BACKSTOP_MS);
   }, [clearTimers, setPendingState]);
 
@@ -727,12 +748,14 @@ window.useLiveSession = useLiveSession;
 // #348: expose the recovery-timing contract for tests (and devtools introspection). Purely
 // additive — nothing in the running app reads these off window; the hook uses the locals above.
 window.recoveryWindowMs = recoveryWindowMs;
+window.stuckBackstopMs = stuckBackstopMs;  // #746: the budget-aware hard-ceiling selector (pure)
 window.__PENDING_TIMING__ = {
   recoveryMs: PENDING_RECOVERY_MS,
   recoveryFirstMs: PENDING_RECOVERY_FIRST_MS,
   backstopMs: PENDING_BACKSTOP_MS,
   armGraceMs: PENDING_ARM_GRACE_MS,            // #648: the just-armed-turn protection window
-  stuckBackstopMs: PENDING_STUCK_BACKSTOP_MS,  // #745: hard stuck ceiling from submit (progress does NOT reset it)
+  stuckBackstopMs: PENDING_STUCK_BACKSTOP_MS,  // #745/#746: later-beat hard stuck ceiling from submit (progress does NOT reset it)
+  stuckBackstopFirstMs: PENDING_STUCK_BACKSTOP_FIRST_MS,  // #746: first-beat (cold-open) hard stuck ceiling
 };
 // #402: expose the live-tail bound for tests/devtools introspection (purely additive — the hook
 // closes over the consts directly; nothing in the running app reads these off window).
