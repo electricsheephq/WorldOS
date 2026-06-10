@@ -47,20 +47,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-# Sibling helper (qa/scoring_config_version.py): the content hash of the scoring RULER (rubrics +
-# schemas + gates). Stamped on every scored run so a number is always tagged with which ruler
-# produced it — the fix for "we used to hit 4.5, now 3.6" (different rulers, silently compared).
+# Sibling helper (qa/scoring_config_version.py): the content hashes of the scoring RULERS — the
+# FULL ruler (rubrics + schemas + gates incl. RRI; ``sc_…``) and the LENS ruler (the 8 files that
+# produce the lens numbers; ``lc_…``, #725). Stamped on every scored run so a number is always
+# tagged with which ruler produced it — the fix for "we used to hit 4.5, now 3.6".
 try:
-    from scoring_config_version import scoring_config_version, scoring_config_label
+    from scoring_config_version import scoring_config_version, scoring_config_label, lens_config_version
 except ImportError:  # imported from a different cwd / as a package
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from scoring_config_version import scoring_config_version, scoring_config_label
+    from scoring_config_version import scoring_config_version, scoring_config_label, lens_config_version
 
 # ---------------------------------------------------------------------------
 # Locations
@@ -85,9 +87,12 @@ COLUMNS: tuple[str, ...] = (
     "scorer_model",       # model that produced the lens scores (claude / gpt-5.4 / derived)
     "methodology",        # free text, e.g. "3-lens duo 8-beat", "5-persona part-B", "handoff smoke"
     # --- comparability provenance (the missing stamps that broke cross-time comparison) ---
-    "scoring_config_version",  # content hash of the scoring RULER (rubrics+schemas+gates); see
-                               # qa/scoring_config_version.py. Two runs are a comparable QUALITY
-                               # TREND only when this matches — across versions it's a re-baseline.
+    "scoring_config_version",  # content hash of the FULL scoring RULER (rubrics+schemas+gates incl.
+                               # RRI); see qa/scoring_config_version.py. Fences the RRI trend.
+    "lens_config_version",     # content hash of the LENS ruler (#725): the 8 files that produce the
+                               # story/mech/angry numbers (full ruler minus release_readiness.py).
+                               # Fences the engine-duo quality trend. NULL on rows recorded before
+                               # lens stamping (compare falls back to scoring_config_version).
     "rubric_label",       # human label for the ruler, e.g. "ruler@sc_a1b2c3d4e5f6 (9/9 files)"
     "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
@@ -175,13 +180,32 @@ def add_run(
     if fields.get("ts") is None:
         fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # Auto-stamp the scoring RULER unless the caller pinned it, so no scored run is ever recorded
+    # Auto-stamp the scoring RULERS unless the caller pinned them, so no scored run is ever recorded
     # without the ruler that produced it (the comparability fix). When BACKFILLING an old re-scored
-    # transcript, pass scoring_config_version/rubric_label explicitly to record the ruler used THEN.
+    # transcript, pass scoring_config_version/rubric_label explicitly to record the ruler used THEN —
+    # in that pinned case the LENS stamp is left NULL unless also pinned (stamping TODAY's lens hash
+    # onto an old run would itself be a false claim; compare_rc falls back to the full ruler).
     if fields.get("scoring_config_version") is None:
         fields["scoring_config_version"] = scoring_config_version()
+        if fields.get("lens_config_version") is None:
+            fields["lens_config_version"] = lens_config_version()
     if fields.get("rubric_label") is None:
         fields["rubric_label"] = scoring_config_label()
+
+    # Notes/stamp consistency guard (the v1.0.4-rc2 'apples-to-apples' false-claim class): a ruler
+    # hash CITED in the notes must equal the hash STAMPED on the row. To reference another run's
+    # ruler, name the run_id ("rc1's ruler differs") instead of pasting its hash.
+    notes = fields.get("notes")
+    if notes:
+        for pattern, col in ((r"\bsc_[0-9a-f]{12}\b", "scoring_config_version"),
+                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version")):
+            mismatched = sorted({h for h in re.findall(pattern, notes) if h != fields.get(col)})
+            if mismatched:
+                raise ValueError(
+                    f"notes cite ruler hash(es) {mismatched} but the row's {col} is "
+                    f"{fields.get(col)!r} — a notes claim must match the stamp (to reference "
+                    f"another run's ruler, cite its run_id, not its hash)"
+                )
 
     # JSON-encode structured per-persona payloads.
     ppj = fields.get("per_persona_json")
@@ -243,6 +267,7 @@ _MD_COLS = [
     ("actor_model", "Actor model"),
     ("scorer_model", "Scorer"),
     ("scoring_config_version", "Ruler"),
+    ("lens_config_version", "Lens ruler"),
     ("rc_label", "RC"),
     ("methodology", "Methodology"),
     ("story_overall", "Story"),
@@ -281,12 +306,15 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
     )
     out.append("")
     out.append(
-        "> **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files). "
-        "Rows under DIFFERENT Ruler values are **NOT directly comparable as a quality trend** — the "
-        "ruler changed (a rubric recalibration or a new gate moves the number with no change in play "
-        "quality). Use `python3 qa/scores_db.py --compare` for a ruler-fenced trend; comparing across "
-        "rulers requires re-scoring an archived transcript under the current ruler. **RC** = the "
-        "release candidate a run scored (e.g. `v1.0.4-rc1`)."
+        "> **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files, "
+        "RRI gate included). **Lens ruler** = `lens_config_version` (the 8 files that produce the "
+        "story/mech/angry LENS numbers — full ruler minus `release_readiness.py`; blank = recorded "
+        "before lens stamping, #725). Rows under DIFFERENT Ruler values are **NOT directly comparable "
+        "as a quality trend** — the ruler changed (a rubric recalibration or a new gate moves the "
+        "number with no change in play quality). Use `python3 qa/scores_db.py --compare` for a "
+        "lens-fenced engine-duo trend (add `--compare-rc-surface` for the GUI-built-app RC blocks); "
+        "comparing across rulers requires re-scoring an archived transcript under the current ruler. "
+        "**RC** = the release candidate a run scored (e.g. `v1.0.4-rc1`)."
     )
     out.append("")
     out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
@@ -312,26 +340,35 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
     return text
 
 
-def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None) -> str:
-    """The release-candidate quality view: engine-duo lens/RRI scores, FENCED by scoring ruler so
-    numbers are only lined up when they're actually comparable. This resolves the "we used to hit
+def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None,
+               include_rc_surface: bool = False) -> str:
+    """The release-candidate quality view: engine-duo lens scores, FENCED by the LENS ruler (#725)
+    so numbers are only lined up when they're actually comparable. This resolves the "we used to hit
     4.5, now 3.6" confusion — rows scored under different rulers (a rubric recalibration or an added
-    gate) appear in separate blocks (a re-baseline, not a trend). With ``rc`` set, restrict to runs
-    that scored that release candidate (e.g. ``v1.0.4-rc1``)."""
-    rows = [r for r in fetch_rows(db_path) if r.get("surface") == "engine-duo"]
+    gate) appear in separate blocks (a re-baseline, not a trend). The lens trend fences on
+    ``lens_config_version`` (the 8 files that PRODUCE the lens numbers — an RRI-gate-only edit no
+    longer false-fences it), falling back to the full ``scoring_config_version`` for rows recorded
+    before lens stamping (conservative: may split more than needed, never falsely merges). With
+    ``rc`` set, restrict to runs that scored that release candidate (e.g. ``v1.0.4-rc1``). With
+    ``include_rc_surface``, append the GUI-built-app RC rows (the RRI sweeps) as their OWN blocks,
+    fenced on the FULL ruler — the RRI is produced by release_readiness.py, which IS in that ruler."""
+    all_rows = fetch_rows(db_path)
+    rows = [r for r in all_rows if r.get("surface") == "engine-duo"]
     if rc:
         rows = [r for r in rows if (r.get("rc_label") or "") == rc]
     groups: dict[str, list] = {}
     order: list[str] = []
     for r in rows:
-        key = r.get("scoring_config_version") or "(unstamped — pre-versioning)"
+        key = (r.get("lens_config_version") or r.get("scoring_config_version")
+               or "(unstamped — pre-versioning)")
         if key not in groups:
             groups[key] = []
             order.append(key)
         groups[key].append(r)
 
-    cur = scoring_config_version()
-    out = ["WorldOS quality trend — surface=engine-duo, FENCED by scoring ruler.",
+    cur_lens = lens_config_version()
+    cur_full = scoring_config_version()
+    out = ["WorldOS quality trend — surface=engine-duo, FENCED by LENS ruler (lc_…; sc_/unstamped = pre-lens fallback).",
            "Only compare numbers WITHIN a block; across blocks the ruler changed."]
     if rc:
         out.append(f"release candidate filter: {rc}")
@@ -343,7 +380,7 @@ def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None) -> str:
 
     for key in order:
         grp = groups[key]
-        tag = "   <<< CURRENT ruler" if key == cur else ""
+        tag = "   <<< CURRENT ruler" if key in (cur_lens, cur_full) else ""
         out.append(f"=== ruler {key}{tag}  ({len(grp)} run(s)) ===")
         out.append(f"  {'rc / build':<24}{'dm_model':<16}{'story':>6}{'mech':>6}{'angry':>6}{'beh':>5}{'rri':>5}")
         for r in reversed(grp):  # fetch_rows is newest-first → chronological
@@ -354,10 +391,41 @@ def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None) -> str:
                 f"{str(r.get('behavioral') or '')[:4]:>5}{_g(r,'rri'):>5}"
             )
         out.append("")
-    if len([k for k in order]) > 1:
+    if len(order) > 1:
         out += ["NOTE: the blocks above used DIFFERENT rulers — a number in one block is NOT directly",
                 "comparable to one in another. To anchor across rulers, re-score an archived transcript",
-                "under the current ruler (qa/score.sh is generic over <transcript> <state> <rubric> <schema>)."]
+                "under the current ruler (qa/score.sh is generic over <transcript> <state> <rubric> <schema>).",
+                ""]
+
+    if include_rc_surface:
+        rc_rows = [r for r in all_rows if r.get("surface") == "GUI-built-app"]
+        if rc:
+            rc_rows = [r for r in rc_rows if (r.get("rc_label") or "") == rc]
+        rc_groups: dict[str, list] = {}
+        rc_order: list[str] = []
+        for r in rc_rows:
+            key = r.get("scoring_config_version") or "(unstamped — pre-versioning)"
+            if key not in rc_groups:
+                rc_groups[key] = []
+                rc_order.append(key)
+            rc_groups[key].append(r)
+        out += ["RC surface (GUI-built-app) — RRI/sat trend, FENCED by the FULL scoring ruler",
+                "(release_readiness.py included; an RRI-gate edit IS a new ruler here).", ""]
+        for key in rc_order:
+            grp = rc_groups[key]
+            tag = "   <<< CURRENT ruler" if key == cur_full else ""
+            out.append(f"--- rc-surface ruler {key}{tag}  ({len(grp)} run(s)) ---")
+            out.append(f"  {'rc / build':<24}{'dm_model':<16}{'rri':>6}{'sat':>6}{'crit':>6}{'beh':>6}{'pass':>6}")
+            for r in reversed(grp):
+                lbl = r.get("rc_label") or str(r.get("build_sha") or "?")
+                pv = r.get("pass")
+                out.append(
+                    f"  {str(lbl)[:23]:<24}{str(r.get('dm_model') or '')[:15]:<16}"
+                    f"{_g(r,'rri'):>6}{_g(r,'cross_persona_sat'):>6}{_g(r,'critical_bugs'):>6}"
+                    f"{str(r.get('behavioral') or '')[:5]:>6}"
+                    f"{('' if pv is None else ('PASS' if int(pv) else 'FAIL')):>6}"
+                )
+            out.append("")
     return "\n".join(out)
 
 
@@ -372,9 +440,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--list", action="store_true", help="print rows (newest first) as JSON")
     p.add_argument("--add", action="store_true", help="append one run from the --field flags below")
     p.add_argument("--compare", action="store_true",
-                   help="print the engine-duo quality trend, FENCED by scoring ruler (the honest rc1-vs-rc2-vs-4.5-era view)")
+                   help="print the engine-duo quality trend, FENCED by LENS ruler (the honest rc1-vs-rc2-vs-4.5-era view)")
     p.add_argument("--rc", default=None,
                    help="with --compare: restrict to runs that scored this release candidate (e.g. v1.0.4-rc1)")
+    p.add_argument("--compare-rc-surface", action="store_true",
+                   help="with --compare: also show GUI-built-app RC rows (RRI sweeps) in their own "
+                        "blocks, fenced on the FULL scoring ruler")
     p.add_argument("--run-id")
     for col in COLUMNS:
         p.add_argument(f"--{col.replace('_', '-')}", dest=col, default=None)
@@ -411,7 +482,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"rendered {MD_PATH} ({len(fetch_rows(db))} rows)")
 
     if args.compare:
-        print(compare_rc(db, rc=args.rc))
+        print(compare_rc(db, rc=args.rc, include_rc_surface=args.compare_rc_surface))
 
     if not any([args.init, args.add, args.list, args.render, args.compare]):
         _build_parser().print_help()
