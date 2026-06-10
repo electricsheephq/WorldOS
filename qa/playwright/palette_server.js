@@ -196,6 +196,12 @@ async function ensurePage() {
     const url = resp.url();
     const method = resp.request().method();
     const rec = { ts: nowIso(), url, status, method };
+    // Additive (audit F11-1b): the viewer's /image responses class their outcome via
+    // X-Image-Outcome (served|no-art|placeholder|error). Record it so scoring can
+    // exclude DESIGNED no-art/placeholder 404s from the render-rate denominator.
+    // Header absent (older viewer) => field absent => today's status-code behavior.
+    const imageOutcome = (resp.headers() || {})["x-image-outcome"];
+    if (imageOutcome) rec.image_outcome = imageOutcome;
     appendLine(NETWORK, rec);
     // The viewer 404s a missing /image?scope=... ON PURPOSE — it's graceful degradation
     // (the UI shows a silhouette/placeholder). On a fresh run with no cached art that fires
