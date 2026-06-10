@@ -13,10 +13,20 @@ directly comparable as a QUALITY TREND only when their `scoring_config_version` 
 versions the comparison is a deliberate re-baseline, never a silent trend. The hash is impossible
 to forget — any edit to a rubric anchor, a schema, or a gate changes it automatically.
 
+There are TWO rulers (issue #725):
+  * the FULL scoring ruler (``scoring_config_version`` → ``sc_…``) — everything above INCLUDING
+    ``release_readiness.py`` (the 11-gate RRI). Fences the RRI trend.
+  * the LENS ruler (``lens_config_version`` → ``lc_…``) — only the 8 files that produce the
+    story/mech/angry LENS numbers (rubrics + schemas + the behavioral gate). Fences the
+    engine-duo quality trend. Without this split, an RRI-gate-only edit (like #723/#728)
+    re-versions the full ruler and FALSELY fences the lens trend even though the rubrics that
+    produced those numbers never changed.
+
 CLI:
-  python3 qa/scoring_config_version.py            # print the current hash
+  python3 qa/scoring_config_version.py            # print the current FULL ruler hash
+  python3 qa/scoring_config_version.py --lens     # print the current LENS ruler hash
   python3 qa/scoring_config_version.py --label    # print a human label + the hash
-  python3 qa/scoring_config_version.py --files     # list the files that define the ruler
+  python3 qa/scoring_config_version.py --files     # list the files that define the full ruler
 """
 from __future__ import annotations
 
@@ -42,18 +52,37 @@ SCORING_CONFIG_FILES: list[str] = [
     "release_readiness.py",         # the 11-gate RRI
 ]
 
+# The LENS ruler (#725): exactly the files that produce the story/mech/angry LENS numbers —
+# SCORING_CONFIG_FILES minus release_readiness.py. The RRI gate does not touch what a lens
+# number MEANS, so an RRI-only edit must not re-fence the engine-duo quality trend.
+LENS_CONFIG_FILES: list[str] = [n for n in SCORING_CONFIG_FILES if n != "release_readiness.py"]
 
-def scoring_config_version(qa_dir: Path | None = None) -> str:
-    """Return a stable short hash (``sc_xxxxxxxxxxxx``) of the scoring ruler's contents."""
+
+def _content_hash(files: list[str], prefix: str, qa_dir: Path | None = None) -> str:
+    """Order-stable sha256 over (name, content) pairs; absent files hash as a sentinel."""
     root = qa_dir or _QA_DIR
     h = hashlib.sha256()
-    for name in sorted(SCORING_CONFIG_FILES):
+    for name in sorted(files):
         p = root / name
         h.update(name.encode("utf-8"))
         h.update(b"\0")
         h.update(p.read_bytes() if p.is_file() else b"<absent>")
         h.update(b"\0")
-    return "sc_" + h.hexdigest()[:12]
+    return prefix + h.hexdigest()[:12]
+
+
+def scoring_config_version(qa_dir: Path | None = None) -> str:
+    """Return a stable short hash (``sc_xxxxxxxxxxxx``) of the FULL scoring ruler's contents."""
+    return _content_hash(SCORING_CONFIG_FILES, "sc_", qa_dir)
+
+
+def lens_config_version(qa_dir: Path | None = None) -> str:
+    """Return a stable short hash (``lc_xxxxxxxxxxxx``) of the LENS ruler's contents (#725).
+
+    Distinct ``lc_`` prefix so a lens hash can never be mistaken for (or checked against) a
+    full-ruler ``sc_`` hash — the two namespaces are guarded separately in scores_db.add_run.
+    """
+    return _content_hash(LENS_CONFIG_FILES, "lc_", qa_dir)
 
 
 def scoring_config_label(qa_dir: Path | None = None) -> str:
@@ -69,5 +98,7 @@ if __name__ == "__main__":
             print(n)
     elif "--label" in sys.argv:
         print(scoring_config_label())
+    elif "--lens" in sys.argv:
+        print(lens_config_version())
     else:
         print(scoring_config_version())
