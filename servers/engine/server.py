@@ -5816,14 +5816,65 @@ def _apply_item_catalog(
     )
 
 
+def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[dict]:
+    """F09-5 stage 1 — TELL, don't enforce: report the mechanical consequences of
+    an equip/unequip so the DM can apply them through the existing writer paths.
+    The engine deliberately does NOT auto-write armor_class here: AC effects (e.g.
+    Mage Armor) flow through update_character today, and a silent equip-side write
+    would fight that path (stage 2 / #806 owns the AC-ownership design). Returns
+    None for items with no catalog mechanics (free-text gear) so the response stays
+    exactly the pre-existing payload."""
+    rec = itemcatalog.resolve(item_name)
+    if rec is None:
+        return None
+    current_ac, _ = _effective_armor_class(ch)
+    if rec.get("kind") == "armor" and rec.get("ac"):
+        cat_ac = int(rec["ac"])
+        if "shield" in rec["name"].lower():
+            # The SRD flattens a shield's ac_base as 2 — it is a +2 bonus on top
+            # of the wearer's AC, not a base AC of 2.
+            suggested = current_ac + cat_ac if equipped else current_ac - cat_ac
+            basis = f"shield {'+' if equipped else '-'}{cat_ac}"
+        elif equipped:
+            suggested = cat_ac
+            basis = f"base AC {cat_ac}; apply the armor's DEX-mod rule on top"
+        else:
+            suggested = 10 + ch.ability_modifier(Ability.DEX)
+            basis = "unarmored baseline 10 + DEX"
+        return {
+            "applied": False,
+            "current_ac": current_ac,
+            "suggested_ac": suggested,
+            "ac_delta": suggested - current_ac,
+            "note": (
+                f"AC does not change on its own ({basis}): call "
+                f"update_character(armor_class={suggested}) to apply it"
+            ),
+        }
+    if rec.get("damage"):
+        return {
+            "applied": False,
+            "damage": rec["damage"],
+            "damage_type": rec.get("damage_type", ""),
+            "note": (
+                "weapon stats are not auto-applied: pass damage_dice="
+                f"{rec['damage']!r} (plus ability/magic bonuses) and the matching "
+                "attack_bonus to attack()"
+            ),
+        }
+    return None
+
+
 @mcp.tool()
 def lookup_item(name: str) -> dict:
     """Look up a single SRD item by name (case-insensitive) in the bundled
     ~960-item catalog (magic items, weapons, armor, gear, potions, etc.). Returns
     the flattened record — {name, kind, rarity, requires_attunement, weight, cost,
     description, properties} plus damage/damage_type for weapons and ac for armor —
-    or {"error", "suggestions"} on a miss. Use this (then add_item with
-    item_name=...) to grant a REAL item instead of free-texting it."""
+    or {"error", "suggestions"} on a miss. `cost` is the listed price in gp, or
+    null when the SRD lists no price (every magic item) — null means the DM sets
+    the price, NOT that it is free. Use this (then add_item with item_name=...)
+    to grant a REAL item instead of free-texting it."""
     rec = itemcatalog.resolve(name)
     if rec is None:
         return {"error": f"no item named {name!r} in the SRD catalog",
@@ -5880,13 +5931,22 @@ def remove_item(campaign_id: str, character_id: str, name: str, quantity: int = 
 
 @mcp.tool()
 def equip_item(campaign_id: str, character_id: str, name: str, equipped: bool = True) -> dict:
-    """Equip an item (or unequip with equipped=False)."""
+    """Equip an item (or unequip with equipped=False). Equipping is ADVISORY for
+    mechanics: for catalog-recognized armor/shields/weapons the response carries a
+    `mechanics` block ({suggested_ac, ac_delta, note} or {damage, damage_type,
+    note}) — the engine does NOT change armor_class or attacks on its own, so
+    apply the AC via update_character(armor_class=...) and pass weapon stats to
+    attack()."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         it = inventory.set_equipped(ch, name, equipped)
         save_campaign(c)
-        return it.model_dump()
+        out = it.model_dump()
+        mech = _equip_mechanics(ch, it.name, equipped)
+        if mech is not None:
+            out["mechanics"] = mech
+        return out
 
 
 @mcp.tool()
@@ -5918,42 +5978,72 @@ def buy_item(
     campaign_id: str, character_id: str, name: str = "", cost_gp: float = -1.0, quantity: int = 1,
     weight: float = 0.0, requires_attunement: Optional[bool] = None, description: str = "", item_name: str = "",
 ) -> dict:
-    """Buy an item: pay cost_gp (making change from the purse) and add it to inventory.
-    Raises if the character can't afford it.
+    """Buy an item: pay cost_gp PER UNIT x quantity (making change from the purse)
+    and add it to inventory. Raises if the character can't afford the total.
 
     Pass `item_name` to buy a REAL SRD item by name: name, weight, attunement, a
     rich description, AND the catalog price are filled from the bundled catalog
     (leave `cost_gp` unset to charge the SRD price, or pass `cost_gp` to override —
-    e.g. a haggled or marked-up price). Omit `item_name` for the original free-text
-    path (then `name` and `cost_gp` are required)."""
+    e.g. a haggled or marked-up price). Items with NO listed SRD price (every magic
+    item) require an explicit cost_gp — the DM sets the price (cost_gp=0 only for a
+    deliberate free grant; or just use add_item). Omit `item_name` for the original
+    free-text path (then `name` and `cost_gp` are required).
+
+    Returns the updated purse + inventory plus {unit_cost_gp, total_cost_gp}."""
     name, weight, requires_attunement, description, rec = _apply_item_catalog(
         item_name, name, weight, requires_attunement, description
     )
     if cost_gp < 0:  # sentinel: caller didn't state a price
-        cost_gp = rec.get("cost", 0.0) if rec else -1.0
-        if cost_gp < 0:
+        catalog_cost = rec.get("cost") if rec else None
+        if catalog_cost is None:
+            if rec is not None:  # resolved, but the SRD lists no price (F09-3: priceless != free)
+                raise ValueError(
+                    f"{rec['name']!r} has no listed price in the SRD catalog — pass an "
+                    "explicit cost_gp (the DM sets the price; cost_gp=0 only if deliberately free)"
+                )
             raise ValueError("buy_item needs cost_gp (or an item_name that resolves in the catalog)")
+        cost_gp = catalog_cost
     if not name:
         raise ValueError("buy_item needs a name (or an item_name that resolves in the catalog)")
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
+    total_cp = inventory.gp_to_cp(cost_gp) * int(quantity)  # F09-2: unit x qty, copper-exact
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        inventory.pay(ch, cost_gp)
+        inventory.pay_cp(ch, total_cp)
         inventory.add_item(ch, name, quantity, weight, requires_attunement, description)
         save_campaign(c)
-        return {"currency": ch.currency.model_dump(), "inventory": [i.model_dump() for i in ch.inventory]}
+        return {
+            "currency": ch.currency.model_dump(),
+            "inventory": [i.model_dump() for i in ch.inventory],
+            "unit_cost_gp": float(cost_gp),
+            "total_cost_gp": total_cp / 100,
+        }
 
 
 @mcp.tool()
 def sell_item(campaign_id: str, character_id: str, name: str, price_gp: float, quantity: int = 1) -> dict:
-    """Sell an item: remove it and add price_gp to the purse."""
+    """Sell an item: remove `quantity` of it and add price_gp PER UNIT x quantity
+    to the purse. Returns the updated purse + inventory plus {unit_price_gp,
+    total_price_gp}."""
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
+    if price_gp < 0:
+        raise ValueError("cannot gain a negative amount")
+    total_cp = inventory.gp_to_cp(price_gp) * int(quantity)  # F09-2 mirror: unit x qty
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         inventory.remove_item(ch, name, quantity)
-        inventory.gain(ch, price_gp)
+        inventory.gain_cp(ch, total_cp)
         save_campaign(c)
-        return {"currency": ch.currency.model_dump(), "inventory": [i.model_dump() for i in ch.inventory]}
+        return {
+            "currency": ch.currency.model_dump(),
+            "inventory": [i.model_dump() for i in ch.inventory],
+            "unit_price_gp": float(price_gp),
+            "total_price_gp": total_cp / 100,
+        }
 
 
 @mcp.tool()

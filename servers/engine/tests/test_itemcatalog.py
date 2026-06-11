@@ -71,7 +71,11 @@ def test_flattened_record_shape():
         assert key in rec, key
     assert isinstance(rec["properties"], list)
     assert isinstance(rec["requires_attunement"], bool)
-    assert isinstance(rec["weight"], float) and isinstance(rec["cost"], float)
+    assert isinstance(rec["weight"], float)
+    # cost is TRI-STATE (F09-3): None = no listed price (every magic item);
+    # a priced item carries a float.
+    assert rec["cost"] is None
+    assert isinstance(itemcatalog.resolve("Longsword")["cost"], float)
 
 
 def test_find_potion_returns_matches():
@@ -96,8 +100,22 @@ def test_resolve_unknown_returns_none_and_suggests():
 
 
 def test_resolve_loose_substring_when_unambiguous():
-    # surrounding whitespace + a unique substring still resolves
-    assert itemcatalog.resolve("  bag of holding  ")["name"] == "Bag of Holding"
+    # F09-1: a TRUE substring (not collapsing to the exact index key) + surrounding
+    # whitespace resolves via the fuzzy branch — this used to raise AttributeError
+    # ('dict' object has no attribute 'lower') on every unique-substring match.
+    assert itemcatalog.resolve("  bag of hold  ")["name"] == "Bag of Holding"
+
+
+def test_resolve_unique_substring_returns_the_record():
+    # F09-1: the fuzzy branch returns the full catalog record, same shape as exact.
+    rec = itemcatalog.resolve("bag of hold")
+    assert rec is not None and rec["name"] == "Bag of Holding"
+    assert rec["kind"] == "wondrous"
+
+
+def test_resolve_ambiguous_substring_returns_none():
+    # 2+ matches stay ambiguous -> None (the caller offers find()/suggest()).
+    assert itemcatalog.resolve("potion of") is None
 
 
 def test_pack_precedence_srd_wins_and_pack_adds(tmp_path, monkeypatch):
@@ -289,3 +307,175 @@ def test_buy_item_freetext_path_unchanged(cid):
     out = server.buy_item(cid, "grett", "Torch", cost_gp=1)
     assert out["currency"]["gp"] == 19
     assert _item(out["inventory"], "Torch")["name"] == "Torch"
+
+
+def _cp_total(cur: dict) -> int:
+    return cur["cp"] + cur["sp"] * 10 + cur["ep"] * 50 + cur["gp"] * 100 + cur["pp"] * 1000
+
+
+# --- F09-1: fuzzy resolve through the tool path (the live-repro surface) -----
+
+
+def test_lookup_item_tool_fuzzy_substring_resolves():
+    # F09-1 live repro: the fuzzy lookup used to surface as a raw MCP tool error.
+    rec = server.lookup_item("bag of hold")
+    assert rec["name"] == "Bag of Holding" and "error" not in rec
+
+
+# --- F09-3: priceless != free --------------------------------------------------
+
+
+def test_unpriced_magic_item_cost_is_none():
+    # The SRD dump stores 0 / "0.00" for every magic item — that means "no listed
+    # price", not "free". Flatten emits None; a real price survives exactly.
+    assert itemcatalog.resolve("Bag of Holding")["cost"] is None
+    assert itemcatalog.resolve("Candle")["cost"] == 0.01  # sub-gp price preserved
+
+
+def test_no_catalog_item_flattens_to_zero_cost():
+    # Census guard (F09-3): nothing in the index is "free by accident" — every
+    # record either carries a positive price or None. The SRD split is exactly
+    # 760 unpriced (757 magic items + 3 unpriced mundane index entries) / 200 priced.
+    records = list(itemcatalog._index().values())
+    zero_or_negative = [r["name"] for r in records if r["cost"] is not None and r["cost"] <= 0]
+    assert zero_or_negative == []
+    assert sum(1 for r in records if r["cost"] is None) == 760
+
+
+def test_lookup_item_reports_unpriced_cost_as_null():
+    # lookup_item/find_items show cost: null honestly (LLM-read payload).
+    assert server.lookup_item("Bag of Holding")["cost"] is None
+    out = server.find_items("Bag of Holding", limit=1)
+    assert out["items"][0]["cost"] is None
+
+
+def test_buy_unpriced_item_requires_explicit_cost(cid):
+    server.adjust_currency(cid, "grett", gp=50)
+    before = server.get_character(cid, "grett")
+    with pytest.raises(ValueError, match="cost_gp"):
+        server.buy_item(cid, "grett", item_name="Bag of Holding")
+    # the error names the gap (the item with no listed price)
+    with pytest.raises(ValueError, match="no listed price"):
+        server.buy_item(cid, "grett", item_name="Bag of Holding")
+    # nothing persisted: purse unchanged, bag NOT granted
+    after = server.get_character(cid, "grett")
+    assert _cp_total(after["currency"]) == _cp_total(before["currency"])
+    assert all(i["name"] != "Bag of Holding" for i in after["inventory"])
+
+
+def test_buy_unpriced_item_with_explicit_cost_works(cid):
+    server.adjust_currency(cid, "grett", gp=500)
+    out = server.buy_item(cid, "grett", item_name="Bag of Holding", cost_gp=400)
+    assert out["currency"]["gp"] == 100
+    assert _item(out["inventory"], "Bag of Holding")
+
+
+def test_buy_item_explicit_zero_cost_is_a_deliberate_free_grant(cid):
+    # cost_gp=0 stays expressible as the DM's explicit choice (a gift/reward).
+    before = server.get_character(cid, "grett")
+    out = server.buy_item(cid, "grett", item_name="Bag of Holding", cost_gp=0)
+    assert _cp_total(out["currency"]) == _cp_total(before["currency"])
+    assert _item(out["inventory"], "Bag of Holding")
+
+
+# --- F09-2: unit price x quantity ---------------------------------------------
+
+
+def test_buy_item_charges_unit_price_times_quantity(cid):
+    server.adjust_currency(cid, "grett", gp=100)
+    out = server.buy_item(cid, "grett", item_name="Potion of Healing", quantity=2)
+    assert out["currency"]["gp"] == 0  # 100 - 50 x 2
+    assert out["unit_cost_gp"] == 50.0
+    assert out["total_cost_gp"] == 100.0
+    assert _item(out["inventory"], "Potion of Healing")["quantity"] == 2
+
+
+def test_buy_item_insufficient_for_total_raises_and_persists_nothing(cid):
+    server.adjust_currency(cid, "grett", gp=100)  # enough for 1 unit, not 5
+    before = server.get_character(cid, "grett")
+    with pytest.raises(ValueError, match="insufficient funds"):
+        server.buy_item(cid, "grett", item_name="Potion of Healing", quantity=5)
+    after = server.get_character(cid, "grett")
+    assert _cp_total(after["currency"]) == _cp_total(before["currency"])
+    assert after["inventory"] == before["inventory"]
+
+
+def test_buy_item_sub_cp_exact_for_fractional_prices(cid):
+    server.adjust_currency(cid, "grett", gp=1)
+    before = server.get_character(cid, "grett")
+    out = server.buy_item(cid, "grett", item_name="Candle", quantity=7)  # 0.01 gp each
+    assert _cp_total(before["currency"]) - _cp_total(out["currency"]) == 7  # exactly 7 cp
+    assert out["unit_cost_gp"] == 0.01
+    assert out["total_cost_gp"] == 0.07
+    assert _item(out["inventory"], "Candle")["quantity"] == 7
+
+
+def test_buy_item_rejects_non_positive_quantity(cid):
+    server.adjust_currency(cid, "grett", gp=10)
+    before = server.get_character(cid, "grett")
+    with pytest.raises(ValueError, match="quantity"):
+        server.buy_item(cid, "grett", "Torch", cost_gp=1, quantity=0)
+    after = server.get_character(cid, "grett")
+    assert _cp_total(after["currency"]) == _cp_total(before["currency"])
+
+
+def test_sell_item_credits_unit_price_times_quantity(cid):
+    server.add_item(cid, "grett", name="Pelt", quantity=3)
+    before = server.get_character(cid, "grett")
+    out = server.sell_item(cid, "grett", "Pelt", price_gp=0.5, quantity=3)
+    assert _cp_total(out["currency"]) - _cp_total(before["currency"]) == 150  # 0.5 gp x 3
+    assert out["unit_price_gp"] == 0.5
+    assert out["total_price_gp"] == 1.5
+    assert all(i["name"] != "Pelt" for i in out["inventory"])
+
+
+# --- F09-5 stage 1: equip TELLs the mechanical consequences --------------------
+
+
+def test_equip_catalog_armor_tells_suggested_ac(cid):
+    server.add_item(cid, "grett", item_name="Plate Armor")
+    out = server.equip_item(cid, "grett", "Plate Armor")
+    assert out["equipped"] is True
+    mech = out["mechanics"]
+    assert mech["applied"] is False  # stage 1 is TELL-only
+    assert mech["suggested_ac"] == 18
+    assert mech["ac_delta"] == 18 - mech["current_ac"]
+    assert "update_character(armor_class=18)" in mech["note"]
+    # the engine did NOT silently change AC (stage 2 / #806 owns enforcement)
+    assert server.get_character(cid, "grett")["armor_class"] == mech["current_ac"]
+
+
+def test_equip_shield_tells_plus_two_delta(cid):
+    server.add_item(cid, "grett", item_name="Shield")
+    out = server.equip_item(cid, "grett", "Shield")
+    mech = out["mechanics"]
+    assert mech["ac_delta"] == 2  # a shield is +2 ON TOP of current AC, not "AC 2"
+    assert mech["suggested_ac"] == mech["current_ac"] + 2
+    unequip = server.equip_item(cid, "grett", "Shield", equipped=False)
+    assert unequip["mechanics"]["ac_delta"] == -2
+
+
+def test_unequip_body_armor_suggests_unarmored_baseline(cid):
+    server.add_item(cid, "grett", item_name="Plate Armor")
+    server.equip_item(cid, "grett", "Plate Armor")
+    out = server.equip_item(cid, "grett", "Plate Armor", equipped=False)
+    sheet = server.get_character(cid, "grett")
+    dex_mod = (sheet["abilities"]["dexterity"] - 10) // 2
+    assert out["mechanics"]["suggested_ac"] == 10 + dex_mod
+
+
+def test_equip_catalog_weapon_tells_attack_implications(cid):
+    server.add_item(cid, "grett", item_name="Longsword")
+    out = server.equip_item(cid, "grett", "Longsword")
+    mech = out["mechanics"]
+    assert mech["applied"] is False
+    assert mech["damage"] == "1d8" and mech["damage_type"] == "slashing"
+    assert "attack" in mech["note"]
+
+
+def test_equip_freetext_item_payload_unchanged(cid):
+    # additive regression: non-catalog items return exactly today's payload.
+    server.add_item(cid, "grett", name="lucky pebble")
+    out = server.equip_item(cid, "grett", "lucky pebble")
+    assert out["equipped"] is True
+    assert "mechanics" not in out
