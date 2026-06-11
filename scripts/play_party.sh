@@ -62,6 +62,12 @@ fi
 if declare -F clawdnd_missing_commands >/dev/null 2>&1; then
   clawdnd_missing_commands python3 claude uv jq curl || exit 127
 fi
+# F12-8 (#787): timeout(1) is a coreutils binary stock macOS lacks. The DM beats are bounded via
+# the worldos_timeout shim (python3 fallback), so absence is non-fatal — but warn with the brew
+# hint so the native tool gets installed.
+if declare -F clawdnd_warn_if_no_timeout >/dev/null 2>&1; then
+  clawdnd_warn_if_no_timeout
+fi
 WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
 PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
@@ -315,7 +321,7 @@ turn() {
     # TIMEOUT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation scripts/play.sh's
     # dm_turn uses: the cold open's --effort max world-build runs ~280–400s, so it gets
     # WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats get CLAWDND_BEAT_TIMEOUT (default
-    # 200s). Keyed off the SAME `first` signal as the effort tier above. This wraps the DM turn in
+    # 360s). Keyed off the SAME `first` signal as the effort tier above. This wraps the DM turn in
     # `timeout` (parity with play.sh dm_turn — play_party is the native app's entry point and
     # previously had NO per-beat deadline, so a wedged DM turn could hang the session indefinitely;
     # the one-retry below recovers a transient timeout). DM turn ONLY — the companion facade never
@@ -325,8 +331,11 @@ turn() {
     # DM turn with ONE retry (parity with scripts/play.sh dm_turn — play_party is the native app's
     # entry point and previously had NO DM retry, so a transient cold-open failure was permanent).
     local rc
+    # F12-8: worldos_timeout (qa/lib_beat_driver.sh) — timeout(1) when present, else a python3
+    # fallback with the same rc=124 semantics. A bare `timeout` died rc=127 on stock
+    # (non-coreutils) Macs, killing every beat in <1s with the failure masked.
     _dm_invoke() {
-      timeout "$beat_timeout" \
+      worldos_timeout "$beat_timeout" \
         claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
           --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
           --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
@@ -337,7 +346,10 @@ turn() {
       # consumed --session-id ("Session ID … is already in use."). Lean re-mints itself; the
       # cold-open / --resume path re-mints via the shared helper. ($extra is unchanged.)
       clawdnd_report_attempt_failure "$out" "$rc"
-      echo "[play-party] DM turn rc=$rc (timeout=${beat_timeout}s) — retrying once with a fresh session" >&2
+      # F12-1: the retry must NOT reuse attempt 1's deadline verbatim — escalate attempt 2 to the
+      # model-aware cold-open tier (never de-escalating below attempt 1's), same as play.sh.
+      beat_timeout="$(clawdnd_dm_retry_timeout "$beat_timeout")"
+      echo "[play-party] DM turn rc=$rc — retrying once with a fresh session (deadline escalated to ${beat_timeout}s)" >&2
       clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
       if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
         resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
@@ -457,6 +469,14 @@ echo "  Save dir: $STATE_DIR"
 # (the DM must NOT recruit its own — it re-grounds via get_state and finds the party), and
 # (2) the human's moves AND each companion's moves will arrive as tagged declarations.
 COMP_NAME_LIST="$(printf '%s' "$SEED_JSON" | jq -r '[.companions[].name] | join(", ")')"
+# F12-4 (#790, completes #623): the model-INDEPENDENT wrapper heartbeat — the party lane never
+# emitted it (the helper's own doc says it was factored "so every harness shares it"; only play.sh
+# called it). The campaign id is PRE-SEEDED in this lane, so even the cold open can heartbeat —
+# /events gets a row within ~1s and the viewer flips its opening spinner instead of staying blank
+# for the ~280-500s world-build. Post-#763 this is also what flips the viewer's progress state at
+# heartbeat INGEST. Same shared helper play.sh calls (its exact wrapper lines are what app.jsx
+# filters and the #763 fallback recognizes — never a local text bank). first=1 → opening teaser.
+clawdnd_emit_progress_heartbeat "$CAMPAIGN_ID" 1 0
 DMSG="$(turn dm "$DSID" 1 "You are the Dungeon Master for a ClawDnD adventure played by ONE human plus an AI PARTY. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a session in a living world for a single human player (who acts through the dashboard) traveling with a party of companions who ALREADY EXIST in the world:
@@ -490,28 +510,11 @@ echo "[play-party] DM opened: ${DMSG:0:120}…"
 # code break. Guard it the same way the DM TURN itself is guarded (one retry, then fail loud):
 # read the snapshot for a seated player actor; if none, retry the cold open ONCE on a FRESH
 # session with a hard seat-only directive; if STILL none, abort with a clear, non-silent error
-# rather than hand the player a no_actor session. Mirrors viewer/server.py `_action_actor`:
-# a seated PC = a party member whose character record is kind="player".
-pc_seated() {  # 0 = a player PC is seated in the party; 1 = none
-  local snap="$CAMP_DIR/snapshot.json"
-  [ -f "$snap" ] || return 1   # no snapshot at all -> definitely not seated
-  python3 - "$snap" <<'PY'
-import json, sys
-try:
-    snap = json.load(open(sys.argv[1]))
-except Exception:
-    sys.exit(1)
-chars = snap.get("characters") if isinstance(snap.get("characters"), dict) else {}
-party = snap.get("party") if isinstance(snap.get("party"), list) else []
-# Match the viewer's _action_actor: a party member whose record is kind="player".
-seated = any(
-    isinstance(chars.get(cid), dict) and chars.get(cid, {}).get("kind") == "player"
-    for cid in party if isinstance(cid, str)
-)
-sys.exit(0 if seated else 1)
-PY
-}
-if ! pc_seated; then
+# rather than hand the player a no_actor session. The check itself is the SHARED
+# clawdnd_pc_seated (qa/lib_beat_driver.sh — F12-3 factored this lane's local copy into the lib
+# so play.sh runs the IDENTICAL guard): snapshot-read-only, mirrors viewer/server.py
+# `_action_actor` — a seated PC = a party member whose character record is kind="player".
+if ! clawdnd_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
   echo "[play-party] cold open seated NO player PC (party has no kind=\"player\" member) — retrying the cold open ONCE on a fresh session…" >&2
   # Fresh session id so the retry's first=1 --session-id can't collide with the consumed $DSID.
   DSID="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
@@ -524,7 +527,7 @@ if ! pc_seated; then
   AGENT_TURNS=$((AGENT_TURNS + 1))
   # #720: the reseat turn re-writes the opening scene — route it through record_dm_reply too.
   if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; record_dm_reply "$CAMPAIGN_ID" "$DMSG" reseat; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
-  if ! pc_seated; then
+  if ! clawdnd_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
     echo "[play-party] COLD-OPEN SEATED NO PC: after a retry the party still has no kind=\"player\" member — aborting rather than hand the player a no_actor session (see $COMBINED)." >&2
     exit 1
   fi
@@ -616,6 +619,17 @@ while true; do
     BEAT_NO=$((BEAT_NO + 1))
     RUNBOOK="$(clawdnd_runbook_for_beat "$BEAT_NO" 8 "$PREV_LOC" "$STATE_DIR")"
     echo "[play-party] beat $BEAT_NO runbook: ${RUNBOOK%% (*}…"
+    # F12-5 (#791): read the clock BEFORE the beat so the soft clock-tick backstop below can tell
+    # whether the DM advanced it this beat (mirrors play.sh's pre-beat PROG_PRE capture).
+    PROG_PRE="$(clawdnd_read_progress "$STATE_DIR")"
+    PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
+    PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
+    # F12-4 (#790): wrapper heartbeat NOW — after the human's move is read and BEFORE the
+    # companion turns, so the player isn't staring at a dead spinner through companion latency +
+    # the DM's long think (each companion is its own claude -p ahead of the DM turn). Same shared
+    # helper play.sh calls; best-effort + non-fatal; engine stays the sole writer (it routes
+    # through log_engine_narration). 0-based index so the teaser rotation matches play.sh's.
+    clawdnd_emit_progress_heartbeat "$CAMPAIGN_ID" 0 "$((BEAT_NO - 1))"
 
     # Each living companion reacts to the LAST DM narration + (implicitly) the unfolding
     # beat, taking its own move via its facade. Relay ONLY structured moves to the DM.
@@ -651,6 +665,13 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
     # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
     record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; AGENT_TURNS=$((AGENT_TURNS + 1))
+    # F12-5 (#791) — C soft clock-tick backstop (the SAME shared helper play.sh:504 + both duo
+    # loops call; play_party was the ONLY beat loop without it, so party sessions could freeze at
+    # day-1 morning forever): advance ONE phase via the engine ONLY if the DM left the clock
+    # frozen this beat. The helper defers to a DM-advanced clock, skips during combat (combat
+    # time is rounds, not phases), never fails the loop, and the engine stays the sole writer
+    # (advance_time).
+    clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
     # Remember this beat's location so the next beat's runbook can detect a stuck party (travel cue).
     PREV_LOC="$(printf '%s' "$(clawdnd_read_progress "$STATE_DIR")" | cut -f5)"
   else

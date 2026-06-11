@@ -191,9 +191,13 @@ def test_coldopen_play_party_guards_player_pc_seating():
     # (1) the prompt mandates seating the PC (kind="player", add_to_party) up front.
     assert 'create_character with kind=\\"player\\" and add_to_party=true' in text
     # (2) a snapshot-backed guard exists and matches the viewer's _action_actor notion of a
-    #     seated PC (a party member whose record is kind="player").
-    assert "pc_seated()" in text
-    assert 'get("kind") == "player"' in text
+    #     seated PC (a party member whose record is kind="player"). F12-3 (#777) factored the
+    #     guard into the SHARED lib (clawdnd_pc_seated) so play.sh runs the identical check —
+    #     the _action_actor-matching python now lives there, called from this lane.
+    assert "clawdnd_pc_seated" in text
+    lib = (_ROOT / "qa" / "lib_beat_driver.sh").read_text(encoding="utf-8")
+    assert "clawdnd_pc_seated()" in lib
+    assert 'get("kind") == "player"' in lib
     # (3) the guard retries the cold open ONCE, then aborts loudly on a still-unseated party.
     assert "retrying the cold open ONCE" in text
     assert "COLD-OPEN SEATED NO PC" in text and "exit 1" in text

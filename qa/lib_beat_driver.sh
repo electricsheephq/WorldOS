@@ -474,21 +474,27 @@ clawdnd_dm_effort_arg() {
 # for the SAME reason the effort tier splits them (clawdnd_dm_effort_arg, keyed off `first`):
 #   • the COLD OPEN (first != 0) is the one-time, --effort max, full world-build — generate the
 #     world, scene, PC, opening NPCs + portraits. That MAX-EFFORT cold open routinely runs ~280–400s;
-#     the routine 200s deadline KILLS it mid-build (the masked "cold-open reproducibly broken" mode),
+#     the routine deadline KILLS it mid-build (the masked "cold-open reproducibly broken" mode),
 #     so the cold open gets a generous deadline: WORLDOS_COLDOPEN_TIMEOUT (default 400s).
 #   • CONTINUING / routine beats (first = 0) are --effort medium and resolve one move against
-#     established canon — fast — so they keep the existing per-beat deadline CLAWDND_BEAT_TIMEOUT
-#     (default 200s), unchanged. (Routine behavior is byte-identical to today.)
+#     established canon — faster — so they get the per-beat deadline CLAWDND_BEAT_TIMEOUT
+#     (default 360s — see the F12-1 note below).
 # Keyed off the SAME `first` signal as the effort + lean levers, so cold-open=full+max+400s and the
-# long tail=lean+medium+200s stay in lock-step. Applies ONLY to the DM turn (player/companion turns
+# long tail=lean+medium+360s stay in lock-step. Applies ONLY to the DM turn (player/companion turns
 # are never wrapped in a per-beat timeout at all).
 #
 # Both knobs resolve through the same WORLDOS_/CLAWDND_ fallback as everything else (worldos_env):
 #   WORLDOS_COLDOPEN_TIMEOUT (default 400) — the cold open's deadline, in seconds.
-#   CLAWDND_BEAT_TIMEOUT     (default 200) — every continuing beat's deadline (today's knob, kept).
+#   CLAWDND_BEAT_TIMEOUT     (default 360) — every continuing beat's deadline (today's knob, kept).
 # Note: CLAWDND_BEAT_TIMEOUT keeps its CLAWDND_ name (it predates the WorldOS rename and is the
 # documented routine knob); only the NEW cold-open knob takes the WORLDOS_ name. worldos_env still
 # honors a WORLDOS_BEAT_TIMEOUT override of the routine tier for forward-compat.
+#
+# F12-1 (audit 2026-06-11): the routine default was a flat 200s, which killed ~18% of HEALTHY
+# routine beats (measured on 206 run_duo beats, same opus/medium defaults: p50=152 p90=224
+# p95=264 max=360 — run_duo has no timeout, so its >200s completions are the honest
+# counterfactual for what the product lanes were killing). 360s covers the measured max; an
+# explicit CLAWDND_BEAT_TIMEOUT/WORLDOS_BEAT_TIMEOUT override still wins unchanged.
 #
 # Unlike the effort/lean helpers (which populate an array spliced into argv), this just ECHOES the
 # resolved seconds — the caller uses it as the scalar `timeout <secs>` argument. $1 = first?(1/0)
@@ -501,8 +507,67 @@ clawdnd_dm_timeout() {
     case "${CLAWDND_DM_MODEL:-}" in *opus*) _co_timeout=500 ;; esac
     worldos_env COLDOPEN_TIMEOUT "$_co_timeout"
   else
-    worldos_env BEAT_TIMEOUT 200
+    worldos_env BEAT_TIMEOUT 360
   fi
+}
+
+# RETRY DEADLINE (F12-1's second half): both dm_turn paths captured `beat_timeout` ONCE and the
+# ONE retry re-invoked with the SAME deadline verbatim — so a healthy-but-long beat that tripped
+# the routine deadline was killed AGAIN at the same mark (two kills, zero narration). Attempt 2
+# ESCALATES to the model-aware COLD-OPEN tier (clawdnd_dm_timeout 1 — opus 500 / default 400,
+# env-overridable via WORLDOS_COLDOPEN_TIMEOUT like everything else), and never DE-escalates: if
+# the caller's attempt-1 deadline was already larger (an explicit CLAWDND_BEAT_TIMEOUT override,
+# or a cold-open retry whose tier == the escalation tier), the larger value is kept. A
+# non-numeric base (an env typo) is treated as 0 → the escalation tier (3.2-clean: no arrays,
+# pure case/test). ECHOES the resolved seconds. $1 = attempt 1's deadline in seconds.
+clawdnd_dm_retry_timeout() {
+  local base="${1:-0}" esc
+  case "$base" in ''|*[!0-9]*) base=0 ;; esac
+  esc="$(clawdnd_dm_timeout 1)"
+  if [ "$base" -gt "$esc" ]; then
+    printf '%s' "$base"
+  else
+    printf '%s' "$esc"
+  fi
+}
+
+# BOUNDED-COMMAND SHIM (F12-8): `timeout(1)` is a GNU coreutils binary that does NOT exist on
+# stock macOS (/usr/bin/timeout is absent on Darwin; only Homebrew coreutils provides one) — so
+# every `timeout <secs> claude …` beat on a non-coreutils Mac died rc=127 ("command not found")
+# in under a second, the retry died the same way, and the empty narration was masked. This shim
+# is the ONE bounded-invocation front door for the harnesses: it uses timeout(1) when present
+# (cheapest — no extra interpreter per beat), else falls back to a python3 subprocess that
+# preserves the exact rc semantics callers branch on:
+#   rc=124 — the deadline killed the command (timeout(1)'s contract; the retry triggers on it),
+#   rc=127 / rc=126 — command not found / not executable,
+#   any other rc — the child's own exit code, passed through verbatim.
+# stdout/stderr/stdin of the child pass through untouched (python3 -c keeps stdin free — the
+# callers redirect stdout per-attempt). Fallback kill is SIGKILL (subprocess.run's TimeoutExpired
+# path) vs timeout(1)'s SIGTERM — acceptable here: the wrapped beat is by definition wedged, and
+# every caller treats 124 as "dead, retry". Bash 3.2-clean: no arrays, "$@" pass-through only.
+# $1 = seconds, $2.. = the command. NOTE: callers should prefer this over bare `timeout` for any
+# new bounded call (F12-9/11/12 land on this same shim).
+worldos_timeout() {
+  local _secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_secs" "$@"
+    return $?
+  fi
+  python3 -c '
+import subprocess, sys
+secs = float(sys.argv[1])
+cmd = sys.argv[2:]
+try:
+    sys.exit(subprocess.run(cmd, timeout=secs).returncode)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+except FileNotFoundError:
+    sys.exit(127)
+except PermissionError:
+    sys.exit(126)
+except KeyboardInterrupt:
+    sys.exit(130)
+' "$_secs" "$@"
 }
 
 # RE-MINT SESSION ON RETRY (the ONE shared implementation of "never reuse a CONSUMED session id").
@@ -620,6 +685,38 @@ combat = s.get("combat") or {}
 combat_active = 1 if isinstance(combat, dict) and combat.get("active") else 0
 print("\t".join([str(day), tod, str(visited), str(npcs_met), str(cur),
                  str(cur_visited), str(combat_active)]))
+PY
+}
+
+# SEATING GUARD (F12-3): is a PLAYER PC seated in this campaign's party? The cold open's seating
+# is DM-STOCHASTIC (a forensic .app run built the world but ended its cold-open turn WITHOUT ever
+# calling create_character(kind="player") — party=[] and an unplayable "no_actor" surface), so
+# BOTH product opener paths guard it: check, ONE reseat retry, then a LOUD abort. Factored here —
+# the audit's recurring fix shape is "extract the shared helper, stop patching one path"
+# (play_party.sh carried this guard locally; play.sh had nothing). Matches the viewer's
+# _action_actor contract exactly: seated == a party member whose character record is
+# kind="player". SNAPSHOT-READ-ONLY (never writes; engine stays the sole writer). A missing
+# snapshot or a blank campaign id (the dead-cold-open mode: CAMPAIGN_ID="") is NOT seated.
+# $1 = STATE_DIR  $2 = campaign_id ; returns 0 = seated, 1 = not seated.
+clawdnd_pc_seated() {
+  local state_dir="$1" campaign_id="${2:-}"
+  [ -n "${campaign_id//[[:space:]]/}" ] || return 1
+  local snap="$state_dir/campaigns/$campaign_id/snapshot.json"
+  [ -f "$snap" ] || return 1   # no snapshot at all -> definitely not seated
+  python3 - "$snap" <<'PY'
+import json, sys
+try:
+    snap = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+chars = snap.get("characters") if isinstance(snap.get("characters"), dict) else {}
+party = snap.get("party") if isinstance(snap.get("party"), list) else []
+# Match the viewer's _action_actor: a party member whose record is kind="player".
+seated = any(
+    isinstance(chars.get(cid), dict) and chars.get(cid, {}).get("kind") == "player"
+    for cid in party if isinstance(cid, str)
+)
+sys.exit(0 if seated else 1)
 PY
 }
 
