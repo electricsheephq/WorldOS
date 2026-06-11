@@ -21,14 +21,23 @@ here (image rate from score.json/network.ndjson) and passed in (palette-live), s
 a pure disk reader.
 
 image_render gate sources (signals.image_render_source):
-  - "vm-network"  : per-run network.ndjson /image rows exist -> the REAL rate is computed
-                    and is authoritative (recorded 404s can never be papered over).
-  - "mac-handoff" : no per-run /image denominator exists (the VM cannot serve gitignored
-                    _private art) AND a valid --handoff-json at the same --build-sha proved
+  - "vm-network"  : per-run network.ndjson /image rows with UNEXPECTED outcomes exist ->
+                    the REAL rate is computed and is authoritative (recorded unexpected
+                    404s can never be papered over). Rows classed as DESIGNED degradation
+                    by the viewer's X-Image-Outcome header (no-art/placeholder — the VM
+                    serves no _private art and runs a null provider, so its /image
+                    requests 404 by construction) are excluded from the denominator
+                    (audit F11-1b); rows without the field count exactly as before.
+  - "mac-handoff" : no per-run UNEXPECTED /image denominator exists AND a valid
+                    --handoff-json at the same --build-sha proved
                     health.image_probe_ok:true + the private art root across every
                     required handoff gate. This is a representative built-app image
                     probe, NOT a render rate — weaker but real Mac evidence.
   - "none"        : neither source -> the gate stays a HARD FAIL with an evidence gap.
+
+A score.json image_404s count with no success denominator is an EVIDENCE GAP, never a
+fabricated 0.0 rate (audit F11-1a) — KNOWN unexpected 404s (image_404s_unexpected > 0)
+hard-gap the gate; an unknown split gaps it only when no Mac handoff carries it.
 
 Usage:
   release_readiness.py --runs <run-dir>[,<run-dir>...] \
@@ -131,24 +140,66 @@ def read_ndjson(path: Path) -> list[dict]:
     return out
 
 
-def image_render_rate(run: Path, score: dict) -> tuple[float, int, int, str]:
-    """Fraction of image requests that returned bytes (not 404). Prefers network.ndjson
-    (200 vs 404 image responses); falls back to score.json's image_404s with an unknown
-    denominator (then rate is reported as 1.0 only if 0 404s, else conservative)."""
+# Designed-degradation classes of the additive X-Image-Outcome response header
+# (viewer/server.py _serve_image, audit F11-1b): `no-art` (no descriptor — the UI
+# shows its silhouette ON PURPOSE) and `placeholder` (a payload-less descriptor,
+# e.g. the null provider's placeholder). Network rows carrying these classes are
+# EXCLUDED from the render-rate denominator — they are not render failures.
+# Rows without the field (older captures) keep today's status-code behavior.
+DESIGNED_IMAGE_OUTCOMES = {"no-art", "no_art", "placeholder"}
+
+
+def _row_image_outcome(row: dict) -> str:
+    return str(row.get("image_outcome") or "").strip().lower()
+
+
+def image_render_rate(run: Path, score: dict) -> tuple[float, int, int, str, str]:
+    """Fraction of image requests that returned bytes (not 404), over UNEXPECTED
+    outcomes only. Returns (rate, ok, total, source, evidence_gap_detail).
+
+    Prefers network.ndjson rows (200 vs 404 image responses); rows whose additive
+    `image_outcome` field classes them as DESIGNED degradation (no-art/placeholder)
+    are excluded from the denominator — the VM has no _private art and a null image
+    provider, so every /image request 404s by construction and those 404s are NOT
+    render failures (audit F11-1). Rows without the field count exactly as before.
+
+    The score.json fallback carries a 404 COUNT with no success denominator. That can
+    never be converted into a rate: a 404-only count with an unknown denominator is an
+    EVIDENCE GAP (the 5th tuple element; total stays 0), never a fabricated 0.0 — the
+    fabricated denominator is what kept the image_render gate structurally un-passable
+    on the VM release lane and blocked the #762 mac-handoff source (audit F11-1a)."""
     network_paths = [run / "network.ndjson", run / "player" / "network.ndjson"]
     net_path = next((p for p in network_paths if p.exists()), network_paths[0])
     net = read_ndjson(net_path)
     img = [n for n in net if "/image" in str(n.get("url", ""))]
+    counted = [n for n in img if _row_image_outcome(n) not in DESIGNED_IMAGE_OUTCOMES]
+    if counted:
+        ok = sum(1 for n in counted if int(n.get("status", 0) or 0) and int(n.get("status")) < 400)
+        total = len(counted)
+        return (ok / total if total else 1.0), ok, total, str(net_path), ""
     if img:
-        ok = sum(1 for n in img if int(n.get("status", 0) or 0) and int(n.get("status")) < 400)
-        total = len(img)
-        return (ok / total if total else 1.0), ok, total, str(net_path)
+        # every recorded /image row was expectation-classed DESIGNED degradation —
+        # zero unexpected failures by direct row evidence, but also no denominator
+        # (total stays 0; the persona still needs mac-handoff coverage to pass).
+        return 1.0, 0, 0, str(net_path), ""
     # fallback: score.json carries image_404s but not the success count
     f404 = int(score.get("image_404s", 0) or 0)
     if f404 == 0:
-        return 1.0, 0, 0, str(run / "score.json")
-    # unknown denominator → report the 404 count, conservative rate
-    return 0.0, 0, f404, str(run / "score.json")
+        return 1.0, 0, 0, str(run / "score.json"), ""
+    # ui_playtest_score.py (header-aware capture) may have expectation-classed the
+    # 404s already: all-designed 404s are clean degradation (still no denominator);
+    # KNOWN unexpected 404s are a hard evidence gap that no handoff may paper over.
+    unexpected = score.get("image_404s_unexpected")
+    if isinstance(unexpected, int) and not isinstance(unexpected, bool):
+        if unexpected == 0:
+            return 1.0, 0, 0, str(run / "score.json"), ""
+        return 0.0, 0, 0, str(run / "score.json"), (
+            f"{unexpected} unexpected image 404s recorded but no denominator"
+        )
+    # unknown split (no header data) → evidence gap, never a fabricated denominator
+    return 0.0, 0, 0, str(run / "score.json"), (
+        f"{f404} image 404s recorded but no denominator"
+    )
 
 
 def split_csv(value: str) -> list[str]:
@@ -608,10 +659,13 @@ def main() -> int:
                 "part_b_failure_detail": part_b_obj.get("failure_detail") or "",
             })
             continue
-        rate, ok, total, image_source = image_render_rate(rd, sc)
+        rate, ok, total, image_source, image_gap = image_render_rate(rd, sc)
         persona = sc.get("persona") or expected_for_run or infer_persona(rd)
         if persona:
             completed_personas.append(str(persona))
+        unexpected_404s = sc.get("image_404s_unexpected")
+        if isinstance(unexpected_404s, bool) or not isinstance(unexpected_404s, int):
+            unexpected_404s = None
         persona_scores.append({
             "run": sc.get("run") or rd.name,
             "persona": persona,
@@ -624,6 +678,12 @@ def main() -> int:
             "image_ok": ok,
             "image_total": total,
             "image_source": image_source,
+            # Additive (audit F11-1a): a non-empty image_evidence_gap means this run
+            # recorded image 404s with NO success denominator — an evidence gap, never
+            # a fabricated rate. image_404s/unexpected are carried for honest detail.
+            "image_evidence_gap": image_gap,
+            "image_404s": int(sc.get("image_404s", 0) or 0),
+            "image_404s_unexpected": unexpected_404s,
             "run_build_sha": rj.get("build_sha") or "",
             "part_b_result": (rj.get("part_b") or {}).get("persona_loop") or "n/a",
             "part_b_score_pass": bool((rj.get("part_b") or {}).get("score_pass")),
@@ -658,13 +718,18 @@ def main() -> int:
     img_rate = (sum(p["image_ok"] for p in img_runs) / sum(p["image_total"] for p in img_runs)) if img_runs else 0.0
     total_image_denominator = sum(p["image_total"] for p in img_runs)
 
-    # image_render source selection. The VM cannot serve gitignored _private art, so a
-    # split VM+Mac sweep structurally has NO per-run /image denominator; the Mac handoff
-    # is then the authoritative image evidence (built-app image_probe_ok + private art
-    # root across every required handoff gate, at the SAME --build-sha). Precedence is
-    # honest: any recorded VM image traffic computes the REAL rate (a handoff can never
-    # paper over recorded 404s), and when NEITHER source exists the gate stays a hard
-    # fail with an evidence gap — a VM-only sweep without a handoff still reports the gap.
+    # image_render source selection. The VM cannot serve gitignored _private art and runs
+    # a null image provider, so every VM /image request 404s BY CONSTRUCTION — those are
+    # DESIGNED no-art outcomes, not render failures (audit F11-1: a real sweep always
+    # records /image 404s, so "the VM has no denominator" was empirically false; treating
+    # those 404s as a denominator kept this gate permanently un-passable). The denominator
+    # therefore counts only UNEXPECTED network rows (designed no-art/placeholder rows are
+    # excluded via X-Image-Outcome) and 404-only score.json counts are evidence gaps, never
+    # fabricated rates. The Mac handoff is then the authoritative image evidence (built-app
+    # image_probe_ok + private art root across every required handoff gate, at the SAME
+    # --build-sha). Precedence is honest: any UNEXPECTED recorded VM image traffic computes
+    # the REAL rate (a handoff can never paper over recorded unexpected 404s), and when
+    # NEITHER source exists the gate stays a hard fail with an evidence gap.
     handoff_image_evidence = handoff_proof.get("image_evidence") if isinstance(handoff_proof.get("image_evidence"), dict) else {}
     handoff_image_ok = bool(
         args.handoff_json
@@ -798,6 +863,33 @@ def main() -> int:
         evidence_gaps.append({"gate": "ui_audit", "missing": "--ui-audit-log", "detail": "UI audit log path not supplied"})
     elif not Path(args.ui_audit_log).exists():
         evidence_gaps.append({"gate": "ui_audit", "missing": args.ui_audit_log, "detail": "UI audit log path missing"})
+    # Personas whose image evidence is a 404 count with NO denominator (score.json
+    # fallback, audit F11-1a). KNOWN unexpected 404s are a hard gap no handoff may
+    # paper over; an unknown split (legacy capture) is a gap only when the Mac handoff
+    # does not carry the gate — on the VM lane those 404s are designed no-art outcomes.
+    image_gap_personas = [p for p in persona_scores if p.get("image_evidence_gap")]
+    blocking_image_gap_personas = [
+        p for p in image_gap_personas
+        if isinstance(p.get("image_404s_unexpected"), int) and p["image_404s_unexpected"] > 0
+    ]
+    nonblocking_image_gap_personas = [
+        p for p in image_gap_personas if p not in blocking_image_gap_personas
+    ]
+    if blocking_image_gap_personas:
+        evidence_gaps.append({
+            "gate": "image_render",
+            "missing": "image 404 denominator",
+            "detail": "unexpected image 404s recorded but no denominator: "
+            + ", ".join(f"{p['persona']} ({p['image_evidence_gap']})" for p in blocking_image_gap_personas),
+        })
+    if nonblocking_image_gap_personas and image_render_source != "mac-handoff":
+        evidence_gaps.append({
+            "gate": "image_render",
+            "missing": "image 404 denominator",
+            "detail": "image 404s recorded but no denominator (404-only score.json fallback; "
+            "designed no-art 404s are indistinguishable without X-Image-Outcome): "
+            + ", ".join(f"{p['persona']}={p['image_404s']}" for p in nonblocking_image_gap_personas),
+        })
     if image_missing_personas and image_render_source != "mac-handoff":
         image_gap_detail = f"no /image requests recorded for: {', '.join(image_missing_personas)}"
         if args.handoff_json and image_render_source == "none":
@@ -933,6 +1025,11 @@ def main() -> int:
             "image_render_source": image_render_source,
             "image_request_denominator": total_image_denominator,
             "image_missing_personas": image_missing_personas,
+            # Additive (audit F11-1a): personas whose runs recorded image 404s with no
+            # success denominator — honest record even when the Mac handoff carries the gate.
+            "image_404_personas_without_denominator": [
+                str(p["persona"]) for p in image_gap_personas
+            ],
             "palette_live": args.palette_live,
             "run_build_shas": build_shas,
         },

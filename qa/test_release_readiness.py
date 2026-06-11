@@ -228,30 +228,35 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         include_part_a: bool = True,
         include_image_traffic: bool = True,
         image_status: int = 200,
+        network_rows: list[dict] | None = None,
+        extra_score_fields: dict | None = None,
     ) -> Path:
         run = tmp / f"gate-{persona}"
         player = run / "player"
         player.mkdir(parents=True)
-        (run / "score.json").write_text(
-            json.dumps(
-                {
-                    "run": f"gate-{persona}",
-                    "persona": persona,
-                    "completed_intro_flow": True,
-                    "persona_satisfaction": 9,
-                    "gave_up": False,
-                    "bug_reports_critical": 0,
-                    "console_errors": 0,
-                    "image_404s": 0,
-                }
-            ),
-            encoding="utf-8",
-        )
+        score = {
+            "run": f"gate-{persona}",
+            "persona": persona,
+            "completed_intro_flow": True,
+            "persona_satisfaction": 9,
+            "gave_up": False,
+            "bug_reports_critical": 0,
+            "console_errors": 0,
+            "image_404s": 0,
+        }
+        if extra_score_fields:
+            score.update(extra_score_fields)
+        (run / "score.json").write_text(json.dumps(score), encoding="utf-8")
         payload = {"build_sha": sha, "part_b": {"persona_loop": "PASS", "score_pass": True}}
         if include_part_a:
             payload["part_a"] = {"result": "PASS"}
         (run / "run.json").write_text(json.dumps(payload), encoding="utf-8")
-        if include_image_traffic:
+        if network_rows is not None:
+            (player / "network.ndjson").write_text(
+                "\n".join(json.dumps(row) for row in network_rows) + "\n",
+                encoding="utf-8",
+            )
+        elif include_image_traffic:
             (player / "network.ndjson").write_text(
                 json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": image_status}),
                 encoding="utf-8",
@@ -1437,6 +1442,313 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertEqual(payload["signals"]["image_render_source"], "vm-network")
             self.assertEqual(payload["signals"]["image_request_denominator"], 5)
             self.assertEqual(payload["signals"]["image_render_rate"], 0.0)
+
+    def test_image_404s_without_denominator_is_an_evidence_gap_not_a_fabricated_rate(self):
+        # Audit F11-1a: score.json carries a 404 COUNT with no success count. The old
+        # fallback fabricated rate 0.0 with total=image_404s — a denominator that does
+        # not exist — which both hard-failed the gate AND (by total>0) selected the
+        # "vm-network" source, structurally blocking the mac-handoff source. A 404-only
+        # count with an unknown denominator must be an EVIDENCE GAP instead.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = self.write_persona_run(
+                tmp,
+                "newbie",
+                include_image_traffic=False,
+                extra_score_fields={"image_404s": 7},
+            )
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                str(run),
+                "--expected-personas",
+                "newbie",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertIn("image_render", payload["failed_gates"])
+            # The fabricated denominator is gone: the 404 count contributes NOTHING.
+            self.assertEqual(payload["personas"][0]["image_total"], 0)
+            self.assertEqual(payload["signals"]["image_request_denominator"], 0)
+            self.assertEqual(payload["signals"]["image_render_source"], "none")
+            self.assertEqual(
+                payload["signals"]["image_404_personas_without_denominator"], ["newbie"]
+            )
+            gap_details = [
+                gap["detail"] for gap in payload["evidence_gaps"] if gap["gate"] == "image_render"
+            ]
+            self.assertTrue(
+                any("no denominator" in detail for detail in gap_details),
+                f"expected a no-denominator evidence gap, got: {gap_details}",
+            )
+
+    def test_designed_no_art_rows_are_excluded_from_image_denominator(self):
+        # Audit F11-1b: network rows expectation-classed as DESIGNED degradation by the
+        # viewer's X-Image-Outcome header (no-art / placeholder) are not render failures
+        # and must not poison the rate. Unclassified rows keep today's behavior.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = self.write_persona_run(
+                tmp,
+                "newbie",
+                network_rows=[
+                    {"url": "http://127.0.0.1/image?scope=a", "status": 404, "image_outcome": "no-art"},
+                    {"url": "http://127.0.0.1/image?scope=b", "status": 404, "image_outcome": "placeholder"},
+                    {"url": "http://127.0.0.1/image?scope=c", "status": 200},
+                    {"url": "http://127.0.0.1/image?scope=d", "status": 404},
+                ],
+            )
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                str(run),
+                "--expected-personas",
+                "newbie",
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)  # single persona: never release_ready
+            self.assertEqual(payload["signals"]["image_render_source"], "vm-network")
+            self.assertEqual(payload["signals"]["image_request_denominator"], 2)
+            self.assertEqual(payload["personas"][0]["image_ok"], 1)
+            self.assertEqual(payload["personas"][0]["image_total"], 2)
+            self.assertAlmostEqual(payload["signals"]["image_render_rate"], 0.5)
+
+    def test_image_render_mac_handoff_engages_when_vm_404s_are_all_designed(self):
+        # The F11-1 headline: the canonical 5-persona VM sweep ALWAYS records /image
+        # 404s (no _private art + null provider — they 404 by construction), so the
+        # mac-handoff source could never engage. When every recorded 404 is classed
+        # designed no-art, the VM contributes no denominator and a valid same-SHA Mac
+        # handoff with sound image evidence carries the gate.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(
+                    tmp,
+                    persona,
+                    include_part_a=False,
+                    network_rows=[
+                        {"url": f"http://127.0.0.1/image?scope=scene-{persona}", "status": 404, "image_outcome": "no-art"},
+                        {"url": f"http://127.0.0.1/image?scope=portrait-{persona}", "status": 404, "image_outcome": "no-art"},
+                    ],
+                    extra_score_fields={"image_404s": 2, "image_404s_designed": 2, "image_404s_unexpected": 0},
+                )
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(
+                tmp,
+                app_status_overrides={"health": {"image_probe_ok": True}},
+            )
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "mac-handoff")
+            self.assertEqual(payload["signals"]["image_request_denominator"], 0)
+            self.assertNotIn("image_render", {gap["gate"] for gap in payload["evidence_gaps"]})
+
+    def test_legacy_404_only_scores_with_sound_handoff_pass_via_mac_handoff(self):
+        # Audit F11-1 red test (1): 5 personas whose score.json recorded image_404s>0
+        # with NO network rows and NO expectation classes (a legacy capture). On the VM
+        # lane those 404s are designed no-art outcomes; a valid same-SHA handoff with
+        # sound image evidence must carry the gate (today: hard FAIL 0.0/"vm-network").
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(
+                    tmp,
+                    persona,
+                    include_part_a=False,
+                    include_image_traffic=False,
+                    extra_score_fields={"image_404s": 5},
+                )
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(
+                tmp,
+                app_status_overrides={"health": {"image_probe_ok": True}},
+            )
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "mac-handoff")
+            self.assertEqual(payload["signals"]["image_request_denominator"], 0)
+            # Honest record even when the handoff carries the gate.
+            self.assertEqual(
+                sorted(payload["signals"]["image_404_personas_without_denominator"]),
+                sorted(personas),
+            )
+
+    def test_known_unexpected_404s_without_denominator_block_even_with_handoff(self):
+        # When the capture DID classify the 404s and some were UNEXPECTED, that is real
+        # failure evidence — a Mac handoff must never paper over it (the #762 invariant,
+        # extended to the score.json fallback).
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(
+                    tmp,
+                    persona,
+                    include_part_a=False,
+                    include_image_traffic=False,
+                    extra_score_fields={"image_404s": 3, "image_404s_designed": 1, "image_404s_unexpected": 2},
+                )
+                for persona in personas
+            ]
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            handoff = self.write_handoff_bundle(
+                tmp,
+                app_status_overrides={"health": {"image_probe_ok": True}},
+            )
+            support_preflight = self.write_support_preflight(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs",
+                ",".join(str(r) for r in runs),
+                "--expected-personas",
+                ",".join(personas),
+                "--story",
+                str(story),
+                "--mech",
+                str(mech),
+                "--behavioral",
+                "GREEN",
+                "--behavioral-path",
+                str(behavioral),
+                "--ui-audit",
+                "PASS",
+                "--ui-audit-log",
+                str(audit),
+                "--palette-live",
+                "true",
+                "--palette-source",
+                str(palette),
+                "--handoff-json",
+                str(handoff),
+                "--support-preflight-json",
+                str(support_preflight),
+                "--build-sha",
+                "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            gap_details = [
+                gap["detail"] for gap in payload["evidence_gaps"] if gap["gate"] == "image_render"
+            ]
+            self.assertTrue(
+                any("unexpected image 404s" in detail for detail in gap_details),
+                f"expected an unexpected-404 evidence gap, got: {gap_details}",
+            )
 
     def test_split_vm_persona_evidence_requires_support_preflight(self):
         with tempfile.TemporaryDirectory() as td:

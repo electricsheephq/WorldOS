@@ -468,6 +468,58 @@ def _latest_descriptor(scope: Optional[str]) -> Optional[dict]:
     return _newest_json_descriptor(_images_dir(scope))
 
 
+def _image_serve_roots() -> list[Path]:
+    """Path-containment allowlist for a descriptor's `path` field (audit F11-2).
+
+    Factored out of `_serve_image` so the serve path and the app-status image probe
+    apply the SAME containment rule: the derived image cache, the OpenClaw gateway
+    media dir, and the gitignored _private ingested-art tree. The viewer is the
+    documented "pure reader": a descriptor's `path` must never let /image serve an
+    arbitrary file (e.g. /etc/passwd) even if tampered."""
+    _oh = os.environ.get("OPENCLAW_HOME")
+    return [
+        _state_dir() / "images",
+        Path(env_var_legacy("CLAWDND_OPENCLAW_MEDIA_DIR")
+             or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
+        # W2b: ingested wiki art (gitignored _private; never committed).
+        _ingested_images_root(),
+    ]
+
+
+def _descriptor_servable(desc: Optional[dict]) -> bool:
+    """True iff `_serve_image` would answer this descriptor with a < 400 status (audit F11-2).
+
+    Mirrors the serve path exactly: a contained, readable, non-empty `path`; OR valid
+    base64 `bytes_b64`; OR a non-empty `url` (302 redirect). A descriptor that parses
+    but carries none of these — e.g. the null provider's payload-less placeholder —
+    is NOT servable, even though it exists on disk. This is the predicate the
+    app-status image probe must use: probe-true while /image 404s is the F11-2 hole.
+    (The engine-side portrait-gen snippet keeps its own inline copy of the payload
+    check — it runs in the engine subprocess and cannot import viewer helpers.)"""
+    if not isinstance(desc, dict):
+        return False
+    path = desc.get("path")
+    if isinstance(path, str) and path:
+        try:
+            rp = Path(path).resolve()
+            if (any(rp == r.resolve() or r.resolve() in rp.parents for r in _image_serve_roots())
+                    and rp.is_file() and rp.stat().st_size > 0):
+                return True
+        except OSError:
+            pass
+    b64 = desc.get("bytes_b64")
+    if isinstance(b64, str) and b64:
+        try:
+            if base64.b64decode(b64, validate=True):
+                return True
+        except (binascii.Error, ValueError):
+            pass
+    url = desc.get("url")
+    if isinstance(url, str) and url:
+        return True
+    return False
+
+
 def _portrait_by_name(scope: Optional[str], campaign_id: str) -> Optional[dict]:
     """Resolve a ``portrait-<engine-id>`` scope by the character's NAME when the id itself
     has no art. PCs are minted with opaque engine ids (``char_09bfb0ec913c``) while canon
@@ -5781,10 +5833,59 @@ def _move_run_id(dest: Path | None) -> str:
     return ""
 
 
-def _app_status_image_probe(surface: dict) -> bool:
+def _probe_image_scope(scope: str, campaign_id: str = "") -> str:
+    """Expectation-class one image scope exactly the way GET /image would resolve it
+    (audit F11-2): 'servable' (a descriptor exists AND /image would answer < 400),
+    'no-art' (no descriptor at all — designed silhouette degradation, NOT a failure),
+    'unservable' (a descriptor exists but /image would 404 it — e.g. the null
+    provider's payload-less placeholder; an unexpected outcome the probe must catch)."""
+    desc = _latest_descriptor(scope)
+    if desc is None:
+        desc = _portrait_by_name(scope, campaign_id)
+    if desc is None:
+        return "no-art"
+    return "servable" if _descriptor_servable(desc) else "unservable"
+
+
+def _app_status_image_probe(surface: dict) -> tuple[bool, dict]:
+    """Probe the live scene's image scope SET and return (ok, machine-readable detail).
+
+    Audit F11-2: the old probe was `bool(scope and _latest_descriptor(scope))` —
+    vacuously true on ANY parsed descriptor (including the cached null-provider
+    placeholder that `_serve_image` then 404s) and scene-scope-only (zero portrait
+    coverage). Now the probe:
+      - requires the SCENE descriptor to be genuinely SERVABLE (probe verdict ==
+        GET /image status < 400, via the shared `_descriptor_servable`), and
+      - covers `portrait-<id>` for every party member: a portrait with NO art stays
+        a designed silhouette miss (does not fail the probe), but a portrait whose
+        descriptor exists yet cannot be served is an unexpected failure.
+    The detail dict is emitted additively as app-status `health.image_probe` so the
+    Mac-handoff release evidence (qa/release_readiness.py) is expectation-classed,
+    not a vacuous bit."""
+    campaign_id = str(surface.get("campaign_id") or "")
     scene = surface.get("scene") if isinstance(surface.get("scene"), dict) else {}
-    scope = scene.get("imageScope") if isinstance(scene, dict) else ""
-    return bool(scope and _latest_descriptor(str(scope)))
+    scene_scope = str(scene.get("imageScope") or "") if isinstance(scene, dict) else ""
+    party = surface.get("party") if isinstance(surface.get("party"), list) else []
+    scopes: list[str] = []
+    if scene_scope:
+        scopes.append(scene_scope)
+    for card in party:
+        if isinstance(card, dict) and card.get("id"):
+            portrait_scope = f"portrait-{card['id']}"
+            if portrait_scope not in scopes:
+                scopes.append(portrait_scope)
+    outcomes = {s: _probe_image_scope(s, campaign_id) for s in scopes}
+    unservable = sorted(s for s, o in outcomes.items() if o == "unservable")
+    ok = bool(scene_scope) and outcomes.get(scene_scope) == "servable" and not unservable
+    detail = {
+        "ok": ok,
+        "scene_scope": scene_scope,
+        "probed": scopes,
+        "servable": sorted(s for s, o in outcomes.items() if o == "servable"),
+        "no_art": sorted(s for s, o in outcomes.items() if o == "no-art"),
+        "unservable": unservable,
+    }
+    return ok, detail
 
 
 def _browser_health_counts(console_log: str | None, network_log: str | None) -> tuple[int, int]:
@@ -5852,7 +5953,7 @@ def _app_status_readiness(*, live: dict | None, moves: Path | None, is_live_view
     )
     narration_present = chat_lines > 0 or recent_narration > 0
     art_present = art_root.is_dir()
-    image_probe_ok = _app_status_image_probe(surface)
+    image_probe_ok, image_probe_detail = _app_status_image_probe(surface)
     console_errors = max(0, int(console_errors or 0))
     network_failures = max(0, int(network_failures or 0))
 
@@ -5901,6 +6002,10 @@ def _app_status_readiness(*, live: dict | None, moves: Path | None, is_live_view
         "provider_ready": provider_ready,
         "provider_status": provider_status or {},
         "image_probe_ok": image_probe_ok,
+        # Additive machine-readable probe evidence (audit F11-2): which scopes were
+        # probed (scene + party portraits) and how each classed. Consumers that only
+        # read the boolean keep working; release evidence can read the classes.
+        "image_probe": image_probe_detail,
         "pending_player_turn": bool(pending_player_turn),
         "failure_bucket": failure_bucket,
         "failure_detail": failure_detail,
@@ -6350,6 +6455,8 @@ def main():
     )
     desc = imagegen.generate("portrait", prompt, seed=seed, scope=scope)
     # A real, servable portrait carries path/url/bytes_b64 and is NOT a placeholder/degraded.
+    # (Inline payload check mirroring the viewer's _descriptor_servable — this snippet runs
+    # inside the ENGINE subprocess and cannot import viewer helpers; keep the two in step.)
     servable = bool(desc.get("path") or desc.get("url") or desc.get("bytes_b64"))
     generated = servable and not desc.get("placeholder") and not desc.get("degraded_from")
     print(json.dumps({
@@ -6828,11 +6935,17 @@ class _Handler(BaseHTTPRequestHandler):
             # client disconnected — normal SSE teardown, not an error.
             return
 
-    def _send(self, code: int, body: bytes, ctype: str) -> None:
+    def _send(self, code: int, body: bytes, ctype: str,
+              extra_headers: Optional[dict] = None) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        # Additive: callers may attach extra response headers (e.g. /image's
+        # X-Image-Outcome classification, audit F11-1b). Default None = exactly
+        # today's behavior for every existing caller.
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -6854,7 +6967,16 @@ class _Handler(BaseHTTPRequestHandler):
         or a `url` (302 redirect). 404s cleanly when the scope/descriptor is absent or
         carries no servable image, so the dashboard keeps its placeholder. Content-Type
         comes from the descriptor's `mime_type` (default image/png). Pure reader — never
-        imports the engine, never writes."""
+        imports the engine, never writes.
+
+        Audit F11-1(b): every response carries an additive `X-Image-Outcome` header
+        classing the result — `served` (2xx/302), `no-art` (no descriptor at all: the
+        DESIGNED silhouette degradation), `placeholder` (a descriptor with nothing
+        servable, e.g. the null provider's placeholder: also designed degradation), or
+        `error` (a descriptor whose payload UNEXPECTEDLY failed to serve — uncontained/
+        unreadable path, invalid base64). Status codes and bodies are unchanged; QA
+        network captures use the header to compute render rates over unexpected
+        failures only, so designed no-art 404s stop poisoning the release gate."""
         desc = _latest_descriptor(scope)
         if not desc:
             # A PC pulled from canon is minted with an opaque engine id (portrait-char_…);
@@ -6865,36 +6987,31 @@ class _Handler(BaseHTTPRequestHandler):
             # silhouette placeholder. We deliberately do NOT substitute a class/race heraldic
             # crest — a coat of arms is not a person's face, and dressing a faceless PC in one
             # reads as a bug, not art. Canon NPCs resolve to real ingested portraits above.
-            self._send(404, b"no image", "text/plain")
+            self._send(404, b"no image", "text/plain", extra_headers={"X-Image-Outcome": "no-art"})
             return
         ctype = desc.get("mime_type")
         ctype = ctype if isinstance(ctype, str) and ctype.strip() else "image/png"
+        # Track whether a payload field was present but failed to serve — that is an
+        # UNEXPECTED outcome (`error`), distinct from a payload-less placeholder.
+        payload_failed = False
         # 1) a real file on disk — ONLY if it's contained under an expected image root
         # (the derived cache, the OpenClaw gateway media dir, or the gitignored _private
-        # ingested-art tree). The viewer is the documented "pure reader": a descriptor's
-        # `path` must never let /image serve an arbitrary file (e.g. /etc/passwd) even
-        # if tampered. W2b adds the _private ingested root so wiki_images.py output is
-        # served transparently alongside generated images.
+        # ingested-art tree — `_image_serve_roots`, shared with the app-status probe).
+        # The viewer is the documented "pure reader": a descriptor's `path` must never
+        # let /image serve an arbitrary file (e.g. /etc/passwd) even if tampered.
         path = desc.get("path")
         if isinstance(path, str) and path:
-            _oh = os.environ.get("OPENCLAW_HOME")
-            roots = [
-                _state_dir() / "images",
-                Path(env_var_legacy("CLAWDND_OPENCLAW_MEDIA_DIR")
-                     or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
-                # W2b: ingested wiki art (gitignored _private; never committed).
-                _ingested_images_root(),
-            ]
             data = None
             try:
                 rp = Path(path).resolve()
-                if any(rp == r.resolve() or r.resolve() in rp.parents for r in roots):
+                if any(rp == r.resolve() or r.resolve() in rp.parents for r in _image_serve_roots()):
                     data = rp.read_bytes()
             except OSError:
                 data = None
             if data:
-                self._send(200, data, ctype)
+                self._send(200, data, ctype, extra_headers={"X-Image-Outcome": "served"})
                 return
+            payload_failed = True
         # 2) inline base64 bytes
         b64 = desc.get("bytes_b64")
         if isinstance(b64, str) and b64:
@@ -6903,8 +7020,9 @@ class _Handler(BaseHTTPRequestHandler):
             except (binascii.Error, ValueError):
                 data = None
             if data:
-                self._send(200, data, ctype)
+                self._send(200, data, ctype, extra_headers={"X-Image-Outcome": "served"})
                 return
+            payload_failed = True
         # 3) a remote URL — hand the browser a redirect (we don't proxy bytes)
         url = desc.get("url")
         if isinstance(url, str) and url:
@@ -6912,10 +7030,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Location", url)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", "0")
+            self.send_header("X-Image-Outcome", "served")
             self.end_headers()
             return
-        # descriptor exists but carries no servable image (e.g. null placeholder)
-        self._send(404, b"no image", "text/plain")
+        # descriptor exists but carries no servable image: a payload that FAILED is an
+        # unexpected `error`; a payload-less descriptor (e.g. null placeholder) is the
+        # designed `placeholder` degradation.
+        outcome = "error" if payload_failed else "placeholder"
+        self._send(404, b"no image", "text/plain", extra_headers={"X-Image-Outcome": outcome})
 
     def _serve_export(self, campaign_id: str) -> None:
         """GET /export?campaign=<id> — stream a campaign's snapshot.json as a download.

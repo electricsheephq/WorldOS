@@ -126,7 +126,26 @@ def main() -> int:
     def is_image_404(n: dict) -> bool:
         return n.get("status") == 404 and "/image?scope=" in (n.get("url") or "")
 
-    image_404s = sum(1 for n in network if is_image_404(n))
+    # Expectation-class the image 404s (audit F11-1b): the viewer's /image responses
+    # carry an additive X-Image-Outcome header (recorded into network rows as
+    # `image_outcome` by the capture harness). `no-art` / `placeholder` 404s are the
+    # DESIGNED degradation this file's own comment describes — only the rest are
+    # unexpected render failures. Rows without the field (older captures) stay
+    # unclassified: they count in image_404s exactly as before and the designed/
+    # unexpected split is simply not emitted as known-zero certainty.
+    DESIGNED_IMAGE_OUTCOMES = {"no-art", "no_art", "placeholder"}
+
+    def image_outcome(n: dict) -> str:
+        return str(n.get("image_outcome") or "").strip().lower()
+
+    image_404_rows = [n for n in network if is_image_404(n)]
+    image_404s = len(image_404_rows)
+    image_404s_designed = sum(1 for n in image_404_rows if image_outcome(n) in DESIGNED_IMAGE_OUTCOMES)
+    classified_404s = sum(1 for n in image_404_rows if image_outcome(n))
+    # Only claim a known unexpected count when EVERY 404 row carries an outcome class —
+    # a partial capture must not let release_readiness treat unclassified designed 404s
+    # as proven-clean (None = unknown, omitted from score.json).
+    image_404s_unexpected = (image_404s - image_404s_designed) if classified_404s == image_404s else None
     network_failures = sum(1 for n in network if not is_image_404(n))
 
     # --- completed intro flow? -----------------------------------------------
@@ -190,6 +209,11 @@ def main() -> int:
         "console_errors": console_errors,
         "network_failures": network_failures,
         "image_404s": image_404s,
+        # Additive expectation-classed split (audit F11-1b). image_404s stays the raw
+        # total for older consumers; designed = X-Image-Outcome no-art/placeholder;
+        # unexpected = the remainder, or null when any 404 row lacks the class.
+        "image_404s_designed": image_404s_designed,
+        "image_404s_unexpected": image_404s_unexpected,
         "bug_reports_total": len(bugs),
         "bug_reports_player": len(player_bugs),
         "bug_reports_auto": len(auto_bugs),
