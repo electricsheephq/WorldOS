@@ -135,7 +135,10 @@ echo "[uipt] viewer ready."
 # --- DM turn helper (claude -p, full plugin, resumed) ------------------------
 DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 DM_BRIEF="$(cat "$ROOT/qa/play_dm_duo.txt")"
-chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+# chatlog is the SHARED lib implementation (qa/lib_beat_driver.sh, reads ambient $CHAT at call
+# time). SYN-01/F12-7: a local 2-arg override here used to shadow it AFTER sourcing the lib,
+# silently discarding clawdnd_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
+# re-define chatlog in a runner.
 # #745 (the newbie mid-stream-stall give-up): the GUI-sweep DM driver MUST bound every beat exactly
 # like scripts/play.sh's dm_turn — previously this helper ran `claude -p` with NO `timeout`, NO retry,
 # and NO fallback, so a DM turn that streamed partial prose via /events and then FROZE mid-generation
@@ -151,6 +154,9 @@ chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({
 CLAWDND_DM_MODEL="$DM_MODEL"
 dm_turn() {
   local first="$1" msg="$2" out resume=() beat_timeout rc
+  # SYN-01: pre-beat log-tail mark (once per beat — this driver is single-attempt) so the
+  # caller's resolve can tell a GENUINE #357 recovery from RECYCLED pre-beat prose.
+  clawdnd_dm_prebeat_mark "$STATE_DIR"
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
   beat_timeout="$(clawdnd_dm_timeout "$first")"
   out="$RUNDIR/dm/turn.$(date +%s%N).jsonl"
@@ -161,11 +167,13 @@ dm_turn() {
   rc=$?
   [ "$rc" -ne 0 ] && echo "[uipt] DM turn rc=$rc (timeout=${beat_timeout}s) — relying on engine-logged narration fallback" >&2
   cat "$out" >> "$COMBINED"
-  # Echo the beat's RAW final result text. The #357 fallback (recover the engine-logged narration
-  # tail when a killed/failed beat left this empty, so the turn STILL resolves on /chat) is applied
-  # by the CALLER via clawdnd_resolve_dm_reply — a direct call, because dm_turn runs in a command
+  # Echo the beat's final result text via the SYN-01 shared classification front door: it notes
+  # $out for the caller's clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result
+  # (a 401's "result" text is the API's error string, never a reply). The #357 fallback (recover
+  # the engine-logged narration tail when a killed/failed beat left this empty) is applied by
+  # the CALLER via clawdnd_resolve_dm_reply — a direct call, because dm_turn runs in a command
   # substitution where the #749c fallback_recovered flag (a global) could never escape the subshell.
-  jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+  clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
 }
 
 # --- DM opens the scene so a LIVE, playable game exists (the launcher's Chronicles
@@ -180,8 +188,15 @@ Begin a SOLO session for a brand-new human player in this world: start_world(\"$
 # #357/#749c: recover the engine-logged narration tail when the turn died with no result text;
 # a recovered reply stamps fallback_recovered:true on the dm chat row (clawdnd_chatlog_dm).
 clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
-[ -z "$DMSG" ] && echo "[uipt] WARN: DM produced no opening (see $RUNDIR/dm/dm.err) — the player may land in a thin scene." >&2
-clawdnd_chatlog_dm "${DMSG:-The scene is set. What do you do?}"
+# SYN-01: an empty resolved reply is a FAILED beat. The old masking default ("The scene is
+# set. What do you do?") pretended a scene existed; record the wrapper-authored VISIBLE failure
+# row instead — it is still a real turn-END dm row, so the client's pending state clears.
+if [ -z "$DMSG" ]; then
+  echo "[uipt] WARN: DM produced no opening (see $RUNDIR/dm/dm.err) — recording a visible failure beat; the player may land in a thin scene." >&2
+  clawdnd_chatlog_dm_failed
+else
+  clawdnd_chatlog_dm "$DMSG"
+fi
 
 # --- background DM-resolver loop: tail $MOVES, resolve each new move, append narration
 # to $CHAT (the UI shows it via /chat). Identical shape to play_human.sh's loop. Runs
@@ -201,8 +216,14 @@ $PMSG
 
 Resolve it through the engine (roll checks, apply casts/attacks, voice NPCs) and narrate the next beat as a played scene. Hand the moment back to the player.")"
       # #357/#749c: same recovery + honesty stamp as the opening turn (direct call, see dm_turn).
+      # SYN-01: an empty resolved reply is a FAILED beat — the visible failure row replaces the
+      # old "..." masking default (still a turn-END dm row, so the client's pending clears).
       clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
-      clawdnd_chatlog_dm "${DMSG:-...}"
+      if [ -z "$DMSG" ]; then
+        clawdnd_chatlog_dm_failed
+      else
+        clawdnd_chatlog_dm "$DMSG"
+      fi
     else
       sleep 2
     fi

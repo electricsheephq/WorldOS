@@ -127,20 +127,55 @@ clawdnd_dm_narration_or_fallback() {
 }
 
 # clawdnd_resolve_dm_reply REPLY STATE_DIR — the DIRECT-call front door over
-# clawdnd_dm_narration_or_fallback (#749c fallback honesty). Sets:
-#   CLAWDND_DM_REPLY            — the resolved reply text (the DM's own, or the recovered prose)
-#   CLAWDND_FALLBACK_RECOVERED  — 1 IFF the #357 fallback recovered the prose (the DM's reply was
-#                                 blank and the engine log supplied it), else 0
-# Call it DIRECTLY (never in a command substitution — a subshell would drop both globals), then
+# clawdnd_dm_narration_or_fallback (#749c fallback honesty + SYN-01 #757/#745 dead-beat
+# classification). Sets:
+#   CLAWDND_DM_REPLY            — the resolved reply text (the DM's own, the recovered prose,
+#                                 or "" when the beat FAILED)
+#   CLAWDND_FALLBACK_RECOVERED  — 1 IFF the #357 fallback recovered GENUINE prose (the DM's
+#                                 reply was blank and the engine log supplied prose the DM
+#                                 logged THIS beat), else 0
+#   CLAWDND_DM_BEAT_FAILED      — 1 IFF the beat FAILED: the final result event was ERROR-class
+#                                 (is_error / api_error_status — its "result" text is the API's
+#                                 error string, e.g. "Failed to authenticate…", NEVER a reply),
+#                                 or the only recoverable prose PREDATES the pre-beat mark
+#                                 (recycling the previous beat's prose would mask a dead beat).
+# SYN-01 ORDER OF OPERATIONS: the FINAL result event (noted by clawdnd_dm_final_text in
+# $STATE_DIR/.dm_last_result) is classified FIRST — before any fallback — so an error-class
+# result can never be chatted as DM prose NOR "recovered" into recycled prose. Every failed
+# beat resolves to an EMPTY reply; callers branch on that and record the failure VISIBLY
+# (clawdnd_chatlog_dm_failed, or record_dm_reply's blank guard).
+# Call it DIRECTLY (never in a command substitution — a subshell would drop the globals), then
 # read CLAWDND_DM_REPLY. The flag is consumed (and reset) by the next record_dm_reply /
 # clawdnd_chatlog_dm, which stamps {"fallback_recovered":true} on the dm chat row so behavioral
 # tallies can later discount a masked-dead beat that was "resolved" with recovered prose.
 clawdnd_resolve_dm_reply() {
-  local original="$1"
-  CLAWDND_DM_REPLY="$(clawdnd_dm_narration_or_fallback "$1" "$2")"
+  local original="$1" state_dir="$2" last=""
+  CLAWDND_DM_BEAT_FAILED=0
   CLAWDND_FALLBACK_RECOVERED=0
+  # SYN-01 leg 1: parse the FINAL result event FIRST. A 401-class failure carries NON-empty
+  # result text, which used to bypass the empty-only retry AND this fallback and land in chat
+  # AS DM PROSE. Classify it -> the beat FAILED; never chat the error text.
+  last="$(cat "$state_dir/.dm_last_result" 2>/dev/null)"
+  if [ -n "$last" ] && [ -f "$last" ] && clawdnd_dm_result_is_error "$last"; then
+    echo "[worldos] DM beat FAILED: error-class result event (see the [dm-attempt] line above) — the error text will NOT be chatted as narration" >&2
+    CLAWDND_DM_BEAT_FAILED=1
+    CLAWDND_DM_REPLY=""
+    return 0
+  fi
+  CLAWDND_DM_REPLY="$(clawdnd_dm_narration_or_fallback "$original" "$state_dir")"
   if [ -z "${original//[[:space:]]/}" ] && [ -n "${CLAWDND_DM_REPLY//[[:space:]]/}" ]; then
-    CLAWDND_FALLBACK_RECOVERED=1
+    # The #357 fallback recovered prose. GENUINE recovery = the DM logged NEW prose THIS beat
+    # (then died before its final reply). If everything recoverable PREDATES the pre-beat mark
+    # the beat was fully dead and the "recovery" is the PREVIOUS beat's prose — recycling it
+    # would mask the dead beat (F12-14), so the beat FAILS instead. No mark file (an older /
+    # external caller) keeps the legacy assume-genuine behavior.
+    if clawdnd_dm_logged_new_prose "$state_dir"; then
+      CLAWDND_FALLBACK_RECOVERED=1
+    else
+      echo "[worldos] DM beat FAILED: only recyclable (pre-beat) prose available — refusing to mask a dead beat with the previous beat's narration" >&2
+      CLAWDND_DM_BEAT_FAILED=1
+      CLAWDND_DM_REPLY=""
+    fi
   fi
 }
 
@@ -273,6 +308,14 @@ PY
 # behavioral tallies can discount masked-dead beats. Consume-once: the flag resets here.
 record_dm_reply() {
   local campaign_id="$1" text="$2" phase="$3" extra='{"engine_logged":true}' plain_extra=''
+  # SYN-01 (#757 leg 2): NEVER write a blank dm row. A dead beat that recovered nothing used to
+  # land an unflagged EMPTY chat row (the post-#763 play.sh mode) — invisible to the player AND
+  # the tallies. Record the wrapper-authored VISIBLE failure beat instead, and warn.
+  if [ -z "${text//[[:space:]]/}" ]; then
+    echo "[worldos] warning: ${phase} produced NO narration (dead beat) — recording a visible failure beat instead of a blank row" >&2
+    clawdnd_chatlog_dm_failed
+    return 0
+  fi
   if [ "${CLAWDND_FALLBACK_RECOVERED:-0}" = "1" ]; then
     extra='{"engine_logged":true,"fallback_recovered":true}'
     plain_extra='{"fallback_recovered":true}'
@@ -297,6 +340,110 @@ clawdnd_chatlog_dm() {
     chatlog dm "$1"
   fi
   CLAWDND_FALLBACK_RECOVERED=0
+}
+
+# ── SYN-01 (#757/#745): dead-beat failure classification — the honesty layer ────────────────
+# ~10.5% of DM invocations produce no usable beat (28 no-result + 3x401 of 294 archived files;
+# audit 2026-06-11). Three masks made them look "resolved":
+#   (a) a 401-class failure's NON-empty error text bypassed the empty-only retry + the #357
+#       fallback gate and was chatlogged AS DM PROSE;
+#   (b) a fully-dead beat either recycled the PREVIOUS beat's prose into a hidden row, or wrote
+#       an unflagged EMPTY dm row — either way the player saw nothing while the harness counted
+#       a resolved turn;
+#   (c) the fallback_recovered honesty stamp was dead in every QA runner (local chatlog
+#       overrides shadowed the lib) and had no consumer.
+# These helpers close (a)+(b); (c) is closed by deleting the runner overrides + the
+# qa/assert_behavioral.py dm_beat_honesty counter. Flow per beat:
+#   clawdnd_dm_prebeat_mark  (once, BEFORE attempt 1)
+#   clawdnd_dm_final_text    (per attempt — notes the result file + classifies error-class)
+#   clawdnd_resolve_dm_reply (classification first; failed beats resolve to an EMPTY reply)
+#   clawdnd_chatlog_dm_failed / record_dm_reply's blank guard (the VISIBLE failure row)
+
+# The wrapper-authored, PLAYER-VISIBLE failure beat. Chat-only BY DESIGN — deliberately NOT
+# routed through log_engine_narration: (1) the #727 substring dedup would swallow the constant
+# text on a repeat failure, and an engine_logged stamp would then HIDE the row (app.jsx drops
+# engine_logged rows in favor of /events, where the deduped repeat never lands); (2) a failure
+# line in the session log would pollute recap/FTS/lean-tail story memory (#763 decontamination)
+# and could itself be "recovered" by the NEXT beat's #357 fallback. A plain /chat row renders
+# unconditionally in every consumer — visible, exactly once per failure.
+CLAWDND_DM_FAILED_BEAT_TEXT="(The tale falters — the Dungeon Master could not resolve this beat. Your last action still stands; give it a moment and try again.)"
+
+# clawdnd_dm_result_is_error OUT — is the FINAL result event of a DM attempt's stream-json an
+# ERROR-class result? The 401 shape (verified verbatim) is subtype:"success", is_error:true,
+# api_error_status:401 with the API's error string in .result — so the test is is_error OR an
+# api_error_status, NEVER the subtype or the text. A missing/empty file or a stream with no
+# result event is NOT error-class (the empty-reply path owns those modes). 0 = error-class.
+clawdnd_dm_result_is_error() {
+  local out="$1" flag
+  [ -n "$out" ] && [ -s "$out" ] || return 1
+  flag="$(jq -rs 'map(select(.type=="result"))[-1] | if . == null then "none" else (((.is_error == true) or ((.api_error_status // null) != null)) | tostring) end' "$out" 2>/dev/null)"
+  case "$flag" in
+    true) return 0 ;;
+    false | none) return 1 ;;
+  esac
+  # jq unavailable/unparseable -> the same conservative grep-fallback discipline as
+  # clawdnd_report_attempt_failure: only the explicit error markers flip it.
+  grep -q '"is_error"[[:space:]]*:[[:space:]]*true' "$out" 2>/dev/null && return 0
+  grep -qE '"api_error_status"[[:space:]]*:[[:space:]]*[0-9]+' "$out" 2>/dev/null && return 0
+  return 1
+}
+
+# clawdnd_dm_final_text OUT STATE_DIR [RC] — the ONE extraction front door for a DM attempt's
+# reply text (replaces the bare `jq -rs '… .result // ""'` in every DM wrapper). Notes OUT in
+# $STATE_DIR/.dm_last_result (a FILE, because the turn helpers run inside $(...) subshells
+# where a global cannot escape) so the caller's clawdnd_resolve_dm_reply can classify the SAME
+# final result event — then echoes the final result text, UNLESS the event is ERROR-class:
+# then it echoes NOTHING (the "result" text is the API's error string, never a reply) and
+# surfaces the real failure + the 401/403 re-auth hint via clawdnd_report_attempt_failure.
+# The empty echo also makes the callers' existing empty-only retries fire on error results.
+clawdnd_dm_final_text() {
+  local out="$1" state_dir="$2" rc="${3:-0}"
+  printf '%s\n' "$out" > "$state_dir/.dm_last_result" 2>/dev/null || true
+  if clawdnd_dm_result_is_error "$out"; then
+    clawdnd_report_attempt_failure "$out" "$rc"
+    return 0
+  fi
+  jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+}
+
+# clawdnd_dm_prebeat_mark STATE_DIR — snapshot the active session log's position BEFORE a DM
+# beat launches (file: $STATE_DIR/.dm_prebeat_mark), so clawdnd_dm_logged_new_prose can tell a
+# GENUINE #357 recovery (NEW prose logged THIS beat, then the turn died) from RECYCLED prose
+# (everything recoverable predates the beat — a masked dead beat). Call it ONCE per beat,
+# BEFORE attempt 1: a retry must NOT re-mark, or attempt 1's prose would stop counting as this
+# beat's. Best-effort (never fails a beat); standalone python — no heredoc-in-$() (bash 3.2).
+clawdnd_dm_prebeat_mark() {
+  local state_dir="$1"
+  local mark_py="${CLAWDND_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")}/dm_beat_mark.py"
+  python3 "$mark_py" mark "$state_dir" "$state_dir/.dm_prebeat_mark" 2>/dev/null || true
+  return 0
+}
+
+# clawdnd_dm_logged_new_prose STATE_DIR — did the DM log NEW player-facing prose (narration |
+# dialogue; wrapper heartbeats + setup-brief notation excluded, exactly as the #357 fallback
+# filters) since the pre-beat mark? 0 = yes (a recovery is GENUINE); 1 = no (anything the
+# fallback recovered is RECYCLED pre-beat prose). NO mark file -> 0: an older/external caller
+# keeps the legacy assume-genuine behavior; dm_beat_mark.py also fails OPEN internally.
+clawdnd_dm_logged_new_prose() {
+  local state_dir="$1"
+  local mark="$state_dir/.dm_prebeat_mark"
+  [ -f "$mark" ] || return 0
+  local mark_py="${CLAWDND_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")}/dm_beat_mark.py"
+  python3 "$mark_py" check "$state_dir" "$mark" 2>/dev/null
+}
+
+# clawdnd_chatlog_dm_failed — record the wrapper-authored VISIBLE failure beat for a FAILED DM
+# beat: ONE /chat dm row carrying {"beat_failed":true} (counted + reported by
+# qa/assert_behavioral.py's dm_beat_honesty; the discount/gate policy stays #757's call). The
+# row text is CLAWDND_DM_FAILED_BEAT_TEXT — never an error string, never recycled prose, never
+# blank, never hidden (no engine_logged stamp — see the constant's comment). Consume-once on
+# the resolve flags, mirroring clawdnd_chatlog_dm. Reads ambient $CHAT exactly as chatlog does.
+clawdnd_chatlog_dm_failed() {
+  CLAWDND_DM_BEATS_FAILED=$((${CLAWDND_DM_BEATS_FAILED:-0} + 1))
+  echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$CLAWDND_DM_BEATS_FAILED this run)" >&2
+  chatlog dm "$CLAWDND_DM_FAILED_BEAT_TEXT" '{"beat_failed":true}'
+  CLAWDND_FALLBACK_RECOVERED=0
+  CLAWDND_DM_BEAT_FAILED=0
 }
 
 # LIVE-PROGRESS + WRAPPER HEARTBEAT (#623 — the ONE shared implementation of the perceived-latency fix).
