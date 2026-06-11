@@ -52,6 +52,45 @@ def level_for_xp(xp: int) -> int:
     return lvl
 
 
+@functools.lru_cache(maxsize=None)
+def finesse_weapon_names() -> tuple[str, ...]:
+    """Lowercased display names of the SRD FINESSE weapons (audit F01-4 / #774), derived
+    from the raw srd524 dumps: WeaponPropertyAssignment.json maps the finesse property
+    slug (``srd-2024_finesse...`` — matched case-insensitively) to weapon slugs, and
+    Weapon.json maps those slugs to display names (slug-strip fallback when a name is
+    missing). Pure + cached; returns () when the data files are absent so the engine
+    never crashes on a trimmed data dir."""
+    base = _DIR / "srd524"
+    try:
+        assignments = json.loads((base / "WeaponPropertyAssignment.json").read_text(encoding="utf-8"))
+        weapons = json.loads((base / "Weapon.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    slug_to_name = {
+        rec.get("pk", ""): str((rec.get("fields") or {}).get("name") or "")
+        for rec in weapons
+    }
+    names: list[str] = []
+    for rec in assignments:
+        f = rec.get("fields") or {}
+        if "finesse" not in str(f.get("property", "")).lower():
+            continue
+        slug = str(f.get("weapon", ""))
+        display = slug_to_name.get(slug) or slug.split("_", 1)[-1]
+        if display:
+            names.append(display.casefold())
+    return tuple(sorted(set(names)))
+
+
+def is_finesse_weapon(item_name: str) -> bool:
+    """Does this inventory item name a finesse weapon? Case-insensitive and
+    substring-tolerant so magic-item naming still matches ("Rapier +1", "Daggers")."""
+    n = (item_name or "").casefold()
+    if not n:
+        return False
+    return any(w in n for w in finesse_weapon_names())
+
+
 def class_data(name: str) -> dict:
     c = classes().get(name.lower())
     if c is None:

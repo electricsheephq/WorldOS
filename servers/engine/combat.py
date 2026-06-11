@@ -53,6 +53,27 @@ def spell_grants_advantage(spell_name: str) -> bool:
     return spell_name in _ADVANTAGE_GRANTING_SPELLS
 
 
+# Curated numeric-rider registry (audit SYN-06 / #780, merging F01-6 + F03-1): the spells
+# whose tracked ActiveEffect carries a MECHANICAL modifier the engine itself applies —
+# mirrors the _ADVANTAGE_GRANTING_SPELLS pattern above. Keyed by canonical spell name;
+# values are the ActiveEffect field overrides copied at cast time. A leading '-' on a dice
+# expression means the rolled amount is SUBTRACTED (Bane). SCOPE DISCIPLINE: exactly these
+# four spells (Bless +1d4 attack/save, Bane -1d4, Shield of Faith +2 AC, Shield +5 AC);
+# every other spell stays narrative exactly as before.
+_SPELL_EFFECT_RIDERS: dict[str, dict] = {
+    "Bless": {"attack_bonus_dice": "1d4", "save_bonus_dice": "1d4"},
+    "Bane": {"attack_bonus_dice": "-1d4", "save_bonus_dice": "-1d4"},
+    "Shield of Faith": {"ac_bonus": 2},
+    "Shield": {"ac_bonus": 5},
+}
+
+
+def spell_effect_riders(spell_name: str) -> dict | None:
+    """The curated mechanical rider fields for this spell's tracked effect (SYN-06), or
+    None for every un-curated spell (the overwhelmingly common case). Pure."""
+    return _SPELL_EFFECT_RIDERS.get(spell_name)
+
+
 def advantage_granting_effect(target: Character):
     """The first active_effect on ``target`` flagged as granting advantage to the next
     attack against it (Guiding Bolt's rider), or None. Pure — no mutation; attack() reads

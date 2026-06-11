@@ -535,6 +535,25 @@ class ActiveEffect(_StrictModel):
     # live sheet values when an older Mage Armor effect lacks the metadata.
     armor_base_ac: int = 0
     armor_formula_ac: int = 0
+    # GENERIC MECHANICAL RIDERS (audit SYN-06 / #780): before these fields, Bless / Bane /
+    # Shield of Faith / Shield were stored + duration-ticked and then IGNORED by every
+    # resolver — buffs were unrepresentable, not merely unautomated. Populated at cast_spell
+    # time from combat.spell_effect_riders (a curated registry mirroring
+    # _ADVANTAGE_GRANTING_SPELLS); consumed by _effective_armor_class (ac_bonus) and by
+    # attack / saving_throw / concentration_save / next_turn's repeat save (bonus dice —
+    # the ENGINE rolls them and surfaces the component). A leading '-' on a dice expression
+    # means the rolled amount is SUBTRACTED (Bane). All default to inert, so every existing
+    # effect and old snapshot deserializes unchanged.
+    ac_bonus: int = 0
+    attack_bonus_dice: str = ""  # e.g. "1d4" (Bless), "-1d4" (Bane); "" = none
+    save_bonus_dice: str = ""    # same convention, folded into saving throws
+    # A concentration CHILD effect: this effect lives on a TARGET of someone else's
+    # concentration spell (Bless on an ally) and must end the moment the caster
+    # (`source_id`) stops concentrating on the spell of this name. Swept by next_turn's
+    # inverse-link reconciliation and by drop_concentration — the same linkage repeat-save
+    # markers use, extended to numeric riders (the naive caster-side-only expiry provably
+    # never reached these). Defaults False: old snapshots and ordinary effects untouched.
+    linked_to_concentration: bool = False
 
 
 class PendingDamageBonus(_StrictModel):
