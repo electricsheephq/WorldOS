@@ -98,6 +98,13 @@ function ScreenInventory({ onNavigate, state, setState }) {
   }, [loadSurface]);
 
   const hero = party.find((p) => p.id === activeHero) || party[0] || null;
+  // RRI-5e98e6f: derive the displayed coin purse from the ONE shared selector + normalizer the
+  // Market also uses, so the same character's coins read identically on both screens (no
+  // 35-vs-232 divergence). partyPurse resolves the active hero (else party[0]) and zeroes/ints it.
+  const purse = window.partyPurse
+    ? window.partyPurse(party, hero?.id || activeHero)
+    : { pp: 0, gp: Number(hero?.currency?.gp) || 0, sp: 0, ep: 0, cp: 0 };
+  const purseTotalGp = window.currencyTotalGp ? window.currencyTotalGp(purse) : purse.gp;
   // The stash is the active hero's own pack (live surface); never the demo stash.
   const stash = (hero && Array.isArray(hero.items)) ? hero.items
     : (Array.isArray(surface?.stash) ? surface.stash : []);
@@ -181,16 +188,26 @@ function ScreenInventory({ onNavigate, state, setState }) {
         {/* I-09: PP/GP/SP are the everyday 5e coinage — always shown. Electrum (EP) and Copper
             (CP) are minted only rarely; the surface emits them as 0 by default, so an empty
             EP/CP slot is dead chrome. Render those two only when the hero actually holds them
-            (data-driven, hide-when-absent) — never fabricate a metal the engine isn't tracking. */}
+            (data-driven, hide-when-absent) — never fabricate a metal the engine isn't tracking.
+            RRI-5e98e6f: the displayed purse comes from window.partyPurse(party, activeHero) — the
+            ONE shared selector the Market also uses — so the Stash and the Market never disagree
+            on the same character's coins (the 35-vs-232 contradiction). */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
-          <CoinSlot tone="#e5e4e2" label="PP" val={String(hero.currency?.pp ?? 0)} />
-          <CoinSlot tone="#d4b97a" label="GP" val={String(hero.currency?.gp ?? 0)} />
-          <CoinSlot tone="#c0c0c0" label="SP" val={String(hero.currency?.sp ?? 0)} />
+          <CoinSlot tone="#e5e4e2" label="PP" val={String(purse.pp)} />
+          <CoinSlot tone="#d4b97a" label="GP" val={String(purse.gp)} />
+          <CoinSlot tone="#c0c0c0" label="SP" val={String(purse.sp)} />
         </div>
-        {((hero.currency?.ep ?? 0) > 0 || (hero.currency?.cp ?? 0) > 0) && (
+        {(purse.ep > 0 || purse.cp > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-            {(hero.currency?.ep ?? 0) > 0 && <CoinSlot tone="#b08860" label="EP" val={String(hero.currency.ep)} />}
-            {(hero.currency?.cp ?? 0) > 0 && <CoinSlot tone="#8a6a45" label="CP" val={String(hero.currency.cp)} />}
+            {purse.ep > 0 && <CoinSlot tone="#b08860" label="EP" val={String(purse.ep)} />}
+            {purse.cp > 0 && <CoinSlot tone="#8a6a45" label="CP" val={String(purse.cp)} />}
+          </div>
+        )}
+        {/* Unified gp-equivalent total (the one shared converter the Market uses) — only when
+            there is mixed coin to roll up; a plain-gold purse reads its total off the GP slot. */}
+        {(purse.pp > 0 || purse.ep > 0 || purse.sp > 0 || purse.cp > 0) && (
+          <div className="hand muted" style={{ fontSize: 12, marginTop: 6, textAlign: "right" }}>
+            ≈ {Number.isInteger(purseTotalGp) ? purseTotalGp : purseTotalGp.toFixed(2)} gp total
           </div>
         )}
       </Panel>
@@ -568,6 +585,42 @@ function itemCompareRows(item, equipped) {
   return { peer: peer.name, rows };
 }
 
+/* RRI-5e98e6f (optimizer minor): itemize a PACK/KIT's contents when the engine already carries
+   them in the item's description. The engine grants e.g. an "Explorer's Pack" whose description is
+   a manifest ("Bedroll, rations, rope, torches, and the like."). This is a READ-ONLY reformatting
+   of the engine-provided desc into a bulleted contents list — it parses ONLY the desc string the
+   surface already returns and never fabricates an item the engine isn't tracking. Returns [] for a
+   non-pack item or a description that isn't a contents manifest, so the list is shown only when
+   there is real content to itemize. */
+function packContents(item) {
+  if (!item) return [];
+  const name = String(item.name || "").toLowerCase();
+  if (!/\b(pack|kit|pouch|set|tools?|supplies)\b/.test(name)) return [];
+  let desc = String(item.desc || "").trim();
+  if (!desc) return [];
+  // Drop a trailing catch-all clause ("…, and the like.", "…, etc.") — it is flavor, not an item.
+  desc = desc.replace(/[.;]\s*$/, "").replace(/\s*,?\s*(and\s+)?(the like|so on|etc\.?|more)\s*$/i, "");
+  // Split on commas and a trailing "and"/"&" conjunction; trim, drop empties + a leading article.
+  const parts = desc
+    .split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+    .map((s) => s.trim().replace(/^(a|an|the)\s+/i, ""))
+    .filter(Boolean);
+  // Only itemize when the desc actually reads like a list (≥2 entries) — a one-line prose
+  // description is left to the paragraph above, untouched.
+  if (parts.length < 2) return [];
+  // De-dupe case-insensitively, cap to a sane number, and Title-case the first letter for display.
+  const seen = new Set();
+  const out = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p.charAt(0).toUpperCase() + p.slice(1));
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
 function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
   // #756: Examine opens a real read-only PANEL (the full description + every resolved
   // stat), not a fleeting toast — the optimizer's "Examine fires a toast ONLY". Local
@@ -579,6 +632,8 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
   React.useEffect(() => { if (examineSignal) setExamineOpen(true); }, [examineSignal]);
   const statRows = itemStatRows(item);
   const compare = itemCompareRows(item, hero && hero.equipped);
+  // RRI-5e98e6f: a pack/kit's contents, itemized from the engine desc (read-only).
+  const contents = packContents(item);
 
   if (examineOpen) {
     return (
@@ -642,6 +697,21 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
       <p className="body dropcap" style={{ marginTop: 0, fontSize: 15 }}>
         {item.desc}
       </p>
+
+      {/* RRI-5e98e6f: itemize a pack/kit's contents (e.g. Explorer's Pack) when the engine
+          description carries them — a read-only reformatting of the desc the surface already
+          returns. Hidden for non-packs / prose descriptions (packContents returns []). */}
+      {contents.length > 0 && (
+        <>
+          <Divider />
+          <div className="eyebrow">Contents</div>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: "var(--ink-700)" }}>
+            {contents.map((c) => (
+              <li key={c} className="body-sm" style={{ marginBottom: 2 }}>{c}</li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {/* Stat block — Weight/Value always (catalog-backfilled), plus the REAL combat stats the
           read-model now surfaces from the SRD item catalog: damage dice + type for weapons (with
@@ -752,4 +822,4 @@ function itemCategory(item) {
 
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope, itemStatRows, itemCompareRows });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, packContents, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope, itemStatRows, itemCompareRows });

@@ -94,13 +94,21 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const canAct = Boolean(surface?.can_act);
   const campaignId = surface?.campaign_id || "";
   const surfaceLoading = surfaceStatus === "loading";
-  // MK-13: the purse shown + spent-against is the LIVE currency when the surface carries it
-  // (engine = sole writer; matches the Stash). Falls back to the local demo purse only in
-  // read-only preview (no live session) — where the local-spend simulation still applies.
-  const liveCur = surface?.currency;
-  const coins = liveCur
-    ? { gp: Number(liveCur.gp) || 0, sp: Number(liveCur.sp) || 0, cp: Number(liveCur.cp) || 0, pp: Number(liveCur.pp) || 0, ep: Number(liveCur.ep) || 0 }
+  // MK-13 (RRI-5e98e6f optimizer "Stash 35 GP, Market 232 GP"): the purse shown + spent-against
+  // is the LIVE currency when a session is attached (engine = sole writer; matches the Stash). The
+  // coin purse rides PER party member of /character-surface (`party[i].currency`, the SAME engine
+  // field the inventory shows) — NOT a top-level `surface.currency`, which never existed, so the
+  // Market silently fell through to the hardcoded demo {gp:232} while the Stash showed live coin.
+  // The Market has no hero switcher, so window.partyPurse lands on party[0] — exactly the Stash's
+  // default active hero — via the ONE shared currency helper. Falls back to the local demo purse
+  // only in read-only preview (no live party) where the local-spend simulation still applies.
+  const liveParty = Array.isArray(surface?.party) ? surface.party : [];
+  const coins = liveParty.length
+    ? window.partyPurse(liveParty, "")
     : localCoins;
+  // The unified gp-equivalent total — the same converter the Stash uses, so a "total" never
+  // diverges between the two screens.
+  const purseTotalGp = window.currencyTotalGp(coins);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
@@ -422,11 +430,26 @@ function ScreenMerchant({ onNavigate, state, setState }) {
       {/* RIGHT — Cart + balance */}
       <Panel framed style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <SectionTitle>Your Purse</SectionTitle>
+        {/* RRI-5e98e6f: render the SAME coin breakdown as the Stash (PP/GP/SP always; EP/CP only
+            when held) from the same shared purse, so the two screens never disagree on the coins. */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+          <CoinSlot tone="#e5e4e2" label="PP" val={coins.pp} />
           <CoinSlot tone="#d4b97a" label="GP" val={coins.gp} />
           <CoinSlot tone="#c0c0c0" label="SP" val={coins.sp} />
-          <CoinSlot tone="#b08860" label="CP" val={coins.cp} />
         </div>
+        {(coins.ep > 0 || coins.cp > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+            {coins.ep > 0 && <CoinSlot tone="#b08860" label="EP" val={coins.ep} />}
+            {coins.cp > 0 && <CoinSlot tone="#8a6a45" label="CP" val={coins.cp} />}
+          </div>
+        )}
+        {/* Unified gp-equivalent total (the one shared converter) — only meaningful when there is
+            mixed coin to roll up; a plain-gold purse already reads its total off the GP slot. */}
+        {(coins.pp > 0 || coins.ep > 0 || coins.sp > 0 || coins.cp > 0) && (
+          <div className="hand muted" style={{ fontSize: 12, marginTop: 6, textAlign: "right" }}>
+            ≈ {Number.isInteger(purseTotalGp) ? purseTotalGp : purseTotalGp.toFixed(2)} gp total
+          </div>
+        )}
 
         <Divider />
 
@@ -509,7 +532,13 @@ function ScreenMerchant({ onNavigate, state, setState }) {
               }).catch((e) => toast({ kind: "danger", title: "Move not sent", body: e?.message || "viewer unreachable" }))
                 .finally(() => { submittingRef.current = false; });
             } else {
-              setLocalCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
+              // Read-only preview: the local-spend simulation only applies when the displayed
+              // purse IS the local demo purse (no live party). When a live party purse is shown
+              // (read-only view of a live session, can_act=false), do NOT fake a coin change —
+              // the engine is the sole writer; just clear the counter (honest no-write).
+              if (!liveParty.length) {
+                setLocalCoins((prev) => ({ ...prev, gp: prev.gp + balanceDelta }));
+              }
               setCart([]);
               submittingRef.current = false;
             }

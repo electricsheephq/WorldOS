@@ -35,6 +35,45 @@ window.itemArtScope = function itemArtScope(itemOrName) {
   return aliased ? "item-" + aliased : "";
 };
 
+// ── Shared currency layer (RRI-5e98e6f optimizer finding: "Stash 35 GP, Market 232 GP") ──
+// The coin purse is engine-owned (server `_currency_for` → {cp,sp,ep,gp,pp} ints) and rides on
+// EACH party member of BOTH the /character-surface and /inventory-surface read models
+// (`party[i].currency`). The Market used to read a non-existent top-level `surface.currency` and
+// fell through to a hardcoded demo purse ({gp:232}), while the Stash showed the live per-hero
+// purse (e.g. 35gp) — the 35-vs-232 contradiction. Both screens now derive their displayed coins
+// from these ONE shared helpers so the same character renders the same purse + total everywhere.
+// Read-only: these only project engine-owned numbers; they never write campaign state.
+const _COIN_KEYS = ["pp", "gp", "sp", "ep", "cp"];
+
+// Coerce any currency-ish object to the canonical {pp,gp,sp,ep,cp} int shape (mirrors the engine
+// `_currency_for`). Tolerates undefined/null/garbage by zeroing — never throws, never invents.
+window.normalizeCurrency = function normalizeCurrency(cur) {
+  const src = (cur && typeof cur === "object") ? cur : {};
+  const out = {};
+  for (const k of _COIN_KEYS) {
+    const n = Number(src[k]);
+    out[k] = Number.isFinite(n) ? Math.trunc(n) : 0;
+  }
+  return out;
+};
+
+// The ONE 5e gp-equivalent conversion (1pp=10gp, 1ep=0.5gp, 1sp=0.1gp, 1cp=0.01gp). Using this
+// single converter on both screens is what keeps a "total" from diverging between them.
+window.currencyTotalGp = function currencyTotalGp(cur) {
+  const c = window.normalizeCurrency(cur);
+  return c.pp * 10 + c.gp + c.ep * 0.5 + c.sp * 0.1 + c.cp * 0.01;
+};
+
+// Select the SAME source-of-truth hero's purse both screens render: the active hero by id, else
+// the first party member. Both surfaces are projected from the same snapshot in the same `party`
+// order, so an absent/blank active id (the Market has no hero switcher) lands on party[0] — which
+// is exactly the Stash's default active hero. Always returns the normalized coin shape.
+window.partyPurse = function partyPurse(party, activeId) {
+  const list = Array.isArray(party) ? party : [];
+  const hero = list.find((p) => p && p.id === activeId) || list[0] || null;
+  return window.normalizeCurrency(hero && hero.currency);
+};
+
 const NAV_GROUPS = [
   {
     id: "g_table", label: "Table", glyph: "dice",
