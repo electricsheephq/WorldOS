@@ -58,6 +58,20 @@ if [ -f "$CARRY" ]; then
   else
     fail "carry file missing the fired beat text. Contents:"; sed 's/^/      /' "$CARRY"
   fi
+  # --- EXPIRY CHANNEL (the dict-repr leak). The expired clock effect (Bless) must surface as
+  #     its clean NAME on the "effects that ran out" line, NEVER as the raw {character_id, name}
+  #     dict repr. The engine returns expired_effects as list[{character_id, name}]; before the
+  #     fix str(x) rendered the whole dict, leaking "character_id" + braces to the player. -----
+  if grep -q "effects that ran out overnight: .*Bless" "$CARRY"; then
+    pass "carry file carries the expired effect's clean NAME (Bless)"
+  else
+    fail "carry file missing the clean expired-effect name. Contents:"; sed 's/^/      /' "$CARRY"
+  fi
+  if grep -q "character_id" "$CARRY"; then
+    fail "carry file leaked the raw dict repr (found 'character_id'). Contents:"; sed 's/^/      /' "$CARRY"
+  else
+    pass "carry file does NOT leak the raw dict repr (no 'character_id')"
+  fi
 else
   fail "soft-tick did NOT write a carry file (the F04-2 leak)"
 fi

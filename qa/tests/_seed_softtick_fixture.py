@@ -1,5 +1,9 @@
-"""F04-2 fixture: seed a campaign with a thread-beat due TODAY so the harness soft-tick's
-advance_time(phases=1) fires it into `world_beats` — the content the leak used to discard.
+"""F04-2 fixture: seed a campaign with (a) a thread-beat due TODAY so the harness soft-tick's
+advance_time(phases=1) fires it into `world_beats`, AND (b) a minute-scale clock effect that
+EXPIRES on that same phase advance so it lands in `expired_effects` — the two living-world
+channels the leak used to discard. The expiry channel is list[{character_id, name}] (NOT plain
+strings like the others), which is why its carry line must render the effect NAME, not the raw
+dict repr (F04-2 follow-up).
 
 Run with WORLDOS_STATE_DIR/CLAWDND_STATE_DIR pointed at a temp state dir (the shell proof
 does this). Prints ONLY the campaign id on success so the caller can capture it.
@@ -19,7 +23,7 @@ if _engine not in sys.path:
 
 import server  # noqa: E402
 import store  # noqa: E402
-from models import Consequence  # noqa: E402
+from models import ActiveEffect, Consequence  # noqa: E402
 
 
 def main() -> int:
@@ -38,6 +42,15 @@ def main() -> int:
             thread_id="thread-fixture-f042",
         )
     )
+    # A minute-scale clock effect that EXPIRES on the soft-tick's phase advance: out of combat,
+    # ANY time-of-day phase advance expires a round/minute-scale effect
+    # (combat.expire_clock_effects), so advance_time(phases=1) reports it in `expired_effects`.
+    # That channel is list[{character_id, name}] (dicts, unlike the string-valued world_beats /
+    # world_developments), so the carry line must surface the effect NAME ("Bless"), never the
+    # raw "{'character_id': ..., 'name': 'Bless'}" dict repr (the F04-2-follow-up bug).
+    pc = next(iter(c.characters.values()))
+    pc.active_effects.append(ActiveEffect(name="Bless", scale="minutes", rounds_remaining=10))
+
     # Put the clock at evening so advance_time(phases=1) rolls a real phase (steps > 0 -> tick).
     c.time_of_day = "evening"
     store.save_campaign(c)
