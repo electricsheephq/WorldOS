@@ -298,6 +298,10 @@ turn() {
   local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
+    # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the in-function retry
+    # below must not re-mark: attempt 1's logged prose still counts as this beat's), so the
+    # caller's clawdnd_resolve_dm_reply can tell a GENUINE #357 recovery from RECYCLED prose.
+    clawdnd_dm_prebeat_mark "$STATE_DIR"
     # #623: prepend the live-progress rule so the DM logs an early /events narration beat (parity
     # with play_codex_dm.sh) — without it the long beat shows blank → the perceived drop/hang.
     msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
@@ -361,7 +365,10 @@ turn() {
       _dm_invoke; rc=$?
     fi
     cat "$out" >> "$COMBINED"
-    jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+    # SYN-01: shared classification front door — notes the FINAL attempt's $out for the caller's
+    # clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's "result"
+    # text is the API's error string, never narration), surfacing the re-auth hint instead.
+    clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
     out="$STATE_DIR/companion.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \

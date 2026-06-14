@@ -257,6 +257,10 @@ fi
 # deadline via clawdnd_dm_retry_timeout. Echoes the DM's final text.
 dm_turn() {
   local first="$1" msg="$2" campaign_id="${3:-}" out resume=() extra=() rc beat_timeout
+  # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the in-function retry
+  # below must not re-mark: attempt 1's logged prose still counts as this beat's), so the
+  # caller's clawdnd_resolve_dm_reply can tell a GENUINE #357 recovery from RECYCLED prose.
+  clawdnd_dm_prebeat_mark "$STATE_DIR"
   # #623: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE in
   # qa/lib_beat_driver.sh — parity with scripts/play_party.sh + scripts/play_codex_dm.sh) so the DM
   # logs an EARLY /events narration beat. Its ABSENCE in this SOLO path was the #623 bug: the DM
@@ -332,7 +336,10 @@ dm_turn() {
     [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2
   fi
   cat "$out" >> "$COMBINED" 2>/dev/null
-  jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+  # SYN-01: shared classification front door — notes the FINAL attempt's $out for the caller's
+  # clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's "result" text
+  # is the API's error string, never narration), surfacing the re-auth hint instead.
+  clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
 }
 
 # Launch the dashboard pointed at THIS game; setting CLAWDND_PLAYER_MOVES flips the

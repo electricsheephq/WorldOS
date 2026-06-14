@@ -184,6 +184,23 @@ def main() -> int:
                 + ("" if has_companion else " (no companion in party ⇒ WARN not fatal)"),
                 fatal=bool(has_companion))
 
+        # SYN-01 (#757 leg 3): dead-beat honesty counters. The wrappers stamp dm rows with
+        # fallback_recovered:true (#357 prose recovered from the engine log, not the DM's own
+        # reply) and beat_failed:true (a wrapper-authored VISIBLE failure beat for a dead /
+        # error-class DM turn — qa/lib_beat_driver.sh clawdnd_chatlog_dm_failed). COUNT + REPORT
+        # both so a masked-dead run can never read as silently clean. The gate does NOT flip on
+        # them — the discount/gate policy stays #757's call; this is the consumer that policy
+        # was blocked on (the stamp was write-only: zero readers before this check).
+        recovered_rows = sum(
+            1 for r in chat if r.get("role") == "dm" and r.get("fallback_recovered") is True)
+        failed_rows = sum(
+            1 for r in chat if r.get("role") == "dm" and r.get("beat_failed") is True)
+        chk("dm_beat_honesty", failed_rows == 0 and recovered_rows == 0,
+            f"beats_failed={failed_rows} fallback_recovered={recovered_rows} — failed beats "
+            f"surfaced as visible failure rows (dead/error-class DM turns); recovered rows used "
+            f"the #357 engine-log fallback. Reported only; gate policy stays #757's call.",
+            fatal=False)
+
     # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
     # tools. An empty moves log means the facade was blocked/unused (e.g. a missing
     # --permission-mode), even though it may have produced complaint text.

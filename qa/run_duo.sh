@@ -132,12 +132,15 @@ COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
 # dashboard can show the PROTAGONIST acting — not just the DM narrating. The DM's own
 # stream (COMBINED) doesn't echo the player's turns, so we capture both sides here.
 CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"
-chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
+# chatlog is the SHARED lib implementation (qa/lib_beat_driver.sh, reads ambient $CHAT at call
+# time). SYN-01/F12-7: a local 2-arg override here used to shadow it AFTER sourcing the lib,
+# silently discarding clawdnd_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
+# re-define chatlog in a runner.
 echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
 
 # $1=role(player|dm) $2=session-id $3=first?(1/0) $4=message ; echoes the agent's reply text
 turn() {
-  local role="$1" sid="$2" first="$3" msg="$4" out resume=() extra=()
+  local role="$1" sid="$2" first="$3" msg="$4" out resume=() extra=() rc=0
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$role" = "dm" ]; then
     # LEAN beats (CLAWDND_LEAN_BEATS=1): a continuing DM beat starts a FRESH session + a
@@ -162,8 +165,13 @@ turn() {
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
+    rc=$?
     cat "$out" >> "$COMBINED"
-    jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
+    # SYN-01: the shared classification front door (qa/lib_beat_driver.sh) — notes $out for the
+    # caller's clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's
+    # "result" text is the API's error string, never a reply), so turn_retry's empty-only retry
+    # now fires on error results too instead of chatting them as DM prose.
+    clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -175,7 +183,12 @@ turn() {
 # A turn, with ONE retry on empty output (a transient CLI/auth/rate blip shouldn't
 # silently truncate a run). Echoes the reply text (possibly empty after the retry).
 turn_retry() {
-  local r; r="$(turn "$@")"
+  local r
+  # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the retry must not
+  # re-mark: attempt 1's logged prose still counts as this beat's), so the resolve path can
+  # tell a GENUINE #357 recovery from RECYCLED pre-beat prose. File-based (subshell-safe).
+  clawdnd_dm_prebeat_mark "$STATE_DIR"
+  r="$(turn "$@")"
   if [ -z "$r" ]; then
     echo "[duo] empty turn ($1) — retrying once…" >&2
     # A cold-open ($3=1) retry must NOT reuse $2's already-registered --session-id (a failed but
@@ -246,7 +259,14 @@ Do the setup now: start_world(\"$WORLD\"), start_session, then seat THEIR charac
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
 clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 echo "[duo] DM opened: ${DMSG:0:120}…"
-[ -z "$DMSG" ] && { echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
+# SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
+# nothing recovered). Record the wrapper-authored VISIBLE failure row — never the error text,
+# never a blank/hidden row — then abort loudly as before.
+if [ -z "$DMSG" ]; then
+  clawdnd_chatlog_dm_failed
+  echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2
+  exit 1
+fi
 clawdnd_chatlog_dm "$DMSG"
 
 # Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
@@ -326,7 +346,13 @@ $EVENT_ADV")"
   # tool call but logged real prose isn't mis-flagged as a silent DM (and isn't blank in chat).
   clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
-  [ -z "$DMSG" ] && { echo "[duo] DM went silent at beat $b; stopping early"; break; }
+  # SYN-01: an empty resolved reply is a FAILED beat — record the visible failure row (counted
+  # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
+  if [ -z "$DMSG" ]; then
+    clawdnd_chatlog_dm_failed
+    echo "[duo] DM went silent at beat $b; stopping early"
+    break
+  fi
   clawdnd_chatlog_dm "$DMSG"
 
   # C — soft clock-tick backstop: if the DM didn't move the clock this beat, advance one
