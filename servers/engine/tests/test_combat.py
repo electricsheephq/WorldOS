@@ -775,6 +775,67 @@ def test_start_combat_no_outlook_for_fair_fight(tmp_path, monkeypatch):
 
 
 # =========================================================================
+# F06-8: companion combat-participation advisory (audit 2026-06-11)
+# =========================================================================
+
+
+def test_start_combat_flags_omitted_co_located_companion(tmp_path, monkeypatch):
+    """F06-8 (audit 2026-06-11): start_combat built the order STRICTLY from passed ids with no
+    party diff and no omission advisory — a co-located companion left out of the fight was
+    silently sidelined (the engine never told the DM). When a living, co-located companion is
+    NOT in combatant_ids, surface a `companions_omitted` advisory (the same engine-tells pattern
+    as extra_attack_reminder / outlook) so the DM can pull them in or narrate why they sit out."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Omit Companion")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", class_name="fighter", level=2)["id"]
+    comp = server.create_character(cid, "Vesper", kind="companion", class_name="cleric", level=2)["id"]
+    bandit = server.spawn_monster(cid, "Bandit", count=1)["spawned"][0]["id"]
+
+    # Start combat with the PC + bandit but FORGET the companion.
+    view = server.start_combat(cid, [pc, bandit])
+    assert "companions_omitted" in view
+    omitted = view["companions_omitted"]
+    assert any(o["id"] == comp and o["name"] == "Vesper" for o in omitted)
+
+
+def test_start_combat_no_omission_advisory_when_all_companions_included(tmp_path, monkeypatch):
+    """When every living companion is in the fight there is NO advisory — the view is unchanged
+    (purely additive; a complete party's start_combat is byte-for-byte today)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("All In")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", class_name="fighter", level=2)["id"]
+    comp = server.create_character(cid, "Vesper", kind="companion", class_name="cleric", level=2)["id"]
+    bandit = server.spawn_monster(cid, "Bandit", count=1)["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, comp, bandit])
+    assert "companions_omitted" not in view
+
+
+def test_start_combat_does_not_flag_a_dead_or_downed_companion(tmp_path, monkeypatch):
+    """A dead/downed companion left out of the fight is NOT flagged — it can't fight, so its
+    omission is correct, not an oversight (avoid false advisories)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+    import store
+
+    cid = server.create_campaign("Dead Companion")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", class_name="fighter", level=2)["id"]
+    comp = server.create_character(cid, "Vesper", kind="companion", class_name="cleric", level=2)["id"]
+    c = store.load_campaign(cid)
+    c.characters[comp].dead = True
+    c.characters[comp].current_hp = 0
+    store.save_campaign(c)
+    bandit = server.spawn_monster(cid, "Bandit", count=1)["spawned"][0]["id"]
+
+    view = server.start_combat(cid, [pc, bandit])
+    assert "companions_omitted" not in view
+
+
+# =========================================================================
 # Change 3: start_combat surpriser_ids — surprise-attack affordance (#153)
 # =========================================================================
 

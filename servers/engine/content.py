@@ -26,6 +26,7 @@ from models import (
     CampaignBacklog,
     CompanionArc,
     CompanionDossier,
+    CompanionQuestArc,
     Character,
     DowntimeProject,
     Event,
@@ -1030,6 +1031,18 @@ def _apply_ending_overlay(c: Campaign, overlay: dict) -> None:
             if supersedes:
                 c.lore_supersedes = list(supersedes)
 
+    # F06-10 (audit 2026-06-11): seed the ending's authored CompanionQuestArcs FIRST — BEFORE
+    # the companion_seeds arcs below. The fix-spec requires this ordering so a personal_quest
+    # GATE in a companion_seeds arc that links a `quest_arc_id` finds its target already present
+    # (resolves cleanly instead of landing in F06-11's dangling-link path). Runs after the base
+    # roster (so the owner ref-check sees base companions) + after base seeding (so quest_ids
+    # ref-check against c.quests). Additive + degrade-not-abort; no `companion_quest_arcs` key in
+    # the overlay is a no-op.
+    ov_id_cqa = overlay.get("id", overlay.get("name", "?"))
+    _seed_companion_quest_arcs_block(
+        c, overlay.get("companion_quest_arcs"), where=f"ending overlay {ov_id_cqa!r}"
+    )
+
     # ADDITIVE post-state seeding (S4 synthesis): the chosen ending may PRE-LOAD a
     # canon companion's relationship arc + sealed agenda, so "the chosen ending shapes
     # which companions betray you, and why" is a real engine fact at start_world — not
@@ -1333,6 +1346,83 @@ def _seed_faction_arcs(c: Campaign, world: dict) -> None:
     Runs AFTER factions are seeded (so an arc's `faction_id` can be ref-checked). Additive +
     degrade-not-abort: a world with no `faction_arcs` key seeds nothing (today's behavior)."""
     _seed_faction_arcs_block(c, world.get("faction_arcs"), where="world faction_arcs block")
+
+
+def _seed_companion_quest_arcs_block(c: Campaign, raw, *, where: str) -> int:
+    """Fold an OPTIONAL authored `companion_quest_arcs` block onto the campaign (F06-10, audit
+    2026-06-11). Mutates `c.companion_quest_arcs`; returns the count seeded.
+
+    This is the missing CONTENT path for the engine-complete CompanionQuestArc machine — until
+    now an authored companion personal-quest arc could only be minted at runtime via the
+    `set_companion_quest_arc` MCP tool, so no world/ending could SHIP one. It mirrors
+    `_seed_faction_arcs_block` byte-for-byte: a list of CompanionQuestArc objects OR a dict
+    id->CompanionQuestArc; each validated into a `CompanionQuestArc`; a present-but-MALFORMED
+    entry is SKIPPED with a diagnostic — DEGRADE-not-abort, exactly the companion_seeds /
+    faction_arcs / events contract — never aborting start_world. A missing/None/non-collection
+    block is a no-op (today's behavior; default {} round-trips).
+
+    Ref-checks (F06-10 fix-spec, REQUIRED — otherwise this loader is the very thing that arms
+    F06-11's forever-error in production): an arc must name a companion that exists in the roster
+    and is a companion; each `quest_ids` / stage `quest_id` projection must point at a tracked
+    Quest already seeded. A dangling ref degrades the WHOLE arc (skip-one). An explicit id
+    collision keeps the first and skips the rest."""
+    if raw is None:
+        return 0
+    if isinstance(raw, dict):
+        entries = list(raw.values())
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        print(f"[content] skipping malformed companion_quest_arcs block in {where} (not a list or object)")
+        return 0
+    seeded = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            print(f"[content] skipping companion_quest_arcs entry in {where} (not an object)")
+            continue
+        try:
+            arc = CompanionQuestArc.model_validate(entry)
+        except (ValidationError, ValueError, TypeError):
+            print(f"[content] skipping malformed companion quest arc in {where}")
+            continue
+        # The arc must belong to a real companion — the lifecycle is character-owned, and a
+        # gate that links it ref-checks the same id. An unknown/non-companion owner is dropped.
+        owner = c.characters.get(arc.companion_id)
+        if not arc.companion_id or owner is None or owner.kind != "companion":
+            print(
+                f"[content] skipping companion quest arc {arc.id!r} in {where}: "
+                f"names unknown/non-companion owner {arc.companion_id!r}"
+            )
+            continue
+        # Every tracked-Quest projection (arc-level quest_ids + per-stage quest_id; the model
+        # validator already folds the latter into quest_ids) must point at a seeded Quest. A
+        # dangling projection degrades the arc (mirrors the faction-arc stage quest_id check).
+        bad_quest = next((qid for qid in arc.quest_ids if qid not in c.quests), None)
+        if bad_quest is not None:
+            print(
+                f"[content] skipping companion quest arc {arc.id!r} in {where}: "
+                f"references unknown tracked quest {bad_quest!r}"
+            )
+            continue
+        if arc.id in c.companion_quest_arcs:
+            print(
+                f"[content] skipping companion quest arc {arc.id!r} in {where}: "
+                f"duplicate arc id (keeping the first)"
+            )
+            continue
+        c.companion_quest_arcs[arc.id] = arc
+        seeded += 1
+    return seeded
+
+
+def _seed_companion_quest_arcs(c: Campaign, world: dict) -> None:
+    """Seed authored companion personal-quest arcs from `world['companion_quest_arcs']` (F06-10).
+
+    Runs AFTER the npc_roster loop (so the named companion exists) and after quest seeding (so a
+    `quest_ids` projection can be ref-checked). Additive + degrade-not-abort: a world with no
+    `companion_quest_arcs` key seeds nothing (today's behavior). The ending overlay may add MORE
+    (see `_apply_ending_overlay`)."""
+    _seed_companion_quest_arcs_block(c, world.get("companion_quest_arcs"), where="world companion_quest_arcs block")
 
 
 def _seed_world_graph(c: Campaign, world: dict) -> None:
@@ -1841,6 +1931,14 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             except (ValidationError, ValueError, TypeError):
                 print(f"[content] skipping malformed arc in npc_roster entry {ch.name!r}")
         c.characters[ch.id] = ch
+
+    # F06-10 (audit 2026-06-11): the CONTENT path for engine-complete CompanionQuestArcs. Runs
+    # AFTER the npc_roster loop so the named companion exists for the owner ref-check (and after
+    # any seeded quests so a quest_ids projection can be ref-checked). Additive + degrade-not-
+    # abort: a world with no `companion_quest_arcs` key seeds nothing (today's behavior). The
+    # ending overlay may add MORE (see _apply_ending_overlay), seeded BEFORE companion_seeds arcs
+    # so a personal_quest GATE that links one resolves cleanly (avoids F06-11's dangling link).
+    _seed_companion_quest_arcs(c, world)
 
     _seed_settlement_pressure(c, world)
 

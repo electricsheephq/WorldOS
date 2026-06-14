@@ -631,12 +631,17 @@ def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monke
     server.set_companion_arc(cid, j, {"arc_gates": [{"kind": "loyalty", "threshold": 40, "note": "trust"}]})
     out = server.camp_scene(cid)
     assert set(out["present"]) == {"Jaheira", "Minsc"}            # companions only, not the PC
-    assert len(out["beats"]) == 2
-    assert all(b.get("prompt") and b.get("voice_id") for b in out["beats"])
-    jbeat = next(b for b in out["beats"] if b["companion"] == "Jaheira")
+    # F06-5 leg (c): EACH companion gets a solo beat AND pair banter is now reachable (the cap
+    # no longer truncates pairs below the solos) — so a 2-companion camp surfaces 2 solos + 1 pair.
+    solo_beats = [b for b in out["beats"] if b["kind"] == "solo"]
+    pair_beats = [b for b in out["beats"] if b["kind"] == "pair_banter"]
+    assert len(solo_beats) == 2
+    assert len(pair_beats) == 1
+    assert all(b.get("prompt") and b.get("voice_id") for b in solo_beats)
+    jbeat = next(b for b in solo_beats if b["companion"] == "Jaheira")
     assert jbeat["attitude_value"] == 25
     assert jbeat["arc"]["next_gate"] == {"kind": "loyalty", "threshold": 40, "points_away": 15}
-    mbeat = next(b for b in out["beats"] if b["companion"] == "Minsc")
+    mbeat = next(b for b in solo_beats if b["companion"] == "Minsc")
     # F06-1: a companion made via create_character now carries the SEEDED DEFAULT arc (a
     # loyalty gate at threshold 25), so the camp beat surfaces that default summary — camp is
     # no longer inert for a companion the DM never hand-authored an arc for.

@@ -207,6 +207,12 @@ class ArcGate(_StrictModel):
     # make the linked arc/stage available once; it never decides success or failure.
     quest_arc_id: str = ""
     stage_id: str = ""
+    # F06-11 (audit 2026-06-11): a ONE-SHOT latch for a broken `quest_arc_id` link. When the
+    # linked companion-quest-arc can't resolve at unlock time, `evaluate` records the error
+    # here and reports it EXACTLY ONCE (instead of regenerating the same error every beat
+    # forever). The gate stays locked so a later set_companion_quest_arc can still recover the
+    # link; a recovery clears this. Additive default "" — old snapshots round-trip unchanged.
+    link_error: str = ""
 
 
 class CompanionAgenda(_StrictModel):

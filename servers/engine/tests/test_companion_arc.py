@@ -1012,18 +1012,51 @@ def test_betrayal_warning_absent_above_the_band():
     assert "betrayal_warning" not in res
 
 
-def test_betrayal_warning_absent_below_the_band():
-    """Below the danger band (attitude < -40) the warning stops — past telegraphing, the
-    turn is imminent (and the high per-beat P speaks for itself)."""
+def test_betrayal_warning_persists_deep_red_below_old_lower_edge():
+    """F06-4 (audit, CORRECTED): a LIVE attitude_below agenda whose companion has fallen
+    DEEP into the red (below the old absolute lower edge of -40) MUST still telegraph —
+    the deepest-red bond is the MOST dangerous, exactly when the DM most needs to
+    foreshadow. The old absolute band [-40,-20] silently dropped this case."""
     agenda = CompanionAgenda(trigger="attitude_below", value=0)
-    # use a fresh companion each beat so a fire doesn't end the loop; just inspect one beat
+    # use a fresh companion so a fire doesn't end the loop; force no-fire to inspect the warning.
     ch = _companion(attitude=-60, agenda=agenda)
-    # Force no-fire this beat with an rng that returns ~1.0 so we can inspect the warning field.
     class _NoFire(random.Random):
-        def random(self):  # always >= any p -> never fires
+        def random(self):  # always >= any p -> never fires this beat
             return 0.999999
     res = companion_arc.evaluate(ch, _campaign_with(ch), rng=_NoFire())
     assert res["agenda_fired"] is False
+    warn = res.get("betrayal_warning")
+    assert warn is not None
+    assert warn["attitude_value"] == -60
+
+
+def test_betrayal_warning_fires_for_low_threshold_agenda():
+    """F06-4 (audit, CORRECTED): the never-warn DEAD ZONE — an agenda whose breaking-point
+    threshold is itself <= -40. With the old absolute band [-40,-20] the conditions
+    (av in band AND av < threshold<=-40) were disjoint, so a saboteur with a low threshold
+    NEVER telegraphed at any attitude. Now it warns once the bond has crossed below its
+    own breaking point and soured past the upper edge."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=-50, note="turns on the party")
+    # below the -50 breaking point and past the upper edge -> a live, foreshadowable turn.
+    ch = _companion(attitude=-55, agenda=agenda)
+    class _NoFire(random.Random):
+        def random(self):
+            return 0.999999
+    res = companion_arc.evaluate(ch, _campaign_with(ch), rng=_NoFire())
+    assert res["agenda_fired"] is False
+    warn = res.get("betrayal_warning")
+    assert warn is not None
+    assert warn["attitude_value"] == -55
+    assert warn["threshold"] == -50
+
+
+def test_betrayal_warning_absent_when_low_threshold_not_yet_crossed():
+    """A low-threshold agenda (value=-50) whose companion sits in the souring band but
+    has NOT yet crossed below the breaking point (av=-30 > -50) does NOT warn — the agenda
+    isn't live yet. (Guards against over-warning when fixing the dead zone.)"""
+    agenda = CompanionAgenda(trigger="attitude_below", value=-50)
+    ch = _companion(attitude=-30, agenda=agenda)  # soured, but above the -50 threshold
+    res = companion_arc.evaluate(ch, _campaign_with(ch), rng=random.Random(0))
     assert "betrayal_warning" not in res
 
 
@@ -1047,6 +1080,58 @@ def test_no_warning_for_non_attitude_or_fired_agenda():
     agenda = CompanionAgenda(trigger="attitude_below", value=0, fired=True)
     ch_fired = _companion(attitude=-30, agenda=agenda)
     assert "betrayal_warning" not in companion_arc.evaluate(ch_fired, _campaign_with(ch_fired))
+
+
+# --- F06-11: a broken personal_quest gate link reports its error EXACTLY ONCE ----
+
+def test_broken_quest_arc_link_reports_error_exactly_once():
+    """F06-11 (audit 2026-06-11, option b — one-shot `link_error` latch): a personal_quest
+    gate whose `quest_arc_id` resolves to no companion quest arc used to RE-REPORT its error
+    on EVERY evaluate forever (gate stayed locked, `continue` regenerated the same error),
+    violating the module's EXACTLY-ONCE contract. Now the error is latched on the gate and
+    reported exactly once; the gate stays LOCKED so a later set_companion_quest_arc can still
+    recover the link (the deliberate author-the-gate-first recovery path)."""
+    from models import ArcGate
+    ch = _companion(attitude=50, gates=[
+        ArcGate(kind="personal_quest", threshold=25, quest_arc_id="cqarc-missing")
+    ])
+    c = _campaign_with(ch)
+
+    first = companion_arc.evaluate(ch, c)
+    unlocks = first.get("companion_quest_unlocks") or []
+    assert len(unlocks) == 1 and "error" in unlocks[0]
+    # The gate stays LOCKED (recovery path preserved), but the error is now latched...
+    assert ch.arc.arc_gates[0].unlocked is False
+    assert ch.arc.arc_gates[0].link_error == unlocks[0]["error"]
+
+    # ...so every later beat is SILENT — the error is reported exactly once.
+    second = companion_arc.evaluate(ch, c)
+    assert "companion_quest_unlocks" not in second
+    third = companion_arc.evaluate(ch, c)
+    assert "companion_quest_unlocks" not in third
+
+
+def test_valid_quest_arc_link_still_unlocks_and_reports_once():
+    """A WELL-FORMED personal_quest gate link still marks the arc available exactly once and
+    flips the gate (regression guard that the F06-11 fix didn't break the happy path)."""
+    from models import ArcGate, CompanionQuestArc, CompanionQuestStage
+    ch = _companion(attitude=50, gates=[
+        ArcGate(kind="personal_quest", threshold=25, quest_arc_id="cqarc-1", stage_id="s1")
+    ])
+    c = _campaign_with(ch)
+    c.companion_quest_arcs["cqarc-1"] = CompanionQuestArc(
+        id="cqarc-1", companion_id=ch.id, title="Reckoning",
+        stages=[CompanionQuestStage(id="s1", title="confront the past")],
+    )
+
+    first = companion_arc.evaluate(ch, c)
+    unlocks = first.get("companion_quest_unlocks") or []
+    assert len(unlocks) == 1 and "error" not in unlocks[0]
+    assert unlocks[0]["changed"] == ["arc", "stage"]
+    assert ch.arc.arc_gates[0].unlocked is True
+    assert c.companion_quest_arcs["cqarc-1"].status == "available"
+    # idempotent thereafter
+    assert "companion_quest_unlocks" not in companion_arc.evaluate(ch, c)
 
 
 # --- the Decision -> flag path (MCP tool layer) ----------------------------------
