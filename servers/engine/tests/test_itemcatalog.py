@@ -479,3 +479,173 @@ def test_equip_freetext_item_payload_unchanged(cid):
     out = server.equip_item(cid, "grett", "lucky pebble")
     assert out["equipped"] is True
     assert "mechanics" not in out
+
+
+# --- F09-6: armor DEX-mod rules recovered from the SRD flatten -----------------
+
+
+def test_catalog_armor_carries_dex_mod_rule():
+    # Light = full DEX (no cap); medium = capped at +2; heavy = no DEX; shield = +2 bonus.
+    light = itemcatalog.resolve("Leather Armor")
+    assert light["armor_category"] == "light"
+    assert light["ac_dex_mod"] == "full" and light["ac_dex_cap"] is None
+    assert light["ac"] == 11
+
+    medium = itemcatalog.resolve("Breastplate")
+    assert medium["armor_category"] == "medium"
+    assert medium["ac_dex_mod"] == "capped" and medium["ac_dex_cap"] == 2
+    assert medium["ac"] == 14  # base AC, NOT the dropped flat value
+
+    heavy = itemcatalog.resolve("Plate Armor")
+    assert heavy["armor_category"] == "heavy"
+    assert heavy["ac_dex_mod"] == "none" and heavy["ac_dex_cap"] is None
+    assert heavy["ac"] == 18
+
+
+def test_shield_is_a_plus_two_bonus_not_ac_two():
+    # The SRD smuggles a shield's +2 BONUS in as ac_base=2 — F09-6 surfaces it as a bonus.
+    shield = itemcatalog.resolve("Shield")
+    assert shield["armor_category"] == "shield"
+    assert shield["ac_bonus"] == 2
+    assert shield["ac_dex_mod"] == "none"
+
+
+def test_catalog_describe_renders_dex_rule_not_flat_ac():
+    # The describe string the DM reads must show the DEX rule, not a flat "AC N".
+    assert "AC +2 (shield)" in server._catalog_describe(itemcatalog.resolve("Shield"))
+    assert "AC 14 + DEX (max +2)" in server._catalog_describe(itemcatalog.resolve("Breastplate"))
+    assert "AC 11 + DEX" in server._catalog_describe(itemcatalog.resolve("Leather Armor"))
+    assert "AC 18 (no DEX)" in server._catalog_describe(itemcatalog.resolve("Plate Armor"))
+    # never the old misleading bare "AC 2" for a shield
+    assert "AC 2]" not in server._catalog_describe(itemcatalog.resolve("Shield"))
+
+
+def test_magic_armor_inherits_dex_rule_via_fk():
+    # A MagicItem/Item armor recovers its DEX rule from the FK-joined base Armor record.
+    # No SRD magic item in this dump carries an `armor` FK, so prove the join path with a
+    # synthetic record pointing at the real breastplate armor pk (medium = +2 cap).
+    weapons, armors = itemcatalog._weapon_armor_join()
+    bp_pk = next(pk for pk, f in armors.items() if f.get("name") == "Breastplate")
+    rec = itemcatalog._flatten("magicitem", {
+        "name": "Enchanted Breastplate", "category": "armor", "armor": bp_pk,
+        "rarity": "rare", "weight": "20.00",
+    })
+    assert rec["kind"] == "armor"
+    assert rec["ac"] == 14
+    assert rec["armor_category"] == "medium"
+    assert rec["ac_dex_mod"] == "capped" and rec["ac_dex_cap"] == 2
+
+
+def test_equip_medium_armor_applies_capped_dex(cid):
+    # F09-6 effective-AC path: medium armor adds DEX up to +2, no further.
+    server.update_character(cid, "grett", patch={"abilities": {"dexterity": 18}})  # +4 DEX
+    server.add_item(cid, "grett", item_name="Breastplate")
+    out = server.equip_item(cid, "grett", "Breastplate")
+    # base 14 + min(+4, +2 cap) = 16  (NOT 14+4=18, and NOT a flat 14)
+    assert out["mechanics"]["suggested_ac"] == 16
+
+
+def test_equip_light_armor_applies_full_dex(cid):
+    server.update_character(cid, "grett", patch={"abilities": {"dexterity": 16}})  # +3 DEX
+    server.add_item(cid, "grett", item_name="Leather Armor")
+    out = server.equip_item(cid, "grett", "Leather Armor")
+    assert out["mechanics"]["suggested_ac"] == 11 + 3  # full DEX, uncapped
+
+
+def test_equip_heavy_armor_ignores_dex(cid):
+    server.update_character(cid, "grett", patch={"abilities": {"dexterity": 18}})  # +4 DEX
+    server.add_item(cid, "grett", item_name="Plate Armor")
+    out = server.equip_item(cid, "grett", "Plate Armor")
+    assert out["mechanics"]["suggested_ac"] == 18  # flat, DEX never applies
+
+
+# --- F09-7: granted Item persists the catalog's structured stats (#756 root) ---
+
+
+def test_granted_weapon_persists_structured_stats(cid):
+    out = server.add_item(cid, "grett", item_name="Longsword")
+    it = _item(out["inventory"], "Longsword")
+    assert it["kind"] == "weapon"
+    assert it["damage"] == "1d8" and it["damage_type"] == "slashing"
+    assert it["cost_gp"] == 15.0
+    # the inspector (#756) now has structure, not just prose
+    assert it["ac"] is None and it["armor_category"] == ""
+
+
+def test_granted_armor_persists_ac_and_dex_rule(cid):
+    out = server.add_item(cid, "grett", item_name="Breastplate")
+    it = _item(out["inventory"], "Breastplate")
+    assert it["kind"] == "armor"
+    assert it["ac"] == 14
+    assert it["armor_category"] == "medium"
+    assert it["ac_dex_mod"] == "capped" and it["ac_dex_cap"] == 2
+
+
+def test_granted_shield_persists_bonus_in_ac(cid):
+    out = server.add_item(cid, "grett", item_name="Shield")
+    it = _item(out["inventory"], "Shield")
+    assert it["armor_category"] == "shield"
+    assert it["ac"] == 2  # the +2 bonus carried as ac (described as a bonus, not base AC)
+
+
+def test_freetext_item_has_empty_stat_defaults(cid):
+    # additive: a free-text grant carries NO structured stats (all empty defaults).
+    out = server.add_item(cid, "grett", name="a weird trinket")
+    it = _item(out["inventory"], "a weird trinket")
+    assert it["kind"] == "" and it["rarity"] == "" and it["properties"] == []
+    assert it["ac"] is None and it["cost_gp"] is None and it["damage"] == ""
+
+
+def test_old_snapshot_item_round_trips_without_new_fields():
+    # F09-7 invariant: an Item dict from BEFORE these fields existed loads + dumps clean
+    # (defaults fill), so old saves round-trip under the strict model.
+    from models import Item
+
+    old = Item.model_validate({"name": "Old Relic", "quantity": 1, "weight": 2.0,
+                               "description": "x", "equipped": False,
+                               "requires_attunement": False, "attuned": False})
+    assert old.kind == "" and old.cost_gp is None and old.ac is None
+    assert old.properties == []
+    redumped = Item.model_validate(old.model_dump())  # round-trip is stable
+    assert redumped.model_dump() == old.model_dump()
+
+
+def test_granted_stats_do_not_alias_the_catalog_cache(cid):
+    # The catalog rec + its properties list are live lru-cache references; the persisted
+    # Item must COPY them (mutating the owned item must not bleed into the catalog).
+    rec = itemcatalog.resolve("Studded Leather Armor")
+    before = list(rec.get("properties") or [])
+    out = server.add_item(cid, "grett", item_name="Studded Leather Armor")
+    # mutate the catalog rec's properties; the persisted item must be unaffected (it copied)
+    rec.get("properties", []).append("__poison__")
+    fresh = _item(server.get_character(cid, "grett")["inventory"], "Studded Leather Armor")
+    assert "__poison__" not in fresh["properties"]
+    rec["properties"][:] = before  # restore the shared cache list
+
+
+def test_identical_grants_still_stack_with_stats(cid):
+    # Two identical catalog grants produce identical stats -> they still merge to one stack.
+    server.add_item(cid, "grett", item_name="Longsword")
+    out = server.add_item(cid, "grett", item_name="Longsword")
+    swords = [i for i in out["inventory"] if i["name"] == "Longsword"]
+    assert len(swords) == 1 and swords[0]["quantity"] == 2
+
+
+def test_freetext_and_catalog_grants_do_not_merge(cid):
+    # A free-text "Longsword" (no stats) must NOT merge with a catalog Longsword (statted).
+    server.add_item(cid, "grett", name="Longsword")  # bare, no item_name
+    out = server.add_item(cid, "grett", item_name="Longsword")  # statted
+    swords = [i for i in out["inventory"] if i["name"] == "Longsword"]
+    assert len(swords) == 2  # different stats -> two distinct records
+
+
+def test_split_stack_carries_structured_stats(cid):
+    # F09-7 watch-item: equipping splits a unit off a stack — the split unit must keep the
+    # structured stats (the old shallow clone dropped any new Item field).
+    server.add_item(cid, "grett", item_name="Longsword")
+    server.add_item(cid, "grett", item_name="Longsword")  # stack of 2
+    server.equip_item(cid, "grett", "Longsword")
+    inv = server.get_character(cid, "grett")["inventory"]
+    equipped = next(i for i in inv if i["name"] == "Longsword" and i["equipped"])
+    assert equipped["damage"] == "1d8" and equipped["kind"] == "weapon"
+    assert equipped["cost_gp"] == 15.0

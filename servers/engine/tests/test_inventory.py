@@ -175,3 +175,123 @@ def test_sell_negative_price_raises(tmp_path, monkeypatch):  # H1 via tool
     server.add_item(cid, h, "Trinket")
     with pytest.raises(Exception):
         server.sell_item(cid, h, "Trinket", price_gp=-10)
+
+
+# --- F09-9: sell price sanity (TELL by default, optional hard cap) -------------
+
+
+@pytest.fixture
+def shop(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Shop")["id"]
+    h = server.create_character(cid, "Seller", kind="player")["id"]
+    return cid, h
+
+
+def test_sell_surfaces_catalog_cost(shop):
+    cid, h = shop
+    server.add_item(cid, h, item_name="Longsword")  # list 15
+    out = server.sell_item(cid, h, "Longsword", price_gp=10)
+    assert out["catalog_cost_gp"] == 15.0
+    assert "warning" not in out  # at/under list -> no flag
+
+
+def test_sell_above_list_warns_but_does_not_block(shop):
+    cid, h = shop
+    server.add_item(cid, h, item_name="Longsword")  # list 15, cap 2x = 30
+    out = server.sell_item(cid, h, "Longsword", price_gp=100)
+    assert "warning" in out and "list" in out["warning"].lower()
+    # TELL only by default: the sale still goes through and the purse is credited
+    assert out["currency"]["gp"] == 100
+    assert all(i["name"] != "Longsword" for i in out["inventory"])
+
+
+def test_sell_freetext_item_has_null_reference(shop):
+    cid, h = shop
+    server.add_item(cid, h, name="Hand-carved Idol")  # no catalog match
+    out = server.sell_item(cid, h, "Hand-carved Idol", price_gp=500)
+    assert out["catalog_cost_gp"] is None  # no list price to compare
+    assert "warning" not in out  # nothing to warn against
+
+
+def test_sell_reference_reads_persisted_cost_gp(shop):
+    # The reference price comes off the OWNED item's persisted cost_gp (F09-7), which a
+    # catalog grant set to the SRD list — proven by mutating the saved record's cost_gp and
+    # seeing the reference follow it (rather than a fresh by-name catalog re-resolve).
+    cid, h = shop
+    server.add_item(cid, h, item_name="Longsword")  # persists cost_gp=15
+    ch = server.get_character(cid, h)
+    assert next(i for i in ch["inventory"] if i["name"] == "Longsword")["cost_gp"] == 15.0
+    out = server.sell_item(cid, h, "Longsword", price_gp=12)
+    assert out["catalog_cost_gp"] == 15.0  # the persisted/list reference
+    assert "warning" not in out
+
+
+def test_enforce_sell_cap_blocks_overprice(shop):
+    cid, h = shop
+    server.set_house_rules(cid, {"enforce_sell_cap": True})
+    server.add_item(cid, h, item_name="Longsword")  # list 15, cap 2x = 30
+    before = server.get_character(cid, h)
+    with pytest.raises(ValueError, match="enforce_sell_cap"):
+        server.sell_item(cid, h, "Longsword", price_gp=100)
+    # nothing persisted: the item is still held, purse unchanged
+    after = server.get_character(cid, h)
+    assert any(i["name"] == "Longsword" for i in after["inventory"])
+    assert after["currency"] == before["currency"]
+
+
+def test_enforce_sell_cap_allows_under_cap(shop):
+    cid, h = shop
+    server.set_house_rules(cid, {"enforce_sell_cap": True})
+    server.add_item(cid, h, item_name="Longsword")  # list 15, cap 2x = 30
+    out = server.sell_item(cid, h, "Longsword", price_gp=25)  # under cap
+    assert out["currency"]["gp"] == 25
+    assert "warning" not in out
+
+
+# --- F09-10: adjust_currency value paths (spend_gp / earn_gp) ------------------
+
+
+def test_adjust_spend_gp_makes_change(shop):
+    cid, h = shop
+    server.adjust_currency(cid, h, sp=120)  # 12 gp of value in silver
+    out = server.adjust_currency(cid, h, spend_gp=5)  # spend 5 gp value
+    assert inventory.total_copper(Currency(**out)) == 700  # 7 gp left, change made
+
+
+def test_adjust_earn_gp_credits_value(shop):
+    cid, h = shop
+    out = server.adjust_currency(cid, h, earn_gp=15)
+    assert inventory.total_copper(Currency(**out)) == 1500
+
+
+def test_adjust_spend_gp_insufficient_raises_and_persists_nothing(shop):
+    cid, h = shop
+    server.adjust_currency(cid, h, gp=2)
+    before = server.get_character(cid, h)
+    with pytest.raises(ValueError, match="insufficient funds"):
+        server.adjust_currency(cid, h, spend_gp=5)
+    after = server.get_character(cid, h)
+    assert after["currency"] == before["currency"]  # atomic: nothing changed
+
+
+def test_adjust_denomination_underflow_error_points_at_spend_gp(shop):
+    # F09-10: subtracting more gp COINS than held errors with a hint to use spend_gp
+    # (which CAN make change) — the original raw ValueError gave no affordance.
+    cid, h = shop
+    server.adjust_currency(cid, h, sp=120)  # 12 gp of VALUE, but 0 gp coins
+    with pytest.raises(ValueError, match="spend_gp"):
+        server.adjust_currency(cid, h, gp=-5)  # no gp coins to subtract
+
+
+def test_adjust_denomination_path_unchanged(shop):
+    # additive regression: the plain denomination path behaves exactly as before.
+    cid, h = shop
+    out = server.adjust_currency(cid, h, gp=10, sp=5)
+    assert out["gp"] == 10 and out["sp"] == 5
+
+
+def test_adjust_negative_value_param_rejected(shop):
+    cid, h = shop
+    with pytest.raises(ValueError, match="non-negative"):
+        server.adjust_currency(cid, h, spend_gp=-1)
