@@ -22,8 +22,9 @@ complete_quest(campaign_id, quest_id, evolves_to="<a follow-on hook or a free se
 ```
 
 The engine schedules the follow-on as a consequence — due `callback_in_days` later (or immediately, if
-0) — and surfaces it back to you through `check_consequences` when its day comes. You weave the return;
-the engine just makes sure it *comes back*. The grateful family you saved becomes a feud over the reward.
+0) — and surfaces it back to you when its day comes: it fires automatically into `scene_context`'s
+`consequences_due` (the beat re-ground you read every turn), and `check_consequences` shows it too. You
+weave the return; the engine just makes sure it *comes back*. The grateful family you saved becomes a feud over the reward.
 The smuggler you let walk owes you, and one day comes to collect — or to be collected. The cult you broke
 left one survivor who remembers your face. Reach for the *consequence* of the resolution, not a sequel
 hook bolted on: what did winning *cost*, who did it *make*, what did it leave *unfinished*. (If you forget,

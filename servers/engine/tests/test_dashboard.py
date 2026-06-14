@@ -122,6 +122,59 @@ def test_re_resolving_quest_does_not_double_schedule(cid):
     assert len(evo) == 1 and evo[0].id == first_conseq_id  # still exactly one
 
 
+# ── F05-1: the evolution tool seam (complete_quest sets evolves_to directly) ──
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F05-1). Before this fix the ONLY
+# way to set evolves_to/callback_in_days was direct model mutation (see _set_evolution
+# above) — the skill-documented call complete_quest(..., evolves_to=, callback_in_days=)
+# TypeError'd, so the saga mechanism was dead in 100% of real campaigns.
+
+
+def test_complete_quest_evolves_to_kwarg_schedules_evolution(cid):
+    """The skill-documented call shape works: passing evolves_to + callback_in_days
+    on complete_quest sets the fields AND schedules the rule-of-three follow-on in ONE
+    call (no separate update). Source: F05-1."""
+    qid = server.add_quest(cid, "Recover the Sunblade")["id"]
+    before = store.load_campaign(cid)
+    start_day = before.day
+    assert before.consequences == []
+
+    out = server.complete_quest(
+        cid, qid, "completed",
+        evolves_to="hook_shadow_returns", callback_in_days=3,
+    )
+    assert out["status"] == "completed"
+    assert out["evolution_scheduled"]["evolves_to"] == "hook_shadow_returns"
+    assert out["evolution_scheduled"]["trigger_day"] == start_day + 3
+
+    c = store.load_campaign(cid)
+    q = c.quests[qid]
+    # the fields are persisted on the quest (the seam that was unreachable)
+    assert q.evolves_to == "hook_shadow_returns" and q.callback_in_days == 3
+    evo = [con for con in c.consequences if con.note == f"evolves_from:{qid}"]
+    assert len(evo) == 1 and evo[0].trigger_day == start_day + 3
+    assert "hook_shadow_returns" in evo[0].text and "Recover the Sunblade" in evo[0].text
+
+
+def test_complete_quest_without_evolves_to_kwarg_is_unchanged(cid):
+    """ADDITIVE: omitting evolves_to is byte-identical to today — no fields set, nothing
+    scheduled. Source: F05-1 (defaults preserve today's behavior)."""
+    qid = server.add_quest(cid, "Plain Errand")["id"]
+    out = server.complete_quest(cid, qid, "completed")
+    assert "evolution_scheduled" not in out
+    c = store.load_campaign(cid)
+    assert c.quests[qid].evolves_to == "" and c.consequences == []
+
+
+def test_complete_quest_evolves_to_kwarg_does_not_clobber_preset_field(cid):
+    """If the quest ALREADY carries an evolves_to (content/questgen authored it) and the
+    DM calls complete_quest WITHOUT the kwarg, the preset field is preserved and still
+    schedules. The kwarg only sets when explicitly provided. Source: F05-1."""
+    qid = server.add_quest(cid, "Ancient Pact")["id"]
+    _set_evolution(cid, qid, evolves_to="seed_preauthored", callback_in_days=1)
+    out = server.complete_quest(cid, qid, "completed")  # no kwarg
+    assert out["evolution_scheduled"]["evolves_to"] == "seed_preauthored"
+
+
 def test_dashboard_rollup_resolves_links(cid):
     server.create_character(cid, "Hero", kind="player", max_hp=10)
     server.add_quest(cid, "Find the drain", giver_id="brakka", location_id="loc-sump")

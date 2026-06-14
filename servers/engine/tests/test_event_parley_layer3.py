@@ -98,6 +98,22 @@ def test_event_models_default_shapes():
     ev = Event(prompt="p")
     assert ev.trigger == "manual" and ev.resolved is False and ev.options == []
     assert ev.id.startswith("event_")
+    # SYN-04 (F07-3): first_presented_day defaults to None (never presented yet) — additive.
+    assert ev.first_presented_day is None
+
+
+def test_event_first_presented_day_additive_round_trip():
+    """SYN-04: an old Event snapshot without first_presented_day loads with None and
+    round-trips. Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (SYN-04 / F07-3)."""
+    ev = _event(eid="event_fp")
+    data = ev.model_dump(mode="json")
+    old = {k: v for k, v in data.items() if k != "first_presented_day"}
+    assert "first_presented_day" not in old
+    reloaded = Event.model_validate(old)
+    assert reloaded.first_presented_day is None
+    # a stamped value round-trips too
+    ev.first_presented_day = 7
+    assert Event.model_validate(ev.model_dump(mode="json")).first_presented_day == 7
 
 
 def test_event_round_trips_with_full_outcome():
@@ -680,12 +696,17 @@ def _seed_bg(ending: str = "") -> Campaign:
 
 def test_bg_raphael_event_seeds_and_surfaces():
     """The authored Raphael bribe Event loads from the base world and surfaces via present
-    (manual trigger), bound to the canon anchor NPC, with the bribe option carrying the
-    took_bribe decision_flag + the negative Flaming-Fist ripple + the rule-of-three echo."""
+    once its day_reached trigger arms (SYN-04: not at minute one), bound to the canon
+    anchor NPC, with the bribe option carrying the took_bribe decision_flag + the negative
+    Flaming-Fist ripple + the rule-of-three echo."""
     c = _seed_bg()
     assert RAPHAEL_EVENT in c.events, "the authored Raphael Event must seed from world.json"
     ev = c.events[RAPHAEL_EVENT]
     assert ev.prompt.strip(), "the Event must carry a prompt the DM voices"
+    # SYN-04: a day_reached trigger so the devil's bargain doesn't open the campaign cold.
+    assert ev.trigger == "day_reached" and ev.trigger_threshold >= 1
+    assert not any(e.id == RAPHAEL_EVENT for e in events_mod.present(c)), \
+        "must NOT surface on day 1 (the trigger hasn't armed) — SYN-04 fix"
     # bound to a canon roster NPC (the owner's anchoring priority) — Raphael is in the roster
     assert ev.anchor_npc_id == "npc-raphael"
     assert c.characters.get("npc-raphael") is not None, "anchor NPC must exist in the roster"
@@ -697,7 +718,8 @@ def test_bg_raphael_event_seeds_and_surfaces():
     assert bribe.outcome.schedule_in_days > 0 and bribe.outcome.schedule_text.strip()  # L1 echo
     # a refuse path exists (a choice the player can decline cleanly)
     assert events_mod.find_option(ev, "Refuse him") is not None
-    # surfaces NOW (manual trigger, unresolved)
+    # surfaces once the in-world day reaches the trigger (still unresolved)
+    c.day = ev.trigger_threshold
     assert any(e.id == RAPHAEL_EVENT for e in events_mod.present(c))
 
 
@@ -789,20 +811,28 @@ BG_FILL_EVENTS = {
 
 def test_bg_fill_events_seed_and_surface():
     """All four authored fill Events load from the base world, bind to a canon roster anchor NPC,
-    surface via present (manual trigger), and each offers a clean decline/walk-away path."""
+    surface via present once their day_reached trigger arms (SYN-04: staggered, not all at
+    minute one), and each offers a clean decline/walk-away path."""
     c = _seed_bg()
+    # SYN-04: none ride beat 1 — they carry real (day_reached) triggers, not 'manual'.
+    day1_ids = {e.id for e in events_mod.present(c)}
+    for eid in BG_FILL_EVENTS:
+        assert eid not in day1_ids, f"{eid} must NOT surface on day 1 (SYN-04 fix)"
+    # advance the clock past the latest trigger so all four are now available.
+    c.day = max(c.events[eid].trigger_threshold for eid in BG_FILL_EVENTS)
     present_ids = {e.id for e in events_mod.present(c)}
     for eid, (fac_id, _flag) in BG_FILL_EVENTS.items():
         assert eid in c.events, f"the authored fill Event {eid!r} must seed from world.json"
         ev = c.events[eid]
         assert ev.prompt.strip(), f"{eid} must carry a prompt the DM voices"
+        assert ev.trigger == "day_reached", f"{eid} must use a real trigger, not manual (SYN-04)"
         # bound to a canon roster NPC (the owner's anchoring priority)
         assert ev.anchor_npc_id and c.characters.get(ev.anchor_npc_id) is not None, (
             f"{eid} must anchor to a real roster NPC"
         )
         # at least 2 options, and at least one carries the entangling decision_flag the content names
         assert len(ev.options) >= 2
-        assert ev.id in present_ids, f"{eid} (manual trigger, unresolved) must surface via present"
+        assert ev.id in present_ids, f"{eid} (day_reached trigger, unresolved) must surface via present"
         # the touched faction is a real seeded faction (so the rep ripple lands, not degrades)
         assert fac_id in c.factions
 
@@ -912,3 +942,105 @@ def test_bg_fill_astarion_seam_end_to_end():
     # and the advisory telegraph fires so the DM can foreshadow the fracture
     warn = companion_arc._betrayal_warning(astarion, c)
     assert warn is not None and warn["decision_flag_active"] is True
+
+
+# =========================================================================
+# SYN-04 — scene_context throttles manual events to <=1 + stamps
+# first_presented_day so an event presents ONCE then stops re-riding every beat.
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (SYN-04 / F05-3 + F07-3).
+# present_events (standalone) stays the FULL, read-only payload; the throttle +
+# write live in scene_context's events block.
+# =========================================================================
+
+
+def test_present_events_standalone_unchanged_and_full(l3_campaign):
+    """The standalone present_events tool keeps the FULL payload AND stays read-only
+    (the audit's invariant: only scene_context's events block throttles/stamps).
+    Source: SYN-04 leg (b)/(c)."""
+    cid, _pc, _comp = l3_campaign
+    for i in range(3):
+        _inject_event(cid, _event(eid=f"event_full_{i}", trigger="manual",
+                                   prompt=f"Manual event {i} with full prose here."))
+    before = store.load_campaign(cid).model_dump(mode="json")
+    out = server.present_events(cid)
+    after = store.load_campaign(cid).model_dump(mode="json")
+    # all 3 surface, with prompt prose, and NOTHING was written (still read-only)
+    assert len(out["events"]) == 3
+    assert all(e["prompt"] for e in out["events"])
+    assert before == after
+
+
+def test_scene_context_throttles_to_one_manual_event_with_queue(l3_campaign):
+    """scene_context surfaces at most ONE manual event in full + reports the rest as a
+    manual_queued count (the audit's ~6.5KB-every-beat fix). Source: SYN-04 leg (b)."""
+    cid, _pc, _comp = l3_campaign
+    for i in range(3):
+        _inject_event(cid, _event(eid=f"event_q_{i}", trigger="manual",
+                                   prompt=f"Manual decisional {i}."))
+    ev_block = server.scene_context(cid)["events"]
+    # exactly one full event surfaced, the other two are queued (not full prose)
+    assert len(ev_block["events"]) == 1
+    assert ev_block["manual_queued"] == 2
+    assert ev_block["events"][0]["prompt"]  # the surfaced one carries full prose
+
+
+def test_scene_context_stamps_first_presented_day_and_stub_on_repeat(l3_campaign):
+    """An event presented via scene_context is stamped first_presented_day; a LATER
+    scene_context returns it as a compact stub (not full prose), so it stops re-riding
+    every beat at ~1.6K tok. Source: SYN-04 leg (c)."""
+    cid, _pc, _comp = l3_campaign
+    _inject_event(cid, _event(eid="event_once", trigger="manual",
+                              prompt="A long stumble-into prompt that costs tokens every beat."))
+    c = store.load_campaign(cid)
+    day = c.day
+
+    first = server.scene_context(cid)["events"]
+    assert len(first["events"]) == 1
+    # stamped under lock (engine = sole writer; scene_context now writes here)
+    assert store.load_campaign(cid).events["event_once"].first_presented_day == day
+
+    # next beat: already presented -> compact stub, NOT the full prompt prose again
+    second = server.scene_context(cid)["events"]
+    assert second["events"] == []  # not re-surfaced as a fresh full event
+    stubs = second.get("presented", [])
+    assert any(s["id"] == "event_once" for s in stubs)
+    stub = next(s for s in stubs if s["id"] == "event_once")
+    assert "prompt" not in stub or len(stub.get("prompt", "")) < 80  # head only, not full prose
+
+
+def test_scene_context_queued_manual_event_stays_resolvable(l3_campaign):
+    """A manual event throttled OUT of the surfaced slot is still resolvable by id
+    (resolve_event looks it up directly in c.events). Source: SYN-04 leg (b)."""
+    cid, _pc, _comp = l3_campaign
+    _inject_event(cid, _event(eid="event_aaa", trigger="manual", prompt="First."))
+    _inject_event(cid, _event(eid="event_zzz", trigger="manual", options=[
+        ParleyOption(label="Help", outcome=Outcome(faction_id="fac-fist", reputation_delta=5)),
+    ], prompt="Second."))
+    block = server.scene_context(cid)["events"]
+    surfaced_ids = [e["id"] for e in block["events"]]
+    assert "event_aaa" in surfaced_ids and block["manual_queued"] == 1
+    # the QUEUED event (event_zzz) is still resolvable by id
+    res = server.resolve_event(cid, "event_zzz", "Help")
+    assert res["resolved"] is True
+    assert store.load_campaign(cid).factions["fac-fist"].reputation == 5
+
+
+def test_scene_context_triggered_event_surfaces_full_once(l3_campaign):
+    """A non-manual (flag_set) event surfaces FULL exactly once the trigger arms, then
+    becomes a stub. Source: SYN-04 (the content leg moves events off 'manual')."""
+    cid, _pc, _comp = l3_campaign
+    _inject_event(cid, _event(eid="event_flag", trigger="flag_set",
+                              trigger_value="armed", prompt="The flag-gated moment."))
+    # not armed: not surfaced
+    assert server.scene_context(cid)["events"]["events"] == []
+    # arm it
+    with store.campaign_lock(cid):
+        c = store.load_campaign(cid)
+        c.flags["armed"] = True
+        store.save_campaign(c)
+    first = server.scene_context(cid)["events"]
+    assert [e["id"] for e in first["events"]] == ["event_flag"]
+    # next beat: stub, not full again
+    second = server.scene_context(cid)["events"]
+    assert second["events"] == []
+    assert any(s["id"] == "event_flag" for s in second.get("presented", []))

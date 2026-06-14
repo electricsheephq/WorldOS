@@ -8392,14 +8392,28 @@ def _maybe_schedule_quest_evolution(c: Campaign, q: Quest) -> Optional[Consequen
 
 
 @mcp.tool()
-def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -> dict:
+def complete_quest(
+    campaign_id: str,
+    quest_id: str,
+    status: str = "completed",
+    evolves_to: str = "",
+    callback_in_days: int = 0,
+) -> dict:
     """Resolve a quest. status: completed | failed | active.
 
-    Rule-of-three evolution (Quest & Arc engine, Layer 1): if the quest resolves
-    (status -> completed) and carries an ``evolves_to`` follow-on, the engine
-    schedules a Consequence so the thread echoes later (surfaced via
-    check_consequences). Additive + idempotent: empty ``evolves_to`` == today's
-    behavior; re-resolving never double-schedules."""
+    Rule-of-three evolution (Quest & Arc engine, Layer 1): close a won thread with an
+    ECHO so a session becomes a saga. Pass ``evolves_to`` (a follow-on hook/quest id or
+    a free seed tag the DM weaves on callback) and optionally ``callback_in_days`` (the
+    in-world days before it returns; 0 = due immediately) — when the quest resolves
+    (status -> completed) the engine schedules a Consequence that surfaces later via
+    ``check_consequences`` / ``scene_context``. The grateful family becomes a feud, the
+    spared villain returns. You may instead pre-set ``evolves_to`` on the quest (content/
+    questgen) and call this without the kwarg — a field already on the quest is honored.
+
+    Additive + idempotent: omit ``evolves_to`` (and leave the field empty) == today's
+    behavior, byte-for-byte; passing an empty ``evolves_to`` never clobbers a field the
+    quest already carries; re-resolving never double-schedules (the ``evolves_from:<id>``
+    note guards it)."""
     if status not in ("completed", "failed", "active"):
         raise ValueError("status must be completed | failed | active")
     with campaign_lock(campaign_id):
@@ -8408,6 +8422,14 @@ def complete_quest(campaign_id: str, quest_id: str, status: str = "completed") -
         if q is None:
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
+        # F05-1: make the skill-documented evolution seam reachable. Set the rule-of-three
+        # fields from the kwargs ONLY when explicitly provided, so an empty kwarg never
+        # clobbers a field content/questgen already authored on the quest. Assigned under
+        # the lock BEFORE _maybe_schedule_quest_evolution reads them (engine = sole writer).
+        if evolves_to.strip():
+            q.evolves_to = evolves_to.strip()
+        if callback_in_days:
+            q.callback_in_days = max(0, int(callback_in_days))
         evolution = _maybe_schedule_quest_evolution(c, q)
         # A completed quest is an unambiguous "real win" — auto-award milestone XP in
         # xp-mode (deterministic, no LLM judgment) so progression isn't a manual chore the
@@ -9691,6 +9713,99 @@ def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
     ]
 
 
+def _scene_fire_due_consequences(campaign_id: str) -> list[dict]:
+    """F14-4: fire (and surface) the authored Consequences that have come due as of the
+    current day, ON the every-beat scene_context path. Source: ENGINE-AUDIT-2026-06-11
+    (F14-4) — add_consequence was write-only; nothing on the beat loop called
+    ``consequences.due()``, so scheduled world-beats structurally never fired. This is the
+    READ the WRITE was missing.
+
+    Acquires the campaign_lock, fires the due consequences (``consequences.due`` marks each
+    fired so it never re-tells on a later beat — idempotent — and SKIPS worldsim thread
+    beats, which belong to ``world_tick``), then saves ONLY when something fired (no
+    churn on the common no-op beat). Mirrors check_consequences' return shape so the DM
+    sees the same fields it would from the standalone tool."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        fired = consequences_mod.due(c)
+        if fired:  # save only on an actual state change (avoid an updated_at bump per beat)
+            save_campaign(c)
+        return [
+            {"id": x.id, "text": x.text, "note": x.note, "trigger_day": x.trigger_day}
+            for x in fired
+        ]
+
+
+# SYN-04: how many full manual-prose events scene_context surfaces per beat (the read
+# valve). The audit measured 5 full BG event prompts (~6.5KB ≈ 1.6K tok) riding EVERY
+# beat; surfacing at most one keeps the bundle lean while the rest rotate / wait.
+_SCENE_EVENTS_FULL_PER_BEAT = 1
+# A presented-event stub's prompt head length (enough to recognise the thread, not the
+# full ~1KB prose).
+_EVENT_STUB_HEAD_CHARS = 60
+
+
+def _event_full_projection(ev: Event) -> dict:
+    """The FULL event projection (same shape present_events surfaces)."""
+    return {
+        "id": ev.id,
+        "prompt": ev.prompt,
+        "trigger": ev.trigger,
+        "anchor_npc_id": ev.anchor_npc_id,
+        "options": [
+            {"label": opt.label, "tag": opt.tag, "skill": opt.skill, "dc": opt.dc}
+            for opt in ev.options
+        ],
+    }
+
+
+def _event_stub_projection(ev: Event) -> dict:
+    """A COMPACT stub for an already-presented event — enough to keep the thread in the
+    DM's view (recognise it, re-offer its options) WITHOUT re-sending the full prose every
+    beat. Source: SYN-04 leg (c)."""
+    head = (ev.prompt or "")[:_EVENT_STUB_HEAD_CHARS]
+    return {
+        "id": ev.id,
+        "prompt_head": head,
+        "option_labels": [opt.label for opt in ev.options],
+        "note": "already presented — resolve_event by id when the player picks",
+    }
+
+
+def _scene_events_throttled(campaign_id: str) -> dict:
+    """SYN-04: the scene_context EVENTS block — surfaces at most ``_SCENE_EVENTS_FULL_PER_BEAT``
+    NOT-YET-PRESENTED event(s) in full, stamps each ``first_presented_day`` under the
+    campaign_lock (engine = sole writer), renders already-presented live events as compact
+    STUBS, and reports the remaining unpresented count as ``manual_queued`` (they rotate in
+    on later beats). Source: ENGINE-AUDIT-2026-06-11 (SYN-04 / F05-3 + F07-3).
+
+    The standalone ``present_events`` tool is UNCHANGED (full payload, read-only) — only this
+    every-beat bundle throttles. Queued / stubbed events stay resolvable: ``resolve_event``
+    looks them up by id directly from ``c.events``."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        live = events_mod.present(c)  # unresolved + trigger holds, id-ordered
+        fresh = [ev for ev in live if ev.first_presented_day is None]
+        already = [ev for ev in live if ev.first_presented_day is not None]
+
+        surfaced = fresh[:_SCENE_EVENTS_FULL_PER_BEAT]
+        queued = fresh[_SCENE_EVENTS_FULL_PER_BEAT:]
+
+        stamped = False
+        for ev in surfaced:
+            ev.first_presented_day = c.day  # stamp: presented this beat
+            stamped = True
+        if stamped:  # save only when we actually stamped (no per-beat churn otherwise)
+            save_campaign(c)
+
+        return {
+            "events": [_event_full_projection(ev) for ev in surfaced],
+            "presented": [_event_stub_projection(ev) for ev in already],
+            "manual_queued": len(queued),
+            "free_form": True,  # #141: the player may ALWAYS act outside the menu
+        }
+
+
 @mcp.tool()
 def scene_context(
     campaign_id: str,
@@ -9717,8 +9832,18 @@ def scene_context(
                         ``flags``. Always present; empty collections == today.
       - ``director``  — get_campaign_director(campaign_id): the top structural
                         debts the campaign OWES right now (advisory, read-only).
-      - ``events``    — present_events(campaign_id): stumble-into decisionals whose
-                        contract-safe trigger has fired this beat (READ-ONLY).
+      - ``events``    — the THROTTLED stumble-into decisionals (SYN-04): at most ONE
+                        not-yet-presented Event surfaces in FULL per beat (``events``);
+                        the engine stamps its ``first_presented_day`` so a later beat
+                        renders it as a compact STUB (``presented``) instead of re-sending
+                        its full ~1KB prose every turn; the rest queue as ``manual_queued``
+                        (a count, rotating in over later beats). Resolve any of them by id
+                        via ``resolve_event``. The standalone ``present_events`` tool still
+                        returns the FULL, read-only payload when you want every option.
+      - ``consequences_due`` — the authored Consequences that come DUE this beat, FIRED
+                        (and surfaced) here so the deferred world actually moves (F14-4).
+                        Always present; ``[]`` when nothing is due. Idempotent: each fires
+                        exactly once (worldsim thread-beats are left for ``world_tick``).
       - ``companion_arcs`` — check_companion_arc(campaign_id): bonds that just
                         turned / a ``betrayal_warning`` to foreshadow. (This is the
                         one sub-call that persists arc progress — same effect as
@@ -9741,13 +9866,18 @@ def scene_context(
                         active quests, combat status, pacing_mode, seed_params.
                         LAST because it carries the volatile values (clock, HP).
 
-    Read-mostly: it runs the SAME code paths as the individual tools (so behavior
-    and side effects are identical — including check_companion_arc's arc-progress
-    save), just bundled. ``durable`` + ``recent_narration`` are pure READS/derivations
-    over committed state — scene_context NEVER writes campaign state itself. Use this
-    every beat in place of the separate get_state / get_campaign_director /
-    present_events / check_companion_arc calls. For a returning NPC you still want
-    recall_npc(npc_id) / get_scene on arrival — those stay their own calls.
+    Read-MOSTLY: ``durable`` / ``recent_narration`` / ``recall`` / ``state`` are pure
+    reads/derivations. Three sub-paths persist engine-mutated progress under the
+    campaign_lock — the same shape check_companion_arc has always had on this bundle:
+    ``companion_arcs`` saves arc progress, ``events`` stamps each surfaced Event's
+    ``first_presented_day`` (so it stops re-riding every beat, SYN-04), and
+    ``consequences_due`` marks fired the consequences it surfaces (so the deferred world
+    actually moves AND never re-fires, F14-4). Each save is guarded — it happens only when
+    that sub-path actually changed state, so a beat with nothing to fire/stamp writes only
+    what check_companion_arc already wrote. Use this every beat in place of the separate
+    get_state / get_campaign_director / present_events / check_companion_arc /
+    check_consequences calls. For a returning NPC you still want recall_npc(npc_id) /
+    get_scene on arrival — those stay their own calls.
     """
     # Each delegate takes (and fully releases) the per-campaign flock before the
     # next runs — sequential, never nested — so this is deadlock-free even though
@@ -9760,7 +9890,14 @@ def scene_context(
     out: dict = {
         "durable": _scene_durable_threads(_require(campaign_id)),
         "director": get_campaign_director(campaign_id),
-        "events": present_events(campaign_id),
+        # SYN-04: the THROTTLED events view (<=1 full event/beat + first_presented_day
+        # stamping + stubs + manual_queued) instead of present_events' full every-beat
+        # dump. The standalone present_events tool is unchanged.
+        "events": _scene_events_throttled(campaign_id),
+        # F14-4: fire (and surface) the authored consequences that come due this beat —
+        # the every-beat READ that add_consequence's WRITE was missing. Always present
+        # (empty list when nothing is due) so the DM can rely on the key.
+        "consequences_due": _scene_fire_due_consequences(campaign_id),
         "companion_arcs": check_companion_arc(campaign_id),
     }
     if recent_narration and recent_narration > 0:
