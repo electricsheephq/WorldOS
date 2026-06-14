@@ -47,6 +47,7 @@ import travel
 import wander
 import worldsim
 import wrapper_progress as _wrapper_progress_mod
+import _env
 from models import (
     SKILL_ABILITIES,
     Ability,
@@ -9680,6 +9681,29 @@ def _scene_durable_threads(c: Campaign) -> dict:
     }
 
 
+# SYN-08 / F07-11: how many RAW rows to over-read for each requested player-facing
+# beat. recent_narration filters out bookkeeping (rolls / system / wrapper-heartbeat /
+# combat-log) before taking the last N, so the bounded tail must hand back more raw
+# rows than N. 8x covers a tail that is mostly bookkeeping while still short-circuiting
+# the whole-history re-parse on a long campaign.
+_RECENT_RAW_SLACK = 8
+
+
+def _recent_narration_max_chars() -> int:
+    """SYN-08 / F14-17: optional per-beat soft cap (chars) for recent_narration's
+    prose tail. DEFAULT-OFF (0): bounding the WINDOW (last-N) is lossless and always
+    on, but byte-capping the CONTENT drops story, so it only engages when a wrapper
+    sets ``WORLDOS_RECENT_NARRATION_MAX_CHARS`` (legacy ``CLAWDND_*`` honored). Story
+    is the north star — ride a long-campaign duo A/B before any default change.
+    Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-17, SYN-08)."""
+    raw = _env.env_var("RECENT_NARRATION_MAX_CHARS", "0")
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
 def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
     """The last ``limit`` PLAYER-FACING beats (kind in narration|dialogue) across
     the WHOLE campaign's session logs, in CHRONOLOGICAL order — the prose tail a
@@ -9693,12 +9717,25 @@ def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
     session_ids order, defensive disk tail, stable by timestamp) so the last N
     beats surface regardless of which session wrote them.
 
+    SYN-08 / F07-11: the read is BOUNDED (``read_log_all(tail=…)``) so this
+    every-beat surface no longer re-parses the entire append-only campaign history
+    just to return the last handful — it scans a bounded newest-first window. This
+    is lossless: the same last-N player-facing beats come back (the slack covers the
+    bookkeeping rows the filter below drops).
+
     Rolls / system / combat-log rows are bookkeeping noise and are dropped (mirrors
     recap's _STORY_KINDS, minus combat: this is the spoken story).
     """
     if limit <= 0:
         return []
-    entries = read_log_all(c.id, getattr(c, "session_ids", None))
+    # F07-11: bound the read to a newest-first window instead of re-parsing the whole
+    # append-only history. We OVER-read the raw tail (``limit * _RECENT_RAW_SLACK``)
+    # because the filter below drops bookkeeping rows (rolls/system/wrapper/combat-log)
+    # — so the post-filter last-`limit` player-facing beats are intact even when the
+    # raw tail is heavily interleaved with bookkeeping. read_log_all(tail=…) returns
+    # exactly the last K RAW rows the full walk would, so this stays lossless.
+    raw_tail = limit * _RECENT_RAW_SLACK
+    entries = read_log_all(c.id, getattr(c, "session_ids", None), tail=raw_tail)
     # #749: drop the wrapper progress heartbeat (exact-match) — it is the QA/play wrappers'
     # mid-turn liveness filler, not the DM's prose. Feeding it back here told a lean
     # (transcript-free) DM that canned filler was its own canon.
@@ -9707,8 +9744,14 @@ def _scene_recent_narration(c: Campaign, limit: int) -> list[dict]:
         if e.kind in ("narration", "dialogue")
         and not _wrapper_progress_mod.is_wrapper_progress_line(e.text)
     ]
+    # F14-17: per-beat soft cap is DEFAULT-OFF (0 -> verbatim, today's behavior).
+    cap = _recent_narration_max_chars()
+
+    def _text(e) -> str:
+        return recap._soft_truncate(e.text, cap) if cap > 0 else e.text
+
     return [
-        {"text": e.text, **({"speaker": e.speaker} if e.speaker else {})}
+        {"text": _text(e), **({"speaker": e.speaker} if e.speaker else {})}
         for e in facing[-limit:]
     ]
 
