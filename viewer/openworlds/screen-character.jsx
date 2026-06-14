@@ -16,7 +16,7 @@ function characterPortraitScope(p) {
   return (p && p.id) ? "portrait-" + p.id : "";
 }
 
-function ScreenCharacter({ onNavigate, state, setState }) {
+function ScreenCharacter({ onNavigate, state, setState, liveSession }) {
   const surfaceQuery = window.combatSurfaceFromCampaign
     ? window.combatSurfaceFromCampaign(
         (Array.isArray(state?.campaigns) ? state.campaigns : []).find((c) => c.id === state?.activeCampaign) ||
@@ -34,6 +34,16 @@ function ScreenCharacter({ onNavigate, state, setState }) {
   const [restOpen, setRestOpen] = React.useState(false);
   const [levelUpOpen, setLevelUpOpen] = React.useState(false);
   const toast = window.useToast ? window.useToast() : (() => {});
+
+  // #610/#617 — the Rest & Prepare relay. The Make-camp / Seal-the-choices CTAs write THROUGH THE
+  // ENGINE (sole writer) via /move, exactly as camp-sidebar.jsx and the level-up picker do — the
+  // viewer never mutates HP / slots / prepared spells itself. They are live + functional when a
+  // session is attached (`can_act`) AND the DM isn't mid-turn (#402), honestly disabled + explained
+  // otherwise. `dmBusy` rides the app-level liveSession hook, mirroring ScreenMap → CampSidebar.
+  const canAct = Boolean(surface?.can_act);
+  const dmPending = liveSession?.pending || null;
+  const dmBusy = Boolean(dmPending && !dmPending.stuck);
+  const campaignId = surface?.campaign_id || state?.activeCampaign || "";
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     try {
@@ -303,7 +313,19 @@ function ScreenCharacter({ onNavigate, state, setState }) {
         </div>
       </div>
 
-      {restOpen && <RestPrepareModal hero={hero} party={party} onClose={() => setRestOpen(false)} toast={toast} setState={setState} />}
+      {restOpen && (
+        <RestPrepareModal
+          hero={hero}
+          party={party}
+          campaignId={campaignId}
+          canAct={canAct}
+          dmBusy={dmBusy}
+          onClose={() => setRestOpen(false)}
+          onDone={() => { setRestOpen(false); loadSurface(); }}
+          toast={toast}
+          setState={setState}
+        />
+      )}
       {levelUpOpen && (
         <LevelUpModal
           hero={hero}
@@ -424,9 +446,23 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
     }
   };
 
-  // Confirm is blocked ONLY while submitting or when a subclass is required but unnamed — it is
-  // never permanently disabled (that is the RestPrepareModal display-only stub; the picker writes).
-  const confirmDisabled = submitting || (subclassDue && !subclassName.trim());
+  // #607: is there an XP-legal level to advance into? The planner only lists LEGAL options (it
+  // pushes no-XP paths to blocked_options), so an EMPTY options list when the modal was opened on a
+  // pending subclass means "no XP earned yet for the next level" — the affordance is open to NAME
+  // the missed subclass, but a level-up confirm would be illegal. The free-standing subclass naming
+  // still rides the next earned level-up; until then, block + explain.
+  const noLegalLevel = !loading && !error && options.length === 0;
+  const subclassNeedsName = subclassDue && !subclassName.trim();
+  // Confirm is blocked while submitting, when a subclass is required but unnamed, or when there is
+  // no XP-legal level to advance into — never PERMANENTLY (that is the old display-only stub). The
+  // reason is surfaced as a hover tooltip so the disabled state is never a mystery (the optimizer
+  // persona's complaint: a dead "Confirm advancement" with no explanation of WHY).
+  const confirmBlockReason = noLegalLevel
+    ? "No XP earned yet — there's no level to advance into. Earn more XP first."
+    : subclassNeedsName
+      ? "Name (or pick) your " + subclassGroupLabel + " to confirm — the DM finalizes it"
+      : "";
+  const confirmDisabled = submitting || !!confirmBlockReason;
 
   return (
     <div style={{
@@ -509,8 +545,12 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
                         data-worldos-testid="levelup-subclass-options">
                         {subclassOptions.map((opt) => {
                           const selected = subclassName.trim().toLowerCase() === (opt.name || "").toLowerCase();
+                          // #607: each option lists the level-3 features it grants so the picker is a
+                          // real BROWSABLE comparison ("what each tradition gives me"), not a name list.
+                          const optFeatures = Array.isArray(opt.features) ? opt.features : [];
                           return (
                             <button key={opt.name} type="button"
+                              aria-pressed={selected}
                               onClick={() => setSubclassName(opt.name)}
                               data-worldos-testid={"levelup-subclass-option-" + (opt.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}
                               style={{
@@ -522,6 +562,17 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
                               }}>
                               <div style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>{opt.name}</div>
                               {opt.desc && <div className="body-sm" style={{ opacity: 0.85, marginTop: 2 }}>{opt.desc}</div>}
+                              {optFeatures.length > 0 && (
+                                <ul style={{ margin: "6px 0 0", paddingLeft: 16 }}
+                                  data-worldos-testid={"levelup-subclass-features-" + (opt.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}>
+                                  {optFeatures.map((f, i) => (
+                                    <li key={i} className="body-sm" style={{ opacity: 0.9, marginTop: 1 }}>
+                                      <strong>{(f && f.name) || String(f)}</strong>
+                                      {f && f.desc ? <span style={{ opacity: 0.8 }}> — {f.desc}</span> : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </button>
                           );
                         })}
@@ -560,10 +611,19 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
               <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
                 <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close level up modal">Not yet</BrassButton>
                 <BrassButton onClick={confirm} disabled={confirmDisabled} testId="levelup-confirm"
-                  ariaLabel="Confirm level up and relay to the Dungeon Master">
+                  ariaLabel="Confirm level up and relay to the Dungeon Master"
+                  title={confirmBlockReason || "Relays the advancement to the DM via /move — the engine resolves the level-up"}>
                   {submitting ? "Relaying…" : "Confirm advancement"}
                 </BrassButton>
               </div>
+              {/* #607: when Confirm is disabled, say WHY inline (a hover tooltip alone is invisible
+                  to touch + screen-reader users) — never a silently dead button. */}
+              {confirmBlockReason && (
+                <div className="hand muted" style={{ fontSize: 11, marginTop: 8, textAlign: "right" }}
+                  data-worldos-testid="levelup-confirm-reason">
+                  {confirmBlockReason}.
+                </div>
+              )}
             </>
           )}
         </Panel>
@@ -572,10 +632,15 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   );
 }
 
-function RestPrepareModal({ hero, party, onClose, toast, setState }) {
+function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, onDone, toast, setState }) {
   const [step, setStep] = React.useState("rest");
   const [restType, setRestType] = React.useState("long");
   const [prepared, setPrepared] = React.useState({});
+  const [submitting, setSubmitting] = React.useState(false);
+  // #robustness: synchronous in-flight lock (mirrors LevelUpModal / screen-table.jsx). The
+  // `submitting` STATE only updates on re-render, so a rapid double-click would otherwise relay
+  // TWO rest/prepare intents. The ref blocks the second call within the same tick.
+  const submittingRef = React.useRef(false);
   // Watch order is drawn from the LIVE party (first names), never the hardcoded demo trio.
   const watchOrder = (Array.isArray(party) ? party : []).map((p) => (p.name || "").split(" ")[0]).filter(Boolean);
 
@@ -602,28 +667,71 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
     }
   };
 
-  // Display-only: this modal has no write route to the engine. The toasts below are
-  // neutral previews — nothing here mutates HP, spell slots, or prepared spells.
+  // #610/#617 — relay a composed `do` move-intent to the DM (sole writer) and let the engine
+  // resolve it through long_rest/short_rest + prepare_spells (refreshing HP + spell slots,
+  // advancing the clock, recording prepared spells). The viewer NEVER writes snapshot — this is
+  // the same write path camp-sidebar.jsx and LevelUpModal use. Synchronously locked + busy-gated.
+  const relayMove = async (text, onSuccess, eyebrow, title) => {
+    if (submittingRef.current) return;
+    if (dmBusy) {
+      toast({ kind: "danger", eyebrow: "Camp", title: "The Dungeon Master is still narrating", body: "Resolve the current beat first — then make camp and rest." });
+      return;
+    }
+    if (!canAct) {
+      toast({ kind: "danger", eyebrow: "Camp", title: "The chronicle is read-only", body: "Start a session to make camp, rest, and prepare spells." });
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "do", text, campaign: campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || "move " + response.status);
+      toast({ kind: "rest", eyebrow, title, body: "Move relayed to the DM — the engine resolves it, refreshes the party, and advances the clock." });
+      if (onSuccess) onSuccess();
+    } catch (e) {
+      toast({ kind: "danger", eyebrow, title: title + " not sent", body: (e && e.message) || "The viewer could not reach /move." });
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  // Make camp: relay the chosen rest, then advance to the spell-preparation step.
   const completeRest = () => {
-    toast({
-      kind: "rest",
-      eyebrow: (restType === "long" ? "Long rest" : "Short rest") + " (preview)",
-      title: "Rest preview",
-      body: "Display-only — rest is not saved to the engine.",
-    });
-    setStep("prep");
+    const watch = watchOrder.length > 0 ? ` ${watchOrder.join(", then ")} keep watch.` : "";
+    const text = restType === "long"
+      ? `${hero.name} and the party make camp and take a long rest — restore HP, recover all spell slots, and refresh abilities, then advance the clock to morning.${watch}`
+      : `${hero.name} and the party take a short rest — spend Hit Dice to recover HP and refresh short-rest abilities.${watch}`;
+    relayMove(text, () => { submittingRef.current = false; setSubmitting(false); setStep("prep"); },
+      restType === "long" ? "Long rest" : "Short rest", "Rest");
   };
 
   const completePrep = () => {
-    const count = Object.values(prepared).reduce((s, l) => s + l.length, 0);
-    toast({
-      kind: "item",
-      eyebrow: "Spellbook (preview)",
-      title: count + " spell" + (count !== 1 ? "s" : "") + " selected",
-      body: "Display-only — spell preparation is not saved to the engine.",
-    });
-    onClose();
+    // Compose the prepared list (level-tagged) into the intent so the engine records exactly
+    // which spells are prepared for the day; empty = "leave my preparation unchanged".
+    const named = Object.keys(prepared)
+      .sort((a, b) => Number(a) - Number(b))
+      .flatMap((lv) => (prepared[lv] || []).map((n) => n))
+      .filter(Boolean);
+    const text = named.length > 0
+      ? `${hero.name} prepares today's spells: ${named.join(", ")}.`
+      : `${hero.name} keeps their currently prepared spells.`;
+    relayMove(text, () => { if (onDone) onDone(); else onClose(); },
+      "Spellbook", "Preparation");
   };
+
+  // Why the CTAs are disabled, surfaced as a hover tooltip (and the inline note below) so a dead
+  // button is never a mystery — mirrors camp-sidebar.jsx and the level-up picker.
+  const blockReason = !canAct
+    ? "The chronicle is read-only — start a session to make camp and rest"
+    : dmBusy
+      ? "The Dungeon Master is still narrating — resolve the current beat first"
+      : "";
+  const ctaDisabled = submitting || !!blockReason;
 
   return (
     <div style={{
@@ -685,10 +793,17 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
 
               <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
                 <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close rest and prepare modal">Not yet</BrassButton>
-                <BrassButton onClick={completeRest} disabled title="Display-only — rest is not saved to the engine">
-                  Make camp <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+                <BrassButton onClick={completeRest} disabled={ctaDisabled} testId="rest-make-camp"
+                  ariaLabel="Make camp and relay the rest to the Dungeon Master"
+                  title={blockReason || "Relays the rest to the DM via /move — the engine refreshes HP + spell slots and advances the clock"}>
+                  {submitting ? "Relaying…" : "Make camp"}
                 </BrassButton>
               </div>
+              {blockReason && (
+                <div className="hand muted" style={{ fontSize: 11, marginTop: 8, textAlign: "right" }}>
+                  {blockReason}.
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -759,8 +874,10 @@ function RestPrepareModal({ hero, party, onClose, toast, setState }) {
                 </span>
                 <div style={{ display: "flex", gap: 10 }}>
                   <BrassButton tone="ghost" onClick={onClose} testId="modal-close" ariaLabel="Close rest and prepare modal">Close book</BrassButton>
-                  <BrassButton onClick={completePrep} disabled title="Display-only — spell preparation is not saved to the engine">
-                    Seal the choices <span style={{ fontSize: 9, opacity: 0.7 }}>(preview)</span>
+                  <BrassButton onClick={completePrep} disabled={ctaDisabled} testId="rest-prepare-spells"
+                    ariaLabel="Seal today's prepared spells and relay to the Dungeon Master"
+                    title={blockReason || "Relays your prepared spells to the DM via /move — the engine records the day's preparation"}>
+                    {submitting ? "Relaying…" : "Seal the choices"}
                   </BrassButton>
                 </div>
               </div>

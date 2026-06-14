@@ -1204,7 +1204,7 @@ function ScreenRouter({ screen, state, setState, onNavigate, campMode, setCampMo
     case "roster":    return <ScreenRoster state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
     case "table":     return <ScreenTable state={state} setState={setState} onNavigate={onNavigate} liveSession={liveSession} />;
     case "combat":    return <ScreenCombat state={state} setState={setState} onNavigate={onNavigate} />;
-    case "character": return <ScreenCharacter state={state} setState={setState} onNavigate={onNavigate} />;
+    case "character": return <ScreenCharacter state={state} setState={setState} onNavigate={onNavigate} liveSession={liveSession} />;
     case "create":    return <ScreenCreate state={state} setState={setState} onNavigate={onNavigate} preferredProvider={preferredProvider} />;
     case "forge":     return <ScreenForge state={state} setState={setState} onNavigate={onNavigate} />;
     case "relations": return <ScreenRelations state={state} setState={setState} onNavigate={onNavigate} />;
