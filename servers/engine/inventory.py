@@ -16,6 +16,15 @@ from models import Character, Currency, Item
 ATTUNEMENT_LIMIT = 3
 _COINS_PER_POUND = 50  # SRD variant: 50 coins weigh 1 lb
 
+# F09-7: the structured stat fields a catalog grant persists onto an Item (beyond the
+# original name/weight/attunement/description). Kept in one place so _split_one's clone,
+# add_item's stacking-identity check, and the server-side catalog extractor all agree —
+# the audit's watch-item is that _split_one MUST carry these or a split stack loses them.
+_STAT_FIELDS = (
+    "kind", "rarity", "cost_gp", "damage", "damage_type",
+    "ac", "armor_category", "ac_dex_mod", "ac_dex_cap", "properties",
+)
+
 
 def total_copper(cur: Currency) -> int:
     return cur.cp + cur.sp * 10 + cur.ep * 50 + cur.gp * 100 + cur.pp * 1000
@@ -139,17 +148,34 @@ def _split_one(ch: Character, item: Item) -> Item:
     if item.quantity <= 1:
         return item
     item.quantity -= 1
-    clone = Item(
-        name=item.name, quantity=1, weight=item.weight,
-        requires_attunement=item.requires_attunement, description=item.description,
-    )
+    # F09-7: clone via the full model so EVERY Item field (incl. the new structured
+    # stats) carries to the split-off unit — equipped/attuned reset to a fresh unit.
+    clone = item.model_copy(deep=True)
+    clone.quantity = 1
+    clone.equipped = False
+    clone.attuned = False
     ch.inventory.append(clone)
     return clone
 
 
-def add_item(ch: Character, name, quantity=1, weight=0.0, requires_attunement=False, description="") -> Item:
+def add_item(
+    ch: Character, name, quantity=1, weight=0.0, requires_attunement=False,
+    description="", stats: dict | None = None,
+) -> Item:
+    """Add an item, stacking with a FULLY identical unequipped/non-attuned unit. `stats`
+    (F09-7) carries the catalog's structured fields (kind/rarity/cost_gp/damage/ac/…) to
+    persist onto a granted Item; None == today's free-text behavior (all stat fields stay
+    at their empty defaults). Two grants stack only when their stats are identical too —
+    identical catalog grants produce identical stats, so they still merge."""
     if quantity <= 0:
         raise ValueError("quantity must be positive")
+    stats = {k: stats[k] for k in _STAT_FIELDS if stats and k in stats}
+    # The Item this grant would CREATE — used both to construct the record and to compare
+    # against an existing stack (so we stack only on byte-identical structured stats).
+    prospective = Item(
+        name=name, quantity=quantity, weight=weight,
+        requires_attunement=requires_attunement, description=description, **stats,
+    )
     for it in ch.inventory:  # only stack a fully-identical, unequipped, non-attuned item
         if (
             it.name.lower() == name.lower()
@@ -158,15 +184,14 @@ def add_item(ch: Character, name, quantity=1, weight=0.0, requires_attunement=Fa
             and it.weight == weight
             and it.requires_attunement == requires_attunement
             and it.description == description
+            # F09-7: the structured stats must match too, or two differently-statted
+            # grants of the same name would silently merge under one record.
+            and all(getattr(it, k) == getattr(prospective, k) for k in _STAT_FIELDS)
         ):
             it.quantity += quantity
             return it
-    item = Item(
-        name=name, quantity=quantity, weight=weight,
-        requires_attunement=requires_attunement, description=description,
-    )
-    ch.inventory.append(item)
-    return item
+    ch.inventory.append(prospective)
+    return prospective
 
 
 def remove_item(ch: Character, name, quantity=1) -> None:

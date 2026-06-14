@@ -130,6 +130,40 @@ def _int(value, default: int = 0) -> int:
         return default
 
 
+def _armor_dex_rule(fields: dict, ac_base: int, name: str) -> dict:
+    """F09-6 — recover the SRD armor DEX-mod rule the bare ``ac_base`` throws away.
+
+    SRD ``Armor.json`` carries two rule fields the old flatten ignored:
+    ``ac_add_dexmod`` (does DEX add to AC at all) and ``ac_cap_dexmod`` (the +N cap on
+    that DEX bonus, or null for no cap). Together with ``ac_base`` they reconstruct the
+    armor's category and how a wearer's effective AC is computed — so a Breastplate is
+    "14 + DEX (max +2)", a Plate is a flat 18 (no DEX), and a Shield is a +2 BONUS on top
+    of the wearer's AC, not a base AC of 2.
+
+    Returns the additive keys ``{armor_category, ac_dex_mod, ac_dex_cap, ac_bonus?}`` to
+    fold onto the catalog record. ``armor_category`` ∈ {light, medium, heavy, shield};
+    ``ac_dex_mod`` ∈ {full, capped, none}; ``ac_dex_cap`` is the int cap when capped, else
+    None. A shield (the SRD's flat +2 that ``ac_base`` smuggles in as "2") gets
+    ``ac_bonus`` so callers add it rather than treating 2 as a base AC."""
+    add_dex = bool(fields.get("ac_add_dexmod"))
+    cap = fields.get("ac_cap_dexmod")
+    cap = _int(cap) if cap not in (None, "") else None
+    # Shield: the SRD stores a +2 BONUS as ac_base=2 (no DEX). Detect by name (the only
+    # SRD "armor" whose ac_base is the bonus, not a worn-armor base) so we never mistake a
+    # low-AC body armor for a shield. Heavy/medium/light all carry ac_base >= 11.
+    if "shield" in (name or "").lower() and not add_dex and ac_base <= 3:
+        return {"armor_category": "shield", "ac_dex_mod": "none", "ac_dex_cap": None,
+                "ac_bonus": ac_base}
+    if not add_dex:
+        # Heavy armor — AC is the flat ac_base, DEX never applies.
+        return {"armor_category": "heavy", "ac_dex_mod": "none", "ac_dex_cap": None}
+    if cap is None:
+        # Light armor — full DEX modifier, uncapped.
+        return {"armor_category": "light", "ac_dex_mod": "full", "ac_dex_cap": None}
+    # Medium armor — DEX modifier applies but is capped (SRD: +2).
+    return {"armor_category": "medium", "ac_dex_mod": "capped", "ac_dex_cap": cap}
+
+
 @functools.lru_cache(maxsize=None)
 def _weapon_armor_join() -> tuple[dict, dict]:
     """({weapon_pk: weapon_fields}, {armor_pk: armor_fields}) merged across all
@@ -185,6 +219,7 @@ def _flatten(model: str, fields: dict) -> dict:
             props.append("stealth-disadvantage")
         if fields.get("strength_score_required"):
             props.append(f"str-{fields['strength_score_required']}")
+        ac_base = _int(fields.get("ac_base"))
         return {
             "name": name,
             "kind": "armor",
@@ -194,7 +229,10 @@ def _flatten(model: str, fields: dict) -> dict:
             "cost": _cost(fields.get("cost")),
             "description": fields.get("desc", "") or "",
             "properties": props,
-            "ac": _int(fields.get("ac_base")),
+            "ac": ac_base,
+            # F09-6: carry the DEX-mod rule (light/medium/heavy/shield) so the
+            # effective-AC path can apply it and the description reads correctly.
+            **_armor_dex_rule(fields, ac_base, name),
         }
 
     # MagicItem / Item share a shape. Resolve damage/ac via the weapon/armor FK.
@@ -225,8 +263,14 @@ def _flatten(model: str, fields: dict) -> dict:
     afk = fields.get("armor")
     if afk and afk in armors:
         af = armors[afk]
-        record["ac"] = _int(af.get("ac_base"))
+        ac_base = _int(af.get("ac_base"))
+        record["ac"] = ac_base
+        # F09-6: a magic armor inherits its base armor's DEX-mod rule via the FK join.
+        record.update(_armor_dex_rule(af, ac_base, record["name"]))
     elif fields.get("armor_class"):
+        # Homebrew/inline armor_class with no DEX-rule data: keep the bare AC. Without
+        # ac_add_dexmod we can't infer the category — leave the rule keys absent so the
+        # describe/effective-AC path treats it as a flat AC (today's behavior).
         record["ac"] = _int(fields.get("armor_class"))
     return record
 

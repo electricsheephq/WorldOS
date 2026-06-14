@@ -7199,6 +7199,27 @@ def escape_grapple(
         }
 
 
+def _armor_ac_tag(rec: dict) -> str:
+    """F09-6 — the AC fragment for an armor/shield catalog record, rendered per the SRD
+    DEX-mod rule instead of the bare ``AC {ac_base}`` that misread a Shield as "AC 2" and
+    a Breastplate as a flat "AC 14". A shield is a +N BONUS; body armor states its DEX
+    contribution (light = + DEX, medium = + DEX (max +N), heavy = no DEX)."""
+    ac = rec.get("ac")
+    cat = rec.get("armor_category")
+    if cat == "shield":
+        return f"AC +{rec.get('ac_bonus', ac)} (shield)"
+    if not ac:
+        return ""
+    if cat == "light":
+        return f"AC {ac} + DEX"
+    if cat == "medium":
+        cap = rec.get("ac_dex_cap", 2)
+        return f"AC {ac} + DEX (max +{cap})"
+    if cat == "heavy":
+        return f"AC {ac} (no DEX)"
+    return f"AC {ac}"  # unknown/homebrew flat AC — today's behavior
+
+
 def _catalog_describe(rec: dict) -> str:
     """A one-line description for an inventory item granted from the catalog:
     the SRD prose, prefixed with the mechanical tags (kind/rarity/attunement/
@@ -7208,8 +7229,9 @@ def _catalog_describe(rec: dict) -> str:
         tags.append(rec["rarity"])
     if rec.get("damage"):
         tags.append(f"{rec['damage']} {rec.get('damage_type', '')}".strip())
-    if rec.get("ac"):
-        tags.append(f"AC {rec['ac']}")
+    ac_tag = _armor_ac_tag(rec)
+    if ac_tag:
+        tags.append(ac_tag)
     if rec.get("requires_attunement"):
         tags.append("requires attunement")
     for p in rec.get("properties", []):
@@ -7243,6 +7265,28 @@ def _apply_item_catalog(
     )
 
 
+def _catalog_item_stats(rec: dict | None) -> dict | None:
+    """F09-7 — extract the structured stats to PERSIST onto a granted Item from a catalog
+    record. COPIES every value (the catalog `rec` and its `properties` list are live
+    lru-cache references — aliasing them into a saved Character would let a later mutation
+    leak across campaigns). Maps the catalog's `cost` → Item.`cost_gp`. Returns None for a
+    free-text grant (no resolved record) so the Item keeps its empty-default stats."""
+    if rec is None:
+        return None
+    return {
+        "kind": rec.get("kind", "") or "",
+        "rarity": rec.get("rarity", "") or "",
+        "cost_gp": rec.get("cost"),
+        "damage": rec.get("damage", "") or "",
+        "damage_type": rec.get("damage_type", "") or "",
+        "ac": rec.get("ac"),
+        "armor_category": rec.get("armor_category", "") or "",
+        "ac_dex_mod": rec.get("ac_dex_mod", "") or "",
+        "ac_dex_cap": rec.get("ac_dex_cap"),
+        "properties": list(rec.get("properties") or []),  # COPY — never alias the cache list
+    }
+
+
 def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[dict]:
     """F09-5 stage 1 — TELL, don't enforce: report the mechanical consequences of
     an equip/unequip so the DM can apply them through the existing writer paths.
@@ -7255,18 +7299,36 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
     if rec is None:
         return None
     current_ac, _ = _effective_armor_class(ch)
-    if rec.get("kind") == "armor" and rec.get("ac"):
-        cat_ac = int(rec["ac"])
-        if "shield" in rec["name"].lower():
-            # The SRD flattens a shield's ac_base as 2 — it is a +2 bonus on top
-            # of the wearer's AC, not a base AC of 2.
-            suggested = current_ac + cat_ac if equipped else current_ac - cat_ac
-            basis = f"shield {'+' if equipped else '-'}{cat_ac}"
+    if rec.get("kind") == "armor" and (rec.get("ac") or rec.get("ac_bonus")):
+        dex_mod = ch.ability_modifier(Ability.DEX)
+        category = rec.get("armor_category")
+        if category == "shield" or (category is None and "shield" in rec["name"].lower()):
+            # F09-6: a shield is a +N BONUS on top of the wearer's AC, not a base AC.
+            # The SRD smuggles the bonus in as ac_base=2; prefer the structured ac_bonus.
+            bonus = int(rec.get("ac_bonus") or rec.get("ac") or 2)
+            suggested = current_ac + bonus if equipped else current_ac - bonus
+            basis = f"shield {'+' if equipped else '-'}{bonus}"
         elif equipped:
-            suggested = cat_ac
-            basis = f"base AC {cat_ac}; apply the armor's DEX-mod rule on top"
+            # F09-6: apply the armor's DEX-mod rule to derive the worn AC directly —
+            # light = base + DEX, medium = base + min(DEX, cap), heavy = base flat.
+            base = int(rec["ac"])
+            if category == "light":
+                suggested = base + dex_mod
+                basis = f"light armor: base {base} + DEX ({dex_mod:+d})"
+            elif category == "medium":
+                cap = int(rec.get("ac_dex_cap") or 2)
+                applied_dex = min(dex_mod, cap)
+                suggested = base + applied_dex
+                basis = f"medium armor: base {base} + DEX capped at +{cap} ({applied_dex:+d})"
+            elif category == "heavy":
+                suggested = base
+                basis = f"heavy armor: flat AC {base} (no DEX)"
+            else:
+                # Unknown/homebrew flat AC — keep today's behavior (bare base AC).
+                suggested = base
+                basis = f"base AC {base}; apply the armor's DEX-mod rule on top"
         else:
-            suggested = 10 + ch.ability_modifier(Ability.DEX)
+            suggested = 10 + dex_mod
             basis = "unarmored baseline 10 + DEX"
         return {
             "applied": False,
@@ -7332,7 +7394,7 @@ def add_item(
     catalog. Any value you also pass explicitly (name, weight, requires_attunement,
     description) overrides the catalog fill. Omit `item_name` for the original
     free-text path (then `name` is required)."""
-    name, weight, requires_attunement, description, _ = _apply_item_catalog(
+    name, weight, requires_attunement, description, rec = _apply_item_catalog(
         item_name, name, weight, requires_attunement, description
     )
     if not name:
@@ -7340,7 +7402,9 @@ def add_item(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        inventory.add_item(ch, name, quantity, weight, requires_attunement, description)
+        # F09-7: persist the catalog's structured stats onto the granted Item (#756 root).
+        inventory.add_item(ch, name, quantity, weight, requires_attunement, description,
+                           stats=_catalog_item_stats(rec))
         save_campaign(c)
         return {"inventory": [i.model_dump() for i in ch.inventory]}
 
@@ -7389,15 +7453,50 @@ def attune_item(campaign_id: str, character_id: str, name: str, attuned: bool = 
 
 @mcp.tool()
 def adjust_currency(
-    campaign_id: str, character_id: str, cp: int = 0, sp: int = 0, ep: int = 0, gp: int = 0, pp: int = 0
+    campaign_id: str, character_id: str, cp: int = 0, sp: int = 0, ep: int = 0, gp: int = 0,
+    pp: int = 0, spend_gp: float = 0.0, earn_gp: float = 0.0,
 ) -> dict:
-    """Add or subtract specific coin denominations. Raises if any would go negative."""
+    """Adjust a character's purse. Two paths (additive — use either or both):
+
+    - DENOMINATION path (cp/sp/ep/gp/pp): add or subtract SPECIFIC coins. Exact, but
+      cannot "make change" — subtracting more gp than the character holds in gp coins
+      raises, even when the total value is affordable in mixed coin.
+    - VALUE path (F09-10): `spend_gp` deducts a gp VALUE making change from the whole
+      purse (so 5 gp comes out of 50 sp), and `earn_gp` credits a gp value. Use these to
+      spend/earn money WITHOUT itemizing coins — the change-making the denomination path
+      can't do. Decimal-exact for 2-decimal gp.
+
+    Raises (and persists nothing) on a negative result; the denomination-underflow error
+    points you at `spend_gp` when the value is actually affordable."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        cur = inventory.adjust_currency(ch, cp, sp, ep, gp, pp)
+        if spend_gp < 0 or earn_gp < 0:
+            raise ValueError("spend_gp and earn_gp must be non-negative (use them to spend/earn a value)")
+        # VALUE path first: change-making spend/earn over the whole purse (Decimal-exact).
+        if earn_gp:
+            inventory.gain(ch, earn_gp)
+        if spend_gp:
+            try:
+                inventory.pay(ch, spend_gp)
+            except ValueError:
+                raise ValueError(
+                    f"insufficient funds to spend {spend_gp} gp "
+                    f"(purse holds {inventory.total_copper(ch.currency) / 100:g} gp of value)"
+                )
+        # DENOMINATION path: specific coins, with a change-making hint on underflow (F09-10).
+        if cp or sp or ep or gp or pp:
+            try:
+                inventory.adjust_currency(ch, cp, sp, ep, gp, pp)
+            except ValueError:
+                have = ch.currency
+                raise ValueError(
+                    "a coin denomination would go negative "
+                    f"(have cp={have.cp} sp={have.sp} ep={have.ep} gp={have.gp} pp={have.pp}); "
+                    "to spend a VALUE making change across coins, use spend_gp= instead"
+                )
         save_campaign(c)
-        return cur.model_dump()
+        return ch.currency.model_dump()
 
 
 @mcp.tool()
@@ -7439,7 +7538,9 @@ def buy_item(
         c = _require(campaign_id)
         ch = _char(c, character_id)
         inventory.pay_cp(ch, total_cp)
-        inventory.add_item(ch, name, quantity, weight, requires_attunement, description)
+        # F09-7: a bought catalog item persists its structured stats too (#756 root).
+        inventory.add_item(ch, name, quantity, weight, requires_attunement, description,
+                           stats=_catalog_item_stats(rec))
         save_campaign(c)
         return {
             "currency": ch.currency.model_dump(),
@@ -7449,11 +7550,33 @@ def buy_item(
         }
 
 
+def _sell_price_reference(name: str, ch: Character) -> Optional[float]:
+    """F09-9 — the listed price of the item being sold, for sell-price sanity. Prefers the
+    structured cost_gp persisted on the OWNED item (F09-7) so a haggled/custom grant keeps
+    its real value; falls back to the SRD catalog by name. None == no reference price."""
+    owned = next(
+        (it for it in ch.inventory if it.name.lower() == name.lower()
+         and getattr(it, "cost_gp", None) is not None),
+        None,
+    )
+    if owned is not None:
+        return float(owned.cost_gp)
+    rec = itemcatalog.resolve(name)
+    if rec and rec.get("cost") is not None:
+        return float(rec["cost"])
+    return None
+
+
 @mcp.tool()
 def sell_item(campaign_id: str, character_id: str, name: str, price_gp: float, quantity: int = 1) -> dict:
-    """Sell an item: remove `quantity` of it and add price_gp PER UNIT x quantity
-    to the purse. Returns the updated purse + inventory plus {unit_price_gp,
-    total_price_gp}."""
+    """Sell an item: remove `quantity` of it and add price_gp PER UNIT x quantity to the
+    purse. Returns the updated purse + inventory plus {unit_price_gp, total_price_gp}.
+
+    F09-9 — price sanity (TELL, don't block by default): the response carries
+    `catalog_cost_gp` (the item's listed/owned reference price, or null) and, when the sale
+    price is implausibly above it, a `warning`. The DM sees list price in-context at the
+    moment of sale. House-rule `enforce_sell_cap` (off by default) turns the rail hard:
+    a price above `sell_cap_multiple`× the reference is then REJECTED instead of warned."""
     if quantity <= 0:
         raise ValueError("quantity must be positive")
     if price_gp < 0:
@@ -7462,15 +7585,35 @@ def sell_item(campaign_id: str, character_id: str, name: str, price_gp: float, q
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        # F09-9: resolve the reference price BEFORE the item is removed (the owned record
+        # is gone afterwards) so the warning/cap can compare against it.
+        ref = _sell_price_reference(name, ch)
+        warning = None
+        if ref is not None and ref > 0:
+            cap = float(c.house_rules.sell_cap_multiple)
+            if price_gp > ref * cap:
+                msg = (
+                    f"sell price {price_gp} gp is {price_gp / ref:.1f}× the listed "
+                    f"{ref} gp for {name!r} (cap {cap:.1f}×)"
+                )
+                if c.house_rules.enforce_sell_cap:
+                    raise ValueError(
+                        msg + " — enforce_sell_cap is on; lower the price or disable the cap"
+                    )
+                warning = msg + " — selling above list (TELL only; no buy-back economy in SRD)"
         inventory.remove_item(ch, name, quantity)
         inventory.gain_cp(ch, total_cp)
         save_campaign(c)
-        return {
+        out = {
             "currency": ch.currency.model_dump(),
             "inventory": [i.model_dump() for i in ch.inventory],
             "unit_price_gp": float(price_gp),
             "total_price_gp": total_cp / 100,
+            "catalog_cost_gp": ref,  # the reference list price (or null)
         }
+        if warning:
+            out["warning"] = warning
+        return out
 
 
 @mcp.tool()
@@ -10405,7 +10548,9 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
 def set_house_rules(campaign_id: str, patch: dict) -> dict:
     """Update house rules (partial merge). Keys: difficulty, critical_max_damage,
     flanking_advantage, slow_natural_healing, feats_allowed, multiclass_allowed,
-    dm_can_fudge. Unknown keys are rejected."""
+    dm_can_fudge, wandering_encounters, enforce_sell_cap, sell_cap_multiple (F09-9:
+    when enforce_sell_cap is on, sell_item rejects a price above sell_cap_multiple× the
+    item's listed cost). Unknown keys are rejected."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         data = c.house_rules.model_dump()

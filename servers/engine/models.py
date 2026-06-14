@@ -151,6 +151,22 @@ class Item(_StrictModel):
     requires_attunement: bool = False
     attuned: bool = False
     description: str = ""
+    # --- F09-7: structured stats persisted at grant time (additive; #756 root cause) ---
+    # Until now a granted Item kept ONLY prose — the catalog's mechanical stats were baked
+    # into `description` and the structured record (damage, AC, kind, rarity, price) was
+    # discarded, so the item inspector had nothing to render (#756). These fields persist
+    # the catalog stats so the viewer/sheet can show real numbers. ALL default empty/None,
+    # so an old snapshot round-trips unchanged and a free-text item carries no stat clutter.
+    kind: str = ""                     # weapon / armor / wondrous / potion / gear / ...
+    rarity: str = ""                   # common / uncommon / rare / ... ("" = mundane)
+    cost_gp: Optional[float] = None    # listed SRD price in gp, or None (unpriced/free-text)
+    damage: str = ""                   # weapon damage dice ("1d8"), "" for non-weapons
+    damage_type: str = ""              # "slashing" / "piercing" / ...
+    ac: Optional[int] = None           # armor base AC (or shield bonus), None for non-armor
+    armor_category: str = ""           # light / medium / heavy / shield ("" = n/a)
+    ac_dex_mod: str = ""               # full / capped / none ("" = n/a)
+    ac_dex_cap: Optional[int] = None   # +N DEX cap for medium armor, else None
+    properties: list[str] = Field(default_factory=list)  # SRD tags (stealth-disadvantage, str-13, attune:...)
 
 
 class Currency(_StrictModel):
@@ -1246,6 +1262,14 @@ class HouseRules(_StrictModel):
     # set False to disable the auto-roll entirely (explicit roll_wandering_encounter
     # still works). Additive: an old snapshot lacking this key loads as True.
     wandering_encounters: bool = True
+    # F09-9: when True, sell_item REJECTS a sale priced implausibly above the SRD list
+    # (more than `sell_cap_multiple`× the catalog cost) instead of merely warning. OFF by
+    # default == today's unbounded TELL-only behavior; an old snapshot loads as False.
+    enforce_sell_cap: bool = False
+    # The multiple of an item's listed catalog price above which a sale is flagged (and,
+    # with enforce_sell_cap, rejected). SRD has no buy-back economy, so this is a sanity
+    # rail, not a rule: 1.0× = list price. Default 2.0 catches gross fat-finger overprices.
+    sell_cap_multiple: float = 2.0
 
 
 class SeedParams(_StrictModel):
