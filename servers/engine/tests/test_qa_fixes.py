@@ -637,7 +637,10 @@ def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monke
     assert jbeat["attitude_value"] == 25
     assert jbeat["arc"]["next_gate"] == {"kind": "loyalty", "threshold": 40, "points_away": 15}
     mbeat = next(b for b in out["beats"] if b["companion"] == "Minsc")
-    assert mbeat["arc"] is None                                   # no arc -> no summary, no crash
+    # F06-1: a companion made via create_character now carries the SEEDED DEFAULT arc (a
+    # loyalty gate at threshold 25), so the camp beat surfaces that default summary — camp is
+    # no longer inert for a companion the DM never hand-authored an arc for.
+    assert mbeat["arc"]["next_gate"] == {"kind": "loyalty", "threshold": 25, "points_away": 25}
 
 
 def test_long_rest_hints_camp_only_when_companions_present(tmp_path, monkeypatch):

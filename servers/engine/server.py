@@ -1451,6 +1451,55 @@ def _seat_flat10_warnings(ch, class_label: str, where: str) -> list[str]:
     return [warn]
 
 
+def _seed_companion_operational_state(ch) -> None:
+    """Seed a companion's ARC and DOSSIER if absent — the shared finisher every
+    companion-creation path runs so the relationship system (camp_scene /
+    check_companion_arc / agendas) has state to track (F06-1).
+
+    Two of the three creation paths used to SKIP this (create_character — the dominant
+    path at 111 calls — seeded neither; load_canon_character seeded the dossier but never
+    an arc), so 20/20 live snapshot companions had arc=None/dossier=None and the whole arc
+    machine was structurally inert. recruit_companion already did this inline; this is the
+    extracted shared helper (the same logic, byte-for-byte) called by all three.
+
+    Both writes are None-GUARDED, so an ending-seeded / canon / roster arc or dossier is
+    NEVER overwritten — the DM can still author a richer one via set_companion_arc /
+    update_character. Caller holds campaign_lock; this mutates the passed Character in
+    place and does not save. NOT called for players/npcs/monsters — companion-only on every
+    path."""
+    # A companion needs an ARC for the relationship system (camp_scene / check_companion_arc)
+    # to have anything to track — QA found a freshly-recruited canon companion with arc=null,
+    # so camp + the gates were inert. If none was seeded (i.e. not an ending-tied
+    # companion_seed), give a light DEFAULT: one loyalty gate at a moderate approval, so the
+    # bond can deepen at camp. Guarded on None, so an ending-seeded arc is never overwritten;
+    # the DM can set_companion_arc to author a richer, character-specific arc.
+    if ch.arc is None:
+        ch.arc = CompanionArc.model_validate({"arc_gates": [
+            {"kind": "loyalty", "threshold": 25,
+             "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
+    # A companion also needs a DOSSIER for the living-world systems (camp scheduling,
+    # banter selection, approval causes) to have operational state to act on (#68). If
+    # none was seeded (i.e. not an ending/roster/canon dossier), synthesize a MINIMAL
+    # one from what the record ALREADY carries — the personality/backstory hint and the
+    # memory facts become terse camp prompts, so a freshly-recruited companion isn't a
+    # blank slate at camp. Guarded on None so a seeded dossier is NEVER overwritten; the
+    # DM can flesh it out via update_character. We don't invent wants/values/approval
+    # causes the record doesn't imply — the DM authors those as the bond develops.
+    if ch.companion_dossier is None:
+        # backstory/personality are the recruit/canon sources; biography is the
+        # create_character authoring field — fall through them so every path has a hint.
+        seed_hint = (ch.backstory or ch.personality or ch.biography or "").strip()
+        camp_prompts: list[str] = []
+        if seed_hint:
+            # one short clause, not the whole biography — keep the dossier operational
+            clause = seed_hint.replace("\n", " ").split(". ")[0].strip()
+            if clause:
+                camp_prompts.append(clause[:200])
+        # the NPC's seeded hook / remembered facts make good, character-specific camp talk
+        camp_prompts.extend(m.strip() for m in ch.memory if m.strip())
+        ch.companion_dossier = CompanionDossier(camp_prompts=camp_prompts[:4])
+
+
 @mcp.tool()
 def create_character(
     campaign_id: str,
@@ -1543,6 +1592,12 @@ def create_character(
         # location_id wins; otherwise default to the party's current location.
         if kind in ("npc", "monster"):
             ch.location_id = location_id or c.current_location_id
+        # F06-1: a companion made on THIS path (the dominant one, 111 calls) used to get
+        # NO arc and NO dossier, so camp/gates/agendas were inert (20/20 live snapshots).
+        # Route it through the shared seeding helper — companion-only, None-guarded so an
+        # explicitly-passed arc/dossier is never clobbered.
+        if kind == "companion":
+            _seed_companion_operational_state(ch)
         c.characters[ch.id] = ch
         # INVARIANT: a kind="player" character is always in the party (it's the protagonist),
         # even if add_to_party=False was passed; a companion joins only when add_to_party.
@@ -1907,35 +1962,14 @@ def recruit_companion(
             ch.stable = False
             ch.death_saves = DeathSaves()
             ch.conditions = [cond for cond in ch.conditions if cond != Condition.UNCONSCIOUS]
-        # A companion needs an ARC for the relationship system (camp_scene / check_companion_arc)
-        # to have anything to track — QA found a freshly-recruited canon companion with arc=null,
-        # so camp + the gates were inert. If none was seeded (i.e. not an ending-tied
-        # companion_seed), give a light DEFAULT: one loyalty gate at a moderate approval, so the
-        # bond can deepen at camp. Guarded on None, so an ending-seeded arc is never overwritten;
-        # the DM can set_companion_arc to author a richer, character-specific arc.
-        if ch.arc is None:
-            ch.arc = CompanionArc.model_validate({"arc_gates": [
-                {"kind": "loyalty", "threshold": 25,
-                 "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
-        # A companion also needs a DOSSIER for the living-world systems (camp scheduling,
-        # banter selection, approval causes) to have operational state to act on (#68). If
-        # none was seeded (i.e. not an ending/roster/canon dossier), synthesize a MINIMAL
-        # one from what the record ALREADY carries — the personality/backstory hint and the
-        # memory facts become terse camp prompts, so a freshly-recruited companion isn't a
-        # blank slate at camp. Guarded on None so a seeded dossier is NEVER overwritten; the
-        # DM can flesh it out via update_character. We don't invent wants/values/approval
-        # causes the record doesn't imply — the DM authors those as the bond develops.
-        if ch.companion_dossier is None:
-            seed_hint = (ch.backstory or ch.personality or "").strip()
-            camp_prompts: list[str] = []
-            if seed_hint:
-                # one short clause, not the whole biography — keep the dossier operational
-                clause = seed_hint.replace("\n", " ").split(". ")[0].strip()
-                if clause:
-                    camp_prompts.append(clause[:200])
-            # the NPC's seeded hook / remembered facts make good, character-specific camp talk
-            camp_prompts.extend(m.strip() for m in ch.memory if m.strip())
-            ch.companion_dossier = CompanionDossier(camp_prompts=camp_prompts[:4])
+        # A companion needs an ARC + DOSSIER for the relationship system (camp_scene /
+        # check_companion_arc / banter / approval causes) to have state to track — QA found a
+        # freshly-recruited canon companion with arc=null, so camp + the gates were inert.
+        # The shared seeding helper (F06-1) gives a None-guarded default arc (a loyalty gate so
+        # the bond can deepen) + a minimal dossier synthesized from what the record already
+        # carries (backstory/personality/memory -> terse camp prompts). Guarded on None so an
+        # ending-seeded arc/dossier is NEVER overwritten; the DM authors richer ones later.
+        _seed_companion_operational_state(ch)
         ch.met = True  # joining the party means the party has met them
         if ch.id not in c.party:
             c.party.append(ch.id)
@@ -2714,6 +2748,12 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
             ch.met = True  # brought into the party => met
             if ch.id not in c.party:
                 c.party.append(ch.id)
+        # F06-1: this path seeded the DOSSIER (above) but never an ARC, so a canon-loaded
+        # companion had arc=null and camp/gates were inert. Run the shared seeding helper
+        # (companion-only, None-guarded) so it adds the default arc — and only synthesizes a
+        # dossier if the canon record didn't already carry one (_coerce_dossier left it None).
+        if ch.kind == "companion":
+            _seed_companion_operational_state(ch)
         c.characters[ch.id] = ch
         save_campaign(c)
         # ADDITIVE WARNING (non-fatal): a PLAYER or a SPELLCASTER that still ended at the flat-10
@@ -7355,6 +7395,23 @@ def companion_suggest_action(campaign_id: str, companion_id: str) -> dict:
     return companion.suggest_action(_char(c, companion_id), c.combat, c.characters)
 
 
+def _attitude_band(attitude_value: int) -> str:
+    """Map the numeric approval gauge (-100..+100, 0 = neutral) to a single band label
+    from the canonical attitude vocabulary (npc.ATTITUDE_TRACK), so companion_advise can
+    tell the DM the companion's CURRENT leaning. A pure read of the gauge only — the same
+    five bands a social_check moves a companion through, just keyed off the number instead
+    of the free-text track. Cutoffs are deterministic and centered on 0 (neutral)."""
+    if attitude_value <= -50:
+        return "hostile"
+    if attitude_value <= -15:
+        return "wary"
+    if attitude_value < 25:
+        return "indifferent"
+    if attitude_value < 60:
+        return "friendly"
+    return "helpful"
+
+
 @mcp.tool()
 def companion_advise(campaign_id: str, companion_id: str, situation: str = "") -> dict:
     """Get the companion's in-character take on the CURRENT (non-combat) moment so
@@ -7362,11 +7419,29 @@ def companion_advise(campaign_id: str, companion_id: str, situation: str = "") -
     a short `situation` (the choice/discovery/lull at hand); it pulls relevant
     memory callbacks via recall and returns the companion's voice_id + personality
     + callbacks + a prompt to voice from. Speak the companion's line in its voice,
-    then let the player respond / deliberate with it. Read-only."""
+    then let the player respond / deliberate with it. Read-only.
+
+    Also folds in the companion's STANDING (the approval band derived from its gauge),
+    its dossier's `approval_likes`/`approval_dislikes` (so the DM can judge whether THIS
+    moment wins or loses the companion's regard), and an `arc` summary (gates + how far
+    the next locked gate is) — so the voiced line already carries the relationship,
+    instead of a blank-neutral opinion. The engine reads the gauge; the DM judges the
+    cause (it never auto-moves approval here). Best-effort: a companion with no dossier/
+    arc still returns the base frame (F06-3)."""
     c = _require(campaign_id)
     comp = _char(c, companion_id)
     callbacks = ledger_mod.recall(campaign_id, situation, limit=3) if situation.strip() else []
-    return companion.deliberate(comp, situation, callbacks=callbacks)
+    # F06-3: the standing band is a pure read of the engine-mutated approval gauge.
+    standing = {"band": _attitude_band(comp.attitude_value),
+                "attitude_value": comp.attitude_value}
+    out = companion.deliberate(
+        comp, situation, callbacks=callbacks,
+        standing=standing,
+        dossier=getattr(comp, "companion_dossier", None),
+    )
+    # Arc/gate-distance summary (same read _camp_arc_summary gives camp); None when no arc.
+    out["arc"] = _camp_arc_summary(comp)
+    return out
 
 
 def _camp_arc_summary(comp) -> Optional[dict]:

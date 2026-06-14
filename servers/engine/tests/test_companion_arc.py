@@ -509,6 +509,10 @@ def test_personal_quest_gate_stage_unlock_reports_actual_arc_status(camp):
 
 def test_set_companion_arc_rejects_missing_personal_quest_link_without_mutation(camp):
     cid, comp = camp
+    # F06-1: a companion now carries a seeded DEFAULT arc at creation; the no-mutation
+    # guarantee is that a REJECTED set_companion_arc leaves that arc UNCHANGED (the bad
+    # personal_quest gate is never applied), not that arc is None.
+    before = store.load_campaign(cid).characters[comp].arc.model_dump(mode="json")
 
     with pytest.raises(ValueError, match="no companion quest arc"):
         server.set_companion_arc(cid, comp, {
@@ -519,11 +523,14 @@ def test_set_companion_arc_rejects_missing_personal_quest_link_without_mutation(
             }],
         })
 
-    assert store.load_campaign(cid).characters[comp].arc is None
+    after = store.load_campaign(cid).characters[comp].arc.model_dump(mode="json")
+    assert after == before  # the seeded default arc is intact; the bad arc was not applied
+    assert not any(g["kind"] == "personal_quest" for g in after["arc_gates"])
 
 
 def test_set_companion_arc_rejects_stage_without_quest_arc(camp):
     cid, comp = camp
+    before = store.load_campaign(cid).characters[comp].arc.model_dump(mode="json")
 
     with pytest.raises(ValueError, match="stage_id requires quest_arc_id"):
         server.set_companion_arc(cid, comp, {
@@ -534,7 +541,9 @@ def test_set_companion_arc_rejects_stage_without_quest_arc(camp):
             }],
         })
 
-    assert store.load_campaign(cid).characters[comp].arc is None
+    after = store.load_campaign(cid).characters[comp].arc.model_dump(mode="json")
+    assert after == before  # the seeded default arc is intact; the bad arc was not applied
+    assert not any(g["kind"] == "personal_quest" for g in after["arc_gates"])
 
 
 def test_set_companion_quest_arc_rejects_replacing_referenced_stage(camp):
