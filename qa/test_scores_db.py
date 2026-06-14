@@ -84,6 +84,48 @@ def test_pass_bool_coerced_to_int(tmp_path):
     assert scores_db.fetch_rows(db)[0]["pass"] == 1
 
 
+# --- F13-4: the latency ledger columns (s_per_beat / coldopen_s / turns_per_beat) ---
+
+def test_latency_columns_are_registered_and_real(tmp_path):
+    # The three F13-4 columns exist, are REAL-typed, and round-trip a write.
+    for col in ("s_per_beat", "coldopen_s", "turns_per_beat"):
+        assert col in scores_db.COLUMNS, f"{col} missing from COLUMNS"
+        assert scores_db._coltype(col) == "REAL"
+    db = tmp_path / "t.db"
+    scores_db.add_run(
+        "duo-lat", db_path=db, surface="engine-duo",
+        s_per_beat=80.5, coldopen_s=174.0, turns_per_beat=4.3,
+    )
+    row = scores_db.fetch_rows(db)[0]
+    assert row["s_per_beat"] == 80.5
+    assert row["coldopen_s"] == 174.0
+    assert row["turns_per_beat"] == 4.3
+
+
+def test_latency_columns_read_null_on_pre_f134_rows(tmp_path):
+    # ADDITIVITY: a row recorded WITHOUT the latency fields (a pre-F13-4 run) reads back
+    # NULL for all three — the new columns never break an old write.
+    db = tmp_path / "t.db"
+    scores_db.add_run("duo-old", db_path=db, surface="engine-duo", story_overall=4.1)
+    row = scores_db.fetch_rows(db)[0]
+    assert row["s_per_beat"] is None
+    assert row["coldopen_s"] is None
+    assert row["turns_per_beat"] is None
+
+
+def test_latency_columns_alter_into_an_old_db(tmp_path):
+    # A db created before F13-4 (no latency columns) gets them ALTER-added on connect.
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE runs ("run_id" TEXT PRIMARY KEY, "surface" TEXT, "story_overall" REAL)')
+    conn.commit()
+    conn.close()
+    conn = scores_db.connect(db)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)")}
+    conn.close()
+    assert {"s_per_beat", "coldopen_s", "turns_per_beat"} <= cols
+
+
 def test_render_markdown_contains_header_and_rows(tmp_path):
     db = tmp_path / "t.db"
     md = tmp_path / "led.md"

@@ -563,19 +563,46 @@ def test_start_world_echoes_chosen_ending(tmp_path, monkeypatch):
 def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
-    allc = server.list_canon_characters(cid)["available"]
-    names = {x["name"] for x in allc}
-    # every record now reports a playable flag; the seven origin heroes are NOT playable
-    assert {"Astarion", "Gale", "Karlach", "Lae'zel", "Shadowheart", "Wyll", "Halsin"} <= names
-    by_name = {x["name"]: x for x in allc}
-    assert by_name["Astarion"]["playable"] is False and by_name["Astarion"]["role"] == "hero"
-    assert by_name["Minsc"]["playable"] is True
+    # SYN-03: the surface is BOUNDED — the unfiltered call no longer dumps all ~2,076
+    # records; it returns a `limit`-capped page with a `{total, returned, truncated}`
+    # envelope. Query the heroes by name (`q`) instead of scanning the whole roster.
+    full = server.list_canon_characters(cid)
+    assert full["total"] > full["returned"] and full["truncated"] is True
+    assert full["returned"] == len(full["available"]) == 100  # default page
+    assert "note" in full and "find_npcs" in full["note"]
+    for hero in ("Astarion", "Gale", "Karlach", "Lae'zel", "Shadowheart", "Wyll", "Halsin"):
+        hit = server.list_canon_characters(cid, q=hero)["available"]
+        by_name = {x["name"]: x for x in hit}
+        assert hero in by_name, f"{hero} should be findable via q="
+    assert server.list_canon_characters(cid, q="Astarion")["available"][0]["playable"] is False
+    minsc = {x["name"]: x for x in server.list_canon_characters(cid, q="Minsc")["available"]}
+    assert minsc["Minsc"]["playable"] is True
     # the playable-only filter keeps just the minor figures a player can pick up;
     # the original four plus the three new caster-party additions (Rolan, Lia, Isobel)
-    play = {x["name"] for x in server.list_canon_characters(cid, playable_only=True)["available"]}
-    assert {"Jaheira", "Minsc", "Withers", "Jergal"} <= play  # original minor figures present
-    assert {"Rolan", "Lia", "Isobel"} <= play              # new caster-party figures present
-    assert "Astarion" not in play and "Gale" not in play
+    for figure in ("Jaheira", "Minsc", "Withers", "Jergal", "Rolan", "Lia", "Isobel"):
+        play = {x["name"] for x in server.list_canon_characters(cid, playable_only=True, q=figure)["available"]}
+        assert figure in play
+    # a hero is never in the PLAYABLE slice even when queried by name
+    assert "Astarion" not in {
+        x["name"] for x in server.list_canon_characters(cid, playable_only=True, q="Astarion")["available"]
+    }
+
+
+def test_list_canon_characters_envelope_and_query(tmp_path, monkeypatch):
+    # SYN-03: the bounded envelope on the flagship roster — {total, returned, truncated},
+    # a working `q` substring filter, and a `limit` that pages without losing the total.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    capped = server.list_canon_characters(cid, limit=10)
+    assert capped["returned"] == len(capped["available"]) == 10
+    assert capped["total"] > 10 and capped["truncated"] is True
+    # q narrows the TOTAL, not just the page
+    sh = server.list_canon_characters(cid, q="shadow")
+    assert sh["total"] >= 1 and all("shadow" in r["name"].lower() for r in sh["available"])
+    assert sh["total"] < capped["total"]  # a substring search is a strict subset
+    # limit is hard-capped at 200 even if a caller asks for more
+    big = server.list_canon_characters(cid, limit=99999)
+    assert big["returned"] <= 200
 
 
 def test_roster_surface_excludes_origins_and_filters():
@@ -671,7 +698,10 @@ def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch
     ph = server.start_character(cid, origin="pickup:Astarion")
     assert "error" in ph and ph["playable"] is False
     assert "legend" in ph["error"].lower() and "npc" in ph["error"].lower()
-    assert "Minsc" in ph["playable_options"]  # points the player at who they CAN pick up
+    # SYN-03: suggests a FEW pickup-eligible names (did_you_mean), never the whole list
+    assert isinstance(ph["did_you_mean"], list) and len(ph["did_you_mean"]) <= 5
+    assert ph["available_count"] > 5  # the roster is large; we did NOT dump it
+    assert "playable_options" not in ph  # the old full-list key is gone
     # the heroes remain encounterable as NPCs — load_canon_character(kind="npc") is
     # unrestricted (they're already seeded into the world roster by start_world)
     assert server.load_canon_character(cid, "Astarion", kind="npc").get("id") == "npc-astarion"
@@ -1671,16 +1701,16 @@ def test_new_origins_appear_in_list_origin_templates():
 
 
 def test_new_characters_appear_in_list_canon_characters(tmp_path, monkeypatch):
-    """Rolan, Lia, and Isobel are discoverable as playable canon characters."""
+    """Rolan, Lia, and Isobel are discoverable as playable canon characters.
+    (SYN-03: the roster is now bounded, so look them up by `q` rather than scanning
+    the capped head of the ~2,000-record list.)"""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
-    chars = server.list_canon_characters(cid)["available"]
-    names = {c["name"] for c in chars}
-    for expected in ("Rolan", "Lia", "Isobel"):
-        assert expected in names, f"{expected} missing from list_canon_characters"
-    by_name = {c["name"]: c for c in chars}
-    # These are minor figures (playable: true, role: "")
     for who in ("Rolan", "Lia", "Isobel"):
+        chars = server.list_canon_characters(cid, q=who)["available"]
+        by_name = {c["name"]: c for c in chars}
+        assert who in by_name, f"{who} missing from list_canon_characters(q={who!r})"
+        # These are minor figures (playable: true, role: "")
         assert by_name[who]["playable"] is True, f"{who} must be playable"
         assert by_name[who].get("role", "") == "", f"{who} role must be empty"
 
@@ -1886,3 +1916,111 @@ def test_seed_world_propagates_rumoured_and_never_overrides_with_discovered_defa
 
     both = c.locations["loc-both"]
     assert both.rumoured is True and both.discovered is True  # explicit author values both honored
+
+
+# ── SYN-03: canon-roster surfaces are BOUNDED + misses resolve-then-suggest ──
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (SYN-03 / F10-3 + F13-2 + F13-3 + F14-1).
+# A 2,076-record flagship roster was returned WHOLE (180KB) by list_canon_characters and
+# DUMPED AS THE ERROR PAYLOAD (28KB) on a load_canon_character miss. These tests pin the
+# additive limit/name_contains filter + the resolve-then-suggest miss path against a
+# synthetic large roster, so the contract is verified independent of the shipped BG data.
+
+
+def _synth_roster_world(root, world_id="synthville", n=300):
+    """Write `n` canon-character JSON records into a tmp content dir and return its id.
+    Records are Hero 0..n with a couple of known names ('Minsc and Boo', 'Shadowmaiden')
+    so the resolve-then-suggest paths have something deterministic to match."""
+    cdir = root / "worlds" / world_id / "characters"
+    cdir.mkdir(parents=True, exist_ok=True)
+    for i in range(n):
+        rec = {"name": f"Hero {i:03d}", "race": "Human", "class": "Fighter",
+               "playable": (i % 2 == 0)}
+        (cdir / f"hero-{i:03d}.json").write_text(json.dumps(rec), encoding="utf-8")
+    # two named anchors for substring / fuzzy resolution
+    (cdir / "minsc-and-boo.json").write_text(
+        json.dumps({"name": "Minsc and Boo", "race": "Human", "class": "Ranger", "playable": True}),
+        encoding="utf-8")
+    (cdir / "shadowmaiden.json").write_text(
+        json.dumps({"name": "Shadowmaiden", "race": "Elf", "class": "Cleric", "playable": True}),
+        encoding="utf-8")
+    return world_id
+
+
+def test_list_canon_characters_name_contains_is_additive(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path / "content"))
+    wid = _synth_roster_world(tmp_path / "content")
+    # default (no filter) is byte-identical to before: the full 302-record list
+    full = content.list_canon_characters(wid)
+    assert len(full) == 302
+    # name_contains is a case-insensitive substring filter
+    minsc = content.list_canon_characters(wid, name_contains="minsc")
+    assert [r["name"] for r in minsc] == ["Minsc and Boo"]
+    heroes = content.list_canon_characters(wid, name_contains="Hero 01")
+    assert len(heroes) == 10 and all("Hero 01" in r["name"] for r in heroes)
+
+
+def test_suggest_canon_names_substring_then_fuzzy(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path / "content"))
+    wid = _synth_roster_world(tmp_path / "content")
+    # a "Minsc" query is a SUBSTRING of "Minsc and Boo" — resolves by substring, ≤5, total reported
+    sugg, total = content.suggest_canon_names(wid, "Minsc")
+    assert sugg == ["Minsc and Boo"] and total == 302
+    # a typo'd query with no substring hit falls back to difflib fuzzy
+    fuzzy, _ = content.suggest_canon_names(wid, "Shadowmaidn")
+    assert "Shadowmaiden" in fuzzy and len(fuzzy) <= 5
+    # playable_only scopes BOTH the suggestions and the count. Hero 001 is non-playable
+    # (odd index), so a playable-only "Hero 001" query never surfaces it.
+    play, ptotal = content.suggest_canon_names(wid, "Hero 001", playable_only=True)
+    assert "Hero 001" not in play and ptotal < total  # the playable subset is smaller
+    # an even-indexed hero IS playable and resolves under playable_only
+    play2, _ = content.suggest_canon_names(wid, "Hero 002", playable_only=True)
+    assert "Hero 002" in play2
+
+
+def _campaign_on_synth_world(tmp_path, monkeypatch):
+    """A live campaign whose `world_id` points at the synthetic 300-record roster — built
+    without a full world.json (the canon tools only read the world's characters dir).
+
+    The campaign is created against the REAL bundled content (cellar-rats adventure), then
+    CONTENT_DIR is redirected to the synthetic roster so the canon-character reads resolve
+    there. Ordering matters: redirecting first would hide the cellar-rats adventure data."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path / "state"))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path / "content"))
+    wid = _synth_roster_world(tmp_path / "content")
+    with server.campaign_lock(cid):
+        c = server._require(cid)
+        c.world_id = wid
+        server.save_campaign(c)
+    return cid
+
+
+def test_canon_miss_payload_is_small_and_suggestive(tmp_path, monkeypatch):
+    # The flagship-class regression: a miss must NOT serialize the whole roster.
+    cid = _campaign_on_synth_world(tmp_path, monkeypatch)
+    miss = server.load_canon_character(cid, "Nonexistent Person")
+    assert "error" in miss  # play.sh reads this key — preserved
+    assert "available" not in miss  # the old full-roster dump key is GONE
+    assert isinstance(miss["did_you_mean"], list) and len(miss["did_you_mean"]) <= 5
+    assert miss["available_count"] == 302  # tells the DM the roster size without listing it
+    blob = json.dumps(miss)
+    assert len(blob) < 2048, f"miss payload should be <2KB, got {len(blob)}B"
+
+
+def test_canon_miss_resolves_substring_class_before_suggesting(tmp_path, monkeypatch):
+    # "Minsc" should RESOLVE (load_canon_character's unique-substring step), not miss.
+    cid = _campaign_on_synth_world(tmp_path, monkeypatch)
+    hit = server.load_canon_character(cid, "Minsc")
+    assert hit.get("name") == "Minsc and Boo" and "error" not in hit
+
+
+def test_start_character_pickup_miss_suggests_not_dumps(tmp_path, monkeypatch):
+    # SYN-03: the start_character pickup miss must suggest, never dump the playable roster.
+    cid = _campaign_on_synth_world(tmp_path, monkeypatch)
+    miss = server.start_character(cid, origin="pickup:Shadowmaidn")  # typo
+    assert "error" in miss and miss["playable"] is True
+    assert "did_you_mean" in miss and len(miss["did_you_mean"]) <= 5
+    assert "Shadowmaiden" in miss["did_you_mean"]  # fuzzy-resolved
+    assert "playable" in miss and isinstance(miss["available_count"], int)
+    assert miss["available_count"] > 5  # large roster, NOT dumped
+    assert len(json.dumps(miss)) < 2048

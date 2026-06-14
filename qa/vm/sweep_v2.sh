@@ -188,6 +188,9 @@ fi
 note "3-lens duo..."
 timeout 3600 bash qa/run_duo.sh vm2-duo baldurs-gate veteran 8 5.00 > "$RES/duo.log" 2>&1
 for f in tolkien angrydm; do s="qa/transcripts/vm2-duo.$f.json"; [ -f "$s" ] && cp "$s" "$RES/duo-$f.json" && note "  $f overall=$(python3 -c "import json;print(json.load(open('$s')).get('overall'))" 2>/dev/null)"; done
+# F13-4 (#753): carry the duo's derived latency ledger into the sweep results so scores_db
+# can stamp s_per_beat/coldopen_s/turns_per_beat (the #753 budget ledger). run_duo wrote it.
+LAT="qa/transcripts/vm2-duo.latency.json"; [ -f "$LAT" ] && cp "$LAT" "$RES/duo-latency.json" && note "  latency $(python3 -c "import json;d=json.load(open('$LAT'));print('s/beat=%s cold-open=%ss turns/beat=%s'%(d.get('s_per_beat'),d.get('coldopen_s'),d.get('turns_per_beat')))" 2>/dev/null)"
 DCOMB="qa/transcripts/vm2-duo.combined.jsonl"; DSTATE="qa/transcripts/vm2-duo.state.json"
 [ -f "$DCOMB" ] && { python3 qa/assert_behavioral.py "$DCOMB" "$DSTATE" > "$RES/behavioral.log" 2>&1; echo "rc=$?" >> "$RES/behavioral.log"; note "behavioral rc=$(tail -1 "$RES/behavioral.log")"; }
 aport=8861; lsof -ti:$aport 2>/dev/null | xargs kill -9 2>/dev/null

@@ -69,8 +69,11 @@ def test_end_combat_auto_awards_xp_in_xp_mode(cid):
 def test_load_canon_character_pulls_real_identity(cid):
     # the BG canon roster is ingested (content/worlds/baldurs-gate/characters/*.json, S2.5)
     c = store.load_campaign(cid); c.world_id = "baldurs-gate"; store.save_campaign(c)
-    names = {a["name"] for a in server.list_canon_characters(cid)["available"]}
-    assert {"Shadowheart", "Astarion"} <= names
+    # SYN-03: the roster surface is bounded — query by name rather than scanning the
+    # capped head of the ~2,000-record list.
+    for who in ("Shadowheart", "Astarion"):
+        names = {a["name"] for a in server.list_canon_characters(cid, q=who)["available"]}
+        assert who in names
     res = server.load_canon_character(cid, "Shadowheart", kind="companion", add_to_party=True)
     assert "error" not in res, res
     sheet = server.get_character(cid, res["id"])

@@ -394,5 +394,15 @@ if [ "${GATE:-0}" != "0" ]; then
   clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
   clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
-echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) angry-dm=$(jq -r '.overall//"?"' "$T/$RUN.angrydm.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)"
+# F13-4 (#753): derive the latency ledger (s_per_beat / coldopen_s / turns_per_beat) from the
+# per-beat $RUN.dm.<ns>.jsonl transcripts this run already wrote — the missing #753 budget ledger.
+# Non-fatal: a derivation hiccup must never fail an otherwise-good run. The JSON is the handoff
+# for scores_db.add_run(**{s_per_beat,coldopen_s,turns_per_beat}); the figures also print here.
+LATENCY_JSON="$T/$RUN.latency.json"
+if python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --out "$LATENCY_JSON" >/dev/null 2>&1; then
+  LAT_SUMMARY="$(jq -r '"s/beat="+(.s_per_beat|tostring)+" cold-open="+(.coldopen_s|tostring)+"s turns/beat="+(.turns_per_beat|tostring)' "$LATENCY_JSON" 2>/dev/null)"
+else
+  LAT_SUMMARY="latency=unavailable"
+fi
+echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) angry-dm=$(jq -r '.overall//"?"' "$T/$RUN.angrydm.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED) ${LAT_SUMMARY:-}"
 exit $GATE

@@ -8,6 +8,7 @@ hook becomes the opening quest. The DM skill then reads the scenes and runs play
 
 from __future__ import annotations
 
+import difflib
 import json
 import random
 import re
@@ -153,7 +154,10 @@ def is_dead_record(rec: dict) -> bool:
 
 
 def list_canon_characters(
-    world_id: str, playable_only: bool = False, alive_only: "bool | None" = None
+    world_id: str,
+    playable_only: bool = False,
+    alive_only: "bool | None" = None,
+    name_contains: str = "",
 ) -> list[dict]:
     """The ingested canon characters available for a world — {name, race, class,
     playable, role} each — from content/worlds/<id>/characters/*.json. De-duplicated by
@@ -164,9 +168,15 @@ def list_canon_characters(
     picked up as the PC — #305). It defaults to follow `playable_only`: the player-facing
     "who can I play?" surface (`playable_only=True`) is alive-only, while a raw inventory
     (`playable_only=False`) lists the dead too unless the caller asks otherwise. Pass it
-    explicitly to override."""
+    explicitly to override.
+
+    `name_contains` (SYN-03) is a case-insensitive substring filter on the display name —
+    `""` (the default) filters nothing, so the unfiltered call is byte-identical to before.
+    It is the engine-side query that lets the `list_canon_characters` tool bound the
+    180KB+ flagship roster (2,076 records) instead of dumping it whole."""
     if alive_only is None:
         alive_only = playable_only
+    needle = name_contains.strip().lower()
     out: list[dict] = []
     seen: set[str] = set()
     for cdir in _characters_dirs(world_id):
@@ -179,6 +189,8 @@ def list_canon_characters(
                 continue
             nm = (rec.get("name") or p.stem).strip()
             if nm.lower() in seen:
+                continue
+            if needle and needle not in nm.lower():
                 continue
             playable = is_playable(rec)
             if playable_only and not playable:
@@ -194,6 +206,37 @@ def list_canon_characters(
                 "role": rec.get("role", ""),
             })
     return out
+
+
+def suggest_canon_names(
+    world_id: str, query: str, limit: int = 5, playable_only: bool = False
+) -> "tuple[list[str], int]":
+    """Resolve-then-suggest helper for a canon-character MISS (SYN-03): return
+    ``(did_you_mean, available_count)`` — up to `limit` candidate NAMES for `query`
+    plus the total roster size — NEVER the whole roster.
+
+    Mirrors ``itemcatalog.suggest``: case-insensitive substring matches first
+    (ranked shortest-name-first so a tight hit like "Minsc" beats "Minsc and Boo"),
+    then a ``difflib.get_close_matches`` fuzzy fallback over the full name list for a
+    typo'd query. `playable_only` scopes the suggestions to pickup-eligible figures
+    (the `start_character` pickup miss); `False` (default) suggests across the whole
+    cast (the `load_canon_character` npc/companion miss). Names only — the lightweight
+    payload for an error dict, so a 2,076-record world's miss stays a sub-2KB reply."""
+    roster = list_canon_characters(world_id, playable_only=playable_only)
+    names = [r["name"] for r in roster]
+    total = len(names)
+    q = (query or "").strip().lower()
+    if not q:
+        return ([], total)
+    subs = sorted(
+        (n for n in names if q in n.lower()),
+        key=lambda n: (len(n), n.lower()),
+    )[:limit]
+    if subs:
+        return (subs, total)
+    # No substring hit — a typo or a wrong name. difflib over the full name list.
+    fuzzy = difflib.get_close_matches(query, names, n=limit, cutoff=0.6)
+    return (fuzzy, total)
 
 
 def find_canon_characters(
