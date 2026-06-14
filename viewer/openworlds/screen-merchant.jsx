@@ -24,6 +24,14 @@ function enrichWare(item, catalog) {
   // The ware's OWN explicit fields win; the catalog only fills gaps + supplies the combat
   // stats the hardcoded stock never carried.
   if (typeof merged.ac !== "number" && typeof rec.ac === "number") merged.ac = rec.ac;
+  // F09-6 / #874: carry the catalog's composed armor dex-rule line so the Market inspector
+  // reads "AC 14 + DEX (max +2)" for medium armor and a shield's "+2" bonus (not the
+  // misleading flat "AC 14"/"AC 2"), consistently with the Stash inspector — itemStatRows()
+  // prefers acDisplay over the bare AC. The hardcoded stock never carries these, so fill them.
+  if (!merged.acDisplay && rec.acDisplay) merged.acDisplay = rec.acDisplay;
+  if (!merged.armorCategory && rec.armorCategory) merged.armorCategory = rec.armorCategory;
+  if (!merged.acDexMod && rec.acDexMod) merged.acDexMod = rec.acDexMod;
+  if (typeof merged.acDexCap !== "number" && typeof rec.acDexCap === "number") merged.acDexCap = rec.acDexCap;
   if (!merged.damage && rec.damage) { merged.damage = rec.damage; merged.damageType = rec.damageType; }
   if (!merged.versatile && rec.versatile) merged.versatile = rec.versatile;
   if (!merged.weight || merged.weight === "—") { if (rec.weight && rec.weight !== "—") merged.weight = rec.weight; }
