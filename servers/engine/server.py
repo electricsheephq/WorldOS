@@ -95,7 +95,7 @@ _AB3_TO_FULL = {
 # Reverse: accept either the 3-letter code (the Ability enum value) or the full word
 # (how the SRD records spell saving_throw_ability, e.g. "wisdom") and resolve to an Ability.
 _FULL_TO_AB3 = {full: ab3 for ab3, full in _AB3_TO_FULL.items()}
-from store import append_log, campaign_lock, campaigns_for_world, read_log_all
+from store import append_log, campaign_lock, campaigns_for_world, last_dropped_keys, read_log_all
 from store import active_campaign_id as _active_campaign_id
 from store import list_campaigns as _list_campaigns
 from store import list_slots as _list_slots
@@ -591,7 +591,7 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
         prior = load_campaign(resume)
         if prior is not None and prior.world_id == world_id:
             ploc = prior.locations.get(prior.current_location_id) if prior.current_location_id else None
-            return {
+            resumed = {
                 "campaign_id": prior.id,
                 "world": prior.title,
                 "resumed": True,
@@ -606,6 +606,18 @@ def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str
                 "regions": [{"id": l.id, "name": l.name} for l in prior.locations.values()],
                 "note": "Resumed an existing campaign. Call session_recap / get_state to re-ground, then start_session.",
             }
+            # F08-3: surface any tolerant-load schema drift on the resume path (see start_session).
+            drift = last_dropped_keys(prior.id)
+            if drift:
+                resumed["schema_drift"] = {
+                    "dropped_keys": drift,
+                    "note": (
+                        "This save was written by a different engine schema; the listed top-level "
+                        "field(s) were dropped on load. The original snapshot is preserved at "
+                        "snapshot.pre-tolerant.json."
+                    ),
+                }
+            return resumed
         # invalid/mismatched resume id -> fall through to a fresh start
 
     c = content_mod.seed_world(world, start_at=start_at, ending=ending)
@@ -7698,7 +7710,22 @@ def start_session(campaign_id: str, title: str = "") -> dict:
             ),
         )
         save_campaign(c)
-        return {"session_id": sid, "number": len(c.session_ids), "previously_on": previously}
+        out = {"session_id": sid, "number": len(c.session_ids), "previously_on": previously}
+        # F08-3: if this campaign's snapshot needed the TOLERANT load (unknown top-level keys from
+        # a newer/older schema were dropped), SURFACE the dropped key names on the resume path so
+        # schema-evolution data-loss is visible at the table — not just buried in a log line. The
+        # original bytes are recoverable from campaigns/<id>/snapshot.pre-tolerant.json.
+        drift = last_dropped_keys(campaign_id)
+        if drift:
+            out["schema_drift"] = {
+                "dropped_keys": drift,
+                "note": (
+                    "This save was written by a different engine schema; the listed top-level "
+                    "field(s) were dropped on load. The original snapshot is preserved at "
+                    "snapshot.pre-tolerant.json."
+                ),
+            }
+        return out
 
 
 @mcp.tool()

@@ -116,7 +116,6 @@ def _atomic_write(path: Path, data: str) -> None:
 
 
 def save_campaign(campaign: Campaign) -> Path:
-    campaign.updated_at = time.time()
     # Version-stamp the snapshot: record the engine SHA that wrote it (cached, best-effort —
     # never aborts a save) and make sure schema_version is populated. schema_version's authority
     # is the manual constant on the Campaign model (default 1, bumped only on a breaking schema
@@ -125,8 +124,140 @@ def save_campaign(campaign: Campaign) -> Path:
     if not campaign.schema_version:
         campaign.schema_version = Campaign.model_fields["schema_version"].default
     path = _campaign_dir(campaign.id) / "snapshot.json"
+
+    # F08-2 dirty-skip chokepoint: a load -> (no mutation) -> save_campaign is a PURE READ and
+    # must not rewrite the snapshot or bump updated_at — otherwise it flips the #640
+    # "most-recently-updated == live" pointer (a cross-campaign check_*/world_tick/scene_context
+    # evaluation would silently steal the live pointer onto the inspected campaign). We detect a
+    # no-op by serializing with the CURRENT (pre-stamp) updated_at and byte-comparing to disk: if
+    # a tool mutated nothing, the candidate matches what we last wrote and we skip the write+stamp.
+    # A genuine mutation -> bytes differ -> we stamp updated_at and write as usual (so a real write
+    # is NEVER dropped). Note (F08-3 composition): after a TOLERANT load the in-memory dump differs
+    # from the on-disk bytes (dropped keys are gone), so the candidate != disk and we DO write —
+    # which is exactly why F08-3 stashes the original bytes independently BEFORE the drop.
+    candidate = campaign.model_dump_json(indent=2)
+    try:
+        if path.exists() and path.read_text(encoding="utf-8") == candidate:
+            return path  # byte-identical -> nothing changed -> no rewrite, no fresh stamp
+    except OSError:
+        # Unreadable on-disk snapshot: fall through to a normal write (never skip a real save).
+        pass
+
+    campaign.updated_at = time.time()
     _atomic_write(path, campaign.model_dump_json(indent=2))
     return path
+
+
+# F08-3: the most-recent set of unknown top-level keys the tolerant load dropped, per campaign id.
+# Observable so the resume path can SURFACE schema-evolution data-loss instead of it being log-only
+# (the audit's "make the drop observable" requirement). A clean strict load clears the entry.
+_LAST_DROPPED_KEYS: dict[str, list[str]] = {}
+
+# Sidecar name for the write-once pre-tolerant backup (F08-3). Lives beside snapshot.json; nothing
+# globs ``campaigns/<id>/*.json`` (list_slots globs slots/*.json; listings read snapshot.json by
+# name), so the sibling file is inert to the rest of the store.
+_PRE_TOLERANT_BACKUP = "snapshot.pre-tolerant.json"
+
+
+def last_dropped_keys(campaign_id: str) -> list[str]:
+    """The unknown top-level keys the LAST tolerant load of this campaign dropped (F08-3).
+
+    Empty when the most recent load was a clean strict parse (nothing dropped). The resume path
+    reads this to surface schema-evolution data-loss to the operator/DM rather than leaving it
+    log-only and invisible at the table — the original bytes remain recoverable from the
+    ``snapshot.pre-tolerant.json`` sidecar this load stashes."""
+    return list(_LAST_DROPPED_KEYS.get(campaign_id, []))
+
+
+def _validate_tolerant(raw: str) -> tuple[Campaign, list[str]]:
+    """Side-effect-free tolerant parse: drop unknown top-level keys, validate, and report which
+    keys were dropped (F08-3/F08-4 shared core).
+
+    PURE — no disk writes, no module-state mutation — so the enumerators (F08-4) can reuse it
+    without turning a listing into a writer (the "pure reads don't write" invariant). Only the
+    callable load path (:func:`_tolerant_load`) layers on the write-once backup + dropped-key
+    recording. Raises RuntimeError if the snapshot is incompatible even after stripping unknown
+    top-level keys (genuine corruption — not a schema-skew we can recover)."""
+    import json
+    data: dict = json.loads(raw)
+    known = set(Campaign.model_fields)
+    dropped = [k for k in list(data) if k not in known]
+    for k in dropped:
+        del data[k]
+    try:
+        return Campaign.model_validate(data), dropped
+    except ValidationError as exc:
+        raise RuntimeError(
+            f"snapshot is incompatible with the current schema and cannot be loaded even "
+            f"after stripping unknown top-level keys.  Validation error: {exc}"
+        ) from exc
+
+
+def _tolerant_load(campaign_id: str, raw: str) -> Campaign:
+    """Tolerant load for the CALLABLE path: parse + record dropped keys + stash the original bytes.
+
+    Wraps the pure :func:`_validate_tolerant` with the two F08-3 side effects (skipped by the
+    read-only enumerators): recording the dropped key names so the resume path can SURFACE the
+    loss, and stashing the ORIGINAL bytes write-once into ``snapshot.pre-tolerant.json`` so the
+    unknown data is recoverable even after the next save rewrites snapshot.json in the current
+    schema."""
+    try:
+        c, dropped = _validate_tolerant(raw)
+    except RuntimeError as exc:
+        # Preserve the historical load_campaign error wording (callers/tests match on it).
+        raise RuntimeError(f"load_campaign({campaign_id!r}): {exc}") from exc
+    _LAST_DROPPED_KEYS[campaign_id] = list(dropped)
+    if dropped:
+        log.warning(
+            "load_campaign(%s): dropping unrecognised top-level key(s) %s "
+            "— snapshot may be from a different schema version; the original bytes are "
+            "stashed in %s and the data in those fields is lost for this load.",
+            campaign_id,
+            dropped,
+            _PRE_TOLERANT_BACKUP,
+        )
+        # Stash the ORIGINAL bytes write-once BEFORE the drop takes effect on disk, so the unknown
+        # fields stay recoverable even after the next save rewrites snapshot.json in the current
+        # schema. Fixed filename (NOT timestamped) + skip-if-exists: the FIRST-skew bytes are the
+        # valuable ones, and a fresh-timestamp name would mint an unbounded backup per tolerant
+        # load. Best-effort: a backup-write failure must DEGRADE (log) — never abort the load (a
+        # read must not brick because a sibling write failed).
+        backup = _campaign_dir(campaign_id) / _PRE_TOLERANT_BACKUP
+        if not backup.exists():
+            try:
+                _atomic_write(backup, raw)
+            except OSError as exc:
+                log.warning(
+                    "load_campaign(%s): could not stash pre-tolerant backup %s: %s "
+                    "(continuing — the load is unaffected).",
+                    campaign_id, _PRE_TOLERANT_BACKUP, exc,
+                )
+    return c
+
+
+def _load_summary(snap: Path) -> Optional[Campaign]:
+    """Read-only tolerant parse of a snapshot file for the ENUMERATORS (F08-4).
+
+    The enumerators (list_campaigns / campaigns_for_world / active_campaign_id) must use the SAME
+    notion of "loadable" as load_campaign — otherwise a tolerant-loadable campaign is INVISIBLE to
+    listings and to the #640 live-pointer resolver (the resolver would silently pick the OTHER,
+    strict-only campaign). Strict parse first; tolerant retry only on strict failure. PURE: no
+    backup write, no module-state mutation (those side effects belong to the callable load path
+    only — a listing must never write). Genuinely-corrupt snapshots (RuntimeError) are skipped, so
+    real corruption can't crash or pollute a listing."""
+    try:
+        raw = snap.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        return Campaign.model_validate_json(raw)
+    except ValidationError:
+        pass
+    try:
+        c, _ = _validate_tolerant(raw)
+        return c
+    except (RuntimeError, ValueError):
+        return None
 
 
 def load_campaign(campaign_id: str) -> Optional[Campaign]:
@@ -135,39 +266,18 @@ def load_campaign(campaign_id: str) -> Optional[Campaign]:
         return None
     raw = path.read_text(encoding="utf-8")
     try:
-        return Campaign.model_validate_json(raw)
+        c = Campaign.model_validate_json(raw)
+        _LAST_DROPPED_KEYS.pop(campaign_id, None)  # clean strict load: nothing dropped
+        return c
     except ValidationError:
         pass
 
-    # Tolerant fallback: drop any top-level keys the current schema doesn't know
-    # about (removed/renamed fields from an older or newer snapshot).  We only
-    # attempt this at the TOP level of Campaign — sub-model strictness is
-    # intentionally preserved.  Per-rename migrations (old-key → new-key) are
-    # added here per-release as needed; this generic net only handles field
-    # removal / unknown keys.
-    import json
-    data: dict = json.loads(raw)
-    known = set(Campaign.model_fields)
-    dropped = [k for k in list(data) if k not in known]
-    if dropped:
-        log.warning(
-            "load_campaign(%s): dropping unrecognised top-level key(s) %s "
-            "— snapshot may be from a different schema version; "
-            "data in those fields is lost for this load.",
-            campaign_id,
-            dropped,
-        )
-        for k in dropped:
-            del data[k]
-
-    try:
-        return Campaign.model_validate(data)
-    except ValidationError as exc:
-        raise RuntimeError(
-            f"load_campaign({campaign_id!r}): snapshot is incompatible with the "
-            f"current schema and cannot be loaded even after stripping unknown "
-            f"top-level keys.  Validation error: {exc}"
-        ) from exc
+    # Tolerant fallback: drop any top-level keys the current schema doesn't know about
+    # (removed/renamed fields from an older or newer snapshot).  We only attempt this at the TOP
+    # level of Campaign — sub-model strictness is intentionally preserved.  Per-rename migrations
+    # (old-key → new-key) are added in _tolerant_load per-release as needed; this generic net only
+    # handles field removal / unknown keys.
+    return _tolerant_load(campaign_id, raw)
 
 
 def _slots_dir(campaign_id: str) -> Path:
@@ -352,9 +462,8 @@ def list_campaigns() -> list[dict]:
         snap = d / "snapshot.json"
         if not snap.exists():
             continue
-        try:
-            c = Campaign.model_validate_json(snap.read_text(encoding="utf-8"))
-        except Exception:
+        c = _load_summary(snap)  # F08-4: tolerant-loadable campaigns stay visible to listings
+        if c is None:
             continue
         out.append({"id": c.id, "title": c.title, "updated_at": c.updated_at})
     return out
@@ -371,9 +480,8 @@ def campaigns_for_world(world_id: str) -> list[dict]:
         snap = d / "snapshot.json"
         if not snap.exists():
             continue
-        try:
-            c = Campaign.model_validate_json(snap.read_text(encoding="utf-8"))
-        except Exception:
+        c = _load_summary(snap)  # F08-4: same tolerant "loadable" definition as load_campaign
+        if c is None:
             continue
         if c.world_id == world_id:
             out.append({"id": c.id, "title": c.title, "day": c.day, "updated_at": c.updated_at})
@@ -413,9 +521,8 @@ def active_campaign_id(world_id: str = "") -> Optional[str]:
         snap = d / "snapshot.json"
         if not snap.exists():
             continue
-        try:
-            c = Campaign.model_validate_json(snap.read_text(encoding="utf-8"))
-        except Exception:
+        c = _load_summary(snap)  # F08-4: a tolerant-loadable campaign must not be skipped here —
+        if c is None:            # otherwise the #640 resolver silently picks the OTHER campaign
             continue
         if world_id and c.world_id != world_id:
             continue
@@ -431,8 +538,25 @@ def active_campaign_id(world_id: str = "") -> Optional[str]:
 def append_log(campaign_id: str, session_id: str, entry: SessionLogEntry) -> None:
     path = _campaign_dir(campaign_id) / "sessions" / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
+    # F08-5 newline-heal: if a prior append was torn (e.g. an OOM-kill mid-write left an
+    # unterminated final line with no trailing '\n'), a blind append would concatenate THIS entry
+    # onto that torn line — one physical line carrying both a broken JSON fragment and a good entry,
+    # so the poison grows and the good entry is unreadable too. Prefix a newline when the file's
+    # last byte isn't already one, fencing the torn fragment onto its own line (the reader then
+    # skips just that one line). Runs under the caller's campaign_lock, so no writer race. A fresh
+    # / empty file needs no prefix.
+    prefix = ""
+    try:
+        if path.exists() and path.stat().st_size > 0:
+            with open(path, "rb") as rf:
+                rf.seek(-1, os.SEEK_END)
+                if rf.read(1) != b"\n":
+                    prefix = "\n"
+    except OSError:
+        # Can't inspect the tail (race/permissions) — degrade to a plain append (today's behavior).
+        prefix = ""
     with open(path, "a", encoding="utf-8") as f:
-        f.write(entry.model_dump_json() + "\n")
+        f.write(prefix + entry.model_dump_json() + "\n")
 
 
 def read_log(campaign_id: str, session_id: str) -> list[SessionLogEntry]:
@@ -440,10 +564,26 @@ def read_log(campaign_id: str, session_id: str) -> list[SessionLogEntry]:
     if not path.exists():
         return []
     entries: list[SessionLogEntry] = []
+    bad = 0
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        # F08-5 reader tolerance: one TORN line (truncated mid-write by an OOM-kill, or a stray
+        # non-JSON line) must NOT brick the whole read. A single ValidationError used to raise out
+        # of read_log -> read_log_all -> recap_from_store -> start_session's recap, hand-repair the
+        # only fix. Skip the unparseable line and keep the rest; the recap/resume path stays alive.
+        # Acceptable loss: one bad entry, vs a bricked resume (the audit's explicit trade-off).
+        try:
             entries.append(SessionLogEntry.model_validate_json(line))
+        except ValidationError:
+            bad += 1
+    if bad:
+        log.warning(
+            "read_log(%s/%s): skipped %d unparseable session-log line(s) "
+            "(torn/truncated write) — continuing with the readable entries.",
+            campaign_id, session_id, bad,
+        )
     return entries
 
 
