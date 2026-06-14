@@ -318,6 +318,24 @@ def _rage_uses(level: int) -> int:
     return n
 
 
+def _second_wind_uses(level: int) -> int:
+    # SRD 5.2 Fighter: Second Wind has 2 uses at L1, 3 at L4, 4 at L10.
+    if level >= 10:
+        return 4
+    if level >= 4:
+        return 3
+    return 2 if level >= 1 else 0
+
+
+def _wild_shape_uses(level: int) -> int:
+    # SRD 5.2 Druid: 2 uses at L2, 3 at L6, 4 at L17 — kept (does NOT drop) at L20.
+    if level >= 17:
+        return 4
+    if level >= 6:
+        return 3
+    return 2 if level >= 2 else 0
+
+
 def _channel_divinity_cleric(level: int) -> int:
     # Cleric: 2 uses at L2, 3 at L6, 4 at L18 (SRD 5.2).
     if level < 2:
@@ -364,13 +382,16 @@ _CLASS_RESOURCES: dict[str, dict] = {
         "sorcery_points": ("Sorcery Points", "long", lambda lvl, cha: lvl if lvl >= 2 else 0),
     },
     "fighter": {
-        # Second Wind from L1; Action Surge from L2 (2 uses at L17). Short-rest.
-        "second_wind": ("Second Wind", "short", lambda lvl, cha: 1),
+        # Second Wind from L1; SRD 5.2 scales the pool 2/3/4 at L1/L4/L10 (the old flat
+        # "1" undercounted every Fighter — audit F02-11). Action Surge from L2 (2 at L17).
+        "second_wind": ("Second Wind", "short", lambda lvl, cha: _second_wind_uses(lvl)),
         "action_surge": ("Action Surge", "short", lambda lvl, cha: (2 if lvl >= 17 else 1) if lvl >= 2 else 0),
     },
     "druid": {
-        # Wild Shape: 2 uses from L2 (Archdruid grants unlimited at L20 -> not pooled).
-        "wild_shape": ("Wild Shape", "short", lambda lvl, cha: 0 if lvl >= 20 else (2 if lvl >= 2 else 0)),
+        # Wild Shape (SRD 5.2): 2 uses at L2, 3 at L6, 4 at L17 — and the pool PERSISTS at
+        # L20 (the 2014 "Archdruid unlimited -> not pooled" zero was mixed-edition drift
+        # against the engine's 2024 feature tables; under 5.2 the pool stays at 4 — F02-11).
+        "wild_shape": ("Wild Shape", "short", lambda lvl, cha: _wild_shape_uses(lvl)),
     },
 }
 

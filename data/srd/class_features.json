@@ -279,8 +279,8 @@
     "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
     "17": [{"name": "Sneak Attack (9d6)", "desc": "Your Sneak Attack damage increases; subclass feature gained.", "sneak_attack_dice": "9d6"}],
     "18": [{"name": "Elusive", "desc": "No attack roll has advantage against you while you aren't incapacitated."}],
-    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
-    "20": [{"name": "Stroke of Luck", "desc": "Turn a missed attack into a hit or a failed check into a 20 once per short or long rest.", "sneak_attack_dice": "10d6"}]
+    "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}, {"name": "Sneak Attack (10d6)", "desc": "Your Sneak Attack damage increases to 10d6.", "sneak_attack_dice": "10d6"}],
+    "20": [{"name": "Stroke of Luck", "desc": "Turn a missed attack into a hit or a failed check into a 20 once per short or long rest."}]
   },
   "sorcerer": {
     "1": [

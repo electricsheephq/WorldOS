@@ -1197,6 +1197,20 @@ def _class_level_hp(class_name: str, level: int, con_mod: int) -> "int | None":
     return max(1, die + con_mod + (lvl - 1) * per_level_after_first)
 
 
+def _expertise_count(class_name: str, level: int) -> int:
+    """How many skills carry EXPERTISE (double proficiency) for a single-class character of
+    `class_name` at `level`, per SRD 5.2. Rogue: 2 at L1, 4 at L6. Bard: 2 at L2, 4 at L9.
+    Every other class: 0. Pure — drives the F02-15 default-fill so an engine-built rogue's
+    expertise math is correct out of the box (a real build choice the DM can refine later)."""
+    cname = (class_name or "").lower()
+    lvl = max(1, int(level)) if str(level).lstrip("-").isdigit() else 1
+    if cname == "rogue":
+        return 4 if lvl >= 6 else 2
+    if cname == "bard":
+        return 4 if lvl >= 9 else (2 if lvl >= 2 else 0)
+    return 0
+
+
 def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
     """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
     hit dice, level-1 HP (max die + CON), proficiency bonus, class base AC (when
@@ -1264,6 +1278,18 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 explicit = [s for s in pool if s != "any" and s in SKILL_ABILITIES]
                 pool = explicit + [s for s in SKILL_ABILITIES if s not in explicit]
             ch.skill_proficiencies = pool[: int(sk.get("count", 0))]
+        # F02-15: a class that grants EXPERTISE (rogue L1/L6, bard L2/L9) had NO engine grant
+        # path — every engine-built rogue's expertise-skill math was short by PB (skill_bonus pays
+        # 2xPB only from skill_expertise, which only update_character's `expertise` alias ever
+        # wrote). Default-fill the expertise picks from the character's OWN proficiencies (so they
+        # always map to a real skill), mirroring the skill default-fill above. Only fills an
+        # otherwise-empty list, so a hand-authored / DM-chosen expertise set is respected. The
+        # actual chosen skills are a build choice the DM/optimizer can later refine via
+        # update_character — this just makes the rogue mechanically correct out of the box.
+        if not ch.skill_expertise:
+            exp_n = _expertise_count(cname, level)
+            if exp_n > 0:
+                ch.skill_expertise = list(ch.skill_proficiencies[:exp_n])
         _recompute_spellcasting(ch)
         _seed_starting_spells(ch, cname, level)
         _recompute_class_resources(ch)
@@ -1271,7 +1297,7 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         pass  # unknown class -> keep the explicit values
 
 
-def _recompute_level_scaled_stats(ch, patch: dict) -> None:
+def _recompute_level_scaled_stats(ch, patch: dict, prior_hit_dice_remaining: "int | None" = None) -> None:
     """OVERWRITE the purely level-derived stats — proficiency bonus, hit dice, max HP, and
     extra attacks — to match ``ch.classes`` after a class/level change, so a DOWN-level retier
     (a canon L12 Fighter patched to L3) does NOT keep the higher tier's inflated math.
@@ -1293,7 +1319,15 @@ def _recompute_level_scaled_stats(ch, patch: dict) -> None:
         if single_class and "hit_dice" not in keys:
             ch.hit_dice = f"{total}d{srd_tables.hit_die(cname)}"
             if "hit_dice_remaining" not in keys:
-                ch.hit_dice_remaining = min(ch.hit_dice_remaining, total)
+                # F02-5: cap the SPENT pool against the new total — never REFILL it. The caller
+                # passes the pre-recompute remaining because _apply_srd_class_defaults ran first
+                # and unconditionally reset hit_dice_remaining to `level` (which would refund every
+                # spent die on a stat/level patch). Fall back to the current value when no prior
+                # was supplied (the level_up path keeps its own +1 accounting).
+                spent_basis = (prior_hit_dice_remaining
+                               if prior_hit_dice_remaining is not None
+                               else ch.hit_dice_remaining)
+                ch.hit_dice_remaining = max(0, min(spent_basis, total))
         if single_class and "max_hp" not in keys:
             recomputed = _class_level_hp(cname, total, ch.ability_modifier(Ability.CON))
             if recomputed:
@@ -1781,6 +1815,19 @@ def start_character(
                 "available_count": count,
                 "note": "list_canon_characters(playable_only=True, q=…) to search pickups.",
             }
+        # HARD GATE (F02-8, mirrors load_canon_character's #305 player gate): a canon-DEAD figure
+        # may be a lore NPC but must NEVER be seated as the PLAYER — the prestige-CRPG framing
+        # breaks if the PC's canon-truth is "dead and rotting". pickup only checked is_playable
+        # (a flag that defaults True), never is_dead_record — so a playable-but-dead record slipped
+        # through. Return the same {"error", "dead_in_canon"} shape so play.sh falls back to a living pick.
+        if content_mod.is_dead_record(rec):
+            return {
+                "error": (f"{rec.get('name', who)} is dead in canon and cannot be the player "
+                          f"character — pick a living figure (list_canon_characters("
+                          f"playable_only=True) lists only living, playable figures)."),
+                "dead_in_canon": True,
+                "name": rec.get("name", who),
+            }
         resolved = f"pickup:{rec.get('name', who)}"
         pickup_canon_name = str(rec.get("name", who) or who)  # match the roster by canon identity
         build["name"] = name or rec.get("name", who)
@@ -1848,6 +1895,17 @@ def start_character(
                     ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10),
                     rec_abilities=(rec or {}).get("abilities"),
                     backfill_abilities=not build["abilities"])
+            # F02-8: promoting a roster STUB to the PLAYER must clear any stale death state — a
+            # bare identity stub (max_hp=1) can be flagged dead/stable after one combat hit, and
+            # seating a dead PC deadlocks the facade (the PC can't act, can't long_rest). Mirrors
+            # recruit_companion's clear. Guarded on living HP so this never resurrects a 0-HP record.
+            if ch.current_hp > 0 and (ch.dead or ch.stable or ch.death_saves.successes
+                                      or ch.death_saves.failures):
+                ch.dead = False
+                ch.stable = False
+                ch.death_saves = DeathSaves()
+                ch.conditions = [cond for cond in ch.conditions if cond != Condition.UNCONSCIOUS]
+            ch.met = True  # an active player is, by convention, met
             if ch.id not in c.party:
                 c.party.append(ch.id)
             save_campaign(c)
@@ -2055,10 +2113,12 @@ def reroll_character(
          record is KEPT in `characters` (a memorial — the fallen hero the world remembers).
       4. Add the new PC to the party as the sole `kind=="player"`.
 
-    Gear and gold are LOST with the body by default — a new character earns their own kit
-    (use `add_item`/`adjust_currency` if the fiction lets the party loot the corpse). HOW
-    the new hero arrives in the world is the DM's narration, not this tool's job. On a
-    party WIPE, call this once per fallen member (there is no separate batch tool).
+    The DEAD PC's gear and gold are LOST with the body — they stay on the corpse, never
+    transferred to the new hero (use `add_item`/`adjust_currency` if the fiction lets the party
+    loot it). The new character is seated with their OWN class-appropriate starting kit (a modest
+    purse + the armor/weapon that justify their AC), at the party's current location. HOW the new
+    hero arrives in the world is the DM's narration, not this tool's job. On a party WIPE, call
+    this once per fallen member (there is no separate batch tool).
 
     Returns ``{new_pc: {id, name, kind, level, in_party}, memorial: {id, name, now_kind}}``.
     """
@@ -2096,11 +2156,23 @@ def reroll_character(
             else [],
             abilities=scores,
             initiative_bonus=scores.modifier(Ability.DEX),
+            # F02-12: seat the new hero IN THE SCENE — at the party's current location, not a
+            # null location_id that only the next travel would fix (a just-rerolled PC was shown
+            # a scene behind the party). met=True for consistency (a player is implicitly met —
+            # create_character sets it; the model comment documents the convention).
+            location_id=c.current_location_id,
+            met=True,
         )
         if skills:  # explicit skill choices win over the class default-fill
             new.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if class_name:
-            _apply_srd_class_defaults(new, class_name, lvl, set_base_ac=True)
+            # F02-12: route through the shared seat finisher so the new hero's AC is BACKED by a
+            # real kit (the old path set an armored class_base_ac over an empty inventory — AC 16
+            # with no armor). The "gear lost with the body" rule applies to the DEAD PC's loot;
+            # the new character still earns their own starting kit (the docstring says so), so AC
+            # and inventory AGREE. backfill only when no explicit abilities were passed.
+            _finish_seat_sheet(new, class_name, lvl, set_base_ac=True,
+                               backfill_abilities=not abilities, seed_gear=True)
 
         # KEYSTONE — demote the corpse off kind=="player" so the facade stops resolving it,
         # and remove it from the party. Keep the record in `characters` as a memorial (it
@@ -2981,9 +3053,16 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         old_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in ch.classes]
         new_sig = [(cl.name.lower(), cl.level, (cl.subclass or "")) for cl in new_ch.classes]
         if old_sig != new_sig and new_ch.classes:
+            # F02-5: a class/level retier must re-derive the POOL SIZE (hit_dice string scales
+            # to the new level) but must NOT silently refill a previously-SPENT pool. Capture the
+            # pre-recompute remaining BEFORE _apply_srd_class_defaults unconditionally resets it
+            # to `level`, so _recompute_level_scaled_stats can cap against the spent count (a DM
+            # who patched a brand-new full-pool record still gets `min(spent, total)` == today).
+            prior_hit_dice_remaining = new_ch.hit_dice_remaining
             _apply_srd_class_defaults(new_ch, new_ch.classes[0].name,
                                       new_ch.total_level, set_base_ac=False)
-            _recompute_level_scaled_stats(new_ch, patch or {})
+            _recompute_level_scaled_stats(new_ch, patch or {},
+                                          prior_hit_dice_remaining=prior_hit_dice_remaining)
         # #733: keep initiative_bonus == DEX modifier when a patch changes the DEX score.
         # Every engine write derives initiative_bonus from the DEX modifier (create_character,
         # level_up's ASI path, the canon-load derivation), but update_character — the path a DM
@@ -2996,6 +3075,20 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         dex_changed = ch.ability_modifier(Ability.DEX) != new_ch.ability_modifier(Ability.DEX)
         if dex_changed and "initiative_bonus" not in (patch or {}):
             new_ch.initiative_bonus = new_ch.ability_modifier(Ability.DEX)
+        # F02-6: a CON change retro-adjusts max HP by the CON-modifier DELTA across every level
+        # the character has (raising CON grants +1 HP per level; a corrective drop removes them,
+        # floored at 1). Delta-based — it respects a DM-authored HP base and a multiclass sheet
+        # rather than re-deriving from scratch. Skipped when the SAME patch set max_hp explicitly
+        # (a DM-chosen HP wins) or already recomputed the class math above (a class-sig retier
+        # re-derives max_hp from the new total_level, which already reflects the new CON).
+        con_changed = ch.ability_modifier(Ability.CON) != new_ch.ability_modifier(Ability.CON)
+        class_sig_changed = old_sig != new_sig and new_ch.classes
+        if (con_changed and "max_hp" not in (patch or {}) and not class_sig_changed
+                and new_ch.total_level > 0):
+            con_delta = new_ch.ability_modifier(Ability.CON) - ch.ability_modifier(Ability.CON)
+            hp_delta = con_delta * new_ch.total_level
+            new_ch.max_hp = max(1, new_ch.max_hp + hp_delta)
+            new_ch.current_hp = max(1, min(new_ch.current_hp, new_ch.max_hp))
         c.characters[character_id] = new_ch
         save_campaign(c)
         return c.characters[character_id].model_dump(mode="json")
@@ -5646,12 +5739,13 @@ def level_up(
             raise ValueError(f"{class_name} level {new_class_level} does not grant an ASI or feat choice")
 
         die = srd_tables.hit_die(cname)
-        con = ch.ability_modifier(Ability.CON)
-        if hp_method == "roll":
-            base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
-        else:
-            base = srd_tables.average_hp(die)
-        gain = max(1, base + con)
+
+        # F02-6: apply a CON-raising ASI BEFORE sizing this level's HP so the new level
+        # uses the POST-ASI CON (the SRD intent — a +CON at this level adds HP at this
+        # level too), and so we can retro-adjust the prior levels by the CON-mod delta.
+        # `con_before` is captured here; `applied`/abilities mutate just below.
+        con_before = ch.ability_modifier(Ability.CON)
+        prior_total_level = ch.total_level  # levels the character ALREADY had before this one
 
         # Normalize a chosen subclass to its canonical SRD name when the table knows
         # it ('Evocation' -> 'Evoker'); an unknown/world-canon name passes through
@@ -5672,14 +5766,8 @@ def level_up(
         else:
             ch.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
 
-        ch.max_hp += gain
-        ch.current_hp += gain
-        ch.hit_dice_remaining += 1
-        # keep the hit_dice string in sync (single-class; was left stale after level_up)
-        if len({cl.name.lower() for cl in ch.classes}) == 1:
-            ch.hit_dice = f"{sum(cl.level for cl in ch.classes)}d{die}"
-
         applied = None
+        pending_choice_recorded = False
         if is_asi_level:
             if pending_asi:
                 for ability, inc in pending_asi.items():
@@ -5687,7 +5775,39 @@ def level_up(
                 applied = {"asi": pending_asi}
             elif feat:
                 applied = {"feat": feat}
+                # F02-3: record the chosen feat on a STRUCTURED ledger the DM/viewer can read,
+                # not just buried in free-text notes (the feat path was 100% inert). The note
+                # line stays for back-compat; `feats` is the surface the engine/viewer key off.
+                if feat not in ch.feats:
+                    ch.feats.append(feat)
                 ch.notes = (ch.notes + f" | feat: {feat}").strip(" |")
+            else:
+                # F02-3: an ASI/feat was DUE this level but NEITHER was supplied. Previously
+                # this choice was silently dropped and no surface ever offered it again. RECORD
+                # the debt on the pending-choice ledger so the DM (or update_character) can
+                # settle it later. Additive: a level-up that DOES take the choice records nothing.
+                label = f"ASI/feat due: {class_name.capitalize()} level {new_class_level}"
+                if label not in ch.pending_choices:
+                    ch.pending_choices.append(label)
+                pending_choice_recorded = True
+
+        # F02-6: now that any CON-raising ASI has landed, size THIS level's HP with the
+        # POST-ASI CON, and retro-adjust the HP already banked at the prior levels by the
+        # CON-modifier delta (raising CON grants +1 HP per level you already have; lowering it
+        # via a corrective drop removes them, floored so HP never goes < 1).
+        con_after = ch.ability_modifier(Ability.CON)
+        if hp_method == "roll":
+            base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
+        else:
+            base = srd_tables.average_hp(die)
+        gain = max(1, base + con_after)
+        con_retro = (con_after - con_before) * prior_total_level
+        ch.max_hp = max(1, ch.max_hp + gain + con_retro)
+        ch.current_hp = max(1, ch.current_hp + gain + con_retro)
+        ch.hit_dice_remaining += 1
+        # keep the hit_dice string in sync (single-class; was left stale after level_up)
+        if len({cl.name.lower() for cl in ch.classes}) == 1:
+            ch.hit_dice = f"{sum(cl.level for cl in ch.classes)}d{die}"
 
         ch.proficiency_bonus = srd_tables.proficiency_bonus(ch.total_level)
         ch.initiative_bonus = ch.ability_modifier(Ability.DEX)
@@ -5719,12 +5839,29 @@ def level_up(
             if f.get("sneak_attack_dice"):
                 ch.sneak_attack_dice = f["sneak_attack_dice"]
 
+        # F02-14: in XP leveling mode, WARN (never block — the engine stays the sole writer and
+        # the DM may have a reason) when the character isn't yet XP-entitled to the level they
+        # just took. Milestone campaigns level by story beat, so the check is xp-mode-only.
+        # `prior_total_level` is the level BEFORE this up; entitlement is by current xp.
+        xp_warning = None
+        if c.leveling_mode == "xp":
+            entitled = srd_tables.level_for_xp(ch.xp)
+            new_total = ch.total_level
+            if new_total > entitled:
+                xp_warning = (
+                    f"{ch.name} leveled to {new_total} but has only enough XP for level "
+                    f"{entitled} ({ch.xp} XP). Award XP first (award_xp/award_party_xp) or set "
+                    f"house_rules / leveling_mode='milestone' if leveling by story beat."
+                )
+
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         save_campaign(c)
         sheet = c.characters[character_id].model_dump(mode="json")
         sheet["_hp_gained"] = gain
         sheet["_asi_applied"] = applied
         sheet["_features_gained"] = gained
+        sheet["_pending_choice_recorded"] = pending_choice_recorded
+        sheet["_xp_warning"] = xp_warning
         return sheet
 
 
@@ -5817,12 +5954,11 @@ def preview_level_up(
             errors.append(f"does not meet the multiclass prerequisite for {class_name}")
 
     die = srd_tables.hit_die(cname)
-    con = preview.ability_modifier(Ability.CON)
-    if hp_method == "roll":
-        base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
-    else:
-        base = srd_tables.average_hp(die)
-    gain = max(1, base + con)
+    # F02-6 (preview/actual parity): mirror level_up — apply a CON-raising ASI BEFORE sizing
+    # this level's HP, and retro-adjust the prior levels by the CON-mod delta, so the previewed
+    # hp_gain/max_hp match what level_up will actually write.
+    con_before = preview.ability_modifier(Ability.CON)
+    prior_total_level = preview.total_level
 
     if existing:
         existing.level += 1
@@ -5832,12 +5968,6 @@ def preview_level_up(
     else:
         preview.classes.append(ClassLevel(name=class_name.capitalize(), level=1, subclass=subclass))
         new_class_level = 1
-
-    preview.max_hp += gain
-    preview.current_hp += gain
-    preview.hit_dice_remaining += 1
-    if len({cl.name.lower() for cl in preview.classes}) == 1:
-        preview.hit_dice = f"{sum(cl.level for cl in preview.classes)}d{die}"
 
     if srd_tables.is_asi_level(cname, new_class_level):
         choice_requirements.append(
@@ -5861,6 +5991,19 @@ def preview_level_up(
                 applied = {"feat": feat}
     elif asi or feat:
         errors.append(f"{class_name} level {new_class_level} does not grant an ASI or feat choice")
+
+    con_after = preview.ability_modifier(Ability.CON)
+    if hp_method == "roll":
+        base = hp_roll if hp_roll is not None else dice_mod.roll(f"1d{die}", seed=seed).total
+    else:
+        base = srd_tables.average_hp(die)
+    gain = max(1, base + con_after)
+    con_retro = (con_after - con_before) * prior_total_level
+    preview.max_hp = max(1, preview.max_hp + gain + con_retro)
+    preview.current_hp = max(1, preview.current_hp + gain + con_retro)
+    preview.hit_dice_remaining += 1
+    if len({cl.name.lower() for cl in preview.classes}) == 1:
+        preview.hit_dice = f"{sum(cl.level for cl in preview.classes)}d{die}"
 
     preview.proficiency_bonus = srd_tables.proficiency_bonus(preview.total_level)
     preview.initiative_bonus = preview.ability_modifier(Ability.DEX)

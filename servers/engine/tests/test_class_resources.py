@@ -44,7 +44,10 @@ def test_resource_formulas_across_classes():
     }
     assert srd_tables.class_resources_through("bard", 5, cha_mod=3)["bardic_inspiration"]["recharge"] == "short"
     f = srd_tables.class_resources_through("fighter", 2)
-    assert f["second_wind"]["max"] == 1 and f["second_wind"]["recharge"] == "short"
+    # SRD 5.2 Second Wind scales 2/3/4 at L1/L4/L10 (was a flat "1" — audit F02-11).
+    assert f["second_wind"]["max"] == 2 and f["second_wind"]["recharge"] == "short"
+    assert srd_tables.class_resources_through("fighter", 4)["second_wind"]["max"] == 3
+    assert srd_tables.class_resources_through("fighter", 10)["second_wind"]["max"] == 4
     assert f["action_surge"]["max"] == 1
     assert "ki" not in srd_tables.class_resources_through("monk", 1)  # no Ki before L2
     assert srd_tables.class_resources_through("wizard", 5) == {}  # no pools
