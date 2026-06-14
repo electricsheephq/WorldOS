@@ -162,11 +162,30 @@ turn() {
     # signal as lean. DM turn ONLY — the player branch below never gets --effort.
     clawdnd_dm_effort_arg "$first"
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
-    claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-      --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
+    # F12-11 (audit 2026-06-11): the DM turn was UNBOUNDED here — run_duo had no per-beat deadline at
+    # all, so a wedged DM beat (hung MCP startup, a stuck model call) hung the whole sweep, and
+    # turn_retry's empty-output retry never fired because a hang never RETURNS empty (it never
+    # returns). Bound the DM turn through the SAME worldos_timeout shim + clawdnd_dm_timeout tier the
+    # product lanes use (cold-open vs routine, model-aware), so a hang is killed at the deadline (rc=124)
+    # → no result event → clawdnd_dm_final_text echoes empty → turn_retry's empty-output retry fires.
+    # Player turn stays unbounded (it is a fast facade turn and was never the hang source).
+    local beat_timeout; beat_timeout="$(clawdnd_dm_timeout "$first")"
+    worldos_timeout "$beat_timeout" \
+      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     rc=$?
     cat "$out" >> "$COMBINED"
+    # F12-11: surface the REAL failure cause on a nonzero rc with NO error-class result (a timeout
+    # rc=124 writes no result event; a CLI crash; a rate-limit exit) — these were MASKED because
+    # clawdnd_dm_final_text below reports only an error-class RESULT event, so a hang/timeout left the
+    # structured cause buried in $out and the duo loop showed only "empty turn". The
+    # is-error guard avoids a DOUBLE report when the result IS error-class (final_text handles that
+    # one). Read-only; echoes a "[dm-attempt] …" reason (+ the 401/403 re-auth hint) to stderr. The
+    # rc==0 path is byte-identical to before.
+    if [ "$rc" -ne 0 ] && ! clawdnd_dm_result_is_error "$out"; then
+      clawdnd_report_attempt_failure "$out" "$rc"
+    fi
     # SYN-01: the shared classification front door (qa/lib_beat_driver.sh) — notes $out for the
     # caller's clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's
     # "result" text is the API's error string, never a reply), so turn_retry's empty-only retry
@@ -192,11 +211,19 @@ turn_retry() {
   if [ -z "$r" ]; then
     echo "[duo] empty turn ($1) — retrying once…" >&2
     # A cold-open ($3=1) retry must NOT reuse $2's already-registered --session-id (a failed but
-    # registered attempt → "Session ID … is already in use." → empty output again). Re-mint a fresh
-    # id for the retry. Continuing beats ($3=0) use --resume (safe to repeat); lean continuing beats
-    # already mint their own fresh id inside turn(), so only the cold open needs a swap here.
+    # registered attempt → "Session ID … is already in use." → empty output again). F12-11: re-mint
+    # via the SHARED clawdnd_dm_remint_session_on_retry (qa/lib_beat_driver.sh) — the SAME re-mint
+    # implementation scripts/play.sh + play_party.sh use, so the three harnesses can't drift. The
+    # helper inspects the prior turn's resume MODE (which `turn` built from $3): on a cold open the
+    # mode is `--session-id $2`, so it populates CLAWDND_DM_RETRY_SESSION with a FRESH `--session-id
+    # <uuid>` we hand back to turn as the new sid. Continuing beats ($3=0) use --resume (safe to
+    # repeat) — the helper leaves the array empty and we retry verbatim; lean continuing beats already
+    # mint their own fresh id inside turn(). The empty-output trigger above is preserved (it now ALSO
+    # fires on a timeout, which clawdnd_dm_final_text turns into an empty reply).
     if [ "${3:-}" = "1" ]; then
-      local _fresh; _fresh="$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+      clawdnd_dm_remint_session_on_retry --session-id "$2"
+      local _fresh="$2"
+      [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${CLAWDND_DM_RETRY_SESSION[1]}"
       r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
     else
       r="$(turn "$@")"

@@ -81,5 +81,34 @@ else
   echo "PASS: read-only-dir spin guard (skipped — running as root bypasses dir perms)"
 fi
 
+# (6) F12-13: scripts/play.sh (the .app's DEFAULT solo entry point) must ALSO acquire + release this
+#     lock — before, only play_party.sh did, and on the solo path it `exec play.sh` AFTER acquiring,
+#     so a solo launch had NO lock and two solo launches stacked two viewers + two DM sessions. These
+#     are static-wiring assertions on the real script (a runtime launch needs claude + a viewer).
+PLAY="$ROOT/scripts/play.sh"
+chk "play.sh acquires the single-flight launch lock"  'grep -q "clawdnd_acquire_launch_lock" "$PLAY"'
+chk "play.sh releases the lock in cleanup"            'grep -q "clawdnd_release_launch_lock" "$PLAY"'
+chk "play.sh acquire is guarded (declare -F) like play_party" 'grep -q "declare -F clawdnd_acquire_launch_lock" "$PLAY"'
+chk "play.sh acquire precedes the viewer supervisor"  '[ "$(grep -n "clawdnd_acquire_launch_lock" "$PLAY" | head -1 | cut -d: -f1)" -lt "$(grep -n "viewer_supervisor &" "$PLAY" | head -1 | cut -d: -f1)" ]'
+
+# (7) F12-13: play.sh has an IDLE CEILING (was spinning `sleep 2` forever with no player). Static +
+#     a hermetic runtime check of the idle-break logic extracted VERBATIM from play.sh's loop tail.
+chk "play.sh defines MAX_IDLE from CLAWDND_PLAY_MAX_IDLE" 'grep -q "MAX_IDLE=.*CLAWDND_PLAY_MAX_IDLE" "$PLAY"'
+chk "play.sh idle-break echoes the stop reason"       'grep -q "idle .* with no player move — stopping" "$PLAY"'
+# Hermetic idle-break: mirror the loop's else-branch (no claude/viewer). With MAX_IDLE=1 and no move,
+# the loop must BREAK within a few seconds, not spin forever. A watchdog turns a regression into a
+# FAIL, not a hang.
+( SECONDS=0; MAX_IDLE=1; last_activity=$SECONDS
+  while true; do
+    if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then echo "BROKE"; break; fi
+    sleep 1
+  done > "$TMP/idle.out" ) & ipid=$!
+for _ in $(seq 1 60); do kill -0 "$ipid" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$ipid" 2>/dev/null; then
+  kill "$ipid" 2>/dev/null; echo "FAIL: idle ceiling did not break within 6s (regression: would spin forever)"; fail=1
+else
+  chk "idle ceiling breaks the loop when MAX_IDLE elapses" 'grep -q "BROKE" "$TMP/idle.out"'
+fi
+
 [ "$fail" = 0 ] && echo "ALL ASSERTIONS PASSED" || echo "SOME ASSERTIONS FAILED"
 exit "$fail"

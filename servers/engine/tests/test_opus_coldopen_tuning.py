@@ -6,7 +6,12 @@ killed before it writes narration, the backend grace-proceeds into an empty scen
 finishes ~300s WITH a full BG-caliber opening — "the lamps of Sorcerous Sundries burn low and blue…").
 
 So the cold-open effort + deadline + the QA narration-wait are MODEL-AWARE: Opus gets high / 500s /
-a longer narration grace; Sonnet is unchanged (max / 400s / the historic grace).
+a longer narration grace; Sonnet keeps max / a longer narration grace.
+
+F12-2 (audit 2026-06-11): the NON-opus cold-open deadline was 400s — but a sonnet max-effort cold
+open's OWN documented band is "~280–400s", so 400 == the band TOP (zero margin vs the band). Bumped to
+550s so the sonnet A/B arm gets proportional margin to opus's. Opus is unchanged at 500s (still the
+default DM model in every lane, so the shipped path is byte-identical).
 """
 import unittest
 from pathlib import Path
@@ -29,7 +34,10 @@ class OpusColdOpenTuningTests(unittest.TestCase):
 
     def test_coldopen_timeout_has_opus_margin(self):
         src = self._read("qa/lib_beat_driver.sh")
-        self.assertRegex(src, r"_co_timeout=400", "non-opus cold-open timeout stays 400s")
+        # F12-2: the non-opus default cleared its documented 400s band top — now 550s (margin over the
+        # band, not equal to it). Opus is unchanged at 500s.
+        self.assertRegex(src, r"_co_timeout=550", "non-opus cold-open timeout must clear the 400s band top (F12-2 -> 550s)")
+        self.assertNotRegex(src, r"_co_timeout=400", "the thin-margin 400s non-opus default must be gone (F12-2)")
         self.assertRegex(src, r"\*opus\*\)\s*_co_timeout=5\d\d", "Opus cold-open timeout must have margin (>=500s)")
         self.assertIn(
             'worldos_env COLDOPEN_TIMEOUT "$_co_timeout"', src,

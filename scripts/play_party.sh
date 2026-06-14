@@ -148,6 +148,12 @@ CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"
 DM_LOG="$STATE_DIR/dm"          # per-turn stream-json files: $DM_LOG.<ts>.jsonl
 COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"  # every agent turn's stream (cost accounting)
 VIEWER_LOG="$STATE_DIR/viewer.log"
+# F12-10 (audit 2026-06-11): the provider-status sidecar the viewer reads — the CLAUDE lanes never
+# wrote it, so a cap/budget stop or crash showed a live-looking dead dashboard. Path defined HERE
+# (before the traps) so an early-abort EXIT trap can write "failed". Writes below: "running" once
+# seated, "stopped" on a clean cap/budget/idle stop, "failed" on an abnormal exit. (Same as play.sh.)
+PROVIDER_STATUS="$STATE_DIR/provider_status.json"
+PROVIDER_STOPPED_CLEANLY=0
 
 # #623: the live-progress rule (parity with scripts/play_codex_dm.sh's LIVE_PROGRESS_LOG_RULE).
 # Without it the claude/plugin DM emits NOTHING to /events until the full 85-157s beat completes,
@@ -371,9 +377,21 @@ turn() {
     clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
     out="$STATE_DIR/companion.$(date +%s%N).jsonl"
-    claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-      --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err"
+    # F12-12 (audit 2026-06-11): the companion facade turn was a BARE `claude -p` with NO per-beat
+    # deadline, so a wedged companion (hung MCP startup, a stuck model call) blocked companion_moves
+    # — which runs BEFORE the DM turn each beat — indefinitely: the human's move was acknowledged and
+    # the cursor advanced, but nothing ever resolved. Bound it through the SAME worldos_timeout shim
+    # the DM turn uses (timeout(1) when present, else the python3 rc=124 fallback), at
+    # WORLDOS_ACTOR_TIMEOUT (default 120s — a companion facade move is a single tool-driven turn, far
+    # shorter than a DM beat). On a timeout (or any nonzero rc) the partial $out yields no result
+    # event, so the jq below echoes empty and companion_moves skips this companion's move for the beat
+    # (its `[ -n "$cm" ] &&` guard) — graceful degradation: the beat still reaches the DM. The
+    # companion is NOT retried (unlike the DM): a missed companion move is recoverable next beat, and a
+    # retry would double its latency ahead of the DM. Cost still accrues via $COMBINED on whatever ran.
+    worldos_timeout "${WORLDOS_ACTOR_TIMEOUT:-${CLAWDND_ACTOR_TIMEOUT:-120}}" \
+      claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
+        --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err" || true
     cat "$out" >> "$COMBINED"   # companion tool-call cost counts toward the session ceiling
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
   fi
@@ -454,7 +472,19 @@ viewer_supervisor &  SUP=$!
 # main loop, so `kill`/closing the window couldn't stop a wedged run (it took kill -9, and a
 # dry-run with no human spun a sleep-loop for 8.5h). Separate the EXIT trap (cleanup) from the
 # signal traps (cleanup + exit) so a normal `kill` actually stops it.
-_party_cleanup() { declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"; kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
+# F12-10: on an ABNORMAL exit (crash, kill -TERM, early cold-open abort) write "failed" so the viewer
+# buckets it as no_provider — never overwriting a clean "stopped" (cap/budget/idle), and only when the
+# path is already known. Guarded for set -u (early aborts run before some globals exist). Written
+# BEFORE the viewer is killed so the row lands while a read could still serve it.
+_party_cleanup() {
+  if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ] && [ -n "${PROVIDER_STATUS:-}" ] \
+     && declare -F clawdnd_write_provider_status >/dev/null 2>&1; then
+    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "ClawDnD DM provider exited unexpectedly. Restart the session to continue." "${AGENT_TURNS:-0}" "scripts/play_party.sh"
+  fi
+  declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"
+  kill "$SUP" 2>/dev/null
+  [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null
+}
 trap _party_cleanup EXIT
 trap '_party_cleanup; exit 130' INT TERM
 
@@ -582,13 +612,33 @@ Narrate the RESULT of each declared move (never invent a companion's internal ch
   [ -n "$DMSG" ] && { record_dm_reply "$CAMPAIGN_ID" "$DMSG" after_intros; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
 fi
 
+# F12-10: the session is playable (the seating guard above passed) — write the "running" sidecar so
+# the viewer shows a live provider. Shared writer; AGENT_TURNS is this lane's turn counter. (play.sh
+# parity; the EXIT trap relabels it "failed" on a crash, over_budget/idle relabel "stopped".)
+provider_status_set() { clawdnd_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$AGENT_TURNS" "scripts/play_party.sh"; }
+provider_status_set running active "ClawDnD party DM provider is running."
+
 # --- session ceiling (aggregate cost + turn cap), mirrors play.sh + run_party.sh --------
+# F12-10: a clean cap/budget stop writes the "stopped" sidecar (with the reason) + a short grace
+# window so the viewer renders the "provider stopped" surface before the EXIT trap kills it, then sets
+# the clean-stop flag so the EXIT trap does NOT relabel "stopped" as "failed".
 over_budget() {
   local spent
-  [ "$AGENT_TURNS" -ge "$MAX_TURNS" ] && { echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."; return 0; }
+  if [ "$AGENT_TURNS" -ge "$MAX_TURNS" ]; then
+    echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."
+    provider_status_set stopped turn_cap "ClawDnD party DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
+    PROVIDER_STOPPED_CLEANLY=1
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    return 0
+  fi
   spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
-  awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
-    && { echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."; return 0; }
+  if awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
+    echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."
+    provider_status_set stopped budget "ClawDnD party DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
+    PROVIDER_STOPPED_CLEANLY=1
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    return 0
+  fi
   return 1
 }
 
@@ -684,6 +734,9 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
   else
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
       echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      # F12-10: an idle stop is CLEAN (not a crash) — write "stopped"/idle + set the flag.
+      provider_status_set stopped idle "ClawDnD party DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      PROVIDER_STOPPED_CLEANLY=1
       break
     fi
     sleep 2

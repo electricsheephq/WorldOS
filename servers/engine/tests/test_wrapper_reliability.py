@@ -170,7 +170,7 @@ def test_routine_beat_timeout_env_override_still_wins():
 
 def test_retry_timeout_escalates_to_the_coldopen_tier():
     """Attempt 2 must NOT reuse attempt 1's deadline: it escalates to the model-aware cold-open
-    tier (opus 500 / default 400) and never DE-escalates below attempt 1's deadline."""
+    tier (opus 500 / non-opus 550 after F12-2) and never DE-escalates below attempt 1's deadline."""
     r = _bash(
         _CLEAN
         + 'CLAWDND_DM_MODEL=opus\n'
@@ -182,7 +182,8 @@ def test_retry_timeout_escalates_to_the_coldopen_tier():
     assert r.returncode == 0, r.stderr
     assert "opus360=500" in r.stdout, ("a routine retry escalates to the opus cold-open tier", r.stdout)
     assert "opus600=600" in r.stdout, ("never de-escalate below attempt 1's deadline", r.stdout)
-    assert "sonnet360=400" in r.stdout, ("non-opus escalates to the 400s cold-open tier", r.stdout)
+    # F12-2: the non-opus cold-open tier rose 400 -> 550, so a non-opus routine retry escalates to 550.
+    assert "sonnet360=550" in r.stdout, ("non-opus escalates to the 550s cold-open tier (F12-2)", r.stdout)
 
 
 def test_retry_timeout_tolerates_a_garbage_base():

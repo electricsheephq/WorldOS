@@ -622,16 +622,17 @@ clawdnd_dm_effort_arg() {
 #   • the COLD OPEN (first != 0) is the one-time, --effort max, full world-build — generate the
 #     world, scene, PC, opening NPCs + portraits. That MAX-EFFORT cold open routinely runs ~280–400s;
 #     the routine deadline KILLS it mid-build (the masked "cold-open reproducibly broken" mode),
-#     so the cold open gets a generous deadline: WORLDOS_COLDOPEN_TIMEOUT (default 400s).
+#     so the cold open gets a generous, model-aware deadline: WORLDOS_COLDOPEN_TIMEOUT
+#     (default 500s opus / 550s non-opus — see the F12-2 note in clawdnd_dm_timeout below).
 #   • CONTINUING / routine beats (first = 0) are --effort medium and resolve one move against
 #     established canon — faster — so they get the per-beat deadline CLAWDND_BEAT_TIMEOUT
 #     (default 360s — see the F12-1 note below).
-# Keyed off the SAME `first` signal as the effort + lean levers, so cold-open=full+max+400s and the
-# long tail=lean+medium+360s stay in lock-step. Applies ONLY to the DM turn (player/companion turns
+# Keyed off the SAME `first` signal as the effort + lean levers, so cold-open=full+max+(500/550)s and
+# the long tail=lean+medium+360s stay in lock-step. Applies ONLY to the DM turn (player/companion turns
 # are never wrapped in a per-beat timeout at all).
 #
 # Both knobs resolve through the same WORLDOS_/CLAWDND_ fallback as everything else (worldos_env):
-#   WORLDOS_COLDOPEN_TIMEOUT (default 400) — the cold open's deadline, in seconds.
+#   WORLDOS_COLDOPEN_TIMEOUT (default 500 opus / 550 non-opus) — the cold open's deadline, in seconds.
 #   CLAWDND_BEAT_TIMEOUT     (default 360) — every continuing beat's deadline (today's knob, kept).
 # Note: CLAWDND_BEAT_TIMEOUT keeps its CLAWDND_ name (it predates the WorldOS rename and is the
 # documented routine knob); only the NEW cold-open knob takes the WORLDOS_ name. worldos_env still
@@ -648,9 +649,16 @@ clawdnd_dm_effort_arg() {
 clawdnd_dm_timeout() {
   local first="$1"
   if [ "$first" != "0" ]; then
-    # Cold-open deadline is model-aware. Opus-high cold-open measured ~300s; give it margin (500s) for
-    # per-world/per-run variance so it is never killed mid-build. Sonnet keeps 400s (max runs ~280–400s).
-    local _co_timeout=400
+    # Cold-open deadline is model-aware. Opus-high cold-open measured ~300s here; give it margin (500s)
+    # for per-world/per-run variance so it is never killed mid-build.
+    # F12-2 (audit 2026-06-11): the NON-opus default was 400s — but a sonnet max-effort cold open's
+    # OWN documented band is "~280–400s" (the prior comment), so 400 == the band TOP (zero margin vs
+    # the band, ~8% vs the 370s measured max) and a slow sonnet cold open was killed at the same mark
+    # the band predicted. Bump the non-opus default to 550s (~38% over the 400 band-top), so the sonnet
+    # A/B arm gets proportional margin to opus's (opus: 500 vs ~300 measured ≈ +67%; sonnet: 550 vs 400
+    # band-top ≈ +38%). Opus is unchanged (still the default DM model in every lane), so the shipped
+    # path is byte-identical; only the explicit sonnet opt-in widens. Env override still wins unchanged.
+    local _co_timeout=550
     case "${CLAWDND_DM_MODEL:-}" in *opus*) _co_timeout=500 ;; esac
     worldos_env COLDOPEN_TIMEOUT "$_co_timeout"
   else
@@ -715,6 +723,78 @@ except PermissionError:
 except KeyboardInterrupt:
     sys.exit(130)
 ' "$_secs" "$@"
+}
+
+# PROVIDER-STATUS SIDECAR (F12-10): write the provider lifecycle sidecar the OpenWorlds viewer reads
+# (provider_status.json, schema worldos.provider-status.v1). Before this, ONLY the codex DM wrapper
+# wrote it; the CLAUDE lanes (scripts/play.sh + scripts/play_party.sh) never did, so on a turn-cap /
+# budget stop or a crash the viewer fell back to status "unknown" — which is NOT in the
+# {stopped,failed,exhausted} set the viewer buckets as `no_provider` (viewer/server.py), so the app
+# showed a live-looking-but-dead dashboard instead of the "DM provider is no longer running" surface.
+# This is the ONE shared writer for the claude lanes (the codex wrapper keeps its own richer copy with
+# the seed fixture). The sidecar is DERIVED / atomic state, NOT campaign state — it is the viewer's
+# read-only health view, never read back as truth — so writing it does not violate engine-sole-writer.
+#
+# Atomic: write a sibling tmp under the SAME dir, fsync, replace, fsync the dir — so a concurrent
+# viewer read never sees a torn file. Reads ambient globals with safe defaults (every field the
+# viewer's _provider_status_summary expects), so a caller that hasn't set a field still writes a valid
+# row. Best-effort: a write failure never fails a beat (returns 0). Bash 3.2-clean: standalone python
+# (no heredoc-in-$()), no arrays. $1=PROVIDER_STATUS path  $2=status  $3=reason  $4=detail  $5=turns
+# $6=wrapper-name (optional; defaults to the calling script's basename — display-only field).
+clawdnd_write_provider_status() {
+  local path="$1" status="$2" reason="$3" detail="$4" turns="${5:-0}" wrapper="${6:-${BASH_SOURCE[1]:-}}"
+  local provider model max_turns sha actor_model scorer_model
+  provider="$(worldos_env PROVIDER claude)"
+  model="$(worldos_env DM_MODEL '')"
+  actor_model="$(worldos_env ACTOR_MODEL '')"
+  scorer_model="$(worldos_env SCORER_MODEL '')"
+  max_turns="${MAX_TURNS:-}"
+  sha="${WORLDOS_BUILD_SHA:-${CLAWDND_BUILD_SHA:-$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')}}"
+  python3 - "$path" "$status" "$reason" "$detail" "$provider" "$model" "$actor_model" "$scorer_model" "$max_turns" "$turns" "$sha" "$wrapper" 2>/dev/null <<'PY' || true
+import json, os, sys, time
+from pathlib import Path
+(path, status, reason, detail, provider, model, actor_model, scorer_model,
+ max_turns, turns, sha, wrapper) = sys.argv[1:]
+path = Path(path)
+wrapper_name = os.path.basename(wrapper) or wrapper or "play.sh"
+payload = {
+    "schema": "worldos.provider-status.v1",
+    "provider": provider,
+    "provider_family": "anthropic-claude" if "codex" not in provider.lower() else "codex-openai",
+    "auth_surface": "claude-cli",
+    "model": model,
+    "player_model": actor_model,
+    "scorer_model": scorer_model,
+    "wrapper": ("scripts/%s" % wrapper_name) if not wrapper_name.startswith("scripts/") else wrapper_name,
+    "fixture": {},
+    "status": status,
+    "reason": reason,
+    "detail": detail,
+    "max_turns": int(max_turns) if str(max_turns).isdigit() else (max_turns or None),
+    "dm_turns": int(turns) if str(turns).isdigit() else turns,
+    "updated_at": time.time(),
+}
+try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(".%s.%s.tmp" % (path.name, os.getpid()))
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    tmp.replace(path)
+    try:
+        dfd = os.open(str(path.parent), os.O_RDONLY)
+    except OSError:
+        dfd = None
+    if dfd is not None:
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+except OSError:
+    sys.exit(0)
+PY
+  return 0
 }
 
 # RE-MINT SESSION ON RETRY (the ONE shared implementation of "never reuse a CONSUMED session id").

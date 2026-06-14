@@ -625,12 +625,106 @@ record_dm_reply() {
   fi
 }
 
-codex_dm_turn() {
-  local prompt="$1"
-  printf '%s\n' "$prompt" > "$PROMPT_FILE"
-  : > "$LAST_MESSAGE"
-  local status=0
-  codex exec \
+# F12-9: bounded-command shim, behaviorally identical to qa/lib_beat_driver.sh's worldos_timeout (the
+# canonical copy). This wrapper is deliberately self-contained (it owns its own chatlog /
+# write_provider_status / log_engine_narration and does NOT source the beat-driver lib), so it carries
+# a local copy here rather than pull in ~35 lib helpers + 3 name clashes. timeout(1) when present
+# (cheapest), else a python3 subprocess preserving rc=124 (deadline) / 127 (not found) / 126 (not
+# exec). The F12-20 consolidation finding tracks deduping this against the lib copy. $1=secs $2..=cmd.
+worldos_timeout() {
+  local _secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_secs" "$@"
+    return $?
+  fi
+  python3 -c '
+import subprocess, sys
+secs = float(sys.argv[1])
+cmd = sys.argv[2:]
+try:
+    sys.exit(subprocess.run(cmd, timeout=secs).returncode)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+except FileNotFoundError:
+    sys.exit(127)
+except PermissionError:
+    sys.exit(126)
+except KeyboardInterrupt:
+    sys.exit(130)
+' "$_secs" "$@"
+}
+
+# F12-9: estimate the session's USD spend from codex's cumulative token usage. Codex `exec --json`
+# emits token_count events; we take the LARGEST cumulative total seen across all turns in $STDOUT_LOG
+# (the events report a running total) and convert at WORLDOS_CODEX_USD_PER_MTOK (USD per MILLION
+# tokens — an explicit, overridable BLENDED rate; default a conservative gpt-5.x estimate). Echoes the
+# estimate as a decimal, or 0 when nothing is parseable (so the turn cap stays the hard ceiling).
+# Read-only; jq-optional (a python fallback parses the same fields). No engine state touched.
+codex_session_spend_usd() {
+  local rate="${WORLDOS_CODEX_USD_PER_MTOK:-${CLAWDND_CODEX_USD_PER_MTOK:-10}}"
+  [ -f "$STDOUT_LOG" ] || { printf '0'; return 0; }
+  python3 - "$STDOUT_LOG" "$rate" 2>/dev/null <<'PY' || printf '0'
+import json, sys
+path, rate = sys.argv[1], float(sys.argv[2])
+best = 0
+def total_from(obj):
+    # Accept several shapes codex has used for cumulative usage.
+    if not isinstance(obj, dict):
+        return None
+    for key in ("total_token_usage", "token_usage", "usage", "info"):
+        v = obj.get(key)
+        if isinstance(v, dict):
+            t = total_from(v)
+            if t is not None:
+                return t
+    tot = obj.get("total_tokens")
+    if isinstance(tot, (int, float)):
+        return tot
+    parts = [obj.get(k) for k in ("input_tokens", "output_tokens", "cached_input_tokens", "reasoning_output_tokens")]
+    nums = [p for p in parts if isinstance(p, (int, float))]
+    if nums:
+        return sum(nums)
+    return None
+try:
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            t = total_from(ev)
+            if t is not None and t > best:
+                best = t
+except OSError:
+    pass
+print("%.6f" % (best / 1_000_000.0 * rate))
+PY
+}
+
+# F12-9: stop the session "exhausted" when the estimated spend crosses CLAWDND_PLAY_SESSION_BUDGET.
+# Called AFTER each completed turn (spend only changes then). Sets BUDGET_EXCEEDED=1 + PROVIDER_
+# STOPPED_CLEANLY=1 and stamps the sidecar; the loop honors BUDGET_EXCEEDED at the top and breaks.
+# Best-effort: an unparseable token stream leaves the estimate 0, so the turn cap stays the ceiling.
+enforce_session_budget() {
+  local spent; spent="$(codex_session_spend_usd)"
+  if awk -v s="${spent:-0}" -v b="$CLAWDND_PLAY_SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
+    write_provider_status "exhausted" "budget" "Codex DM stopped after reaching the session budget (~\$$spent/\$$CLAWDND_PLAY_SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new provider-backed session."
+    BUDGET_EXCEEDED=1
+    PROVIDER_STOPPED_CLEANLY=1
+  fi
+}
+
+# One `codex exec` attempt, BOUNDED by worldos_timeout (F12-8/F12-9). A wedged codex turn (hung MCP
+# startup, a stuck model call) previously ran UNBOUNDED — it could hang the session indefinitely.
+# WORLDOS_CODEX_TURN_TIMEOUT (default 500s — codex max-effort cold opens run long, parity with the
+# claude cold-open tier) caps it; rc=124 on a timeout. Writes the last message to $LAST_MESSAGE and
+# tees the JSON stream to $STDOUT_LOG (so codex_session_spend_usd can read cumulative token usage).
+_codex_exec_once() {
+  worldos_timeout "${WORLDOS_CODEX_TURN_TIMEOUT:-${CLAWDND_CODEX_TURN_TIMEOUT:-500}}" \
+    codex exec \
     --sandbox read-only \
     --json \
     ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
@@ -653,7 +747,26 @@ codex_dm_turn() {
     -c "mcp_servers.clawdnd-voice.default_tools_approval_mode=\"approve\"" \
     - < "$PROMPT_FILE" \
     > >(tee -a "$STDOUT_LOG" >/dev/null) \
-    2> >(tee -a "$STDERR_LOG" >&2) || status=$?
+    2> >(tee -a "$STDERR_LOG" >&2)
+}
+
+codex_dm_turn() {
+  local prompt="$1"
+  printf '%s\n' "$prompt" > "$PROMPT_FILE"
+  : > "$LAST_MESSAGE"
+  # F12-9: ONE retry. Each `codex exec` is a STATELESS fresh invocation (no --session-id to collide,
+  # unlike the claude --resume path), so a retry is session-safe — a transient timeout / CLI blip /
+  # rate bump that killed attempt 1 gets a second chance instead of a hard `fail` that left the
+  # sidecar stuck "running". The prompt file is reused; $LAST_MESSAGE is re-truncated per attempt so a
+  # partial first message can't leak into the retry's reply.
+  local status=0
+  _codex_exec_once || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "[codex-dm-provider] codex turn rc=$status — retrying once (codex turns are stateless, so the retry is session-safe)" >&2
+    : > "$LAST_MESSAGE"
+    status=0
+    _codex_exec_once || status=$?
+  fi
   [ "$status" -eq 0 ] || return "$status"
 
   local last
@@ -711,7 +824,20 @@ viewer_supervisor() {
   done
 }
 viewer_supervisor & SUP=$!
+# F12-9 (audit 2026-06-11): the EXIT/INT/TERM trap previously killed only SUP + the viewer — it never
+# wrote the provider-status sidecar, so a CRASH (a codex auth failure, an OOM, a kill -TERM) left the
+# sidecar stuck at "running" and the viewer kept showing a live-looking-but-dead dashboard (the
+# {stopped,failed,exhausted} set is what the viewer buckets as no_provider). Now the trap stamps
+# "failed" on an ABNORMAL exit — UNLESS the run already stopped cleanly (turn cap / budget), which
+# sets PROVIDER_STOPPED_CLEANLY=1 so the trap never relabels a clean "stopped" as "failed". Written
+# BEFORE the viewer is killed so the row lands while a read could still serve it. DM_TURNS is a global.
+PROVIDER_STOPPED_CLEANLY=0
+BUDGET_EXCEEDED=0
+DM_TURNS=0
 _cleanup() {
+  if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ]; then
+    write_provider_status "failed" "crashed" "Codex DM provider exited unexpectedly. Restart the provider-backed session to continue." 2>/dev/null || true
+  fi
   kill "$SUP" 2>/dev/null || true
   [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null || true
 }
@@ -721,7 +847,6 @@ trap '_cleanup; exit 130' INT TERM
 echo "WorldOS Codex DM provider -> $VIEWER_URL"
 echo "  Save dir: $RUN_DIR"
 
-DM_TURNS=0
 write_provider_status "running" "active" "Codex DM provider is running."
 
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"
@@ -804,12 +929,18 @@ CAMPAIGN_TOOL_HINT="$(campaign_tool_hint "$ACTIVE_CAMPAIGN_ID")"
 
 DM_TURNS=1
 write_provider_status "running" "active" "Codex DM provider is running."
+enforce_session_budget   # F12-9: the opening world-build can itself exhaust a tiny session budget.
 while true; do
   if [ "$DM_TURNS" -ge "$CLAWDND_PLAY_MAX_TURNS" ]; then
     write_provider_status "stopped" "turn_cap" "Codex DM stopped after reaching the configured max turns. Increase Max turns or start a new provider-backed session to continue."
+    PROVIDER_STOPPED_CLEANLY=1   # F12-9: a clean stop — the EXIT trap must not relabel it "failed".
     sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
     break
   fi
+  # F12-9: budget enforcement is checked AFTER each completed turn (enforce_session_budget), not here
+  # on every idle poll — spend only changes when a turn runs, so polling spend every 2s would spawn a
+  # python3 estimate needlessly. The post-turn check below sets BUDGET_EXCEEDED=1; honor it at the top.
+  if [ "${BUDGET_EXCEEDED:-0}" = "1" ]; then break; fi
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"
   total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then
@@ -848,6 +979,7 @@ $PMSG")"; then
     record_dm_reply "$ACTIVE_CAMPAIGN_ID" "$REPLY" "move"
     DM_TURNS=$((DM_TURNS + 1))
     write_provider_status "running" "active" "Codex DM provider is running."
+    enforce_session_budget   # F12-9: check spend AFTER the turn that changed it (loop honors it next iter).
   else
     sleep 2
   fi

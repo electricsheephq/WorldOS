@@ -50,6 +50,18 @@ PORT_EXPLICIT=0
 if declare -F clawdnd_choose_port >/dev/null 2>&1; then
   PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
 fi
+# F12-13 (audit 2026-06-11): single-flight launch lock — refuse a SECOND concurrent solo cold-open
+# from this checkout so two play.sh runs can't collide on session ids / the viewer port (the
+# "Session ID already in use" failure observed under memory pressure on the 16GB host). play_party.sh
+# has carried this lock since its ensemble landed, BUT it acquires AFTER `exec play.sh` on the solo
+# path — so a solo launch (the .app's default) previously had NO lock and two solo launches stacked
+# two viewers + two DM sessions. Acquired here, before any heavy work (the hero pre-seed mints a
+# campaign, the viewer supervisor, the DSID mint, the DM cold-open); released in _play_cleanup below.
+# A rejected launch exits HERE, before the EXIT/INT/TERM traps are armed, so it runs no cleanup and
+# never touches the holder's lock. (set -uo pipefail has no -e, so the explicit `exit 1` is required.)
+if declare -F clawdnd_acquire_launch_lock >/dev/null 2>&1; then
+  clawdnd_acquire_launch_lock "$ROOT" || exit 1
+fi
 # The DM model is an env var (default opus, owner 2026-06-06) — one-flag flip; mirrors qa/run_duo.sh.
 CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # Budgets scale to the DM model: an Opus turn — especially the max-effort cold-open world-build —
@@ -112,6 +124,12 @@ CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"
 DM_LOG="$STATE_DIR/dm"          # per-turn stream-json files: $DM_LOG.<ts>.jsonl
 COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"
 VIEWER_LOG="$STATE_DIR/viewer.log"
+# F12-10: the provider-status sidecar path is defined HERE (before the traps are armed) so an EARLY
+# abort — a dead cold open that exits before the loop — still leaves a "failed" sidecar for the viewer
+# to bucket as no_provider, instead of the live-looking "unknown" fallback. The actual writes happen
+# below: "running" once seated, "stopped" on a clean cap/budget stop, "failed" in the EXIT trap.
+PROVIDER_STATUS="$STATE_DIR/provider_status.json"
+PROVIDER_STOPPED_CLEANLY=0
 
 # Wire the three plugin MCP servers (engine/rules/voice) from THIS repo, with the
 # engine pointed at this game's state dir and a silent voice backend (the dashboard
@@ -376,7 +394,20 @@ viewer_supervisor &  SUP=$!
 # paced loop below has no idle ceiling, so it would spin `sleep 2` forever). Separate the EXIT trap
 # (cleanup) from the signal traps (cleanup + exit) so a normal `kill` actually stops it. (Mirrors
 # play_party.sh.)
-_play_cleanup() { kill "$SUP" 2>/dev/null; [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null; }
+# F12-10: on an ABNORMAL exit (a crash, a kill -TERM, an early cold-open abort) write the "failed"
+# provider-status sidecar so the viewer buckets it as no_provider — BUT never overwrite a clean
+# "stopped" (cap/budget) row, and only when the path is already known (set near STATE_DIR). Guarded
+# for set -u (the early aborts run before some globals exist). Written BEFORE the viewer is killed so
+# the row lands while a read could still serve it.
+_play_cleanup() {
+  if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ] && [ -n "${PROVIDER_STATUS:-}" ] \
+     && declare -F clawdnd_write_provider_status >/dev/null 2>&1; then
+    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "ClawDnD DM provider exited unexpectedly. Restart the session to continue." "${DM_TURNS:-0}" "scripts/play.sh"
+  fi
+  declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"
+  kill "$SUP" 2>/dev/null
+  [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null
+}
 trap _play_cleanup EXIT
 trap '_play_cleanup; exit 130' INT TERM
 
@@ -510,23 +541,57 @@ if ! clawdnd_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
   echo "[play] reseat OK — a player PC is now seated in the party."
 fi
 
+# F12-10 (audit 2026-06-11): the provider-status sidecar the viewer reads. The CLAUDE lane never wrote
+# it (only the codex wrapper did), so on a turn-cap/budget stop or a crash the viewer fell back to
+# "unknown" and showed a live-looking-but-dead dashboard instead of the "DM provider is no longer
+# running" surface. Write it through the SHARED clawdnd_write_provider_status (qa/lib_beat_driver.sh):
+# "running" now (the session is playable — the seating guard above passed), "stopped" on a clean cap/
+# budget stop, "failed" on an abnormal exit (the EXIT trap below). The sidecar is derived/atomic state,
+# not campaign state, so the engine stays the sole writer. A local thin wrapper passes $DM_TURNS
+# (PROVIDER_STATUS + PROVIDER_STOPPED_CLEANLY were defined near STATE_DIR so an early-abort EXIT trap
+# can write "failed").
+provider_status_set() { clawdnd_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$DM_TURNS" "scripts/play.sh"; }
+provider_status_set running active "ClawDnD DM provider is running."
+
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn
 # ceiling. total_cost_usd is reported on each turn's result event (accumulated in $COMBINED).
+# F12-10: a clean stop writes the "stopped" sidecar (with the reason) + a short grace window so the
+# viewer can render the "provider stopped" surface BEFORE the EXIT trap kills it, then sets the
+# clean-stop flag so the EXIT trap does NOT overwrite "stopped" with "failed".
 over_budget() {
   local spent; spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
-  [ "$DM_TURNS" -ge "$MAX_TURNS" ] && { echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."; return 0; }
-  awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
-    && { echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."; return 0; }
+  if [ "$DM_TURNS" -ge "$MAX_TURNS" ]; then
+    echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."
+    provider_status_set stopped turn_cap "ClawDnD DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
+    PROVIDER_STOPPED_CLEANLY=1
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    return 0
+  fi
+  if awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
+    echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."
+    provider_status_set stopped budget "ClawDnD DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
+    PROVIDER_STOPPED_CLEANLY=1
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    return 0
+  fi
   return 1
 }
 
 # Human-paced loop: when a new move lands in $MOVES (you acted in the dashboard), resolve
 # it with a DM turn and render the next beat. Otherwise idle, waiting on your next move.
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
+# F12-13 (audit 2026-06-11): IDLE CEILING. This loop waits for a HUMAN move in $MOVES. With no human
+# acting (a dry-run, or a player who walked away) it would otherwise spin `sleep 2` FOREVER — the same
+# orphan class play_party.sh added CLAWDND_PLAY_MAX_IDLE for after an 8.5h orphan, but play.sh (the .app's
+# DEFAULT solo entry point) never got it. Stop after CLAWDND_PLAY_MAX_IDLE seconds (default 30 min) with
+# no new move; relaunch when ready. Same knob + default as play_party.sh (WORLDOS_/CLAWDND_ twin).
+MAX_IDLE="${WORLDOS_PLAY_MAX_IDLE:-${CLAWDND_PLAY_MAX_IDLE:-1800}}"
+last_activity=$SECONDS
 while true; do
   over_budget && break
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
   if [ "$total" -gt "$MCURSOR" ]; then
+    last_activity=$SECONDS
     new="$(tail -n +"$((MCURSOR + 1))" "$MOVES" 2>/dev/null)"; MCURSOR="$total"
     # The dashboard palette sends {kind,name}; Say/Do send {kind,text}. The Seed screen sends
     # {kind:"set_seed_param",param,value[,force]} (#266) — render it as a config directive
@@ -570,6 +635,15 @@ $RUNBOOK" "$CAMPAIGN_ID")"
     # clock frozen this beat (engine stays the sole writer; defers to the DM's in-fiction pacing).
     clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
   else
+    # F12-13: idle ceiling — stop a player-less session instead of spinning `sleep 2` forever.
+    if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
+      echo "[play] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      # F12-10: an idle stop is a CLEAN stop (not a crash) — write "stopped"/idle, set the flag so the
+      # EXIT trap does not relabel it "failed".
+      provider_status_set stopped idle "ClawDnD DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      PROVIDER_STOPPED_CLEANLY=1
+      break
+    fi
     sleep 2
   fi
 done
