@@ -4181,7 +4181,12 @@ def _catalog_stat_block(name: str) -> dict:
     no AC value' + 'Quarterstaff Examine is missing Versatile / 1d8 two-handed' findings).
 
     Returns ``{"resolved": False}`` for a name the catalog cannot resolve (free-text /
-    homebrew gear) so the caller shows weight/price only — never a fabricated number."""
+    homebrew gear) so the caller shows weight/price only — never a fabricated number.
+
+    F09-6 / #874: surfaces the SAME composed armor dex-rule (``armorCategory`` /
+    ``acDexMod`` / ``acDexCap`` + a ``acDisplay`` line via ``_armor_ac_display``) the Stash
+    inspector carries, so the Market reads "AC 14 + DEX (max +2)" for medium armor and a
+    shield's bonus "+2" — not the misleading flat "AC 14"/"AC 2"."""
     meta = _catalog_meta(name)
     if not meta:
         return {"resolved": False}
@@ -4189,6 +4194,11 @@ def _catalog_stat_block(name: str) -> dict:
     weight = _num(meta.get("weight"))
     cost = _num(meta.get("cost"))
     ac_raw = meta.get("ac")
+    ac = int(ac_raw) if isinstance(ac_raw, (int, float)) else None
+    armor_category = _text(meta.get("armor_category"))
+    ac_dex_mod = _text(meta.get("ac_dex_mod"))
+    cap_raw = meta.get("ac_dex_cap")
+    ac_dex_cap = int(cap_raw) if isinstance(cap_raw, (int, float)) else None
     return {
         "resolved": True,
         "name": _text(meta.get("name"), name),
@@ -4199,7 +4209,11 @@ def _catalog_stat_block(name: str) -> dict:
         "damage": damage,
         "damageType": _text(meta.get("damage_type")) if damage else "",
         "versatile": _text(meta.get("versatile")) if damage else "",
-        "ac": int(ac_raw) if isinstance(ac_raw, (int, float)) else None,
+        "ac": ac,
+        "armorCategory": armor_category,
+        "acDexMod": ac_dex_mod,
+        "acDexCap": ac_dex_cap,
+        "acDisplay": _armor_ac_display(ac, armor_category, ac_dex_mod, ac_dex_cap),
         "attunement": bool(meta.get("requires_attunement")),
         "properties": _catalog_property_chips(meta),
         "description": _text(meta.get("description")),

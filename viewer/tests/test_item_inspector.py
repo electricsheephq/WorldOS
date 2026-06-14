@@ -229,6 +229,37 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         )
         self.assertEqual(out2["price"], 3)
 
+    # --- F09-6 / #874: the Market path renders the same honest armor dex rule -----
+    # The FULL Market render: enrichWare() must carry the catalog's composed acDisplay +
+    # armorCategory onto the ware, so window.itemStatRows() (the SAME helper the Stash uses)
+    # reads "AC 14 + DEX (max +2)" for medium armor and a shield's bonus "+2" — never the
+    # misleading flat "AC 14"/"AC 2" the bare ac would render.
+    def test_market_breastplate_renders_acdisplay_dex_rule(self):
+        rows = self._run(
+            "var ware = win.enrichWare("
+            "  { name: 'Breastplate', type: 'armor', weight: '20 lb', price: 400 },"
+            "  { 'Breastplate': { resolved: true, ac: 14, kind: 'armor',"
+            "      armorCategory: 'medium', acDexMod: 'capped', acDexCap: 2,"
+            "      acDisplay: 'AC 14 + DEX (max +2)', properties: [] } });"
+            "return win.itemStatRows(ware);"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Armor"), "AC 14 + DEX (max +2)")
+        self.assertNotIn("Armor Class", kv)  # the acDisplay branch supersedes the bare AC
+
+    def test_market_shield_renders_bonus_not_flat_ac(self):
+        rows = self._run(
+            "var ware = win.enrichWare("
+            "  { name: 'Shield', type: 'armor', weight: '6 lb', price: 10 },"
+            "  { 'Shield': { resolved: true, ac: 2, kind: 'armor',"
+            "      armorCategory: 'shield', acDexMod: 'none', acDexCap: null,"
+            "      acDisplay: '+2', properties: [] } });"
+            "return win.itemStatRows(ware);"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Shield"), "+2")
+        self.assertNotIn("Armor Class", kv)
+
 
 # ── served-source guards: the wiring the pure-helper harness can't observe ─────
 
@@ -308,6 +339,21 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertEqual(items["Longsword"]["damage"], "1d8")
         self.assertTrue(items["Plate"]["resolved"])
         self.assertEqual(items["Plate"]["ac"], 18)
+
+    # F09-6 / #874: the catalog endpoint (the Market's source of truth) composes the SAME
+    # honest armor dex-rule the Stash inspector carries — medium armor reads its DEX cap and
+    # a shield reads its bonus, so the Market never re-exhibits the flat "AC 14"/"AC 2" bug.
+    def test_item_catalog_endpoint_composes_armor_acdisplay(self):
+        status, _ctype, body = self._get("/item-catalog?name=Breastplate&name=Shield")
+        items = json.loads(body)["items"]
+        bp = items["Breastplate"]
+        self.assertTrue(bp["resolved"])
+        self.assertEqual(bp["armorCategory"], "medium")
+        self.assertEqual(bp["acDisplay"], "AC 14 + DEX (max +2)")
+        sh = items["Shield"]
+        self.assertTrue(sh["resolved"])
+        self.assertEqual(sh["armorCategory"], "shield")
+        self.assertEqual(sh["acDisplay"], "+2")  # a +N bonus, never the flat "AC 2"
 
     # Examine opens a PANEL (dialog), not a toast
     def test_examine_opens_a_panel_not_a_toast(self):
