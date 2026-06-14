@@ -162,3 +162,49 @@ def test_classless_noncaster_npc_does_not_warn(tmp_path, monkeypatch):
     assert "error" not in res
     assert res["ability_source"] == "placeholder"
     assert res["warnings"] == []
+
+
+# ── #888: a canon record may carry a `subclass`; the seated figure gets it ──────
+
+
+def test_canon_paladin_record_carries_subclass_and_gets_oath_features(tmp_path, monkeypatch):
+    # ADDITIVE canon `subclass` field: a L10 Paladin canon record naming "Oath of Devotion"
+    # seats WITH that oath and its features THROUGH the levels (Sacred Weapon + Oath Spells at
+    # 3, Aura of Devotion at 7) — never an L10 Paladin with NO Sacred Oath. Inject a record via
+    # the content loader so the test owns the data (not coupled to a specific shipped roster name).
+    c = _seed(tmp_path, monkeypatch)
+    record = {"name": "Oathsworn Knight", "class": "Paladin", "subclass": "Oath of Devotion", "level": "10"}
+    monkeypatch.setattr(server.content_mod, "load_canon_character", lambda world_id, name: record)
+    res = server.load_canon_character(c.id, "Oathsworn Knight", kind="player", add_to_party=True)
+    assert "error" not in res
+    ch = server._require(c.id).characters[res["id"]]
+    assert ch.classes[0].subclass == "Oath of Devotion"
+    assert "Sacred Weapon" in ch.features
+    assert "Oath of Devotion Spells" in ch.features
+    assert "Aura of Devotion" in ch.features, "an L10 oath Paladin must seat with Aura of Devotion (7)"
+
+
+def test_canon_record_without_subclass_round_trips_unchanged(tmp_path, monkeypatch):
+    # Additivity: a canon record with NO subclass behaves exactly as before (free-text subclass
+    # stays unset). The seated Paladin is OVERDUE for its oath (surfaced by build_options), not
+    # silently granted one.
+    c = _seed(tmp_path, monkeypatch)
+    record = {"name": "Plain Paladin", "class": "Paladin", "level": "5"}
+    monkeypatch.setattr(server.content_mod, "load_canon_character", lambda world_id, name: record)
+    res = server.load_canon_character(c.id, "Plain Paladin", kind="player", add_to_party=True)
+    assert "error" not in res
+    ch = server._require(c.id).characters[res["id"]]
+    assert not (ch.classes[0].subclass or "")
+    assert "Aura of Devotion" not in ch.features
+
+
+def test_shipped_hellrider_paladin_seats_with_oath_of_devotion(tmp_path, monkeypatch):
+    # End-to-end against the SHIPPED content file (content/worlds/baldurs-gate/characters/
+    # hellrider-paladin.json) — seeded with the oath so a player who seats the canon L10
+    # Hellrider Paladin gets a real Sacred Oath, not a blank one. Guards the content edit.
+    c = _seed(tmp_path, monkeypatch)
+    res = server.load_canon_character(c.id, "Hellrider Paladin", kind="npc")
+    assert "error" not in res, res
+    ch = server._require(c.id).characters[res["id"]]
+    assert ch.classes[0].subclass == "Oath of Devotion"
+    assert "Aura of Devotion" in ch.features

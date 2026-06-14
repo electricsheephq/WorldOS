@@ -584,6 +584,23 @@ function itemStatRows(item) {
     const v = item.versatile ? `${dmg} (${item.versatile} two-handed)` : dmg;
     rows.push({ k: "Damage", v });
   }
+  // #888 (veteran/optimizer Examine depth): the SHEET-CORRECT to-hit for THIS weapon in the
+  // owner's pack — the server composes attackBonus as prof + the governing ability mod (Stash
+  // only; the Market has no owner). Rendered only when present (a non-weapon yields null/none).
+  if (typeof item.attackBonus === "number") {
+    rows.push({ k: "Attack", v: (item.attackBonus >= 0 ? "+" : "") + item.attackBonus });
+  }
+  // #888: the weapon CATEGORY (Simple/Martial proficiency tier) so the player can answer "is this
+  // a Martial weapon I'm proficient with?". Server-resolved from the SRD is_simple flag; blank
+  // for non-weapons / unresolved (row hidden — never fabricated).
+  if (item.weaponCategory) {
+    rows.push({ k: "Category", v: item.weaponCategory + " Weapon" });
+  }
+  // #888: the 2024 Weapon MASTERY property (Topple/Vex/Sap/…) — the advanced combat option the
+  // veteran reads on a weapon. Server-resolved from the SRD Mastery assignment; blank when none.
+  if (item.mastery) {
+    rows.push({ k: "Mastery", v: item.mastery });
+  }
   // RRI-25e55fa optimizer #3: a ranged/thrown weapon shows its real range bracket
   // ("100/400 ft"); the server composes rangeDisplay from the SRD weapon range, blank for a
   // pure melee weapon — so the row is rendered ONLY when there is a real bracket (never "0/0 ft").

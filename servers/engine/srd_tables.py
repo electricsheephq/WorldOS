@@ -183,6 +183,16 @@ _SUBCLASS_FEATURE_LEVELS: dict[tuple[str, str], int] = {
     ("champion", "heroic warrior"): 10,
     ("champion", "superior critical"): 15,
     ("champion", "survivor"): 18,
+    # Paladin — Oath of Devotion (SRD 5.2 / 2024 PHB). The Sacred Oath grants its higher
+    # features at the Paladin subclass-feature levels (7 / 15 / 20 — exactly the
+    # "Subclass Feature" placeholders in class_features.json). Pinning these lets a Paladin
+    # seated/leveled AT or PAST those levels actually receive the oath features it is owed
+    # (the optimizer/veteran "L10 Paladin missing 7 levels of subclass features" finding).
+    # Sacred Weapon + Oath of Devotion Spells are the choice-level (3) features, derived
+    # automatically from subclasses.json — not pinned here.
+    ("oath-of-devotion", "aura of devotion"): 7,
+    ("oath-of-devotion", "smite of protection"): 15,
+    ("oath-of-devotion", "holy nimbus"): 20,
 }
 
 
@@ -301,6 +311,53 @@ def subclass_features_at(class_name: str, subclass: str | None, class_level: int
         if opt["name"] == canonical:
             return [dict(f) for f in opt.get("features", [])]
     return []
+
+
+def subclass_features_through(class_name: str, subclass: str | None, class_level: int) -> list[dict]:
+    """EVERY subclass feature a character is OWED by ``class_level`` — the choice-level
+    features (gained at the subclass-choice level) PLUS each higher archetype feature whose
+    canonical SRD level (from ``_SUBCLASS_FEATURE_LEVELS``) is ``<= class_level``.
+
+    This is the "features populate THROUGH the levels" path (the optimizer/veteran
+    "L10 Paladin has NO Sacred Oath subclass — missing 7 levels of subclass features"
+    finding): a Paladin SEATED at L10 with Oath of Devotion, or one that CHOOSES the oath
+    late at L10, gets Sacred Weapon + Oath of Devotion Spells (choice level 3) AND Aura of
+    Devotion (level 7) — not just the level-3 pair.
+
+    HONEST + additive: a feature with NO verifiable level (``_SUBCLASS_FEATURE_LEVELS`` has
+    no pin and it is not a choice-level feature) is NEVER auto-granted here — we don't
+    fabricate a level to decide it was earned. Empty for no subclass, an unknown subclass,
+    or a level below the subclass-choice level (today's behavior). The list is de-duped by
+    name (choice-level entries win) and ordered by level then name."""
+    canonical = resolve_subclass(class_name, subclass)
+    if not canonical:
+        return []
+    slvl = subclass_level(class_name)
+    if slvl is None or class_level < slvl:
+        return []
+    choice_names = {
+        str(f.get("name", "")).lower()
+        for f in subclass_features_at(class_name, canonical, slvl)
+    }
+    out: list[dict] = []
+    seen: set[str] = set()
+    # Choice-level features first (always owed once past the choice level).
+    for f in subclass_features_at(class_name, canonical, slvl):
+        key = str(f.get("name", "")).lower()
+        if key and key not in seen:
+            seen.add(key)
+            out.append({**dict(f), "level": slvl})
+    # Higher archetype features whose pinned SRD level is at/below this class level.
+    for f in subclass_full_features(class_name, canonical, slvl):
+        key = str(f.get("name", "")).lower()
+        if not key or key in seen or key in choice_names:
+            continue
+        lvl = f.get("level")
+        if isinstance(lvl, int) and slvl < lvl <= class_level:
+            seen.add(key)
+            out.append(dict(f))
+    out.sort(key=lambda f: (f.get("level") or 0, f.get("name", "")))
+    return out
 
 
 def caster_type(name: str) -> str:

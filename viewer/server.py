@@ -4224,6 +4224,11 @@ def _catalog_stat_block(name: str) -> dict:
         "acDexMod": ac_dex_mod,
         "acDexCap": ac_dex_cap,
         "acDisplay": _armor_ac_display(ac, armor_category, ac_dex_mod, ac_dex_cap),
+        # #888: the weapon CATEGORY (Simple/Martial) + 2024 MASTERY property (damage-gated:
+        # only meaningful on a weapon) so the Market inspector reads "Martial Weapon · Mastery:
+        # Sap". Empty for non-weapons / unresolved — the screen hides the row (never fabricated).
+        "weaponCategory": _text(meta.get("weapon_category")) if damage else "",
+        "mastery": _text(meta.get("mastery")) if damage else "",
         "attunement": bool(meta.get("requires_attunement")),
         "properties": _catalog_property_chips(meta),
         "description": _text(meta.get("description")),
@@ -4263,6 +4268,49 @@ def _armor_ac_display(ac: "int | None", armor_category: str, ac_dex_mod: str, ac
     if mod == "full":
         return f"AC {ac} + DEX"
     return f"AC {ac}"
+
+
+def _weapon_attack_bonus(ch: dict, item: dict, meta: dict) -> "int | None":
+    """#888 — the SHEET-CORRECT to-hit for a weapon in this owner's pack: proficiency bonus +
+    the governing ability modifier, exactly mirroring the engine's ``_combat_numbers`` rule
+    (server.py) so the Stash Examine reads the SAME number the DM attacks with — never an
+    invented one. The governing ability:
+
+      * FINESSE weapon  -> max(STR, DEX)   (5e finesse: the better of the two)
+      * RANGED weapon   -> DEX             (Ammunition, or a ranged-only weapon with a range
+                                            bracket and NO Thrown property, e.g. a Blowgun)
+      * otherwise melee -> STR             (incl. a Thrown melee weapon like a Javelin)
+
+    Honest + additive: returns None for a NON-weapon (no damage) so the screen hides the row,
+    and matches ``_combat_numbers`` by ALWAYS adding the proficiency bonus (the surfaced "sheet"
+    number the engine itself shows — it does not down-rate for a non-proficient weapon). The
+    +N magic bonus a named weapon ("Longsword +1") implies is NOT folded in (the catalog can't
+    parse it), keeping the number conservative rather than fabricated."""
+    # Only weapons have a to-hit.
+    if not _text(item.get("damage")) and not (meta and _text(meta.get("damage"))):
+        return None
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    str_mod = _ability_mod(abilities.get("strength"))
+    dex_mod = _ability_mod(abilities.get("dexterity"))
+    prof = _num(ch.get("proficiency_bonus"))
+    prof = int(prof) if prof is not None else 2
+    # The weapon's SRD properties (persisted on the Item first, else the by-name catalog).
+    raw_props = item.get("properties")
+    if not (isinstance(raw_props, list) and raw_props):
+        raw_props = (meta or {}).get("properties") or []
+    props = {str(p).strip().lower() for p in raw_props}
+    rng = _num(item.get("range"))
+    if rng is None:
+        rng = _num((meta or {}).get("range"))
+    is_finesse = "finesse" in props
+    is_ranged = ("ammunition" in props) or (rng is not None and rng > 0 and "thrown" not in props)
+    if is_finesse:
+        ability_mod = max(str_mod, dex_mod)
+    elif is_ranged:
+        ability_mod = dex_mod
+    else:
+        ability_mod = str_mod
+    return prof + ability_mod
 
 
 def _item_stat_block(item: dict, meta: dict) -> dict:
@@ -4334,6 +4382,11 @@ def _item_stat_block(item: dict, meta: dict) -> dict:
         "acDexMod": ac_dex_mod,
         "acDexCap": ac_dex_cap,
         "acDisplay": _armor_ac_display(ac, armor_category, ac_dex_mod, ac_dex_cap),
+        # #888: weapon CATEGORY (Simple/Martial) + 2024 MASTERY property — persisted-first
+        # (F09-7 Item fields) then by-name catalog fallback, damage-gated. The Stash Examine
+        # depth the veteran/optimizer asked for ("category + Weapon Mastery property").
+        "weaponCategory": pick_str("weapon_category") if damage else "",
+        "mastery": pick_str("mastery") if damage else "",
         "costGp": cost,
         "propertyChips": prop_chips,
     }
@@ -4359,6 +4412,10 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
         # HONEST: a datum neither persisted nor resolvable stays empty — never fabricated.
         meta = _catalog_meta(name)
         stats = _item_stat_block(item, meta)
+        # #888: the SHEET-CORRECT to-hit for this weapon in THIS owner's pack (prof + governing
+        # ability mod) — Stash-only (the Market has no owner), the depth the veteran/optimizer
+        # asked for. None for a non-weapon so the row is hidden.
+        attack_bonus = _weapon_attack_bonus(ch, item, meta)
         # Weight prefers the item's recorded value (model default 0.0 -> backfill from catalog).
         weight = _num(item.get("weight"))
         if (weight is None or weight <= 0) and meta:
@@ -4404,6 +4461,12 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             "acDexMod": stats["acDexMod"],
             "acDexCap": stats["acDexCap"],
             "acDisplay": stats["acDisplay"],
+            # #888: weapon CATEGORY (Simple/Martial), 2024 MASTERY property, and the owner's
+            # sheet-correct ATTACK BONUS (to-hit) — the Stash Examine depth the veteran/optimizer
+            # asked for. Empty/None for non-weapons so the screen hides each row (never fabricated).
+            "weaponCategory": stats["weaponCategory"],
+            "mastery": stats["mastery"],
+            "attackBonus": attack_bonus,
             "attunement": attunement,
             "attuned": bool(item.get("attuned")),
             "properties": properties,

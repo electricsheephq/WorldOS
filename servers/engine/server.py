@@ -1215,7 +1215,11 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                         cl.subclass = canonical
                 slvl = srd_tables.subclass_level(cname)
                 if slvl is not None and level >= slvl:
-                    through += srd_tables.subclass_features_at(cname, canonical, slvl)
+                    # #888: grant EVERY subclass feature owed THROUGH this level, not just
+                    # the choice-level pair — a Paladin seated at L10 with Oath of Devotion
+                    # gets Sacred Weapon + Oath Spells (3) AND Aura of Devotion (7), closing
+                    # the optimizer/veteran "L10 Paladin missing 7 levels of subclass features".
+                    through += srd_tables.subclass_features_through(cname, canonical, level)
         for f in through:
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
@@ -2694,7 +2698,14 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
                 lvl = max(1, int(rec.get("level") or 1))
             except (TypeError, ValueError):
                 lvl = 1
-            classes = [ClassLevel(name=str(rec["class"]), level=lvl)]
+            # #888 ADDITIVE: a canon record MAY carry a `subclass` (e.g. a L10 Paladin's
+            # "Oath of Devotion") so the seated figure gets its archetype features THROUGH the
+            # levels (_finish_seat_sheet -> _apply_srd_class_defaults -> subclass_features_through),
+            # instead of standing at L10 with NO Sacred Oath at all. Loosely named values
+            # ('Devotion') are normalized to the canonical SRD name downstream; an absent/unknown
+            # subclass stays free-text and round-trips exactly as before.
+            sub = str(rec.get("subclass") or "").strip()
+            classes = [ClassLevel(name=str(rec["class"]), level=lvl, subclass=sub or None)]
         ch = Character(
             name=canonical,
             # A canon figure can be pulled in as the PROTAGONIST (the player), not just an
@@ -5870,9 +5881,13 @@ def level_up(
         # #624 backfill: a subclass chosen LATE (the missed-choice case — set for
         # the first time at a level PAST the choice level) still grants its
         # choice-level features at the level-up that sets it, not nothing.
+        # #888: grant EVERY oath/archetype feature owed THROUGH the current level (choice-level
+        # pair PLUS each higher feature whose SRD level <= new_class_level), so an L10 Paladin who
+        # finally picks Oath of Devotion at level-up gets Sacred Weapon + Oath Spells AND Aura of
+        # Devotion — not just the level-3 pair. _features_gained de-dupes against ch.features below.
         slvl = srd_tables.subclass_level(cname)
         if subclass_newly_set and slvl is not None and new_class_level > slvl:
-            gained = gained + srd_tables.subclass_features_at(cname, cur_subclass, slvl)
+            gained = gained + srd_tables.subclass_features_through(cname, cur_subclass, new_class_level)
         for f in gained:
             if f["name"] not in ch.features:
                 ch.features.append(f["name"])
@@ -7225,6 +7240,10 @@ def _catalog_item_stats(rec: dict | None) -> dict | None:
         "armor_category": rec.get("armor_category", "") or "",
         "ac_dex_mod": rec.get("ac_dex_mod", "") or "",
         "ac_dex_cap": rec.get("ac_dex_cap"),
+        # #888: persist the weapon CATEGORY (Simple/Martial) + MASTERY property so a renamed/
+        # enchanted weapon the catalog can't resolve by name still carries them on the Item.
+        "weapon_category": rec.get("weapon_category", "") or "",
+        "mastery": rec.get("mastery", "") or "",
         "properties": list(rec.get("properties") or []),  # COPY — never alias the cache list
     }
 

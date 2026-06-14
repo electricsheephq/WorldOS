@@ -144,6 +144,18 @@ def _weapon_range(fields: dict) -> dict:
     }
 
 
+def _weapon_category(fields: dict) -> str:
+    """#888 — the SRD 5.2 weapon CATEGORY ("Simple" / "Martial") from the Weapon record's
+    ``is_simple`` flag. The veteran/optimizer Examine wants the proficiency tier ("is this a
+    Martial weapon I'm proficient with?"). The SRD encodes it ONLY as ``is_simple`` (True =>
+    Simple, False => Martial); there is no separate category string. Returns "" when the field
+    is absent (a non-Weapon record), so the inspector row is hidden — never fabricated."""
+    flag = fields.get("is_simple")
+    if flag is None:
+        return ""
+    return "Simple" if flag else "Martial"
+
+
 def _armor_dex_rule(fields: dict, ac_base: int, name: str) -> dict:
     """F09-6 — recover the SRD armor DEX-mod rule the bare ``ac_base`` throws away.
 
@@ -203,8 +215,8 @@ def _weapon_armor_join() -> tuple[dict, dict]:
 
 @functools.lru_cache(maxsize=None)
 def _weapon_property_join() -> dict[str, dict]:
-    """{weapon_pk: {"properties": [name, …], "versatile": "1d8"}} from the SRD
-    ``WeaponProperty.json`` + ``WeaponPropertyAssignment.json`` tables (#756).
+    """{weapon_pk: {"properties": [name, …], "versatile": "1d8", "mastery": "Topple"}}
+    from the SRD ``WeaponProperty.json`` + ``WeaponPropertyAssignment.json`` tables (#756).
 
     A weapon's classic properties (Versatile, Finesse, Light, Thrown, Two-Handed,
     Heavy, Reach, Ammunition, Loading, Reach) and — for a Versatile weapon — its
@@ -213,11 +225,13 @@ def _weapon_property_join() -> dict[str, dict]:
     property" and no 1d8 two-handed damage (the RRI-5e98e6f optimizer findings). We
     recover them read-only here.
 
-    The 2024 weapon-MASTERY properties (Topple/Nick/Sap/Graze/Slow/Vex/Cleave…,
-    ``type == "Mastery"``) are an advanced combat-option layer, not item descriptors a
-    buyer evaluates, so they are deliberately excluded from the chip list — only the
-    base properties (``type`` null) are surfaced. ``versatile`` carries the assignment
-    ``detail`` (the two-handed die, e.g. "1d8"); absent → "". Keyed by pk (the FK)."""
+    The 2024 weapon-MASTERY property (Topple/Nick/Sap/Graze/Slow/Vex/Cleave/Push,
+    ``type == "Mastery"``) is an advanced combat-option layer, kept OUT of the base
+    ``properties`` chip list (a buyer evaluating descriptors) but surfaced SEPARATELY
+    as ``mastery`` (#888 — the veteran/optimizer "Examine is missing the Weapon Mastery
+    property"): a weapon has exactly one in SRD 5.2, so it's a single string ("" when
+    none). ``versatile`` carries the assignment ``detail`` (the two-handed die, e.g.
+    "1d8"); absent → "". Keyed by pk (the FK)."""
     # property_pk -> {name, type}
     prop_meta: dict[str, dict] = {}
     for d in _dirs():
@@ -242,12 +256,18 @@ def _weapon_property_join() -> dict[str, dict]:
             meta = prop_meta.get(ppk)
             if not meta or not meta["name"]:
                 continue
-            slot = out.setdefault(wpk, {"properties": [], "versatile": ""})
+            slot = out.setdefault(wpk, {"properties": [], "versatile": "", "mastery": ""})
             seen_for = seen.setdefault(wpk, set())
             name = meta["name"]
             # Versatile: keep its two-handed die (the assignment `detail`).
             if name.lower() == "versatile" and not slot["versatile"]:
                 slot["versatile"] = str(f.get("detail") or "")
+            # The Mastery property is surfaced separately (not a descriptor chip). SRD 5.2
+            # gives a weapon exactly one; keep the first seen.
+            if meta["type"] == "Mastery":
+                if not slot["mastery"]:
+                    slot["mastery"] = name
+                continue
             # Base (non-Mastery) properties become item-descriptor chips; Mastery
             # options are excluded. De-dupe per weapon, preserve first-seen order.
             if meta["type"] is None and name not in seen_for:
@@ -290,6 +310,11 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
             "damage": fields.get("damage_dice") or "",
             "damage_type": fields.get("damage_type") or "",
             "versatile": extra.get("versatile", ""),
+            # #888 (veteran/optimizer Examine depth): the weapon CATEGORY (Simple/Martial,
+            # from the SRD `is_simple` flag) + the 2024 Weapon MASTERY property (Topple/Vex/…)
+            # so the Stash/Market inspector reads "Martial Weapon · Mastery: Sap" — additive.
+            "weapon_category": _weapon_category(fields),
+            "mastery": extra.get("mastery", ""),
             # RRI-25e55fa optimizer #3: the SRD weapon range bracket (0/0 for pure melee).
             **_weapon_range(fields),
         }
@@ -345,6 +370,8 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
         # RRI-25e55fa optimizer #3: a magic weapon inherits its base weapon's range bracket
         # via the same FK (0/0 for a melee polearm — never a fabricated thrown range).
         record.update(_weapon_range(wf))
+        # #888: a magic weapon inherits its base weapon's CATEGORY + MASTERY via the same FK.
+        record["weapon_category"] = _weapon_category(wf)
         # #756: a magic weapon inherits its base weapon's SRD properties + versatile
         # two-handed die via the same FK (de-duped onto the attunement clause above).
         wp = wprops.get(wfk, {})
@@ -353,6 +380,8 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
                 record["properties"].append(chip)
         if wp.get("versatile"):
             record["versatile"] = wp["versatile"]
+        if wp.get("mastery"):
+            record["mastery"] = wp["mastery"]
     afk = fields.get("armor")
     if afk and afk in armors:
         af = armors[afk]
