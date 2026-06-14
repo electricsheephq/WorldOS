@@ -6088,7 +6088,12 @@ def build_options(campaign_id: str, character_id: str) -> dict:
         # #624: surface the subclass picker (options + previews) when this path
         # levels into the class's subclass-choice level without one chosen yet.
         next_class_level = preview["to"]["class_level"]
-        sub_block = _subclass_block_for(cname, next_class_level, existing_subclass.get(cname))
+        # #607: full_features so the viewer's subclass picker (GET /build-options) shows
+        # every archetype's features WITH rules text — the optimizer must COMPARE subclasses,
+        # not just see the level-3 pair. Mirrors preview_level_up's block (which already does).
+        sub_block = _subclass_block_for(
+            cname, next_class_level, existing_subclass.get(cname), full_features=True
+        )
         if sub_block is not None:
             option["subclass"] = sub_block
         if option["legal"]:

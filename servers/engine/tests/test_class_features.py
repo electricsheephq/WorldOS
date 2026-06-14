@@ -133,6 +133,29 @@ def test_build_options_exposes_subclass_choice_at_subclass_level(cid):
     assert all(o.get("desc") for o in sub["options"])
 
 
+def test_build_options_subclass_options_carry_full_feature_detail(cid):
+    # #607 (RRI-25e55fa optimizer): the viewer subclass picker reads build_options (GET
+    # /build-options). The optimizer asked to COMPARE archetypes by their features. The
+    # SRD 5.2.1 ships exactly ONE subclass per class (Champion for Fighter — Battle Master /
+    # Eldritch Knight are licensed PHB content, not shippable), so the real, in-scope fix is
+    # that the available archetype carries its FULL feature set (choice-level PLUS higher-
+    # level features, each with rules text + level) — not just the lone level-3 entry.
+    # The bug: build_options omitted full_features (preview_level_up already passed it).
+    wid = server.create_character(
+        cid, "Lyra", kind="player", class_name="Fighter", level=2,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, wid)
+    fopt = next(o for o in planner["options"] if o["class_name"] == "fighter")
+    sub = fopt.get("subclass")
+    assert sub and sub["required"] is True
+    champion = next(o for o in sub["options"] if o["name"] == "Champion")
+    feats = champion.get("features") or []
+    # Full set (>1 = more than the lone choice-level entry), each with rules text + level.
+    assert len(feats) >= 2, f"expected full feature list, got {feats}"
+    assert all(f.get("desc") and f.get("level") for f in feats), feats
+
+
 # ── #624 backfill (rc2 audit): a MISSED subclass choice is offered at the NEXT
 # level-up — an L5 wizard with no Arcane Tradition (the pendingSubclass case) must
 # still get the options block, not the free-text fallback. ──────────────────────
