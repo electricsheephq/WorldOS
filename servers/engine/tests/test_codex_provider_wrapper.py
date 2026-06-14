@@ -584,3 +584,183 @@ def test_codex_wrappers_match_current_cli_flags():
         assert "--sandbox read-only" in source
         assert 'default_tools_approval_mode=\\"approve\\"' in source
         assert "gpt-5.1-codex-max" not in source
+
+
+# --- F12-9: codex DM wrapper hardening (timeout + retry, EXIT-failed status, budget enforcement) ----
+
+def test_codex_dm_wrapper_bounds_codex_exec_with_one_retry():
+    """The codex turn must be worldos_timeout-bounded with ONE session-safe retry (was unbounded)."""
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+    assert "worldos_timeout()" in source                 # the inline F12-8 shim is present
+    assert "WORLDOS_CODEX_TURN_TIMEOUT" in source         # the codex turn deadline knob
+    assert "worldos_timeout" in source and "codex exec" in source
+    # the shim wraps the codex invocation
+    exec_start = source.index("_codex_exec_once() {")
+    exec_block = source[exec_start : source.index("\n}", exec_start)]
+    assert "worldos_timeout" in exec_block
+    assert "codex exec" in exec_block
+    # ONE retry, documented as session-safe (stateless codex turns)
+    turn_start = source.index("codex_dm_turn() {")
+    turn_block = source[turn_start : source.index("LOG_EVENT_TOOL_RULE=", turn_start)]
+    assert turn_block.count("_codex_exec_once") >= 2      # attempt 1 + the retry
+    assert "retrying once" in turn_block
+    assert "stateless" in turn_block
+
+
+def test_codex_dm_wrapper_marks_failed_on_abnormal_exit():
+    """The EXIT/INT/TERM trap must stamp provider_status 'failed' on a crash (was stuck 'running')."""
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+    cleanup_start = source.index("_cleanup() {")
+    cleanup_block = source[cleanup_start : source.index("trap _cleanup EXIT", cleanup_start)]
+    assert 'write_provider_status "failed"' in cleanup_block
+    assert "PROVIDER_STOPPED_CLEANLY" in cleanup_block
+    # a clean turn-cap / budget stop sets the flag so the trap does NOT relabel it
+    assert source.count("PROVIDER_STOPPED_CLEANLY=1") >= 2
+
+
+def test_codex_dm_wrapper_enforces_session_budget():
+    """The budget envs were validated then never used — now the session budget is a hard stop."""
+    source = DM_SCRIPT.read_text(encoding="utf-8")
+    assert "codex_session_spend_usd()" in source
+    assert "enforce_session_budget()" in source
+    assert "WORLDOS_CODEX_USD_PER_MTOK" in source
+    assert 'write_provider_status "exhausted"' in source
+    assert "CLAWDND_PLAY_SESSION_BUDGET" in source
+    # the spend check actually gates the loop (sets BUDGET_EXCEEDED, honored at the loop top)
+    assert "BUDGET_EXCEEDED" in source
+    # checked AFTER turns (opening + each move), not on every idle poll
+    assert source.count("enforce_session_budget") >= 3
+
+
+def test_codex_dm_wrapper_run_marks_failed_when_codex_crashes(tmp_path):
+    """A codex that always exits nonzero (after the retry) must end with provider_status 'failed'."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+# Consume stdin, write NOTHING to --output-last-message, exit nonzero — every attempt fails.
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) last="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat >/dev/null
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="codex-crash",
+        CLAWDND_PLAY_PORT="8801",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+    result = _run_dm([], env, timeout=30)
+
+    # The wrapper `fail`s the opening turn (rc=2), and the EXIT trap stamps the sidecar "failed".
+    assert result.returncode != 0, result.stdout + result.stderr
+    sidecar = tmp_path / "codex-crash" / "provider_status.json"
+    assert sidecar.exists(), result.stdout + result.stderr
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    # 'failed' is in the {stopped,failed,exhausted} set the viewer buckets as no_provider.
+    assert payload["status"] in {"stopped", "failed", "exhausted"}
+
+
+def test_codex_dm_wrapper_run_retries_a_transient_failure(tmp_path):
+    """A codex that fails the FIRST attempt then succeeds must survive (the ONE retry recovers it)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    # Fail once per logical turn, then succeed: a per-turn marker keyed off the prompt's turn nonce
+    # is overkill — instead use a global attempt counter file; the opening needs attempt 2 to pass.
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) last="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat >/dev/null
+ctr="$CLAWDND_STATE_DIR/.fake-attempts"
+n=0; [ -f "$ctr" ] && n="$(cat "$ctr")"; n=$((n + 1)); printf '%s' "$n" > "$ctr"
+# Fail the very first attempt (forces the retry), then succeed on every subsequent attempt.
+if [ "$n" -eq 1 ]; then
+  exit 1
+fi
+mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
+printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
+printf 'Opening narration after a retry.' > "$last"
+printf '{"type":"result","result":"Opening narration after a retry."}\\n'
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="codex-retry",
+        CLAWDND_PLAY_PORT="8802",
+        CLAWDND_PLAY_MAX_TURNS="1",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+    result = _run_dm([], env, timeout=30)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    chat = (tmp_path / "codex-retry" / "chat.jsonl").read_text(encoding="utf-8")
+    assert "Opening narration after a retry." in chat
+    # turn cap (1) reached cleanly → 'stopped', NOT 'failed' (the retry recovered the opening).
+    payload = json.loads((tmp_path / "codex-retry" / "provider_status.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "stopped"
+    assert payload["reason"] == "turn_cap"
+
+
+def test_codex_dm_wrapper_run_stops_exhausted_over_session_budget(tmp_path):
+    """A codex that reports token usage over a tiny session budget must stop 'exhausted'."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_codex = bin_dir / "codex"
+    # Seat a PC on the opening, emit a HUGE token_count event (cumulative), then succeed. With a tiny
+    # session budget the over-budget check fires BEFORE the next turn and stops 'exhausted'.
+    fake_codex.write_text(
+        """#!/usr/bin/env bash
+last=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message) last="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat >/dev/null
+mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
+printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
+printf 'Opening narration with heavy token usage.' > "$last"
+printf '{"type":"token_count","info":{"total_token_usage":{"input_tokens":4000000,"output_tokens":1000000}}}\\n'
+printf '{"type":"result","result":"Opening narration with heavy token usage."}\\n'
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    env = _env(
+        tmp_path,
+        PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
+        CLAWDND_RUN_ID="codex-budget",
+        CLAWDND_PLAY_PORT="8803",
+        CLAWDND_PLAY_MAX_TURNS="50",                # high, so the BUDGET (not the turn cap) stops it
+        CLAWDND_PLAY_SESSION_BUDGET="0.10",          # 5M tokens @ $10/Mtok = $50 >> $0.10
+        WORLDOS_CODEX_USD_PER_MTOK="10",
+        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+    )
+    result = _run_dm([], env, timeout=30)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((tmp_path / "codex-budget" / "provider_status.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "exhausted"
+    assert payload["reason"] == "budget"
