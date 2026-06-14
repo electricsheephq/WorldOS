@@ -221,3 +221,65 @@ def test_subagent_companion_methods_raise_not_implemented():
 def test_module_exposes_ally_and_enemy_kind_sets():
     assert companion_mod.ALLY_KINDS == {"player", "companion"}
     assert companion_mod.ENEMY_KINDS == {"npc", "monster"}
+
+
+# --- F06-6: heal suggestion must not split on spell-name CASE ("cast None") -------------
+
+from models import SpellSlotLevel  # noqa: E402
+
+
+def _healer(spells, slots=2):
+    c = mk("Cleric", kind="companion")
+    c.spells_known = list(spells)
+    c.spell_slots = {1: SpellSlotLevel(maximum=slots, used=0)}
+    return c
+
+
+@pytest.mark.parametrize("known", ["healing word", "Healing Word", "HEALING WORD", "HeAlInG wOrD"])
+def test_best_heal_spell_is_case_insensitive(known):
+    """F06-6 (audit 2026-06-11): `_can_heal` lowercases its match but `_best_heal_spell`
+    matched the Title-Case priority list case-SENSITIVELY against the raw known-set, so a
+    lowercase ``["healing word"]`` returned None → the suggestion said "cast None". The
+    best castable heal must resolve regardless of the casing the sheet stored."""
+    comp = _healer([known])
+    assert companion_mod._can_heal(comp) is True
+    assert companion_mod._best_heal_spell(comp) == "Healing Word"
+
+
+def test_best_heal_spell_none_without_a_slot():
+    """No free slot -> None regardless of case (unchanged: never suggest a heal it can't pay for)."""
+    comp = _healer(["healing word"], slots=1)
+    comp.spell_slots[1].used = 1  # the one slot is spent
+    assert companion_mod._best_heal_spell(comp) is None
+
+
+def test_aid_downed_with_lowercase_heal_names_the_spell_not_none():
+    """F06-6 end-to-end: a downed ally + a healer carrying a LOWERCASE 'healing word' must
+    suggest casting Healing Word (a bonus action), NOT 'cast None' / a false 'no spell slot'."""
+    comp = _healer(["healing word"])
+    downed = mk("Hero", kind="player", current_hp=0, max_hp=20)
+    enemy = mk("Goblin", kind="monster", current_hp=5)
+    combat = in_combat(comp, downed, enemy)
+
+    out = suggest_action(comp, combat, roster(comp, downed, enemy))
+
+    assert out["action"] == "aid_downed"
+    assert out["spell"] == "Healing Word"
+    assert out["bonus_action"] is True
+    assert "cast None" not in out["reason"] and "no spell slot" not in out["reason"]
+    assert out.get("then_attack_target_id") == enemy.id  # bonus-action heal frees the action
+
+
+def test_heal_wounded_ally_with_lowercase_heal_names_the_spell():
+    """F06-6: the 1.5 heal branch (a still-standing, critically wounded ally) also names the
+    spell for a lowercase known-set instead of 'cast None'."""
+    comp = _healer(["healing word"])
+    wounded = mk("Hero", kind="player", current_hp=2, max_hp=20)  # ~10% -> critical
+    enemy = mk("Goblin", kind="monster", current_hp=5)
+    combat = in_combat(comp, wounded, enemy)
+
+    out = suggest_action(comp, combat, roster(comp, wounded, enemy))
+
+    assert out["action"] == "heal"
+    assert out["spell"] == "Healing Word"
+    assert "cast None" not in out["reason"]

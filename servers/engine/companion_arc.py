@@ -66,10 +66,23 @@ chance trigger); the event triggers ignore it.
 Warning bands (telegraph, not surprise-from-nowhere)
 ----------------------------------------------------
 ``evaluate`` surfaces an advisory ``betrayal_warning`` when a companion carrying a LIVE
-(unfired) ``attitude_below`` agenda sits in the danger band ATTITUDE_WARN_HIGH (-20) ..
-ATTITUDE_WARN_LOW (-40) — so the DM/Director can foreshadow the fracture before it fires.
-It is ADVISORY ONLY: it never fires the agenda, never mutates state, and reads only the
-attitude gauge + the (engine-set) decision_flag. Outside the band there is no warning.
+(unfired) ``attitude_below`` agenda has (a) crossed BELOW its own breaking-point
+``threshold`` (the agenda is live) AND (b) soured at least to ATTITUDE_WARN_HIGH (-20) —
+so the DM/Director can foreshadow the fracture before it fires. It is ADVISORY ONLY: it
+never fires the agenda, never mutates state, and reads only the attitude gauge + the
+(engine-set) decision_flag.
+
+F06-4 (audit 2026-06-11, CORRECTED): the telegraph window is anchored to the agenda's
+OWN threshold, NOT a fixed absolute band. The previous code clamped the warning to an
+absolute band [ATTITUDE_WARN_LOW=-40, ATTITUDE_WARN_HIGH=-20], which created two
+silent failures: (1) a saboteur whose threshold was itself <= -40 could never satisfy
+"in band AND below threshold" simultaneously, so it NEVER telegraphed at any attitude
+(the dead zone); (2) the deepest-red bond (av < -40) — the most dangerous, most
+foreshadow-worthy moment — dropped out the bottom of the band and went silent. The
+window is now ``threshold > av`` (live) AND ``av <= ATTITUDE_WARN_HIGH`` (soured past
+the upper edge) — so the warning rides every live, soured agenda down to the floor.
+ATTITUDE_WARN_LOW is RETAINED as the documented "deep red" marker (surfaced in the
+advisory so the DM knows a near-floor bond is past mere souring), not a hard clip.
 """
 
 from __future__ import annotations
@@ -110,11 +123,14 @@ ATTITUDE_SNAP_DECISION_MAX: float = 0.90
 
 # --- warning-band constants (telegraph, Quest & Arc engine, Layer 2) ------------
 
-# The attitude danger band for a LIVE attitude_below agenda: when attitude_value sits
-# in [ATTITUDE_WARN_LOW, ATTITUDE_WARN_HIGH] the relationship is fracturing but hasn't
-# bottomed out — `evaluate` surfaces an advisory so the DM/Director can foreshadow.
+# The telegraph window for a LIVE attitude_below agenda. ATTITUDE_WARN_HIGH is the UPPER
+# edge: don't telegraph a still-warm bond — only once the relationship has soured to at
+# least -20 (and has crossed below the agenda's OWN threshold) does `evaluate` foreshadow.
+# F06-4: there is NO hard lower clip — the warning rides a live, soured agenda all the way
+# down (the deepest-red bond is the most dangerous). ATTITUDE_WARN_LOW is RETAINED as the
+# documented "deep red / near-snap" marker, surfaced advisory-only via `deep_red`.
 ATTITUDE_WARN_HIGH: int = -20  # upper edge: the bond has clearly soured
-ATTITUDE_WARN_LOW: int = -40   # lower edge: below this it's already deep-red / near-snap
+ATTITUDE_WARN_LOW: int = -40   # deep-red marker (advisory): below this it's near-snap
 
 
 def _party_vulnerable(campaign: Campaign) -> bool:
@@ -223,13 +239,19 @@ def _betrayal_warning(character: Character, campaign: Campaign) -> dict | None:
     """ADVISORY telegraph for an approaching betrayal (Layer 2) — never auto-acts.
 
     Returns a small advisory dict when the companion carries a LIVE (unfired)
-    ``attitude_below`` agenda AND its attitude sits in the danger band
-    [ATTITUDE_WARN_LOW, ATTITUDE_WARN_HIGH] — the relationship is fracturing but hasn't
-    bottomed out, so the DM/Director can foreshadow the turn instead of springing it
-    "from nowhere". Returns None outside the band, or when there is no live attitude_below
+    ``attitude_below`` agenda that has (a) crossed BELOW its own breaking-point threshold
+    (the agenda is live) AND (b) soured at least to ATTITUDE_WARN_HIGH — the relationship
+    is fracturing, so the DM/Director can foreshadow the turn instead of springing it
+    "from nowhere". Returns None when the bond is still warm (above the upper edge), when
+    the agenda hasn't crossed its threshold yet, or when there is no live attitude_below
     agenda. Reads only the attitude gauge + the (engine-set) decision_flag — no fiction,
-    no mutation. The `decision_flag_active` field lets the DM know a recorded choice has
-    already spiked the odds (foreshadow harder)."""
+    no mutation.
+
+    F06-4 (audit 2026-06-11): the window is anchored to the agenda's OWN threshold and has
+    NO hard lower clip, so a low-threshold saboteur and a deepest-red bond both telegraph
+    (the old absolute band [-40,-20] silenced both). The `decision_flag_active` field lets
+    the DM know a recorded choice has already spiked the odds (foreshadow harder); the
+    `deep_red` flag marks a bond that has fallen past ATTITUDE_WARN_LOW (near-snap)."""
     arc = character.arc
     if arc is None:
         return None
@@ -239,21 +261,30 @@ def _betrayal_warning(character: Character, campaign: Campaign) -> dict | None:
     if agenda.value is None:
         return None
     av = character.attitude_value
-    # Only warn while the bond is in the danger band AND has actually crossed below the
-    # agenda's breaking point (an agenda whose threshold is even lower isn't live yet).
-    if not (ATTITUDE_WARN_LOW <= av <= ATTITUDE_WARN_HIGH):
-        return None
+    # The agenda must actually be LIVE — the bond has crossed below its breaking point.
+    # (A saboteur whose threshold sits even lower isn't live yet; don't telegraph it.)
     if av >= agenda.value:
         return None
+    # Only warn once the bond has soured past the upper edge — don't telegraph a still-warm
+    # companion whose threshold happens to be a tiny negative. There is NO lower clip: a live,
+    # soured agenda telegraphs all the way to the floor (F06-4 — the deepest red is the most
+    # dangerous and most needs foreshadowing).
+    if av > ATTITUDE_WARN_HIGH:
+        return None
+    deep_red = av < ATTITUDE_WARN_LOW
     return {
         "companion_id": character.id,
         "attitude_value": av,
         "threshold": agenda.value,
-        "band": [ATTITUDE_WARN_LOW, ATTITUDE_WARN_HIGH],
+        # The telegraph window for THIS agenda: from its breaking point down through the
+        # souring zone, capped above at the upper edge (back-compat: still a 2-int list).
+        "band": [min(agenda.value, ATTITUDE_WARN_LOW), ATTITUDE_WARN_HIGH],
+        "deep_red": deep_red,
         "decision_flag_active": _decision_flag_active(agenda, campaign),
         "note": (
-            "approaching betrayal — this companion's bond is in the danger band; "
+            "approaching betrayal — this companion's bond has crossed its breaking point; "
             "foreshadow the fracture before the agenda fires"
+            + (" (deep red — the turn is near)" if deep_red else "")
         ),
     }
 
@@ -339,8 +370,20 @@ def evaluate(character: Character, campaign: Campaign, rng: random.Random | None
         if not gate.unlocked and gate.threshold <= character.attitude_value:
             quest_unlock = _unlock_companion_quest_arc(character, campaign, gate)
             if quest_unlock is not None and quest_unlock.get("error"):
-                companion_quest_unlocks.append(quest_unlock)
+                # F06-11 (audit 2026-06-11, option b): a dangling/mismatched `quest_arc_id`
+                # link must report its error EXACTLY ONCE, not regenerate on every evaluate
+                # forever (the module's EXACTLY-ONCE contract). The gate stays LOCKED so a
+                # later set_companion_quest_arc can still recover the link (the deliberate
+                # author-the-gate-first recovery path); we only suppress the REPEAT by
+                # latching the one-shot `link_error` on the gate. The first time we see this
+                # exact error we report it; once latched (and unchanged) we stay silent.
+                if gate.link_error != quest_unlock["error"]:
+                    gate.link_error = quest_unlock["error"]
+                    companion_quest_unlocks.append(quest_unlock)
                 continue
+            # The link resolved (or there was no link) — the gate flips and any recovery
+            # clears a previously-latched link error so a re-break would report afresh.
+            gate.link_error = ""
             gate.unlocked = True
             newly_unlocked.append(gate.model_dump())
             if quest_unlock is not None:

@@ -4385,14 +4385,17 @@ def _attitude_disposition(ch: dict) -> str:
     return "neutral"
 
 
-# Mirror of companion_arc.ATTITUDE_WARN_{LOW,HIGH} (the engine's danger band). A LIVE
-# (unfired) `attitude_below` agenda whose companion sits in [-40, -20] AND below the
-# agenda's breaking point is "approaching a fracture" — the engine emits an advisory
-# `betrayal_warning` from `evaluate()`; here we recompute the SAME band read-only from the
+# Mirror of companion_arc.ATTITUDE_WARN_{LOW,HIGH} (the engine's telegraph window). A LIVE
+# (unfired) `attitude_below` agenda whose companion has crossed BELOW its own breaking point
+# AND soured to at least -20 is "approaching a fracture" — the engine emits an advisory
+# `betrayal_warning` from `evaluate()`; here we recompute the SAME window read-only from the
 # snapshot so the relations screen can telegraph it. Display-only: never mutates, never
 # fires anything, reads only the approval gauge + the (engine-set) decision_flag presence.
+# F06-4 (audit 2026-06-11): the window is anchored to the agenda's OWN threshold with NO hard
+# lower clip — a low-threshold saboteur and a deepest-red bond both telegraph (the old absolute
+# band [-40,-20] silenced both). _ATTITUDE_WARN_LOW is retained as the "deep red" marker only.
 _ATTITUDE_WARN_HIGH = -20  # upper edge: the bond has clearly soured
-_ATTITUDE_WARN_LOW = -40   # lower edge: below this it's already deep-red / near-snap
+_ATTITUDE_WARN_LOW = -40   # deep-red marker: below this it's already near-snap
 
 
 def _betrayal_warning(ch: dict, snapshot: dict) -> dict | None:
@@ -4422,24 +4425,31 @@ def _betrayal_warning(ch: dict, snapshot: dict) -> dict | None:
         return None
     threshold = int(threshold)
     av = int(av)
-    # Only warn while in the band AND actually below the agenda's breaking point (an
-    # agenda whose threshold is even lower isn't live yet).
-    if not (_ATTITUDE_WARN_LOW <= av <= _ATTITUDE_WARN_HIGH):
-        return None
+    # The agenda must be LIVE — the bond has crossed below its own breaking point (a saboteur
+    # whose threshold sits even lower isn't live yet).
     if av >= threshold:
         return None
+    # Only warn once the bond has soured past the upper edge (don't telegraph a still-warm
+    # companion). NO lower clip: a live, soured agenda telegraphs all the way down (F06-4).
+    if av > _ATTITUDE_WARN_HIGH:
+        return None
+    deep_red = av < _ATTITUDE_WARN_LOW
     flags = snapshot.get("flags") if isinstance(snapshot.get("flags"), dict) else {}
     decision_flag = _text(agenda.get("decision_flag"))
     decision_active = bool(flags.get(decision_flag)) if decision_flag else False
     return {
         "attitude_value": av,
         "threshold": threshold,
-        "band": [_ATTITUDE_WARN_LOW, _ATTITUDE_WARN_HIGH],
+        # The telegraph window for THIS agenda: from its breaking point down through the souring
+        # zone, capped above at the upper edge (back-compat: still a 2-int list).
+        "band": [min(threshold, _ATTITUDE_WARN_LOW), _ATTITUDE_WARN_HIGH],
+        "deep_red": deep_red,
         "decision_active": decision_active,
         "label": "Bond fracturing",
         "note": (
-            "This companion is approaching a breaking point — their bond has soured into "
-            "the danger band."
+            "This companion is approaching a breaking point — their bond has crossed its "
+            "breaking point."
+            + (" Deep red — the turn is near." if deep_red else "")
             + (" A choice you made has deepened the rift." if decision_active else "")
         ),
     }

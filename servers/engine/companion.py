@@ -68,11 +68,19 @@ def _has_slot(companion: Character) -> bool:
 def _best_heal_spell(companion: Character) -> Optional[str]:
     """The companion's best healing spell it can ACTUALLY cast right now — None if
     it knows/prepares none OR has no spell slot free (so the suggestion never tells
-    the DM to cast a heal the companion can't afford; stabilize another way)."""
+    the DM to cast a heal the companion can't afford; stabilize another way).
+
+    F06-6 (audit 2026-06-11): the match is CASE-INSENSITIVE. `spells.py` is itself
+    case-insensitive and a sheet may store ``"healing word"`` (lowercase), ``"Healing
+    Word"`` (title), or any casing. Matching the Title-Case ``_HEAL_PRIORITY`` directly
+    against the raw known-set used to miss a lowercase entry — `_can_heal` (which
+    lowercases) returned True while this returned None, so the suggestion said "cast
+    None". Lowercasing both sides fixes the split; the canonical Title-Case name is still
+    what we return (so the DM/voice always sees a clean spell name)."""
     if not _has_slot(companion):
         return None
-    have = set(companion.spells_prepared) | set(companion.spells_known)
-    return next((name for name in _HEAL_PRIORITY if name in have), None)
+    have = {s.lower() for s in (set(companion.spells_prepared) | set(companion.spells_known))}
+    return next((name for name in _HEAL_PRIORITY if name.lower() in have), None)
 
 
 def _weakest_living_enemy(in_combat: list) -> Optional[Character]:

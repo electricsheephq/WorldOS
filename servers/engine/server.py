@@ -2074,10 +2074,34 @@ def recruit_companion(
         # companion shown a scene behind the party). Mirrors _move_party_to's contract.
         if c.current_location_id is not None:
             ch.location_id = c.current_location_id
+        # F06-7 (audit 2026-06-11): backfill the recruit's XP to the party's CURRENT parity so a
+        # mid-run join isn't a guaranteed false `companion_xp_synced_on_award` WARN. recruit
+        # co-locates the recruit in this same call, so a recruit left at xp=0 is EXACTLY the WARN
+        # predicate (kind=companion, not dead, location==current, xp==0, pc_xp_max>0) the moment
+        # the party has earned anything. The new ally also LEVELS WITH the party (the #739/#353
+        # "join together → level together" rule the award/relocate paths already enforce). Only
+        # ever RAISES toward the living party's max XP — never lowers a recruit already ahead
+        # (a seasoned guest keeps their earned XP). In xp leveling mode only; no party XP -> 0
+        # (today's behavior byte-for-byte).
+        xp_backfilled = 0
+        if c.leveling_mode == "xp":
+            party_xp_max = max(
+                (m.xp for m in (c.characters.get(i) for i in _party_xp_recipients(c))
+                 if m is not None and m.id != ch.id),
+                default=0,
+            )
+            if party_xp_max > ch.xp:
+                xp_backfilled = party_xp_max - ch.xp
+                ch.xp = party_xp_max
         save_campaign(c)
-        return {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party),
-                "arc_seeded": ch.arc is not None,
-                "dossier_seeded": ch.companion_dossier is not None}
+        out = {"id": ch.id, "name": ch.name, "kind": ch.kind, "party": list(c.party),
+               "arc_seeded": ch.arc is not None,
+               "dossier_seeded": ch.companion_dossier is not None}
+        if xp_backfilled:
+            out["xp"] = ch.xp
+            out["xp_backfilled"] = xp_backfilled
+            out["level_available"] = srd_tables.level_for_xp(ch.xp)
+        return out
 
 
 @mcp.tool()
@@ -3662,6 +3686,34 @@ def start_combat(
               if c.characters.get(cid) is not None and int(getattr(c.characters[cid], "extra_attacks", 0)) > 0]
         if ea:
             view["extra_attack_reminder"] = ea
+        # F06-8 (audit 2026-06-11): companion combat PARTICIPATION advisory. start_combat builds
+        # the order STRICTLY from the passed ids — a co-located companion the DM forgot to include
+        # was silently sidelined, with no engine signal (the audit's "companion combat
+        # participation unenforced + unobserved"). Surface a `companions_omitted` advisory — the
+        # same engine-tells pattern as extra_attack_reminder / outlook — listing every LIVING
+        # companion (in c.party OR a de-facto companion, the #353/#739 rule) that is co-located
+        # with the party yet absent from this fight, so the DM pulls them in or narrates why they
+        # sit out. NEVER auto-adds a combatant (the DM is the authority on who joins). Purely
+        # additive — absent when every companion is already in (today's view byte-for-byte).
+        combatant_set = set(combatant_ids)
+        cur_loc = c.current_location_id
+        omitted = [
+            {"id": ch.id, "name": ch.name}
+            for ch in c.characters.values()
+            if ch.kind == "companion"
+            and not ch.dead
+            and ch.current_hp > 0
+            and ch.id not in combatant_set
+            # co-located with the party (or unplaced) — a companion off elsewhere isn't "omitted".
+            and (cur_loc is None or ch.location_id in (cur_loc, None))
+        ]
+        if omitted:
+            view["companions_omitted"] = omitted
+            view["companions_omitted_note"] = (
+                "these living companions are with the party but NOT in this fight — add them to "
+                "the combatants (re-call start_combat or have them act) or narrate why they hold "
+                "back; the engine never auto-adds a combatant."
+            )
         # Surface monster combat numbers (Multiattack count + authoritative attack to-hit/damage)
         # so the DM never invents monster attack bonuses and always runs the right number of
         # attacks per turn. Mirrors the PC _combat_numbers approach: authoritative sheet values,
@@ -8137,6 +8189,24 @@ def _camp_beat_view(c: Campaign, beat: CampBeatCandidate) -> dict:
                 "arc": _camp_arc_summary(comp),
             }
         )
+        # F06-10: surface this companion's personal QUEST ARCs at camp too — a non-locked
+        # arc/stage is a ripe personal-quest beat to play in the camp round. Pure read; absent
+        # when the companion owns none (today's solo-beat shape unchanged).
+        quest_arcs = [
+            {
+                "id": a.id,
+                "title": a.title,
+                "status": a.status,
+                "open_stages": [
+                    {"id": s.id, "title": s.title, "status": s.status}
+                    for s in a.stages if s.status != "locked"
+                ],
+            }
+            for a in sorted(c.companion_quest_arcs.values(), key=lambda a: (a.title, a.id))
+            if a.companion_id == comp.id
+        ]
+        if quest_arcs:
+            out["quest_arcs"] = quest_arcs
     return out
 
 
@@ -8151,16 +8221,19 @@ def camp_scene(campaign_id: str, setting: str = "") -> dict:
     ripe — then `check_companion_arc` to fire/mark it and `record_camp_beat` to persist that the
     camp beat happened. Read-only (advice + state; it changes nothing)."""
     c = _require(campaign_id)
-    companions = [
-        c.characters[i]
-        for i in c.party
-        if i in c.characters
-        and c.characters[i].kind == "companion"
-        and not c.characters[i].dead
-        and c.characters[i].current_hp > 0
-    ]
+    # F06-5: gather EVERY living companion (incl. de-facto companions not in c.party) via the
+    # shared scheduler helper — camp was the one seam that gated on c.party while relocate/XP
+    # include any kind=='companion'. One source of truth for "who's at camp".
+    companions = companion_banter._living_companions(c)
     sit = setting.strip() or "an unpressured moment in camp — the day's danger behind you, the fire low"
-    scheduled = companion_banter.schedule_camp_beats(c, max_beats=len(companions))
+    # F06-5 leg (c): a flat max_beats=len(companions) STARVED pair banter — solo priorities
+    # (50-90) always outrank pairs (40+len(tags) <= 43), so every pair sorted past the cut.
+    # Budget room for each companion's solo AND a bounded slate of the top pair beats so the
+    # camp round can actually reveal cross-companion tension/warmth. C(n,2) pairs exist; cap the
+    # pair allowance at len(companions) so a big party doesn't dump every pairing in one scene.
+    n = len(companions)
+    pair_budget = min(n * (n - 1) // 2, n) if n >= 2 else 0
+    scheduled = companion_banter.schedule_camp_beats(c, max_beats=n + pair_budget)
     beats = [_camp_beat_view(c, beat) for beat in scheduled]
     return {
         "setting": sit,
@@ -10376,18 +10449,40 @@ def _scene_durable_threads(c: Campaign) -> dict:
             continue
         arc = getattr(ch, "arc", None)
         agenda = getattr(arc, "agenda", None) if arc is not None else None
-        companions.append(
-            {
-                "id": getattr(ch, "id", None),
-                "name": getattr(ch, "name", None),
-                "attitude_value": getattr(ch, "attitude_value", None),
-                "has_arc": arc is not None,
-                "has_betrayal_agenda": bool(
-                    agenda is not None
-                    and getattr(agenda, "trigger", None) == "attitude_below"
-                ),
-            }
-        )
+        entry = {
+            "id": getattr(ch, "id", None),
+            "name": getattr(ch, "name", None),
+            "attitude_value": getattr(ch, "attitude_value", None),
+            "has_arc": arc is not None,
+            "has_betrayal_agenda": bool(
+                agenda is not None
+                and getattr(agenda, "trigger", None) == "attitude_below"
+            ),
+        }
+        # F06-10 (audit 2026-06-11): surface this companion's personal QUEST ARCs — until now
+        # the engine-complete CompanionQuestArc machine was invisible to the DM at re-ground
+        # (durable.companions showed gates/flags only, no quest-arc mention anywhere DM-facing),
+        # so an authored personal quest never got played. Pure read: each owned arc's
+        # id/title/status + any non-locked stage, so the DM can advance a ripe one. Absent (no
+        # key) when the companion owns no quest arcs (today's shape byte-for-byte).
+        cqa = [
+            a for a in c.companion_quest_arcs.values()
+            if getattr(a, "companion_id", "") == getattr(ch, "id", None)
+        ]
+        if cqa:
+            entry["quest_arcs"] = [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "status": a.status,
+                    "open_stages": [
+                        {"id": s.id, "title": s.title, "status": s.status}
+                        for s in a.stages if s.status != "locked"
+                    ],
+                }
+                for a in sorted(cqa, key=lambda a: (a.title, a.id))
+            ]
+        companions.append(entry)
 
     # Faction gauges (engine-mutated; these gate events — invariant #3).
     factions = [
@@ -10401,13 +10496,35 @@ def _scene_durable_threads(c: Campaign) -> dict:
     ]
 
     flags = getattr(c, "flags", None) or {}
-    return {
+    out = {
         "open_quests": open_quests,
         "npc_relationships": npc_relationships,
         "companions": companions,
         "factions": factions,
         "flags": sorted(k for k, v in flags.items() if v),
     }
+    # F06-5 leg (a): the camp/banter pillar was UNREACHABLE — its only pointer was long_rest's
+    # camp_hint (census 0), and the every-beat re-ground (scene_context.durable) had no camp
+    # affordance at all, so the DM never learned camp_scene exists. Surface a lightweight
+    # advisory when there are living companions AND no fight is underway (camp is a between-
+    # beats pillar): the DM can gather them via camp_scene. Present only when actionable, so a
+    # solo run / mid-combat re-ground keeps today's durable shape byte-for-byte.
+    living_companions = [
+        ch for ch in chars
+        if getattr(ch, "kind", None) == "companion"
+        and not getattr(ch, "dead", False)
+        and (getattr(ch, "current_hp", 0) or 0) > 0
+    ]
+    in_combat = bool(getattr(getattr(c, "combat", None), "active", False))
+    if living_companions and not in_combat:
+        out["camp_available"] = {
+            "companions": [getattr(ch, "name", None) for ch in living_companions],
+            "note": (
+                "companions are present and out of danger — call camp_scene to gather them for a "
+                "character round (banter, worries, ripe arc/quest beats) between adventures"
+            ),
+        }
+    return out
 
 
 # SYN-08 / F07-11: how many RAW rows to over-read for each requested player-facing

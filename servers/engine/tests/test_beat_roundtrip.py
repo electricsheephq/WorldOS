@@ -214,13 +214,18 @@ def test_scene_context_durable_threads_present(cid):
     shapes (open_quests + objectives, met-NPC relationships, companion bonds,
     faction gauges, set flags) so a transcript-free re-ground loses nothing."""
     dur = server.scene_context(cid)["durable"]
-    assert set(dur) == {
+    # The always-present durable keys. `camp_available` (F06-5) is ADDITIVE — present only when
+    # living companions are with the party and out of combat (an advisory the DM can act on).
+    assert {
         "open_quests",
         "npc_relationships",
         "companions",
         "factions",
         "flags",
-    }
+    } <= set(dur)
+    assert set(dur) - {
+        "open_quests", "npc_relationships", "companions", "factions", "flags",
+    } <= {"camp_available"}
 
     # open_quests: every non-completed/failed quest with its still-open objectives;
     # mirrors get_state's active_quests ids but adds the objective continuity.
@@ -231,10 +236,14 @@ def test_scene_context_durable_threads_present(cid):
         assert set(q) == {"id", "title", "status", "open_objectives"}
 
     # companions: standing bond shape (gauge + arc/betrayal flags), one row per companion.
+    # `quest_arcs` (F06-10) is ADDITIVE — present only when the companion owns a personal quest arc.
     comp_ids = {ch.id for ch in c.characters.values() if ch.kind == "companion"}
     assert {x["id"] for x in dur["companions"]} == comp_ids
     for x in dur["companions"]:
-        assert set(x) == {"id", "name", "attitude_value", "has_arc", "has_betrayal_agenda"}
+        assert {"id", "name", "attitude_value", "has_arc", "has_betrayal_agenda"} <= set(x)
+        assert set(x) - {
+            "id", "name", "attitude_value", "has_arc", "has_betrayal_agenda",
+        } <= {"quest_arcs"}
 
     # factions: both engine-mutated gauges surfaced.
     for f in dur["factions"]:
@@ -293,7 +302,12 @@ def test_scene_durable_threads_never_throws_on_missing_attrs(cid):
 
     # The bare object has no kind/met/arc → it joins no durable list; the real
     # threads are unchanged from the baseline (graceful degradation, not a crash).
-    assert set(dur) == {"open_quests", "npc_relationships", "companions", "factions", "flags"}
+    # (`camp_available`, F06-5, is additive and present only when companions are with the
+    # party out of combat — the bare object never adds or removes it, so dur==baseline holds.)
+    assert {"open_quests", "npc_relationships", "companions", "factions", "flags"} <= set(dur)
+    assert set(dur) - {
+        "open_quests", "npc_relationships", "companions", "factions", "flags",
+    } <= {"camp_available"}
     assert dur == baseline
 
 
