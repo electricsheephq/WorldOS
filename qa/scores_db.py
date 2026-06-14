@@ -104,6 +104,13 @@ COLUMNS: tuple[str, ...] = (
     "rri",                # Release-Readiness Index (0-10), NULL if not an RRI sweep
     "critical_bugs",      # count of critical bugs, NULL if not measured
     "image_render_rate",  # 0.0-1.0 image render success rate, NULL if not measured
+    # --- latency ledger (F13-4 / #753): the per-beat GENERATION cost the #753 budget is
+    # judged against. Derived from each beat's `duration_api_ms` (the worldos-latency-
+    # forensics method) by qa/latency_rollup.py. NULL on rows recorded before latency
+    # stamping (pre-F13-4 runs read back NULL — additive, migration-free). ---
+    "s_per_beat",         # mean GENERATION seconds per CONTINUING (routine) beat (cold open excluded)
+    "coldopen_s",         # cold-open (first/world-build beat) GENERATION seconds
+    "turns_per_beat",     # mean claude -p `num_turns` per CONTINUING beat (ToolSearch / round-trip proxy)
     "pass",               # 1 (pass) / 0 (fail) / NULL (no pass/fail verdict)
     "source_path",        # where the evidence lives (file/dir, LEXAR or repo-relative)
     "notes",              # free-text context: what was under test, caveats, confidence flags
@@ -113,6 +120,8 @@ COLUMNS: tuple[str, ...] = (
 _REAL_COLS = {
     "story_overall", "mech_overall", "angrydm_overall", "cross_persona_sat",
     "rri", "image_render_rate",
+    # F13-4 latency ledger (all wall-clock seconds / turn counts → REAL)
+    "s_per_beat", "coldopen_s", "turns_per_beat",
 }
 _INT_COLS = {"critical_bugs", "pass"}
 
@@ -278,6 +287,9 @@ _MD_COLS = [
     ("rri", "RRI"),
     ("critical_bugs", "Crit"),
     ("image_render_rate", "Img%"),
+    ("s_per_beat", "s/beat"),
+    ("coldopen_s", "cold-open s"),
+    ("turns_per_beat", "turns/beat"),
     ("pass", "Pass"),
     ("source_path", "Source"),
     ("notes", "Notes"),

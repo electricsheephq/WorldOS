@@ -456,12 +456,20 @@ def test_persist_beat_does_not_advance_clock_during_combat(cid):
 
 
 def _session_log_lines(cid: str) -> list:
-    """Every session-log entry across the campaign (to assert atomic non-application)."""
+    """Every session-log entry across the campaign, read DISK-FIRST (atomicity guard).
+
+    Uses ``store.read_log_all`` (which walks every ``sessions/*.jsonl`` on disk, INCLUDING
+    files not yet registered in the persisted ``session_ids``), NOT a ``read_log`` over
+    ``session_ids`` only. That distinction is load-bearing for the F14-3 atomicity guard
+    below: a NON-atomic persist_beat appends an event to disk and THEN raises (before
+    ``save_campaign``), leaving the orphan file on disk but NOT in the persisted
+    ``session_ids``. A ``session_ids``-only reader would miss that orphan and report a
+    FALSE GREEN (the prior version of this helper did exactly that — the cellar-rats
+    fixture opens no session, so the leaked beat's session id was never persisted and the
+    test passed even against the buggy apply-before-validate code). read_log_all's
+    defensive disk tail witnesses the leaked row, so the guard can actually fail red."""
     c = store.load_campaign(cid)
-    entries = []
-    for sid in c.session_ids:
-        entries.extend(store.read_log(cid, sid))
-    return entries
+    return list(store.read_log_all(cid, getattr(c, "session_ids", None)))
 
 
 def test_persist_beat_chosen_null_does_not_crash(cid):
@@ -501,18 +509,40 @@ def test_persist_beat_bad_memory_id_is_actionable_not_bare_keyerror(cid):
 
 
 def test_persist_beat_events_not_applied_when_later_section_fails(cid):
-    # ATOMICITY (events-only window, F14-3): a good event + a bad memory item must
-    # leave ZERO new session-log rows — validation precedes the first append_log.
-    char = _a_char(cid)
-    before = len(_session_log_lines(cid))
+    """ATOMICITY guard for the F14-3 events-only window — a REAL red→green test.
+
+    A persist_beat with a GOOD events section but a section that FAILS validation AFTER it
+    (a bad memories id) must leave ZERO new session-log rows: the whole batch is validated
+    BEFORE the first ``append_log``, so the events leg is never half-applied (a crash
+    mid-batch otherwise leaves an orphan chronicle row that a retry then duplicates).
+
+    This drives the atomicity path the prior version did NOT:
+      * a session is OPENED FIRST (start_session), so a leaked event lands in a session that
+        IS on disk AND registered — the orphan is observable to any reader, not hidden by an
+        unpersisted session_ids list (the false-green the old fixture created);
+      * the count is taken via read_log_all (disk tail), which sees a leaked row even if the
+        save that would register its session never happens.
+
+    Proof it would FAIL a non-atomic implementation: the OLD persist_beat appended the event
+    to the session jsonl IMMEDIATELY (events → _log_session_entry → append_log), THEN
+    validated memories — so against that code this asserts the leaked "ORPHAN …" row, the
+    count goes up by one, and the test goes RED. Verified by hand-reproducing the
+    apply-before-validate interleave (event written to disk, then the bad id raises): the
+    disk tail shows before→before+1 while a session_ids-only read shows before→before. Only
+    the validate-then-apply HEAD code keeps the count flat. """
+    server.start_session(cid)  # open a session so a leaked event row is on the persisted path
+    orphan = "ORPHAN row that must NEVER persist when a later section fails."
+    before = _session_log_lines(cid)
+    n_before = len(before)
     with pytest.raises(Exception):
         server.persist_beat(
             cid,
-            events=[{"kind": "narration", "text": "This line must NOT persist."}],
+            events=[{"kind": "narration", "text": orphan}],
             memories=[{"character_id": "no-such-id", "fact": "x"}],
         )
-    after = len(_session_log_lines(cid))
-    assert after == before  # the events leg was NOT applied
+    after = _session_log_lines(cid)
+    assert len(after) == n_before  # the events leg was NOT applied (no orphan row)
+    assert all(orphan not in (e.text or "") for e in after)  # specifically, the orphan text never landed
 
 
 def test_persist_beat_event_text_alias_honored(cid):

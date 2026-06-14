@@ -1736,9 +1736,27 @@ def start_character(
         c0 = _require(campaign_id)
         rec = content_mod.load_canon_character(c0.world_id, who) if c0.world_id else None
         if rec is None:
-            avail = [x["name"] for x in (content_mod.list_canon_characters(c0.world_id, playable_only=True) if c0.world_id else [])]
-            return {"error": f"no canon character {who!r} for world {c0.world_id!r}", "playable": avail}
+            # SYN-03: resolve-then-suggest scoped to PICKUP-ELIGIBLE figures — never dump
+            # the whole playable roster as the error payload. Keep the `error` key.
+            did_you_mean, count = (
+                content_mod.suggest_canon_names(c0.world_id, who, playable_only=True)
+                if c0.world_id else ([], 0)
+            )
+            return {
+                "error": f"no canon character {who!r} for world {c0.world_id!r}",
+                "playable": True,
+                "did_you_mean": did_you_mean,
+                "available_count": count,
+                "note": "list_canon_characters(playable_only=True, q=…) to search pickups.",
+            }
         if not content_mod.is_playable(rec):
+            # A real figure, just not a pickup. Suggest a FEW pickup-eligible alternatives
+            # near the requested name (or the roster head when there's nothing close) —
+            # not the whole playable list.
+            did_you_mean, count = (
+                content_mod.suggest_canon_names(c0.world_id, who, playable_only=True)
+                if c0.world_id else ([], 0)
+            )
             return {
                 "error": (
                     f"{rec.get('name', who)!r} is a legend of this era — they appear as an "
@@ -1746,7 +1764,9 @@ def start_character(
                     f"load_canon_character to encounter them in the world."
                 ),
                 "playable": False,
-                "playable_options": [x["name"] for x in (content_mod.list_canon_characters(c0.world_id, playable_only=True) if c0.world_id else [])],
+                "did_you_mean": did_you_mean,
+                "available_count": count,
+                "note": "list_canon_characters(playable_only=True, q=…) to search pickups.",
             }
         resolved = f"pickup:{rec.get('name', who)}"
         pickup_canon_name = str(rec.get("name", who) or who)  # match the roster by canon identity
@@ -2540,20 +2560,52 @@ def get_character(campaign_id: str, character_id: str = "", target_id: str = "",
 
 
 @mcp.tool()
-def list_canon_characters(campaign_id: str, playable_only: bool = False) -> dict:
-    """Who's available to pull into THIS world from the ingested canon roster (the
-    post-BG3 cast — Shadowheart, Astarion, Gale, …). Returns {name, race, class,
-    playable, role} each. Use load_canon_character to bring one in as an NPC/companion.
+def list_canon_characters(
+    campaign_id: str, playable_only: bool = False, q: str = "", limit: int = 100
+) -> dict:
+    """Who's available to pull into THIS world from the ingested canon roster. Use
+    load_canon_character to bring one in as an NPC/companion.
 
-    The top heroes of the era (the BG3 origin companions) are `playable: false` — they
-    remain legends/quest-givers/encounterable NPCs but are NOT a hero the player embodies.
-    Pass `playable_only=True` for just the minor figures a player may pick up as their PC
-    via start_character(origin="pickup:<name>")."""
+    The flagship world ships a LARGE roster (the post-BG3 wiki-first ingest is ~2,000
+    canon records), so this surface is BOUNDED: filter with `q` and page with `limit`
+    instead of dumping the whole cast (~180KB) every call. For a STRUCTURED pull
+    ("the merchant in this region", "a Harper", "an antagonist") reach for `find_npcs`
+    (tags / faction / role / location) — it is the precise picker.
+
+      * `q`      — case-insensitive substring of the display name (e.g. "shadow",
+                   "minsc"). Empty (default) lists the roster head.
+      * `limit`  — max rows returned (default 100, capped at 200). When more match than
+                   fit, `truncated` is True and `note` points at `find_npcs`/`q`.
+
+    Returns ``{world_id, total, returned, available:[{name, race, class, playable,
+    role}], truncated, note?}`` — `total` is the full match count, `available` the
+    bounded page. The top heroes of the era (the BG3 origin companions) are
+    `playable: false` — legends/quest-givers/encounterable NPCs, not a hero the player
+    embodies; pass `playable_only=True` for just the minor figures a player may pick up
+    as their PC via start_character(origin="pickup:<name>")."""
     c = _require(campaign_id)
-    return {
+    if not c.world_id:
+        return {"world_id": "", "total": 0, "returned": 0, "available": [], "truncated": False}
+    n = max(1, min(int(limit), 200))
+    matches = content_mod.list_canon_characters(
+        c.world_id, playable_only=playable_only, name_contains=q
+    )
+    total = len(matches)
+    page = matches[:n]
+    out = {
         "world_id": c.world_id,
-        "available": content_mod.list_canon_characters(c.world_id, playable_only=playable_only) if c.world_id else [],
+        "total": total,
+        "returned": len(page),
+        "available": page,
+        "truncated": total > len(page),
     }
+    if out["truncated"]:
+        out["note"] = (
+            f"{total} canon characters match; showing {len(page)}. Narrow with q=… "
+            f"(name substring) or use find_npcs(tag/faction_id/arc_role/canon_location_id) "
+            f"for a structured pull."
+        )
+    return out
 
 
 @mcp.tool()
@@ -2625,8 +2677,19 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
         c = _require(campaign_id)
         rec = content_mod.load_canon_character(c.world_id, name) if c.world_id else None
         if rec is None:
-            avail = [x["name"] for x in (content_mod.list_canon_characters(c.world_id) if c.world_id else [])]
-            return {"error": f"no canon character {name!r} for world {c.world_id!r}", "available": avail}
+            # SYN-03: resolve-then-suggest — NEVER dump the whole roster (180KB on the
+            # flagship world). load_canon_character already does exact + unique-substring
+            # resolution, so a miss here is a typo or a wrong name: offer up-to-5
+            # did_you_mean names + the roster size, keep the `error` key (play.sh reads it).
+            did_you_mean, count = (
+                content_mod.suggest_canon_names(c.world_id, name) if c.world_id else ([], 0)
+            )
+            return {
+                "error": f"no canon character {name!r} for world {c.world_id!r}",
+                "did_you_mean": did_you_mean,
+                "available_count": count,
+                "note": "list_canon_characters(q=…) to search the roster.",
+            }
         canonical = rec.get("name", name)
         # HARD GATE (#305): a canon-DEAD figure (a corpse like Dal Lightspark, whose lineage
         # opens "a dead gold dwarven Harper whose corpse is in the Shadow-Cursed Lands") may
