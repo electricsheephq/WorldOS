@@ -435,6 +435,47 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertIsNone(fbolt["saveDc"])
         self.assert_no_private_keys(surface)
 
+    def test_character_surface_surfaces_browsable_preparable_pool_for_a_prepared_caster(self):
+        # #754 (optimizer): the Spellbook must let a prepared caster BROWSE the full class spell
+        # list (what they can prepare FROM), not just the few currently prepared. The surface
+        # projects `preparableSpells` — the whole Paladin list, capped to the caster's highest
+        # slot level (L10 Paladin -> L1–3), enriched with the same SRD rules cards.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["party"].append("wyll")
+        snap["characters"]["wyll"] = {
+            "id": "wyll", "name": "Wyll", "kind": "player", "race": "Human",
+            "classes": [{"name": "Paladin", "level": 10}],
+            "abilities": {"charisma": 18, "strength": 16, "constitution": 14},
+            "proficiency_bonus": 4, "armor_class": 18, "max_hp": 84, "current_hp": 84,
+            "spells_known": ["Bless", "Cure Wounds", "Shield of Faith"],
+            "spells_prepared": ["Bless", "Cure Wounds", "Shield of Faith"],
+            "spell_slots": {"1": {"maximum": 4, "used": 0}, "2": {"maximum": 3, "used": 0},
+                            "3": {"maximum": 2, "used": 0}},
+        }
+        self._write("camp_paladin", snap)
+        _status, surface = self._get_json("/character-surface?campaign=camp_paladin")
+        wyll = {c["id"]: c for c in surface["party"]}["wyll"]
+        pool = wyll["preparableSpells"]
+        names = {sp["name"] for sp in pool}
+        # the browsable pool is far larger than the 3 prepared, and includes Paladin spells the
+        # character has NOT prepared (the whole point — a planning surface).
+        self.assertGreater(len(pool), len(wyll["spells"][0]["list"]))
+        self.assertIn("Divine Smite", names)   # a Paladin spell not in the prepared 3
+        self.assertIn("Bless", names)
+        # capped to the highest slot level (L3) — no L4/L5 spells the L10 Paladin can't slot
+        self.assertEqual(max(sp["level"] for sp in pool), 3)
+        # each pool entry is enriched with its SRD rules card (level + school, not just a name)
+        smite = next(sp for sp in pool if sp["name"] == "Divine Smite")
+        self.assertIn("levelLabel", smite)
+        self.assert_no_private_keys(surface)
+
+    def test_character_surface_preparable_pool_empty_for_non_caster(self):
+        # A Fighter (Cassian) has no caster class -> no preparable pool is fabricated.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_marches")
+        hero = {c["id"]: c for c in surface["party"]}["cassian"]
+        self.assertEqual(hero["preparableSpells"], [])
+
     def test_character_surface_omits_spell_dc_for_non_caster_but_keeps_rules(self):
         # HONEST data: Cassian is a Fighter (no SRD caster class), so no spell save DC is
         # fabricated — but the spell's own rules text (school/range/duration) still resolves,

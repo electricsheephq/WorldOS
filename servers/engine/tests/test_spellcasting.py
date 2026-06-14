@@ -110,6 +110,68 @@ def test_unknown_spell_raises():
         server.cast_spell(cid, w, "Wish")  # not bundled
 
 
+# --- #754: the browsable preparable pool (the full class spell list) ----------
+def test_class_spell_list_paladin_full_pool():
+    # A prepared caster must be able to BROWSE the full class spell list, not just what's
+    # currently prepared. The Paladin SRD list is half-caster (spell levels 1–5) — derived
+    # straight from the srd524 `classes` field, so it is SRD-correct, not hand-maintained.
+    pool = spells.class_spell_list("paladin")
+    names = {s["name"] for s in pool}
+    assert "Bless" in names and "Cure Wounds" in names and "Divine Smite" in names
+    assert len(pool) >= 30, "the full Paladin list is dozens of spells, not just the prepared few"
+    levels = {s["level"] for s in pool}
+    assert max(levels) == 5 and 0 not in levels, "Paladin: spell levels 1–5 (half-caster, no cantrips)"
+    # sorted (level, name) and each entry carries an integer level
+    assert pool == sorted(pool, key=lambda s: (s["level"], s["name"]))
+
+
+def test_class_spell_list_capped_by_max_level():
+    # A L10 Paladin has slots up to level 3 — the browsable pool should cap there so it only
+    # shows spells they can actually slot, while still being the WHOLE list at those levels.
+    capped = spells.class_spell_list("paladin", max_level=3)
+    assert capped, "a capped pool is non-empty"
+    assert max(s["level"] for s in capped) == 3
+    full = spells.class_spell_list("paladin")
+    assert len(capped) < len(full), "capping to L3 drops the L4–L5 Paladin spells"
+    # the cap keeps the FULL set at each allowed level (not just the prepared ones)
+    l1_capped = {s["name"] for s in capped if s["level"] == 1}
+    l1_full = {s["name"] for s in full if s["level"] == 1}
+    assert l1_capped == l1_full
+
+
+def test_class_spell_list_unknown_class_is_empty():
+    assert spells.class_spell_list("fighter") == []
+    assert spells.class_spell_list("") == []
+
+
+def test_get_character_surfaces_preparable_pool_for_prepared_caster():
+    # The character read-endpoint returns the full class spell list (the preparable pool for
+    # class+highest-slot-level) ALONGSIDE the prepared set, so the viewer Spellbook can show
+    # BOTH. Additive: prepared/known are unchanged.
+    cid = server.create_campaign("S")["id"]
+    p = server.create_character(cid, "Wyll", kind="player", class_name="Paladin",
+                                level=10, apply_srd_defaults=True)["id"]
+    sheet = server.get_character(cid, p)
+    pool = sheet["preparable_spells"]
+    names = {s["name"] for s in pool}
+    # the full browsable pool is far larger than the few prepared, and is capped to the
+    # caster's highest slot level (a L10 Paladin -> levels 1–3).
+    assert len(pool) > len(sheet["spells_prepared"])
+    assert "Divine Smite" in names and "Bless" in names
+    assert max(s["level"] for s in pool) == 3
+    # prepared/known are untouched (additive)
+    assert sheet["spells_prepared"] == ["Bless", "Cure Wounds", "Shield of Faith"]
+
+
+def test_get_character_non_caster_has_empty_preparable_pool():
+    # A Fighter (no caster class) gets an empty preparable pool — never a fabricated list.
+    cid = server.create_campaign("S")["id"]
+    f = server.create_character(cid, "Brawn", kind="player", class_name="Fighter",
+                                apply_srd_defaults=True)["id"]
+    sheet = server.get_character(cid, f)
+    assert sheet["preparable_spells"] == []
+
+
 # --- hardening regressions (from adversarial review) ---
 def test_half_on_save_damage():  # C1
     cid = server.create_campaign("S")["id"]

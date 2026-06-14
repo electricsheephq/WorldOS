@@ -3855,6 +3855,11 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "stats": stats,
         "skills": skills,
         "spells": spells,
+        # #754 — the BROWSABLE preparable pool: the FULL SRD class spell list this caster can
+        # choose to prepare (capped to their highest slot level), distinct from the few they've
+        # currently prepared. A prepared caster (Paladin/Cleric/Druid/Wizard) plans FROM this;
+        # empty for a non-caster. Derived from the engine's own srd524 class↔spell map.
+        "preparableSpells": _preparable_spells_view(ch),
         # Character-level casting summary (Spell Save DC + Spell Attack Bonus) for the top
         # of the Spells tab. None for a non-caster (Fighter/Rogue) — the screen omits it
         # rather than show a fake DC. Derived from the PC's casting ability + proficiency.
@@ -4080,6 +4085,74 @@ def _character_spellcasting(ch: dict) -> dict | None:
         "spellSaveDc": _spell_save_dc(ch),
         "spellAttackBonus": _spell_attack_bonus(ch),
     }
+
+
+def _highest_slot_level_from_sheet(ch: dict) -> int:
+    """The highest spell-slot level the character has a slot for, read straight off the
+    snapshot's ``spell_slots`` ({level: {maximum, used}}). 0 == no leveled slots. Mirrors
+    engine server._highest_slot_level so the viewer caps the preparable pool the SAME way."""
+    slots = ch.get("spell_slots")
+    if not isinstance(slots, dict):
+        return 0
+    best = 0
+    for lvl, pool in slots.items():
+        if not isinstance(pool, dict):
+            continue
+        mx = _num(pool.get("maximum"))
+        if mx is not None and int(mx) > 0:
+            try:
+                best = max(best, int(lvl))
+            except (TypeError, ValueError):
+                continue
+    return best
+
+
+def _preparable_spells_view(ch: dict) -> list[dict]:
+    """The full SRD class spell list a PREPARED caster can BROWSE to choose what to prepare
+    (#754) — each ``{name, level, levelLabel, school, ...}`` enriched spell card, capped to the
+    caster's highest available slot level. Mirrors engine server._preparable_spells: derived
+    from the engine's own srd524 class↔spell map (spells.class_spell_list) so the pool is
+    SRD-correct, NOT a viewer-fabricated list. The viewer stays a pure reader — it surfaces the
+    same data the engine's get_character endpoint computes (additive, default empty).
+
+    Returns [] for a non-caster (no caster class / no slots), or when the engine spells module
+    can't be imported (the viewer degrades to today's behavior — no fabricated pool)."""
+    max_lvl = _highest_slot_level_from_sheet(ch)
+    if max_lvl <= 0:
+        return []
+    # Reuse the same lazily-imported engine `spells` module the spell cards already use.
+    global _SPELLS_MOD, _SPELLS_TRIED
+    if _SPELLS_MOD is None and not _SPELLS_TRIED:
+        _SPELLS_TRIED = True
+        _SPELLS_MOD = _engine_module("spells")
+    mod = _SPELLS_MOD
+    if mod is None or not hasattr(mod, "class_spell_list"):
+        return []
+    save_dc = _spell_save_dc(ch)
+    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    merged: dict[str, dict] = {}
+    for cl in classes:
+        if not isinstance(cl, dict):
+            continue
+        cname = _text(cl.get("name") or cl.get("class_name"))
+        # Only real caster classes contribute a preparable pool (mirror _casting_ability).
+        if not cname or cname.lower() not in _CASTING_ABILITY:
+            continue
+        try:
+            entries = mod.class_spell_list(cname, max_level=max_lvl) or []
+        except Exception:
+            entries = []
+        for entry in entries:
+            name = _text(entry.get("name"))
+            if not name or name.lower() in merged:
+                continue
+            lvl = entry.get("level")
+            lvl = int(lvl) if isinstance(lvl, (int, float)) else 0
+            # Enrich each pool spell with its full SRD rules card (level/school/range/save/…)
+            # so the Spellbook can show the same rich detail as a prepared spell.
+            card = _spell_card(name, "available", save_dc)
+            merged[name.lower()] = card
+    return sorted(merged.values(), key=lambda s: (int(s.get("level") or 0), _text(s.get("name"))))
 
 
 def _spell_card(name: str, time_label: str, save_dc: int | None) -> dict:
