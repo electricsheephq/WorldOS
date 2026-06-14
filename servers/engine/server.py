@@ -2241,12 +2241,16 @@ def _combat_numbers(ch: Character) -> dict:
     """The sheet-derived attack/save numbers the DM must pass to `attack` — surfaced so the
     DM reads AUTHORITATIVE values instead of inventing them (QA: a Rogue's to-hit was narrated
     as +7 by copying another combatant when the sheet gave +3). `attack` trusts the bonus you
-    hand it, so the correct number has to be visible at the point of attack. Melee uses STR,
-    ranged/finesse uses DEX; damage modifiers are the same ability mod."""
+    hand it, so the correct number has to be visible at the point of attack. Melee uses STR —
+    UNLESS the character carries a FINESSE weapon (audit F01-4 / #774): finesse uses
+    max(STR, DEX) on attack AND damage, so a rapier rogue's surfaced melee numbers are the
+    DEX ones, not a wrong STR line. Ranged uses DEX; damage modifiers are the same ability
+    mod. A rogue's Sneak Attack dice are surfaced too (audit F01-5 / #166) — the sheet tracks
+    them but the attack trigger never showed them, hiding ~half the class's damage."""
     prof = ch.proficiency_bonus
     str_mod = ch.ability_modifier(Ability.STR)
     dex_mod = ch.ability_modifier(Ability.DEX)
-    return {
+    nums = {
         "proficiency_bonus": prof,
         "ability_mods": {a.value: ch.ability_modifier(a) for a in Ability},
         "melee_attack_bonus": prof + str_mod,        # STR weapon
@@ -2256,6 +2260,40 @@ def _combat_numbers(ch: Character) -> dict:
         "note": "Pass these to attack(attack_bonus=…, damage_dice='NdM+<mod>'); the engine "
                 "trusts the number, so use the sheet's — never copy another combatant's.",
     }
+    # FINESSE (#774): if the character carries a finesse weapon (equipped first, else any
+    # carried), melee attack AND damage use max(STR, DEX) — 5e's finesse rule. Read-surface
+    # only: attack() keeps trusting the bonus the DM passes; non-finesse loadouts are
+    # byte-identical (no key, same numbers).
+    fin = next((it.name for it in ch.inventory
+                if it.equipped and srd_tables.is_finesse_weapon(it.name)), None)
+    if fin is None:
+        fin = next((it.name for it in ch.inventory
+                    if srd_tables.is_finesse_weapon(it.name)), None)
+    if fin is not None:
+        best = max(str_mod, dex_mod)
+        ability = "dex" if dex_mod > str_mod else "str"
+        nums["melee_attack_bonus"] = prof + best
+        nums["melee_damage_mod"] = best
+        nums["finesse"] = {
+            "weapon": fin,
+            "ability": ability,
+            "note": (f"{fin} is a finesse weapon — melee attack/damage use "
+                     f"max(STR, DEX) = {ability.upper()} here."),
+        }
+    # SNEAK ATTACK (F01-5, enriches #166): surface the sheet's dice + the 5e trigger at the
+    # point of attack, as a ready-to-pass damage_rolls component — the engine then rolls it
+    # (and crit-doubles it) through the existing multi-component path (#210). Absent for
+    # non-rogues (byte-identical).
+    if ch.sneak_attack_dice:
+        nums["sneak_attack"] = {
+            "dice": ch.sneak_attack_dice,
+            "note": (f"Sneak Attack, ONCE PER TURN: when the attack has advantage, OR an "
+                     f"ally is within 5 ft of the target and the attack lacks disadvantage, "
+                     f"add it to that attack's damage_rolls as a component "
+                     f"{{'dice': '{ch.sneak_attack_dice}', 'type': <weapon damage type>}} — "
+                     f"the engine rolls it and doubles it on a crit."),
+        }
+    return nums
 
 
 @mcp.tool()
@@ -3420,6 +3458,9 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
                 "ranged_damage_mod": nums["ranged_damage_mod"],
                 "extra_attacks": int(getattr(ch, "extra_attacks", 0)),
             }
+            for cue in ("finesse", "sneak_attack"):  # F01-4/F01-5: carry the cues per-turn
+                if cue in nums:
+                    brief["attack"][cue] = nums[cue]
             brief["note"] = "No bestiary data — use derived bonuses above; never invent."
     else:
         nums = _combat_numbers(ch)
@@ -3433,6 +3474,11 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
             "extra_attacks": extra,
             "attacks_per_action": attacks_per_action,
         }
+        # F01-4/F01-5 (#774/#166): the per-turn brief is the surface the DM actually reads
+        # each turn — carry the finesse and Sneak Attack cues here too, not just on the sheet.
+        for cue in ("finesse", "sneak_attack"):
+            if cue in nums:
+                brief["attack"][cue] = nums[cue]
         brief["note"] = (
             f"Declare use_action(kind='action') then make {attacks_per_action} attack call(s) "
             "using the sheet bonuses above — never invent or copy another combatant's."
@@ -3567,17 +3613,25 @@ def next_turn(campaign_id: str) -> dict:
                     f"1d20+{previous.saving_throw_bonus(rs.ability)}",
                     disadvantage=disadvantage,
                 )
-                success = (not auto_fail) and r.total >= rs.dc
+                # NUMERIC RIDERS (SYN-06 / #780): the end-of-turn repeat save is a saving
+                # throw — fold the holder's engine-tracked save bonus dice (Bless/Bane).
+                rs_rider_bonus, rs_rider_rolls = _roll_effect_bonus_dice(
+                    previous, "save_bonus_dice"
+                )
+                rs_total = r.total + rs_rider_bonus
+                success = (not auto_fail) and rs_total >= rs.dc
                 entry = {
                     "character_id": previous.id,
                     "name": eff.name,
                     "ability": rs.ability.value,
                     "dc": rs.dc,
-                    "roll": r.total,
+                    "roll": rs_total,
                     "natural": r.natural,
                     "success": success,
                     "ended": False,
                 }
+                if rs_rider_rolls:
+                    entry["bonus_dice"] = rs_rider_rolls
                 if auto_fail:
                     forcing = ", ".join(
                         cn.value for cn in previous.conditions if cn in combat.SAVE_AUTOFAIL
@@ -3656,12 +3710,17 @@ def next_turn(campaign_id: str) -> dict:
         # recast) — the spell is over, so the target must be freed here rather than staying
         # paralyzed indefinitely. Sweep every combatant's markers: when the source caster no
         # longer concentrates on that spell, drop the marker + clear the condition it imposed.
+        # SYN-06 (#780) extends the same sweep to concentration-linked NUMERIC-rider children
+        # (Bless on an ally lives target-side as a linked child) — before that, the naive
+        # caster-side expiry provably never reached them and the buff outlived the spell.
         for cb in order:
             holder = c.characters.get(cb.character_id)
             if holder is None:
                 continue
             for eff in list(holder.active_effects):
-                if eff.repeat_save is None or not eff.source_id:
+                if eff.repeat_save is None and not eff.linked_to_concentration:
+                    continue
+                if not eff.source_id:
                     continue
                 caster = c.characters.get(eff.source_id)
                 # Marker is orphaned when the caster is gone, or no longer concentrating on
@@ -3813,8 +3872,33 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         return _combat_view(c)
 
 
+def _roll_effect_bonus_dice(ch: Character, field: str) -> tuple[int, list[dict]]:
+    """Roll the numeric-rider bonus dice carried by ``ch``'s active effects (SYN-06 / #780:
+    Bless +1d4 / Bane -1d4) for the given field ('attack_bonus_dice' or 'save_bonus_dice').
+    THE ENGINE ROLLS — each component is rolled here and surfaced so the DM narrates the
+    d4 instead of being told a buff exists and then watching the engine ignore it. A
+    leading '-' subtracts the rolled amount (Bane). Returns (signed_total, components);
+    (0, []) for the overwhelmingly common no-rider case — byte-identical behavior."""
+    total = 0
+    rolls: list[dict] = []
+    for eff in ch.active_effects or []:
+        expr = (getattr(eff, field, "") or "").strip()
+        if not expr:
+            continue
+        sign = -1 if expr.startswith("-") else 1
+        r = dice_mod.roll(expr.lstrip("+-"))
+        signed = sign * r.total
+        total += signed
+        rolls.append({"source": eff.name, "dice": expr, "rolled": signed, "detail": r.detail})
+    return total, rolls
+
+
 def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
-    """Return the AC the attack resolver should use, including engine-tracked buffs."""
+    """Return the AC the attack resolver should use, including engine-tracked buffs:
+    Mage Armor's set-AC formula (the original special case) plus any additive ``ac_bonus``
+    riders (SYN-06 / #780 — Shield of Faith +2, Shield +5). Bonuses stack on top of
+    whichever base/formula AC wins, and each contribution is itemized in the detail dict
+    (``ac_bonuses``) so the DM sees WHY the AC moved."""
     base_ac = int(ch.armor_class or 10)
     mage_armor = next(
         (
@@ -3825,25 +3909,40 @@ def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
         None,
     )
     if mage_armor is None:
-        return base_ac, None
-    dex_mod = ch.ability_modifier(Ability.DEX)
-    mage_ac = mage_armor.armor_formula_ac or (13 + dex_mod)
-    stored_base_ac = mage_armor.armor_base_ac or base_ac
-    if mage_ac <= base_ac:
-        return base_ac, {
-            "source": "Mage Armor",
-            "base_ac": stored_base_ac,
-            "formula_ac": mage_ac,
-            "dex_modifier": dex_mod,
-            "applied": False,
-        }
-    return mage_ac, {
-        "source": "Mage Armor",
-        "base_ac": stored_base_ac,
-        "formula_ac": mage_ac,
-        "dex_modifier": dex_mod,
-        "applied": True,
-    }
+        ac, detail = base_ac, None
+    else:
+        dex_mod = ch.ability_modifier(Ability.DEX)
+        mage_ac = mage_armor.armor_formula_ac or (13 + dex_mod)
+        stored_base_ac = mage_armor.armor_base_ac or base_ac
+        if mage_ac <= base_ac:
+            ac, detail = base_ac, {
+                "source": "Mage Armor",
+                "base_ac": stored_base_ac,
+                "formula_ac": mage_ac,
+                "dex_modifier": dex_mod,
+                "applied": False,
+            }
+        else:
+            ac, detail = mage_ac, {
+                "source": "Mage Armor",
+                "base_ac": stored_base_ac,
+                "formula_ac": mage_ac,
+                "dex_modifier": dex_mod,
+                "applied": True,
+            }
+    # Additive AC riders (SYN-06): sum every active effect's ac_bonus (Shield of Faith +2,
+    # Shield +5) on top. No riders == today's return exactly (incl. detail None).
+    bonus_effects = [
+        eff for eff in (ch.active_effects or [])
+        if int(getattr(eff, "ac_bonus", 0) or 0) != 0
+    ]
+    if bonus_effects:
+        ac += sum(int(eff.ac_bonus) for eff in bonus_effects)
+        detail = dict(detail) if detail is not None else {}
+        detail["ac_bonuses"] = [
+            {"source": eff.name, "bonus": int(eff.ac_bonus)} for eff in bonus_effects
+        ]
+    return ac, detail
 
 
 @mcp.tool()
@@ -3981,8 +4080,14 @@ def attack(
         adv = advantage or cadv
         dis = disadvantage or cdis
         atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
+        # NUMERIC RIDERS (SYN-06 / #780): fold the attacker's engine-tracked bonus dice
+        # (Bless +1d4 / Bane -1d4) into the attack total — the engine ROLLS the rider it
+        # advertises instead of tracking it as theater. Nat-20 auto-hit / nat-1 auto-miss
+        # still read the natural die; no riders == atk.total exactly as before.
+        rider_bonus, rider_rolls = _roll_effect_bonus_dice(attacker, "attack_bonus_dice")
+        atk_total = atk.total + rider_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
-        hit = atk.crit or (not atk.fumble and atk.total >= target_ac)
+        hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
         # PARRY (#218): a defender with an available defensive reaction (+N AC vs one melee
         # attack it can see) turns the blow aside — but ONLY when doing so FLIPS this hit to a
         # miss. The engine never wastes the reaction on a crit it can't stop or a blow that
@@ -3996,7 +4101,7 @@ def attack(
             and c.combat.active
             and not combat.is_incapacitated(target)
             and Condition.BLINDED not in target.conditions
-            and atk.total < target_ac + target.parry
+            and atk_total < target_ac + target.parry
         ):
             target_cb = next(
                 (cb for cb in c.combat.order if cb.character_id == target_id), None
@@ -4011,7 +4116,7 @@ def attack(
                     "effective_ac": eff_ac,
                     "note": (
                         f"{target.name} spends its reaction to Parry — AC rises to {eff_ac}, "
-                        f"and the blow ({atk.total}) turns aside"
+                        f"and the blow ({atk_total}) turns aside"
                     ),
                 }
         # SRD: a melee hit against an unconscious/paralyzed creature auto-crits.
@@ -4022,7 +4127,7 @@ def attack(
         result = {
             "attacker": attacker.name,
             "target": target.name,
-            "attack_roll": {"total": atk.total, "natural": atk.natural, "detail": atk.detail},
+            "attack_roll": {"total": atk_total, "natural": atk.natural, "detail": atk.detail},
             "advantage": adv,
             "disadvantage": dis,
             "crit": is_crit,
@@ -4033,6 +4138,10 @@ def attack(
             "target_base_ac": target.armor_class,
             "damage": None,
         }
+        if rider_rolls:
+            # The engine-rolled rider components (SYN-06), itemized so the DM narrates
+            # "the blessing guides the blade (+3)" — and sees the buff actually counted.
+            result["attack_roll"]["bonus_dice"] = rider_rolls
         if target_ac_detail is not None:
             result["target_ac_detail"] = target_ac_detail
         # Commit the action economy now — an attack spends its action/reaction whether
@@ -4274,7 +4383,7 @@ def attack(
                         "effective_ac": eff_ac,
                         "note": (f"{target.name} has a Parry reaction (+{target.parry} AC vs one "
                                  f"melee hit) but it would not have stopped this blow (roll "
-                                 f"{atk.total} >= effective AC {eff_ac}). Reaction NOT spent — "
+                                 f"{atk_total} >= effective AC {eff_ac}). Reaction NOT spent — "
                                  "narrate the attempted-but-overwhelmed defense if you like."),
                     }
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
@@ -4306,12 +4415,14 @@ def attack(
                     "ac_detail": target_ac_detail,
                 },
                 "roll": {
-                    "total": atk.total,
+                    "total": atk_total,
                     "natural": atk.natural,
                     "detail": atk.detail,
                     "attack_bonus": attack_bonus,
                     "advantage": adv,
                     "disadvantage": dis,
+                    # SYN-06: engine-rolled rider components (Bless/Bane), when any
+                    **({"bonus_dice": rider_rolls} if rider_rolls else {}),
                 },
                 "damage": result["damage"],
                 "target_state": result.get("target_state"),
@@ -4419,21 +4530,28 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
         c = _require(campaign_id)
         ch = _char(c, character_id)
         r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
-        maintained = r.total >= dc
+        # NUMERIC RIDERS (SYN-06 / #780): a concentration save is a saving throw — fold
+        # the engine-tracked save bonus dice (Bless +1d4 / Bane -1d4) like saving_throw.
+        rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")
+        total = r.total + rider_bonus
+        maintained = total >= dc
         expired: list[str] = []
         if not maintained:
             ch.concentration = None
             # The engine-tracked concentration effect ends with the concentration.
             expired = combat.expire_concentration_effects(ch)
         save_campaign(c)
-        return {
-            "roll": r.total,
+        out = {
+            "roll": total,
             "natural": r.natural,
             "dc": dc,
             "maintained": maintained,
             "concentration": ch.concentration,
             "expired_effects": expired,
         }
+        if rider_rolls:
+            out["bonus_dice"] = rider_rolls
+        return out
 
 
 @mcp.tool()
@@ -4467,7 +4585,12 @@ def drop_concentration(campaign_id: str, character_id: str, reason: str = "") ->
         if was:
             for holder in list(c.characters.values()):
                 for eff in list(holder.active_effects):
-                    if eff.repeat_save is None or eff.source_id != character_id:
+                    # A repeat-save marker (Hold Person) OR a concentration-linked numeric-
+                    # rider child (Bless on an ally — SYN-06/#780): both are target-side
+                    # twins of THIS caster's concentration and end with it.
+                    if eff.repeat_save is None and not eff.linked_to_concentration:
+                        continue
+                    if eff.source_id != character_id:
                         continue
                     if eff.name != was:
                         continue
@@ -5404,11 +5527,21 @@ def cast_spell(
         # non-concentration buff with an explicit target holds it on that target.
         effect_holder = ch
         pending_rider = None  # set when the effect DEFERS to the spell-attack hit (#186)
+        # NUMERIC RIDERS (SYN-06 / #780): the curated <=4-spell registry (Bless, Bane,
+        # Shield of Faith, Shield) whose tracked effect carries a mechanical modifier the
+        # engine itself applies. A CONCENTRATION rider cast at a SEPARATE target ALSO
+        # writes a linked CHILD effect on that target (the caster-side twin stays the
+        # concentration tracker; the child carries the numbers and is released by the
+        # sweep paths when concentration ends). None for every other spell == byte-identical.
+        rider_fields = combat.spell_effect_riders(canonical)
+        rider_child_target = None
         if duration is not None:
             if not concentrates and target_id and target_id != character_id:
                 tgt = c.characters.get(target_id)
                 if tgt is not None:
                     effect_holder = tgt
+            if rider_fields and concentrates and target_id and target_id != character_id:
+                rider_child_target = c.characters.get(target_id)
             # ON-HIT RIDER DEFER (#186). An ATTACK-ROLL spell whose timed effect lands on a
             # SEPARATE target is a 5e on-hit rider (Guiding Bolt: "on a hit, the next attack
             # against it has Advantage"). The cast and the spell attack are two calls, so the
@@ -5461,17 +5594,52 @@ def cast_spell(
                     eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
                         c, duration["hours"], duration["days"]
                     )
+                # SYN-06: when THIS effect is the beneficiary record (self-cast / Shield /
+                # a non-concentration targeted buff), copy the curated rider numbers onto
+                # it. With a separate child target the caster-side twin stays a pure
+                # concentration tracker (blessing an ally must not also bless the caster).
+                if rider_fields and rider_child_target is None:
+                    eff.ac_bonus = int(rider_fields.get("ac_bonus", 0))
+                    eff.attack_bonus_dice = rider_fields.get("attack_bonus_dice", "")
+                    eff.save_bonus_dice = rider_fields.get("save_bonus_dice", "")
                 # Recasting the SAME spell on a holder refreshes (doesn't stack) it.
                 effect_holder.active_effects = [
                     e for e in effect_holder.active_effects if e.name != canonical
                 ]
                 effect_holder.active_effects.append(eff)
+                # SYN-06: the concentration-linked CHILD on the separate target — same
+                # clock as the twin, carries the mechanical rider, flagged so BOTH sweep
+                # paths (next_turn's inverse sweep + drop_concentration) release it the
+                # moment the caster's concentration ends. Refresh-not-stack, like the twin.
+                if rider_child_target is not None:
+                    child = ActiveEffect(
+                        name=canonical,
+                        source_id=character_id,
+                        concentration=False,
+                        scale=duration["scale"],
+                        rounds_remaining=duration["rounds"],
+                        until_long_rest=(duration["scale"] == "hours"),
+                        expires_day=eff.expires_day,
+                        expires_phase_index=eff.expires_phase_index,
+                        linked_to_concentration=True,
+                        ac_bonus=int(rider_fields.get("ac_bonus", 0)),
+                        attack_bonus_dice=rider_fields.get("attack_bonus_dice", ""),
+                        save_bonus_dice=rider_fields.get("save_bonus_dice", ""),
+                    )
+                    rider_child_target.active_effects = [
+                        e for e in rider_child_target.active_effects if e.name != canonical
+                    ]
+                    rider_child_target.active_effects.append(child)
         mod = _casting_mod(ch)
         prof = ch.proficiency_bonus
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         if effect_holder is not ch:
             c.characters[effect_holder.id] = Character.model_validate(
                 effect_holder.model_dump(mode="json")
+            )
+        if rider_child_target is not None and rider_child_target is not effect_holder:
+            c.characters[rider_child_target.id] = Character.model_validate(
+                rider_child_target.model_dump(mode="json")
             )
         # An off-turn / reaction cast spends the caster's reaction (the combatant record
         # is separate from the character, so the re-validation above didn't touch it).
@@ -5519,6 +5687,22 @@ def cast_spell(
                 "rounds_remaining": duration["rounds"],
                 "concentration": concentrates,
             }
+            # SYN-06 (#780): tell the DM the buff has ENGINE-APPLIED teeth — which numbers,
+            # on whom — so it isn't narrated as flavor and then double-applied by hand.
+            if rider_fields:
+                result["effect_riders"] = {
+                    "holder_id": (
+                        rider_child_target.id if rider_child_target is not None
+                        else effect_holder.id
+                    ),
+                    **rider_fields,
+                    "note": (
+                        "Engine-applied: ac_bonus is folded into the holder's effective AC; "
+                        "attack/save bonus dice are rolled automatically on the holder's "
+                        "attack and saving throws and itemized in each roll's bonus_dice — "
+                        "do NOT add them again by hand."
+                    ),
+                }
         if curated is not None:
             result["automated"] = True
             result["effect"] = spells.resolve_effect(
@@ -5598,8 +5782,14 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     ab = Ability(ability.lower())
     auto_fail, disadvantage = combat.save_modifiers(ch, ab)
     r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}", disadvantage=disadvantage)
-    out = {"ability": ab.value, "roll": r.total, "natural": r.natural, "dc": dc,
-           "success": (not auto_fail) and r.total >= dc}
+    # NUMERIC RIDERS (SYN-06 / #780): fold the engine-tracked save bonus dice (Bless +1d4 /
+    # Bane -1d4) into the total — the engine rolls the rider it advertises.
+    rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")
+    total = r.total + rider_bonus
+    out = {"ability": ab.value, "roll": total, "natural": r.natural, "dc": dc,
+           "success": (not auto_fail) and total >= dc}
+    if rider_rolls:
+        out["bonus_dice"] = rider_rolls
     if auto_fail:
         forcing = ", ".join(cn.value for cn in ch.conditions if cn in combat.SAVE_AUTOFAIL)
         out["reason"] = f"condition auto-fail: {ch.name} is {forcing} — STR/DEX saves automatically fail"
