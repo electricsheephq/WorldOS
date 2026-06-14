@@ -5,15 +5,19 @@
      Post-compaction agents: this 6-line block is ground truth. Do NOT reconstruct
      state from scattered docs or old plans; trust this, verify the sha, then act.
      ──────────────────────────────────────────────────────────────────────────
-     AS OF:        2026-06-09 — v1.0.4-rc1 RRI re-baseline (honest non-partial sweep + 9-agent audit + roadmap).
+     AS OF:        2026-06-14 — audit fix-wave + sibling-fork engine fixes landed; rc3 QUOTA-ABORTED; re-measure pending quota.
      MAIN BASELINE:
-                   `origin/main` = `a104f1e`. The RC-under-test SHA was `fa97b34` (8 PRs merged since
-                   da05101: #719/#720/#722/#723/#724/#726/#727/#728). RELEASE MODEL is now RRI-FIRST:
-                   v1.0.x tags = semver feature-labels; RRI 10/10 = release-authority; tag-after-proof
-                   ("Player-Ready Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity).
-                   Milestone v1.0.4 (#27) is the version-scoped ledger (22 issues) for the Beta push.
-                   Plan: `/Users/lume/.claude/plans/continue-lets-update-the-wild-lecun.md`. The
-                   da05101/9545383/fd9dba5/4a0efe1 handoffs are preserved history, not current proof.
+                   `origin/main` ≈ `347b6c2` (moving — many PRs merging). Since rc1, TWO streams landed:
+                   (a) the reliability + audit fix-wave (#735 keystone, #759 subclass-backfill, #760
+                   ledger/ruler + #725 lens-fence, #761 budget-aware stuck ceiling, #762 image_render
+                   Mac-evidence path, #763 heartbeat repair, #764 VM no-axe, #844 quota-abort honesty);
+                   (b) the SIBLING full-engine-audit fork's fixes (#768 master report = 169 findings;
+                   #828 beat-reliability; #829 image_render PASSABLE on the VM lane; #830 spells;
+                   #831 economy; #832/#834 combat/mech teeth; #833 seat-path; #841 dead-beat masking).
+                   So mech + image_render + dead-beat + seat-path gates all have fresh fixes — a clean
+                   re-measure could move several gates at once. RELEASE MODEL = RRI-FIRST: v1.0.x tags =
+                   semver feature-labels; RRI 10/10 = release-authority; tag-after-proof ("Player-Ready
+                   Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity). Milestone v1.0.4 (#27).
      CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
@@ -32,15 +36,17 @@
                    release-RRI readiness requires `--private-art-mode required`. Artifact:
                    `/Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight/`.
      LAST MEASURED GATE BUILD:
-                   v1.0.4-rc1 RRI = 3.6/10 (4/11) @`fa97b34` — HONEST, non-partial 5-persona sweep
-                   (Mac part-A handoff 100/100 + VM part-B), ruler-stamped sc_5ac7a1d9103c, in
-                   qa/scores.db (run_id v1.0.4-rc1-fa97b34). PASS: native_gate(signal), arc, no_give_up,
-                   behavioral GREEN, palette. FAIL: cross_persona_sat 4.8(need 7); zero_critical (the 4
-                   "criticals" = ONE root: active-PC silent-switch #735, 4/5 personas); story 3.9(need
-                   4.3); mechanical 3.2(need 4.5; one-duo sampling-understated); ui_audit (STALE fa97b34
-                   snapshot, pre the v1.0.2 axe-0 merges — re-proof on a104f1e likely PASS); image_render
-                   0% (VM-gateway gap, Mac authoritative). Superseded f5500ac(2.7) + da05101. NB: caught+
-                   fixed #728, a #723 regression that crashed EVERY rollup — CI gap #729 let it ship.
+                   NONE valid since rc2. rc1 = 3.6/10 @`fa97b34`; rc2 = 2.7/10 @`c92a393` (criticals
+                   4→1, sat 4.8→5.8 — product IMPROVED; RRI dip was native-skip + newbie stall, both
+                   since fixed). **rc3 @`a245a2c` = QUOTA-ABORTED, INVALID** (issue #845): the newbie
+                   canary (run alone) came back CLEAN (sat=7, 0 crit, arc, no give-up — the stall-fix
+                   re-proof on newbie), then the claude account hit its session limit (HTTP 429) and the
+                   4 remaining cold-opens 429'd → never seated → the OLD parallel harness rolled a junk
+                   1.8. NO scores.db row written. #844 hardened the harness (sequential personas +
+                   429-abort + ABORTED-not-a-number). Mac part-A handoff @a245a2c = 100/100 with full
+                   image evidence (banked at /Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/
+                   handoff-20260610T115322Z-a245a2c). NEXT MEASURE = hardened sequential sweep at CURRENT
+                   main + that (or a fresh) Mac handoff — pending claude quota (rc3 429 reset hint 3:50pm UTC).
      LAST BUILT-APP PLAY PROOF:
                    Last built-app handoff proof is `da05101`
                    (`/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/handoff-20260607-da05101-current-main-clean/`):
@@ -64,16 +70,17 @@
      LAST VALID RELEASE GATE:
                    none after the RRI contract hardening. A release verdict requires expected
                    persona count, disk-backed palette/image/behavioral evidence, and built .app play.
-     NEXT ACTION:  Execute the v1.0.4 Player-Ready-Beta plan — 3 gate-flip sprints → RRI 10/10, all
-                   gaps tracked under milestone v1.0.4 (#27). Sprint 1 (reliability/cheap-gates): #735
-                   active-PC silent-switch (THE zero_critical root, 4/5 personas), #731 XSS, #732
-                   chronicle-leak, #623 DM-hang + heartbeat, #624 subclass, #306 + ui_audit re-proof on
-                   a104f1e (likely stale-PASS), #721, #353. Sprint 2: sat→7 (latency telemetry +
-                   display-only screen wiring #602/#604/#607 + #358). Sprint 3: story 4.3 / mech 4.5
-                   (companion-system depth #612-616/#593 + engine-audit #733/#696). VELOCITY: #729 (CI
-                   gate qa/ tests), `qa/cut_rc.sh` one-command RC harness, support_vm_preflight (#730).
-                   Provider parity (#696/#701) is vNext — Opus is the Beta DM. Do NOT tag v1.0.4 until a
-                   clean non-partial RRI 10/10. Drive sprints as ultracode workflows + verify on a build.
+     NEXT ACTION:  RE-MEASURE — the binding step. Run the HARDENED sequential VM sweep (#844: quota-safe,
+                   429-aborts, ABORTED-not-a-number) at CURRENT main + a same-SHA Mac part-A handoff →
+                   full rollup (--handoff-json + --support-preflight-json + --abort-marker) → ruler-stamped
+                   row (run_id v1.0.4-rc4-<sha>; lens auto-stamps; ONE branch — scores.db is a committed
+                   binary). BLOCKED ON CLAUDE QUOTA (rc3 429; reset hint 3:50pm UTC) — and the sweep shares
+                   the account with the AI's own agent/workflow usage, so DON'T run heavy fleets in the
+                   same window (the rc3 root cause). The sweep canary now aborts cleanly if quota is gone.
+                   Many gates have fresh fixes (mech #832/#834, image_render #829, dead-beat #841, seat
+                   #833) — re-measure FIRST, THEN target the residual sat→7 (Sprint 2) at what actually
+                   still fails, not speculatively. Provider parity (#696/#701) stays vNext — Opus is the
+                   Beta DM. Do NOT tag v1.0.4 until a clean non-partial RRI 10/10.
      DISCIPLINE:   ≥2 clean reads before any fix (channel fabricates under host load); ONE heavy claude -p stream;
                    never probe-kill; test the BUILT .app, never a proxy; honest scores; never "100% confidence".
      ════════════════════════════════════════════════════════════════════════════ -->
