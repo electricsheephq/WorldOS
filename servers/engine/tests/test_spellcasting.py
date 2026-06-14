@@ -223,6 +223,9 @@ def _wizard_at(cid, level, name="Gale"):
     w = server.create_character(cid, name, kind="player", class_name="Wizard", level=level,
                                 apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
     server.learn_spells(cid, w, ["Acid Splash", "Eldritch Blast", "Fireball"])
+    # Prepare Fireball too (F03-8: a non-empty prepared list now gates leveled casts; the
+    # seeded loadout doesn't include Fireball, so add it for the scaling tests that cast it).
+    server.prepare_spells(cid, w, ["Fireball"], mode="add")
     return w
 
 
@@ -320,3 +323,107 @@ def test_non_ritual_normal_casts_unchanged_no_ritual_fields():
     w = _ritual_wizard(cid)
     out = server.cast_spell(cid, w, "Magic Missile")
     assert "ritual_cast" not in out and "ritual_available" not in out
+
+
+# --- F03-7: learn/prepare canonicalize + validate; case-insensitive cast gate ----
+def _blank_wizard(cid, **abil):
+    """A wizard with NO seeded loadout (apply_srd_defaults False) so the spellbook is exactly
+    what the test learns — isolates the gate from the starter-loadout union."""
+    ab = {"intelligence": 16, "constitution": 12}
+    ab.update(abil)
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities=ab)["id"]
+    server.learn_spells(cid, w, [])      # clear seeded known
+    server.prepare_spells(cid, w, [])    # clear seeded prepared
+    return w
+
+
+def test_learn_lowercase_then_cast_canonical_passes():
+    """F03-7 (THE BUG): learn_spells stored raw strings, so a lowercase learn made the
+    canonical-cased cast gate reject every cast. Now names are canonicalized on write."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.learn_spells(cid, w, ["magic missile"])  # lowercase
+    sheet = server.get_character(cid, w)
+    assert sheet["spells_known"] == ["Magic Missile"]  # stored proper-cased
+    server.cast_spell(cid, w, "Magic Missile")  # previously raised "doesn't know" — now OK
+
+
+def test_learn_unknown_spell_rejected_at_learn_time_listing_offenders():
+    """F03-7: an unknown/typo spell is rejected when LEARNED (not silently stored to fail at
+    cast), and the error names every offender so the DM can fix the input."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    with pytest.raises(ValueError, match="Definitely Not A Spell"):
+        server.learn_spells(cid, w, ["Magic Missile", "Definitely Not A Spell"])
+    # Nothing was stored (rejection before any state change).
+    assert server.get_character(cid, w)["spells_known"] == []
+
+
+def test_learn_mode_add_appends_without_relisting():
+    """F03-7: mode='add' appends new spells to the known list (de-duped) — teach one without
+    re-listing the whole spellbook. Default mode stays 'replace'."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.learn_spells(cid, w, ["Magic Missile"])
+    out = server.learn_spells(cid, w, ["fire bolt", "Magic Missile"], mode="add")  # dup ignored
+    assert out["spells_known"] == ["Magic Missile", "Fire Bolt"]
+
+
+def test_prepare_unknown_spell_rejected():
+    """F03-7: prepare_spells validates+canonicalizes identically."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    with pytest.raises(ValueError, match="unknown spell"):
+        server.prepare_spells(cid, w, ["Not Real"])
+
+
+def test_legacy_lowercase_snapshot_still_casts():
+    """F03-7 round-trip: an OLD snapshot whose spells_known carries raw-cased strings (written
+    before canonicalization) must still cast — the gate compares case-insensitively on read."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    # Simulate a legacy snapshot via the raw model patch (bypasses learn_spells canonicalization).
+    server.update_character(cid, w, patch={"spells_known": ["magic missile"],
+                                           "spells_prepared": ["magic missile"]})
+    server.cast_spell(cid, w, "Magic Missile")  # casefolded compare accepts the legacy casing
+
+
+# --- F03-8: prepared discipline — a non-empty prepared list gates leveled casts --
+def test_unprepared_leveled_cast_rejected_when_prepared_nonempty():
+    """F03-8 (THE NO-OP): with a non-empty prepared list, a leveled spell that is KNOWN but
+    NOT PREPARED is now rejected — preparation has mechanical weight (was a union no-op)."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.learn_spells(cid, w, ["Magic Missile", "Shield"])
+    server.prepare_spells(cid, w, ["Shield"])  # Magic Missile known but NOT prepared
+    with pytest.raises(ValueError, match="hasn't prepared"):
+        server.cast_spell(cid, w, "Magic Missile")
+    server.cast_spell(cid, w, "Shield")  # prepared -> allowed
+
+
+def test_empty_prepared_keeps_lenient_known_gate():
+    """F03-8 legacy guard: an EMPTY prepared list keeps the lenient known-only gate (today's
+    behavior) — a known-spell cast still works without preparing it (sorcerer / old snapshot)."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.learn_spells(cid, w, ["Magic Missile"])  # known, prepared stays empty
+    server.cast_spell(cid, w, "Magic Missile")  # lenient: empty prepared -> known gate only
+
+
+def test_cantrip_castable_when_known_even_if_not_prepared():
+    """F03-8: cantrips are never 'prepared' in 5e — a known cantrip is castable even with a
+    non-empty (leveled) prepared list that doesn't list it."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.learn_spells(cid, w, ["Fire Bolt", "Magic Missile"])
+    server.prepare_spells(cid, w, ["Magic Missile"])  # leveled prep; cantrip not listed
+    server.cast_spell(cid, w, "Fire Bolt")  # cantrip -> allowed via known, not prepared
+
+
+def test_both_lists_empty_stays_fully_lenient():
+    """F03-8 / F03-7 additive: with BOTH lists empty the gate is skipped entirely (today's
+    behavior for a monster/NPC or an un-loadout-ed caster) — no rejection."""
+    cid = server.create_campaign("S")["id"]
+    w = _blank_wizard(cid)
+    server.cast_spell(cid, w, "Magic Missile")  # no known/prepared -> lenient pass

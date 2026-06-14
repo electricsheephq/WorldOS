@@ -6435,9 +6435,33 @@ def cast_spell(
                         f"advance with next_turn so the order stays in sync."
                     )
                 cast_consumes_reaction = True
-        known = set(ch.spells_known) | set(ch.spells_prepared)
-        if known and canonical not in known:
-            raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
+        # KNOWN / PREPARED GATE (F03-7 + F03-8). Compare CASE-INSENSITIVELY (F03-7): the
+        # cast-side `canonical` is the proper-cased SRD name, but legacy snapshots may carry
+        # raw-cased strings (learn_spells/prepare_spells now canonicalize on write, but old
+        # campaigns round-trip), so casefold both sides — a lowercase-stored "magic missile"
+        # still matches the canonical "Magic Missile".
+        known_cf = {s.strip().lower() for s in ch.spells_known}
+        prepared_cf = {s.strip().lower() for s in ch.spells_prepared}
+        cf = canonical.strip().lower()
+        if spell_level == 0:
+            # Cantrips are never "prepared" in 5e — a known cantrip is always castable. Gate
+            # only against the union (lenient when both lists are empty, today's behavior).
+            if (known_cf or prepared_cf) and cf not in (known_cf | prepared_cf):
+                raise ValueError(f"{ch.name} doesn't know {canonical!r}")
+        elif prepared_cf:
+            # F03-8: a prepared caster (non-empty prepared list) casts a LEVELED spell only if
+            # it is PREPARED — knowing it is not enough. This gives preparation real mechanical
+            # weight (Rolan's snapshot: known(7) ⊋ prepared(4) was a no-op union before).
+            if cf not in prepared_cf:
+                raise ValueError(
+                    f"{ch.name} knows {canonical!r} but hasn't prepared it — "
+                    f"prepare_spells it first, or cast a prepared spell"
+                )
+        elif known_cf:
+            # Legacy / known-caster path: no prepared list (sorcerer, or an old snapshot that
+            # only set spells_known) keeps the lenient known-only gate — byte-identical behavior.
+            if cf not in known_cf:
+                raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
         slot_used = None
         # A ritual cast consumes NO slot (#813) — the +10 minutes is the cost; the
         # spell resolves at its base level (a ritual can't be upcast).
@@ -7577,24 +7601,78 @@ def set_class_resource(
         }
 
 
+def _canonicalize_spell_list(spells_list: list, existing: list, mode: str) -> list:
+    """Validate + canonicalize a learn/prepare spell list (F03-7). Each entry must be a
+    known SRD spell (any casing); unknown entries raise listing ALL of them, so the cast
+    gate compares the proper-cased name against proper-cased stored names. `mode='replace'`
+    (default) substitutes the list; `mode='add'` appends the new spells to `existing`
+    (de-duped, canonical-cased, order-preserving). Raises ValueError on an unknown name or
+    an unrecognized mode — rejection BEFORE any state change, like every engine write."""
+    if mode not in ("replace", "add"):
+        raise ValueError(f"mode must be 'replace' or 'add', got {mode!r}")
+    canonical: list[str] = []
+    unknown: list[str] = []
+    for raw in spells_list:
+        name = spells.canonical_name(str(raw))
+        if name is None:
+            unknown.append(str(raw))
+        else:
+            canonical.append(name)
+    if unknown:
+        raise ValueError(
+            "unknown spell(s) (not in the SRD): "
+            + ", ".join(repr(u) for u in unknown)
+            + " — check spelling; only SRD spells can be learned/prepared"
+        )
+    if mode == "add":
+        result = list(existing)
+        have = {s.strip().lower() for s in existing}
+        for name in canonical:
+            if name.strip().lower() not in have:
+                result.append(name)
+                have.add(name.strip().lower())
+        return result
+    # replace: de-dupe the incoming list (keep first-seen canonical casing/order)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for name in canonical:
+        if name.strip().lower() not in seen:
+            deduped.append(name)
+            seen.add(name.strip().lower())
+    return deduped
+
+
 @mcp.tool()
-def learn_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
-    """Set a character's known spells (replaces the list)."""
+def learn_spells(campaign_id: str, character_id: str, spells_list: list,
+                 mode: str = "replace") -> dict:
+    """Set a character's KNOWN spells. Each name is VALIDATED + CANONICALIZED (F03-7): an
+    unknown spell (typo, non-SRD) is rejected listing the offenders, and any casing you pass
+    ("fire bolt") is stored proper-cased ("Fire Bolt") so the case-sensitive cast gate accepts
+    a later cast. `mode='replace'` (default) substitutes the whole list; `mode='add'` appends
+    the new spells to the existing known list (de-duped) — so you can teach one spell without
+    re-listing the whole spellbook. Rejection happens BEFORE any change (nothing is stored on
+    an unknown name)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.spells_known = list(spells_list)
+        ch.spells_known = _canonicalize_spell_list(spells_list, ch.spells_known, mode)
         save_campaign(c)
         return {"spells_known": ch.spells_known}
 
 
 @mcp.tool()
-def prepare_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
-    """Set a character's prepared spells (replaces the list)."""
+def prepare_spells(campaign_id: str, character_id: str, spells_list: list,
+                   mode: str = "replace") -> dict:
+    """Set a character's PREPARED spells. Each name is VALIDATED + CANONICALIZED (F03-7) like
+    learn_spells. With a non-empty prepared list, cast_spell now enforces preparation for
+    LEVELED spells (F03-8): a prepared caster (cleric/wizard/druid) casts only what it has
+    prepared, while cantrips stay always-castable once known. `mode='replace'` (default)
+    substitutes the list (your daily preparation); `mode='add'` appends. An unknown spell is
+    rejected before any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.spells_prepared = list(spells_list)
+        ch.spells_prepared = _canonicalize_spell_list(spells_list, ch.spells_prepared, mode)
         save_campaign(c)
         return {"spells_prepared": ch.spells_prepared}
 

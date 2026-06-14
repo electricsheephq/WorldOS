@@ -52,6 +52,21 @@ def srd_spell(name: str):
     return _srd524().get(name.strip().lower())
 
 
+def canonical_name(name: str) -> Optional[str]:
+    """The canonical-cased SRD spell name for `name` (case-insensitive), or None if
+    `name` is not any of the ~339 SRD spells. Prefers the hand-authored curated record's
+    casing, falling back to the srd524 dump — both store the proper name, the lookup tables
+    casefold on read. Used by learn_spells/prepare_spells to canonicalize+validate on WRITE
+    (F03-7), so the case-sensitive cast gate compares like against like."""
+    if not name or not name.strip():
+        return None
+    key = name.strip().lower()
+    rec = _all().get(key) or _srd524().get(key)
+    if rec is None:
+        return None
+    return rec.get("name") or name.strip()
+
+
 def _parse_dice(expr: str) -> tuple[int, int]:
     """Parse the dice part of 'NdM(+K)' -> (N, M), ignoring any flat modifier."""
     body = expr.lower().split("+")[0].split("-")[0]
