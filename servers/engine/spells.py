@@ -67,6 +67,26 @@ def canonical_name(name: str) -> Optional[str]:
     return rec.get("name") or name.strip()
 
 
+@functools.lru_cache(maxsize=1)
+def all_spell_names() -> list[str]:
+    """Every castable spell's canonical-cased name (curated + the full srd524 dump),
+    de-duped, for did-you-mean fuzzy matching on an unknown-spell refusal (F14-7 / #812).
+
+    Prefers the curated record's casing where both sources carry a spell (curated is the
+    hand-authored, full-automation set). Pure + cached — same provenance as srd_spell /
+    canonical_name, so a suggestion always names a spell cast_spell can actually resolve."""
+    names: dict[str, str] = {}
+    for rec in _srd524().values():
+        n = rec.get("name")
+        if n:
+            names[n.lower()] = n
+    for rec in _all().values():  # curated casing wins
+        n = rec.get("name")
+        if n:
+            names[n.lower()] = n
+    return sorted(names.values())
+
+
 def _parse_dice(expr: str) -> tuple[int, int]:
     """Parse the dice part of 'NdM(+K)' -> (N, M), ignoring any flat modifier."""
     body = expr.lower().split("+")[0].split("-")[0]

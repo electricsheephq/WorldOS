@@ -29,6 +29,19 @@ from models import Campaign, SessionLogEntry
 
 log = logging.getLogger(__name__)
 
+
+class SnapshotSchemaError(RuntimeError):
+    """A snapshot is incompatible with the running engine's schema even after the tolerant
+    top-level-key strip (F14-2 / #812) — typically a SUB-model skew (an old engine reading a
+    newer save whose nested model gained a field, or vice-versa).
+
+    Subclasses RuntimeError so every existing ``except RuntimeError`` consumer (load_campaign,
+    the enumerators, start_session's drift surfacing) keeps working unchanged. The message is
+    BOUNDED (≤500 chars) and ACTIONABLE — it names the skew direction, both engine SHAs, the
+    campaign id, the first few offending field locations, and concrete recovery moves — instead
+    of dumping the raw multi-KB pydantic wall (with its ``errors.pydantic.dev`` URL) that a DM
+    reads and gives up on. The full pydantic detail survives on ``__cause__`` for logs."""
+
 # Resolved-once cache for the engine's short git SHA. `None` = not yet resolved; a string
 # (possibly "") = resolved. We stamp this onto every saved snapshot so a campaign records the
 # engine version that last wrote it. Sentinel-based so a genuine "" (git unavailable) is cached
@@ -169,6 +182,42 @@ def last_dropped_keys(campaign_id: str) -> list[str]:
     return list(_LAST_DROPPED_KEYS.get(campaign_id, []))
 
 
+def _bounded_schema_error_message(exc: ValidationError, data: dict) -> str:
+    """Build the BOUNDED, ACTIONABLE SnapshotSchemaError message from a pydantic
+    ValidationError + the raw snapshot dict (F14-2 / #812).
+
+    Carries: the "incompatible with the current schema" phrase (the historical key consumers
+    and tests match on), the skew DIRECTION + both engine SHAs (snapshot-stamped vs running),
+    the first ≤3 offending field LOCATIONS (NOT the verbose per-error messages — those carry the
+    errors.pydantic.dev URL), and two concrete RECOVERY moves. The whole thing is clamped to
+    ≤500 chars; the full pydantic detail stays recoverable via the exception's ``__cause__``."""
+    snap_sha = str(data.get("engine_sha") or "") or "unknown"
+    run_sha = engine_sha() or "unknown"
+    # Skew direction: an UNKNOWN sub-model field means the snapshot was written by a NEWER engine
+    # (the field didn't exist when this engine's schema was authored); a MISSING-required error
+    # leans the other way. Default to "newer" (the dominant extra="forbid" case).
+    errs = exc.errors()
+    types = {e.get("type") for e in errs}
+    direction = (
+        "the snapshot is NEWER than this engine (it carries field(s) this engine doesn't know)"
+        if "extra_forbidden" in types
+        else "the snapshot may be OLDER than this engine (a required field is absent/changed)"
+    )
+    locs = []
+    for e in errs[:3]:
+        loc = ".".join(str(p) for p in e.get("loc", ())) or "(root)"
+        locs.append(loc)
+    loc_str = ", ".join(locs) or "(unknown)"
+    msg = (
+        f"snapshot is incompatible with the current schema after stripping unknown top-level "
+        f"keys — {direction}. snapshot engine_sha={snap_sha}, running engine_sha={run_sha}. "
+        f"First skew field(s): {loc_str}. "
+        f"Recover: run this engine sha (or migrate the save), or restore the pre-skew bytes from "
+        f"the {_PRE_TOLERANT_BACKUP} sidecar."
+    )
+    return msg[:500]
+
+
 def _validate_tolerant(raw: str) -> tuple[Campaign, list[str]]:
     """Side-effect-free tolerant parse: drop unknown top-level keys, validate, and report which
     keys were dropped (F08-3/F08-4 shared core).
@@ -176,8 +225,10 @@ def _validate_tolerant(raw: str) -> tuple[Campaign, list[str]]:
     PURE — no disk writes, no module-state mutation — so the enumerators (F08-4) can reuse it
     without turning a listing into a writer (the "pure reads don't write" invariant). Only the
     callable load path (:func:`_tolerant_load`) layers on the write-once backup + dropped-key
-    recording. Raises RuntimeError if the snapshot is incompatible even after stripping unknown
-    top-level keys (genuine corruption — not a schema-skew we can recover)."""
+    recording. Raises SnapshotSchemaError (a RuntimeError subclass) if the snapshot is
+    incompatible even after stripping unknown top-level keys — a SUB-model skew or genuine
+    corruption. The error is BOUNDED + ACTIONABLE (F14-2); the raw pydantic wall is NOT embedded
+    (it survives on the exception's ``__cause__`` for logs)."""
     import json
     data: dict = json.loads(raw)
     known = set(Campaign.model_fields)
@@ -187,10 +238,7 @@ def _validate_tolerant(raw: str) -> tuple[Campaign, list[str]]:
     try:
         return Campaign.model_validate(data), dropped
     except ValidationError as exc:
-        raise RuntimeError(
-            f"snapshot is incompatible with the current schema and cannot be loaded even "
-            f"after stripping unknown top-level keys.  Validation error: {exc}"
-        ) from exc
+        raise SnapshotSchemaError(_bounded_schema_error_message(exc, data)) from exc
 
 
 def _tolerant_load(campaign_id: str, raw: str) -> Campaign:
@@ -203,8 +251,15 @@ def _tolerant_load(campaign_id: str, raw: str) -> Campaign:
     schema."""
     try:
         c, dropped = _validate_tolerant(raw)
+    except SnapshotSchemaError as exc:
+        # F14-2 (#812): name the campaign id but keep the SnapshotSchemaError type AND the ≤500
+        # budget — prepend the id, then re-clamp so the whole surface stays bounded + actionable.
+        raise SnapshotSchemaError(
+            f"load_campaign({campaign_id!r}): {exc}"[:500]
+        ) from exc.__cause__
     except RuntimeError as exc:
-        # Preserve the historical load_campaign error wording (callers/tests match on it).
+        # Any non-schema RuntimeError (e.g. a malformed JSON path that surfaced as RuntimeError):
+        # preserve the historical load_campaign error wording (callers/tests match on it).
         raise RuntimeError(f"load_campaign({campaign_id!r}): {exc}") from exc
     _LAST_DROPPED_KEYS[campaign_id] = list(dropped)
     if dropped:

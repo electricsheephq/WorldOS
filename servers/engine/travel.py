@@ -18,11 +18,44 @@ at night.
 
 from __future__ import annotations
 
+import difflib
+from collections import deque
+
 from models import Campaign, Location
 
 # The in-world day, in order. Travel advances along this cycle; passing the end
 # rolls over into the next day.
 PHASES: tuple[str, ...] = ("morning", "afternoon", "evening", "night")
+
+
+def _bfs_first_step(campaign: Campaign, start_id: str, dest_id: str) -> Location | None:
+    """The FIRST hop a shortest path from `start_id` to `dest_id` takes, or None when no
+    path exists (F14-5 / #812). A pure breadth-first walk of the location graph the engine
+    already holds — so a rejection of a known-but-not-adjacent dest can name the next step
+    ("go via the Cellar") instead of leaving the DM to step blindly. Read-only: no mutation."""
+    if start_id == dest_id:
+        return None
+    # parent map: child_id -> the immediate-neighbour-of-start it was first reached through
+    first_hop: dict[str, str] = {}
+    seen: set[str] = {start_id}
+    q: deque[str] = deque()
+    start = campaign.locations.get(start_id)
+    for nxt in (start.connections if start is not None else []):
+        if nxt in campaign.locations and nxt not in seen:
+            seen.add(nxt)
+            first_hop[nxt] = nxt  # a direct neighbour's first hop is itself
+            q.append(nxt)
+    while q:
+        cur_id = q.popleft()
+        if cur_id == dest_id:
+            return campaign.locations.get(first_hop[cur_id])
+        cur = campaign.locations.get(cur_id)
+        for nxt in (cur.connections if cur is not None else []):
+            if nxt in campaign.locations and nxt not in seen:
+                seen.add(nxt)
+                first_hop[nxt] = first_hop[cur_id]  # inherit the originating first hop
+                q.append(nxt)
+    return None
 
 
 def reachable(campaign: Campaign) -> list[Location]:
@@ -85,7 +118,20 @@ def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = Fals
     """
     dest = campaign.locations.get(destination_id)
     if dest is None:
-        raise ValueError(f"unknown location id {destination_id!r}")
+        # F14-5 (#812): a bare "unknown location id" on a typo sends the DM guessing. Surface a
+        # did-you-mean of the nearest known location id/name so the next call recovers. The
+        # "unknown location id {id!r}" key/prefix is preserved (additive tail).
+        corpus = {loc.id: loc.name for loc in campaign.locations.values()}
+        candidates = list(corpus) + [n for n in corpus.values() if n]
+        near = difflib.get_close_matches(destination_id, candidates, n=3, cutoff=0.5)
+        # map any matched display-name back to "id (name)" so the DM gets the id to pass
+        name_to_id = {n: i for i, n in corpus.items() if n}
+        shown = []
+        for m in near:
+            lid = m if m in corpus else name_to_id.get(m, m)
+            shown.append(f"{lid} ({corpus.get(lid, m)})")
+        hint = f" — did you mean {', '.join(dict.fromkeys(shown))}?" if shown else ""
+        raise ValueError(f"unknown location id {destination_id!r}{hint}")
 
     cur_id = campaign.current_location_id
     if cur_id is not None:
@@ -97,9 +143,19 @@ def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = Fals
             exits = ", ".join(
                 f"{loc.id} ({loc.name})" for loc in reachable(campaign)
             ) or "(none)"
+            # F14-5 (#812): the engine holds the WHOLE graph — a known-but-not-adjacent dest
+            # gets a BFS first-step route hint ("travel via <id> (<name>)") instead of only the
+            # direct exits, so a multi-hop journey doesn't bounce 18% of the time. A genuinely
+            # disconnected dest says so plainly. Pure read; no mutation on a rejected travel.
+            step = _bfs_first_step(campaign, cur_id, destination_id)
+            if step is not None:
+                route = (f" To reach {dest.name!r} ({dest.id}), travel via "
+                         f"{step.id} ({step.name}).")
+            else:
+                route = f" There is no known route from here to {dest.name!r}."
             raise ValueError(
                 f"cannot travel to {destination_id!r}: not connected to the current "
-                f"location. Reachable from here: {exits}"
+                f"location. Reachable from here: {exits}.{route}"
             )
 
     first_visit = not dest.visited

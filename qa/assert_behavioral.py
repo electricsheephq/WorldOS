@@ -552,6 +552,24 @@ def main() -> int:
                 f"{len(benign)} engine guard rejection(s) (recoverable, DM expected to retry): "
                 f"{[n for n, _ in benign]}", fatal=False)
 
+    # F14-13 (#812): SOFT errors. A few tools return a DICT-shaped {"error": ...} with
+    # is_error=False (load_canon_character miss, start_character pickup miss, the bestiary
+    # miss, the dead-PC path) — invisible to the is_error-only A8 gate above. CONVENTION
+    # (documented here, the consumer the convention was blocked on): a tool that cannot do
+    # what was asked returns a top-level string ``error`` key; the gate COUNTS those soft
+    # errors so a masked-soft-failure run can't read as silently clean. REPORT-ONLY (WARN,
+    # never RED) — these are recoverable, the DM is told and re-asks; the gate/discount policy
+    # stays the maintainers' call (mirrors dm_beat_honesty). Additive: a clean run is at zero.
+    soft_errors = [
+        (n, r["error"]) for (n, inp, r, err, text) in evs
+        if not err and isinstance(r, dict) and isinstance(r.get("error"), str)
+    ]
+    if soft_errors:
+        chk("tool_soft_errors", False,
+            f"{len(soft_errors)} soft-error return(s) (dict {{'error':…}}, is_error=False — "
+            f"invisible to A8): {[n for n, _ in soft_errors]}; "
+            f"first: {soft_errors[0][1][:140]}. Reported only; recoverable.", fatal=False)
+
     # A3 (FATAL; WARN under CLAWDND_GATE_COMBAT_SPRINT) — end_combat called but a hostile is
     # still alive (kind=monster, current_hp>0, dead=false) with NO flee/surrender/retreat event
     # logged. The clearest pure-state defect: it corrupts the save for the next session load and

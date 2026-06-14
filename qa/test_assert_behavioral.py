@@ -147,6 +147,36 @@ def test_a8_benign_engine_guard_is_not_red_only_warn(tmp_path):
     assert "engine_guards_hit" in out  # surfaced as a WARN
 
 
+# ── F14-13 (#812): SOFT errors (dict {"error": ...}, is_error=False) are visible ──
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-13). Some tools return a
+# dict-shaped {"error": ...} with is_error=False — invisible to the is_error-only A8
+# gate. A report-only `tool_soft_errors` counter SURFACES them (WARN, never RED) so a
+# masked soft-failure run can't read as silently clean.
+
+def test_f14_13_soft_error_dict_is_counted_as_warn(tmp_path):
+    events = [
+        _assistant_tool_use("s1", "mcp__engine__load_canon_character", {"who": "nobody"}),
+        _user_tool_result("s1", json.dumps(
+            {"error": "no canon character 'nobody' for world 'baldurs-gate'",
+             "did_you_mean": ["Minsc"]})),  # is_error=False (soft error)
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out  # report-only: never flips the gate RED
+    assert "tool_soft_errors" in out  # the soft error is now VISIBLE to the gate
+
+
+def test_f14_13_clean_run_reports_zero_soft_errors_silently(tmp_path):
+    # A run with NO soft errors must not WARN (the counter is at zero → PASS, no noise).
+    events = [
+        _assistant_tool_use("ok1", "mcp__engine__look_around", {}),
+        _user_tool_result("ok1", json.dumps({"location": {"id": "a", "name": "Hall"}})),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    # the counter line is PASS (no soft errors), not a WARN
+    assert "[WARN] tool_soft_errors" not in out
+
+
 # ── A3: end_combat with a living, un-fled hostile (FATAL) ──────────────────────
 
 def test_a3_end_combat_with_living_hostile_is_red(tmp_path):

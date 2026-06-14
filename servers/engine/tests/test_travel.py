@@ -79,6 +79,69 @@ def test_travel_to_unknown_raises():
         travel.travel_to(c, "nope")
 
 
+# --- F14-5 (#812): route hints on an unreachable dest + did-you-mean on a typo ----
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-5). A rejection that only lists
+# the DIRECT exits sends the DM stepping blindly; the engine holds the full graph, so a
+# known-but-not-adjacent dest gets a BFS first-step hint. An UNKNOWN id gets a did-you-mean.
+
+def _chain_camp(current="a") -> Campaign:
+    """a<->b<->c<->e, plus a<->x (a separate branch). e is reachable from a only via b,c."""
+    return Campaign(
+        title="T",
+        current_location_id=current,
+        locations={
+            "a": Location(id="a", name="Hall", connections=["b", "x"]),
+            "b": Location(id="b", name="Cellar", connections=["a", "c"]),
+            "c": Location(id="c", name="Vault", connections=["b", "e"]),
+            "e": Location(id="e", name="Crypt", connections=["c"]),
+            "x": Location(id="x", name="Garden", connections=["a"]),
+            "z": Location(id="z", name="Sealed Room", connections=[]),  # unreachable island
+        },
+    )
+
+
+def test_unreachable_known_dest_gives_bfs_first_step():
+    """Traveling toward a known-but-not-adjacent dest names the FIRST step of the route."""
+    c = _chain_camp("a")
+    with pytest.raises(ValueError) as ei:
+        travel.travel_to(c, "e")  # known, reachable via b->c->e, not a direct exit
+    msg = str(ei.value)
+    assert "not connected" in msg  # cause/key preserved
+    assert "Cellar" in msg  # the BFS first step (b = Cellar) is named
+    assert "via" in msg.lower() or "route" in msg.lower()  # a route hint is given
+    assert c.current_location_id == "a"  # no mutation on a rejected travel
+
+
+def test_unreachable_disconnected_dest_says_no_route():
+    """A known dest with NO path from here says so (instead of a misleading exit list)."""
+    c = _chain_camp("a")
+    with pytest.raises(ValueError) as ei:
+        travel.travel_to(c, "z")  # known but on a disconnected island
+    msg = str(ei.value)
+    assert "not connected" in msg
+    assert "no known route" in msg.lower()
+
+
+def test_unknown_dest_id_suggests_close_match():
+    """A misspelled destination id surfaces a did-you-mean of the nearest known id/name."""
+    c = _chain_camp("a")
+    with pytest.raises(ValueError) as ei:
+        travel.travel_to(c, "celler")  # typo for "b" (Cellar) — fuzzy on name
+    msg = str(ei.value)
+    assert "unknown location" in msg  # key preserved
+    assert "Cellar" in msg or "'b'" in msg  # did-you-mean names the close match
+
+
+def test_unreachable_route_hint_does_not_mutate():
+    """The BFS hint path is a pure read — no visited flip, no location change, no clock tick."""
+    c = _chain_camp("a")
+    before = (c.current_location_id, c.locations["e"].visited, c.day, c.time_of_day)
+    with pytest.raises(ValueError):
+        travel.travel_to(c, "e", advance_time=True)
+    after = (c.current_location_id, c.locations["e"].visited, c.day, c.time_of_day)
+    assert before == after
+
+
 def test_travel_to_current_rejected():
     c = _camp("a")
     with pytest.raises(ValueError, match="already at"):

@@ -168,6 +168,65 @@ def test_update_character_skills_alias_maps_to_proficiencies(tmp_path, monkeypat
         server.update_character(cid, pc, {"skilz": ["Stealth"]})
 
 
+# --- F14-11 (#812): update_character in_party translation + readable errors --------
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-11). `in_party` is a COMPUTED
+# read field (c.id in c.party), not a Character field — a DM patching it tripped
+# extra="forbid" with a raw multi-KB pydantic wall. Translate it to a c.party mutation
+# (mirror recruit/dismiss), and wrap a genuine validation error into ONE readable line.
+
+def _in_party(cid, needle):
+    return any(m.get("id") == needle or m.get("name") == needle
+               for m in server.get_state(cid)["party"])
+
+
+def test_update_character_in_party_true_adds_to_party(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    npc = server.create_character(cid, "Tagalong", kind="companion", max_hp=10,
+                                  add_to_party=False)["id"]
+    assert not _in_party(cid, npc)
+    out = server.update_character(cid, npc, {"in_party": True})
+    assert out["in_party"] is True
+    # membership really mutated c.party (not just the returned dict)
+    assert _in_party(cid, npc)
+
+
+def test_update_character_in_party_false_removes_from_party(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    comp = server.create_character(cid, "Ally", kind="companion", max_hp=10,
+                                   add_to_party=True)["id"]
+    assert _in_party(cid, comp)
+    out = server.update_character(cid, comp, {"in_party": False})
+    assert out["in_party"] is False
+    assert not _in_party(cid, comp)
+
+
+def test_update_character_in_party_composes_with_other_fields(tmp_path, monkeypatch):
+    """`in_party` is popped before model_validate, so it coexists with normal field edits."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    npc = server.create_character(cid, "Joiner", kind="companion", max_hp=10,
+                                  add_to_party=False)["id"]
+    out = server.update_character(cid, npc, {"in_party": True, "armor_class": 15})
+    assert out["in_party"] is True and out["armor_class"] == 15
+
+
+def test_update_character_validation_error_is_readable_and_bounded(tmp_path, monkeypatch):
+    """A genuine type error returns ONE readable ValueError, not a multi-KB pydantic wall
+    with an errors.pydantic.dev URL. The error must still RAISE (typo-forbid stays red)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.start_world("baldurs-gate")["campaign_id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
+    with pytest.raises(ValueError) as ei:
+        # current_hp expects an int; a dict is a clean type error inside the model
+        server.update_character(cid, pc, {"current_hp": {"bad": "shape"}})
+    msg = str(ei.value)
+    assert "errors.pydantic.dev" not in msg  # no URL wall
+    assert len(msg) <= 500  # bounded
+    assert "current_hp" in msg  # names the offending field
+
+
 def test_player_kind_always_in_party(tmp_path, monkeypatch):
     # QA ow-rv1: a canon PC loaded via load_canon_character(kind="player") got kind=player
     # but sat OUTSIDE c.party (add_to_party defaults False) → player_in_party gate RED with
