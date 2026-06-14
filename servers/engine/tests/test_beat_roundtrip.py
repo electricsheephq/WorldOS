@@ -167,6 +167,45 @@ def test_scene_context_recent_narration_spans_multiple_sessions(cid):
     ]
 
 
+# ── SYN-08 / F14-17 (issue #805): recent_narration byte-cap is DEFAULT-OFF ──
+# F14-17: bounding the WINDOW (last-N) is lossless and stays on; byte-capping the
+# CONTENT drops story, so it is DEFAULT-OFF (story is the north star) and only
+# engages when WORLDOS_RECENT_NARRATION_MAX_CHARS is set. With the cap OFF the
+# tail is verbatim (today's behavior, byte-identical). The read also now uses the
+# bounded tail walk internally (F07-11) but returns the SAME last-N rows.
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-17, F07-11, SYN-08).
+
+
+def test_scene_context_recent_narration_verbatim_by_default(cid):
+    """DEFAULT-OFF byte-cap: with no env knob set, a long narration beat comes back
+    VERBATIM (only the count is bounded) — no truncation creeps into the lean DM's
+    story memory."""
+    long_text = "The cathedral bell tolled. " * 60  # ~1.6KB, well over any cap
+    server.log_event(cid, kind="narration", text=long_text.strip())
+    rn = server.scene_context(cid, recent_narration=1)["recent_narration"]
+    assert rn[-1]["text"] == long_text.strip()  # byte-identical, not truncated
+
+
+def test_scene_context_recent_narration_byte_cap_opt_in(cid, monkeypatch):
+    """When WORLDOS_RECENT_NARRATION_MAX_CHARS is set, each returned beat is soft-
+    capped to that many chars (opt-in, wrapper-tunable per the F14-17 spec)."""
+    monkeypatch.setenv("WORLDOS_RECENT_NARRATION_MAX_CHARS", "120")
+    long_text = "The cathedral bell tolled. " * 60
+    server.log_event(cid, kind="narration", text=long_text.strip())
+    rn = server.scene_context(cid, recent_narration=1)["recent_narration"]
+    assert len(rn[-1]["text"]) <= 140  # ~120 cap + a little boundary slack
+    assert rn[-1]["text"].startswith("The cathedral bell tolled.")
+
+
+def test_scene_context_recent_narration_cap_keeps_short_verbatim(cid, monkeypatch):
+    """Even with the cap engaged, a short beat is untouched (the cap is a CEILING,
+    never padding or rewriting)."""
+    monkeypatch.setenv("WORLDOS_RECENT_NARRATION_MAX_CHARS", "120")
+    server.log_event(cid, kind="dialogue", text="Halt!", speaker="Guard")
+    rn = server.scene_context(cid, recent_narration=1)["recent_narration"]
+    assert rn[-1] == {"text": "Halt!", "speaker": "Guard"}
+
+
 # ── scene_context: the pinned durable continuity threads ─────────────────────
 
 

@@ -587,8 +587,20 @@ def read_log(campaign_id: str, session_id: str) -> list[SessionLogEntry]:
     return entries
 
 
+# SYN-08 / F07-11 (issue #805): over-read multiplier for the bounded tail. The
+# every-beat consumer (scene_context's recent_narration) FILTERS the result
+# (drops rolls / system / combat-log rows, then takes the last N), so a bounded
+# tail must hand back MORE than N raw rows or the post-filter window could come up
+# short. We read ``tail * _TAIL_SLACK`` newest rows so a heavily-bookkept tail
+# still yields N story beats; the read still short-circuits long before scanning
+# the whole append-only campaign log (the linear-in-campaign-size defect).
+_TAIL_SLACK = 8
+
+
 def read_log_all(
-    campaign_id: str, session_ids: Optional[list[str]] = None
+    campaign_id: str,
+    session_ids: Optional[list[str]] = None,
+    tail: Optional[int] = None,
 ) -> list[SessionLogEntry]:
     """Read EVERY session log of a campaign, concatenated in chronological order.
 
@@ -609,6 +621,18 @@ def read_log_all(
       * within each session, entries keep their on-disk (append) order.
     A final stable sort by each entry's timestamp ``t`` smooths any cross-file
     interleave while preserving append order for equal/zero timestamps.
+
+    ``tail`` (SYN-08 / F07-11) bounds the read to the last *window* of rows
+    instead of parsing EVERY line of EVERY session file — the defect this fixes is
+    that the every-beat lean path was strictly linear in campaign size (it opened
+    + pydantic-validated the whole append-only history 2-4x per beat just to
+    return the last handful). With ``tail=N`` the walk goes NEWEST file first,
+    reading whole files back-to-front, and stops once it has at least ``N`` rows
+    of slack (``N * _TAIL_SLACK``, so a caller that further filters still gets N);
+    the result is the SAME final ``[-N]``-class window the full walk would
+    produce, just without scanning the older history. ``tail=None`` (the default)
+    keeps the full walk, byte-identical to before. ``tail<=0`` is a degenerate
+    empty window (``[]``) — pass ``None``, not ``0``, to mean "everything".
     """
     sessions_dir = _campaign_dir(campaign_id) / "sessions"
     if not sessions_dir.is_dir():
@@ -626,6 +650,23 @@ def read_log_all(
     leftover = [sid for sid in on_disk if sid not in seen]
     leftover.sort(key=lambda sid: on_disk[sid].stat().st_mtime)
     ordered_ids.extend(leftover)
+
+    if tail is not None:
+        if tail <= 0:
+            return []
+        # Bounded NEWEST-first walk: read whole files from the END of the canonical
+        # order and stop once we have enough slack, so the OLDER history is never
+        # opened. Each file is read entirely (the bounded unit is one file), which
+        # preserves within-file append order; we only stop opening older files.
+        want = tail * _TAIL_SLACK
+        collected: list[SessionLogEntry] = []
+        for sid in reversed(ordered_ids):
+            collected = read_log(campaign_id, sid) + collected
+            if len(collected) >= want:
+                break
+        # Same stable-by-timestamp ordering as the full walk, then the [-N] window.
+        collected.sort(key=lambda e: e.t)
+        return collected[-tail:]
 
     entries: list[SessionLogEntry] = []
     for sid in ordered_ids:

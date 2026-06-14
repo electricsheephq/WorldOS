@@ -241,3 +241,116 @@ def test_read_log_all_is_read_only(tmp_path, monkeypatch):
 
     after = {p.name: p.stat().st_mtime_ns for p in sessions_dir.glob("*.jsonl")}
     assert before == after  # no writes, no new files
+
+
+# ---------------------------------------------------------------------------
+# SYN-08 / F07-11 (issue #805): bounded tail read. read_log_all(tail=N) scans a
+# bounded newest-first window instead of opening + pydantic-validating EVERY line
+# of EVERY session file (which was 2-4x/beat on the lean every-beat path, strictly
+# linear in campaign size). The tail must return EXACTLY the last N rows the full
+# walk would (equivalence), so the only observable change is fewer rows parsed.
+# Default (tail=None) stays the full walk, byte-identical.
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F07-11, F14-17, SYN-08).
+# ---------------------------------------------------------------------------
+
+def _seed_multi_session(cid: str, sessions: int, per_session: int) -> None:
+    """Seed `sessions` session files, each with `per_session` rows, with globally
+    monotonic timestamps so the canonical chronological order is unambiguous."""
+    t = 0.0
+    for s in range(sessions):
+        sid = f"s{s}"
+        for i in range(per_session):
+            t += 1.0
+            store.append_log(
+                cid, sid,
+                SessionLogEntry(t=t, kind="narration", text=f"row {s}-{i} (t={t})"),
+            )
+
+
+def test_read_log_all_tail_equals_full_walk_tail(tmp_path, monkeypatch):
+    """read_log_all(tail=N) returns EXACTLY the last N entries of the full walk —
+    same texts, same order — across MULTIPLE session files (the tail must cross a
+    file boundary, which is the whole point of a campaign-wide tail)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-tail"
+    sids = [f"s{s}" for s in range(4)]
+    _seed_multi_session(cid, sessions=4, per_session=5)  # 20 rows, 5/file
+
+    full = store.read_log_all(cid, sids)
+    assert len(full) == 20
+    for n in (1, 3, 7, 12, 20, 99):
+        tailed = store.read_log_all(cid, sids, tail=n)
+        assert [e.text for e in tailed] == [e.text for e in full[-n:]], n
+        # chronological (oldest-first within the window), like the full walk
+        assert [e.t for e in tailed] == sorted(e.t for e in tailed), n
+
+
+def test_read_log_all_tail_none_is_full_walk(tmp_path, monkeypatch):
+    """tail=None (the default) is byte-identical to today's full walk — no behavior
+    change for any existing caller."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-tail-none"
+    sids = [f"s{s}" for s in range(3)]
+    _seed_multi_session(cid, sessions=3, per_session=4)
+    default = store.read_log_all(cid, sids)
+    explicit = store.read_log_all(cid, sids, tail=None)
+    assert [e.text for e in default] == [e.text for e in explicit]
+    assert [e.text for e in default] == [f"row {s}-{i} (t={s * 4 + i + 1}.0)"
+                                         for s in range(3) for i in range(4)]
+
+
+def test_read_log_all_tail_parses_fewer_rows(tmp_path, monkeypatch):
+    """The bounded tail must actually SHORT-CIRCUIT: with a small tail over a large
+    history it parses far fewer SessionLogEntry rows than the full walk. We count
+    model_validate_json calls — the linear-in-campaign-size parse is the defect."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-count"
+    sids = [f"s{s}" for s in range(10)]
+    _seed_multi_session(cid, sessions=10, per_session=20)  # 200 rows
+
+    calls = {"n": 0}
+    real = SessionLogEntry.model_validate_json.__func__
+
+    def _counting(cls, *a, **k):
+        calls["n"] += 1
+        return real(cls, *a, **k)
+
+    monkeypatch.setattr(SessionLogEntry, "model_validate_json", classmethod(_counting))
+
+    tailed = store.read_log_all(cid, sids, tail=5)
+    assert [e.text for e in tailed][-1].startswith("row 9-19")
+    # Full walk would parse all 200; a bounded tail parses a small multiple of N.
+    assert calls["n"] < 200
+    assert calls["n"] <= 60  # generous slack ceiling (tail x slack x a file or two)
+
+
+def test_read_log_all_tail_zero_or_negative_is_empty(tmp_path, monkeypatch):
+    """tail<=0 is a degenerate window -> [] (never the full walk; that's tail=None)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-tail-zero"
+    _seed_multi_session(cid, sessions=2, per_session=3)
+    assert store.read_log_all(cid, ["s0", "s1"], tail=0) == []
+    assert store.read_log_all(cid, ["s0", "s1"], tail=-3) == []
+
+
+def test_read_log_all_tail_includes_orphan_files(tmp_path, monkeypatch):
+    """The defensive disk tail (files not in session_ids) must still be reachable by
+    the bounded walk — newest content wins regardless of which file holds it."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-tail-orphan"
+    store.append_log(cid, "listed", SessionLogEntry(t=1.0, kind="narration", text="old-listed"))
+    store.append_log(cid, "orphan", SessionLogEntry(t=2.0, kind="narration", text="new-orphan"))
+    tailed = store.read_log_all(cid, ["listed"], tail=1)
+    assert [e.text for e in tailed] == ["new-orphan"]
+
+
+def test_read_log_all_tail_is_read_only(tmp_path, monkeypatch):
+    """Bounded tail keeps the sole-writer invariant: no file created or touched."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp-tail-ro"
+    store.append_log(cid, "s0", SessionLogEntry(t=1.0, kind="narration", text="x"))
+    sessions_dir = tmp_path / "campaigns" / cid / "sessions"
+    before = {p.name: p.stat().st_mtime_ns for p in sessions_dir.glob("*.jsonl")}
+    store.read_log_all(cid, ["s0"], tail=1)
+    after = {p.name: p.stat().st_mtime_ns for p in sessions_dir.glob("*.jsonl")}
+    assert before == after

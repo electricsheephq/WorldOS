@@ -122,6 +122,70 @@ def test_format_recap_keeps_combat_with_unrelated_payload():
     assert "duel ended" in out
 
 
+# ── SYN-08 / F07-5 / F14-16 (issue #805): recap is BYTE-capped, not just count- ──
+# capped. recap.py bounded COUNT (12 entries) but not SIZE — 12 x ~4KB beats
+# reproduced 48,631B live every cold open. The fix adds a per-entry sentence-
+# boundary char cap (~400) + a total byte budget (~6KB), defaulted, trimming
+# OLDEST-first so the newest beats stay intact (recency is what the gates read).
+# Short entries stay byte-identical (the existing tests above guard that).
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F07-5, F14-16, SYN-08).
+
+def test_format_recap_total_byte_budget():
+    """A run of fat beats is capped to ~max_chars total — the whole-recap budget,
+    not just per-entry — and stays well under the unbounded 48KB it produced."""
+    entries = [
+        SessionLogEntry(t=float(i), kind="narration", text=("X" * 4000) + f" beat {i}.")
+        for i in range(12)
+    ]
+    out = recap.format_recap(entries)
+    assert len(out) <= 6500  # ~6KB budget + the intro slack
+    # The unbounded join would be ~48KB; this is an order of magnitude smaller.
+    assert len(out) < 12000
+
+
+def test_format_recap_keeps_newest_when_budget_trims():
+    """Oldest-first trimming: when the TOTAL budget bites, the NEWEST beats survive
+    and the oldest drop (recency is the story memory the gates read). Driven with a
+    tight total budget so the trim mechanism is exercised directly (the per-entry
+    cap alone keeps the default config well under 6KB)."""
+    entries = [
+        SessionLogEntry(t=float(i), kind="narration", text=f"BEAT{i}END is the whole beat.")
+        for i in range(12)
+    ]
+    out = recap.format_recap(entries, max_chars=80)
+    # newest beats present; oldest trimmed out of the tight budget
+    assert "BEAT11END" in out
+    assert "BEAT0END" not in out
+    assert len(out) <= 80 + len(recap._INTRO) + 4
+
+
+def test_format_recap_per_entry_char_cap_at_sentence_boundary():
+    """A single very long beat is truncated to ~max_entry_chars, preferring a
+    sentence boundary so the recap reads as prose, not a mid-word cut."""
+    long_text = (
+        "The party crossed the bridge. " * 5  # ~150 chars of whole sentences
+        + "Then they walked on and on and on " * 40  # pushes well past the cap
+    )
+    out = recap.format_recap([SessionLogEntry(t=1.0, kind="narration", text=long_text)])
+    body = out[len(recap._INTRO) + 1:]
+    assert len(body) <= 420  # ~400 cap + a little boundary slack
+    assert "The party crossed the bridge." in out  # opening sentence preserved
+
+
+def test_format_recap_short_entries_byte_identical():
+    """The caps NEVER touch short entries — the common case stays byte-for-byte
+    today's output (additive-by-default, recency preserved)."""
+    short = [
+        SessionLogEntry(t=1.0, kind="narration", text="The torch sputters."),
+        SessionLogEntry(t=2.0, kind="dialogue", text="This way.", speaker="Lyra"),
+    ]
+    # Reproduce the legacy join by hand to prove no truncation crept in.
+    expected = (
+        recap._INTRO + " The torch sputters. " + 'Lyra said, "This way."'
+    )
+    assert recap.format_recap(short) == expected
+
+
 def test_recap_from_store(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     campaign_id = "camp_test123"
