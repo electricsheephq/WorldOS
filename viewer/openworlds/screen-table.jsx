@@ -122,15 +122,63 @@ const _STAGE_DIRECTION = new RegExp(
     "\\bof the\\b[^.]{0,30}\\b(?:cold open|beat|act|scene)\\b[^.]{0,30}\\bcomplete\\b" +
   ")", "i",
 );
+// (4) #752: INTER-BEAT TRANSITION meta-text — the engine/DM "seam" stage-directions that leaked
+// into the chronicle BETWEEN player beats (adversarial confirm sweep: "Engine META-TEXT transition
+// phrases leak into the chronicle between player beats"). These announce the move from one beat/
+// scene to the next ("Moving on to the next beat", "Transitioning to the next scene", "Scene
+// transition", "End of beat", "Beginning the next beat", "Time passes between the beats", "We now
+// move to the next part of the story"). The player must see story, never the seams.
+//
+// HIGH-CONFIDENCE ONLY — never bare "beat"/"scene"/"transition". Legitimate fiction MUST survive:
+//   • "your heart skips a beat"            — "beat" with no transition frame
+//   • "the tavern scene is loud"           — "scene" with no transition frame
+//   • "a smooth transition from the parapet to the rope" — a PHYSICAL transition (from X to a
+//     non-structural noun), NOT "…to the next beat/scene". So `transition` only triggers when it
+//     is bound to "the next beat/scene/part" or is a bare "(scene|beat) transition" note — never
+//     "transition from <thing>".
+// `_STRUCT` is the structural-unit noun ("beat"/"scene"/"part of the story"/"act"/"chapter") these
+// stage-directions move between; the patterns require it next to a transition verb/marker.
+const _STRUCT = "(?:beat|scene|act|chapter|part of the story|part)";
+// The "end of <struct>" / "beginning the <struct>" arms are the over-eager ones: `act`/
+// `chapter`/`part` are common in REAL fiction ("the end of the act left them breathless",
+// "the close of the scene", "the act of contrition"), so those arms use ONLY the engine's own
+// structural terms AND require a forward-transition qualifier (next/this/current/following) —
+// the META form is always a forward move ("beginning the next scene"), never a descriptive
+// "the close of the scene". This spares real prose (story quality is the north star).
+const _STRUCT_FWD = "(?:beat|scene)";
+const _BEAT_TRANSITION = new RegExp(
+  "(?:" +
+    // "moving on/move on/we (now) move … to the next <struct>" (the verbatim leak form)
+    "\\b(?:moving on|move on|we (?:now )?move|now (?:we )?move|let'?s move)\\b[^.]{0,24}" +
+      "\\bto the (?:next |following )?" + _STRUCT + "\\b|" +
+    // "transition(ing) to the (next) <struct>" — bound to a STRUCTURAL target, not a physical one
+    "\\btransition(?:ing|s|ed)?\\b[^.]{0,18}\\bto the (?:next |following )?" + _STRUCT + "\\b|" +
+    // a bare "<struct> transition" note ("Scene transition.", "Beat transition")
+    "\\b" + _STRUCT + "\\s+transition\\b|" +
+    // "end of (the/this/next) <struct>" — TERMINAL only: the meta note IS the (short) sentence and
+    // ends on the engine's own struct ("End of beat.", "End of the scene."). Descriptive fiction
+    // embeds the phrase mid-sentence ("by the close of the scene, three lay dead") so the struct is
+    // NOT at the end → not matched. Uses beat|scene only (act/chapter/part are real-fiction words).
+    "\\b(?:end|close|beginning|start) of (?:the |this )?(?:next |current |following )?" + _STRUCT_FWD + "\\s*[.!?]?\\s*$|" +
+    // "beginning/starting the (next) <struct>" — terminal only, same rationale.
+    "\\b(?:begin(?:ning)?|start(?:ing)?) the (?:next |following )?" + _STRUCT_FWD + "\\s*[.!?]?\\s*$|" +
+    // "(time passes) between the beats/scenes" — the interstitial seam phrasing. NOT "between the
+    // beats OF the drum" (real fiction): the meta form is terminal, so forbid a following " of ".
+    "\\bbetween (?:the |these )?(?:beats|scenes)\\b(?!\\s+of\\b)|" +
+    // "on to the next <struct>" tail (covers "…and we move on to the next scene")
+    "\\bon to the next " + _STRUCT + "\\b" +
+  ")", "i",
+);
 // True when a WHOLE sentence is plot-craft jargon or a stage-direction (drop the sentence).
 // The tally is handled separately (in-place excision), so it's NOT a whole-sentence-drop trigger.
 function _isScaffoldingSentence(sentence) {
   const s = (sentence || "").trim();
   if (!s) return false;
-  return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s);
+  return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s) || _BEAT_TRANSITION.test(s);
 }
 function _hasScaffolding(text) {
-  return _TALLY_TEST.test(text) || _CRAFT_JARGON.test(text) || _STAGE_DIRECTION.test(text);
+  return _TALLY_TEST.test(text) || _CRAFT_JARGON.test(text)
+    || _STAGE_DIRECTION.test(text) || _BEAT_TRANSITION.test(text);
 }
 // Clean scaffolding from one line, preserving the real prose. Two grains:
 //   1. excise dice/check TALLY phrases in place (keeps the rest of their sentence);
@@ -287,6 +335,45 @@ const COMPOSER_MODE_BY_UI = {
 // handful of turns AND above one multi-paragraph DM turn, so a beat is never clipped as it streams.
 // Older beats are still available in full in the Quest Journal.
 const CHRONICLE_RENDER_CAP = 50;
+
+// #752: BOUND THE CHRONICLE'S ACCESSIBILITY FOOTPRINT (the headline confirm-sweep fix — flagged
+// MAJOR by 3 of 5 personas: "later beats invisible in a11y tree", "Actions section pushed out of
+// the a11y tree entirely", "player can't tell if the DM is done", "all action controls hidden from
+// the screen reader"). #402 anchored the action bar VISUALLY (a sticky DOM sibling below the log),
+// but the accessibility snapshot a screen reader / the QA blind-player reads is LINEAR and rendered
+// in DOM ORDER, and the reader caps it (qa/playwright/palette_server.js reads
+// `ariaSnapshot().slice(0, 9000)`). The Chronicle (`role="log"`) renders BEFORE the action palette
+// + the move composer, so a long run of multi-paragraph DM beats fills the whole snapshot budget and
+// the action controls get sliced off ENTIRELY — the felt "I can't find the buttons / can't tell the
+// DM finished." A bigger render cap or a sticky bar can't fix a linear, length-capped snapshot.
+//
+// So we cap the chronicle's A11Y exposure independently of its VISUAL row count: only the most-recent
+// CHRONICLE_A11Y_TAIL rendered rows stay in the accessibility tree; older rendered rows (kept fully
+// VISIBLE for sighted scroll-back, and preserved IN FULL in the Quest Journal — the #402 "earlier
+// beats are in your Quest Journal" summary already names that) are `aria-hidden`. So the chronicle's
+// a11y subtree is bounded to a small, predictable size at ANY session length: a screen reader
+// announces the latest DM beat, then immediately reaches the Actions/composer. The latest beat is
+// ALWAYS exposed (it's the player's most recent reply); the bound only engages once the rendered list
+// exceeds the tail (a short early-session chronicle exposes every row). Standard long-log a11y
+// pattern (virtualized chat transcripts do the same). Viewer stays READ-ONLY — this is purely how the
+// already-rendered, engine-authored prose is exposed to assistive tech.
+const CHRONICLE_A11Y_TAIL = 8;
+
+// True when the chronicle row at index `i` of `total` rendered rows must be `aria-hidden` — i.e. it
+// is OLDER than the most-recent CHRONICLE_A11Y_TAIL rows. Pure + exported so the bound is
+// unit-testable without mounting the component (mirrors buildChronicleLog / computePlayGate). When
+// the rendered list is at/under the tail, NOTHING is hidden (every beat announced).
+function chronicleRowAriaHidden(i, total) {
+  const n = Number(total) || 0;
+  const idx = Number(i);
+  if (!Number.isFinite(idx) || n <= CHRONICLE_A11Y_TAIL) return false;
+  return idx < n - CHRONICLE_A11Y_TAIL;
+}
+if (typeof window !== "undefined") {
+  window.CHRONICLE_RENDER_CAP = CHRONICLE_RENDER_CAP;
+  window.CHRONICLE_A11Y_TAIL = CHRONICLE_A11Y_TAIL;
+  window.chronicleRowAriaHidden = chronicleRowAriaHidden;
+}
 
 // #405: assemble the chronicle's full ordered, de-duplicated row list from its three sources. Pure
 // (no React, no DOM) so the exactly-once + chronological-order contract is unit-testable. The whole
@@ -1139,6 +1226,12 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 key={entry.id || `${entry.kind || "n"}-${i}`}
                 ref={i === lastVisibleLogIndex ? latestBeatRef : null}
                 data-worldos-testid={i === lastVisibleLogIndex ? "chronicle-latest-beat" : undefined}
+                // #752: older rendered rows are aria-hidden so the chronicle's accessibility subtree
+                // stays bounded (the most-recent CHRONICLE_A11Y_TAIL rows only) and the action
+                // controls below are never sliced off the (length-capped) a11y snapshot. They remain
+                // fully VISIBLE for sighted scroll-back, and the full history is in the Quest Journal.
+                // The latest beat is never hidden (chronicleRowAriaHidden keeps the tail exposed).
+                aria-hidden={chronicleRowAriaHidden(i, renderedLog.length) ? "true" : undefined}
                 style={{ scrollMarginBlock: 12 }}
               >
                 <LogEntry entry={entry} />
@@ -1178,7 +1271,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
               combat verbs (Attack/Bonus/Reaction) in an "In Combat" group when in combat. Reuses the
               EncounterButton component + invokeAction + ACTION_HINTS — the click path is unchanged.
               flex 0 0 auto so it stays anchored/visible no matter how long the chronicle grows. */}
-          <div data-worldos-testid="action-palette" style={{ flex: "0 0 auto", marginTop: 14 }}>
+          {/* #752: a NAMED a11y region so a screen reader / the QA blind-player can target the action
+              controls directly ("Actions"), even after a long chronicle — paired with the chronicle's
+              bounded a11y footprint above, the buttons are always reachable in the snapshot. */}
+          <div data-worldos-testid="action-palette" role="region" aria-label="Actions — your available moves" style={{ flex: "0 0 auto", marginTop: 14 }}>
             <SectionTitle>Actions</SectionTitle>
             {!actions.length && (
               <div className="body-sm muted" style={{ marginTop: 4 }}>
