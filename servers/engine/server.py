@@ -3166,8 +3166,12 @@ def add_condition(
         if added:
             ch.conditions.append(cond)
         if cond in combat.INCAPACITATING:
+            was_conc = ch.concentration
             ch.concentration = None  # SRD: incapacitation breaks concentration
             combat.expire_concentration_effects(ch)  # ...and its engine-tracked effect
+            # F3-6: incapacitation ends the spell — free its held victims NOW (Hold Person
+            # paralysis, an allied Bless child), not a round later at next_turn's sweep.
+            _release_held_targets(c, character_id, was_conc or "")
         # Save-ends linkage (#209): record a TARGET-side ActiveEffect carrying the recurring
         # end-of-turn save + the condition it imposed, so next_turn self-enforces the escape.
         # The marker is NOT a concentration twin (concentration=False) — the caster's twin
@@ -4948,6 +4952,9 @@ def attack(
             warn = combat.melee_range_warning(c.combat.zones, attacker, target, az, tz)
             if warn:
                 result["range_warning"] = warn
+        # F3-6: capture the target's concentration BEFORE damage may down it (combat.apply_damage*
+        # clears it but is Character-pure and can't free the victim) — see the release after.
+        was_conc_target = target.concentration
         if hit:
             # A pending DAMAGE-maneuver bonus (#213) folds the already-rolled superiority die
             # into THIS strike as one extra typed component. The die is NOT re-rolled and NOT
@@ -5031,6 +5038,13 @@ def attack(
                     "applied": man_bonus.amount > 0,
                 }
             result["target_state"] = outcome
+            # F3-6: if this strike downed/killed a concentrating caster, free its held targets
+            # NOW (Hold Person paralysis, an allied Bless child) — the combat layer cleared the
+            # caster's concentration but can't see the campaign-wide victims.
+            if was_conc_target and target.concentration is None:
+                freed = _release_held_targets(c, target_id, was_conc_target)
+                if freed:
+                    result["freed_targets"] = freed
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
@@ -5256,14 +5270,26 @@ def apply_damage(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         target = _char(c, target_id)
+        was_conc = target.concentration  # F3-6: capture before damage may down the caster
         out = combat.apply_damage(target, amount, crit=crit, half=half, damage_type=damage_type)
         # F01-9: the engine auto-rolls the concentration save the instant damage lands
         # (combat.py returned the DC; it stays dice-free). Surfaced under
         # ``concentration_save`` so the DM narrates the break/hold without having to call
         # concentration_save by hand. None == target wasn't concentrating (unchanged path).
+        # This MAY break concentration (clears target.concentration on a failed save) — the
+        # F3-6 block below then frees any victims that spell was holding.
         conc = _auto_concentration_save(target, out.get("concentration_dc"))
         if conc is not None:
             out["concentration_save"] = conc
+        # F3-6: if this damage ended the caster's concentration — by downing/killing it
+        # (combat.apply_damage cleared it, but is Character-pure and can't see the victims) OR
+        # by the auto-rolled save above failing — free its held targets NOW. Inert when the
+        # target wasn't concentrating or is still concentrating.
+        freed = _release_held_targets(c, target_id, was_conc or "") if (
+            was_conc and target.concentration is None
+        ) else []
+        if freed:
+            out["freed_targets"] = freed
         kx = _award_kill_xp(c, target)
         if kx:
             out["kill_xp"] = kx
@@ -5331,6 +5357,73 @@ def set_temp_hp(campaign_id: str, target_id: str = "", amount: int = 0,
         return {"temp_hp": ch.temp_hp, "hp": f"{ch.current_hp}/{ch.max_hp}"}
 
 
+def _release_held_targets(c, caster_id: str, spell_name: str) -> list[dict]:
+    """Free every TARGET still locked by the just-ended concentration `spell_name` of
+    caster `caster_id` (F3-6): a repeat-save marker (Hold Person -> paralyzed) OR a
+    concentration-linked numeric-rider child (Bless on an ally, SYN-06/#780) is the
+    victim's twin of the caster's concentration — with the concentration gone the spell
+    is over, so drop the effect and lift the condition it imposed. This is the SAME
+    inverse-link reconciliation next_turn performs (server.py ~4017), run NOW at the
+    concentration-end site instead of a round later — so the four non-drop end paths
+    (failed concentration_save, caster incapacitation, caster 0 HP/death, a recast that
+    displaces the prior concentration) release the victim immediately, exactly like
+    drop_concentration already does. Returns the freed-target list (possibly empty).
+
+    A no-op when `spell_name` is falsy (the caster wasn't concentrating on anything) —
+    so every caller can pass the captured prior concentration unconditionally."""
+    freed: list[dict] = []
+    if not spell_name:
+        return freed
+    for holder in list(c.characters.values()):
+        for eff in list(holder.active_effects):
+            # A repeat-save marker (Hold Person) OR a concentration-linked numeric-rider
+            # child (Bless on an ally): both are target-side twins of THIS caster's
+            # concentration and end with it. A non-concentration save-ends source (a
+            # monster's innate hold) carries no source_id link, so it's never swept here.
+            if eff.repeat_save is None and not eff.linked_to_concentration:
+                continue
+            if eff.source_id != caster_id:
+                continue
+            if eff.name != spell_name:
+                continue
+            combat.end_repeat_save_effect(holder, eff)
+            freed.append({"character_id": holder.id, "name": eff.name})
+    return freed
+
+
+def _aoe_damage_spec(curated, srd, slot_level: int, caster_level: int, casting_mod: int):
+    """The damage expression + save ability + on-save rule + damage type for an AoE/multi-target
+    SAVE spell (F03-4), from whichever data source carries it, or None when the spell isn't a
+    resolvable save-for-damage area spell. Returns ``{damage, save_ability, on_save, damage_type}``
+    (save_ability/damage_type as short strings). Curated spells use resolve_effect (so upcast is
+    applied); an srd524-only spell uses its base damage_roll (upcast is prose-only there — kept
+    consistent with cast_spell's documented degrade contract: the BASE dice are rolled, the DM
+    upcasts by hand if the prose says so)."""
+    if curated is not None:
+        eff = spells.resolve_effect(curated, slot_level, caster_level, casting_mod)
+        if eff.get("kind") != "save" or not eff.get("damage"):
+            return None
+        return {
+            "damage": eff["damage"],
+            "save_ability": (eff.get("save_ability") or "dex"),
+            "on_save": (eff.get("on_save") or "half"),
+            "damage_type": (eff.get("damage_type") or ""),
+        }
+    if srd is not None:
+        save_ab = (srd.get("saving_throw_ability") or "").strip().lower()
+        dmg = srd.get("damage_roll") or ""
+        if not save_ab or not dmg:
+            return None  # not a save-for-damage area spell (e.g. Hold Person: save, no damage)
+        types = srd.get("damage_types") or []
+        return {
+            "damage": dmg,
+            "save_ability": save_ab,
+            "on_save": "half",  # SRD area save-for-half is the overwhelming default
+            "damage_type": (types[0] if types else ""),
+        }
+    return None
+
+
 @mcp.tool()
 def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
     """Roll a concentration saving throw (CON save) at the given DC (usually
@@ -5345,10 +5438,15 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
         total = r.total + rider_bonus
         maintained = total >= dc
         expired: list[str] = []
+        freed: list[dict] = []
         if not maintained:
+            was = ch.concentration
             ch.concentration = None
             # The engine-tracked concentration effect ends with the concentration.
             expired = combat.expire_concentration_effects(ch)
+            # F3-6: a broken concentration ends the spell — so free its held victims NOW
+            # (Hold Person paralysis, an allied Bless child), not a round later at next_turn.
+            freed = _release_held_targets(c, character_id, was or "")
         save_campaign(c)
         out = {
             "roll": total,
@@ -5357,6 +5455,7 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
             "maintained": maintained,
             "concentration": ch.concentration,
             "expired_effects": expired,
+            "freed_targets": freed,
         }
         if rider_rolls:
             out["bonus_dice"] = rider_rolls
@@ -5384,27 +5483,11 @@ def drop_concentration(campaign_id: str, character_id: str, reason: str = "") ->
         ch.concentration = None
         # The caster's own engine-tracked concentration effect(s) end with the concentration.
         expired = combat.expire_concentration_effects(ch)
-        # TARGET-side twin: a repeat-save marker (Hold Person -> paralyzed) is the victim's
-        # twin of THIS caster's concentration. With the concentration gone the spell is over,
-        # so free every holder whose marker is sourced to this caster + this spell — drop the
-        # effect and lift the condition it imposed. Mirrors next_turn's inverse-link sweep
-        # (server.py ~2999) so a voluntarily-dropped hold releases its victim immediately,
+        # TARGET-side twin: free every holder still locked by this caster's just-dropped
+        # concentration (Hold Person victim, an allied Bless child). Mirrors next_turn's
+        # inverse-link sweep so a voluntarily-dropped hold releases its victim immediately,
         # not a round later. We can only reconcile the spell we just dropped (`was`).
-        freed: list[dict] = []
-        if was:
-            for holder in list(c.characters.values()):
-                for eff in list(holder.active_effects):
-                    # A repeat-save marker (Hold Person) OR a concentration-linked numeric-
-                    # rider child (Bless on an ally — SYN-06/#780): both are target-side
-                    # twins of THIS caster's concentration and end with it.
-                    if eff.repeat_save is None and not eff.linked_to_concentration:
-                        continue
-                    if eff.source_id != character_id:
-                        continue
-                    if eff.name != was:
-                        continue
-                    combat.end_repeat_save_effect(holder, eff)
-                    freed.append({"character_id": holder.id, "name": eff.name})
+        freed = _release_held_targets(c, character_id, was or "")
         save_campaign(c)
         return {
             "ended": was is not None,
@@ -6277,6 +6360,8 @@ def cast_spell(
     npc_id: str = "",
     id: str = "",
     as_ritual: bool = False,
+    innate: bool = False,
+    target_ids: Optional[list] = None,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -6346,6 +6431,27 @@ def cast_spell(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        # AoE / MULTI-TARGET VALIDATION (F03-4): validate-BEFORE-spend. Resolve EVERY id in
+        # `target_ids` up front; if ANY is unknown, reject the WHOLE cast cleanly here — BEFORE
+        # the slot spend / concentration set (the engine's rejection-before-state-change
+        # discipline). A non-empty list means "the engine resolves the area's per-target damage
+        # saves itself" (one shared damage roll, full/half per save). Empty/None = today's
+        # single-target behavior, byte-identical. Order-preserving + de-duped.
+        aoe_targets: list = []
+        if target_ids:
+            seen_ids: set[str] = set()
+            for tid in target_ids:
+                tid = str(tid)
+                if tid in seen_ids:
+                    continue
+                tgt = c.characters.get(tid)
+                if tgt is None:
+                    raise ValueError(
+                        f"unknown target id {tid!r} in target_ids — the whole AoE cast is "
+                        f"rejected (no slot spent). Check the id and re-cast."
+                    )
+                seen_ids.add(tid)
+                aoe_targets.append(tgt)
         # SRD: an incapacitated creature can't take an action — and a spell's casting time is
         # (almost always) an action/bonus/reaction, so refuse the cast outright rather than
         # spend the caster's slot / set concentration. Mirrors the attack() guard. (extends #42)
@@ -6385,18 +6491,63 @@ def cast_spell(
                         f"advance with next_turn so the order stays in sync."
                     )
                 cast_consumes_reaction = True
-        known = set(ch.spells_known) | set(ch.spells_prepared)
-        if known and canonical not in known:
-            raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
+        # KNOWN / PREPARED GATE (F03-7 + F03-8). Compare CASE-INSENSITIVELY (F03-7): the
+        # cast-side `canonical` is the proper-cased SRD name, but legacy snapshots may carry
+        # raw-cased strings (learn_spells/prepare_spells now canonicalize on write, but old
+        # campaigns round-trip), so casefold both sides — a lowercase-stored "magic missile"
+        # still matches the canonical "Magic Missile".
+        known_cf = {s.strip().lower() for s in ch.spells_known}
+        prepared_cf = {s.strip().lower() for s in ch.spells_prepared}
+        cf = canonical.strip().lower()
+        if spell_level == 0:
+            # Cantrips are never "prepared" in 5e — a known cantrip is always castable. Gate
+            # only against the union (lenient when both lists are empty, today's behavior).
+            if (known_cf or prepared_cf) and cf not in (known_cf | prepared_cf):
+                raise ValueError(f"{ch.name} doesn't know {canonical!r}")
+        elif prepared_cf:
+            # F03-8: a prepared caster (non-empty prepared list) casts a LEVELED spell only if
+            # it is PREPARED — knowing it is not enough. This gives preparation real mechanical
+            # weight (Rolan's snapshot: known(7) ⊋ prepared(4) was a no-op union before).
+            if cf not in prepared_cf:
+                raise ValueError(
+                    f"{ch.name} knows {canonical!r} but hasn't prepared it — "
+                    f"prepare_spells it first, or cast a prepared spell"
+                )
+        elif known_cf:
+            # Legacy / known-caster path: no prepared list (sorcerer, or an old snapshot that
+            # only set spells_known) keeps the lenient known-only gate — byte-identical behavior.
+            if cf not in known_cf:
+                raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
         slot_used = None
+        # INNATE CASTING (F03-11): a monster/NPC casts a leveled spell from an innate/at-will
+        # trait (a Mage Hand Press archmage, a drow's Darkness) — there is no Vancian slot to
+        # spend. `innate=True` skips the slot CHECK and SPEND but keeps every other cast
+        # semantic (concentration, duration, the on-hit/save-ends rider, the DC), so an enemy
+        # Hold Person routes through cast_spell and composes with F03-6's release. No-slot
+        # state integrity: slot_used is reported as "innate" (not a level). Still honors the
+        # downcast guard so you can't claim a sub-level cast.
+        if spell_level > 0 and not as_ritual and innate:
+            lvl = spell_level if slot_level is None else slot_level
+            if lvl < spell_level:
+                raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
+            slot_used = "innate"
         # A ritual cast consumes NO slot (#813) — the +10 minutes is the cost; the
         # spell resolves at its base level (a ritual can't be upcast).
-        if spell_level > 0 and not as_ritual:
+        elif spell_level > 0 and not as_ritual:
             lvl = spell_level if slot_level is None else slot_level
             if lvl < spell_level:
                 raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
             slot = ch.spell_slots.get(lvl)
             if slot is None or slot.used >= slot.maximum:
+                # Enrich the affordance for a monster/NPC caster (F03-11): no spawn path seeds
+                # spell_slots, so a stat-block caster has none — point at innate=True rather than
+                # leaving a dead end. PCs keep the plain slot-exhausted message.
+                if ch.kind in ("monster", "npc"):
+                    raise ValueError(
+                        f"{ch.name} has no level-{lvl} spell slot — a monster/NPC stat block "
+                        f"carries no Vancian slots. For an innate/at-will trait cast, pass "
+                        f"innate=True (no slot spent); otherwise seed spell_slots first."
+                    )
                 raise ValueError(f"no level-{lvl} spell slot available")
             slot.used += 1
             slot_used = lvl
@@ -6406,7 +6557,13 @@ def cast_spell(
             # two stay one source of truth. Drop ALL prior concentration effects (covers
             # both replacing a different spell and recasting the same one — the fresh
             # effect registered below is authoritative). Do it BEFORE setting the field.
+            displaced_conc = ch.concentration
             combat.expire_concentration_effects(ch)
+            # F3-6: a recast that DISPLACES a different prior concentration ends that spell —
+            # free its held victims NOW (e.g. the cleric drops Hold Person to cast Bless), not
+            # a round later. Skip when recasting the SAME spell (the fresh marker rewrites it).
+            if displaced_conc and displaced_conc != canonical:
+                _release_held_targets(c, character_id, displaced_conc)
             ch.concentration = canonical  # replaces (breaks) any prior concentration
         # Register an engine-tracked timed effect so the spell auto-expires (instead of
         # relying on the DM to remember it). Concentration spells hold the effect on the
@@ -6528,6 +6685,87 @@ def cast_spell(
             c.characters[rider_child_target.id] = Character.model_validate(
                 rider_child_target.model_dump(mode="json")
             )
+        # AoE / MULTI-TARGET RESOLUTION (F03-4). Targets were validated up front (before the
+        # slot spend). Now the area save-for-damage spell is resolved by the ENGINE: ONE shared
+        # damage roll for the whole area, then a per-target saving throw vs the caster's DC,
+        # applying full damage on a fail and half on a success (5e area-save default). Existing
+        # save discipline applies per target via combat.save_modifiers (a paralyzed target
+        # auto-fails its DEX save; restrained → disadvantage), and damage runs through the same
+        # combat.apply_damage pipeline as everything else (resistances, temp HP, downing, the
+        # concentration-check DC). One lock, one write. Surfaced as a per-target result table.
+        aoe_result = None
+        if aoe_targets:
+            spec = _aoe_damage_spec(
+                curated, srd,
+                slot_used if isinstance(slot_used, int) else spell_level,
+                ch.total_level, mod,
+            )
+            save_dc = 8 + prof + mod
+            if spec is None:
+                # A non-damage area spell (or an un-resolvable record): we still validated the
+                # ids and report them, but the DM resolves the effect (no engine damage to roll).
+                aoe_result = {
+                    "shared_damage": None,
+                    "save_dc": save_dc,
+                    "note": (
+                        "No engine-resolvable area damage for this spell — the targets are "
+                        "validated; resolve the effect per target by hand (saving_throw + "
+                        "apply_damage / add_condition)."
+                    ),
+                    "targets": [{"character_id": t.id, "name": t.name} for t in aoe_targets],
+                }
+            else:
+                save_ab = Ability(spec["save_ability"])
+                dmg = dice_mod.roll(spec["damage"])  # ONE roll shared across the whole area
+                rows: list[dict] = []
+                for t in aoe_targets:
+                    auto_fail, disadvantage = combat.save_modifiers(t, save_ab)
+                    sr = dice_mod.roll(
+                        f"1d20+{t.saving_throw_bonus(save_ab)}", disadvantage=disadvantage
+                    )
+                    saved = (not auto_fail) and sr.total >= save_dc
+                    half = saved and spec["on_save"] == "half"
+                    # A successful save vs an on_save != "half" spell (rare for pure damage)
+                    # negates entirely; resolve that as zero applied.
+                    if saved and spec["on_save"] != "half":
+                        outcome = {**combat.status(t), "damage_to_hp": 0, "absorbed": 0,
+                                   "concentration_dc": None}
+                    else:
+                        was_tc = t.concentration  # F03-6: free this target's held victims if downed
+                        outcome = combat.apply_damage(
+                            t, dmg.total, half=half, damage_type=spec["damage_type"]
+                        )
+                        if was_tc and t.concentration is None:
+                            _release_held_targets(c, t.id, was_tc)
+                    c.characters[t.id] = Character.model_validate(t.model_dump(mode="json"))
+                    kx = _award_kill_xp(c, t)
+                    row = {
+                        "character_id": t.id,
+                        "name": t.name,
+                        "save_roll": sr.total,
+                        "natural": sr.natural,
+                        "saved": saved,
+                        "damage_taken": outcome.get("damage_to_hp", 0),
+                        "current_hp": outcome.get("current_hp"),
+                        "halved": half,
+                    }
+                    if auto_fail:
+                        row["auto_fail"] = True
+                    if disadvantage:
+                        row["disadvantage"] = True
+                    if outcome.get("concentration_dc"):
+                        row["concentration_dc"] = outcome["concentration_dc"]
+                    if kx:
+                        row["kill_xp"] = kx
+                    rows.append(row)
+                aoe_result = {
+                    "shared_damage": {"total": dmg.total, "expr": spec["damage"],
+                                      "type": spec["damage_type"], "detail": dmg.detail},
+                    "save_ability": save_ab.value,
+                    "save_dc": save_dc,
+                    "on_save": spec["on_save"],
+                    "targets": rows,
+                }
         # An off-turn / reaction cast spends the caster's reaction (the combatant record
         # is separate from the character, so the re-validation above didn't touch it).
         if cast_consumes_reaction and caster_cb is not None:
@@ -6549,6 +6787,20 @@ def cast_spell(
                 str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
             },
         }
+        # AoE / multi-target table (F03-4): the engine-resolved per-target save+damage outcomes
+        # (one shared damage roll, full/half per save). Present only when target_ids was passed.
+        if aoe_result is not None:
+            result["aoe"] = aoe_result
+        # AREA SHAPE (F03-4): surface the spell's geometry (Cone/Sphere/Line + size) from the
+        # srd524 record so the DM can describe the area and pick who's caught — 52 spells carry
+        # it and it was previously never told. Additive; absent when the record has no shape.
+        shape_rec = srd or {}
+        if shape_rec.get("shape_type"):
+            shape = {"type": shape_rec.get("shape_type")}
+            if shape_rec.get("shape_size"):
+                shape["size"] = shape_rec.get("shape_size")
+                shape["unit"] = shape_rec.get("shape_size_unit") or "feet"
+            result["shape"] = shape
         # Ritual surfacing (#813): a ritual cast is told to the DM explicitly (no slot
         # was spent); a NORMAL cast of a ritual-tagged spell advertises the slot-free
         # option so the DM learns it exists. Both fields are additive.
@@ -7521,24 +7773,78 @@ def set_class_resource(
         }
 
 
+def _canonicalize_spell_list(spells_list: list, existing: list, mode: str) -> list:
+    """Validate + canonicalize a learn/prepare spell list (F03-7). Each entry must be a
+    known SRD spell (any casing); unknown entries raise listing ALL of them, so the cast
+    gate compares the proper-cased name against proper-cased stored names. `mode='replace'`
+    (default) substitutes the list; `mode='add'` appends the new spells to `existing`
+    (de-duped, canonical-cased, order-preserving). Raises ValueError on an unknown name or
+    an unrecognized mode — rejection BEFORE any state change, like every engine write."""
+    if mode not in ("replace", "add"):
+        raise ValueError(f"mode must be 'replace' or 'add', got {mode!r}")
+    canonical: list[str] = []
+    unknown: list[str] = []
+    for raw in spells_list:
+        name = spells.canonical_name(str(raw))
+        if name is None:
+            unknown.append(str(raw))
+        else:
+            canonical.append(name)
+    if unknown:
+        raise ValueError(
+            "unknown spell(s) (not in the SRD): "
+            + ", ".join(repr(u) for u in unknown)
+            + " — check spelling; only SRD spells can be learned/prepared"
+        )
+    if mode == "add":
+        result = list(existing)
+        have = {s.strip().lower() for s in existing}
+        for name in canonical:
+            if name.strip().lower() not in have:
+                result.append(name)
+                have.add(name.strip().lower())
+        return result
+    # replace: de-dupe the incoming list (keep first-seen canonical casing/order)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for name in canonical:
+        if name.strip().lower() not in seen:
+            deduped.append(name)
+            seen.add(name.strip().lower())
+    return deduped
+
+
 @mcp.tool()
-def learn_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
-    """Set a character's known spells (replaces the list)."""
+def learn_spells(campaign_id: str, character_id: str, spells_list: list,
+                 mode: str = "replace") -> dict:
+    """Set a character's KNOWN spells. Each name is VALIDATED + CANONICALIZED (F03-7): an
+    unknown spell (typo, non-SRD) is rejected listing the offenders, and any casing you pass
+    ("fire bolt") is stored proper-cased ("Fire Bolt") so the case-sensitive cast gate accepts
+    a later cast. `mode='replace'` (default) substitutes the whole list; `mode='add'` appends
+    the new spells to the existing known list (de-duped) — so you can teach one spell without
+    re-listing the whole spellbook. Rejection happens BEFORE any change (nothing is stored on
+    an unknown name)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.spells_known = list(spells_list)
+        ch.spells_known = _canonicalize_spell_list(spells_list, ch.spells_known, mode)
         save_campaign(c)
         return {"spells_known": ch.spells_known}
 
 
 @mcp.tool()
-def prepare_spells(campaign_id: str, character_id: str, spells_list: list) -> dict:
-    """Set a character's prepared spells (replaces the list)."""
+def prepare_spells(campaign_id: str, character_id: str, spells_list: list,
+                   mode: str = "replace") -> dict:
+    """Set a character's PREPARED spells. Each name is VALIDATED + CANONICALIZED (F03-7) like
+    learn_spells. With a non-empty prepared list, cast_spell now enforces preparation for
+    LEVELED spells (F03-8): a prepared caster (cleric/wizard/druid) casts only what it has
+    prepared, while cantrips stay always-castable once known. `mode='replace'` (default)
+    substitutes the list (your daily preparation); `mode='add'` appends. An unknown spell is
+    rejected before any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.spells_prepared = list(spells_list)
+        ch.spells_prepared = _canonicalize_spell_list(spells_list, ch.spells_prepared, mode)
         save_campaign(c)
         return {"spells_prepared": ch.spells_prepared}
 

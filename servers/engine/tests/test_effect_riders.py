@@ -197,9 +197,10 @@ def test_drop_concentration_frees_linked_children(tmp_path, monkeypatch):
     assert server.get_character(cid, ally)["active_effects"] == []
 
 
-def test_next_turn_sweep_frees_linked_children(tmp_path, monkeypatch):
-    # The inverse-link sweep: caster's concentration broke some other way (a failed
-    # concentration save) -> the next next_turn releases the blessed ally's child.
+def test_failed_concentration_save_frees_linked_children_immediately(tmp_path, monkeypatch):
+    # F3-6: a failed concentration save now releases the blessed ally's linked child in the
+    # SAME call (surfaced in freed_targets), not deferred to the next next_turn sweep. The
+    # sweep remains a clean no-op backstop afterward.
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("SweepConc")["id"]
     caster = server.create_character(cid, "Priest", kind="monster", max_hp=20)["id"]
@@ -211,9 +212,11 @@ def test_next_turn_sweep_frees_linked_children(tmp_path, monkeypatch):
     # break the caster's concentration the non-voluntary way (impossible DC)
     cs = server.concentration_save(cid, caster, dc=100)
     assert cs["maintained"] is False
+    assert {"character_id": ally, "name": "Bless"} in cs["freed_targets"]
+    assert server.get_character(cid, ally)["active_effects"] == []  # freed immediately
+    # The next_turn sweep is a no-op backstop now (nothing left to reconcile).
     nt = server.next_turn(cid)
-    assert {"character_id": ally, "name": "Bless"} in nt["expired_effects"]
-    assert server.get_character(cid, ally)["active_effects"] == []
+    assert {"character_id": ally, "name": "Bless"} not in nt["expired_effects"]
 
 
 def test_cast_result_advertises_engine_applied_riders(tmp_path, monkeypatch):
