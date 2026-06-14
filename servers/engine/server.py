@@ -2552,7 +2552,38 @@ def get_character(campaign_id: str, character_id: str = "", target_id: str = "",
     sheet = ch.model_dump(mode="json")
     sheet["class_resources_view"] = _class_resources_view(ch)
     sheet["combat_numbers"] = _combat_numbers(ch)
+    sheet["preparable_spells"] = _preparable_spells(ch)
     return sheet
+
+
+def _highest_slot_level(ch: Character) -> int:
+    """The highest spell-slot level the character actually has a slot for (0 == no leveled
+    slots). Caps the browsable preparable pool so a half-caster (a L10 Paladin -> L3 slots)
+    sees only spells it can slot. Reads engine-owned spell_slots; pure."""
+    return max((int(lvl) for lvl, s in ch.spell_slots.items() if s.maximum > 0), default=0)
+
+
+def _preparable_spells(ch: Character) -> list[dict]:
+    """The full SRD class spell list a PREPARED caster can browse to choose what to prepare
+    (#754) — each ``{name, level}``, capped to the caster's highest available slot level. The
+    persona complaint: a Paladin's Spellbook showed only the FEW currently-prepared spells, not
+    the dozens-strong list to plan FROM. Derived from the engine's own srd524 class↔spell map
+    (spells.class_spell_list) so it is SRD-correct + additive — a non-caster (no caster class /
+    no slots) returns [] and nothing else on the sheet changes.
+
+    Half-casters (Paladin/Ranger) and full prepared casters (Cleric/Druid/Wizard) all benefit;
+    a class the SRD map doesn't know yields []. The pool merges every caster class the character
+    has (multiclass), de-duped by name, sorted by (level, name)."""
+    max_lvl = _highest_slot_level(ch)
+    if max_lvl <= 0:
+        return []
+    merged: dict[str, dict] = {}
+    for cl in ch.classes:
+        if not srd_tables.casting_ability(cl.name):
+            continue  # only real caster classes contribute a preparable pool
+        for entry in spells.class_spell_list(cl.name, max_level=max_lvl):
+            merged.setdefault(entry["name"].lower(), entry)
+    return sorted(merged.values(), key=lambda s: (s["level"], s["name"]))
 
 
 @mcp.tool()

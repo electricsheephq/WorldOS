@@ -87,6 +87,59 @@ def all_spell_names() -> list[str]:
     return sorted(names.values())
 
 
+# --- class spell LISTS (the preparable pool) — #754 ---------------------------
+#
+# The srd524 dump stamps each spell with a `classes` list of "srd-2024_<class>" slugs
+# (e.g. Bless -> ['srd-2024_cleric', 'srd-2024_paladin']). That is the SRD's own
+# class↔spell mapping — the set of spells a member of <class> can choose to PREPARE
+# (the browsable pool a prepared caster plans from), distinct from the spells the
+# character has currently prepared/known. We re-derive the list straight off that
+# field so the engine stays the single source of truth (no hand-maintained list to
+# drift from the SRD). Pure + cached; additive — a class the dump doesn't know returns [].
+_CLASS_SLUG_PREFIX = "srd-2024_"
+
+
+@functools.lru_cache(maxsize=None)
+def _class_spell_index() -> dict[str, list[dict]]:
+    """Map each SRD class (lowercase short name: 'paladin', 'wizard', …) to the list of
+    that class's spell records (srd524 fields), sorted by (level, name). Built once from
+    the `classes` slugs the srd524 dump stamps on every spell. Pure — no campaign state."""
+    index: dict[str, list[dict]] = {}
+    for rec in _srd524().values():
+        for slug in rec.get("classes") or []:
+            s = str(slug)
+            if not s.startswith(_CLASS_SLUG_PREFIX):
+                continue
+            cls = s[len(_CLASS_SLUG_PREFIX):].strip().lower()
+            if cls:
+                index.setdefault(cls, []).append(rec)
+    for cls, rows in index.items():
+        rows.sort(key=lambda r: (int(r.get("level") or 0), str(r.get("name") or "")))
+    return index
+
+
+def class_spell_list(class_name: str, max_level: Optional[int] = None) -> list[dict]:
+    """The full SRD spell list a `class_name` member can PREPARE — the browsable preparable
+    pool (#754), NOT what a given character has prepared. Each entry is ``{name, level}``
+    (canonical-cased name + integer spell level), sorted by (level, name). Re-derived from
+    the srd524 `classes` field, so it's SRD-correct and never hand-maintained.
+
+    `max_level` (when given) caps the list to spells of that spell level or lower — pass a
+    caster's highest available SLOT level so the pool only shows spells they can actually
+    slot (a L10 Paladin -> levels 1–3). `max_level=0` keeps only cantrips; None (default) =
+    the whole class list. Unknown class -> [] (additive: a non-caster shows nothing)."""
+    rows = _class_spell_index().get(str(class_name).strip().lower(), [])
+    out: list[dict] = []
+    for rec in rows:
+        lvl = int(rec.get("level") or 0)
+        if max_level is not None and lvl > int(max_level):
+            continue
+        name = rec.get("name")
+        if name:
+            out.append({"name": str(name), "level": lvl})
+    return out
+
+
 def _parse_dice(expr: str) -> tuple[int, int]:
     """Parse the dice part of 'NdM(+K)' -> (N, M), ignoring any flat modifier."""
     body = expr.lower().split("+")[0].split("-")[0]

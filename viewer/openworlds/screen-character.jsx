@@ -655,6 +655,8 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
   const submittingRef = React.useRef(false);
   // Watch order is drawn from the LIVE party (first names), never the hardcoded demo trio.
   const watchOrder = (Array.isArray(party) ? party : []).map((p) => (p.name || "").split(" ")[0]).filter(Boolean);
+  // name→slug for stable testids (mirror HeroEquipDoll); window.slug is the shared chrome helper.
+  const slug = window.slug || ((n) => (n || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""));
 
   // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
   React.useEffect(() => {
@@ -663,18 +665,46 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
     return () => window.removeEventListener("keydown", esc);
   }, [onClose]);
 
-  const availableSpells = hero.spells || [];
-  // Data-driven from the live hero. The /character-surface read-model does not project
-  // spell-slot counts (it carries spell names only), so this stays empty rather than
-  // inventing the old 4/3/1 — every slot row is gated on max > 0, so empty = no fabricated pips.
-  const slots = (hero.spellSlots && typeof hero.spellSlots === "object") ? hero.spellSlots : {};
+  // #754 — the BROWSABLE preparable pool: the full class spell list this caster can choose
+  // to prepare FROM (the read-model's hero.preparableSpells), grouped by spell level. This is
+  // the optimizer's MAJOR complaint — the prep step used to iterate only hero.spells (the few
+  // currently prepared/known), so a Paladin could never SELECT a new spell to prepare. We group
+  // the full pool by level so the player picks from everything they can slot.
+  const prepPool = (() => {
+    const byLevel = {};
+    for (const sp of (Array.isArray(hero.preparableSpells) ? hero.preparableSpells : [])) {
+      const lv = Number(sp.level) || 0;
+      (byLevel[lv] = byLevel[lv] || []).push(sp);
+    }
+    return Object.keys(byLevel)
+      .map((k) => Number(k))
+      .sort((a, b) => a - b)
+      .map((lv) => ({ level: lv, list: byLevel[lv] }));
+  })();
+
+  // Pre-seed the picker with the caster's CURRENTLY prepared spells (from hero.spells'
+  // "Prepared" group) so opening the modal shows their real preparation, and "Seal" edits it.
+  React.useEffect(() => {
+    const seed = {};
+    for (const grp of (Array.isArray(hero.spells) ? hero.spells : [])) {
+      if (String(grp.level).toLowerCase() !== "prepared") continue;
+      for (const sp of (grp.list || [])) {
+        // place each prepared spell into its level bucket using the pool's known level
+        const inPool = (Array.isArray(hero.preparableSpells) ? hero.preparableSpells : [])
+          .find((p) => p.name === sp.name);
+        const lv = inPool ? (Number(inPool.level) || 0) : 0;
+        (seed[lv] = seed[lv] || []).push(sp.name);
+      }
+    }
+    if (Object.keys(seed).length) setPrepared(seed);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hero.id]);
 
   const toggleSpell = (lv, name) => {
     const cur = prepared[lv] || [];
-    const max = slots[lv] || 0;
     if (cur.includes(name)) {
       setPrepared({ ...prepared, [lv]: cur.filter((n) => n !== name) });
-    } else if (cur.length < max) {
+    } else {
       setPrepared({ ...prepared, [lv]: [...cur, name] });
     }
   };
@@ -735,8 +765,10 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
       .sort((a, b) => Number(a) - Number(b))
       .flatMap((lv) => (prepared[lv] || []).map((n) => n))
       .filter(Boolean);
+    // Name prepare_spells + "replace" explicitly so the DM resolves it with one engine call: the
+    // chosen set IS the day's complete preparation (the engine = sole writer of spells_prepared).
     const text = named.length > 0
-      ? `${hero.name} prepares today's spells: ${named.join(", ")}.`
+      ? `${hero.name} prepares today's spells — set their prepared spells (prepare_spells, replace) to exactly: ${named.join(", ")}.`
       : `${hero.name} keeps their currently prepared spells.`;
     relayMove(text, () => { if (onDone) onDone(); else onClose(); },
       "Spellbook", "Preparation");
@@ -869,29 +901,36 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
               <Divider />
 
               <p className="body" style={{ marginTop: 0 }}>
-                {hero.name} reads by the dying fire. Choose what will be at hand when the day breaks. Unchosen spells remain bound to the page.
+                {hero.name} reads by the dying fire. Choose what will be at hand when the day breaks — the whole class spell list is yours to browse. Unchosen spells remain bound to the page.
               </p>
 
-              {availableSpells.map((group) => {
+              {/* #754 — pick from the FULL browsable class list (hero.preparableSpells), grouped
+                  by spell level and capped to the caster's highest slot level by the engine. The
+                  optimizer could never SELECT a new spell before; now the entire preparable pool
+                  is here. The chosen set rides the relayed move; the engine's prepare_spells records
+                  it (the viewer stays a move-sink). Empty pool -> an honest invitation, not a stub. */}
+              {prepPool.length === 0 ? (
+                <div data-worldos-testid="prep-empty-pool" className="muted body-sm" style={{ marginTop: 16 }}>
+                  This hero has no preparable spells (no spell slots, or not a prepared caster).
+                </div>
+              ) : prepPool.map((group) => {
                 const cur = prepared[group.level] || [];
-                const max = slots[group.level] || 0;
-                if (max === 0) return null;
                 return (
-                  <div key={group.level} style={{ marginTop: 18 }}>
+                  <div key={group.level} style={{ marginTop: 18 }} data-worldos-testid={`prep-level-${group.level}`}>
                     <SectionTitle right={
-                      <span className="muted body-sm">{cur.length} / {max} prepared</span>
+                      <span className="muted body-sm">{cur.length} prepared · {group.list.length} available</span>
                     }>
-                      Level {group.level}
+                      {group.level === 0 ? "Cantrips" : `Level ${group.level}`}
                     </SectionTitle>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                       {group.list.map((sp) => {
                         const isPrepared = cur.includes(sp.name);
-                        const canPrep = cur.length < max;
                         return (
                           <button
                             key={sp.name}
+                            data-worldos-testid={`prep-spell-${slug(sp.name)}`}
+                            aria-pressed={isPrepared ? "true" : "false"}
                             onClick={() => toggleSpell(group.level, sp.name)}
-                            disabled={!isPrepared && !canPrep}
                             style={{
                               display: "grid", gridTemplateColumns: "40px 1fr auto", gap: 10, alignItems: "center",
                               padding: 10,
@@ -902,8 +941,7 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                               boxShadow: isPrepared
                                 ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 14px -4px var(--gold-glow)"
                                 : "inset 0 0 0 1px rgba(140,100,60,0.25)",
-                              cursor: (!isPrepared && !canPrep) ? "not-allowed" : "pointer",
-                              opacity: (!isPrepared && !canPrep) ? 0.5 : 1,
+                              cursor: "pointer",
                               transition: "all 140ms",
                             }}
                           >
@@ -1602,9 +1640,13 @@ function SpellsTab({ hero }) {
   // the snapshot stores no spell blocks to fabricate from.
   const groups = (Array.isArray(hero.spells) ? hero.spells : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
   const slots = Array.isArray(hero.spellSlots) ? hero.spellSlots : [];
-  const isCaster = slots.length > 0 || groups.length > 0;
+  // #754 — the browsable preparable pool (the full class spell list this caster can prepare FROM),
+  // distinct from the few they have prepared/known. Surfaces in the Spellbook so a prepared caster
+  // (Paladin/Cleric/…) can browse the WHOLE list, not just their current preparation.
+  const preparable = (Array.isArray(hero.preparableSpells) ? hero.preparableSpells : []);
+  const isCaster = slots.length > 0 || groups.length > 0 || preparable.length > 0;
   // #268: every caster gets a working "Browse spellbook" path — a read-only inspector over
-  // the hero's known + prepared spells (the surface's hero.spells groups). The empty state
+  // the hero's prepared/known spells AND the full preparable class list (#754). The empty state
   // INVITES the browse instead of dead-ending; preparation stays in the Rest & Prepare modal.
   const [browsing, setBrowsing] = React.useState(false);
   const spellCount = groups.reduce((n, g) => n + g.list.length, 0);
@@ -1701,17 +1743,39 @@ function SpellsTab({ hero }) {
         </div>
       )}
 
-      {browsing && <SpellbookBrowser hero={hero} groups={groups} onClose={() => setBrowsing(false)} />}
+      {browsing && <SpellbookBrowser hero={hero} groups={groups} preparable={preparable} onClose={() => setBrowsing(false)} />}
     </div>
   );
 }
 
-function SpellbookBrowser({ hero, groups, onClose }) {
-  // Read-only spellbook inspector (#268). Surfaces the hero's known + prepared spells from
-  // the /character-surface read-model — no preparation here (the Rest & Prepare modal owns
-  // that write-flow). When the engine carries no spell NAMES, we say so honestly rather than
-  // fabricate an SRD list, and point the player at Rest & Prepare.
+function SpellbookBrowser({ hero, groups, preparable, onClose }) {
+  // Read-only spellbook inspector (#268 + #754). Surfaces TWO things from the
+  // /character-surface read-model: (1) the hero's currently PREPARED/KNOWN spells, and
+  // (2) the FULL browsable class spell list they can prepare FROM (hero.preparableSpells) —
+  // the optimizer's MAJOR complaint that a Paladin could only see the few prepared, never the
+  // whole list. Preparation still happens in Rest & Prepare (this stays read-only); here the
+  // player BROWSES + plans. When the engine carries no spell data we say so honestly.
   const list = (Array.isArray(groups) ? groups : []).filter((g) => g && Array.isArray(g.list) && g.list.length);
+  const pool = (Array.isArray(preparable) ? preparable : []);
+  // name→slug for stable testids (mirror HeroEquipDoll); window.slug is the shared chrome helper.
+  const slug = window.slug || ((n) => (n || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""));
+  // Names the hero already has prepared — so the browsable list can MARK prepared vs available.
+  const preparedNames = new Set();
+  for (const g of list) {
+    if (String(g.level).toLowerCase() === "prepared") {
+      for (const sp of (g.list || [])) preparedNames.add(sp.name);
+    }
+  }
+  // Group the full preparable pool by spell level for a scannable browse.
+  const poolByLevel = (() => {
+    const byLevel = {};
+    for (const sp of pool) {
+      const lv = Number(sp.level) || 0;
+      (byLevel[lv] = byLevel[lv] || []).push(sp);
+    }
+    return Object.keys(byLevel).map((k) => Number(k)).sort((a, b) => a - b)
+      .map((lv) => ({ level: lv, list: byLevel[lv] }));
+  })();
   // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
   React.useEffect(() => {
     const esc = (e) => e.key === "Escape" && onClose();
@@ -1736,7 +1800,7 @@ function SpellbookBrowser({ hero, groups, onClose }) {
 
           {list.length ? (
             list.map((group) => (
-              <div key={group.level} style={{ marginTop: 16 }}>
+              <div key={group.level} style={{ marginTop: 16 }} data-worldos-testid={`spellbook-group-${slug(String(group.level))}`}>
                 <SectionTitle right={<span className="muted body-sm">{group.list.length}</span>}>
                   {spellGroupLabel(group.level)}
                 </SectionTitle>
@@ -1769,6 +1833,54 @@ function SpellbookBrowser({ hero, groups, onClose }) {
               No spells are inscribed in this hero's book yet. Open <em>Rest &amp; Prepare</em>
               {" "}to bind spells to the day.
             </p>
+          )}
+
+          {/* #754 — the FULL browsable class spell list (what this caster CAN prepare). Clearly
+              separated from "prepared/known" above, and each entry is tagged Prepared vs Available
+              so a prepared caster (Paladin/Cleric/…) can plan from the whole list, not just the few. */}
+          {poolByLevel.length > 0 && (
+            <div data-worldos-testid="spellbook-available">
+              <Divider />
+              <SectionTitle right={<span className="muted body-sm">{pool.length}</span>}>
+                Available to Prepare
+              </SectionTitle>
+              <p className="hand muted" style={{ fontSize: 12, marginTop: -2, marginBottom: 8 }}>
+                The full {hero.class ? titleCaseWord(hero.class) + " " : ""}spell list you can choose from at <em>Rest &amp; Prepare</em>.
+              </p>
+              {poolByLevel.map((group) => (
+                <div key={group.level} style={{ marginTop: 12 }} data-worldos-testid={`spellbook-available-level-${group.level}`}>
+                  <SectionTitle right={<span className="muted body-sm">{group.list.length}</span>}>
+                    {group.level === 0 ? "Cantrips" : `Level ${group.level}`}
+                  </SectionTitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    {group.list.map((sp) => {
+                      const isPrepared = preparedNames.has(sp.name);
+                      return (
+                        <div key={sp.name} data-worldos-testid={`spellbook-available-spell-${slug(sp.name)}`} style={{
+                          padding: 9,
+                          background: isPrepared ? "linear-gradient(180deg, var(--p-100), var(--p-200))" : "rgba(176,141,87,0.05)",
+                          boxShadow: isPrepared
+                            ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400)"
+                            : "inset 0 0 0 1px rgba(140,100,60,0.2)",
+                        }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.05em", color: "var(--ink-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {sp.name}
+                              </div>
+                              <div className="hand muted" style={{ fontSize: 11 }}>{spellMeta(sp)}</div>
+                            </div>
+                            <span className="eyebrow" style={{ fontSize: 8, color: isPrepared ? "var(--emerald)" : "var(--ink-500)", whiteSpace: "nowrap" }}>
+                              {isPrepared ? "Prepared" : "Available"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
 
           <Divider />
