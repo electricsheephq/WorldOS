@@ -296,8 +296,9 @@ def test_tick_respects_max_events():
 def test_capped_tick_does_not_strand_an_overdue_item():
     """L1 regression: when the per-tick cap stops us with due items still pending, the cursor
     must NOT jump to campaign.day (which would strand the strays behind the same-day idempotency
-    guard until the next day-roll). It advances only to the highest day actually fired, so a
-    subsequent tick on the SAME day fires the remainder — without re-firing the done ones."""
+    guard until the next day-roll). F04-9 sharpened the cursor: it rewinds to BEFORE the highest
+    day fired (`last_fired_trigger_day - 1`) so a same-day re-tick ALWAYS sees elapsed > 0 and
+    drains the remainder — even when the strays share campaign.day — without re-firing done ones."""
     c = _camp(day=1)
     # Five deterministic one-shots due at staggered days 2..6; all overdue at day 6.
     ids = []
@@ -311,13 +312,14 @@ def test_capped_tick_does_not_strand_an_overdue_item():
 
     fired1 = worldsim.tick_backlog(c, max_events=2)  # capped at 2 -> fires the two most-overdue
     assert [f.trigger_day for f in fired1] == [2, 3]
-    # Cursor advanced ONLY to the highest day fired (3), NOT to campaign.day (6) — the bug.
-    assert c.campaign_backlog.last_tick_day == 3
+    # Cursor advanced only to BEFORE the highest day fired (3 -> 2), NOT to campaign.day (6) —
+    # leaving elapsed > 0 for the same-day re-tick so the strays still drain.
+    assert c.campaign_backlog.last_tick_day == 2
 
     # A SAME-DAY re-tick still fires the strays (not stranded), and never re-fires the done ones.
     fired2 = worldsim.tick_backlog(c, max_events=2)
     assert [f.trigger_day for f in fired2] == [4, 5]  # the next two, the day-2/3 ones are guarded
-    assert c.campaign_backlog.last_tick_day == 5
+    assert c.campaign_backlog.last_tick_day == 4
 
     fired3 = worldsim.tick_backlog(c, max_events=2)  # the last stray drains; not capped now
     assert [f.trigger_day for f in fired3] == [6]

@@ -121,6 +121,23 @@ def test_point_buy_out_of_range():
         server.generate_ability_scores("point_buy", point_buy={"strength": 16})
 
 
+# --- F02-16: point_buy validates the KEYS, not just the budget --------------------
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F02-16). A bare-budget check accepted
+# nonsense pools like {"luck": 15, "strength": 15}; keys must name real abilities.
+
+def test_point_buy_rejects_non_ability_key():
+    with pytest.raises(ValueError):
+        server.generate_ability_scores("point_buy", point_buy={"luck": 15, "strength": 15})
+
+
+def test_point_buy_accepts_short_ability_aliases():
+    out = server.generate_ability_scores(
+        "point_buy",
+        point_buy={"str": 15, "dex": 15, "con": 13, "int": 8, "wis": 10, "cha": 10},
+    )
+    assert out["points_spent"] == 27
+
+
 def test_roll_method_deterministic():
     out = server.generate_ability_scores("roll", seed=1)
     assert len(out["totals"]) == 6 and all(3 <= t <= 18 for t in out["totals"])

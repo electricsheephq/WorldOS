@@ -193,6 +193,26 @@ def _combatant_ref(ch: Character) -> dict:
     return {"id": ch.id, "name": ch.name}
 
 
+# F07-6: the canonical session-log beat kinds. log_event / persist_beat accepted ANY
+# string, so a typo (kind="narrative") wrote a row invisible to every recap / recall /
+# recent_narration filter (they all match exact kinds). Validated at the DM-facing seams;
+# the model field stays a bare str so OLD logs with legacy kinds still round-trip (additive).
+_LOG_EVENT_KINDS = frozenset({"narration", "dialogue", "roll", "system", "combat"})
+
+
+def _validate_log_kind(kind: str) -> str:
+    """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
+    the canonical lowercase kind; raises ValueError on an unknown kind with the valid set."""
+    kl = (kind or "").strip().lower()
+    if kl not in _LOG_EVENT_KINDS:
+        valid = " | ".join(sorted(_LOG_EVENT_KINDS))
+        raise ValueError(
+            f"unknown log kind {kind!r} — use one of: {valid} "
+            "(a typo'd kind would be invisible to recap/recall/recent_narration)"
+        )
+    return kl
+
+
 def _log_session_entry(
     c: Campaign,
     *,
@@ -2164,6 +2184,11 @@ def _monster_character_from_statblock(sb: dict, label: str, *, location_id=None)
         save_profs.append(ab)
         if scores.modifier(ab) + pb != int(printed):
             overrides[ab.value] = int(printed)
+    # F01-15: transfer the creature's WALKING speed from the SRD stat block (a dict of
+    # movement modes, e.g. {"walk": 40, "fly": 80}). Character.speed is the int walk speed
+    # used by movement/tactics; default 30 only when the data omits walk (additive — a
+    # walk-less stat block keeps today's 30). Other modes ride the bestiary sheet (intel reveal).
+    walk_speed = (sb.get("speed") or {}).get("walk")
     return Character(
         name=label,
         kind="monster",
@@ -2172,6 +2197,7 @@ def _monster_character_from_statblock(sb: dict, label: str, *, location_id=None)
         current_hp=sb["hp"],
         armor_class=sb["ac"],
         hit_dice=sb["hit_dice"],
+        speed=int(walk_speed) if isinstance(walk_speed, (int, float)) and walk_speed > 0 else 30,
         proficiency_bonus=pb,
         saving_throw_proficiencies=save_profs,
         save_bonus_overrides=overrides,
@@ -5510,9 +5536,23 @@ def generate_ability_scores(
     if m == "point_buy":
         if not point_buy:
             raise ValueError("point_buy requires a {ability: score} mapping")
+        # F02-16: validate the KEYS, not just the budget. A bare-budget check accepted
+        # nonsense pools like {"luck": 15, "strength": 15}. Each key must name a real 5e
+        # ability — short (str/dex/...) or full (strength/...), any case (the model's alias
+        # set) — else a typo silently buys phantom stats. Additive: every legitimate caller
+        # already passes ability keys, so this only rejects what was always wrong.
+        _ability_short = {"str", "dex", "con", "int", "wis", "cha"}
+        _ability_long = {"strength": "str", "dexterity": "dex", "constitution": "con",
+                         "intelligence": "int", "wisdom": "wis", "charisma": "cha"}
         cost = srd_tables.point_buy_cost()
         total = 0
         for ability, score in point_buy.items():
+            kl = str(ability).strip().lower()
+            if kl not in _ability_short and kl not in _ability_long:
+                raise ValueError(
+                    f"{ability!r} is not a 5e ability — point_buy keys must be one of "
+                    "str/dex/con/int/wis/cha (or the full names strength/dexterity/...)"
+                )
             if str(score) not in cost:
                 raise ValueError(f"score {score} for {ability} is out of point-buy range 8-15")
             total += cost[str(score)]
@@ -6727,14 +6767,27 @@ def cast_spell(
 
 
 @mcp.tool()
-def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> dict:
+def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int,
+                 advantage: bool = False, disadvantage: bool = False) -> dict:
     """Roll a saving throw for a character against a DC. ability is one of
-    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded."""
+    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded.
+
+    Enforces the SRD condition rules so save outcomes don't depend on the DM
+    remembering them: paralyzed / petrified / stunned / unconscious AUTO-FAIL STR
+    and DEX saves; restrained gives DISADVANTAGE on DEX saves. A forced failure
+    still reports the roll, plus a `reason`. Pass ``advantage`` / ``disadvantage``
+    for situational sources the engine can't derive; they MERGE with any
+    condition-derived disadvantage and cancel by the 5e rule. Both default False
+    (omitting them is byte-identical to before — F01-16)."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     ab = Ability(ability.lower())
-    auto_fail, disadvantage = combat.save_modifiers(ch, ab)
-    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}", disadvantage=disadvantage)
+    auto_fail, cond_disadvantage = combat.save_modifiers(ch, ab)
+    # Merge caller-supplied situational adv/dis with the condition-derived disadvantage,
+    # mirroring attack()'s `adv = advantage or cadv` pattern; dice.roll applies the cancel rule.
+    adv = advantage
+    disadvantage = disadvantage or cond_disadvantage
+    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(ab)}", advantage=adv, disadvantage=disadvantage)
     # NUMERIC RIDERS (SYN-06 / #780): fold the engine-tracked save bonus dice (Bless +1d4 /
     # Bane -1d4) into the total — the engine rolls the rider it advertises.
     rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")
@@ -6746,7 +6799,12 @@ def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> 
     if auto_fail:
         forcing = ", ".join(cn.value for cn in ch.conditions if cn in combat.SAVE_AUTOFAIL)
         out["reason"] = f"condition auto-fail: {ch.name} is {forcing} — STR/DEX saves automatically fail"
-    if disadvantage:
+    # Report the EFFECTIVE state after the 5e cancel rule (one adv + one dis = straight),
+    # so the surfaced flag matches the die that was actually rolled.
+    eff_adv, eff_dis = (adv and not disadvantage), (disadvantage and not adv)
+    if eff_adv:
+        out["advantage"] = True
+    if eff_dis:
         out["disadvantage"] = True
     return out
 
@@ -7363,6 +7421,22 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
         return out
 
 
+# F04-13: the watch-phrase keywords that earn the camp-watch camouflage modifier. The
+# match is now SUBSTRING (any keyword appearing anywhere in the phrase), so a natural
+# "we keep a careful watch" / "set a hidden camp" earns the −0.15 modifier — the old
+# whole-string membership only credited a bare single token.
+_CAREFUL_WATCH_KEYWORDS = (
+    "careful", "camouflage", "camouflaged", "hidden", "concealed", "stealth", "stealthy",
+)
+
+
+def _watch_is_careful(watch: str) -> bool:
+    """True iff the free-text watch phrase signals a careful/concealed watch (F04-13).
+    Substring credit so an ordinary sentence — not just a lone keyword — counts. Pure."""
+    watch_lower = (watch or "").strip().lower()
+    return any(k in watch_lower for k in _CAREFUL_WATCH_KEYWORDS)
+
+
 @mcp.tool()
 def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
     """Take a long rest: restore all HP, recover half total Hit Dice (min 1), reset
@@ -7451,10 +7525,7 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
         # contract as travel: foes are staged + surfaced, never auto-fought.
         if steps > 0:
             cur_loc = c.locations.get(c.current_location_id) if c.current_location_id else None
-            watch_lower = watch.strip().lower()
-            modifiers = {"camouflage": True} if watch_lower in (
-                "careful", "camouflage", "camouflaged", "hidden", "concealed", "stealth", "stealthy"
-            ) else None
+            modifiers = {"camouflage": True} if _watch_is_careful(watch) else None
             staged = _stage_wandering_encounter(
                 c,
                 cur_loc.region if cur_loc is not None else "",
@@ -8692,6 +8763,7 @@ def log_event(
     text = text or message or content or note  # accept the text the DM reaches for
     if not text:
         raise ValueError("log_event needs text (pass `text` or an alias: `message`/`content`/`note`)")
+    kind = _validate_log_kind(kind)  # F07-6: reject a typo'd kind that would be invisible everywhere
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         entry = _log_session_entry(c, kind=kind, text=text, speaker=speaker, payload=payload)
@@ -10740,8 +10812,14 @@ def persist_beat(
                         f"events index {i}: needs text (pass `text` or an alias: "
                         f"`message`/`content`/`note`)"
                     )
+                # F07-6: validate the kind in phase 1 (no writes yet) so a typo'd kind fails
+                # the whole batch up front instead of writing an invisible row.
+                try:
+                    kind = _validate_log_kind(ev.get("kind") or "narration")
+                except ValueError as e:
+                    raise ValueError(f"events index {i}: {e}") from None
                 planned_events.append({
-                    "kind": ev.get("kind") or "narration",
+                    "kind": kind,
                     "text": text,
                     "speaker": ev.get("speaker") or "",
                     "payload": ev.get("payload"),

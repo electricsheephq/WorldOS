@@ -65,6 +65,22 @@ def test_validate_attack_requires_target_and_owned_weapon():
     assert ps.validate_attack(pc, "the guard", "rapier")[0] is True     # weapon carried
 
 
+def test_validate_attack_strips_weapon_name():
+    # F12-19: a trailing space on the weapon must NOT false-refuse (owned_items strips+lowers).
+    pc = _pc(inventory=[Item(name="Sword")])
+    assert ps.validate_attack(pc, "the guard", "sword ")[0] is True
+    assert ps.validate_attack(pc, "the guard", "  Sword ")[0] is True
+
+
+def test_validate_attack_empty_inventory_does_not_bypass():
+    # F12-19: an empty inventory means you own nothing — a NAMED weapon is invalid (the old
+    # `and owned_items(pc)` clause let an empty-inventory PC attack with any named weapon).
+    pc = _pc(inventory=[])
+    assert ps.validate_attack(pc, "the guard", "greatsword")[0] is False
+    # ...but an unarmed/improvised (blank-weapon) attack still passes.
+    assert ps.validate_attack(pc, "the guard", "")[0] is True
+
+
 def test_validate_item_is_scoped_to_inventory():
     pc = _pc(inventory=[Item(name="Rope"), Item(name="Lockpicks")])
     assert ps.validate_item(pc, "rope")[0] is True
