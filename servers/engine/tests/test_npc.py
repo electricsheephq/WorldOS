@@ -16,6 +16,41 @@ def test_shift_attitude():
     assert npc_mod.shift_attitude("", 1) == "friendly"  # blank -> indifferent -> +1
 
 
+# --- F10-6: the two attitude tracks reconcile (value <-> band) ----------------------
+def test_normalize_maps_unfriendly_to_wary():
+    # F10-6(c): "unfriendly" (the 3.5e/PF diplomacy word a DM reaches for) was unmapped
+    # and silently collapsed to "indifferent" — a whole band too friendly. It now lands
+    # on the engine's mirror band, "wary".
+    assert npc_mod.normalize("unfriendly") == "wary"
+    assert npc_mod.normalize("Unfriendly") == "wary"  # case-insensitive like the rest
+
+
+def test_band_for_value_maps_the_numeric_scale_onto_the_track():
+    # F10-6(a): there was NO value<->band mapping anywhere, so a -10 value could sit next
+    # to a "wary" label with nothing reconciling them. band_for_value is that bridge: the
+    # -100..+100 scale projected onto the five-step track, symmetric around 0.
+    assert npc_mod.band_for_value(-100) == "hostile"
+    assert npc_mod.band_for_value(-60) == "hostile"
+    assert npc_mod.band_for_value(-40) == "wary"
+    assert npc_mod.band_for_value(-20) == "wary"
+    assert npc_mod.band_for_value(0) == "indifferent"
+    assert npc_mod.band_for_value(19) == "indifferent"
+    assert npc_mod.band_for_value(20) == "friendly"
+    assert npc_mod.band_for_value(59) == "friendly"
+    assert npc_mod.band_for_value(60) == "helpful"
+    assert npc_mod.band_for_value(100) == "helpful"
+
+
+def test_band_for_value_is_symmetric():
+    # the split is mirror-symmetric: band_for_value(+v) is the track-reflection of
+    # band_for_value(-v), so a "friendly" +40 mirrors a "wary" -40.
+    track = npc_mod.ATTITUDE_TRACK
+    for v in (20, 40, 60, 80, 100):
+        pos = track.index(npc_mod.band_for_value(v))
+        neg = track.index(npc_mod.band_for_value(-v))
+        assert pos + neg == len(track) - 1
+
+
 @pytest.fixture
 def campaign(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
@@ -143,6 +178,25 @@ def test_set_attitude_value_and_default(campaign):
     # value is clamped to the -100..+100 scale
     assert server.set_attitude(campaign, npc_id, "devoted", value=999)["attitude_value"] == 100
     assert server.set_attitude(campaign, npc_id, "hostile", value=-999)["attitude_value"] == -100
+
+
+def test_set_attitude_value_only_does_not_wipe_the_label(campaign):
+    # F10-6(b): set_attitude had `attitude: str = ""` + an UNCONDITIONAL `ch.attitude = attitude`,
+    # so a value-only call (set_attitude(value=...)) blew the free-text label away to "". A DM
+    # nudging just the number must NOT erase the disposition word the bar reads alongside it.
+    npc_id = server.create_character(campaign, "Sentry", kind="npc")["id"]
+    server.set_attitude(campaign, npc_id, "guarded", value=10)
+    assert server.get_character(campaign, npc_id)["attitude"] == "guarded"
+
+    # value-only call (no `attitude`): the label must survive, only the number moves.
+    out = server.set_attitude(campaign, npc_id, value=-30)
+    assert out["attitude"] == "guarded"  # NOT wiped to ""
+    assert out["attitude_value"] == -30
+    assert server.get_character(campaign, npc_id)["attitude"] == "guarded"
+
+    # an explicit label still overwrites (the documented use is unchanged).
+    out2 = server.set_attitude(campaign, npc_id, "friendly")
+    assert out2["attitude"] == "friendly"
 
 
 def test_adjust_attitude_nudges_and_clamps(campaign):

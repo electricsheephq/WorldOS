@@ -51,10 +51,31 @@ mcp = FastMCP("clawdnd-player")
 
 # --- read-only campaign access (the MOST-RECENT campaign in this state dir) -------
 def _campaign():
-    """The live campaign. ``list_campaigns`` sorts by directory name (UUID), NOT
-    recency, so picking ``[0]`` could read a STALE campaign left in a reused state
-    dir and validate the player against the wrong character's sheet (H3). Pick the
-    most-recently-updated one — that's the session actually being played."""
+    """The live campaign this facade speaks to.
+
+    F12-15 / SYN-07 — PIN, don't re-resolve. ``CLAWDND_CAMPAIGN_ID`` (when set) names the
+    EXACT campaign this actor belongs to, so the facade reads THAT campaign on every call
+    regardless of which one is freshest. This closes the #640 silent-switch family: with a
+    parallel campaign B running, the old max(updated_at) heuristic re-resolved "the live
+    campaign" each call, and an ACTOR_ID bound to a character that only lives in campaign A
+    silently resolved to None the moment B took the lead (the companion went mute / its
+    moves were refused). A pure facade READ must never flip which campaign is live.
+
+    ADDITIVE: the pin is unset by default. Unset (or blank/whitespace) -> the original
+    selector below, byte-identical. An unknown pin (a stale/typo'd id not on disk) degrades
+    to the heuristic rather than resolving to None — a bad pin must not silently mute the
+    actor; it falls back to today's behavior.
+
+    The heuristic (no pin): ``list_campaigns`` sorts by directory name (UUID), NOT recency,
+    so picking ``[0]`` could read a STALE campaign left in a reused state dir and validate
+    the player against the wrong character's sheet (H3). Pick the most-recently-updated one
+    — that's the session actually being played."""
+    pinned = (env_var("CAMPAIGN_ID") or "").strip()
+    if pinned:
+        c = store.load_campaign(pinned)
+        if c is not None:
+            return c
+        # Unknown/stale pin -> fall through to the heuristic (never silently mute the actor).
     camps = store.list_campaigns()
     if not camps:
         return None

@@ -8093,7 +8093,9 @@ def set_attitude(
 
     Pass `value` (-100..+100, 0 = neutral) to ALSO set the numeric per-NPC
     relationship the dashboard bar reads; omit it to leave the number untouched
-    (the free-text track keeps working exactly as before).
+    (the free-text track keeps working exactly as before). Pass `attitude=""`
+    (omit it) to leave the free-text LABEL untouched — a value-only call moves
+    just the number and keeps the disposition word it doesn't mention.
 
     Identify the NPC via ``character_id`` (canonical) or the aliases ``target_id`` /
     ``npc_id`` / ``id`` — ``character_id`` wins if more than one is given."""
@@ -8103,7 +8105,12 @@ def set_attitude(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        ch.attitude = attitude
+        # F10-6(b): only OVERWRITE the free-text label when one was actually passed. A
+        # value-only call (set_attitude(value=...)) used to blow the label away to "" via an
+        # unconditional assign; guard it so nudging just the number leaves the disposition
+        # word the dashboard bar reads alongside it intact.
+        if attitude:
+            ch.attitude = attitude
         if value is not None:
             ch.attitude_value = _clamp_attitude(value)
         save_campaign(c)
@@ -8435,15 +8442,39 @@ def _suggested_dc(difficulty: str, house_difficulty: str) -> int:
     return base + shift
 
 
+# F10-2 / SYN-07: the DEFAULT parley difficulty derived from the target NPC's attitude band,
+# so a hostile NPC and a helpful one no longer yield the identical menu. A worse-than-neutral
+# stance makes the ask HARDER, a warmer-than-neutral stance EASIER. An explicit `difficulty`
+# argument always wins over this default (the DM stays in control).
+_ATTITUDE_DEFAULT_DIFFICULTY = {
+    "hostile": "hard", "wary": "hard",
+    "indifferent": "medium",
+    "friendly": "easy", "helpful": "easy",
+}
+
+
+def _parley_npc_difficulty(ch) -> str:
+    """The default parley difficulty for a tracked NPC, keyed off their attitude. Prefers
+    the free-text band (an explicit 'hostile'/'guarded' label the DM set), falling back to
+    the band DERIVED from attitude_value (npc.band_for_value) when no informative label is
+    present. Returns one of easy/medium/hard."""
+    band = npc_mod.normalize(ch.attitude) if ch.attitude else npc_mod.band_for_value(ch.attitude_value)
+    return _ATTITUDE_DEFAULT_DIFFICULTY.get(band, "medium")
+
+
 @mcp.tool()
 def generate_parley_options(
     campaign_id: str,
     actor_id: str = "",
     situation: str = "",
-    difficulty: str = "medium",
+    difficulty: str = "",
     skills: Optional[list[str]] = None,
     include_alignment: bool = True,
     event_id: str = "",
+    npc_id: str = "",
+    target_id: str = "",
+    character_id: str = "",
+    id: str = "",
 ) -> dict:
     """Call this BEFORE narrating a social encounter or any choice point: it lays out the
     PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
@@ -8459,6 +8490,18 @@ def generate_parley_options(
     computes it via the character's skill_bonus, you never invent it). `suggested_dc` comes
     from a fixed band (easy 10 / medium 14 / hard 18) keyed off `difficulty`, shifted +2 when
     HouseRules.difficulty is 'hard' and -2 when 'easy'.
+
+    Bind the parley to a TRACKED NPC (F10-2/SYN-07) by passing ``npc_id`` (aliases
+    ``target_id`` / ``character_id`` / ``id``): the surface then carries an ``npc`` block
+    {id, name, attitude, attitude_value, met, difficulty} so the menu reflects WHO the party
+    is talking to (and the viewer's Parley header stays pinned to a stable id, never drifting
+    to another speaker mid-scene). When you pass an npc_id and DON'T pass an explicit
+    ``difficulty``, the DEFAULT difficulty is DERIVED from the target's attitude — a hostile/
+    wary NPC makes the ask HARD, a friendly/helpful one EASY, indifferent stays MEDIUM — so a
+    hostile -80 NPC and a helpful +80 NPC no longer hand you the identical menu. An explicit
+    ``difficulty`` always wins. An unknown npc_id (typo / wrong campaign) degrades to a
+    freeform parley (no npc block) rather than erroring mid-scene. ``situation`` (the scene
+    prose you supply) is echoed back on the surface so it round-trips for the menu you author.
 
     This tool authors NOTHING and never rolls — it hands you slots, not lines. Voice the
     prose yourself, tag each option by alignment + skill+DC + a reputation/consequence hint,
@@ -8482,6 +8525,12 @@ def generate_parley_options(
         raise ValueError("campaign has no characters to parley with; create the PC first")
     actor = _char(c, aid)
 
+    # F10-2/SYN-07: bind to a tracked NPC (additive). Accept the id the DM reaches for; an
+    # unknown id DEGRADES to a freeform parley (no npc block) — like event_id, it never
+    # raises mid-scene. The binding is a pure READ: nothing on the NPC is mutated here.
+    npc_id = npc_id or target_id or character_id or id
+    the_npc = c.characters.get(npc_id) if npc_id else None
+
     # Default skill set: the actor's own proficient/expertise skills UNION the four core
     # social skills every parley reaches for. Dedup while preserving a stable order
     # (sheet skills first, then any core skills not already present).
@@ -8493,7 +8542,14 @@ def generate_parley_options(
     else:
         chosen = list(dict.fromkeys(s.strip().lower().replace(" ", "_") for s in skills))
 
-    dc = _suggested_dc(difficulty, c.house_rules.difficulty)
+    # The effective difficulty: an explicitly passed `difficulty` ALWAYS wins; otherwise,
+    # when bound to a tracked NPC, derive it from that NPC's attitude band; otherwise the
+    # medium default (today's behavior — `_suggested_dc` maps an empty string to medium, so
+    # the no-npc / no-difficulty payload is byte-identical to before).
+    effective_difficulty = difficulty
+    if not effective_difficulty and the_npc is not None:
+        effective_difficulty = _parley_npc_difficulty(the_npc)
+    dc = _suggested_dc(effective_difficulty, c.house_rules.difficulty)
     skill_rows: list[dict] = []
     for sk in chosen:
         if sk not in SKILL_ABILITIES:
@@ -8515,6 +8571,24 @@ def generate_parley_options(
     }
     if include_alignment:
         out["alignment"] = actor.alignment
+    # F10-2/SYN-07: echo the DM-supplied scene prose (was a DEAD param — every caller filled
+    # it and the engine dropped it). Only when non-empty, so the no-situation payload is
+    # byte-identical to before.
+    if situation:
+        out["situation"] = situation
+    # F10-2/SYN-07: a stable NPC block when bound to a tracked NPC, so the menu (and the
+    # viewer's Parley header) reflects WHO the party faces and stays pinned to one id. A READ
+    # — nothing mutated. `difficulty` is the effective band this menu used (the derived
+    # attitude default, or the DM's explicit override). Absent/unknown npc_id -> no block.
+    if the_npc is not None:
+        out["npc"] = {
+            "id": the_npc.id,
+            "name": the_npc.name,
+            "attitude": the_npc.attitude,
+            "attitude_value": the_npc.attitude_value,
+            "met": the_npc.met,
+            "difficulty": effective_difficulty or "medium",
+        }
     # Quest & Arc engine, Layer 3: when a live Event is named, attach its authored options as
     # the menu slots (the free-form path above stays). A resolved/unknown Event omits the block,
     # degrading to today's freeform parley. resolve_event applies a picked option's ripple.

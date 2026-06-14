@@ -120,6 +120,21 @@ _SELF_DEAD_CUE = re.compile(
 )
 # Leading wiki magic-word directives (e.g. __notoc__, __NOTOC__) to strip off an opener.
 _WIKI_DIRECTIVE_PREFIX = re.compile(r"^(?:__[a-z]+__\s*)+", re.IGNORECASE)
+# F10-7: the SAME wiki magic words anywhere in a string (not just the opener), with any
+# trailing whitespace they sit on. Case-INsensitive is load-bearing: ~1/3 of the dirty
+# canon files carry the uppercase __NOTOC__, so a case-sensitive scrub misses them (#758).
+_WIKI_DIRECTIVE_ANY = re.compile(r"__[a-z]+__\s*", re.IGNORECASE)
+
+
+def strip_wiki_directives(text: str) -> str:
+    """Strip MediaWiki magic-word directives (``__notoc__`` / ``__NOTOC__`` / ``__toc__`` …)
+    from canon prose, ANYWHERE in the string and case-INsensitively, then trim. This is
+    editor markup, not lore — it must never reach the player-facing snippet, the DM-voiced
+    backstory, or a portrait prompt (F10-7). A non-directive ``__word__`` shape and plain
+    ``snake_case`` are left untouched (only the closed ``__<letters>__`` token matches)."""
+    if not text:
+        return text
+    return _WIKI_DIRECTIVE_ANY.sub("", str(text)).strip()
 
 
 def _death_opener(backstory: str) -> str:
@@ -325,8 +340,9 @@ def find_canon_characters(
 def _backstory_snippet(text: str, limit: int = 220) -> str:
     """A short, single-paragraph backstory teaser for the roster card. Collapses internal
     whitespace and trims to ~`limit` chars on a word boundary with an ellipsis. Empty in ->
-    empty out (the card then shows just the identity line)."""
-    s = " ".join(str(text or "").split())
+    empty out (the card then shows just the identity line). F10-7: strips wiki magic-word
+    directives first so the card never opens with ``__notoc__`` markup."""
+    s = " ".join(strip_wiki_directives(str(text or "")).split())
     if not s:
         return ""
     if len(s) <= limit:
@@ -484,8 +500,29 @@ def roster_surface(
     }
 
 
+# The free-prose fields a canon record exposes to the DM / portrait prompt. F10-7 scrubs
+# wiki magic-word directives out of these at read time (belt-and-braces with the one-shot
+# content script + the CI invariant), so the player surface never shows editor markup even
+# if a freshly-ingested record slips one in before the script re-runs.
+_CANON_PROSE_FIELDS = ("backstory", "appearance", "personality", "mannerisms")
+
+
+def _sanitize_canon_record(rec: dict) -> dict:
+    """Return a shallow copy of a canon record with wiki magic-word directives stripped from
+    its prose fields (F10-7). Never mutates the caller's dict; non-prose fields are untouched."""
+    if not isinstance(rec, dict):
+        return rec
+    cleaned = dict(rec)
+    for field in _CANON_PROSE_FIELDS:
+        val = cleaned.get(field)
+        if isinstance(val, str) and val:
+            cleaned[field] = strip_wiki_directives(val)
+    return cleaned
+
+
 def load_canon_character(world_id: str, name: str) -> "dict | None":
-    """Load one ingested canon character record by name (or file slug), or None."""
+    """Load one ingested canon character record by name (or file slug), or None. F10-7: the
+    prose fields are scrubbed of wiki magic-word directives before return."""
     want = name.strip().lower()
     want_toks = set(want.split())
     recs: list[tuple[str, dict]] = []
@@ -501,7 +538,7 @@ def load_canon_character(world_id: str, name: str) -> "dict | None":
     # 1) exact match on display name or file slug.
     for stem, rec in recs:
         if (rec.get("name", "").strip().lower() == want) or (stem == want):
-            return rec
+            return _sanitize_canon_record(rec)
     # 2) fuzzy fallback (QA): the roster/prelude may use a FULLER display name than the canon
     # file — e.g. "Wyll Ravengard" vs the "Wyll" record. Match a record whose name-tokens are a
     # subset of the query (or the query's are a subset of the name's), but ONLY when that pins a
@@ -512,7 +549,7 @@ def load_canon_character(world_id: str, name: str) -> "dict | None":
         nm_toks = set(nm.split())
         if nm_toks and (nm_toks <= want_toks or want_toks <= nm_toks):
             cands[nm] = rec
-    return next(iter(cands.values())) if len(cands) == 1 else None
+    return _sanitize_canon_record(next(iter(cands.values()))) if len(cands) == 1 else None
 
 
 def load_adventure_data(adventure_id: str) -> dict:
@@ -1895,7 +1932,14 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             kind="npc",
             voice_id=npc.get("voice_id", "npc-male-1"),
             personality=npc.get("personality", ""),
-            attitude=npc.get("role", ""),
+            # F10-4: the roster `role` is PROSE identity ("High Harper, veteran of a hundred
+            # years") — it must NOT land in `attitude`, the field social_check/shift_attitude
+            # overwrite with a track word on first influence (silently destroying the role) and
+            # the dashboard bar reads as a disposition. Route the role to `notes` (free text the
+            # DM voices) and leave `attitude` for the social track. An EXPLICIT `attitude` on the
+            # entry is still honored (additive); absent -> "" (the track's neutral default).
+            attitude=npc.get("attitude", ""),
+            notes=npc.get("role", ""),
         )
         if npc.get("id"):
             if npc["id"] in c.characters:
