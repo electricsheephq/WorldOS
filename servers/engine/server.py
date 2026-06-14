@@ -11,6 +11,7 @@ in later epics; this server already owns dice, characters, and persistence.
 
 from __future__ import annotations
 
+import difflib
 import random
 import re
 import sys
@@ -120,11 +121,67 @@ def _require(campaign_id: str) -> Campaign:
     return c
 
 
+def _name_slug(s: str) -> str:
+    """Slugify a display name the way the DM does ('Maddala Deadeye' -> 'maddala-deadeye')."""
+    return re.sub(r"[^a-z0-9]+", "-", (s or "").strip().lower()).strip("-")
+
+
 def _char(c: Campaign, character_id: str) -> Character:
+    """Resolve a character id — tolerantly (audit F14-8). ~60 tools route every
+    character_id through this ONE site, so a bare dict-get-and-raise turned any id slip
+    ('maddala-deadeye' for char_2712a4348f3a "Maddala Deadeye") into a dead-end on all of
+    them: a wasted ~100s beat, or a silently-freehanded result. Resolution ladder,
+    deterministic and READ-ONLY:
+      1. exact dict-key hit (today's behavior — ids stay canonical, zero new cost);
+      2. unique case-insensitive match on id, display name, or slugified name;
+      3. unique substring match on name or id ('maddala' finds her too);
+      4. otherwise raise the SAME-SHAPED ValueError ("no character … in campaign"), now
+         carrying a did-you-mean of the <=5 nearest `id (name, kind)` via difflib.
+    On ANY ambiguity (two NPCs named "Guard") NEVER resolve — raise listing the
+    candidates; a mutating tool must never guess. A fuzzy hit is echoed on stderr (the
+    QA harness captures it) so silent resolution stays observable."""
     ch = c.characters.get(character_id)
-    if ch is None:
-        raise ValueError(f"no character {character_id!r} in campaign")
-    return ch
+    if ch is not None:
+        return ch
+    want = (character_id or "").strip()
+    wl = want.lower()
+    candidates: list[Character] = []
+    if wl:
+        slug = _name_slug(want)
+        exact = [x for x in c.characters.values()
+                 if x.id.lower() == wl or x.name.strip().lower() == wl
+                 or (slug and _name_slug(x.name) == slug)]
+        if len(exact) == 1:
+            print(f"[worldos:_char] resolved {character_id!r} -> {exact[0].id!r} "
+                  f"({exact[0].name})", file=sys.stderr)
+            return exact[0]
+        candidates = exact
+        if not exact:
+            sub = [x for x in c.characters.values()
+                   if wl in x.name.lower() or wl in x.id.lower()]
+            if len(sub) == 1:
+                print(f"[worldos:_char] resolved {character_id!r} -> {sub[0].id!r} "
+                      f"({sub[0].name})", file=sys.stderr)
+                return sub[0]
+            candidates = sub
+    if not candidates and wl:
+        # Nearest names/ids/slugs via difflib, mapped back to characters (dedup by id).
+        corpus: dict[str, Character] = {}
+        for x in c.characters.values():
+            for key in (x.id.lower(), x.name.strip().lower(), _name_slug(x.name)):
+                if key:
+                    corpus.setdefault(key, x)
+        seen: set[str] = set()
+        for m in difflib.get_close_matches(wl, list(corpus), n=10, cutoff=0.5):
+            x = corpus[m]
+            if x.id not in seen:
+                seen.add(x.id)
+                candidates.append(x)
+    msg = f"no character {character_id!r} in campaign"
+    hint = "; ".join(f"{x.id} ({x.name}, {x.kind})" for x in candidates[:5])
+    if hint:
+        msg += f". Did you mean: {hint}?"
+    raise ValueError(msg)
 
 
 _COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
@@ -1280,8 +1337,9 @@ def _seed_starting_gear(ch, class_name: str) -> None:
 # leveled spells). Every name resolves in the srd524 casting DB so cast_spell works out of the
 # box. This exists because _recompute_spellcasting only sizes SLOTS — without seeding spells a
 # freshly-built caster has slots but NOTHING to cast (QA: a level-3 Wizard shipped with an empty
-# spellbook and never cast once). Half-casters (paladin/ranger) gain spells at L2, so they are
-# seeded only from level 2. Generic SRD spells — no proprietary list copied.
+# spellbook and never cast once). Half-casters (paladin/ranger) cast from LEVEL 1 under SRD 5.2
+# (the 2024 edition the engine's feature data follows — audit F02-2), so they seed from L1 like
+# everyone else. Generic SRD spells — no proprietary list copied.
 _STARTING_SPELLS: dict[str, dict[str, list[str]]] = {
     "wizard":   {"cantrips": ["Fire Bolt", "Mage Hand", "Light"],
                  "spells": ["Magic Missile", "Shield", "Mage Armor", "Detect Magic"]},
@@ -1307,19 +1365,90 @@ def _seed_starting_spells(ch, class_name: str, level: int) -> None:
     cast from turn one. Cantrips land in spells_known (always available); leveled spells land in
     BOTH spells_known and spells_prepared so casting works whether the class is a known- or a
     prepared-caster. Only fires when BOTH spell lists are empty (respects a template/canon record
-    that supplied its own spells) and only for the caster classes above. Half-casters wait for L2."""
+    that supplied its own spells) and only for the caster classes above. Half-casters seed from
+    L1 — SRD 5.2 paladins/rangers have Spellcasting at level 1 (the old `level < 2` gate was a
+    2014 assumption that, combined with the round-down caster level, made a L1 half-caster
+    unable to cast at all — audit F02-2)."""
     cname = (class_name or "").lower()
     loadout = _STARTING_SPELLS.get(cname)
     if not loadout:
         return
     if ch.spells_known or ch.spells_prepared:
         return  # respect spells a template / canon record already supplied
-    if cname in ("paladin", "ranger") and level < 2:
-        return  # half-casters have no spells (or slots) until level 2
     cantrips = list(loadout.get("cantrips", []))
     spells = list(loadout.get("spells", []))
     ch.spells_known = cantrips + spells
     ch.spells_prepared = list(spells)
+
+
+_ABILITY_FIELDS = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+
+
+def _backfill_seat_abilities(ch, class_name: str, level: int, rec_abilities=None) -> str:
+    """The ONE ability backfill every seat path shares (audit F02-1). Precedence,
+    deterministic and additive:
+      * a sheet that is already non-flat (hand-authored roster record, explicit caller
+        abilities applied upstream) is NEVER touched -> "explicit";
+      * an explicit record `abilities` block wins next -> "canon" (malformed degrades);
+      * else derive the class+level standard array (_derive_canon_abilities) -> "derived";
+      * a class-less / unknown-class sheet keeps the flat-10 default -> "placeholder".
+    initiative_bonus resets from the REAL DEX whenever abilities are (re)assigned, so
+    HP/AC/initiative downstream compute off real scores. Returns the ability_source."""
+    if any(getattr(ch.abilities, f) != 10 for f in _ABILITY_FIELDS):
+        return "explicit"  # a real sheet always wins over derivation
+    if isinstance(rec_abilities, dict) and rec_abilities:
+        try:
+            ch.abilities = AbilityScores(**rec_abilities)
+            ch.initiative_bonus = ch.abilities.modifier(Ability.DEX)
+            return "canon"
+        except (TypeError, ValueError):
+            pass  # malformed record block -> fall through to derivation/placeholder
+    derived = _derive_canon_abilities(class_name, level)
+    if derived is not None:
+        ch.abilities = derived
+        ch.initiative_bonus = ch.abilities.modifier(Ability.DEX)
+        return "derived"
+    return "placeholder"
+
+
+def _finish_seat_sheet(ch, class_name: str, level: int, *, set_base_ac: bool,
+                       rec_abilities=None, backfill_abilities: bool = True,
+                       seed_gear: bool = True) -> str:
+    """EVERY seat path's shared finisher (audit F02-1 + F02-4): ability backfill ->
+    SRD class defaults -> starting gear+purse, in that order so HP/AC/initiative are
+    computed from REAL ability scores. The five seat paths (create / start fresh +
+    promote / load_canon / recruit) each used to hand-roll a different subset of these
+    steps — pickup PCs seated flat-10, canon/recruit seats claimed an armor AC over an
+    empty pack — so the fix shape is one helper, not another one-path patch. Every step
+    self-guards (non-flat sheets, supplied kits/purses, non-stub HP, and unknown classes
+    are all left alone), making the whole call additive on an already-complete sheet.
+    Returns the ability_source ("explicit" | "canon" | "derived" | "placeholder")."""
+    ability_source = "explicit"
+    if backfill_abilities:
+        ability_source = _backfill_seat_abilities(ch, class_name, level, rec_abilities)
+    if class_name:
+        _apply_srd_class_defaults(ch, class_name, level, set_base_ac=set_base_ac)
+        if seed_gear:
+            _seed_starting_gear(ch, class_name)
+    return ability_source
+
+
+def _seat_flat10_warnings(ch, class_label: str, where: str) -> list[str]:
+    """The flat-10 PLACEHOLDER warning load_canon_character surfaces, shared with the
+    start_character seat paths (audit F02-1): a PLAYER (or any seated spellcaster) standing
+    at 10/10/10/10/10/10 acts at +0 on every check/save/DC — not a hard fail (a class-less
+    blank sheet is a documented origin), but QA and the DM must SEE it. Returned in the
+    tool result and echoed on stderr (the QA harness captures stderr)."""
+    is_flat = all(getattr(ch.abilities, f) == 10 for f in _ABILITY_FIELDS)
+    is_caster = bool(ch.spell_slots or ch.spells_known or ch.spells_prepared)
+    if not (is_flat and (ch.kind == "player" or is_caster)):
+        return []
+    who = "player" if ch.kind == "player" else "spellcaster"
+    warn = (f"{ch.name!r} ({class_label or 'class-less'}) seated as a {who} with a "
+            f"PLACEHOLDER 10/10/10/10/10/10 ability array — its checks, saves, and spell "
+            f"DCs are all +0. Pass `abilities` or flesh the sheet out via update_character.")
+    print(f"[worldos:{where}] WARNING: {warn}", file=sys.stderr)
+    return [warn]
 
 
 @mcp.tool()
@@ -1404,9 +1533,11 @@ def create_character(
         if skills:  # explicit skill choices win over the class default-fill
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
-            _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class == 10))
-            if kind in ("player", "companion"):
-                _seed_starting_gear(ch, class_name)  # gear + purse (was only seeded via start_character)
+            # create_character is the DM's direct authoring surface: an omitted `abilities`
+            # stays the explicit flat sheet (today's contract) — no derivation here.
+            _finish_seat_sheet(ch, class_name, level, set_base_ac=(armor_class == 10),
+                               backfill_abilities=False,
+                               seed_gear=(kind in ("player", "companion")))
         # Anchor NPCs/monsters to where they're introduced so "who's in the scene" is
         # the current location's cast — not the whole seeded world roster. Explicit
         # location_id wins; otherwise default to the party's current location.
@@ -1597,6 +1728,7 @@ def start_character(
         if existing is not None:
             ch = existing
             ch.kind = "player"  # type: ignore[assignment]
+            ability_source = "explicit"
             if build["abilities"]:
                 ch.abilities = scores
                 ch.initiative_bonus = scores.modifier(Ability.DEX)
@@ -1617,8 +1749,13 @@ def start_character(
             if build["skills"]:
                 ch.skill_proficiencies = [s.lower() for s in build["skills"] if s.lower() in SKILL_ABILITIES]
             if cn:
-                _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
-                _seed_starting_gear(ch, cn)  # AC/inventory consistency (no-op if gear already present)
+                # The shared finisher (F02-1/F02-4): backfill-when-flat (a hand-fleshed
+                # roster sheet wins; a flat-10 stub is repaired from the canon rec / the
+                # class array), SRD defaults, gear+purse — same ladder as every seat path.
+                ability_source = _finish_seat_sheet(
+                    ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10),
+                    rec_abilities=(rec or {}).get("abilities"),
+                    backfill_abilities=not build["abilities"])
             if ch.id not in c.party:
                 c.party.append(ch.id)
             save_campaign(c)
@@ -1632,6 +1769,10 @@ def start_character(
                 "level": ch.total_level,
                 "in_party": ch.id in c.party,
                 "promoted_existing": True,  # reused the roster record (no duplicate minted)
+                # Which precedence seated the abilities (explicit/canon/derived/placeholder)
+                # + the same flat-10 warning load_canon surfaces — QA/DM must SEE a +0 PC.
+                "ability_source": ability_source,
+                "warnings": _seat_flat10_warnings(ch, cn, "start_character"),
                 "combat_numbers": _combat_numbers(ch),  # authoritative to-hit/damage — don't invent
             }
 
@@ -1658,11 +1799,17 @@ def start_character(
         if build["skills"]:  # explicit/template skill choices win over the class default-fill
             ch.skill_proficiencies = [s.lower() for s in build["skills"] if s.lower() in SKILL_ABILITIES]
         # Fill a real SRD sheet whenever a class is known (every origin but a class-less
-        # nobody_l1). set_base_ac only when AC is the unarmored default, mirroring
-        # create_character so an explicit/template AC is preserved.
+        # nobody_l1), via the shared finisher (F02-1/F02-4): when no explicit `abilities`
+        # were passed, the canon rec's block -> the class+level standard array backfills
+        # the flat-10 placeholder BEFORE HP/AC/initiative are computed (the pickup-origin
+        # PC used to seat all-10s). set_base_ac only when AC is the unarmored default,
+        # mirroring create_character so an explicit/template AC is preserved.
+        ability_source = "explicit" if build["abilities"] else "placeholder"
         if cn:
-            _apply_srd_class_defaults(ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10))
-            _seed_starting_gear(ch, cn)  # AC/inventory consistency (no-op if gear already present)
+            ability_source = _finish_seat_sheet(
+                ch, cn, lvl, set_base_ac=(int(build["armor_class"]) == 10),
+                rec_abilities=(rec or {}).get("abilities"),
+                backfill_abilities=not build["abilities"])
         # Apply template-supplied spellbooks (additive: empty list == today's behavior).
         if build.get("spells_known"):
             ch.spells_known = list(build["spells_known"])
@@ -1681,6 +1828,10 @@ def start_character(
         "class": cn,
         "level": ch.total_level,
         "in_party": ch.id in c.party,
+        # Which precedence seated the abilities (explicit/canon/derived/placeholder) + the
+        # same flat-10 warning load_canon surfaces — QA/DM must SEE a +0 PC (F02-1).
+        "ability_source": ability_source,
+        "warnings": _seat_flat10_warnings(ch, cn, "start_character"),
         "combat_numbers": _combat_numbers(ch),  # authoritative to-hit/damage — don't invent
     }
 
@@ -1738,7 +1889,12 @@ def recruit_companion(
         if skills:  # explicit skill choices win over the class default-fill
             ch.skill_proficiencies = [s.lower() for s in skills if s.lower() in SKILL_ABILITIES]
         if apply_srd_defaults and class_name:
-            _apply_srd_class_defaults(ch, class_name, level, set_base_ac=(armor_class <= 0))
+            # The shared seat finisher (F02-1/F02-4): a flat-10 roster stub gains a class-
+            # appropriate array (explicit `abilities` / a hand-fleshed sheet always win),
+            # then SRD defaults, then the gear+purse kit the claimed AC implies — recruit
+            # used to apply the AC but never the armor (53 wild AC>=14-no-armor records).
+            _finish_seat_sheet(ch, class_name, level, set_base_ac=(armor_class <= 0),
+                               backfill_abilities=not abilities, seed_gear=True)
         # Recruiting fleshes out a real combat sheet — so a candidate who was flagged dead while
         # still a bare identity STUB (the load_canon_character stub spawns at max_hp=1, and one hit
         # in combat trips the SRD massive-damage instant-death rule) must NOT stay dead once they
@@ -2309,9 +2465,7 @@ def get_character(campaign_id: str, character_id: str = "", target_id: str = "",
     if not character_id:
         raise ValueError("get_character needs a character (pass `character_id` or an alias: `target_id`/`id`)")
     c = _require(campaign_id)
-    ch = c.characters.get(character_id)
-    if ch is None:
-        raise ValueError(f"no character {character_id!r} in campaign")
+    ch = _char(c, character_id)  # ONE resolve-then-suggest site (F14-8), not an inline copy
     sheet = ch.model_dump(mode="json")
     sheet["class_resources_view"] = _class_resources_view(ch)
     sheet["combat_numbers"] = _combat_numbers(ch)
@@ -2502,23 +2656,21 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
         # explicit canon `abilities` block unchanged where one exists (forward-compatible — none in
         # the current corpus, but a hand-authored sheet must win). A class-less / unknown-class
         # record can't be sized, so it KEEPS the flat-10 default (today's behavior) and we warn.
-        ability_source = "placeholder"
-        canon_abilities = rec.get("abilities")
-        if isinstance(canon_abilities, dict) and canon_abilities:
-            try:
-                ch.abilities = AbilityScores(**canon_abilities)
-                ability_source = "canon"
-            except (TypeError, ValueError):
-                pass  # malformed canon abilities -> fall through to derivation/placeholder
-        if ability_source == "placeholder":
-            derived = _derive_canon_abilities(classes[0].name, classes[0].level) if classes else None
-            if derived is not None:
-                ch.abilities = derived
-                ch.initiative_bonus = ch.abilities.modifier(Ability.DEX)
-                ability_source = "derived"
-        if classes:
-            _apply_srd_class_defaults(ch, classes[0].name, classes[0].level,
-                                      set_base_ac=(ch.armor_class == 10))
+        # All of the above now runs through the shared seat finisher (F02-1/F02-4):
+        # canon `abilities` block -> derived class array -> placeholder, then the SRD
+        # defaults, then — for a PARTY seat (player/companion) — the starting gear+purse
+        # the claimed AC implies. load_canon used to apply the SRD AC but never the armor
+        # (Jun-9 Alfira: AC 14, inventory [], 0 gp — one of 53 wild AC>=14-no-armor
+        # records); a lore NPC pull stays gearless. The seeder self-guards, so a record
+        # that ships its own kit/purse is untouched.
+        ability_source = _finish_seat_sheet(
+            ch,
+            classes[0].name if classes else "",
+            classes[0].level if classes else 1,
+            set_base_ac=(ch.armor_class == 10),
+            rec_abilities=rec.get("abilities"),
+            seed_gear=(ch.kind in ("player", "companion")),
+        )
         # MAX_HP (#352 — canon PC seated with a critically-low max_hp). The Character default is a
         # placeholder max_hp=1, and an identity stub left at 1 HP is an INSTANT-KILL combatant: the
         # first hit trips combat's SRD massive-damage rule (damage >= max_hp at 0 HP) and flags it

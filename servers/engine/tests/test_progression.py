@@ -40,13 +40,51 @@ def test_is_asi_level():
     [
         ([("Wizard", 5)], {1: 4, 2: 3, 3: 2}),
         ([("Cleric", 1), ("Wizard", 1)], {1: 3}),  # effective caster level 2
-        ([("Paladin", 1)], {}),  # half-caster level 1 -> CL 0
+        # Half-casters round UP (SRD 5.2 / audit F02-2) — the old 2014 round-DOWN gave a
+        # L1 paladin/ranger ZERO slots and under-slotted every odd level.
+        ([("Paladin", 1)], {1: 2}),  # CL 1 (was {} under round-down)
         ([("Paladin", 2)], {1: 2}),  # CL 1
-        ([("Paladin", 6), ("Sorcerer", 1)], {1: 4, 2: 3}),  # 3 + 1 = CL 4
+        ([("Paladin", 3)], {1: 3}),  # CL 2 (was {1: 2})
+        ([("Ranger", 5)], {1: 4, 2: 2}),  # CL 3 (was {1: 3})
+        ([("Paladin", 6), ("Sorcerer", 1)], {1: 4, 2: 3}),  # 3 + 1 = CL 4 (unchanged)
     ],
 )
 def test_multiclass_slots(class_levels, expected):
     assert srd_tables.multiclass_slots(class_levels) == expected
+
+
+@pytest.mark.parametrize(
+    "level,expected",
+    [
+        # With ceil rounding, the multiclass table reproduces the PHB half-caster
+        # progression column EXACTLY at every single-class paladin/ranger level.
+        (1, {1: 2}),
+        (2, {1: 2}),
+        (3, {1: 3}),
+        (5, {1: 4, 2: 2}),
+        (9, {1: 4, 2: 3, 3: 2}),
+        (13, {1: 4, 2: 3, 3: 3, 4: 1}),
+        (17, {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}),
+        (19, {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}),
+    ],
+)
+def test_half_caster_single_class_matches_phb_column(level, expected):
+    assert srd_tables.multiclass_slots([("Paladin", level)]) == expected
+    assert srd_tables.multiclass_slots([("Ranger", level)]) == expected
+
+
+def test_l1_half_caster_creation_gets_slots_and_spells():
+    # F02-2 compounding seed gate: a L1 paladin/ranger could not cast AT ALL — zero
+    # slots from the round-down table AND a `level < 2` gate in _seed_starting_spells.
+    cid = server.create_campaign("HalfCaster")["id"]
+    for cls, spell in (("paladin", "Cure Wounds"), ("ranger", "Hunter's Mark")):
+        out = server.create_character(cid, f"L1 {cls}", kind="player", class_name=cls,
+                                      level=1, apply_srd_defaults=True)
+        sheet = server.get_character(cid, out["id"])
+        assert sheet["spell_slots"], f"L1 {cls} must have spell slots"
+        assert sheet["spell_slots"]["1"]["maximum"] == 2, cls
+        assert sheet["spells_known"], f"L1 {cls} must seed a starting loadout"
+        assert spell in sheet["spells_prepared"], cls
 
 
 def test_warlock_pact():

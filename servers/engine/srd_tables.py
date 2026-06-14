@@ -258,8 +258,15 @@ def standard_array() -> list[int]:
 
 
 def effective_caster_level(class_levels: list[tuple[str, int]]) -> int:
-    """Multiclass effective caster level: full=+level, half=+level//2,
-    third=+level//3 (per-class floor, summed). Pact/none contribute 0."""
+    """Effective caster level: full=+level, half=+ceil(level/2), third=+ceil(level/3)
+    (per-class, summed). Pact/none contribute 0.
+
+    SRD 5.2 (2024) rounds half- and third-casters UP — and with ceil the multiclass
+    slot table reproduces the PHB half-caster CLASS column exactly at every
+    single-class paladin/ranger level (L1->CL1->[2], L3->CL2->[3], L5->CL3->[4,2]),
+    so half-casters effectively get their own progression column. The old 2014
+    round-DOWN seated a L1 paladin/ranger with ZERO slots and under-slotted every
+    odd level (audit F02-2). Third-casters are unused today — future-proofing."""
     total = 0
     for name, level in class_levels:
         try:
@@ -269,9 +276,9 @@ def effective_caster_level(class_levels: list[tuple[str, int]]) -> int:
         if ct == "full":
             total += level
         elif ct == "half":
-            total += level // 2
+            total += (level + 1) // 2
         elif ct == "third":
-            total += level // 3
+            total += (level + 2) // 3
     return total
 
 
