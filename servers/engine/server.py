@@ -3106,6 +3106,8 @@ def remove_condition(campaign_id: str, character_id: str = "", condition: str = 
         c = _require(campaign_id)
         ch = _char(c, character_id)
         ch.conditions = [x for x in ch.conditions if x != cond]
+        if cond == Condition.GRAPPLED:
+            ch.grappled_by = None  # F01-8: hold lifted — clear the grappler link
         save_campaign(c)
         return ch.model_dump(mode="json")
 
@@ -3370,6 +3372,37 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
                     "damage_rolls for multi-type attacks), not an improvised mix."
                 ),
             }
+    # LEGENDARY ACTIONS (F01-13, audit 2026-06-11 — v1 SURFACE). 31 SRD bosses carry
+    # LEGENDARY_ACTION-typed stat-block entries the engine never exposed, so a dragon never
+    # got its between-turns actions and felt like a sack of HP. v1 SURFACES them so the DM
+    # runs them; the v2 class_resources budget pool is deferred (flagged med-confidence in
+    # the audit). Budget defaults to the SRD-standard 3 legendary actions per round (the
+    # 2024 default for legendary creatures); each option's cost is 1 unless its desc says
+    # "Costs N Actions". Additive — absent for the 95% of creatures with no legendary actions.
+    legendary = [a for a in actions if str(a.get("action_type", "")).upper() == "LEGENDARY_ACTION"]
+    if legendary:
+        import re as _re2
+        options = []
+        for a in legendary:
+            desc = str(a.get("desc", ""))
+            cost_m = _re2.search(r"Costs?\s+(\d+)\s+Action", desc, _re2.IGNORECASE)
+            options.append({
+                "name": a.get("name", ""),
+                "cost": int(cost_m.group(1)) if cost_m else 1,
+                "desc": desc,
+            })
+        entry["legendary_actions"] = {
+            "budget": 3,  # SRD default: 3 legendary actions per round, spent between turns
+            "options": options,
+            "note": (
+                f"{ch.name} is a LEGENDARY creature: it may spend up to 3 legendary actions "
+                "per round, ONE AT A TIME, at the END of another combatant's turn (not on its "
+                "own turn; the budget refreshes at the start of its turn). Pick an option "
+                "below (each costs 1 action unless noted) and resolve it via the normal verbs "
+                "(attack / saving_throw / cast_spell). v1 SURFACE — the engine does not yet "
+                "track the per-round budget; spend them in the fiction."
+            ),
+        }
     return entry
 
 
@@ -3388,6 +3421,75 @@ def _attacker_multiattack_count(ch: "Character", c: "Campaign") -> int:
         return int(apt) if int(apt) > 1 else 0
     except Exception:
         return 0
+
+
+def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes: str) -> None:
+    """Enforce the SRD combat gates on a contest/utility verb (F01-7, audit 2026-06-11):
+    grapple / shove (Attack-action options of the Unarmed Strike — 2024) and
+    escape_grapple / stabilize (an Action). These verbs previously went straight to their
+    DC + save resolution with NO incapacitation check, NO turn ownership, and NO economy
+    write — the exact carve-out attack() / cast_spell already close. This mirrors that
+    pattern, runs BEFORE any roll (a rejected verb changes NOTHING), and CONSUMES the
+    economy on success.
+
+    ``consumes``:
+      * ``"attack"`` — grapple/shove: counts as one attack of the Attack action's budget
+        (check_action_attack + bump action_attacks_made), so a grapple+attack in one turn
+        is correctly limited by Extra Attack / Action Surge, and a grapple-only turn
+        satisfies the PC-skip guard.
+      * ``"action"`` — escape_grapple/stabilize: requires the actor's unspent Action and
+        marks action_used.
+
+    Inert when no combat is active OR the actor isn't in the initiative order (an
+    out-of-initiative scuffle is the DM's call) — purely additive over today's behaviour.
+    Raises ValueError on an illegal verb (incapacitated actor, wrong turn, no budget)."""
+    # SRD: an incapacitated creature can take no action — refuse outright (mirrors attack()).
+    if combat.is_incapacitated(actor):
+        incap = ", ".join(cn.value for cn in actor.conditions if cn in combat.INCAPACITATING)
+        raise ValueError(f"{actor.name} is incapacitated ({incap}) and cannot {verb}")
+    if not c.combat.active:
+        return  # out-of-initiative: inert, as before
+    actor_cb = next(
+        (cb for cb in c.combat.order if cb.character_id == actor.id), None
+    )
+    if actor_cb is None:
+        return  # not a combatant in this fight: left to the DM
+    is_current = c.combat.current_combatant_id == actor.id
+    if not is_current:
+        cur = c.characters.get(c.combat.current_combatant_id)
+        cur_name = cur.name if cur else c.combat.current_combatant_id
+        raise ValueError(
+            f"it is not {actor.name}'s turn (it is {cur_name}'s) — {verb} is an action on "
+            f"your own turn, not an off-turn move. Advance with next_turn so the order stays "
+            f"in sync."
+        )
+    if consumes == "attack":
+        ma = _attacker_multiattack_count(actor, c)
+        ok, reason = combat.check_action_attack(
+            is_current=True,
+            attacks_made=c.combat.action_attacks_made,
+            extra_attacks=getattr(actor, "extra_attacks", 0),
+            surge_actions=c.combat.surge_actions,
+            multiattack=ma,
+        )
+        if not ok:
+            raise ValueError(f"{actor.name} cannot {verb}: {reason}")
+        c.combat.action_attacks_made += 1
+        c.combat.action_used = True  # the Attack action is now declared/used this turn
+    elif consumes == "action":
+        # An action verb (escape/stabilize) is mutually exclusive with the Attack action —
+        # you have ONE action. If it's already spent (an attack made, or another action verb),
+        # reject. On success, mark action_used AND exhaust the attack budget so a later
+        # attack() this turn is rejected by attack()'s existing economy gate (one action gone).
+        if c.combat.action_used or c.combat.action_attacks_made > 0:
+            raise ValueError(
+                f"{actor.name} has already used its action this turn and cannot {verb} "
+                f"(it is an Action). Advance with next_turn for a fresh turn."
+            )
+        c.combat.action_used = True
+        c.combat.action_attacks_made = combat.attacks_allowed(
+            getattr(actor, "extra_attacks", 0), c.combat.surge_actions
+        )
 
 
 @mcp.tool()
@@ -3635,19 +3737,48 @@ def move_to_zone(campaign_id: str, combatant_id: str = "", zone: str = "",
         # Opportunity attacks: hostiles SHARING the zone the mover is leaving. A
         # creature is hostile if it's on the opposing side (players/companions vs
         # monsters/npcs). Only meaningful when actually changing zones.
+        # F01-8: a DISENGAGED mover (it took the Disengage action this turn) provokes NO
+        # opportunity attacks; and a creature can never provoke an OA from the grappler that
+        # is holding it (mover.grappled_by) — the grappler would have to release to follow.
         provokers: list[dict] = []
-        if from_zone and zone != from_zone and mover is not None:
+        disengaged = bool(getattr(cb, "disengaged", False))
+        grappler_id = getattr(mover, "grappled_by", None) if mover is not None else None
+        if from_zone and zone != from_zone and mover is not None and not disengaged:
             ally_kinds = {"player", "companion"}
             mover_ally = mover.kind in ally_kinds
             for other_cb in c.combat.order:
                 if other_cb.character_id == combatant_id or other_cb.zone != from_zone:
                     continue
+                if other_cb.character_id == grappler_id:
+                    continue  # the grappler can't OA the creature it holds
                 other = c.characters.get(other_cb.character_id)
                 if other is None or other.dead:
                     continue
                 other_ally = other.kind in ally_kinds
                 if other_ally != mover_ally:  # opposing side -> it can take an OA
                     provokers.append({"id": other.id, "name": other.name})
+
+        # F01-8: a creature whose movement is reduced to 0 — Grappled or Restrained — CANNOT
+        # use movement to change zones. Advisory-doctrine-preserving (NEVER blocks; the DM may
+        # have a special movement or the creature may break free first): we flag the move as
+        # `movement_illegal` so the DM is told the Speed-0 condition was bypassed, and STILL
+        # move so a deliberate ruling isn't blocked. Only meaningful on an actual zone change.
+        movement_illegal: dict | None = None
+        if mover is not None and from_zone and zone != from_zone:
+            speed_zero = [
+                cn.value for cn in (Condition.GRAPPLED, Condition.RESTRAINED)
+                if cn in mover.conditions
+            ]
+            if speed_zero:
+                movement_illegal = {
+                    "mover": mover.name,
+                    "conditions": speed_zero,
+                    "note": (
+                        f"{mover.name} is {', '.join(speed_zero)} (Speed 0) and cannot normally "
+                        "move between zones — escape the grapple / end the restraint first "
+                        "(escape_grapple), or rule a special movement. Moved anyway (advisory)."
+                    ),
+                }
 
         # Advisory non-adjacency note (only when zones are declared and we know both).
         if c.combat.zones and from_zone and zone != from_zone:
@@ -3669,6 +3800,8 @@ def move_to_zone(campaign_id: str, combatant_id: str = "", zone: str = "",
                 "to_zone": zone,
                 "opportunity_attack": bool(provokers),
                 "provokers": provokers,
+                "disengaged": disengaged,
+                "movement_illegal": movement_illegal,
                 "warnings": list(warnings),
             },
             speaker=mover.name if mover else "",
@@ -3680,6 +3813,10 @@ def move_to_zone(campaign_id: str, combatant_id: str = "", zone: str = "",
     view["opportunity_attack"] = bool(provokers)
     view["provokers"] = provokers
     view["warnings"] = warnings
+    if disengaged:
+        view["disengaged"] = True  # F01-8: this move drew no OAs (Disengage action)
+    if movement_illegal is not None:
+        view["movement_illegal"] = movement_illegal
     return view
 
 
@@ -3992,6 +4129,7 @@ def next_turn(campaign_id: str) -> dict:
             for cb in order:
                 if cb.character_id == cur.id:
                     cb.reaction_used = False
+                    cb.disengaged = False  # F01-8: Disengage is per-turn — clear at turn start
                     break
         # Tick round/minute-scale timed effects ONCE per new round (a "10 rounds"
         # effect lasts 10 rounds, not 10 turns) and auto-expire those that hit 0.
@@ -4031,9 +4169,59 @@ def next_turn(campaign_id: str) -> dict:
                 if caster is not None and not caster_concentrating:
                     combat.end_repeat_save_effect(holder, eff)
                     expired.append({"character_id": holder.id, "name": eff.name})
+        # --- AUTO-ROLL the dying PC's death save at the START of its turn (F01-10, audit
+        # 2026-06-11) ----------------------------------------------------------------------
+        # A downed PC/companion (0 HP, not dead, not stable) rolls a death save at the start
+        # of EACH of its turns (SRD 2024). `death_save_due` only SURFACED that — the
+        # DM-initiated roll_death_save was skippable, so the dying clock could silently stop
+        # forever (QA). ENGINE ROLLS, DM IS TOLD: roll it here via the same dice-free resolver
+        # the manual tool uses, ordered BEFORE turn_brief so the brief reflects a nat-20
+        # self-revive. Monsters die outright at 0 HP (no death saves) — only PCs/companions
+        # are clocked. The manual roll_death_save tool stays as an explicit override. A nat 20
+        # restores 1 HP; this turn then proceeds normally (the PC-skip guard already exempts a
+        # combatant that was downed at turn start via current_hp>0 / is_incapacitated).
+        death_save_auto = None
+        if (
+            cur is not None
+            and cur.kind in ("player", "companion")
+            and cur.current_hp == 0
+            and not cur.dead
+            and not getattr(cur, "stable", False)
+        ):
+            roll = dice_mod.roll("1d20")
+            ds_out = combat.resolve_death_save(cur, roll)
+            death_save_auto = {
+                "character_id": cur.id,
+                "name": cur.name,
+                "roll": roll.natural,
+                "result": ds_out.get("result"),
+                "successes": cur.death_saves.successes,
+                "failures": cur.death_saves.failures,
+                "note": (
+                    f"{cur.name} is dying — the engine rolled their death save at turn start "
+                    f"(natural {roll.natural} → {ds_out.get('result')}). Narrate the result; "
+                    "no manual roll_death_save needed."
+                ),
+            }
+            _log_combat_event(
+                c,
+                f"{cur.name} rolls an automatic death save: {ds_out.get('result')}.",
+                {
+                    "event": "death_save",
+                    "auto": True,
+                    "target": _combatant_ref(cur),
+                    "roll": {"total": roll.total, "natural": roll.natural, "detail": roll.detail},
+                    "result": ds_out.get("result"),
+                    "successes": cur.death_saves.successes,
+                    "failures": cur.death_saves.failures,
+                },
+                speaker=cur.name,
+            )
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
+        if death_save_auto is not None:
+            view["death_saves_rolled"] = death_save_auto
         view["expired_effects"] = expired
         # End-of-turn repeat saves the engine just rolled for the OUTGOING combatant (#209):
         # each carries success + whether the effect/condition ended, so the DM narrates the
@@ -4075,20 +4263,26 @@ def next_turn(campaign_id: str) -> dict:
 
 @mcp.tool()
 def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dict:
-    """Track a combatant's action economy. kind: action | bonus | reaction | free | skip.
+    """Track a combatant's action economy. kind: action | bonus | reaction | free | skip
+    | disengage.
     `action`/`bonus` are legal only on the creature's OWN turn and only once each
     per turn; `reaction` is legal any time but once per round (it refreshes at the
     start of the creature's turn via next_turn); `free`/movement isn't rate-limited.
     `skip` (a.k.a. pass) declares an intentional do-nothing turn for the current
     combatant — sets action_used so next_turn's PC-skip guard is satisfied without
-    actually attacking or casting. Use it when a PC Dodges, Dashes, Disengages,
-    Readies, or simply passes their turn.
-    Returns {ok, reason, action_available, bonus_available, reaction_available} so
-    you can flag an illegal double-action. NOTE: multiattack (Extra Attack) is ONE
+    actually attacking or casting. Use it when a PC Dodges, Dashes, Readies, or simply
+    passes their turn.
+    `disengage` (F01-8) is the 5e DISENGAGE ACTION: it spends the current combatant's
+    action (like skip) AND sets a per-turn `disengaged` flag so a following move_to_zone
+    provokes NO opportunity attacks — the engine then suppresses every provoker until the
+    creature's turn ends (the flag resets at the start of its next turn). Use it instead of
+    skip when a PC steps away from a foe without drawing an attack.
+    Returns {ok, reason, action_available, bonus_available, reaction_available, disengaged}
+    so you can flag an illegal double-action. NOTE: multiattack (Extra Attack) is ONE
     action — declare a single `action`, then make several attack() calls under it."""
     kind = kind.lower()
-    if kind not in ("action", "bonus", "reaction", "free", "movement", "skip"):
-        raise ValueError("kind must be action | bonus | reaction | free | skip")
+    if kind not in ("action", "bonus", "reaction", "free", "movement", "skip", "disengage"):
+        raise ValueError("kind must be action | bonus | reaction | free | skip | disengage")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -4103,12 +4297,22 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
         ok, reason = True, ""
         # SRD: an incapacitated creature (incl. stunned/paralyzed/petrified/unconscious) can take
         # NO actions, bonus actions, or reactions. Block before consuming the budget.
-        if combat.is_incapacitated(ch) and kind in ("action", "bonus", "reaction"):
+        if combat.is_incapacitated(ch) and kind in ("action", "bonus", "reaction", "disengage"):
             ok, reason = False, (
                 f"{ch.name} is incapacitated ("
                 f"{', '.join(c.value for c in ch.conditions if c in combat.INCAPACITATING)}) "
                 f"and can't take an action, bonus action, or reaction"
             )
+        elif kind == "disengage":
+            # F01-8: the Disengage ACTION — spend the action (own turn only, once) AND set the
+            # per-turn disengaged flag so a subsequent move_to_zone provokes no OAs.
+            if not is_current:
+                ok, reason = False, f"it is not {ch.name}'s turn — disengage must be declared on your own turn"
+            elif c.combat.action_used:
+                ok, reason = False, "action already used this turn (disengage is an action)"
+            else:
+                c.combat.action_used = True
+                combatant.disengaged = True
         elif kind == "skip":
             # Declare an intentional pass: satisfies the PC-skip guard in next_turn so
             # the DM can advance the turn without the combatant attacking or casting.
@@ -4144,6 +4348,7 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
             "action_available": not c.combat.action_used,
             "bonus_available": not c.combat.bonus_action_used,
             "reaction_available": not combatant.reaction_used,
+            "disengaged": combatant.disengaged,
         }
 
 
@@ -4173,6 +4378,89 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         return _combat_view(c)
 
 
+@mcp.tool()
+def add_combatant(campaign_id: str, character_id: str = "", initiative: Optional[int] = None,
+                  id: str = "") -> dict:
+    """Add a combatant to a RUNNING fight — mid-combat reinforcements (a second wave, a
+    summoned ally, a guard who heard the noise). F01-12 (audit 2026-06-11): before this,
+    start_combat REFUSED to run while a combat was active and there was no other path into
+    the order, so a mid-fight spawn either (a) never joined initiative, or (b) attacked with
+    EVERY combat gate bypassed (attack()'s economy gates only engage for combatants in the
+    order). This is the missing verb.
+
+    The ENGINE ROLLS the newcomer's initiative (1d20 + their initiative_bonus) and inserts
+    them into the order at their initiative position (desc, ties broken by DEX then by going
+    after existing same-count combatants). The current combatant's turn is preserved (the
+    pointer is adjusted exactly like remove_combatant's index math). Pass an explicit
+    ``initiative`` to override the roll (a readied ambush, a fixed slot). Once added, the
+    reinforcement is subject to the SAME turn-order/action-economy gates as everyone else.
+
+    Identify the character via ``character_id`` (canonical) or the alias ``id``. Raises if no
+    combat is active or the character is already in the order. No model change — additive."""
+    character_id = character_id or id
+    if not character_id:
+        raise ValueError("add_combatant needs a character (pass `character_id` or its alias `id`)")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat — call start_combat to begin a fight")
+        ch = _char(c, character_id)
+        order = c.combat.order
+        if any(cb.character_id == character_id for cb in order):
+            raise ValueError(f"{ch.name} is already in the combat order")
+        if initiative is None:
+            roll = dice_mod.roll(f"1d20+{ch.initiative_bonus}")
+            init_total = roll.total
+            natural = roll.natural
+        else:
+            init_total = int(initiative)
+            natural = None
+        dex_mod = ch.ability_modifier(Ability.DEX)
+        # Insertion position: keep the order sorted desc by initiative, ties broken by DEX
+        # modifier; among an exact (initiative, dex) tie the newcomer slots AFTER existing
+        # combatants (stable — they were rolled first). Find the first slot the newcomer
+        # outranks; insert there (or at the end if it outranks nobody).
+        insert_at = len(order)
+        for i, cb in enumerate(order):
+            other = c.characters.get(cb.character_id)
+            other_dex = other.ability_modifier(Ability.DEX) if other is not None else 0
+            if (init_total, dex_mod) > (cb.initiative, other_dex):
+                insert_at = i
+                break
+        order.insert(insert_at, Combatant(character_id=character_id, initiative=init_total))
+        # Preserve whose turn it is: an insertion at or before the live pointer shifts the
+        # current combatant one slot to the right, so bump turn_index to track them (mirrors
+        # remove_combatant's `idx < turn_index` adjustment, inverted for an insert).
+        if insert_at <= c.combat.turn_index:
+            c.combat.turn_index += 1
+        c.combat.turn_index %= len(order)
+        # Tier 2 — engaged: a bestiary monster joining the fight bumps its intel (parity with
+        # start_combat).
+        if getattr(ch, "kind", "") == "monster":
+            _bump_intel(c, getattr(ch, "creature_slug", ""), 2)
+        _log_combat_event(
+            c,
+            f"{ch.name} joins the fight (initiative {init_total}).",
+            {
+                "event": "combatant_added",
+                "combatant": _combatant_ref(ch),
+                "initiative": init_total,
+                "natural": natural,
+                "position": insert_at,
+            },
+            speaker=ch.name,
+        )
+        save_campaign(c)
+        view = _combat_view(c)
+    view["added"] = {"id": character_id, "name": ch.name, "initiative": init_total}
+    # Surface a reinforcement's authoritative combat numbers + legendary surface (F01-13) so
+    # the DM runs it correctly the moment it joins — same data start_combat provides.
+    entry = _monster_combat_entry(ch, c)
+    if entry is not None:
+        view["monster_combat"] = [entry]
+    return view
+
+
 def _roll_effect_bonus_dice(ch: Character, field: str) -> tuple[int, list[dict]]:
     """Roll the numeric-rider bonus dice carried by ``ch``'s active effects (SYN-06 / #780:
     Bless +1d4 / Bane -1d4) for the given field ('attack_bonus_dice' or 'save_bonus_dice').
@@ -4192,6 +4480,50 @@ def _roll_effect_bonus_dice(ch: Character, field: str) -> tuple[int, list[dict]]
         total += signed
         rolls.append({"source": eff.name, "dice": expr, "rolled": signed, "detail": r.detail})
     return total, rolls
+
+
+def _auto_concentration_save(ch: Character, dc: int) -> dict | None:
+    """F01-9 (audit 2026-06-11): when a concentrating creature TAKES damage, 5e checks
+    concentration the instant the damage lands. The engine already computes the DC
+    (combat._apply_total_to_hp: max(10, damage_taken//2)) and surfaced it as a CUE — but a
+    cue is ignorable, and QA confirmed the DM routinely never called concentration_save, so
+    the spell hung on indefinitely. ENGINE ROLLS, DM IS TOLD: roll the CON save here (mirrors
+    the manual concentration_save tool, including SYN-06 Bless/Bane riders), break
+    concentration on a failure, and return the result so the damage tool surfaces it. The
+    manual concentration_save tool stays as an explicit override. ``dc`` is the value
+    _apply_total_to_hp returned (None/0 == the target wasn't concentrating → no-op, returns
+    None). combat.py stays dice-free; all dice are rolled here. Caller persists (sole-writer)."""
+    if not dc or not getattr(ch, "concentration", None):
+        return None
+    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
+    rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")
+    total = r.total + rider_bonus
+    maintained = total >= dc
+    held = ch.concentration
+    expired: list[str] = []
+    if not maintained:
+        ch.concentration = None
+        expired = combat.expire_concentration_effects(ch)
+    out = {
+        "target": ch.name,
+        "rolled": True,
+        "ability": "con",
+        "dc": dc,
+        "roll": total,
+        "natural": r.natural,
+        "maintained": maintained,
+        "spell": held,
+        "concentration": ch.concentration,
+        "expired_effects": expired,
+        "note": (
+            f"{ch.name} maintained concentration on {held} (rolled {total} vs DC {dc})."
+            if maintained else
+            f"{ch.name} LOST concentration on {held} (rolled {total} vs DC {dc}) — the spell ends."
+        ),
+    }
+    if rider_rolls:
+        out["bonus_dice"] = rider_rolls
+    return out
 
 
 def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
@@ -4628,19 +4960,16 @@ def attack(
         # These NEVER auto-apply or block; they surface a deterministic signal the DM keeps
         # skipping from prose alone. Only meaningful while a fight is active.
         if c.combat.active:
-            # (A4) Lift concentration_dc to the TOP of the result. apply_damage buries it in
-            # target_state, one level too deep to be read reliably mid-Multiattack (QA: the
-            # concentration save kept getting deferred). Promote it so the DM acts on it NOW.
+            # (A4 → F01-9) The engine AUTO-ROLLS the concentration save the instant the
+            # damage lands, rather than surfacing a cue the DM kept deferring mid-Multiattack
+            # (the concentration spell hung on indefinitely). combat.py returned the DC in
+            # target_state; we roll the CON save here (engine rolls, DM is told), break
+            # concentration on a failure, and surface the result at the TOP of the return so
+            # it's read reliably. The manual concentration_save tool remains as an override.
             ts = result.get("target_state") or {}
-            conc_dc = ts.get("concentration_dc")
-            if conc_dc:
-                result["concentration_dc"] = {
-                    "target": target.name,
-                    "dc": conc_dc,
-                    "note": (f"{target.name} was concentrating — call concentration_save("
-                             f"{target.name!r}, dc={conc_dc}) NOW, before the next attack or "
-                             "next_turn (5e checks concentration the instant damage lands)."),
-                }
+            conc = _auto_concentration_save(target, ts.get("concentration_dc"))
+            if conc is not None:
+                result["concentration_save"] = conc
             # (A1) Ranged-in-melee disadvantage nudge. The engine has no positional model
             # (theater-of-mind), so it can't auto-apply the penalty — but a ranged attack with
             # no adv/dis flag, fired while a living opposing hostile is in the order, is the
@@ -4687,6 +5016,33 @@ def attack(
                                  f"{atk_total} >= effective AC {eff_ac}). Reaction NOT spent — "
                                  "narrate the attempted-but-overwhelmed defense if you like."),
                     }
+        else:
+            # F01-14: an attack made with NO active combat resolves at full effect (a real
+            # blow is a real blow — trap/hazard inertness is preserved). But a PC striking a
+            # living foe outside initiative is the exact pattern that should have been a
+            # combat: the turn-order/economy gates are all invisible, and QA can't see the
+            # fight at all (assert_behavioral's combat-integrity checks nest under
+            # start_combat>0). Surface a NUDGE to call start_combat — advisory, never a block.
+            # Only when attacker AND target are living creatures on OPPOSING sides (so a
+            # one-off environmental strike, or hitting an ally, doesn't nag).
+            ally_kinds = {"player", "companion"}
+            atk_ally = attacker.kind in ally_kinds
+            tgt_ally = target.kind in ally_kinds
+            if (
+                attacker.kind in ally_kinds | {"monster", "npc"}
+                and target.kind in ally_kinds | {"monster", "npc"}
+                and atk_ally != tgt_ally
+                and attacker.current_hp > 0 and not attacker.dead
+                and not target.dead
+            ):
+                result["combat_not_active"] = {
+                    "note": (
+                        f"{attacker.name} attacked {target.name} with NO active combat — the "
+                        "turn-order and action-economy gates are inert and QA can't see this "
+                        "as a fight. If this is a real encounter, call start_combat([…ids…]) "
+                        "first. (The attack still fully resolved — this is advisory.)"
+                    ),
+                }
         outcome_label = "crit" if is_crit else ("hit" if hit else "miss")
         if hit and result["damage"]:
             # Use the resolved damage type label so a multi-component strike (#210)
@@ -4756,6 +5112,13 @@ def apply_damage(
         c = _require(campaign_id)
         target = _char(c, target_id)
         out = combat.apply_damage(target, amount, crit=crit, half=half, damage_type=damage_type)
+        # F01-9: the engine auto-rolls the concentration save the instant damage lands
+        # (combat.py returned the DC; it stays dice-free). Surfaced under
+        # ``concentration_save`` so the DM narrates the break/hold without having to call
+        # concentration_save by hand. None == target wasn't concentrating (unchanged path).
+        conc = _auto_concentration_save(target, out.get("concentration_dc"))
+        if conc is not None:
+            out["concentration_save"] = conc
         kx = _award_kill_xp(c, target)
         if kx:
             out["kill_xp"] = kx
@@ -4961,6 +5324,9 @@ def stabilize(campaign_id: str, actor_id: str, target_id: str, dc: int = 10) -> 
         target = _char(c, target_id)
         if target.current_hp != 0 or target.dead or target.stable:
             raise ValueError("can only stabilize a downed (0 HP), unstable, living creature")
+        # F01-7: stabilizing a downed ally (a DC 10 Medicine check) uses the actor's ACTION —
+        # gate it (incapacitation/turn/action, before the roll; inert outside combat).
+        _gate_combat_verb(c, actor, verb="stabilize an ally", consumes="action")
         r = dice_mod.roll(f"1d20+{actor.skill_bonus('medicine')}")
         success = r.total >= dc
         if success:
@@ -6109,6 +6475,25 @@ def cast_spell(
                 warn = combat.melee_range_warning(c.combat.zones, ch, tgt, az, tz)
                 if warn:
                     result["range_warning"] = warn
+        # F01-14: a spell cast at a living OPPOSING target with NO active combat is the same
+        # out-of-initiative loophole as attack() — surface the start_combat nudge (advisory,
+        # never a block). Only when there's an explicit hostile target so a buff/heal/utility
+        # cast doesn't nag. Mirrors attack()'s combat_not_active cue.
+        if not c.combat.active and target_id:
+            tgt = c.characters.get(target_id)
+            if tgt is not None and not tgt.dead:
+                ally_kinds = {"player", "companion"}
+                caster_ally = ch.kind in ally_kinds
+                tgt_ally = tgt.kind in ally_kinds
+                if caster_ally != tgt_ally:
+                    result["combat_not_active"] = {
+                        "note": (
+                            f"{ch.name} cast {canonical} at {tgt.name} with NO active combat — "
+                            "the turn-order/economy gates are inert and QA can't see this as a "
+                            "fight. If this is a real encounter, call start_combat([…ids…]) "
+                            "first. (The spell still resolved — this is advisory.)"
+                        ),
+                    }
         return result
 
 
@@ -6168,6 +6553,11 @@ def grapple(
         attacker = _char(c, attacker_id)
         target = _char(c, target_id)
 
+        # F01-7: a Grapple is an Attack-action option (2024 Unarmed Strike) — enforce the
+        # incapacitation/turn/economy gates BEFORE any roll (inert outside combat). Consumes
+        # one attack of the budget.
+        _gate_combat_verb(c, attacker, verb="grapple", consumes="attack")
+
         # SRD 2024: DC = 8 + attacker STR mod + proficiency bonus (server.py:2643 pattern)
         dc = combat.grapple_save_dc(attacker)
 
@@ -6195,6 +6585,11 @@ def grapple(
             if not immune and cond not in target.conditions:
                 target.conditions.append(cond)
                 applied = True
+            # F01-8: record WHO holds the grapple so move_to_zone won't list the grappler as
+            # a provoker against its own captive. Set whenever the target ends up grappled by
+            # this attacker (incl. a re-grapple that was already grappled — refresh the holder).
+            if not immune:
+                target.grappled_by = attacker_id
 
         save_campaign(c)
 
@@ -6242,6 +6637,10 @@ def shove(
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
         target = _char(c, target_id)
+
+        # F01-7: a Shove is an Attack-action option (2024 Unarmed Strike) — same gate as
+        # grapple (incapacitation/turn/economy, before any roll; consumes one attack).
+        _gate_combat_verb(c, attacker, verb="shove", consumes="attack")
 
         dc = combat.grapple_save_dc(attacker)
 
@@ -6313,6 +6712,10 @@ def escape_grapple(
         escapee = _char(c, character_id)
         grappler = _char(c, grappler_id)
 
+        # F01-7: escaping a grapple uses the escapee's ACTION — gate it (incapacitation/turn/
+        # action, before any roll; inert outside combat). Consumes the action.
+        _gate_combat_verb(c, escapee, verb="escape a grapple", consumes="action")
+
         # Recompute the same DC from the grappler's current sheet
         dc = combat.grapple_save_dc(grappler)
 
@@ -6332,6 +6735,7 @@ def escape_grapple(
         escaped = False
         if success and Condition.GRAPPLED in escapee.conditions:
             escapee.conditions = [x for x in escapee.conditions if x != Condition.GRAPPLED]
+            escapee.grappled_by = None  # F01-8: the hold is broken — clear the grappler link
             escaped = True
 
         save_campaign(c)

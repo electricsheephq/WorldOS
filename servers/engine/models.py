@@ -690,6 +690,12 @@ class Character(_StrictModel):
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves
+    # F01-8: when this creature is Grappled, the id of the grappler holding it (set by a
+    # successful grapple(); cleared on escape_grapple / removal of the grappled condition).
+    # Lets move_to_zone suppress the grappler from its own captive's OA provokers (a grappler
+    # can't opportunity-attack the creature it's holding). None == not grappled / unknown
+    # grappler (a hand-set 'grappled' condition leaves it None — additive, today's behaviour).
+    grappled_by: Optional[str] = None
 
     # damage modifiers — free-text damage types ("fire", "bludgeoning") and, for
     # condition_immunities, condition names ("poisoned"). Usually set when spawning
@@ -1066,6 +1072,11 @@ class Combatant(_StrictModel):
     # theater-of-the-mind (no positional model); set only when the scene declares
     # zones via set_zones. Additive: existing combats deserialize with "".
     zone: str = ""
+    # F01-8: the combatant took the Disengage action this turn — its movement provokes NO
+    # opportunity attacks until its turn ends (reset at the start of its next turn, like
+    # reaction_used). Set via use_action(kind="disengage"); read by move_to_zone to suppress
+    # provokers. Additive: existing combats deserialize with False (today's behaviour).
+    disengaged: bool = False
 
 
 class Zone(_StrictModel):
