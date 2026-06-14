@@ -182,6 +182,119 @@ def test_parley_guidance_mandates_free_form_and_routing(parley_campaign):
 
 
 # =========================================================================
+# F10-2 / SYN-07: bind the parley to a stable NPC + attitude-derived default DC
+#
+# The tool accepted no npc_id, ignored the target's attitude for the DC (a hostile
+# -80 NPC and a helpful +80 NPC yielded the identical menu), and `situation` was a
+# dead param every caller filled with prose that the engine then dropped. The fix is
+# ADDITIVE: an optional npc_id (+ aliases) attaches a stable npc block; the target's
+# attitude_value derives the DEFAULT difficulty band (an explicit difficulty still
+# wins); `situation` is echoed. Absent npc_id -> byte-identical to today's payload.
+# =========================================================================
+
+
+@pytest.fixture
+def parley_with_npc(parley_campaign):
+    """The parley campaign PLUS a tracked NPC the party has met (a hostile innkeeper)."""
+    cid, pc, comp = parley_campaign
+    npc = server.create_character(cid, "Grim Innkeeper", kind="npc")["id"]
+    # hostile band + a deeply negative numeric standing, and they've met
+    server.set_attitude(cid, npc, attitude="hostile", value=-80)
+    c = store.load_campaign(cid)
+    c.characters[npc].met = True
+    store.save_campaign(c)
+    return cid, pc, comp, npc
+
+
+def test_parley_absent_npc_id_is_byte_identical_payload(parley_campaign):
+    # The whole change is additive: with no npc_id (and no situation), the payload is
+    # EXACTLY today's — no npc block, same keys. (Guards the round-trip invariant.)
+    cid, _pc, _comp = parley_campaign
+    out = server.generate_parley_options(cid, difficulty="medium")
+    assert "npc" not in out
+    assert "situation" not in out
+    assert set(out.keys()) == {"actor", "skills", "free_form", "guidance", "alignment"}
+
+
+def test_parley_npc_id_attaches_a_stable_npc_block(parley_with_npc):
+    cid, _pc, _comp, npc = parley_with_npc
+    out = server.generate_parley_options(cid, npc_id=npc)
+    assert out["npc"]["id"] == npc
+    assert out["npc"]["name"] == "Grim Innkeeper"
+    assert out["npc"]["attitude"] == "hostile"
+    assert out["npc"]["attitude_value"] == -80
+    assert out["npc"]["met"] is True
+
+
+def test_parley_npc_id_aliases_resolve(parley_with_npc):
+    # the DM reaches for target_id / character_id / id — all resolve to the same block
+    cid, _pc, _comp, npc = parley_with_npc
+    for alias in ("target_id", "character_id", "id"):
+        out = server.generate_parley_options(cid, **{alias: npc})
+        assert out["npc"]["id"] == npc
+
+
+def test_parley_hostile_npc_defaults_to_hard_band(parley_with_npc):
+    # attitude-derived DEFAULT difficulty: a hostile -80 NPC makes the parley HARD (18),
+    # not the medium default — the menu now reflects who you're actually talking to.
+    cid, _pc, _comp, npc = parley_with_npc
+    out = server.generate_parley_options(cid, npc_id=npc)  # no explicit difficulty
+    assert all(row["suggested_dc"] == 18 for row in out["skills"])
+    assert out["npc"]["difficulty"] == "hard"
+
+
+def test_parley_helpful_npc_defaults_to_easy_band(parley_with_npc):
+    # the mirror: a helpful +80 NPC makes the parley EASY (10).
+    cid, _pc, _comp, npc = parley_with_npc
+    server.set_attitude(cid, npc, attitude="helpful", value=80)
+    out = server.generate_parley_options(cid, npc_id=npc)
+    assert all(row["suggested_dc"] == 10 for row in out["skills"])
+    assert out["npc"]["difficulty"] == "easy"
+
+
+def test_parley_explicit_difficulty_overrides_attitude_default(parley_with_npc):
+    # an explicitly passed difficulty WINS over the attitude-derived default — the DM
+    # stays in control (a hostile NPC, but the DM judges this an easy ask).
+    cid, _pc, _comp, npc = parley_with_npc
+    out = server.generate_parley_options(cid, npc_id=npc, difficulty="easy")
+    assert all(row["suggested_dc"] == 10 for row in out["skills"])
+
+
+def test_parley_indifferent_npc_defaults_to_medium(parley_with_npc):
+    cid, _pc, _comp, npc = parley_with_npc
+    server.set_attitude(cid, npc, attitude="indifferent", value=0)
+    out = server.generate_parley_options(cid, npc_id=npc)
+    assert all(row["suggested_dc"] == 14 for row in out["skills"])
+    assert out["npc"]["difficulty"] == "medium"
+
+
+def test_parley_unknown_npc_id_degrades_to_freeform(parley_campaign):
+    # an unknown npc_id (typo / wrong campaign) DEGRADES like event_id — no npc block,
+    # the medium default — it never raises mid-scene (an actionable degrade, not a crash).
+    cid, _pc, _comp = parley_campaign
+    out = server.generate_parley_options(cid, npc_id="npc-ghost")
+    assert "npc" not in out
+    assert all(row["suggested_dc"] == 14 for row in out["skills"])
+
+
+def test_parley_echoes_situation(parley_campaign):
+    # `situation` was a DEAD param (every caller filled it, the engine dropped it). It is
+    # now echoed so the DM-supplied scene prose round-trips into the surface.
+    cid, _pc, _comp = parley_campaign
+    out = server.generate_parley_options(cid, situation="The guard blocks the bridge, hand on hilt.")
+    assert out["situation"] == "The guard blocks the bridge, hand on hilt."
+
+
+def test_parley_with_npc_is_read_only(parley_with_npc):
+    # the npc binding is a READ — it must not flip met, attitude, or anything on the NPC.
+    cid, _pc, _comp, npc = parley_with_npc
+    before = store.load_campaign(cid).model_dump(mode="json")
+    server.generate_parley_options(cid, npc_id=npc, situation="x")
+    after = store.load_campaign(cid).model_dump(mode="json")
+    assert before == after
+
+
+# =========================================================================
 # PURE: the overmatch ratio + must_offer_out boundary (B-B)
 #
 # The decision doc's empirical line: a ~1.12x L3 troll -> False; a 6.25x L3 dragon

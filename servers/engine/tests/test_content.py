@@ -521,6 +521,56 @@ def test_seed_world_default_is_unchanged_base_state():
     assert unknown.lore[: len(base_lore)] == base_lore
 
 
+def test_seed_world_roster_role_does_not_land_in_attitude(tmp_path, monkeypatch):
+    # F10-4: seed_world wrote a roster NPC's prose ROLE ("High Harper, veteran of a
+    # hundred years") straight into Character.attitude — the field social_check/shift_attitude
+    # OVERWRITE with a track word on first influence (so the role was silently destroyed) and
+    # the dashboard bar reads as a disposition. The role must NOT corrupt attitude: it lands
+    # in `notes` (free text), attitude is left for the social track.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    world = {
+        "id": "role-test", "name": "Role Test", "premise": "p", "era": "now",
+        "regions": [{"id": "loc-a", "name": "A", "description": "d", "connections": []}],
+        "starting_options": [{"location_id": "loc-a", "framing": "Start."}],
+        "npc_roster": [
+            {"id": "npc-harper", "name": "Veteran Harper",
+             "role": "High Harper, veteran of a hundred years"},
+            {"id": "npc-guard", "name": "Gate Guard",
+             "role": "watch captain", "attitude": "wary"},  # explicit attitude still honored
+        ],
+    }
+    c = content.seed_world(world)
+    harper = c.characters["npc-harper"]
+    # the role prose is OUT of attitude (no track-word collision on first influence) ...
+    assert harper.attitude == ""
+    # ... and preserved as free-text notes the DM can voice.
+    assert harper.notes == "High Harper, veteran of a hundred years"
+
+    # an EXPLICIT attitude on the roster entry is still honored (additive, not a regression):
+    guard = c.characters["npc-guard"]
+    assert guard.attitude == "wary"
+    assert guard.notes == "watch captain"
+
+
+def test_seed_world_shipped_roster_attitude_is_not_role_prose():
+    # The flagship world: every seeded roster NPC's attitude is either empty or a real track
+    # word — NEVER the long role prose that used to land there (Jaheira's "High Harper, veteran
+    # of a hundred years"). Guards the live-world regression directly.
+    from npc import ATTITUDE_TRACK
+    w = content.load_world_data("baldurs-gate")
+    c = content.seed_world(w)
+    roster_ids = {n.get("id") for n in (w.get("npc_roster") or []) if n.get("id")}
+    seeded = [c.characters[i] for i in roster_ids if i in c.characters]
+    assert seeded, "expected baldurs-gate to ship a seeded roster"
+    for ch in seeded:
+        # attitude is empty or a known track band — never prose with spaces/commas.
+        assert ch.attitude == "" or ch.attitude in ATTITUDE_TRACK, (
+            f"{ch.name!r} attitude {ch.attitude!r} looks like role prose, not a track word"
+        )
+    jaheira = next(ch for ch in seeded if ch.name == "Jaheira")
+    assert "Harper" in jaheira.notes  # the role prose is preserved as notes
+
+
 def test_seed_world_ending_rewrites_era_and_lands_fate_on_npc():
     # An ending overlay OVERWRITES the era (the chronology guardrail moves to the
     # post-state) and lands each `fates` entry as a memory fact on the matching roster

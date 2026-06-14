@@ -246,3 +246,76 @@ def test_clamped_role_is_what_lands_on_the_move(live, monkeypatch):
     monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "narrator")  # bogus
     ps.say("'Hello.'")
     assert live.rows()[-1]["role"] == "companion"
+
+
+# --- F12-15 / SYN-07: pin the campaign instead of re-resolving max(updated_at) -------
+# The facade re-resolved "the live campaign" as max(updated_at) on EVERY call. With a
+# parallel campaign B taking the lead (fresher updated_at), an ACTOR_ID bound to a
+# character that only lives in campaign A silently resolved to None — the companion went
+# mute / its moves were refused (the #640 silent-switch family). The fix: an additive
+# env pin (CLAWDND_CAMPAIGN_ID). Unset -> the heuristic, byte-identical; set -> that
+# campaign, regardless of which one is freshest. This is a STATE-INTEGRITY contract:
+# a pure facade READ must never flip which campaign is "live" out from under the actor.
+def _second_campaign() -> Campaign:
+    """A SEPARATE campaign that does NOT contain char-ally — the parallel session that,
+    when fresher, would steal the live pointer from camp-actor under the old heuristic."""
+    other = Character(id="char-other", name="Brakka", kind="player",
+                      inventory=[Item(name="Club")])
+    return Campaign(id="camp-other", title="Parallel", characters={other.id: other},
+                    party=[other.id])
+
+
+def test_campaign_id_pins_the_facade_to_that_campaign(live, monkeypatch):
+    # Two campaigns: camp-actor (with the companion) and a FRESHER camp-other (without it).
+    # Save camp-other LAST so it wins max(updated_at). With ACTOR_ID=char-ally pinned to
+    # camp-actor via CLAWDND_CAMPAIGN_ID, the facade resolves the companion's OWN sheet —
+    # it does NOT follow the freshest campaign and go mute.
+    store.save_campaign(_second_campaign())  # fresher -> would win the heuristic
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    # Sanity: WITHOUT the pin, the heuristic picks the fresher camp-other (which lacks the
+    # actor) -> the bound companion silently resolves to no sheet (the bug).
+    assert ps._pc() is None
+    # WITH the pin, the facade stays on camp-actor and resolves the companion.
+    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-actor")
+    assert ps._campaign().id == "camp-actor"
+    assert ps._pc().name == "Seraphine"
+    sheet = ps.my_sheet()
+    assert sheet["name"] == "Seraphine"
+
+
+def test_campaign_id_unset_is_byte_identical_heuristic(live, monkeypatch):
+    # The pin is additive: unset (or blank/whitespace) -> the original max(updated_at)
+    # selector, unchanged. With only camp-actor on disk the facade resolves it either way.
+    monkeypatch.delenv("CLAWDND_CAMPAIGN_ID", raising=False)
+    assert ps._campaign().id == "camp-actor"
+    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "   ")  # whitespace == unset
+    assert ps._campaign().id == "camp-actor"
+
+
+def test_campaign_id_unknown_falls_back_to_heuristic(live, monkeypatch):
+    # A pin that names a campaign that isn't on disk degrades to the heuristic rather than
+    # resolving to None (defensive: a stale/typo'd pin must not silently mute the actor —
+    # it falls back to today's behavior, the most-recently-updated campaign).
+    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-does-not-exist")
+    assert ps._campaign().id == "camp-actor"
+
+
+def test_pure_facade_read_does_not_flip_the_live_campaign(live, monkeypatch):
+    # SYN-07 STATE-INTEGRITY: a pure facade READ (my_sheet, _pc, _campaign) must NEVER bump
+    # updated_at or re-resolve+flip which campaign is live (the #640/#735 silent-switch family
+    # this wave fixes). Capture both campaigns' on-disk state, exercise the read path, and
+    # assert nothing on disk moved — the facade is the SOLE non-writer here.
+    store.save_campaign(_second_campaign())
+    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-actor")
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+
+    before = {c["id"]: c.get("updated_at") for c in store.list_campaigns()}
+    # the full facade read surface
+    ps._campaign()
+    ps._pc()
+    ps.my_sheet()
+    after = {c["id"]: c.get("updated_at") for c in store.list_campaigns()}
+
+    assert before == after  # no updated_at bumped -> the live pointer can't have flipped
+    # and the freshest campaign is unchanged (the read didn't make camp-actor "win" by writing)
+    assert max(after, key=lambda k: after[k] or 0) == max(before, key=lambda k: before[k] or 0)

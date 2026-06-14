@@ -121,18 +121,24 @@ PY
 if [ -z "$SEED_JSON" ]; then echo "[party] pre-seed FAILED — see above" >&2; exit 1; fi
 echo "[party] seeded: $(printf '%s' "$SEED_JSON" | jq -c '{campaign: .campaign_id, player: .player_id, companions: [.companions[].name]}')"
 PLAYER_ID="$(printf '%s' "$SEED_JSON" | jq -r '.player_id')"
+CAMPAIGN_ID="$(printf '%s' "$SEED_JSON" | jq -r '.campaign_id')"
 NUM_COMP="$(printf '%s' "$SEED_JSON" | jq -r '.companions | length')"
 
 # --- PLAYER facade config (DEFAULT actor — no CLAWDND_ACTOR_ID, role:"player") ------
-# Identical to run_duo's player config, so the player stream is byte-for-byte unchanged.
+# Identical to run_duo's player config, so the player stream is byte-for-byte unchanged,
+# PLUS CLAWDND_CAMPAIGN_ID (F12-15/SYN-07): the party harness pre-seeds the campaign, so
+# its id is KNOWN here at config-write time. Pin it so the facade reads THIS campaign on
+# every call instead of re-resolving max(updated_at) — a parallel campaign in the same
+# state dir can no longer steal the live pointer and mute an actor (the #640 family).
 PLAYER_CFG="$STATE_DIR/player.mcp.json"
 PLAYER_MOVES="$STATE_DIR/player_moves.jsonl"; : > "$PLAYER_MOVES"
-python3 - "$ROOT" "$STATE_DIR" "$PLAYER_MOVES" "$PLAYER_CFG" <<'PY'
+python3 - "$ROOT" "$STATE_DIR" "$PLAYER_MOVES" "$CAMPAIGN_ID" "$PLAYER_CFG" <<'PY'
 import json, sys
-root, state, moves, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+root, state, moves, campaign_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
-  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves}}}}, open(out, "w"))
+  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
+          "CLAWDND_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
 PY
 
 # --- COMPANION facade configs (one per companion, each bound to its own actor id) ---
@@ -147,13 +153,17 @@ for i in $(seq 0 $((NUM_COMP - 1))); do
   ccfg="$STATE_DIR/companion_$i.mcp.json"
   cmoves="$STATE_DIR/companion_${i}_moves.jsonl"; : > "$cmoves"
   ccur="$STATE_DIR/.mcursor.companion_$i"; echo 0 > "$ccur"
-  python3 - "$ROOT" "$STATE_DIR" "$cmoves" "$cid" "$ccfg" <<'PY'
+  python3 - "$ROOT" "$STATE_DIR" "$cmoves" "$cid" "$CAMPAIGN_ID" "$ccfg" <<'PY'
 import json, sys
-root, state, moves, actor_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+root, state, moves, actor_id, campaign_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+# CLAWDND_CAMPAIGN_ID (F12-15/SYN-07): pin THIS companion's campaign so the freshest-wins
+# heuristic can never resolve the facade onto a parallel campaign that lacks this actor and
+# silently mute it. The id is known here (the party harness pre-seeded the campaign above).
 json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
-          "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion"}}}}, open(out, "w"))
+          "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion",
+          "CLAWDND_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
 PY
   COMP_CFGS+=("$ccfg"); COMP_MOVES+=("$cmoves"); COMP_CURSORS+=("$ccur")
   COMP_SIDS+=("$(python3 -c 'import uuid;print(uuid.uuid4())')")
