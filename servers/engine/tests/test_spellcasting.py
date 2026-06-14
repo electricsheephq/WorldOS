@@ -621,3 +621,87 @@ def test_single_target_cast_unchanged_no_aoe_key():
     w = _aoe_wizard(cid)
     out = server.cast_spell(cid, w, "Burning Hands")  # no target_ids
     assert "aoe" not in out
+
+
+# --- F14-7 (#812): cast_spell refusals name WHY + what the caster CAN cast -----------
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-7). A refusal that just says
+# "doesn't know X" or "no level-N slot" wastes a ~100s DM beat (the DM freehands =
+# hallucination). The refusal must name the cause AND list the castable affordance
+# (known/prepared spells, the slot table) so the next call recovers. ADDITIVE: the
+# ValueError TYPE and the leading clause are preserved (consumers still match on them).
+
+def _prepared_wizard(cid, level=3, name="Rolan"):
+    w = server.create_character(cid, name, kind="player", class_name="Wizard", level=level,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    # A prepared caster with a small, known set so the refusal has something to list.
+    server.learn_spells(cid, w, ["Magic Missile", "Shield", "Mage Armor"])
+    server.prepare_spells(cid, w, ["Magic Missile", "Shield"])
+    return w
+
+
+def test_unprepared_leveled_refusal_lists_prepared_spells():
+    """A prepared caster casting a known-but-unprepared spell sees WHAT IS prepared."""
+    cid = server.create_campaign("S")["id"]
+    w = _prepared_wizard(cid)
+    with pytest.raises(ValueError) as ei:
+        server.cast_spell(cid, w, "Mage Armor")  # known, not prepared
+    msg = str(ei.value)
+    assert "hasn't prepared" in msg  # cause preserved
+    assert "Magic Missile" in msg and "Shield" in msg  # the prepared affordance is named
+
+
+def test_unknown_to_known_caster_refusal_lists_known_spells():
+    """A known-caster (no prepared list) refusal names the known spells the caster CAN cast."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Sorc", kind="player", class_name="Sorcerer", level=3,
+                                apply_srd_defaults=True, abilities={"charisma": 16})["id"]
+    server.learn_spells(cid, w, ["Magic Missile", "Burning Hands"])
+    # Clear the prepared list so the known-only gate (the F14-7 line 6564 path) applies — a
+    # sorcerer/legacy snapshot with spells_known but no prepared list.
+    server.update_character(cid, w, patch={"spells_prepared": []})
+    with pytest.raises(ValueError) as ei:
+        server.cast_spell(cid, w, "Fireball")  # not known
+    msg = str(ei.value)
+    assert "doesn't know or have" in msg  # cause/key preserved
+    assert "Magic Missile" in msg  # the known affordance is named
+
+
+def test_cantrip_refusal_lists_known_cantrips():
+    """A cantrip not in the known set names the cantrips the caster DOES know."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Mage", kind="player", class_name="Wizard", level=1,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Fire Bolt", "Magic Missile"])
+    with pytest.raises(ValueError) as ei:
+        server.cast_spell(cid, w, "Ray of Frost")  # cantrip not known
+    msg = str(ei.value)
+    assert "doesn't know" in msg
+    assert "Fire Bolt" in msg  # the known affordance is named
+
+
+def test_slot_exhausted_refusal_shows_slot_table():
+    """A PC out of a given slot level sees the remaining slot table (what they CAN cast)."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard", level=1,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Magic Missile"])
+    server.prepare_spells(cid, w, ["Magic Missile"])
+    server.cast_spell(cid, w, "Magic Missile")  # burns slot 1 of 2
+    server.cast_spell(cid, w, "Magic Missile")  # burns slot 2 of 2
+    with pytest.raises(ValueError) as ei:
+        server.cast_spell(cid, w, "Magic Missile")  # no level-1 slots left
+    msg = str(ei.value)
+    assert "no level-1 spell slot" in msg  # cause/key preserved
+    assert "slots" in msg.lower()  # the slot table is surfaced
+
+
+def test_unknown_spell_refusal_suggests_close_match():
+    """An unknown (misspelled) spell name surfaces a did-you-mean fuzzy suggestion."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard", level=3,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    with pytest.raises(ValueError) as ei:
+        server.cast_spell(cid, w, "Magick Missle")  # typo for Magic Missile
+    msg = str(ei.value)
+    assert "unknown spell" in msg  # key preserved
+    assert "Magic Missile" in msg  # did-you-mean

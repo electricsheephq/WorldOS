@@ -132,6 +132,63 @@ def test_load_genuinely_incompatible_raises(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# (d2) F14-2 (#812): a sub-model-skew snapshot (an unknown key INSIDE a nested
+#      Character) raises a BOUNDED, DM-readable SnapshotSchemaError — not the raw
+#      multi-KB pydantic wall with an errors.pydantic.dev URL. SnapshotSchemaError
+#      subclasses RuntimeError so existing `except RuntimeError` consumers are intact.
+# ---------------------------------------------------------------------------
+
+def _submodel_skew_snapshot() -> dict:
+    """A valid Campaign snapshot whose nested Character carries an unknown sub-model field
+    (the F14-2 skew class the top-level tolerant net does NOT absorb — sub-model strictness
+    is intentional)."""
+    from models import Character
+    snap = _minimal_snapshot()
+    ch = json.loads(Character(name="Skewed", kind="player").model_dump_json())
+    ch["a_field_a_newer_engine_added"] = 123  # sub-model extra -> extra="forbid" fails
+    snap["characters"] = {ch["id"]: ch}
+    return snap
+
+
+def test_submodel_skew_raises_snapshot_schema_error(tmp_path, monkeypatch):
+    snapshot = _submodel_skew_snapshot()
+    cid = _write_snapshot(tmp_path, monkeypatch, snapshot)
+    with pytest.raises(store.SnapshotSchemaError) as ei:
+        store.load_campaign(cid)
+    # SnapshotSchemaError IS a RuntimeError (existing consumers catch RuntimeError).
+    assert isinstance(ei.value, RuntimeError)
+
+
+def test_submodel_skew_error_is_bounded_and_actionable(tmp_path, monkeypatch):
+    snapshot = _submodel_skew_snapshot()
+    cid = _write_snapshot(tmp_path, monkeypatch, snapshot)
+    with pytest.raises(store.SnapshotSchemaError) as ei:
+        store.load_campaign(cid)
+    msg = str(ei.value)
+    assert len(msg) <= 500, f"error must be bounded; got {len(msg)} chars"
+    assert "errors.pydantic.dev" not in msg  # no URL wall
+    assert cid in msg  # campaign id named
+    # the offending sub-model field location is named (first error loc)
+    assert "a_field_a_newer_engine_added" in msg or "characters" in msg
+    # a recovery move is offered (actionable, not a dead end)
+    assert "snapshot.pre-tolerant.json" in msg or "engine" in msg.lower()
+
+
+def test_submodel_skew_error_names_both_shas_and_skew_direction(tmp_path, monkeypatch):
+    """The bounded error carries the snapshot's engine_sha + the running engine_sha and a
+    skew-direction word so the DM/operator can tell which side is newer."""
+    snapshot = _submodel_skew_snapshot()
+    snapshot["engine_sha"] = "abc1234"  # the snapshot was written by this engine sha
+    cid = _write_snapshot(tmp_path, monkeypatch, snapshot)
+    with pytest.raises(store.SnapshotSchemaError) as ei:
+        store.load_campaign(cid)
+    msg = str(ei.value)
+    assert "abc1234" in msg  # the snapshot's stamped sha
+    # a skew-direction hint (newer/older) is present
+    assert "newer" in msg.lower() or "older" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
 # (e) observability version-stamp: save→load preserves schema_version +
 #     engine_sha, and an OLD snapshot lacking both fields still loads (defaults)
 # ---------------------------------------------------------------------------

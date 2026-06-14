@@ -48,6 +48,7 @@ import wander
 import worldsim
 import wrapper_progress as _wrapper_progress_mod
 import _env
+from pydantic import ValidationError
 from models import (
     SKILL_ABILITIES,
     Ability,
@@ -3036,6 +3037,24 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
         }
 
 
+def _readable_validation_error(exc, *, where: str) -> str:
+    """A bounded, DM-readable one-liner from a pydantic ValidationError (F14-11 / #812).
+
+    The raw `str(ValidationError)` is a multi-KB wall ending in an ``errors.pydantic.dev``
+    URL — a DM who reads that gives up on the tool and freehands. We surface only the first
+    few field errors as ``field: message`` pairs, ≤~400 chars, no URL. ADDITIVE: callers
+    still get a ``ValueError`` so the strict typo-forbid guard (a bad patch still RAISES)
+    is preserved — only the wording shrinks."""
+    parts: list[str] = []
+    for err in exc.errors()[:3]:
+        loc = ".".join(str(p) for p in err.get("loc", ())) or "(root)"
+        parts.append(f"{loc}: {err.get('msg', 'invalid')}")
+    n = len(exc.errors())
+    more = f" (+{n - 3} more)" if n > 3 else ""
+    body = "; ".join(parts) + more
+    return f"{where}: {body[:400]}"
+
+
 @mcp.tool()
 def update_character(campaign_id: str, character_id: str = "", patch: dict = None,
                      target_id: str = "", id: str = "") -> dict:
@@ -3106,7 +3125,22 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
             data["skill_proficiencies"] = flat_skills
         if flat_expertise is not None:
             data["skill_expertise"] = flat_expertise
-        new_ch = Character.model_validate(data)
+        # F14-11 (#812): `in_party` is a COMPUTED read field (ch.id in c.party), NOT a Character
+        # field — a DM who patched it tripped extra="forbid" with a raw multi-KB pydantic wall.
+        # Pop it BEFORE model_validate and translate to a c.party mutation that mirrors
+        # recruit_companion / dismiss (the sole-writer membership edit). Truthy -> join; falsey ->
+        # leave. Omitted -> membership untouched (byte-identical to today). The mutation is applied
+        # AFTER the validated sheet is stored below, so a rejected patch never strands membership.
+        in_party_intent = data.pop("in_party", None)
+        # F14-11: a genuine type/typo error inside the model is wrapped into ONE bounded, readable
+        # line (no errors.pydantic.dev wall) so the DM can fix it in the next call instead of
+        # freehanding. STILL raises a ValueError, so the strict typo-forbid guard stays load-bearing.
+        try:
+            new_ch = Character.model_validate(data)
+        except ValidationError as exc:
+            raise ValueError(
+                _readable_validation_error(exc, where="update_character patch is invalid")
+            ) from exc
         # Recompute derived class math when the class/level SIGNATURE changed — via EITHER the flat
         # aliases OR a direct `classes` patch. (RRI 2026-06-09: a canon L12 Fighter "Gravedigger
         # Karcen" was patched to L3 via the canonical {"classes":[{"name":"Fighter","level":3}]}
@@ -3158,8 +3192,22 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
             new_ch.max_hp = max(1, new_ch.max_hp + hp_delta)
             new_ch.current_hp = max(1, min(new_ch.current_hp, new_ch.max_hp))
         c.characters[character_id] = new_ch
+        # F14-11 (#812): apply the translated party-membership intent AFTER the validated sheet is
+        # stored (a rejected patch never reaches here). Mirrors recruit_companion / dismiss: a
+        # truthy in_party joins, a falsey one leaves. Idempotent + order-preserving.
+        if in_party_intent is not None:
+            if in_party_intent:
+                if character_id not in c.party:
+                    c.party.append(character_id)
+            else:
+                c.party = [pid for pid in c.party if pid != character_id]
         save_campaign(c)
-        return c.characters[character_id].model_dump(mode="json")
+        out = c.characters[character_id].model_dump(mode="json")
+        # Surface the computed membership so a DM who set in_party sees it took (mirrors the
+        # `in_party` key recruit_companion / load_canon_character already return). Always present
+        # for a stable shape; additive (a field that was never on the model_dump).
+        out["in_party"] = character_id in c.party
+        return out
 
 
 @mcp.tool()
@@ -6391,6 +6439,31 @@ def _expire_clock_effects_all(c: Campaign, *, long_rest: bool = False) -> list[d
     return report
 
 
+def _castable_affordance(ch) -> str:
+    """A terse "what this caster CAN cast right now" clause for a cast_spell refusal
+    (F14-7 / #812): the prepared spells (or the known list when there's no prepared
+    list) plus the available-vs-max slot table. A refusal that just says "doesn't know X"
+    wastes a DM beat (the DM freehands a hallucinated spell); naming the castable set lets
+    the very next call recover. Bounded (≤8 names) so the message stays scannable; pure —
+    reads the sheet, never mutates."""
+    spells_list = ch.spells_prepared or ch.spells_known
+    label = "prepared" if ch.spells_prepared else "known"
+    parts: list[str] = []
+    if spells_list:
+        shown = ", ".join(spells_list[:8])
+        more = "" if len(spells_list) <= 8 else f" (+{len(spells_list) - 8} more)"
+        parts.append(f"{label}: {shown}{more}")
+    # available/max per slot level, low→high; only levels the caster actually has
+    slots = [
+        f"L{lvl} {s.maximum - s.used}/{s.maximum}"
+        for lvl, s in sorted(ch.spell_slots.items())
+        if s.maximum > 0
+    ]
+    if slots:
+        parts.append("slots " + ", ".join(slots))
+    return ("; ".join(parts)) if parts else ""
+
+
 @mcp.tool()
 def cast_spell(
     campaign_id: str,
@@ -6449,7 +6522,12 @@ def cast_spell(
         curated = None
     srd = spells.srd_spell(spell_name)
     if curated is None and srd is None:
-        raise ValueError(f"unknown spell {spell_name!r}")
+        # F14-7 (#812): a bare "unknown spell 'X'" on a typo wastes a DM beat. Surface a
+        # did-you-mean of the nearest SRD spell name(s) so the next call recovers. ADDITIVE:
+        # the "unknown spell {name!r}" key/prefix is preserved (consumers match on it).
+        near = difflib.get_close_matches(spell_name, spells.all_spell_names(), n=3, cutoff=0.6)
+        hint = f" — did you mean {', '.join(repr(n) for n in near)}?" if near else ""
+        raise ValueError(f"unknown spell {spell_name!r}{hint}")
     canonical = (curated or srd).get("name", spell_name)
     spell_level = int((curated.get("level", 0) if curated else srd.get("level", 0)) or 0)
     concentrates = bool(curated.get("concentration") if curated else srd.get("concentration"))
@@ -6543,11 +6621,16 @@ def cast_spell(
         known_cf = {s.strip().lower() for s in ch.spells_known}
         prepared_cf = {s.strip().lower() for s in ch.spells_prepared}
         cf = canonical.strip().lower()
+        # F14-7 (#812): a known/prepared/cantrip refusal must NAME what the caster CAN cast so
+        # the DM's next call recovers instead of freehanding a hallucinated spell. The leading
+        # clause (the error KEY consumers match on) is unchanged; the affordance is appended.
         if spell_level == 0:
             # Cantrips are never "prepared" in 5e — a known cantrip is always castable. Gate
             # only against the union (lenient when both lists are empty, today's behavior).
             if (known_cf or prepared_cf) and cf not in (known_cf | prepared_cf):
-                raise ValueError(f"{ch.name} doesn't know {canonical!r}")
+                cantrips = [s for s in (ch.spells_known + ch.spells_prepared)]
+                known_str = ", ".join(dict.fromkeys(cantrips)) or "(none)"
+                raise ValueError(f"{ch.name} doesn't know {canonical!r} — knows: {known_str}")
         elif prepared_cf:
             # F03-8: a prepared caster (non-empty prepared list) casts a LEVELED spell only if
             # it is PREPARED — knowing it is not enough. This gives preparation real mechanical
@@ -6555,13 +6638,17 @@ def cast_spell(
             if cf not in prepared_cf:
                 raise ValueError(
                     f"{ch.name} knows {canonical!r} but hasn't prepared it — "
-                    f"prepare_spells it first, or cast a prepared spell"
+                    f"prepare_spells it first, or cast a prepared spell. "
+                    f"Castable now: {_castable_affordance(ch)}"
                 )
         elif known_cf:
             # Legacy / known-caster path: no prepared list (sorcerer, or an old snapshot that
             # only set spells_known) keeps the lenient known-only gate — byte-identical behavior.
             if cf not in known_cf:
-                raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
+                raise ValueError(
+                    f"{ch.name} doesn't know or have {canonical!r} prepared. "
+                    f"Castable now: {_castable_affordance(ch)}"
+                )
         slot_used = None
         # INNATE CASTING (F03-11): a monster/NPC casts a leveled spell from an innate/at-will
         # trait (a Mage Hand Press archmage, a drow's Darkness) — there is no Vancian slot to
@@ -6592,7 +6679,17 @@ def cast_spell(
                         f"carries no Vancian slots. For an innate/at-will trait cast, pass "
                         f"innate=True (no slot spent); otherwise seed spell_slots first."
                     )
-                raise ValueError(f"no level-{lvl} spell slot available")
+                # F14-7 (#812): a PC out of this slot level must SEE the slot table (what they CAN
+                # still cast / upcast with) — a bare "no slot" sends the DM freehanding. The
+                # "no level-{lvl} spell slot available" key/prefix is preserved (additive tail).
+                slot_table = ", ".join(
+                    f"L{l} {s.maximum - s.used}/{s.maximum}"
+                    for l, s in sorted(ch.spell_slots.items()) if s.maximum > 0
+                ) or "(no slots remaining)"
+                raise ValueError(
+                    f"no level-{lvl} spell slot available — slots: {slot_table}. "
+                    f"Cast a cantrip, upcast into a higher slot, or rest."
+                )
             slot.used += 1
             slot_used = lvl
         if concentrates:
