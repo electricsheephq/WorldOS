@@ -446,6 +446,26 @@ function useLiveSession(state) {
     setPendingState(null);
   }, [clearTimers, setPendingState]);
 
+  // #826: authoritatively ROLL BACK the optimistic in-flight arm when the /move POST itself is
+  // REJECTED by the server (the move never started, so there is no DM turn to wait for). postMove now
+  // arms the narrating gate the INSTANT the player commits — BEFORE the network round-trip — so the
+  // one-move-at-a-time gate SURVIVES a navigation during the in-flight window (the App-level pending
+  // state outlives ScreenTable's unmount, where a re-mounted submittingRef would otherwise re-open
+  // the bar and let a second move double-fire the lane = the #826 state corruption). When that POST
+  // comes back an ERROR, the gate must clear NOW — but a plain clearPending would be SWALLOWED by the
+  // #648 arm-grace (it deliberately ignores a spurious clear inside the first PENDING_ARM_GRACE_MS).
+  // This is NOT spurious: it is the server's authoritative rejection, so it bypasses the grace. It is
+  // surgical — it only clears the move WE optimistically armed (text match against the still-pending,
+  // not-yet-streaming turn) so it can never clobber a newer live turn (e.g. a fast retry).
+  const abandonPending = React.useCallback((text) => {
+    const p = pendingRef.current;
+    if (!p || p.streaming) return;                          // a streaming turn is real — never abandon it
+    const want = String(text == null ? "" : text);
+    if (want && String(p.text == null ? "" : p.text) !== want) return;  // not the move we armed — no-op
+    clearTimers();
+    setPendingState(null);
+  }, [clearTimers, setPendingState]);
+
   // #342 + #348: arm the narrating indicator + a recovery timeout. If a DM beat doesn't arrive within
   // the recovery window the turn is flagged `stuck` (the bar re-enables with a "try again" hint)
   // instead of staying frozen until the 12-minute backstop. A real beat (below) clears it outright.
@@ -757,7 +777,7 @@ function useLiveSession(state) {
   // (consistent with armPending/clearPending; the /events poll calls the same ref). Purely additive —
   // existing consumers destructure named fields, so nothing breaks; it also makes the mid-stream stall
   // ceiling unit-testable without reaching into the hook's internals.
-  return { chatBeats, log, pending, armPending, clearPending, recordPlayerEcho, notePendingProgress };
+  return { chatBeats, log, pending, armPending, clearPending, abandonPending, recordPlayerEcho, notePendingProgress };
 }
 window.useLiveSession = useLiveSession;
 // #348: expose the recovery-timing contract for tests (and devtools introspection). Purely

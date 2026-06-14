@@ -769,6 +769,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // LOCKOUT P0 play gate); a turn the recovery timeout flagged `stuck` is NO LONGER pending — the bar
   // re-opens (and `stuckRetryUnblocked` lets the retry probe the server even through an app-status latch).
   const armPending = session.armPending;
+  // #826: the authoritative rollback for an OPTIMISTIC arm — postMove arms the narrating gate the
+  // instant the player commits (before the /move round-trip) so the one-move gate survives a nav
+  // during the in-flight window; abandonPending rolls it back if the POST is rejected.
+  const abandonPending = session.abandonPending;
   const recordPlayerEcho = session.recordPlayerEcho;
   // #385: the COLD-OPEN (first beat) gets action-bar copy that reads as "the DM is taking its turn"
   // (alive) rather than the generic "Narrating…" — so the locked bar matches the obviously-alive
@@ -837,6 +841,19 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     // #344: capture the (already-neutralized) move + label + actionId so a later "Try again"
     // recovery can re-POST this exact turn if the DM stalls on it.
     lastMoveRef.current = { move: cleanMove, label: text, actionId };
+    // #826: arm the narrating gate OPTIMISTICALLY — the INSTANT the player commits, BEFORE the /move
+    // round-trip resolves. The arm + the echo live in the app-level useLiveSession hook, so they
+    // SURVIVE this screen unmounting: if the player navigates away (Table→Map) DURING the in-flight
+    // POST and back, the App still holds `pending` (the one-move gate) and the chronicle echo. The old
+    // order armed only AFTER the await, leaving a window where a nav-away/nav-back remounted ScreenTable
+    // with a fresh submittingRef=false AND pending=null — the bar re-opened and a SECOND move could
+    // double-fire the one-move-at-a-time lane (the #826 state corruption). recordPlayerEcho is #399-
+    // idempotent, so re-POST/retry paths don't duplicate the echo.
+    recordPlayerEcho(hero.name, text, cleanMove);
+    armPending(text);
+    // #402: a new turn was just submitted — force the chronicle back to the bottom on the next content
+    // change even if the player had scrolled up, so they always see their move land + the DM reply begin.
+    snapNextRef.current = true;
     try {
       const response = await fetch(writeLane.endpoint || "/move", {
         method: "POST",
@@ -847,14 +864,14 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.reason || `move ${response.status}`);
       }
-      recordPlayerEcho(hero.name, text, cleanMove);
-      armPending(text);
-      // #402: a new turn was just submitted — force the chronicle back to the bottom on the next
-      // content change even if the player had scrolled up, so they always see their move land and
-      // the DM's reply begin. The auto-follow effect honors this one-shot, then re-arms stickiness.
-      snapNextRef.current = true;
       loadSurface();
     } catch (error) {
+      // #826: the POST was REJECTED — the move never started, so authoritatively roll back the
+      // optimistic arm (abandonPending bypasses the #648 arm-grace; it's surgical — clears ONLY the
+      // move we just armed, never a newer live turn). Then surface the honest failure toast. Falls back
+      // to clearPending on an older bundle that predates abandonPending.
+      if (typeof abandonPending === "function") abandonPending(text);
+      else if (typeof session.clearPending === "function") session.clearPending();
       toast({ kind: "danger", title: "Move not sent", body: error?.message || `The viewer could not reach ${writeLane.endpoint || "/move"}.` });
     } finally {
       submittingRef.current = false;

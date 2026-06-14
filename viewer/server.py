@@ -1650,6 +1650,24 @@ def _session_action_context(snapshot: dict, location: dict, summary: str, quests
     }
 
 
+# #825: a generous DoS-only ceiling for a single chronicle history row's text. Set FAR above any real
+# multi-paragraph DM beat (a long Act-opening beat is a few KB), so it can never cut a genuine turn;
+# it exists only to bound a pathological row. _bounded_chronicle_text cuts on a WORD boundary when it
+# trips, so even that case is never sliced mid-word (the #825 complaint).
+_CHRONICLE_ROW_TEXT_MAX = 64 * 1024
+
+
+def _bounded_chronicle_text(text: str) -> str:
+    """Return the FULL beat text (the #825 fix — no fixed mid-word ceiling), trimming only a
+    pathological row past _CHRONICLE_ROW_TEXT_MAX and, even then, on the last whitespace boundary so
+    the cut never lands inside a word."""
+    if len(text) <= _CHRONICLE_ROW_TEXT_MAX:
+        return text
+    head = text[:_CHRONICLE_ROW_TEXT_MAX]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > 0 else head).rstrip()
+
+
 def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
     out: list[dict] = []
     for row in raw_events or []:
@@ -1660,7 +1678,17 @@ def _session_recent_events(raw_events: list[dict] | None) -> list[dict]:
         text = _text(row.get("text") or row.get("detail") or row.get("summary"))
         if not text:
             continue
-        item = {"kind": kind, "text": text[:1000]}
+        # #825: the chronicle's leading history band must carry the FULL DM beat. The old fixed
+        # `text[:1000]` ceiling cut a long narration MID-WORD with no ellipsis/expand — three
+        # personas (rc2 adversarial+narrative, rc1 veteran) reported the remainder unreadable. The
+        # chronicle render region is already a scrollable role="log" (screen-table.jsx), and the #752
+        # a11y bound is the ROW cap (CHRONICLE_RENDER_CAP / MAX_LIVE_BEATS) — NOT a per-row char cut —
+        # so removing this ceiling does not reintroduce the #752 a11y-tree flood. We keep only a
+        # generous DoS guard at _CHRONICLE_ROW_TEXT_MAX, set far above any real multi-paragraph beat
+        # so it can never slice a genuine DM turn (and we cut on a WORD boundary if it ever trips, so
+        # even a pathological row is never cut mid-word). Engine stays sole writer — this is the
+        # read-only viewer bridge projecting state the engine already wrote.
+        item = {"kind": kind, "text": _bounded_chronicle_text(text)}
         if label:
             item["label"] = label[:120]
         # Carry the stable session-log line index (`seq`) through to the surface when present, so the

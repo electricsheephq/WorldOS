@@ -269,10 +269,48 @@ function PortraitSilhouette() {
   );
 }
 
+// #826: how many times Img RETRIES a scope whose /image 404s, and the backoff between tries. The
+// scene image is fire-and-forget (#399): the engine returns a "pending" descriptor immediately and a
+// daemon worker writes the real art OFF the turn path, so /image legitimately 404s for a window after
+// a new scope appears. The OLD Img latched `failed` on the first onError and only ever cleared it on
+// a SCOPE CHANGE — so a same-scope image that became servable LATER stayed frozen on the placeholder
+// forever (a dead handle). That froze the scene art when a player navigated away mid-narration and
+// back (the surface re-projects the same scope, but the latched component never re-attempts). These
+// retries let the component recover when the pending art lands, while a bounded budget + backoff
+// keeps a genuinely-missing image from hammering the endpoint.
+const _IMG_MAX_RETRIES = 8;
+const _IMG_RETRY_MS = 4000;
+
 function Img({ scope, label, w, h, framed, style, className, fit = "cover" }) {
+  // `attempt` doubles as the cache-buster + the retry counter; `failed` is the per-attempt error
+  // latch (placeholder while we wait), NOT a permanent freeze.
+  const [attempt, setAttempt] = React.useState(0);
   const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => { setFailed(false); }, [scope]);
+  const retryRef = React.useRef(null);
+  const clearRetry = () => {
+    if (retryRef.current != null) { window.clearTimeout(retryRef.current); retryRef.current = null; }
+  };
+  // A new scope is a fresh subject — reset the retry budget + error latch and cancel any pending retry.
+  React.useEffect(() => {
+    setFailed(false);
+    setAttempt(0);
+    return clearRetry;
+  }, [scope]);
   const isPortrait = /(^|[-:/])(portrait|pc|npc|char)/i.test(scope || "");
+  const onError = () => {
+    // #826: do NOT permanently latch. Show the placeholder for THIS attempt, then — if we still have
+    // retry budget for this scope (the #399 pending-art window) — schedule another try so a scope
+    // whose image becomes servable later RECOVERS instead of freezing on a dead handle. Past the
+    // budget we stop (a genuinely-missing image), still on the graceful placeholder.
+    setFailed(true);
+    if (attempt >= _IMG_MAX_RETRIES) return;
+    clearRetry();
+    retryRef.current = window.setTimeout(() => {
+      retryRef.current = null;
+      setFailed(false);          // clear the per-attempt latch …
+      setAttempt((a) => a + 1);  // … and re-mount the <img> (cache-busted) to re-probe /image.
+    }, _IMG_RETRY_MS);
+  };
   if (!scope || failed) {
     return (
       <Placeholder label={isPortrait ? "" : label} w={w} h={h} framed={framed} style={style} className={className}>
@@ -280,12 +318,18 @@ function Img({ scope, label, w, h, framed, style, className, fit = "cover" }) {
       </Placeholder>
     );
   }
+  // The cache-buster (`v=attempt`) forces the browser to actually re-request the scope on a retry
+  // rather than re-serve the cached 404; attempt 0 keeps the original URL shape (no change for the
+  // happy path / existing tests that assert the `/image?scope=` prefix).
+  const src = attempt > 0
+    ? `/image?scope=${encodeURIComponent(scope)}&v=${attempt}`
+    : `/image?scope=${encodeURIComponent(scope)}`;
   return (
     <img
-      src={`/image?scope=${encodeURIComponent(scope)}`}
+      src={src}
       alt={label || ""}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={onError}
       className={`ow-img ${framed ? "framed" : ""} ${className || ""}`}
       style={{ width: w, height: h, objectFit: fit, display: "block", ...(style || {}) }}
     />
