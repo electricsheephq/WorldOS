@@ -56,3 +56,43 @@ def test_recall_npc_facts(cid):
 def test_recall_garbage_query_is_safe(cid):
     server.log_event(cid, "narration", "Something happened.")
     assert server.recall(cid, "!@#$%^&*()")["hits"] == []  # sanitized, no crash
+
+
+# ── F07-1 (issue #772): backfill skips combat/system bookkeeping ───────────────
+# Combat-event rows (schema clawdnd.combat_event.v1) and the two engine session
+# markers ("Session N began" / "Session ended.") are mechanical bookkeeping — they
+# must NOT enter the FTS index and outrank story in recall. A DM-AUTHORED kind=system
+# note (a non-marker) MUST stay indexed (SKILL.md:47 contract).
+
+
+def test_backfill_skips_schema_stamped_combat_events(cid):
+    # A schema-stamped combat-event row is mechanical bookkeeping — never recalled.
+    server.log_event(
+        cid, "combat", "Tough 1 takes 5 force damage (12 -> 7).",
+        payload={"schema": "clawdnd.combat_event.v1", "target": "tough-1"},
+    )
+    # A narrative combat beat IS story — recallable.
+    server.log_event(cid, "combat", "The obsidian wyrm coiled through the smoke.")
+    hits = server.recall(cid, "wyrm smoke force damage tough")["hits"]
+    texts = [h["text"].lower() for h in hits]
+    assert any("wyrm" in t for t in texts)            # story survives
+    assert not any("force damage" in t for t in texts)  # bookkeeping gone
+
+
+def test_backfill_skips_engine_session_markers(cid):
+    # The engine's own session markers are bookkeeping, not memory.
+    server.start_session(cid, title="The Ashen Gate")  # logs "Session N began: ..."
+    server.end_session(cid, summary="They fled the ruin.")  # logs "Session ended. ..."
+    server.log_event(cid, "narration", "The ashen gate groaned open before them.")
+    hits = server.recall(cid, "session began ended ashen gate")["hits"]
+    texts = [h["text"].lower() for h in hits]
+    assert any("ashen gate" in t for t in texts)
+    assert not any(t.startswith("session ") and ("began" in t or "ended" in t) for t in texts)
+
+
+def test_backfill_keeps_dm_authored_system_note(cid):
+    # SKILL.md:47: a DM-authored kind=system note feeds recall. It is NOT a session
+    # marker and NOT a combat event, so it MUST stay indexed.
+    server.log_event(cid, "system", "The blood-moon ritual will crest at the third bell.")
+    hits = server.recall(cid, "blood moon ritual third bell")["hits"]
+    assert any("blood-moon ritual" in h["text"].lower() for h in hits)

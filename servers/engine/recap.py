@@ -17,6 +17,25 @@ from wrapper_progress import is_wrapper_progress_line
 # leave out of a "Previously on..." recap.
 _STORY_KINDS = frozenset({"narration", "dialogue", "combat"})
 
+# F07-1 (issue #772): a kind="combat" row can be EITHER a narrative beat (the DM's
+# prose: "the ogre roared") OR an engine bookkeeping row written by _log_combat_event,
+# which stamps this schema into payload. The mechanical rows ("Tough 1 takes 5 force
+# damage", "Turn advances to Tough 2") are not story — a "Previously on..." recap that
+# recites them reads as a damage log. We keep narrative combat (payload None or lacking
+# this schema) and drop only the schema-stamped rows. Distinct from #749/#763, which
+# exact-matched only the wrapper-progress heartbeat.
+_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+
+
+def _is_combat_bookkeeping(entry: SessionLogEntry) -> bool:
+    """True iff this is an engine-authored combat-event row (schema-stamped payload),
+    i.e. mechanical bookkeeping rather than a narrative combat beat."""
+    if entry.kind != "combat":
+        return False
+    payload = entry.payload
+    return isinstance(payload, dict) and payload.get("schema") == _COMBAT_EVENT_SCHEMA
+
+
 _INTRO = "Previously on your adventure..."
 _EMPTY = "This is the start of a new adventure. The story has yet to be written."
 
@@ -56,9 +75,13 @@ def format_recap(entries: list[SessionLogEntry], max_entries: int = 12) -> str:
     # #749: the wrapper progress heartbeat ("Your move lands; attention gathers…") is a
     # liveness signal the QA/play wrappers log mid-turn, not story — reciting it in a
     # "Previously on…" recap reads as canned filler. Exact-match excluded.
+    # F07-1 (#772): schema-stamped combat-event rows are engine bookkeeping, not story —
+    # excluded here while narrative combat beats stay.
     story = [
         e for e in entries
-        if e.kind in _STORY_KINDS and not is_wrapper_progress_line(e.text)
+        if e.kind in _STORY_KINDS
+        and not is_wrapper_progress_line(e.text)
+        and not _is_combat_bookkeeping(e)
     ]
     recent = story[-max_entries:]
 
