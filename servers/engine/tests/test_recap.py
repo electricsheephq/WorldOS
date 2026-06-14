@@ -202,3 +202,63 @@ def test_recap_from_store(tmp_path, monkeypatch):
     assert "Whispering Caverns" in out
     assert "goblins" in out
     assert "Stealth check" not in out
+
+
+# ── F07-4 (issue #803): single-session recap blind spot ────────────────────────
+# session_recap / start_session.previously_on resolve ONE session and recap only
+# that file. A fresh / story-empty session (the COMMON lean-play case — each beat
+# auto-starts a new session) holds only the engine's system marker, so the recap
+# fell back to the empty-adventure string EVEN WITH story in earlier sessions on
+# disk. recap_resume falls back to a campaign-wide read_log_all tail when the
+# resolved session yields zero story beats and other sessions exist; it keeps the
+# single-session result when that session has >=1 story beat; a truly-new campaign
+# stays _EMPTY. The fallback applies the same F07-1/F07-5 filters (it reuses
+# format_recap). Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F07-4).
+
+
+def _story(campaign_id, session_id, text, kind="narration", **kw):
+    store.append_log(campaign_id, session_id, SessionLogEntry(kind=kind, text=text, **kw))
+
+
+def test_recap_resume_falls_back_when_active_session_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp_resume1"
+    # Session 1 has real story; session 2 is story-empty (only a system marker).
+    _story(cid, "s1", "The party breached the ashen gate and slew the wight-lord.")
+    store.append_log(cid, "s2", SessionLogEntry(kind="system", text="Session 2 began"))
+
+    # Recapping the EMPTY active session alone used to return _EMPTY.
+    assert "start of a new adventure" in recap.recap_from_store(cid, "s2").lower()
+    # With the campaign-wide fallback the prior story is recovered.
+    out = recap.recap_resume(cid, "s2", ["s1", "s2"])
+    assert out.startswith("Previously on your adventure...")
+    assert "ashen gate" in out
+
+
+def test_recap_resume_keeps_single_session_when_it_has_story(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp_resume2"
+    _story(cid, "s1", "An older beat about the swamp.")
+    _story(cid, "s2", "The dragon descended on the keep.")
+    # The active session HAS story -> recap that session only (no cross-session bleed).
+    out = recap.recap_resume(cid, "s2", ["s1", "s2"])
+    assert "dragon descended" in out
+    assert "swamp" not in out
+
+
+def test_recap_resume_truly_new_campaign_stays_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp_resume3"
+    # Only the system marker anywhere -> no story at all -> stays the new-adventure msg.
+    store.append_log(cid, "s1", SessionLogEntry(kind="system", text="Session 1 began"))
+    out = recap.recap_resume(cid, "s1", ["s1"])
+    assert "start of a new adventure" in out.lower()
+
+
+def test_recap_resume_no_other_sessions_stays_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = "camp_resume4"
+    store.append_log(cid, "s1", SessionLogEntry(kind="system", text="Session 1 began"))
+    # Empty active session, NO other sessions -> nothing to fall back to -> _EMPTY.
+    out = recap.recap_resume(cid, "s1", ["s1"])
+    assert "start of a new adventure" in out.lower()

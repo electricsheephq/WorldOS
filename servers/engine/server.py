@@ -8914,8 +8914,13 @@ def start_session(campaign_id: str, title: str = "") -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         prior = c.session_ids[-1] if c.session_ids else None
+        # F07-4: recap the PRIOR session, but fall back to the campaign-wide tail when
+        # that prior session is story-empty (the common lean-play case: each beat
+        # auto-starts a fresh session) so a resume mid-campaign never returns the
+        # new-adventure string while earlier sessions hold the story.
         previously = (
-            recap.recap_from_store(campaign_id, prior) if prior else recap.format_recap([])
+            recap.recap_resume(campaign_id, prior, c.session_ids) if prior
+            else recap.format_recap([])
         )
         sid = _new_session_id()
         c.session_ids.append(sid)
@@ -9096,7 +9101,10 @@ def session_recap(campaign_id: str) -> dict:
     sid = c.active_session_id or (c.session_ids[-1] if c.session_ids else None)
     if not sid:
         return {"recap": recap.format_recap([])}
-    return {"recap": recap.recap_from_store(campaign_id, sid)}
+    # F07-4: the active session is routinely story-empty under lean play (a fresh
+    # session per beat). Fall back to the campaign-wide tail so the recap reflects the
+    # story-so-far instead of the new-adventure string while sessions exist on disk.
+    return {"recap": recap.recap_resume(campaign_id, sid, c.session_ids)}
 
 
 @mcp.tool()
