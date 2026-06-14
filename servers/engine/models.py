@@ -405,6 +405,13 @@ class Event(_StrictModel):
     options: list["ParleyOption"] = Field(default_factory=list)  # the tagged choices; freeform is ALWAYS also allowed (#141)
     anchor_npc_id: str = ""  # optional canon-NPC binding (the owner's priority — bind to a roster NPC)
     resolved: bool = False  # idempotency: a fired Event never re-presents or re-applies
+    # SYN-04 (F07-3): the in-world day this Event was FIRST surfaced to the DM via the
+    # every-beat scene_context bundle. ADDITIVE — None == never presented (old snapshots
+    # round-trip). Once stamped, scene_context returns the event as a COMPACT STUB instead
+    # of re-sending its full ~1KB prose every beat (the standalone present_events tool is
+    # unaffected and still returns the full payload). Stamped under campaign_lock (engine =
+    # sole writer), mirroring check_companion_arc's arc-progress write on the same path.
+    first_presented_day: Optional[int] = None
 
 
 class CompanionDossier(_StrictModel):

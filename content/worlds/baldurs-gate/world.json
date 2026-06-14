@@ -89,7 +89,8 @@
   "events": [
     {
       "id": "event-raphael-bargain",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 4,
       "anchor_npc_id": "npc-raphael",
       "prompt": "A door you did not open is suddenly ajar, and the room beyond it is warmer than the Gate's winter has any right to be. Raphael is already seated, one boot crossed over a knee, a decanter of something that smells of cinnamon and cinders breathing on the table between you. 'I do hope you'll forgive the intrusion,' the cambion says, and means it, and smiles. 'But you have a problem, and I — improbably, I admit — happen to be the solution. There is coin here. Real coin, the kind that makes a hard month soft. All I ask in return is a small kindness, owed and unspecified, to be named at my leisure. No menace, friend. Only an arrangement between reasonable people. The wine is excellent, and the offer will not embarrass you. Shall we?'",
       "options": [
@@ -118,7 +119,8 @@
     },
     {
       "id": "event-fist-checkpoint",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 2,
       "anchor_npc_id": "npc-wyll",
       "prompt": "The checkpoint on the bridge wasn't here yesterday — a few sawhorses, a brazier, and four Flaming Fist in mismatched armour who look like they've slept in it. The sergeant working the line is young and grey-faced with exhaustion, and the wagon he's stopped is packed with shivering Lower City families fleeing a tenement fire. 'Toll's gone up,' he says, not meeting their eyes, and the number he names is robbery dressed as policy — coin these people plainly do not have. One of his own troopers has gone very still, watching him; this isn't sanctioned, and everyone on the bridge knows it. The sergeant's gaze flicks to you, the obvious outsider with the look of someone who carries weight. 'You vouching for this lot? Or paying their way? Either works. I just need the line moving and my palm warm before the captain rides through.'",
       "options": [
@@ -159,7 +161,8 @@
     },
     {
       "id": "event-guild-offer",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 5,
       "anchor_npc_id": "npc-astarion",
       "prompt": "You don't find the Guild; the Guild finds you, the way it finds everyone eventually. A woman with a fixer's easy smile slides onto the bench across from you in the Elfsong's quietest corner — too well-dressed for the dockside, too plainly armed for the Upper City — and sets a sealed packet on the wood between you without a word of greeting. 'Nine-Fingers sends her regards,' she says, 'and a small kindness, freely given, to a newcomer who keeps interesting company.' Inside: enough coin to matter, and a name and an address. 'There's a man at that address who's been talking to the Fist about people he shouldn't. We don't want him hurt — gods, no, the Guild doesn't do murders, that's the Bhaalists. We just want his ledgers gone before he hands them over. Quiet work. Profitable. And the Guild remembers a favour the way a creditor remembers a debt — fondly, and forever. First one's on the house. Interested?'",
       "options": [
@@ -200,7 +203,8 @@
     },
     {
       "id": "event-refugee-crisis",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 3,
       "anchor_npc_id": "npc-jaheira",
       "prompt": "It starts as shouting and ends, the way these things do, with you in the middle of it. A knot of tiefling refugees — gaunt, road-worn, a clutch of children among them — has been stopped at the edge of Rivington by a patriar's hired men and a clerk waving a writ: the empty lot where the refugees have been sheltering through the winter has been 'lawfully claimed,' and they're to be cleared out tonight, into the cold, writ or no writ. The refugees' spokeswoman, a horned woman with a healer's worn hands and a voice gone hoarse from pleading, turns to you because you're the only one watching who doesn't look bought. 'They'll die out there — the little ones first. We're not asking for charity. We're asking for one night, and someone who'll stand in the doorway long enough for the cold to break.' The hired men are already loosening their cudgels. The clerk looks like he'd take a bribe or a threat with equal relief, just to be elsewhere.",
       "options": [
@@ -245,7 +249,8 @@
     },
     {
       "id": "event-patriar-bargain",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 6,
       "anchor_npc_id": "npc-the-emperor",
       "prompt": "The invitation came on cream-coloured paper and the wine, when you arrive, is older than your grandparents. The patriar receiving you behind the Basilisk Gate is all warmth and worry — a soft, ringed man whose family name opens doors and whose hands, he wants you to understand, are entirely clean. 'A delicate matter,' he says, 'and you come recommended as discreet.' A rival house has a document; the document concerns a debt his family owes to the Black Network — the Zhentarim — a debt he'd rather the Council never see as the dukedom vote approaches. He wants the document, and he wants the rival to understand it was taken, and he is prepared to be 'lavishly grateful.' 'You'd be doing the Gate a service, truly — that family are vipers, and I am, whatever my creditors, a patriot.' Behind the worry, his eyes are flat and measuring. This is not a man asking for help. This is a man buying a tool, and pricing you.",
       "options": [

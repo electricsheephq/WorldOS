@@ -91,11 +91,16 @@ def test_seed_world_zero_skip_diagnostics():
 
 
 def test_event_surfaces_via_present_events():
-    """The authored manual-trigger event must surface via events_mod.present."""
+    """The authored event surfaces via events_mod.present once its day_reached trigger
+    arms (SYN-04: authored events carry real triggers now, not 'manual')."""
     world = _load_world()
     c, _ = _seed_world(world)
     assert EVENT_ID in c.events, f"event {EVENT_ID!r} not seeded"
     ev = c.events[EVENT_ID]
+    # SYN-04: a real trigger, so it does not ride beat 1; advance the clock to arm it.
+    assert ev.trigger == "day_reached"
+    assert EVENT_ID not in [e.id for e in events_mod.present(c)]  # not on day 1
+    c.day = ev.trigger_threshold
     present_ids = [e.id for e in events_mod.present(c)]
     assert EVENT_ID in present_ids, (
         f"{EVENT_ID!r} not in present_events; present={present_ids}"

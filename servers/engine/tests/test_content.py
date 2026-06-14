@@ -22,6 +22,33 @@ SYNTH = {
 }
 
 
+# ── SYN-04 content lint: no world over-uses the always-on 'manual' event trigger ──
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (SYN-04 / F05-3). A 'manual' trigger
+# is ALWAYS available until resolved; a world authored with many manual events rides
+# their full prose into every beat's bundle (~6.5KB at BG's 5 events). Authored events
+# should carry real triggers (day_reached / reputation_at / flag_set); at most one
+# manual per world is allowed (a deliberate cold-open drop). This lint red-guards the
+# regression at the content seam.
+
+
+def test_shipped_worlds_do_not_overuse_manual_event_trigger():
+    for w in content.list_worlds():
+        data = content.load_world_data(w["id"])
+        events = data.get("events") or []
+        if isinstance(events, dict):
+            events = list(events.values())
+        manual = [
+            e for e in events
+            if isinstance(e, dict) and (e.get("trigger") or "manual") == "manual"
+        ]
+        assert len(manual) <= 1, (
+            f"world {w['id']!r} has {len(manual)} 'manual' events "
+            f"({[e.get('id') for e in manual]}); authored events should use real "
+            f"triggers (day_reached/reputation_at/flag_set) so they don't ride every "
+            f"beat's bundle as full prose (SYN-04). At most 1 manual per world."
+        )
+
+
 def test_seed_campaign_synthetic():
     c = content.seed_campaign(SYNTH)
     assert isinstance(c, Campaign)

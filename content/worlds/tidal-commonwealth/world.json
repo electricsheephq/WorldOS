@@ -149,7 +149,8 @@
   "events": [
     {
       "id": "event-league-cache",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 2,
       "anchor_npc_id": "npc-captain-drev",
       "prompt": "The salvage rig COLD LAMP was supposed to run a routine outer-shallows survey. It came back three days late, two crew short, and with its cargo hold locked from the inside. Captain Drev Ossian intercepts you at the Ironhull docks before the League inspectors arrive: the crew found something at the rim that isn't in any of the Basin charts, something the League factors will auction to the highest bidder the moment they see it — and two cities are already watching the dock. 'I need it in different hands before the inspectors open that hold,' he says. He does not specify what different hands means, or what COLD LAMP found.",
       "options": [
@@ -191,7 +192,8 @@
     },
     {
       "id": "event-warden-summons",
-      "trigger": "manual",
+      "trigger": "day_reached",
+      "trigger_threshold": 4,
       "anchor_npc_id": "npc-warden-estris",
       "prompt": "A letter arrives sealed with the Compact Council's administrative mark — not the official seal, which would require a formal summons and a logged record, but the Secretary-Warden's private mark, which means whoever sent it did not want a record of the sending. The note inside is three sentences: the date, a location in Ironhull Station's lower records room, and the words 'I am aware that the Compact has no authority to ask you to attend. I am asking anyway. —E.V.' The location is accessible at the time given, the Compact's official business is scheduled elsewhere, and whatever the Secretary-Warden wants, she has been careful to make it deniable.",
       "options": [

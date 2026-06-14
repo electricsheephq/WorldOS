@@ -33,14 +33,21 @@ def test_scene_context_bundles_the_beat_reads(cid):
     present_events + check_companion_arc + get_state, and each delegated section
     equals the individual tool's output (the additions never regress the bundle)."""
     sc = server.scene_context(cid)
-    assert set(sc) == {"durable", "director", "events", "companion_arcs", "state"}
+    # consequences_due (F14-4) is always present; events is the throttled view (SYN-04).
+    assert set(sc) == {
+        "durable", "director", "events", "companion_arcs", "consequences_due", "state"
+    }
     # Each DELEGATED section is byte-equal to calling the tool directly (state can
     # carry no time-varying fields here, so a direct compare is safe).
     assert sc["state"] == server.get_state(cid)
     assert sc["director"] == server.get_campaign_director(cid)
-    assert sc["events"] == server.present_events(cid)
     # companion_arc is idempotent across beats, so a second call matches too.
     assert sc["companion_arcs"] == server.check_companion_arc(cid)
+    # The throttled events view (SYN-04): empty fixture -> no events surfaced/stubbed.
+    assert sc["events"] == {
+        "events": [], "presented": [], "manual_queued": 0, "free_form": True
+    }
+    assert sc["consequences_due"] == []  # nothing scheduled in the fixture
 
 
 def test_scene_context_is_durable_first_then_volatile_state(cid):
@@ -275,6 +282,63 @@ def test_scene_context_does_not_deadlock(cid):
     it did, this call would hang. Reaching the assert proves it returns."""
     sc = server.scene_context(cid, recall_query="taproom")
     assert sc["state"]["id"] == cid
+
+
+# ── F14-4: scene_context fires due consequences each beat ────────────────────
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-4). add_consequence was
+# write-only — nothing on the every-beat path called consequences.due(), so 18
+# writes fired 0 times. scene_context now fires (and surfaces) them under lock.
+
+
+def test_scene_context_fires_due_consequences(cid):
+    """A consequence scheduled for today surfaces in scene_context['consequences_due']
+    AND is marked fired (engine rolls, the DM is told). Source: F14-4."""
+    server.add_consequence(cid, 0, "The siege engines arrive at the gate.")
+    sc = server.scene_context(cid)
+    assert "consequences_due" in sc
+    texts = [d["text"] for d in sc["consequences_due"]]
+    assert "The siege engines arrive at the gate." in texts
+    # marked fired in persisted state (idempotent — won't re-fire next beat)
+    c = store.load_campaign(cid)
+    assert all(con.fired for con in c.consequences)
+
+
+def test_scene_context_consequences_fire_once_then_stop(cid):
+    """Idempotent: a consequence fires on the beat it comes due and NOT on later beats
+    (the DM isn't re-told the same world-beat every turn). Source: F14-4."""
+    server.add_consequence(cid, 0, "A spared villain returns.")
+    first = server.scene_context(cid)
+    assert any(d["text"] == "A spared villain returns." for d in first["consequences_due"])
+    second = server.scene_context(cid)
+    assert second["consequences_due"] == []  # already fired -> empty, not re-told
+
+
+def test_scene_context_consequences_due_empty_when_none_due(cid):
+    """A not-yet-due consequence does NOT fire and the key is present-but-empty (so the
+    DM can rely on it). Source: F14-4."""
+    server.add_consequence(cid, 5, "Reinforcements arrive next week.")
+    sc = server.scene_context(cid)
+    assert sc["consequences_due"] == []
+    c = store.load_campaign(cid)
+    assert not any(con.fired for con in c.consequences)  # untouched
+
+
+def test_scene_context_does_not_fire_worldsim_thread_beats(cid):
+    """Consequences carrying a thread_id belong to worldsim (world_tick), NOT the
+    authored-consequence lane — scene_context must not consume them. Source: F14-4
+    (mirrors consequences.due's thread_id skip)."""
+    with store.campaign_lock(cid):
+        c = store.load_campaign(cid)
+        from models import Consequence
+        c.consequences.append(
+            Consequence(trigger_day=c.day, text="A background thread ticks.",
+                        thread_id="thread-x")
+        )
+        store.save_campaign(c)
+    sc = server.scene_context(cid)
+    assert sc["consequences_due"] == []  # worldsim beat left for world_tick
+    c = store.load_campaign(cid)
+    assert not c.consequences[0].fired  # not consumed
 
 
 # ── persist_beat: the end-of-beat write cluster in one call ──────────────────
