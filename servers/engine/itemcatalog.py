@@ -108,6 +108,16 @@ def _num(value, default: float = 0.0) -> float:
         return default
 
 
+def _cost(value) -> Optional[float]:
+    """Tri-state listed price (F09-3): a positive price parses like _num; anything
+    else — missing, null, '', unparseable, or 0/'0.00' (how the SRD dump marks
+    every magic item) — is None, meaning "no listed price". Priceless is NOT free:
+    buy_item demands an explicit cost_gp when this is None instead of silently
+    charging 0 gp for a Bag of Holding."""
+    n = _num(value, default=0.0)
+    return n if n > 0 else None
+
+
 def _int(value, default: int = 0) -> int:
     """Integer fields (AC). Like _num but coerces to int and tolerates strings/floats/
     None — a non-numeric value (e.g. a homebrew pack with ac_base:'plate') degrades to
@@ -158,7 +168,7 @@ def _flatten(model: str, fields: dict) -> dict:
             "rarity": "",
             "requires_attunement": False,
             "weight": _num(fields.get("weight")),
-            "cost": _num(fields.get("cost")),
+            "cost": _cost(fields.get("cost")),
             "description": fields.get("desc", "") or "",
             "properties": [
                 p for p, on in (("simple", fields.get("is_simple")),
@@ -181,7 +191,7 @@ def _flatten(model: str, fields: dict) -> dict:
             "rarity": "",
             "requires_attunement": False,
             "weight": _num(fields.get("weight")),
-            "cost": _num(fields.get("cost")),
+            "cost": _cost(fields.get("cost")),
             "description": fields.get("desc", "") or "",
             "properties": props,
             "ac": _int(fields.get("ac_base")),
@@ -195,7 +205,7 @@ def _flatten(model: str, fields: dict) -> dict:
         "rarity": (fields.get("rarity") or "").strip(),
         "requires_attunement": bool(fields.get("requires_attunement")),
         "weight": _num(fields.get("weight")),
-        "cost": _num(fields.get("cost")),
+        "cost": _cost(fields.get("cost")),
         "description": fields.get("desc", "") or "",
         "properties": [],
     }
@@ -262,7 +272,9 @@ def resolve(name: str) -> Optional[dict]:
         return rec
     matches = find(name, limit=2)
     if len(matches) == 1:
-        return idx.get(matches[0].lower())
+        # find() returns the flattened records themselves (F09-1: this used to
+        # call .lower() on the dict and crash every unique-substring match).
+        return matches[0]
     return None
 
 

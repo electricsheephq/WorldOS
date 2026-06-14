@@ -53,6 +53,33 @@ def gain(ch: Character, gp_amount: float) -> Currency:
     return ch.currency
 
 
+def gp_to_cp(gp_amount: float) -> int:
+    """Exact copper value of a (2-decimal) gp amount — the public face of the
+    Decimal conversion so tool-level totals (unit price x quantity, F09-2) stay
+    copper-exact instead of accumulating float drift."""
+    return _gp_to_cp(gp_amount)
+
+
+def pay_cp(ch: Character, amount_cp: int) -> Currency:
+    """Spend an exact copper amount (making change). Raises on negative or
+    insufficient funds. Copper-exact sibling of pay() for unit x quantity totals."""
+    if amount_cp < 0:
+        raise ValueError("cannot pay a negative amount")
+    have = total_copper(ch.currency)
+    if have < amount_cp:
+        raise ValueError("insufficient funds")
+    ch.currency = _from_copper(have - amount_cp)
+    return ch.currency
+
+
+def gain_cp(ch: Character, amount_cp: int) -> Currency:
+    """Gain an exact copper amount. Copper-exact sibling of gain()."""
+    if amount_cp < 0:
+        raise ValueError("cannot gain a negative amount")
+    ch.currency = _from_copper(total_copper(ch.currency) + amount_cp)
+    return ch.currency
+
+
 def adjust_currency(ch: Character, cp=0, sp=0, ep=0, gp=0, pp=0) -> Currency:
     """Add/subtract specific coin denominations (no auto change-making). Raises if
     any denomination would go negative."""
