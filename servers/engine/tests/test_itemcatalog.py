@@ -118,6 +118,82 @@ def test_resolve_ambiguous_substring_returns_none():
     assert itemcatalog.resolve("potion of") is None
 
 
+# --- #756: base-name disambiguation + weapon property/versatile enrichment ---
+
+
+def test_resolve_base_armor_name_disambiguates_to_canonical_record():
+    """#756 (the CRITICAL gate-flipper from the RRI-5e98e6f optimizer sweep): the
+    market/inventory show 'Studded Leather' but the catalog keys it 'Studded Leather
+    Armor', and a bare-substring resolve is AMBIGUOUS (Armor of Resistance (Studded
+    Leather), Glamoured Studded Leather, …) -> None -> no AC value -> 'impossible to
+    evaluate the upgrade'. The base name + an armor/weapon suffix must resolve to the
+    canonical record so the inspector shows the real AC."""
+    rec = itemcatalog.resolve("Studded Leather")
+    assert rec is not None, "'Studded Leather' must resolve (it did not before #756)"
+    assert rec["name"] == "Studded Leather Armor"
+    assert rec["kind"] == "armor"
+    assert rec["ac"] == 12  # the real base AC the optimizer could not see
+    # the short forms a merchant/inventory actually carry all resolve
+    for short in ("studded leather", "Leather", "Plate", "Hide", "Splint"):
+        assert itemcatalog.resolve(short) is not None, short
+
+
+def test_base_name_disambiguation_does_not_override_an_exact_or_ambiguous_match():
+    # An exact key still wins (no regression): "Leather Armor" stays itself.
+    assert itemcatalog.resolve("Leather Armor")["name"] == "Leather Armor"
+    # A genuinely ambiguous prefix that is NOT a base+suffix name stays None.
+    assert itemcatalog.resolve("potion of") is None
+
+
+def test_resolve_weapon_exposes_versatile_two_handed_damage():
+    """#756: a Versatile weapon hides its two-handed die. The SRD stores it in
+    WeaponPropertyAssignment (versatile-wp detail '1d8' for the Quarterstaff); the
+    flattened record must surface it as `versatile` so the inspector can read
+    '1d6 (1d8 two-handed)' — the optimizer's 'Examine is missing the 1d8 two-handed
+    damage' finding."""
+    rec = itemcatalog.resolve("Quarterstaff")
+    assert rec is not None
+    assert rec["damage"] == "1d6"
+    assert rec["versatile"] == "1d8"
+
+
+def test_resolve_weapon_exposes_real_properties():
+    """#756: weapon properties (Versatile, Finesse, Light, Two-Handed, …) live in
+    WeaponPropertyAssignment, not inline — the flatten dropped them, so the inspector
+    had 'no Versatile property'. They must now appear on the record."""
+    qs = itemcatalog.resolve("Quarterstaff")
+    assert "Versatile" in qs["properties"]
+    # a finesse weapon carries Finesse; a longbow carries Two-Handed/Ammunition.
+    dagger = itemcatalog.resolve("Dagger")
+    assert dagger is not None and "Finesse" in dagger["properties"]
+    longbow = itemcatalog.resolve("Longbow")
+    assert longbow is not None and "Two-Handed" in longbow["properties"]
+
+
+def test_bare_weapon_flatten_merges_simple_flag_with_srd_properties():
+    # The pre-existing is_simple/is_improvised flags must not be dropped when the SRD
+    # WeaponProperty chips are merged in (additive, de-duped). The bare Weapon.json
+    # record carries is_simple; the FK join adds Versatile — both must survive on the
+    # SAME flattened record. (NB: the public catalog resolves "Quarterstaff" to the
+    # Item.json record, whose is_simple is null — so this asserts the weapon-shape
+    # flatten directly, the path a non-Item-shadowed simple weapon takes.)
+    rec = itemcatalog._flatten(
+        "weapon",
+        {"name": "Quarterstaff", "is_simple": True, "damage_dice": "1d6",
+         "damage_type": "bludgeoning"},
+        "srd-2024_quarterstaff",
+    )
+    assert "simple" in rec["properties"]
+    assert "Versatile" in rec["properties"]
+    assert rec["versatile"] == "1d8"
+
+
+def test_non_versatile_weapon_has_no_versatile_key_value():
+    # A weapon with no versatile assignment must not fabricate a two-handed die.
+    rec = itemcatalog.resolve("Dagger")
+    assert rec.get("versatile", "") == ""
+
+
 def test_pack_precedence_srd_wins_and_pack_adds(tmp_path, monkeypatch):
     """A content pack never overrides an SRD item of the same name (srd524 is
     first-wins) but DOES contribute its own new items."""

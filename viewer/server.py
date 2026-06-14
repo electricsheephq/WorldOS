@@ -4167,6 +4167,40 @@ def _catalog_property_chips(meta: dict) -> list[str]:
     return chips
 
 
+def _catalog_stat_block(name: str) -> dict:
+    """#756: the read-only SRD stat block for an item by NAME — the SAME combat fields
+    the inventory inspector carries (ac / damage / damageType / versatile / properties /
+    weight / value / rarity / kind / attunement), built straight from the catalog. Used
+    by the /item-catalog endpoint so the Market inspector can show a ware's AC / damage /
+    Versatile two-handed die / properties (the optimizer's CRITICAL 'Studded Leather shows
+    no AC value' + 'Quarterstaff Examine is missing Versatile / 1d8 two-handed' findings).
+
+    Returns ``{"resolved": False}`` for a name the catalog cannot resolve (free-text /
+    homebrew gear) so the caller shows weight/price only — never a fabricated number."""
+    meta = _catalog_meta(name)
+    if not meta:
+        return {"resolved": False}
+    damage = _text(meta.get("damage"))
+    weight = _num(meta.get("weight"))
+    cost = _num(meta.get("cost"))
+    ac_raw = meta.get("ac")
+    return {
+        "resolved": True,
+        "name": _text(meta.get("name"), name),
+        "kind": _text(meta.get("kind")),
+        "rarity": _text(meta.get("rarity")) or "common",
+        "weight": f"{weight:g} lb" if weight is not None and weight > 0 else "—",
+        "value": f"{cost:g} gp" if cost is not None and cost > 0 else "—",
+        "damage": damage,
+        "damageType": _text(meta.get("damage_type")) if damage else "",
+        "versatile": _text(meta.get("versatile")) if damage else "",
+        "ac": int(ac_raw) if isinstance(ac_raw, (int, float)) else None,
+        "attunement": bool(meta.get("requires_attunement")),
+        "properties": _catalog_property_chips(meta),
+        "description": _text(meta.get("description")),
+    }
+
+
 def _inventory_items(cid: str, ch: dict) -> list[dict]:
     inventory = ch.get("inventory")
     out: list[dict] = []
@@ -4200,6 +4234,9 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
         # Damage / AC: real catalog stats. Damage type is only meaningful with a dice expr.
         damage = _text(meta.get("damage")) if meta else ""
         damage_type = _text(meta.get("damage_type")) if (meta and damage) else ""
+        # #756: a Versatile weapon's two-handed damage die (e.g. "1d8") — only meaningful
+        # alongside the one-handed `damage`; absent for non-versatile gear.
+        versatile = _text(meta.get("versatile")) if (meta and damage) else ""
         ac_raw = meta.get("ac") if meta else None
         ac = int(ac_raw) if isinstance(ac_raw, (int, float)) else None
         # Catalog `kind` ("weapon"/"armor"/"wondrous"/"potion"/"ring"/…) is the SRD's own
@@ -4228,9 +4265,10 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             "desc": _text(item.get("description"), "No description recorded."),
             # Combat stat block (empty string / None when the catalog has no such datum —
             # the screen hides each row that is blank). damage e.g. "1d8", damageType "slashing",
-            # ac e.g. 18 (base AC for armor / shields).
+            # ac e.g. 18 (base AC for armor / shields). versatile e.g. "1d8" (two-handed die, #756).
             "damage": damage,
             "damageType": damage_type,
+            "versatile": versatile,
             "ac": ac,
             "attunement": attunement,
             "attuned": bool(item.get("attuned")),
@@ -7317,6 +7355,30 @@ class _Handler(BaseHTTPRequestHandler):
             cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
             character_id = (qs.get("character") or [""])[0]
             self._json(build_options_response(cid, character_id))
+        elif route == "/item-catalog":
+            # #756 read-only SRD item stat-block lookup by name. Lets the Market inspector
+            # enrich a client-side ware (which carries only name/weight/price) with its real
+            # AC / damage / Versatile two-handed die / properties — the data the engine
+            # catalog already holds (PR #862) but the Market display never read. Pure reader:
+            # resolves names against the bundled SRD catalog; mutates nothing, touches no
+            # campaign state. An unresolvable name returns {"resolved": false} (the caller
+            # then shows weight/price only — never a fabricated stat).
+            qs = parse_qs(parsed.query)
+            # Accept repeated ?name=… params and/or a single newline-separated ?names=… so the
+            # Market can resolve a whole table in one round-trip.
+            raw_names = list(qs.get("name") or [])
+            for blob in (qs.get("names") or []):
+                raw_names.extend(blob.split("\n"))
+            # De-dupe (case-insensitive, order-preserving) and bound the batch.
+            seen_keys: set = set()
+            flat: list = []
+            for n in raw_names:
+                key = n.strip() if isinstance(n, str) else ""
+                if key and key.lower() not in seen_keys:
+                    seen_keys.add(key.lower())
+                    flat.append(key)
+            flat = flat[:64]  # bound the batch so a query can't sweep the whole catalog
+            self._json({"items": {n: _catalog_stat_block(n) for n in flat}})
         elif route == "/bestiary-surface":
             # Read-only player-safe bestiary/codex projection. No campaign or combat
             # mutation route is exposed here; the engine returns only public preview fields.
