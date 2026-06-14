@@ -54,6 +54,35 @@ def test_audit_fields_surfaces_maneuver_damage():
     assert "maneuver-damage: Trip Attack 1d8=6 applied=True" in lines[0]
 
 
+def test_audit_fields_surfaces_concentration_save():
+    # The #792 auto-concentration roll sits after target_state in the result JSON, so the
+    # 240-char preview truncates it and the Angry-DM lens mis-scores a tool-sourced save as a
+    # hallucinated "10 vs 10" prose number. Surfacing it closes the highest-risk false defect.
+    res = json.dumps(
+        {"ok": True, "concentration_save": {
+            "target": "Maren", "rolled": True, "ability": "con",
+            "dc": 10, "roll": 13, "natural": 11, "maintained": True, "spell": "Hold Person"}}
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "concentration-save: Maren CON 13 (nat 11) vs DC 10 → MAINTAINED (Hold Person)" in lines[0]
+    # A broken save renders BROKEN.
+    broken = json.dumps({"concentration_save": {
+        "target": "Maren", "ability": "con", "dc": 14, "roll": 8, "maintained": False}})
+    assert "→ BROKEN" in distill._audit_fields(broken)[0]
+
+
+def test_audit_fields_surfaces_freed_targets_and_advantage_consumed():
+    # Held victims released when concentration breaks (#792/F3-6), and a consumed on-hit
+    # advantage rider (Guiding Bolt) — both engine-auto-fired, both truncated by the preview.
+    freed = distill._audit_fields(json.dumps({"freed_targets": ["goblin-1", "goblin-2"]}))
+    assert len(freed) == 1 and "freed-on-concentration-end: goblin-1, goblin-2" in freed[0]
+    adv = distill._audit_fields(json.dumps({"advantage_consumed": "Guiding Bolt"}))
+    assert len(adv) == 1 and "advantage-consumed: Guiding Bolt" in adv[0]
+    # Empty/absent → no-op.
+    assert distill._audit_fields(json.dumps({"freed_targets": [], "advantage_consumed": None})) == []
+
+
 def test_audit_fields_is_safe_on_non_json_non_dict_and_irrelevant():
     assert distill._audit_fields("not json at all") == []
     assert distill._audit_fields(json.dumps([1, 2, 3])) == []
