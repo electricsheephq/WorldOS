@@ -53,6 +53,35 @@ def _audit_fields(res) -> list[str]:
             f"    `↳ maneuver-damage: {md.get('maneuver', '?')} {md.get('die', '?')}="
             f"{md.get('rolled', '?')} applied={md.get('applied', md.get('applies_to', '?'))}`"
         )
+    # #792 auto-concentration: attack/apply_damage auto-roll the CON save when a
+    # concentrating creature takes damage. The result sits AFTER target_state in the JSON,
+    # so the 240-char preview truncates it and the Angry-DM lens mis-reads a tool-sourced
+    # save as a hallucinated "10 vs 10" prose number. Surface it so the lens can audit it.
+    cs = data.get("concentration_save")
+    if isinstance(cs, dict):
+        verdict = "MAINTAINED" if cs.get("maintained") else "BROKEN"
+        spell = cs.get("spell")
+        out.append(
+            f"    `↳ concentration-save: {cs.get('target', cs.get('character_id', '?'))} "
+            f"{str(cs.get('ability', 'con')).upper()} {cs.get('roll', '?')} "
+            f"(nat {cs.get('natural', '?')}) vs DC {cs.get('dc', '?')} → {verdict}"
+            + (f" ({spell})" if spell else "")
+            + "`"
+        )
+    # #792/F3-6: when concentration breaks, the held victims (Hold Person/Monster) are freed.
+    freed = data.get("freed_targets")
+    if isinstance(freed, list) and freed:
+        out.append(
+            f"    `↳ freed-on-concentration-end: "
+            f"{', '.join(str(f) for f in freed if f)}`"
+        )
+    # #792: a deferred on-hit advantage rider (e.g. Guiding Bolt) consumed by the next attack.
+    adv = data.get("advantage_consumed")
+    if adv:
+        src = adv if isinstance(adv, str) else (
+            adv.get("source") if isinstance(adv, dict) else None
+        )
+        out.append(f"    `↳ advantage-consumed{f': {src}' if src else ''}`")
     return out
 
 
