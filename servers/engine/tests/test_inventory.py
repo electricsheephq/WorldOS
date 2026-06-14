@@ -36,6 +36,58 @@ def test_gain():
     assert inventory.total_copper(ch.currency) == 1500
 
 
+# --- F09-11: pp/ep preservation on pay AND gain ---------------------------------
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F09-11). _from_copper rebuilt the
+# WHOLE purse into gp/sp/cp, so pay()/gain()/sell_item silently vaporized a noble's
+# platinum and electrum. Both now preserve untouched denominations; value is exact.
+
+def test_pay_preserves_platinum_when_paying_a_copper():
+    ch = mk(currency={"pp": 10})  # 10,000 cp of platinum
+    before = inventory.total_copper(ch.currency)
+    inventory.pay(ch, 0.01)  # pay 1 cp -> break ONE platinum, keep the rest as pp
+    assert ch.currency.pp == 9          # nine platinum survive (was 0 on main)
+    assert inventory.total_copper(ch.currency) == before - 1  # value exact
+
+
+def test_gain_preserves_platinum():
+    ch = mk(currency={"pp": 10})
+    before = inventory.total_copper(ch.currency)
+    inventory.gain(ch, 1)  # earn 1 gp -> pp untouched, +1 gp coin
+    assert ch.currency.pp == 10         # platinum survives (was 0 on main)
+    assert ch.currency.gp == 1
+    assert inventory.total_copper(ch.currency) == before + 100
+
+
+def test_pay_spends_smallest_coins_first_no_unneeded_break():
+    # 1 pp + 5 gp; pay 3 gp -> spend gp coins, never touch the platinum.
+    ch = mk(currency={"pp": 1, "gp": 5})
+    inventory.pay(ch, 3)
+    assert ch.currency.pp == 1 and ch.currency.gp == 2
+
+
+def test_gp_sp_cp_only_purse_pay_is_value_identical_to_before():
+    # No pp/ep present -> behavior is byte-identical to the old _from_copper path.
+    ch = mk(currency={"sp": 50})  # 50 sp == 5 gp
+    inventory.pay(ch, 3)
+    assert inventory.total_copper(ch.currency) == 200
+
+
+def test_pay_breaks_a_silver_for_a_copper_remainder():
+    # Only silver on hand; owe 3 cp -> break one sp, get 7 cp change.
+    ch = mk(currency={"sp": 5})
+    inventory.pay(ch, 0.03)
+    assert inventory.total_copper(ch.currency) == 47  # 50 - 3
+    assert ch.currency.cp == 7 and ch.currency.sp == 4
+
+
+def test_gain_cp_and_pay_cp_preserve_platinum():
+    ch = mk(currency={"pp": 2})
+    inventory.gain_cp(ch, 5)
+    assert ch.currency.pp == 2 and ch.currency.cp == 5
+    inventory.pay_cp(ch, 5)
+    assert ch.currency.pp == 2 and ch.currency.cp == 0
+
+
 def test_adjust_currency_negative_raises():
     ch = mk(currency={"gp": 1})
     with pytest.raises(ValueError):

@@ -78,3 +78,38 @@ def test_start_world_seeds_threads_and_downtime_surfaces_them(tmp_path, monkeypa
     assert early["world_beats"] == [] and len(early["pending"]) >= 1   # seeded, not yet due
     moved = server.downtime(cid, 12)                                    # jump the clock
     assert moved["world_beats"]                                         # the world moved on its own
+
+
+# --- F04-9: cap-truncated same-trigger-day backlog items must NOT stall to the next day ----
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F04-9). With 3 items due day 5 and a cap
+# of 2, the first tick fired 2 and set last_tick_day=5; a second SAME-day tick saw elapsed=0
+# and fired 0 — the third stranded until day 6. Now the same-day re-tick drains the stray.
+
+def test_tick_backlog_cap_truncated_items_fire_same_day():
+    from models import BacklogItem
+    c = _camp(day=5)
+    bl = c.campaign_backlog
+    bl.last_tick_day = 4  # yesterday -> day-5 items are due this tick
+    for i in range(3):
+        it = BacklogItem(kind="world_event", title=f"m{i}", trigger_day=5, needs_llm=True)
+        bl.items[it.id] = it
+    first = worldsim.tick_backlog(c, max_events=2)
+    assert len(first) == 2                       # capped this call
+    second = worldsim.tick_backlog(c, max_events=2)  # SAME day, no clock advance
+    assert len(second) == 1                       # the stray drains today (was 0 on main)
+    assert all(it.status == "fired" for it in bl.items.values())  # every item fired exactly once
+
+
+def test_tick_backlog_same_day_retick_does_not_refire():
+    # Conservation: once everything due is drained, a same-day re-tick is a clean no-op
+    # (no re-fire of resolved/fired items).
+    from models import BacklogItem
+    c = _camp(day=5)
+    bl = c.campaign_backlog
+    bl.last_tick_day = 4
+    for i in range(3):
+        it = BacklogItem(kind="world_event", title=f"m{i}", trigger_day=5, needs_llm=True)
+        bl.items[it.id] = it
+    worldsim.tick_backlog(c, max_events=2)
+    worldsim.tick_backlog(c, max_events=2)  # drains the 3rd
+    assert worldsim.tick_backlog(c, max_events=2) == []  # nothing left, no re-fire

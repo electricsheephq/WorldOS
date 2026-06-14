@@ -3,9 +3,9 @@
 The original economy tests (test_inventory.py / test_itemcatalog.py) are single-path:
 one buy, one sell, one armor. This suite is the structural stress matrix the audit asked
 for — a value-conservation PROPERTY over mixed buy/sell/spend/earn cycles, a full
-armor × DEX effective-AC matrix (F09-6), and xfail rows tagged to the still-open
-denomination-preservation finding (F09-11, P3 polish — deferred from this cluster) so the
-known gap is RED-documented, not silently green.
+armor × DEX effective-AC matrix (F09-6), and denomination-preservation rows for F09-11
+(now FIXED in v1.0.5 — pay()/gain() preserve untouched pp/ep instead of canonicalizing
+the whole purse).
 
 Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (PR #768), unit 09 — F09-6/7/9/10/13.
 Engine = sole writer; every tool call here goes through the real campaign_lock + save
@@ -243,25 +243,22 @@ def test_gain_conserves_value(start, earn):
 # DEFERRED-FINDING RED ROWS — documented gaps, not silent passes
 # ===========================================================================
 #
-# F09-11 (P3 polish, NOT in this P2 cluster #807): pay() AND gain() rebuild the whole
-# purse via _from_copper (gp/sp/cp only), so a noble's pp/ep is vaporized into gp even
-# though VALUE is conserved. These xfail rows pin the open behavior so the suite goes RED
-# the moment F09-11's denomination-preserving fix lands (flip xfail -> xpass).
+# F09-11 (P3 polish, v1.0.5): pay() AND gain() used to rebuild the whole purse via
+# _from_copper (gp/sp/cp only), vaporizing a noble's pp/ep into gp even though VALUE was
+# conserved. FIXED — pay() spends smallest-coins-first (breaking only the minimal higher
+# coin) and gain() adds value as gp/sp/cp increments without rebuilding. These rows (once
+# xfail) now assert the denomination-preserving behavior directly.
 
 
-@pytest.mark.xfail(reason="F09-11 (deferred P3): pay() canonicalizes the whole purse, dropping pp")
 def test_pay_preserves_platinum_F09_11():
     ch = Character(name="T", currency={"pp": 10})  # 100 gp of value, all platinum
-    inventory.pay(ch, 0.01)  # spend 1 cp
-    # EXPECTED once F09-11 lands: only the minimal coin is broken, pp largely intact.
-    assert ch.currency.pp >= 9
+    inventory.pay(ch, 0.01)  # spend 1 cp -> break ONE platinum, keep the rest
+    assert ch.currency.pp == 9
 
 
-@pytest.mark.xfail(reason="F09-11 (deferred P3): gain() rebuilds the whole purse, dropping pp/ep")
 def test_gain_preserves_platinum_F09_11():
     ch = Character(name="T", currency={"pp": 10})
-    inventory.gain(ch, 1)  # earn 1 gp
-    # EXPECTED once F09-11 lands: the earned gp is added; existing pp is untouched.
+    inventory.gain(ch, 1)  # earn 1 gp -> existing platinum untouched
     assert ch.currency.pp == 10
 
 

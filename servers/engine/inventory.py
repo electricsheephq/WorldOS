@@ -42,23 +42,70 @@ def _from_copper(total: int) -> Currency:
     return Currency(cp=cp, sp=sp, gp=gp)
 
 
+# Copper value of one coin of each denomination, smallest-first — the order pay()
+# spends in so a purchase touches the LEAST valuable coins it can and never breaks a
+# higher coin it didn't have to (F09-11). pp/ep are real SRD coins.
+_DENOMS = (("cp", 1), ("sp", 10), ("ep", 50), ("gp", 100), ("pp", 1000))
+
+
+def _spend_change(cur: Currency, cost: int) -> Currency:
+    """Spend `cost` copper from `cur`, smallest-denomination-first, breaking only the
+    minimal higher coin needed and leaving every UNTOUCHED denomination intact (F09-11:
+    don't vaporize a noble's platinum just to pay a copper). Value-preserving; assumes
+    the caller already checked sufficiency. Pure — returns a new Currency."""
+    purse = {d: getattr(cur, d) for d, _ in _DENOMS}
+    remaining = cost
+    # Phase 1: pay as much as possible from existing coins, smallest first, without
+    # breaking anything — each coin is spent only if it doesn't overshoot the bill.
+    for denom, value in _DENOMS:
+        if remaining <= 0:
+            break
+        spend = min(purse[denom], remaining // value)
+        purse[denom] -= spend
+        remaining -= spend * value
+    # Phase 2: a sub-coin remainder is left (e.g. owe 3 cp but only have a sp). Break the
+    # SMALLEST coin large enough to cover it, then re-make change for the overpayment in
+    # gp/sp/cp (the broken coin's surplus canonicalizes — only THAT coin, not the purse).
+    if remaining > 0:
+        for denom, value in _DENOMS:
+            if purse[denom] > 0 and value > remaining:
+                purse[denom] -= 1
+                change = value - remaining
+                remaining = 0
+                gp, rem = divmod(change, 100)
+                sp, cp = divmod(rem, 10)
+                purse["gp"] += gp
+                purse["sp"] += sp
+                purse["cp"] += cp
+                break
+    return Currency(**purse)
+
+
 def pay(ch: Character, gp_amount: float) -> Currency:
-    """Spend gp_amount (via total copper, making change). Raises on negative or
-    insufficient funds."""
+    """Spend gp_amount (making change). Raises on negative or insufficient funds.
+    Spends smallest coins first and preserves untouched denominations — paying 1 cp
+    from a platinum-heavy purse no longer dissolves the platinum (F09-11)."""
     if gp_amount < 0:
         raise ValueError("cannot pay a negative amount")
     cost = _gp_to_cp(gp_amount)
     have = total_copper(ch.currency)
     if have < cost:
         raise ValueError("insufficient funds")
-    ch.currency = _from_copper(have - cost)
+    ch.currency = _spend_change(ch.currency, cost)
     return ch.currency
 
 
 def gain(ch: Character, gp_amount: float) -> Currency:
+    """Add gp_amount of value to the purse as gp/sp/cp increments — WITHOUT rebuilding
+    (and thereby destroying) the existing pp/ep coins (F09-11). Value-preserving."""
     if gp_amount < 0:
         raise ValueError("cannot gain a negative amount")
-    ch.currency = _from_copper(total_copper(ch.currency) + _gp_to_cp(gp_amount))
+    earned = _from_copper(_gp_to_cp(gp_amount))
+    cur = ch.currency
+    ch.currency = Currency(
+        cp=cur.cp + earned.cp, sp=cur.sp + earned.sp, ep=cur.ep,
+        gp=cur.gp + earned.gp, pp=cur.pp,
+    )
     return ch.currency
 
 
@@ -71,21 +118,28 @@ def gp_to_cp(gp_amount: float) -> int:
 
 def pay_cp(ch: Character, amount_cp: int) -> Currency:
     """Spend an exact copper amount (making change). Raises on negative or
-    insufficient funds. Copper-exact sibling of pay() for unit x quantity totals."""
+    insufficient funds. Copper-exact sibling of pay() for unit x quantity totals —
+    preserves untouched pp/ep denominations like pay() (F09-11)."""
     if amount_cp < 0:
         raise ValueError("cannot pay a negative amount")
     have = total_copper(ch.currency)
     if have < amount_cp:
         raise ValueError("insufficient funds")
-    ch.currency = _from_copper(have - amount_cp)
+    ch.currency = _spend_change(ch.currency, amount_cp)
     return ch.currency
 
 
 def gain_cp(ch: Character, amount_cp: int) -> Currency:
-    """Gain an exact copper amount. Copper-exact sibling of gain()."""
+    """Gain an exact copper amount. Copper-exact sibling of gain() — adds the value as
+    gp/sp/cp increments without rebuilding (destroying) pp/ep coins (F09-11)."""
     if amount_cp < 0:
         raise ValueError("cannot gain a negative amount")
-    ch.currency = _from_copper(total_copper(ch.currency) + amount_cp)
+    earned = _from_copper(amount_cp)
+    cur = ch.currency
+    ch.currency = Currency(
+        cp=cur.cp + earned.cp, sp=cur.sp + earned.sp, ep=cur.ep,
+        gp=cur.gp + earned.gp, pp=cur.pp,
+    )
     return ch.currency
 
 

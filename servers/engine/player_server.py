@@ -291,10 +291,15 @@ def validate_attack(pc: Character, target: str, weapon: str) -> tuple[bool, str]
     ``use_item``). We deliberately do NOT gate on in-combat — declaring an attack can
     legitimately START a fight; the DM rolls initiative and resolves. The engine
     remains the authority on hit/damage; this just stops "attack nothing" / "attack
-    with a weapon you don't own" from being relayed to the DM as a valid declaration."""
+    with a weapon you don't own" from being relayed to the DM as a valid declaration.
+
+    F12-19: the weapon compare is now STRIPPED+lowered to match ``owned_items`` (so a
+    trailing space — "sword " — is no longer false-refused), and an EMPTY inventory no
+    longer bypasses the check (it means you own nothing, so a named weapon is invalid —
+    unarmed/improvised attacks pass a blank weapon)."""
     if not target.strip():
         return False, "name a target to attack"
-    if weapon.strip() and owned_items(pc) and weapon.lower() not in owned_items(pc):
+    if weapon.strip() and weapon.strip().lower() not in owned_items(pc):
         return False, f"you aren't carrying {weapon!r} to attack with"
     return True, ""
 

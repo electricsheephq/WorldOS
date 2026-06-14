@@ -190,9 +190,11 @@ def tick_backlog(campaign: Campaign, max_events: int = 2) -> list[BacklogItem]:
             capped = True
             break
     # Not capped -> we drained everything due through today, so advance to campaign.day (and never
-    # re-enter on the same day). Capped with pending work left -> advance only to the highest day
-    # we fired, leaving room for the next tick to fire the strays without re-firing the done ones.
-    bl.last_tick_day = last_fired_trigger_day if capped else campaign.day
+    # re-enter on the same day). Capped with pending work left -> rewind last_tick_day to BEFORE the
+    # highest day we fired (F04-9): a same-day re-tick must see elapsed > 0 so the cap-truncated
+    # strays still fire today instead of stalling until tomorrow. Re-fire is safe — done one-shots
+    # are status-guarded (resolved/fired != pending) and recurring items re-armed to day+cadence > day.
+    bl.last_tick_day = max(bl.last_tick_day, last_fired_trigger_day - 1) if capped else campaign.day
     return fired
 
 
