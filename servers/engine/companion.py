@@ -227,7 +227,13 @@ def suggest_action(
     }
 
 
-def deliberate(companion: Character, situation: str = "", callbacks: Optional[list] = None) -> dict:
+def deliberate(
+    companion: Character,
+    situation: str = "",
+    callbacks: Optional[list] = None,
+    standing: Optional[dict] = None,
+    dossier: Optional[object] = None,
+) -> dict:
     """Build a persona-agnostic advice frame for a NON-combat beat — what the
     companion should weigh in on, NOT the words (the persona/agent authors the
     actual line). This is the storytelling counterpart to suggest_action: it makes
@@ -236,9 +242,21 @@ def deliberate(companion: Character, situation: str = "", callbacks: Optional[li
 
     `situation` is the DM's free-text description of the moment; `callbacks` are
     relevant past-memory hits (from the ledger's recall) to ground the opinion.
-    Returns ``{companion, voice_id, personality, callbacks, prompt}`` — the prompt
-    is an instruction the DM (or a Tier-2 forked agent) voices in the companion's
-    own voice."""
+
+    `standing` (F06-3, optional) is the engine-computed approval reading — e.g.
+    ``{"band": "warm", "attitude_value": 45}`` — derived by the caller from the
+    companion's gauge so the DM voices a companion who already HAS a leaning, not a
+    blank neutral. `dossier` (optional) is the companion's ``CompanionDossier`` whose
+    approval_likes/dislikes are surfaced in the return for the DM's human judgment of
+    whether THIS moment wins or loses the companion's regard (the engine reads the
+    gauge; the DM judges the cause — the F6-2 division of labor).
+
+    Returns ``{companion, voice_id, personality, callbacks, prompt}`` plus —
+    only when the optional data is passed — ``standing`` / ``approval_likes`` /
+    ``approval_dislikes``. The prompt is an instruction the DM (or a Tier-2 forked
+    agent) voices in the companion's own voice. ADDITIVE: with no standing/dossier
+    passed the return is byte-identical to the original five-key frame, so the pure
+    module stays pure and every existing caller is unaffected."""
     cbs = [c.get("text", "") if isinstance(c, dict) else str(c) for c in (callbacks or [])]
     cbs = [t for t in cbs if t]
     prompt = (
@@ -248,15 +266,37 @@ def deliberate(companion: Character, situation: str = "", callbacks: Optional[li
     )
     if companion.personality:
         prompt += f" Stay true to who you are: {companion.personality}"
+    # F06-3: fold the engine-computed standing into the voicing instruction so the line
+    # carries the companion's current leaning toward the party (a warm ally and a souring
+    # one react DIFFERENTLY to the same moment) — the band is a read of the gauge only.
+    band = standing.get("band") if isinstance(standing, dict) else None
+    if band:
+        prompt += (
+            f" Your current standing with the party is {band} — let that color how warmly "
+            f"or coolly you speak."
+        )
     if cbs:
         prompt += " Ground it in what you remember: " + " | ".join(cbs)
-    return {
+    out = {
         "companion": companion.name,
         "voice_id": companion.voice_id,
         "personality": companion.personality,
         "callbacks": cbs,
         "prompt": prompt,
     }
+    # ADDITIVE: only attach the enrichment keys when the data was actually passed, so a
+    # caller that supplies nothing gets today's exact five-key frame (the pure-module
+    # guarantee). approval causes go in the RETURN for the DM to judge — never auto-applied.
+    if isinstance(standing, dict) and standing:
+        out["standing"] = standing
+    if dossier is not None:
+        likes = list(getattr(dossier, "approval_likes", []) or [])
+        dislikes = list(getattr(dossier, "approval_dislikes", []) or [])
+        if likes:
+            out["approval_likes"] = likes
+        if dislikes:
+            out["approval_dislikes"] = dislikes
+    return out
 
 
 @runtime_checkable
