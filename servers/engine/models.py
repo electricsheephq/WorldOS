@@ -715,6 +715,17 @@ class Character(_StrictModel):
     # progression
     xp: int = 0
     features: list[str] = Field(default_factory=list)  # class/subclass features gained
+    # Feats taken at ASI levels (Great Weapon Master, Sentinel, …). The engine doesn't yet
+    # model every feat's mechanics, but a chosen feat is now RECORDED on a structured ledger
+    # the DM/viewer surface (the feat path used to be 100% inert — buried only in `notes`).
+    # ADDITIVE: [] == today's behavior; old snapshots round-trip (audit F02-3).
+    feats: list[str] = Field(default_factory=list)
+    # OUTSTANDING build choices owed to the character but not yet settled — e.g. an ASI/feat
+    # that was DUE at a level-up but neither was supplied ("ASI/feat due: Fighter level 4"),
+    # or an Expertise/Fighting-Style pick. Recorded so a skipped choice is recoverable instead
+    # of silently lost; settled by update_character / a later level_up. ADDITIVE: [] == today's
+    # behavior; old snapshots round-trip (audit F02-3 / F02-15).
+    pending_choices: list[str] = Field(default_factory=list)
     extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
     sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
     # A defensive REACTION that adds this many points to AC against ONE melee attack that

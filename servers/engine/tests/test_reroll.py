@@ -122,9 +122,12 @@ def test_reroll_does_not_transfer_gear_or_gold():
 
     c = store.load_campaign(cid)
     new = c.characters[out["new_pc"]["id"]]
-    # Gear/gold are LOST with the body by default — the new character earns their own kit.
-    assert new.inventory == []
-    assert new.currency.gp == 0
+    # The DEAD PC's gear/gold is LOST with the body — never TRANSFERRED to the new hero.
+    # (F02-12: the new character is seated with their OWN class-appropriate starting kit so
+    # their AC is backed by armor on the sheet, but NONE of the corpse's distinctive loot.)
+    assert not any(i.name == "Flametongue Greatsword" for i in new.inventory)
+    assert not any(i.name == "Healing Potion" for i in new.inventory)
+    assert new.currency.gp != 250  # not the corpse's purse
     # The corpse keeps what it died with (the fiction hook for a lootable body).
     corpse = c.characters[pc]
     assert any(i.name == "Flametongue Greatsword" for i in corpse.inventory)
