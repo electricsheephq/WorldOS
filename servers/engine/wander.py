@@ -51,9 +51,32 @@ REGION_RATES: dict[str, float] = {
     "dread": 0.55,
     "deathly": 0.55,
     "underdark": 0.55,
-    # tame / civilized — patrolled, low risk
+    # urban UNDERGROUND (F04-1) — sewers / the Undercity. These are city-adjacent but
+    # genuinely dangerous, NOT tame, so they sit in the danger band. They MUST precede
+    # "city" below: "undercity" contains the substring "city", so without this ordering
+    # an authored "The Undercity" region would mis-resolve to the tame civilized tier.
+    "undercity": 0.45,
+    "sewer": 0.42,
+    # tame / civilized — patrolled, low risk. URBAN keywords (F04-1) join the original
+    # town/city set so a market/tavern/harbor/temple/quarter scene reads as a city
+    # street, not a wilderness trail: a Baldur's Gate area ships region="Baldur's Gate"
+    # with these tags joined into its notes, and the staging seam matches off the
+    # composite "<region> <name> <notes>".
     "town": 0.08,
     "city": 0.08,
+    "market": 0.08,
+    "tavern": 0.07,
+    "harbor": 0.10,
+    "harbour": 0.10,
+    "dock": 0.10,
+    "port": 0.10,
+    "wharf": 0.10,
+    "slum": 0.12,
+    "warren": 0.12,
+    "quarter": 0.08,
+    "district": 0.08,
+    "temple": 0.10,
+    "palace": 0.08,
     "village": 0.10,
     "keep": 0.10,
     "road": 0.15,
@@ -92,7 +115,19 @@ _REGION_TIER: dict[str, str] = {
     "shadow": "undead", "blight": "undead", "dread": "undead",
     "deathly": "undead", "dungeon": "undead",
     "underdark": "underdark",
+    # urban UNDERGROUND (F04-1) — sewers / the Undercity read as the urban-underground
+    # "underdark" creature tier (kobolds/giant spiders/ghouls/ogres — vermin & lurkers),
+    # NOT civilized. MUST precede "city" (the substring hazard — "undercity" ⊃ "city").
+    "undercity": "underdark", "sewer": "underdark",
+    # tame / civilized — patrolled streets. The urban keywords (F04-1) draw from the
+    # civilized pool (Bandit/Guard/Scout/Tough/Cultist/Bandit Captain) — a city threat
+    # is a cutpurse or a patrol, never a wolf pack.
     "town": "civilized", "city": "civilized", "village": "civilized",
+    "market": "civilized", "tavern": "civilized", "harbor": "civilized",
+    "harbour": "civilized", "dock": "civilized", "port": "civilized",
+    "wharf": "civilized", "slum": "civilized", "warren": "civilized",
+    "quarter": "civilized", "district": "civilized", "temple": "civilized",
+    "palace": "civilized",
     "keep": "civilized", "road": "civilized", "safe": "civilized",
     "haven": "civilized", "sanctuary": "civilized",
     "marsh": "swamp", "swamp": "swamp", "bog": "swamp", "river": "swamp",
