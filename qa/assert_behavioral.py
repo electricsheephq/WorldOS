@@ -323,6 +323,28 @@ def main() -> int:
                         "action before advancing; Multiattack = all N attacks).",
                         fatal=False)
 
+        # COMBAT-WITHOUT-INITIATIVE (F01-14, audit 2026-06-11; WARN, NULL-GUARDED). The
+        # combat-integrity checks above all nest under `start_combat>0`, so a session that
+        # ran a whole FIGHT via raw attack()/cast_spell() calls and NEVER called start_combat
+        # was completely invisible to QA — the turn-order and action-economy gates were inert
+        # the entire time (the engine now nudges with `combat_not_active`, but the run can
+        # still ignore it). Flag it: repeated attacks with no start_combat anywhere is the
+        # out-of-initiative loophole. Conservative threshold (>= 3 attacks) so a single
+        # narrative strike or a trap doesn't false-fire; only for a substantial session.
+        if (
+            len(mv) >= MIN_BEATS
+            and tools.get("start_combat", 0) == 0
+            and tools.get("attack", 0) >= 3
+        ):
+            chk("combat_ran_outside_initiative",
+                False,
+                f"{tools.get('attack', 0)} attack call(s) but start_combat was never called — "
+                "a fight ran entirely outside initiative, so turn-order/action-economy gates "
+                "were inert and combat integrity is unchecked. Call start_combat at the top of "
+                "a real encounter (the engine surfaces a `combat_not_active` nudge on each "
+                "out-of-combat attack/cast).",
+                fatal=False)
+
         # PARTY-LOCATION COHERENCE (#agency, WARN, NULL-GUARDED). Every party member with a
         # known location should be co-located with the current scene. Skip members whose
         # location_id is absent/empty (serialization sometimes omits it) — never false-fire on
