@@ -510,3 +510,346 @@ def test_async_generate_worker_failure_does_not_crash(state, monkeypatch):
     # generate() degrades-to-null and does NOT cache the failure, so the key stays a miss.
     _time.sleep(0.2)  # let the worker run + finish
     assert imagegen.cache_read(d["hash"], d["scope"]) is None
+
+
+# --------------------------------------------------------------------------- #
+# F11-5: a cache HIT must not return multi-MB bytes_b64 verbatim into DM context.
+# The metadata-only return carries has_bytes/byte_len; the on-disk cache keeps the
+# bytes so the viewer still serves them.
+# --------------------------------------------------------------------------- #
+
+def test_async_cache_hit_strips_inline_bytes_to_metadata(state):
+    """A provider-lane descriptor with inline bytes_b64 must come back from async_generate
+    as METADATA only (has_bytes/byte_len) — never the megabyte base64 blob (F11-5)."""
+    import base64 as _b64
+
+    raw = b"\x89PNG" + b"\x00" * (1024 * 1024)  # ~1MB image
+    b64 = _b64.b64encode(raw).decode("ascii")
+    # Seed the cache under the exact (null-provider) key async_generate will look up.
+    key = imagegen.content_hash("portrait", "a fence-painted face", provider="null")
+    imagegen.cache_write(
+        {"provider": "null", "kind": "portrait", "prompt": "a fence-painted face",
+         "seed": None, "placeholder": False, "bytes_b64": b64},
+        scope="b64-w",
+    )
+
+    hit = imagegen.async_generate("portrait", "a fence-painted face", scope="b64-w")
+    assert hit["cache_hit"] is True and hit["status"] == "ready"
+    assert "bytes_b64" not in hit, "inline base64 leaked into the tool return"
+    assert hit["has_bytes"] is True
+    assert hit["byte_len"] == len(raw)  # exact decoded size
+    # The on-disk cache entry is UNTOUCHED — the viewer still gets the bytes.
+    on_disk = imagegen.cache_read(key, scope="b64-w")
+    assert on_disk["bytes_b64"] == b64
+
+
+def test_async_cache_hit_without_bytes_is_unchanged(state):
+    """A hit with no inline bytes round-trips unmodified (no has_bytes/byte_len noise)."""
+    imagegen.generate("map", "a quiet road", seed=1, scope="nb-w")  # null placeholder, no bytes
+    hit = imagegen.async_generate("map", "a quiet road", seed=1, scope="nb-w")
+    assert hit["cache_hit"] is True
+    assert "bytes_b64" not in hit and "has_bytes" not in hit and "byte_len" not in hit
+
+
+def test_strip_inline_bytes_is_pure(state):
+    """_strip_inline_bytes never mutates its input (defensive — callers reuse the dict)."""
+    src = {"provider": "openclaw", "kind": "scene", "prompt": "x", "bytes_b64": "QUJD"}
+    out = imagegen._strip_inline_bytes(src)
+    assert "bytes_b64" in src  # input untouched
+    assert "bytes_b64" not in out and out["has_bytes"] is True
+
+
+# --------------------------------------------------------------------------- #
+# F11-7: a failed background generation must leave a `.error` sidecar (no longer
+# completely silent). A successful retry supersedes it; the viewer's *.json glob
+# never picks the sidecar up.
+# --------------------------------------------------------------------------- #
+
+def test_generate_failure_writes_error_sidecar(state):
+    """A provider failure writes <scope>/<hash>.error with the error string (F11-7)."""
+    class _Boom:
+        name = "boom"
+
+        def generate(self, kind, prompt, *, seed=None):
+            raise RuntimeError("gateway exploded")
+
+    state.joinpath("images")  # ensure root resolvable
+    import imagegen as _ig
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(_ig, "get_provider", lambda: _Boom())
+    try:
+        d = _ig.generate("scene", "a torchlit door", scope="err-w")
+    finally:
+        monkey.undo()
+    assert d.get("degraded_from") == "boom"
+    key = _ig.content_hash("scene", "a torchlit door", provider="boom")
+    rec = _ig.read_error(key, scope="err-w")
+    assert rec is not None
+    assert rec["status"] == "error"
+    assert "gateway exploded" in rec["error"]
+    assert rec["provider"] == "boom"
+    # The degraded descriptor itself stays UNCACHED (transient blip stays retryable).
+    assert _ig.cache_read(key, scope="err-w") is None
+    # Sidecar is a bare `.error` suffix on disk, NOT `.error.json`.
+    p = _ig.error_path(key, scope="err-w")
+    assert p.name.endswith(".error") and not p.name.endswith(".json")
+    assert p.is_file()
+
+
+def test_error_sidecar_invisible_to_json_descriptor_glob(state):
+    """The viewer resolves *.json only — a `.error` sidecar must not be mistaken for a
+    real descriptor by imagegen._newest_descriptor (mirrors the viewer's glob)."""
+    imagegen.write_error("deadbeef" * 8, "boom", scope="glob-w", provider="boom")
+    # No *.json descriptor exists in the scope, so the newest-descriptor resolver misses.
+    assert imagegen._newest_descriptor("glob-w") is None
+    # And the .error file is present (so the miss is genuinely "glob ignored the sidecar").
+    assert list((state / "images" / "glob-w").glob("*.error"))
+
+
+def test_successful_generate_clears_stale_error_sidecar(state):
+    """A success under the same key deletes an earlier `.error` (most-recent-outcome)."""
+    # Seed a stale error under the NULL-provider key (what a later success will write to).
+    key = imagegen.content_hash("portrait", "a hopeful face", provider="null")
+    imagegen.write_error(key, "earlier failure", scope="clr-w", provider="null")
+    assert imagegen.read_error(key, scope="clr-w") is not None
+    # A normal (null) generate succeeds under that exact key and must clear the sidecar.
+    imagegen.generate("portrait", "a hopeful face", scope="clr-w")
+    assert imagegen.read_error(key, scope="clr-w") is None
+    assert imagegen.cache_read(key, scope="clr-w") is not None
+
+
+# --------------------------------------------------------------------------- #
+# F11-6: catalog consult / scope idempotency. The viewer serves ingested _private
+# art ahead of any generated cache, so async_generate must NOT spend to generate a
+# scope the ingest already covers (unless force=True). An unknown scope still generates.
+# --------------------------------------------------------------------------- #
+
+def _seed_ingested_art(content_root, world, scope_seg, *, scope_field=None):
+    """Drop a wiki_ingest.json under content/worlds/_private/<world>/images/<seg>/."""
+    d = content_root / "worlds" / "_private" / world / "images" / scope_seg
+    d.mkdir(parents=True, exist_ok=True)
+    img = d / "image.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\nART")
+    desc = {"scope": scope_field or scope_seg, "path": str(img), "kind": "portrait",
+            "source": "wiki", "provider": "ingest"}
+    (d / "wiki_ingest.json").write_text(json.dumps(desc), encoding="utf-8")
+    return img
+
+
+@pytest.fixture
+def ingest_root(tmp_path, monkeypatch):
+    """A tmp content/ root the engine's catalog consult will resolve via CONTENT_DIR."""
+    content = tmp_path / "content"
+    (content / "worlds" / "_private").mkdir(parents=True)
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(content))
+    monkeypatch.delenv("CLAWDND_ART_REPO_ROOT", raising=False)
+    monkeypatch.delenv("CLAWDND_REPO_ROOT", raising=False)
+    return content
+
+
+def test_async_generate_skips_when_ingested_art_exists(state, ingest_root, monkeypatch):
+    """A scope the _private ingest covers returns status='ingested' WITHOUT spending —
+    the provider is never invoked (F11-6)."""
+    _seed_ingested_art(ingest_root, "faerun", "portrait-shadowheart")
+
+    calls = {"n": 0}
+
+    class _Counting:
+        name = "count"
+
+        def generate(self, kind, prompt, *, seed=None):
+            calls["n"] += 1
+            return {"provider": self.name, "kind": kind, "prompt": prompt, "placeholder": False}
+
+    monkeypatch.setattr(imagegen, "get_provider", lambda: _Counting())
+    d = imagegen.async_generate("portrait", "a face", scope="portrait-shadowheart")
+    assert d["status"] == "ingested"
+    assert d["placeholder"] is False
+    assert calls["n"] == 0, "provider was invoked despite ingested art (pure spend)"
+
+
+def test_async_generate_ingest_consult_normalizes_scope(state, ingest_root, monkeypatch):
+    """The consult matches the manifest slug even when the UI fetches an engine-id scope:
+    ingested as portrait:shadowheart, requested as portrait-npc-shadowheart (F11-6)."""
+    _seed_ingested_art(ingest_root, "faerun", "portrait_shadowheart",
+                       scope_field="portrait:shadowheart")
+
+    class _MustNotGenerate:
+        name = "nope"
+
+        def generate(self, kind, prompt, *, seed=None):
+            raise AssertionError("provider.generate must not be called for ingested scope")
+
+    monkeypatch.setattr(imagegen, "get_provider", lambda: _MustNotGenerate())
+    d = imagegen.async_generate("portrait", "a face", scope="portrait-npc-shadowheart")
+    assert d["status"] == "ingested"
+
+
+def test_async_generate_force_regenerates_over_ingested_art(state, ingest_root, monkeypatch):
+    """force=True bypasses the catalog consult and generates anyway (F11-6)."""
+    _seed_ingested_art(ingest_root, "faerun", "portrait-shadowheart")
+    slow = _SlowProvider(delay=0.05)
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+    d = imagegen.async_generate("portrait", "a face", scope="portrait-shadowheart", force=True)
+    assert d["status"] == "pending"  # generation enqueued despite ingested art
+    _wait_for(lambda: imagegen.cache_read(d["hash"], d["scope"]) is not None)
+
+
+def test_async_generate_unknown_scope_still_generates(state, ingest_root, monkeypatch):
+    """A scope with NO ingested art falls through to normal generation (F11-6)."""
+    _seed_ingested_art(ingest_root, "faerun", "portrait-shadowheart")
+    slow = _SlowProvider(delay=0.05)
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+    d = imagegen.async_generate("portrait", "a stranger", scope="portrait-nobody")
+    assert d["status"] == "pending"
+    _wait_for(lambda: imagegen.cache_read(d["hash"], d["scope"]) is not None)
+
+
+def test_has_ingested_art_no_root_is_false(state, monkeypatch, tmp_path):
+    """On an art-less host (no _private tree) the consult returns False (generates)."""
+    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path / "empty-content"))
+    monkeypatch.delenv("CLAWDND_ART_REPO_ROOT", raising=False)
+    monkeypatch.delenv("CLAWDND_REPO_ROOT", raising=False)
+    assert imagegen.has_ingested_art("portrait-anyone") is False
+
+
+# --------------------------------------------------------------------------- #
+# F11-3: detached resolver — art that survives the per-beat `claude -p` exit.
+# The default (env OFF) keeps the daemon-thread behavior; the opt-in path spawns a
+# process-group-detached resolver that writes the derived cache after the parent moves
+# on, and a young `generating` marker suppresses a re-spawn (no double spend).
+# --------------------------------------------------------------------------- #
+
+def test_detached_resolver_off_by_default_uses_thread(state, monkeypatch):
+    """Default behavior unchanged: no env -> daemon-thread worker, no `detached` key,
+    no `generating` marker (additive, today's behavior preserved)."""
+    monkeypatch.delenv("CLAWDND_IMAGE_DETACHED_RESOLVER", raising=False)
+    slow = _SlowProvider(delay=0.05)
+    monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
+    d = imagegen.async_generate("scene", "a quiet glade", scope="det-off")
+    assert d["status"] == "pending"
+    assert "detached" not in d  # the thread path doesn't set it
+    _wait_for(lambda: imagegen.cache_read(d["hash"], d["scope"]) is not None)
+
+
+def test_detached_resolver_enabled_spawns_detached(state, monkeypatch):
+    """With the env flag on, async_generate reports the detached path and writes a
+    `generating` marker (then the resolver subprocess clears it). We stub Popen so the
+    test stays in-process and deterministic."""
+    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+
+    spawned = {"cmd": None}
+
+    class _FakePopen:
+        def __init__(self, cmd, **kw):
+            spawned["cmd"] = cmd
+            # Mimic the kernel-detach contract the real spawn relies on.
+            assert kw.get("start_new_session") is True
+
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    d = imagegen.async_generate("portrait", "a sentinel", scope="det-on")
+    assert d["status"] == "pending"
+    assert d["detached"] is True
+    assert d["already_pending"] is False
+    # A `generating` marker was written before the spawn (suppresses a racing re-POST).
+    assert imagegen.generating_path(d["hash"], d["scope"]).exists()
+    # The spawn used THIS module's --resolve entrypoint.
+    assert "--resolve" in spawned["cmd"]
+    assert spawned["cmd"][1].endswith("imagegen.py")
+
+
+def test_detached_young_generating_marker_suppresses_respawn(state, monkeypatch):
+    """A fresh `generating` marker means a resolver is already in flight: a second
+    async_generate must NOT spawn again (no double spend)."""
+    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    spawns = {"n": 0}
+
+    class _FakePopen:
+        def __init__(self, cmd, **kw):
+            spawns["n"] += 1
+
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    d1 = imagegen.async_generate("portrait", "a twin", scope="det-twin")
+    d2 = imagegen.async_generate("portrait", "a twin", scope="det-twin")
+    assert spawns["n"] == 1  # exactly one resolver spawned
+    assert d1["already_pending"] is False
+    assert d2["already_pending"] is True  # the second saw the young marker and stood down
+
+
+def test_detached_stale_generating_marker_allows_respawn(state, monkeypatch):
+    """A `generating` marker older than the TTL is treated as a crashed resolver — a
+    later call may retry (re-spawn)."""
+    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    monkeypatch.setenv("CLAWDND_IMAGE_GENERATING_TTL", "1.0")
+    key = imagegen.content_hash("portrait", "a ghost", provider="null")
+    # Hand-write a stale marker (started 10s ago, TTL is 1s).
+    p = imagegen.generating_path(key, "det-stale")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"hash": key, "status": "generating",
+                             "started_at": _time.time() - 10.0}), encoding="utf-8")
+    spawns = {"n": 0}
+    monkeypatch.setattr("subprocess.Popen",
+                        lambda cmd, **kw: spawns.__setitem__("n", spawns["n"] + 1))
+    d = imagegen.async_generate("portrait", "a ghost", scope="det-stale")
+    assert spawns["n"] == 1  # stale marker did not suppress the retry
+    assert d["already_pending"] is False
+
+
+def test_resolve_entry_writes_cache_and_clears_marker(state, monkeypatch):
+    """The resolver BODY (what the detached subprocess runs) does the real generate(),
+    writes the derived cache, and clears the `generating` marker (F11-3)."""
+    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    key = imagegen.content_hash("scene", "a lone tower", provider="null")
+    imagegen._write_generating_marker(key, "res-w")
+    assert imagegen.generating_path(key, "res-w").exists()
+    rc = imagegen._resolve_entry({"kind": "scene", "prompt": "a lone tower",
+                                  "seed": None, "scope": "res-w", "key": key})
+    assert rc == 0
+    assert imagegen.cache_read(key, "res-w") is not None  # cache written
+    assert not imagegen.generating_path(key, "res-w").exists()  # marker cleared
+
+
+def test_detached_resolver_survives_parent_exit(tmp_path, monkeypatch):
+    """End-to-end: a REAL detached subprocess writes the cache after the spawning parent
+    has returned (proving the daemon-thread death mode is fixed). Uses the null provider
+    with a small artificial delay so the parent demonstrably returns first (F11-3)."""
+    import subprocess as _sp
+    import sys as _sys
+    import textwrap as _tw
+
+    state = tmp_path / "state"
+    state.mkdir()
+    # A tiny parent program: enable the detached resolver, async_generate, then EXIT.
+    # The resolver subprocess must outlive it and land the cache descriptor.
+    engine_dir = str((__import__("pathlib").Path(imagegen.__file__)).resolve().parent)
+    prog = _tw.dedent(f"""
+        import sys, os
+        sys.path.insert(0, {engine_dir!r})
+        os.environ["CLAWDND_STATE_DIR"] = {str(state)!r}
+        os.environ["CLAWDND_IMAGE_DETACHED_RESOLVER"] = "1"
+        os.environ["CLAWDND_IMAGE_PROVIDER"] = "null"
+        import imagegen
+        d = imagegen.async_generate("scene", "a detached crypt", scope="e2e")
+        print(d["hash"])  # hand the key to the parent test
+    """)
+    proc = _sp.run([_sys.executable, "-c", prog], capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stderr
+    key = proc.stdout.strip().splitlines()[-1]
+    assert len(key) == 64
+
+    # The spawning process has EXITED. The detached resolver must still write the cache.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(state))
+    deadline = _time.monotonic() + 10.0
+    cached = None
+    while _time.monotonic() < deadline:
+        cached = imagegen.cache_read(key, "e2e")
+        if cached is not None:
+            break
+        _time.sleep(0.05)
+    assert cached is not None, "detached resolver did not write the cache after parent exit"
+    assert cached["prompt"] == "a detached crypt"
+    # And the `generating` marker was cleared by the resolver.
+    assert not imagegen.generating_path(key, "e2e").exists()

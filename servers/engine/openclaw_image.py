@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -109,6 +110,87 @@ MAX_INLINE_BYTES = 16 * 1024 * 1024
 
 # Image file extensions the gateway may emit (png/jpeg/webp).
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+# --------------------------------------------------------------------------- #
+# F11-4: media-dir cross-attribution guard.
+#
+# The media dir is SHARED — the skill mandates scene + portrait art in one beat, so two
+# generations run concurrently (one per (key,scope); imagegen spawns a thread/resolver
+# each, with no cross-key serialization). Both snapshot the dir, both poll, and when the
+# first file lands BOTH see it as "fresh" and `max(fresh, key=mtime)` returns the SAME
+# path -> two scopes claim one image (and any unrelated gateway image task is claimable).
+#
+# Two-part fix, derived-cache-only and invariant-safe:
+#   1. A module-level GENERATION LOCK serializes the POST->claim window so concurrent
+#      generations don't overlap their claim races. Serialization is off the DM turn
+#      (async), so the latency cost is invisible to play.
+#   2. A module-level CLAIMED-PATH set: every path a generation claims is recorded, and a
+#      claim picks the OLDEST unclaimed fresh file (FIFO drop order) — so even a file that
+#      lands during another generation's window can never be double-claimed.
+# Both are best-effort within one process; they hold for the in-process burst that is the
+# real-world case (one engine process spawning scene+portrait in a beat).
+# --------------------------------------------------------------------------- #
+_GENERATION_LOCK = threading.Lock()
+_CLAIMED_LOCK = threading.Lock()
+_CLAIMED_PATHS: set[str] = set()
+
+# Suffix of the sidecar lock file that records a CROSS-PROCESS claim (F11-3/F11-4): the
+# detached resolver runs in a separate process, so an in-memory set can't serialize two
+# resolvers. An atomic O_CREAT|O_EXCL `<image>.claimed` file does — the first resolver to
+# create it owns the image; a second resolver's create fails and it skips to the next file.
+_CLAIM_SUFFIX = ".claimed"
+
+
+def _claim_lockfile(path: Path) -> Path:
+    return path.with_name(path.name + _CLAIM_SUFFIX)
+
+
+def _claim_path(path: Path) -> bool:
+    """Atomically claim `path` for THIS generation. Returns True if we won the claim,
+    False if another generation (in this process OR a separate detached resolver) already
+    owns it. Two layers: an in-memory set for the in-process burst, and an exclusive
+    `<image>.claimed` lock file for cross-process resolvers. The lock file is a derived,
+    rebuildable artifact next to the (derived) media file — never campaign state."""
+    key = str(path)
+    with _CLAIMED_LOCK:
+        if key in _CLAIMED_PATHS:
+            return False
+        _CLAIMED_PATHS.add(key)
+    # Cross-process exclusive claim. O_CREAT|O_EXCL is atomic on a local fs: exactly one
+    # creator wins. If we can't even attempt it (no parent dir, perms), fall back to the
+    # in-memory claim we already hold — no worse than today within a single process.
+    import os
+    lock = _claim_lockfile(path)
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        # Another resolver process already owns it — release our in-memory claim so a
+        # later, distinct file can still be claimed by us.
+        with _CLAIMED_LOCK:
+            _CLAIMED_PATHS.discard(key)
+        return False
+    except OSError:
+        return True  # best-effort: keep the in-memory claim (single-process correctness)
+    else:
+        os.close(fd)
+        return True
+
+
+def _is_claimed(path: Path) -> bool:
+    """True if `path` is already claimed in-process OR a cross-process `.claimed` lock
+    exists for it (so a poll loop skips a file another resolver owns)."""
+    with _CLAIMED_LOCK:
+        if str(path) in _CLAIMED_PATHS:
+            return True
+    return _claim_lockfile(path).exists()
+
+
+def _reset_claimed_paths() -> None:
+    """Test helper: clear the in-memory claimed-path registry between cases. (The
+    on-disk `.claimed` lock files live under each test's tmp media dir, so they're
+    isolated by tmp_path and need no global reset.)"""
+    with _CLAIMED_LOCK:
+        _CLAIMED_PATHS.clear()
 
 
 class OpenClawImageError(RuntimeError):
@@ -162,6 +244,9 @@ class OpenClawImageClient:
     media_dir: Optional[Path] = None
     connect_timeout: float = 0.0
     poll_timeout: float = 0.0
+    # Pre-POST media-dir snapshot, stashed by _post_generate for the claim step. Not a
+    # config knob — instance scratch state for one generate_image call.
+    _existing_snapshot: set = field(default_factory=set, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.gateway_url = (self.gateway_url or _env(ENV_GATEWAY_URL, DEFAULT_GATEWAY_URL)).rstrip("/")
@@ -285,8 +370,51 @@ class OpenClawImageClient:
         if not (prompt or "").strip():
             raise OpenClawImageError("prompt is required for image generation")
 
+        # F11-4: serialize the POST->claim window across concurrent generations so two
+        # don't race for the same landed file. Only the waiting (claim-bearing) path needs
+        # the lock; wait=False just fires the POST and returns the task id, no claim. The
+        # `with` is a no-op for wait=False (we acquire nothing).
+        if not wait:
+            return self._generate_post_only(prompt, size=size, count=count)
+        with _GENERATION_LOCK:
+            return self._generate_and_claim(prompt, size=size, count=count)
+
+    def _generate_post_only(self, prompt: str, *, size: Optional[str], count: int) -> "ImageResult":
+        """POST and return the started descriptor (task id) without watching for a file."""
+        out, _started = self._post_generate(prompt, size=size, count=count)
+        return out
+
+    def _generate_and_claim(self, prompt: str, *, size: Optional[str], count: int) -> "ImageResult":
+        """POST, then watch the media dir and claim the oldest unclaimed fresh file."""
+        out, started_at = self._post_generate(prompt, size=size, count=count, snapshot=True)
+        if out.has_image():
+            return out
+        found = self._await_new_media(self._existing_snapshot, since=started_at)
+        if found is not None:
+            out.path = str(found)
+            out.mime_type = _mime_for(found)
+            if found.stat().st_size <= MAX_INLINE_BYTES:
+                out.data = found.read_bytes()
+            return out
+        # No file appeared in budget (slow gen, or gateway is on another host
+        # so its media dir isn't visible here). Clean failure -> fall back.
+        raise OpenClawImageError(
+            "image_generate task started"
+            + (f" ({out.task_id})" if out.task_id else "")
+            + f" but no image appeared in {self.media_dir} within "
+            f"{self.poll_timeout:.0f}s. The gateway may be remote, slow, or "
+            "still rendering; retrieve the image from the gateway host or its "
+            "chat session."
+        )
+
+    def _post_generate(self, prompt: str, *, size: Optional[str], count: int,
+                       snapshot: bool = False) -> tuple["ImageResult", float]:
+        """Shared POST + envelope parse. Returns (ImageResult, started_at). When
+        `snapshot` is set, the pre-POST media-dir set is stashed on the instance so the
+        claim step excludes it. `started_at` is captured BEFORE the snapshot so a file the
+        gateway writes during the POST is counted as fresh."""
         started_at = time.time()
-        existing = self._snapshot_media_dir() if wait else set()
+        self._existing_snapshot = self._snapshot_media_dir() if snapshot else set()
 
         body = self.build_request_body(prompt, size=size, count=count)
         envelope = self._post(body)
@@ -301,35 +429,10 @@ class OpenClawImageClient:
             raise OpenClawImageError("gateway image_generate returned no result payload")
 
         out = ImageResult(raw=result)
-
-        # 1) Synchronous result shape (no session key path): paths/attachments/url/data.
+        # Synchronous result shape (no session key path): paths/attachments/url/data.
         _extract_inline_image(result, out)
         out.task_id = _extract_task_id(result)
-        if out.has_image():
-            return out
-
-        # 2) Async path: we have a task id. Watch the media dir for the new file.
-        if wait:
-            found = self._await_new_media(existing, since=started_at)
-            if found is not None:
-                out.path = str(found)
-                out.mime_type = _mime_for(found)
-                if found.stat().st_size <= MAX_INLINE_BYTES:
-                    out.data = found.read_bytes()
-                return out
-            # No file appeared in budget (slow gen, or gateway is on another host
-            # so its media dir isn't visible here). Clean failure -> fall back.
-            raise OpenClawImageError(
-                "image_generate task started"
-                + (f" ({out.task_id})" if out.task_id else "")
-                + f" but no image appeared in {self.media_dir} within "
-                f"{self.poll_timeout:.0f}s. The gateway may be remote, slow, or "
-                "still rendering; retrieve the image from the gateway host or its "
-                "chat session."
-            )
-
-        # wait=False: return the started descriptor (task id only).
-        return out
+        return out, started_at
 
     # -- media-dir watching ------------------------------------------------ #
 
@@ -341,10 +444,12 @@ class OpenClawImageClient:
         return {p for p in d.iterdir() if p.suffix.lower() in _IMAGE_EXTS}
 
     def _await_new_media(self, before: set, *, since: float) -> Optional[Path]:
-        """Poll the media dir until a NEW image file appears (or budget elapses).
+        """Poll the media dir until a NEW, UNCLAIMED image file appears (F11-4).
 
-        "New" = a path not present in `before` and modified at/after `since`.
-        Returns the newest such file, or None on timeout / no-such-dir.
+        "New" = a path not present in `before` (the pre-POST snapshot) and modified
+        at/after `since`. Among such files we claim the OLDEST unclaimed one (FIFO in
+        drop order) and atomically record the claim, so a concurrent generation can never
+        take the same path. Returns the claimed file, or None on timeout / no-such-dir.
         """
         d = self.media_dir
         if not d:
@@ -357,9 +462,16 @@ class OpenClawImageClient:
                     p
                     for p in current - before
                     if _safe_mtime(p) >= since - 1.0  # 1s slop for clock/fs granularity
+                    and not _is_claimed(p)            # F11-4: skip another scope's image
                 ]
                 if fresh:
-                    return max(fresh, key=_safe_mtime)
+                    # FIFO: claim the OLDEST unclaimed fresh file, so when scene+portrait
+                    # land in order the first generation takes the first file. Tie-break on
+                    # path so two files with identical mtime resolve deterministically.
+                    fresh.sort(key=lambda p: (_safe_mtime(p), str(p)))
+                    for cand in fresh:
+                        if _claim_path(cand):  # we won the claim (lost the race -> next)
+                            return cand
             time.sleep(POLL_INTERVAL)
         return None
 
