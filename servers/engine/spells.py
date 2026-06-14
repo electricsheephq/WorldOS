@@ -59,6 +59,44 @@ def _parse_dice(expr: str) -> tuple[int, int]:
     return int(n or 1), int(sides)
 
 
+_PLAIN_DICE_RE = re.compile(r"^\s*(\d+)d(\d+)\s*$", re.IGNORECASE)
+
+
+def cantrip_tier(caster_level: int) -> int:
+    """A damage cantrip's dice tier at this caster level: 1 base die, then 2/3/4
+    at levels 5/11/17 (the SRD's universal damage-cantrip progression)."""
+    lvl = int(caster_level or 1)
+    return 1 + (lvl >= 5) + (lvl >= 11) + (lvl >= 17)
+
+
+def scaled_cantrip_damage(record: dict, caster_level: int) -> Optional[str]:
+    """Tier-scaled ``NdM`` damage for a STANDARD srd damage cantrip at this caster
+    level, or None when tier scaling does not apply (F03-2 / #808). The srd dump
+    stores the LEVEL-1 dice in ``damage_roll``; for the standard "damage increases
+    ... at levels 5 (2dM), 11 (3dM), and 17 (4dM)" cantrips the structured value the
+    DM is told to roll must be the tier-scaled one. Returns None for:
+
+    * leveled spells (they upcast by slot, not caster level);
+    * Eldritch Blast — excluded BY NAME (audit-hardened): it scales in BEAMS, each
+      its own 1d10 attack roll, so a pooled "3d10" would misstate the mechanic;
+    * cantrips whose ``higher_level`` prose carries no damage increase (Guidance,
+      Resistance: the srd dump stores their 1d4 bonus die as a ``damage_roll``,
+      but they genuinely never scale — N×tier would be wrong the other way);
+    * any non-``NdM`` damage expression (defensive; all 14 are plain today).
+    """
+    if int(record.get("level") or 0) != 0:
+        return None
+    m = _PLAIN_DICE_RE.match(str(record.get("damage_roll") or ""))
+    if m is None:
+        return None
+    if str(record.get("name") or "").strip().lower() == "eldritch blast":
+        return None
+    if "damage increases" not in str(record.get("higher_level") or "").lower():
+        return None
+    n, sides = int(m.group(1)), int(m.group(2))
+    return f"{n * cantrip_tier(caster_level)}d{sides}"
+
+
 def _scale_per_dart(per: str, darts: int) -> str:
     """'1d4+1' x darts -> '{darts}d4+{darts}'."""
     count, sides = _parse_dice(per)

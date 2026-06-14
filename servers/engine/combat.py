@@ -571,10 +571,26 @@ def _commit_expiry(ch: Character, surviving: list[ActiveEffect], expired: list[A
     """Apply an expiry result: keep `surviving`, and if any `expired` effect was the
     concentration twin, clear `ch.concentration` too — when a concentration spell's
     DURATION runs out the spell is over, so the field and the effect stay one source of
-    truth (the inverse of expire_concentration_effects). Returns the expired names."""
+    truth (the inverse of expire_concentration_effects). An expired effect that IMPOSED
+    a condition (a save-ends marker — Hold Person's `paralyzed`) takes that condition
+    with it (F03-5/#819): the duration elapsed, so the victim is freed exactly as a
+    successful repeat save would have freed them. Without this, an out-of-combat phase
+    advance drops the marker but strands the condition FOREVER — every engine path that
+    could lift it (end_repeat_save_effect via next_turn's sweeps, drop_concentration's
+    freed loop) matches on the now-gone marker. This cannot misfire in combat:
+    tick_round_effects exempts repeat-save markers from the round tick, and only
+    add_condition sets `imposes_condition` (always alongside `repeat_save`).
+    Returns the expired names."""
     ch.active_effects = surviving
     if any(eff.concentration for eff in expired):
         ch.concentration = None
+    lifted = {eff.imposes_condition for eff in expired if eff.imposes_condition is not None}
+    if lifted:
+        # Defensive: a SURVIVING marker that still imposes the same condition keeps it
+        # (two save-ends sources on one victim — they normally share the same sweep).
+        lifted -= {e.imposes_condition for e in surviving if e.imposes_condition is not None}
+        if lifted:
+            ch.conditions = [cn for cn in ch.conditions if cn not in lifted]
     return [eff.name for eff in expired]
 
 

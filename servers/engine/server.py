@@ -5414,11 +5414,18 @@ def cast_spell(
     spell: str = "",
     npc_id: str = "",
     id: str = "",
+    as_ritual: bool = False,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
     concentration if the spell concentrates (breaking any prior). If spells_known/
     prepared are set, the spell must be among them (skipped leniently when empty).
+
+    RITUAL CASTING (#813): pass ``as_ritual=True`` for a ritual-tagged spell (Detect
+    Magic, Identify…) to cast it WITHOUT spending a slot — the ritual takes 10 extra
+    minutes instead, so it is refused during active combat. Concentration/duration
+    semantics are unchanged. A normal cast of a ritual spell surfaces
+    ``ritual_available: true`` so you know the slot-free option exists.
 
     For the hand-authored spells the engine fully resolves the effect (returns
     `automated:true` + `effect` with upcast/cantrip-scaled damage/heal). For every
@@ -5455,6 +5462,13 @@ def cast_spell(
     canonical = (curated or srd).get("name", spell_name)
     spell_level = int((curated.get("level", 0) if curated else srd.get("level", 0)) or 0)
     concentrates = bool(curated.get("concentration") if curated else srd.get("concentration"))
+    # Ritual tag (#813): the srd524 records carry `ritual`; curated records may too.
+    is_ritual = bool((curated or {}).get("ritual") or (srd or {}).get("ritual"))
+    if as_ritual and not is_ritual:
+        raise ValueError(
+            f"{canonical} is not a ritual spell — only a ritual-tagged spell can be "
+            f"cast with as_ritual=True. Cast it normally (spending a slot) instead."
+        )
     # The spell's timed duration (if any), normalized from whichever data source carries
     # it — both curated and srd524 records have a `duration` string (see spells.parse_duration).
     duration = spells.parse_duration(curated.get("duration") if curated else srd.get("duration"))
@@ -5476,6 +5490,15 @@ def cast_spell(
         if combat.is_incapacitated(ch):
             incap = ", ".join(cn.value for cn in ch.conditions if cn in combat.INCAPACITATING)
             raise ValueError(f"{ch.name} is incapacitated ({incap}) and cannot cast a spell")
+        # Ritual casting takes 10 extra MINUTES — combat runs in 6-second rounds, so a
+        # ritual can't be performed while combat is active (#813). Rejected BEFORE any
+        # state change (no slot, no concentration), like every other cast rejection.
+        if as_ritual and c.combat.active:
+            raise ValueError(
+                f"cannot cast {canonical} as a ritual during active combat — a ritual "
+                f"takes 10 extra minutes. Cast it normally (spending a slot) or wait "
+                f"until combat ends."
+            )
         # Turn ownership (mirrors attack()): while combat is active and the caster is in
         # the initiative order, an action-cast is legal only on the caster's own turn.
         # An off-turn cast (or an explicitly-declared reaction spell — Shield, Counterspell,
@@ -5504,7 +5527,9 @@ def cast_spell(
         if known and canonical not in known:
             raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
         slot_used = None
-        if spell_level > 0:
+        # A ritual cast consumes NO slot (#813) — the +10 minutes is the cost; the
+        # spell resolves at its base level (a ritual can't be upcast).
+        if spell_level > 0 and not as_ritual:
             lvl = spell_level if slot_level is None else slot_level
             if lvl < spell_level:
                 raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
@@ -5662,6 +5687,13 @@ def cast_spell(
                 str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
             },
         }
+        # Ritual surfacing (#813): a ritual cast is told to the DM explicitly (no slot
+        # was spent); a NORMAL cast of a ritual-tagged spell advertises the slot-free
+        # option so the DM learns it exists. Both fields are additive.
+        if as_ritual:
+            result["ritual_cast"] = True
+        elif is_ritual:
+            result["ritual_available"] = True
         # Surface the engine-tracked timed effect (if any) so the DM knows it'll
         # auto-expire — and on whom it's tracked. An ON-HIT rider (#186) is NOT on the
         # target yet, so report it as a `pending_effect` keyed to its target: it lands
@@ -5713,7 +5745,18 @@ def cast_spell(
             result["school"] = srd.get("school")
             result["save_ability"] = srd.get("saving_throw_ability") or None
             result["attack_roll"] = bool(srd.get("attack_roll"))
-            result["base_damage"] = srd.get("damage_roll") or None
+            # Damage-cantrip tier scaling (F03-2 / #808): the srd record stores the
+            # LEVEL-1 dice, but the note below tells the DM to resolve with these
+            # values — so at caster levels 5/11/17 `base_damage` must carry the
+            # tier-scaled dice (an L11 Ray of Frost is 3d8, not 1d8). The original
+            # die is kept additively in `base_damage_level1`. Eldritch Blast (beam-
+            # scaled) and non-scaling cantrips fall back to the verbatim roll + prose.
+            base_damage = srd.get("damage_roll") or None
+            scaled = spells.scaled_cantrip_damage(srd, ch.total_level)
+            if scaled is not None:
+                result["base_damage_level1"] = base_damage
+                base_damage = scaled
+            result["base_damage"] = base_damage
             result["damage_types"] = srd.get("damage_types") or None
             result["upcast"] = srd.get("higher_level") or None
             result["casting_time"] = srd.get("casting_time")

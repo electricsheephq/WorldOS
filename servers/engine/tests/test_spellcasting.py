@@ -174,3 +174,149 @@ def test_caster_ships_with_a_castable_starter_loadout():
                                   apply_srd_defaults=True)["id"]
     fsheet = server.get_character(cid, ftr)
     assert not fsheet["spells_known"] and not fsheet["spells_prepared"]
+
+
+# --- F03-2 (#808): srd damage-cantrip tier scaling --------------------------------
+# The srd degrade path used to copy the LEVEL-1 damage_roll verbatim into
+# `base_damage` while the note tells the DM to "resolve with the values above" —
+# actively wrong at caster levels 5/11/17. The structured field must carry the
+# tier-scaled dice; the original die survives additively in `base_damage_level1`.
+
+# The 13 cited non-curated damage cantrips (the 14th, Fire Bolt, is curated and
+# already scaled via resolve_effect). Ten tier-scale per their own higher_level
+# prose; Eldritch Blast is beam-scaled (excluded BY NAME — pooled "3d10" would
+# misstate 3 separate 1d10 attack rolls); Guidance/Resistance carry a 1d4 in the
+# srd dump's damage_roll but genuinely never scale (empty higher_level).
+_SCALING_CANTRIPS = {
+    "Acid Splash": "d6",
+    "Chill Touch": "d10",
+    "Poison Spray": "d12",
+    "Produce Flame": "d8",
+    "Ray of Frost": "d8",
+    "Sacred Flame": "d8",
+    "Shocking Grasp": "d8",
+    "Sorcerous Burst": "d8",
+    "Starry Wisp": "d8",
+    "Vicious Mockery": "d6",
+}
+_NON_SCALING_CANTRIPS = ["Eldritch Blast", "Guidance", "Resistance"]
+
+
+@pytest.mark.parametrize("name,die", sorted(_SCALING_CANTRIPS.items()))
+@pytest.mark.parametrize("lvl,tier", [(1, 1), (4, 1), (5, 2), (10, 2), (11, 3), (16, 3), (17, 4), (20, 4)])
+def test_scaled_cantrip_damage_table(name, die, lvl, tier):
+    rec = spells.srd_spell(name)
+    assert spells.scaled_cantrip_damage(rec, lvl) == f"{tier}{die}"
+
+
+@pytest.mark.parametrize("name", _NON_SCALING_CANTRIPS)
+@pytest.mark.parametrize("lvl", [1, 5, 11, 17])
+def test_non_scaling_cantrips_return_none(name, lvl):
+    assert spells.scaled_cantrip_damage(spells.srd_spell(name), lvl) is None
+
+
+def test_leveled_spells_never_tier_scale():
+    assert spells.scaled_cantrip_damage(spells.srd_spell("Fireball"), 17) is None
+
+
+def _wizard_at(cid, level, name="Gale"):
+    w = server.create_character(cid, name, kind="player", class_name="Wizard", level=level,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Acid Splash", "Eldritch Blast", "Fireball"])
+    return w
+
+
+@pytest.mark.parametrize("lvl,expected", [(1, "1d6"), (5, "2d6"), (11, "3d6"), (17, "4d6")])
+def test_cast_srd_cantrip_reports_tier_scaled_base_damage(lvl, expected):
+    cid = server.create_campaign("S")["id"]
+    w = _wizard_at(cid, lvl, name=f"Gale{lvl}")
+    out = server.cast_spell(cid, w, "Acid Splash")
+    assert out["automated"] is False
+    assert out["base_damage"] == expected
+    assert out["base_damage_level1"] == "1d6"  # the original die is never lost
+
+
+def test_eldritch_blast_base_damage_stays_per_beam():
+    """Eldritch Blast scales in BEAMS (separate attack roll each) — a pooled '3d10'
+    would be wrong. The structured field stays the per-beam die; the prose explains."""
+    cid = server.create_campaign("S")["id"]
+    w = _wizard_at(cid, 11)
+    out = server.cast_spell(cid, w, "Eldritch Blast")
+    assert out["base_damage"] == "1d10"
+    assert "base_damage_level1" not in out
+    assert "beam" in (out["upcast"] or "").lower()
+
+
+def test_leveled_srd_spell_base_damage_untouched():
+    cid = server.create_campaign("S")["id"]
+    w = _wizard_at(cid, 11)
+    out = server.cast_spell(cid, w, "Fireball")
+    assert out["base_damage"] == "8d6"
+    assert "base_damage_level1" not in out
+
+
+# --- F03-3 (#813): ritual casting --------------------------------------------------
+# cast_spell(as_ritual=True) on a ritual-tagged spell consumes NO slot (the ritual
+# takes +10 minutes instead); concentration/duration semantics are unchanged.
+# as_ritual on a non-ritual spell raises; as_ritual during active combat raises;
+# a normal cast of a ritual spell surfaces `ritual_available: true`.
+
+def _ritual_wizard(cid):
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Detect Magic", "Magic Missile"])
+    return w
+
+
+def test_ritual_cast_spends_no_slot_and_keeps_concentration():
+    cid = server.create_campaign("S")["id"]
+    w = _ritual_wizard(cid)
+    before = server.get_character(cid, w)["spell_slots"]
+    out = server.cast_spell(cid, w, "Detect Magic", as_ritual=True)
+    assert out["slot_used"] is None
+    assert out["ritual_cast"] is True
+    assert out["concentration"] == "Detect Magic"  # concentration semantics unchanged
+    after = server.get_character(cid, w)["spell_slots"]
+    assert after == before  # not a single slot spent
+    # the engine-tracked timed effect still registers (10 minutes)
+    assert out["active_effect"]["name"] == "Detect Magic"
+
+
+def test_normal_cast_of_ritual_spell_spends_slot_and_flags_ritual_available():
+    cid = server.create_campaign("S")["id"]
+    w = _ritual_wizard(cid)
+    out = server.cast_spell(cid, w, "Detect Magic")
+    assert out["slot_used"] == 1  # today's behavior: the slot is spent
+    assert out["ritual_available"] is True  # ...but the DM learns the option exists
+    assert "ritual_cast" not in out
+
+
+def test_as_ritual_on_non_ritual_spell_rejected_before_any_spend():
+    cid = server.create_campaign("S")["id"]
+    w = _ritual_wizard(cid)
+    with pytest.raises(ValueError, match="not a ritual"):
+        server.cast_spell(cid, w, "Magic Missile", as_ritual=True)
+    sheet = server.get_character(cid, w)
+    assert sheet["spell_slots"]["1"]["used"] == 0  # rejected cleanly, nothing spent
+    assert sheet["concentration"] is None
+
+
+def test_as_ritual_refused_in_active_combat():
+    cid = server.create_campaign("S")["id"]
+    w = _ritual_wizard(cid)
+    foe = server.create_character(cid, "Grunt", kind="monster", max_hp=10)["id"]
+    server.start_combat(cid, [w, foe])
+    with pytest.raises(ValueError, match="combat"):
+        server.cast_spell(cid, w, "Detect Magic", as_ritual=True)
+    sheet = server.get_character(cid, w)
+    assert sheet["spell_slots"]["1"]["used"] == 0
+    assert sheet["concentration"] is None
+
+
+def test_non_ritual_normal_casts_unchanged_no_ritual_fields():
+    """Default-path regression: a plain cast of a non-ritual spell carries neither
+    ritual field (byte-identical for existing callers)."""
+    cid = server.create_campaign("S")["id"]
+    w = _ritual_wizard(cid)
+    out = server.cast_spell(cid, w, "Magic Missile")
+    assert "ritual_cast" not in out and "ritual_available" not in out

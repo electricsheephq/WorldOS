@@ -1063,3 +1063,60 @@ def test_drop_concentration_is_a_noop_when_not_concentrating():
     assert out["was_concentrating_on"] is None
     assert out["concentration"] is None
     assert out["freed_targets"] == [] and out["expired_effects"] == []
+
+
+# --- F03-5 (#819): OOC expiry of a save-ends marker must free its condition ---------
+# Out of combat, any phase advance expires minute/round-scale effects — INCLUDING the
+# save-ends marker (Hold Person -> paralyzed). The expiry must lift the condition the
+# marker imposed, or the victim stays paralyzed FOREVER (every engine path that could
+# free them matches on the marker, which is now gone; remove_condition is the only out).
+
+def _ooc_hold(cid):
+    """Cast Hold Person OUT of combat and apply the self-enforcing paralyzed marker."""
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid)
+    out = server.cast_spell(cid, caster, "Hold Person", target_id=foe)
+    server.add_condition(cid, foe, "paralyzed", **{
+        k: out["condition_rider"][k]
+        for k in ("repeat_save_ability", "repeat_save_dc", "source_id", "spell_name")
+    })
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    return caster, foe
+
+
+def test_ooc_phase_advance_frees_hold_person_victim():
+    """THE BUG (F03-5): advance_time one phase out of combat expires the save-ends
+    marker — the paralyzed condition it imposed must lift WITH it (the minute elapsed;
+    the victim is freed), and the caster's concentration twin clears symmetrically."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ooc_hold(cid)
+    out = server.advance_time(cid, phases=1)
+    expired = {(e["character_id"], e["name"]) for e in out["expired_effects"]}
+    assert (foe, "Hold Person") in expired  # the marker expired (and is surfaced)
+    assert _effects(cid, foe) == []  # marker gone
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]  # freed
+    assert server.get_character(cid, caster)["concentration"] is None  # twin cleared
+
+
+def test_short_rest_frees_hold_person_victim():
+    """Same stranding through the short-rest sweep (~1 hour ends every sub-hour effect)."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ooc_hold(cid)
+    server.short_rest(cid, caster)
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+    assert server.get_character(cid, caster)["concentration"] is None
+
+
+def test_plain_buff_clock_expiry_regression_conditions_untouched():
+    """Regression guard: a plain Bless expiry (no imposed condition) behaves exactly as
+    before — effect gone, concentration cleared, pre-existing conditions untouched."""
+    cid = server.create_campaign("S")["id"]
+    cleric = _cleric(cid)
+    server.cast_spell(cid, cleric, "Bless")
+    server.add_condition(cid, cleric, "poisoned")  # unrelated condition must survive
+    out = server.advance_time(cid, phases=1)
+    assert {(e["character_id"], e["name"]) for e in out["expired_effects"]} == {(cleric, "Bless")}
+    assert _effects(cid, cleric) == []
+    assert server.get_character(cid, cleric)["concentration"] is None
+    assert "poisoned" in server.get_character(cid, cleric)["conditions"]
