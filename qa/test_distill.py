@@ -94,6 +94,89 @@ def test_audit_fields_surfaces_freed_targets_and_advantage_consumed():
     assert len(adv) == 1 and "advantage-consumed: Guiding Bolt" in adv[0]
     # Empty/absent → no-op.
     assert distill._audit_fields(json.dumps({"freed_targets": [], "advantage_consumed": None})) == []
+def test_audit_fields_surfaces_multiattack_budget():
+    # An attack() return for a Multiattack monster (the Ghoul: 2 Bites) carries
+    # attacks_made_this_turn / attacks_allowed_this_turn — but the 240-char preview
+    # truncates them (the attack result is ~585 chars), so the scorer cannot SEE the
+    # engine constrain the monster to its Multiattack budget. csmed-4 ("the Ghoul
+    # conjured a two-Claw Multiattack that doesn't exist") is this blindness: the
+    # ceiling IS enforced, but its tool-sourcing never reaches the distilled transcript.
+    res = json.dumps(
+        {
+            "attacker": "Ghoul",
+            "target": "Hero",
+            "attack_roll": {"total": 21, "natural": 17, "detail": "1d20[17] +4 = 21"},
+            "hit": True,
+            "attacks_made_this_turn": 1,
+            "attacks_allowed_this_turn": 2,
+            "multiattack_grants": 2,  # engine-surfaced: the budget IS a stat-block Multiattack
+        }
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-budget: Ghoul 1/2 attacks this turn (Multiattack)" in lines[0]
+
+
+def test_audit_fields_labels_pc_extra_attack_budget_not_multiattack():
+    # A PC's multi-strike turn comes from Extra Attack / Action Surge, NOT Multiattack —
+    # the engine omits multiattack_grants, so distill must label it "(Extra Attack)" and
+    # never miscredit a PC with a monster Multiattack.
+    res = json.dumps(
+        {
+            "attacker": "Fighter",
+            "target": "Orc",
+            "hit": True,
+            "attacks_made_this_turn": 1,
+            "attacks_allowed_this_turn": 2,
+        }
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-budget: Fighter 1/2 attacks this turn (Extra Attack)" in lines[0]
+
+
+def test_audit_fields_suppresses_single_attack_budget():
+    # A plain single-attack swing (PC with no Extra Attack: allowed=1) must NOT surface a
+    # budget line — no noise for the 95% of attacks that are one strike (additive discipline,
+    # mirrors maneuver_damage/repeat_saves only firing when there is something to audit).
+    res = json.dumps(
+        {
+            "attacker": "Hero",
+            "target": "Goblin",
+            "hit": True,
+            "attacks_made_this_turn": 1,
+            "attacks_allowed_this_turn": 1,
+        }
+    )
+    assert distill._audit_fields(res) == []
+
+
+def test_audit_fields_surfaces_rejected_multiattack_overflow_plain_string():
+    # The REJECTED 3rd attack (a ValueError) reaches the transcript as a PLAIN-STRING
+    # is_error tool_result (the MCP layer renders the exception text, not JSON). distill
+    # must surface it so the scorer sees the engine REFUSE the phantom attack — the exact
+    # csmed-4 evidence ("a Multiattack that doesn't exist" was the DM narrating past a
+    # ceiling the engine had already enforced).
+    res = (
+        "Ghoul cannot attack: this creature's Multiattack grants 2 attack(s) "
+        "per turn; 2 already made this turn."
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-rejected: this creature's Multiattack grants 2 attack(s) per turn" in lines[0]
+
+
+def test_audit_fields_surfaces_rejected_multiattack_overflow_json_error():
+    # Same rejection when the MCP layer wraps it as {"error": "..."} JSON.
+    res = json.dumps(
+        {
+            "error": "Ghoul cannot attack: this creature's Multiattack grants 2 attack(s) "
+            "per turn; 2 already made this turn."
+        }
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-rejected: this creature's Multiattack grants 2 attack(s) per turn" in lines[0]
 
 
 def test_audit_fields_is_safe_on_non_json_non_dict_and_irrelevant():

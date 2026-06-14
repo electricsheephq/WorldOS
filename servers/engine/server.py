@@ -4791,6 +4791,14 @@ def attack(
                     c.combat.surge_actions,
                     ma,
                 )
+                # When the budget comes from a stat-block Multiattack (ma>0), surface the
+                # grant explicitly so the distilled transcript reads the ceiling tool-sourced
+                # (F01-1 / csmed-4: a monster narrated "a Multiattack that doesn't exist" was
+                # the DM running past a ceiling the engine HAD enforced — invisible because the
+                # attack result truncates in qa/distill.py). Absent for PCs (ma=0), so Extra
+                # Attack / Action Surge budgets stay labelled as themselves; purely additive.
+                if ma > 0:
+                    result["multiattack_grants"] = ma
         # Zone-aware range (S2.7): a MELEE attack needs attacker & target in the same
         # or an adjacent zone; ranged reaches any zone. Advisory only — surface a
         # warning, never hard-block. Inert when no zones are declared. Position lives
