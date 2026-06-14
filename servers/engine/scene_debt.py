@@ -155,8 +155,17 @@ def _detect_hook_untracked(c: Campaign) -> list[SceneDebt]:
 
 
 def _detect_quest_stalled(c: Campaign) -> list[SceneDebt]:
-    """quest_stalled — an active Quest with no decision-callback in >= QUEST_STALL_DAYS.
-    Quest has no own 'day' field; we proxy via Decisions that reference it.
+    """quest_stalled — an active Quest with no progress in >= QUEST_STALL_DAYS.
+
+    F05-7: the PRIMARY signal is now the engine-mutated ``Quest.last_progress_day`` —
+    stamped under the lock by add_quest / complete_objective / complete_quest /
+    set_quest_status. A quest whose last progress was within the window is NOT stalled,
+    so a quest added late no longer flags on the very next beat, and any of the engine's
+    own progress verbs resets the clock (the detector reads engine state, never prose).
+
+    Old-snapshot fallback: a quest with ``last_progress_day == -1`` (never stamped) keeps
+    the legacy Decision-text proxy (a Decision referencing the quest id/title within the
+    window counts as a callback), so old snapshots behave exactly as before.
     A brand-new campaign (day <= threshold) generates no debts."""
     if c.day <= QUEST_STALL_DAYS:
         return []
@@ -164,8 +173,15 @@ def _detect_quest_stalled(c: Campaign) -> list[SceneDebt]:
     for q in c.quests.values():
         if q.status != "active":
             continue
-        if _quest_has_decision_callback(c, q.id, q.title, QUEST_STALL_DAYS):
-            continue
+        lpd = getattr(q, "last_progress_day", -1)
+        if lpd >= 0:
+            # Engine-stamped: not stalled while the last progress is within the window.
+            if c.day - lpd < QUEST_STALL_DAYS:
+                continue
+        else:
+            # Old snapshot: fall back to the Decision-text proxy (today's behavior).
+            if _quest_has_decision_callback(c, q.id, q.title, QUEST_STALL_DAYS):
+                continue
         debts.append(
             SceneDebt(
                 id=_debt_id("quest_stalled", q.id),
@@ -355,6 +371,8 @@ def _detect_faction_rank_available(c: Campaign) -> list[SceneDebt]:
     quest (map seam #5). Pure / read-only: it reports stages ALREADY in ``available`` (flipped by
     the engine's gauge eval); it never mutates an arc. A faction not yet joined, or an arc with no
     available stage, is not flagged."""
+    import faction_arc as _fa  # local import: keep scene_debt's import surface minimal/pure
+
     debts: list[SceneDebt] = []
     for arc in sorted(c.faction_arcs.values(), key=lambda a: a.id):
         fac = c.factions.get(arc.faction_id)
@@ -362,10 +380,26 @@ def _detect_faction_rank_available(c: Campaign) -> list[SceneDebt]:
             continue
         if arc.requires_joined and not fac.joined:
             continue  # not a member — no earned rank-up to nudge
+        armed = fac.joined or not arc.requires_joined
         available = [s for s in arc.stages if s.status == "available"]
-        if not available:
+        # F05-6: a LOCKED stage whose gauge gate ALREADY HOLDS is "earned but not yet
+        # unlocked" — invisible on every per-beat surface because nothing on the beat loop
+        # calls evaluate() to flip it. Detect it READ-ONLY (stage_gate_holds is pure) so the
+        # Director can nudge the DM to call check_faction_arcs (the flipper). We NEVER flip the
+        # stage here (detect stays pure) and we NEVER claim it as available — the advisory must
+        # not misstate engine state, so earned-but-locked is labeled DISTINCTLY.
+        earned_locked = [
+            s for s in arc.stages
+            if armed and s.status == "locked" and _fa.stage_gate_holds(s, fac)
+        ]
+        if not available and not earned_locked:
             continue
-        titles = ", ".join(s.title for s in available)
+        bits = []
+        if available:
+            bits.append("available now: " + ", ".join(s.title for s in available))
+        if earned_locked:
+            bits.append("EARNED (call check_faction_arcs to unlock): "
+                        + ", ".join(s.title for s in earned_locked))
         debts.append(
             SceneDebt(
                 id=_debt_id("faction_rank_available", arc.id),
@@ -373,8 +407,9 @@ def _detect_faction_rank_available(c: Campaign) -> list[SceneDebt]:
                 subject=arc.id,
                 detail=(
                     f"Faction questline '{arc.title}' ({fac.name}) has a rank-up the party earned "
-                    f"but hasn't taken — stage(s): {titles}. Play the promotion / next mission and "
-                    f"call advance_faction_arc."
+                    f"but hasn't taken — {'; '.join(bits)}. "
+                    f"Play the promotion / next mission and call advance_faction_arc "
+                    f"(if EARNED-but-locked, call check_faction_arcs first to unlock it)."
                 ),
                 severity="low",
                 evidence={
@@ -382,6 +417,8 @@ def _detect_faction_rank_available(c: Campaign) -> list[SceneDebt]:
                     "faction_id": arc.faction_id,
                     "faction_name": fac.name,
                     "available_stage_ids": [s.id for s in available],
+                    # DISTINCT key — never put a locked stage in available_stage_ids.
+                    "earned_locked_stage_ids": [s.id for s in earned_locked],
                 },
             )
         )
@@ -431,3 +468,42 @@ def detect(c: Campaign) -> list[SceneDebt]:
     debts.extend(_detect_npc_introduced_silent(c))
     debts.extend(_detect_faction_rank_available(c))
     return debts
+
+
+# A resolved debt stays SUPPRESSED for this many in-world days after resolution (F05-4).
+# After the snooze lapses, if the SAME structural fact is still detected, it re-surfaces
+# (the world genuinely still owes it) and can be re-resolved. A non-positive value means
+# "suppress forever once resolved" — we use a finite snooze so a chronic, unaddressed fact
+# is not silenced permanently by a single stale resolution.
+RESOLVED_SNOOZE_DAYS: int = 7
+
+
+def is_snoozed(rec: SceneDebt, day: int) -> bool:
+    """Whether a resolved debt record should still suppress its live re-detection on
+    ``day``. Suppresses while within the snooze window from ``resolved_day``. A record
+    with no ``resolved_day`` (-1, e.g. an old snapshot) suppresses unconditionally — the
+    only signal we have is ``resolved=True``, and the pre-F05-4 contract treated any
+    resolved record as cleared."""
+    if not rec.resolved:
+        return False
+    rd = getattr(rec, "resolved_day", -1)
+    if rd < 0:
+        return True  # old record: no day to age against -> honor the resolution
+    return day - rd < RESOLVED_SNOOZE_DAYS
+
+
+def live(c: Campaign) -> list[SceneDebt]:
+    """The DM-facing LIVE debts: ``detect(c)`` with already-resolved (and still-snoozed)
+    debts SUPPRESSED (F05-4).
+
+    ``detect`` stays PURE and unchanged (every detector re-derives the same structural
+    fact under the same deterministic id). This wrapper drops any detected debt whose id
+    matches a resolved record on ``c.scene_debts`` that is still within its snooze window —
+    so a debt the DM cleared with ``resolve_scene_debt`` stops re-surfacing on every beat
+    and stops crowding out the Director's top-3 slots. Once the snooze lapses, an
+    un-addressed structural fact re-detects and can be re-resolved (no eternal silence,
+    no eternal nag). Read-only: no mutation, no I/O."""
+    suppressed = {
+        d.id for d in c.scene_debts if d.resolved and is_snoozed(d, c.day)
+    }
+    return [d for d in detect(c) if d.id not in suppressed]

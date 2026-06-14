@@ -871,6 +871,13 @@ class Quest(_StrictModel):
     # (xp leveling_mode), so a re-resolve / status flip / complete-via-objective never
     # double-awards. Additive — an old snapshot lacking the key round-trips to False.
     milestone_awarded: bool = False
+    # F05-7: the last campaign day this quest's PROGRESS was advanced by an engine verb
+    # (add_quest seeds it; complete_objective / complete_quest / set_quest_status stamp it).
+    # The quest_stalled detector reads this engine-mutated value instead of scanning
+    # Decision prose, so a quest that the engine knows is being worked is NOT flagged.
+    # ADDITIVE: -1 (default / old snapshot) means "never stamped" -> the detector falls
+    # back to the legacy Decision-text proxy, so old snapshots behave exactly as today.
+    last_progress_day: int = -1
 
 
 class Location(_StrictModel):
@@ -1549,6 +1556,11 @@ class SceneDebt(_StrictModel):
     evidence: dict[str, Any] = Field(default_factory=dict)  # structured context for resolution
     resolved: bool = False
     resolution_evidence: str = ""  # DM-supplied evidence when marking resolved
+    # F05-4: the campaign day this debt was resolved, so a resolved debt can be SUPPRESSED
+    # from re-detection (the live() filter skips a debt whose deterministic id matches a
+    # resolved record). ADDITIVE: -1 (default / old snapshot) means "no resolution day",
+    # which still suppresses (resolved=True is the gate); the day is for snooze/audit only.
+    resolved_day: int = -1
 
 
 class QuestHook(_StrictModel):

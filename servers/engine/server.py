@@ -8433,6 +8433,10 @@ def add_quest(
             giver_id=giver_id or None,
             location_id=location_id or None,
             objectives=list(objectives or []),
+            # F05-7: stamp the arrival day so quest_stalled measures from when the engine
+            # learned of the quest, NOT from day 1. A quest added late is therefore NOT
+            # flaggable on the next beat (the stall clock starts now, under the lock).
+            last_progress_day=c.day,
         )
         c.quests[q.id] = q
         save_campaign(c)
@@ -8513,6 +8517,7 @@ def complete_quest(
         if q is None:
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
+        q.last_progress_day = c.day  # F05-7: resolving a quest IS progress — reset the stall clock.
         # F05-1: make the skill-documented evolution seam reachable. Set the rule-of-three
         # fields from the kwargs ONLY when explicitly provided, so an empty kwarg never
         # clobbers a field content/questgen already authored on the quest. Assigned under
@@ -8596,7 +8601,11 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
         target = _resolve_objective(q, objective)
         if target not in q.completed_objectives:
             q.completed_objectives.append(target)
+        # F05-7: completing an objective IS progress — stamp the day so the quest_stalled
+        # detector measures from the last engine-known advancement (not Decision prose).
+        q.last_progress_day = c.day
         auto = None
+        evolution = None
         remaining = [o for o in q.objectives if o not in q.completed_objectives]
         # Auto-complete only when the quest HAS objectives and every one is done — an
         # empty-objective quest never auto-resolves (the all-done rule can't misfire on a
@@ -8609,6 +8618,11 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
                 if m:
                     q.milestone_awarded = True
                     auto = m
+            # F05-2: this auto-resolve is a real "quest won" verb — route it through the SAME
+            # rule-of-three evolution seam complete_quest uses, so a quest that finished by
+            # ticking its last objective still schedules its follow-on echo. Idempotent via the
+            # evolves_from note guard (a later complete_quest won't double-schedule).
+            evolution = _maybe_schedule_quest_evolution(c, q)
         save_campaign(c)
         out = {"quest_id": q.id, "title": q.title, "status": q.status,
                "completed_objectives": list(q.completed_objectives),
@@ -8616,6 +8630,12 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
         if auto is not None:
             out["xp_awarded"] = auto["xp_awarded"]
             out["grants"] = auto["grants"]
+        if evolution is not None:
+            out["evolution_scheduled"] = {
+                "consequence_id": evolution.id,
+                "trigger_day": evolution.trigger_day,
+                "evolves_to": q.evolves_to,
+            }
         return out
 
 
@@ -9092,6 +9112,49 @@ def record_decision(
 
 
 @mcp.tool()
+def update_decision(
+    campaign_id: str,
+    decision_id: str,
+    chosen: str = "",
+    rationale: str = "",
+) -> dict:
+    """Record the OUTCOME of a decision that was offered earlier but left pending — the DM
+    calls this once the party actually commits (F05-5). Sets the decision's ``chosen`` (and
+    optionally enriches its ``rationale``); this is the resolution for a
+    ``choice_without_outcome`` scene-debt the Director nudges you about.
+
+    Use it when a previous ``record_decision`` (or a present_events options layout) recorded a
+    choice with ``options`` but no ``chosen`` yet, and the party has now decided. ``chosen``
+    must be non-empty (the whole point is to fill the outcome); pass the option the party took
+    (free text — it need not be one of the listed options, since the player may always act
+    outside the menu). ``rationale`` is optional and APPENDED to any existing rationale, never
+    overwriting it.
+
+    Narrow + additive: it mutates ONLY ``chosen``/``rationale`` on an existing Decision under
+    the campaign lock (engine = sole writer); it never re-orders, deletes, or invents a
+    decision, and it does not touch flags (use ``record_decision(sets_flag=)`` for that).
+    Returns the updated decision view."""
+    if not chosen or not chosen.strip():
+        raise ValueError("update_decision needs a non-empty `chosen` — what did the party decide?")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        d = next((x for x in c.decisions if x.id == decision_id), None)
+        if d is None:
+            raise ValueError(
+                f"no decision {decision_id!r} — use get_state / the choice_without_outcome "
+                f"debt's evidence.decision_id to find the pending decision's id."
+            )
+        d.chosen = chosen.strip()
+        extra = rationale.strip()
+        if extra:
+            # APPEND, never clobber — a later commit may add the 'why' to an existing note.
+            d.rationale = f"{d.rationale}\n{extra}".strip() if d.rationale else extra
+        save_campaign(c)
+        return {"id": d.id, "summary": d.summary, "chosen": d.chosen,
+                "rationale": d.rationale, "day": d.day}
+
+
+@mcp.tool()
 def present_events(campaign_id: str) -> dict:
     """Surface the first-class stumble-into EVENTS that are available right now (Quest & Arc
     engine, Layer 3) — the Kingmaker-style decisionals whose moment has arrived. Call it each
@@ -9380,19 +9443,34 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
             if qs not in ("active", "completed", "failed"):
                 raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
             q.status = qs  # type: ignore[assignment]
+            q.last_progress_day = c.day  # F05-7: advancing a quest IS progress — reset stall clock.
             # Mirror complete_quest: a tracked quest reaching "completed" auto-awards
             # milestone XP once (xp-mode) — set_quest_status is the DM's equivalent verb,
             # so both close-of-quest paths pay the same deterministic reward.
             milestone = None
+            evolution = None
             if qs == "completed" and not q.milestone_awarded:
                 milestone = _award_milestone_xp(c, 150 * max(_party_levels(c)), f"quest: {q.title}")
                 if milestone:
                     q.milestone_awarded = True
+            # F05-2: set_quest_status is a full quest-completion verb too — route a "completed"
+            # flip through the SAME rule-of-three evolution seam complete_quest uses, so a quest
+            # the DM resolves via this verb still schedules its follow-on echo (the saga
+            # mechanism was dead on 2 of 3 verbs). Reads any evolves_to content/questgen
+            # pre-authored on the quest; idempotent via the evolves_from note guard.
+            if qs == "completed":
+                evolution = _maybe_schedule_quest_evolution(c, q)
             save_campaign(c)
             out = {"quest_id": q.id, "title": q.title, "status": q.status}
             if milestone is not None:
                 out["xp_awarded"] = milestone["xp_awarded"]
                 out["grants"] = milestone["grants"]
+            if evolution is not None:
+                out["evolution_scheduled"] = {
+                    "consequence_id": evolution.id,
+                    "trigger_day": evolution.trigger_day,
+                    "evolves_to": q.evolves_to,
+                }
             return out
         raise ValueError(f"no quest hook or tracked quest with id {hook_id!r}")
 
@@ -9462,7 +9540,9 @@ def get_scene_debts(campaign_id: str) -> dict:
         }
     """
     c = _require(campaign_id)
-    live = _scene_debt_mod.detect(c)
+    # F05-4: live() = detect() minus the still-snoozed resolved debts, so a debt the DM
+    # cleared via resolve_scene_debt stops re-surfacing in this list every beat.
+    live = _scene_debt_mod.live(c)
     resolved_persisted = [d for d in c.scene_debts if d.resolved]
     return {
         "live_debts": [d.model_dump() for d in live],
@@ -9493,12 +9573,17 @@ def resolve_scene_debt(campaign_id: str, debt_id: str, evidence: str) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
 
-        # Check if already resolved and persisted
+        # F05-4: a resolved record only blocks a re-resolve while it's STILL SNOOZED (within
+        # the suppression window). Once the snooze lapses and the same structural fact is
+        # detected again, the DM can re-resolve it — the record is UPDATED (re-stamped) in
+        # place rather than appended a second time, so the audit trail stays one-per-debt and
+        # the fact never gets permanently silenced by a single stale resolution.
         existing = next((d for d in c.scene_debts if d.id == debt_id and d.resolved), None)
-        if existing:
+        if existing is not None and _scene_debt_mod.is_snoozed(existing, c.day):
             return {"message": "already resolved", "debt": existing.model_dump()}
 
-        # Detect live debts to find the matching one
+        # Detect live debts to find the matching one (raw detect — the snoozed-suppression
+        # is the live() filter; here we want the underlying structural fact if it recurs).
         live = _scene_debt_mod.detect(c)
         debt = next((d for d in live if d.id == debt_id), None)
         if debt is None:
@@ -9507,10 +9592,17 @@ def resolve_scene_debt(campaign_id: str, debt_id: str, evidence: str) -> dict:
                 f"Use get_scene_debts to see current debt ids."
             )
 
-        # Mark resolved and persist
+        if existing is not None:
+            # Re-resolution after the snooze lapsed: update the existing record in place.
+            existing.resolution_evidence = evidence.strip()
+            existing.resolved_day = c.day
+            save_campaign(c)
+            return {"message": "resolved", "debt": existing.model_dump()}
+
+        # First resolution: mark resolved, stamp the day, append to the audit trail.
         debt.resolved = True
         debt.resolution_evidence = evidence.strip()
-        # Append to campaign.scene_debts (additive audit trail)
+        debt.resolved_day = c.day  # F05-4: when it was cleared, for the snooze window + audit.
         c.scene_debts.append(debt)
         save_campaign(c)
 
