@@ -157,6 +157,46 @@ def test_resolve_weapon_exposes_versatile_two_handed_damage():
     assert rec["versatile"] == "1d8"
 
 
+def test_resolve_ranged_weapon_exposes_range():
+    """RRI-25e55fa optimizer #3: a ranged weapon hides its RANGE (Heavy Crossbow had no
+    '100/320 ft'). The SRD Weapon.json carries `range` (normal) + `long_range`; the flatten
+    must surface them as `range`/`range_long` so the inspector can read the real bracket.
+    Re-derived against data/srd/srd524/Weapon.json: Heavy Crossbow is 100/400 ft in SRD 5.2."""
+    hc = itemcatalog.resolve("Heavy Crossbow")
+    assert hc is not None
+    assert hc["range"] == 100
+    assert hc["range_long"] == 400
+    shortbow = itemcatalog.resolve("Shortbow")
+    assert shortbow is not None and shortbow["range"] == 80 and shortbow["range_long"] == 320
+
+
+def test_resolve_thrown_weapon_exposes_thrown_range():
+    """A thrown melee weapon (Dagger/Handaxe) carries a thrown range (20/60 ft). The flatten
+    must surface it so the inspector shows the throwing bracket — never fabricated."""
+    dagger = itemcatalog.resolve("Dagger")
+    assert dagger is not None
+    assert dagger["range"] == 20
+    assert dagger["range_long"] == 60
+
+
+def test_resolve_pure_melee_weapon_has_no_range():
+    """A pure melee weapon (Longsword/Greatsword) has range 0 in the SRD; the flatten must
+    surface 0 (not a fabricated number) so the inspector hides the Range row entirely."""
+    ls = itemcatalog.resolve("Longsword")
+    assert ls is not None
+    assert ls["range"] == 0
+    assert ls["range_long"] == 0
+
+
+def test_resolve_magic_weapon_inherits_range_via_fk():
+    """A magic ranged weapon inherits its base weapon's range via the Weapon FK join, the
+    same path damage/properties take (#756)."""
+    rec = itemcatalog.resolve("Frost Brand (Glaive)")
+    # Glaive is a melee weapon -> range 0 (no fabricated thrown range on a reach polearm).
+    assert rec is not None
+    assert rec["range"] == 0
+
+
 def test_resolve_weapon_exposes_real_properties():
     """#756: weapon properties (Versatile, Finesse, Light, Two-Handed, …) live in
     WeaponPropertyAssignment, not inline — the flatten dropped them, so the inspector

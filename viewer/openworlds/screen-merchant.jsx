@@ -34,6 +34,15 @@ function enrichWare(item, catalog) {
   if (typeof merged.acDexCap !== "number" && typeof rec.acDexCap === "number") merged.acDexCap = rec.acDexCap;
   if (!merged.damage && rec.damage) { merged.damage = rec.damage; merged.damageType = rec.damageType; }
   if (!merged.versatile && rec.versatile) merged.versatile = rec.versatile;
+  // RRI-25e55fa optimizer #3: carry the catalog's composed weapon range bracket so the Market
+  // inspector reads "100/400 ft" for a Heavy Crossbow (the hardcoded stock never carries it).
+  if (!merged.rangeDisplay && rec.rangeDisplay) merged.rangeDisplay = rec.rangeDisplay;
+  if (typeof merged.range !== "number" && typeof rec.range === "number") merged.range = rec.range;
+  if (typeof merged.rangeLong !== "number" && typeof rec.rangeLong === "number") merged.rangeLong = rec.rangeLong;
+  // RRI-25e55fa optimizer #3 ("Value — blank while Price populated"): fold the catalog's gp
+  // value string so the inspector's Value row matches the populated Price. The ware's own
+  // price/value (its explicit fields) still win — this only fills a gap.
+  if (!merged.value && rec.value && rec.value !== "—") merged.value = rec.value;
   if (!merged.weight || merged.weight === "—") { if (rec.weight && rec.weight !== "—") merged.weight = rec.weight; }
   if (!merged.kind && rec.kind) merged.kind = rec.kind;
   if (!merged.rarity && rec.rarity) merged.rarity = rec.rarity;

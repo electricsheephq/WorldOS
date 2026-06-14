@@ -393,15 +393,21 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   // The option for the chosen class (default: continue the current class), else the first legal path.
   const option = options.find((o) => (o.class_name || "").toLowerCase() === chosenClass) || options[0] || null;
   const featuresGained = (option && Array.isArray(option.features_gained)) ? option.features_gained : [];
-  // Subclass is DUE if the engine grants a "<X> Subclass" feature at this level, or the read-model
-  // already flagged one pending (created above the choose-level). Either way the player names it.
-  const subclassDue = !!hero.pendingSubclass ||
-    featuresGained.some((f) => /subclass/i.test((f && f.name) || ""));
   // #624: the engine now exposes the legal SRD subclass options (with a feature preview) for the
   // chosen class at its subclass level. Present them as a pickable list instead of a blind text box —
   // selecting one fills `subclassName`. The free-text input REMAINS for any world-canon tradition the
   // engine's SRD table doesn't enumerate (additive: the DM still finalizes a homebrew name).
   const subclassBlock = (option && option.subclass) || null;
+  // Subclass is DUE if: the engine flags it OVERDUE/required on this build option
+  // (subclass.required — RRI-25e55fa optimizer #1, the L11-no-archetype case where a Fighter past
+  // the choice level with no archetype is leveling into a level that grants no fresh "subclass"
+  // feature), OR the engine grants a "<X> Subclass" feature at this level, OR the read-model already
+  // flagged one pending (created above the choose-level). Either way the player names it. Reading the
+  // engine's required flag (not only the feature-name heuristic / pendingSubclass) is what makes the
+  // overdue archetype enforced at the level it's due.
+  const subclassDue = !!(subclassBlock && subclassBlock.required) ||
+    !!hero.pendingSubclass ||
+    featuresGained.some((f) => /subclass/i.test((f && f.name) || ""));
   const subclassOptions = (subclassBlock && Array.isArray(subclassBlock.options)) ? subclassBlock.options : [];
   const subclassGroupLabel = (subclassBlock && subclassBlock.group_label) || "subclass";
   const asiRequired = !!(option && option.choices && option.choices.asi_required);
@@ -637,6 +643,12 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
   const [restType, setRestType] = React.useState("long");
   const [prepared, setPrepared] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
+  // RRI-25e55fa optimizer #4 — how many Hit Dice to SPEND on a short rest (for HP). The sheet
+  // shows e.g. "11/11d10"; this is the control the optimizer found missing. The engine's
+  // short_rest(hit_dice_to_spend=N) applies it — the viewer only composes the intent (move-sink).
+  const hitDiceRemaining = Math.max(0, Number(hero?.stats?.hitDiceRemaining) || 0);
+  const hitDicePool = String(hero?.stats?.hitDice || "");
+  const [hitDiceToSpend, setHitDiceToSpend] = React.useState(0);
   // #robustness: synchronous in-flight lock (mirrors LevelUpModal / screen-table.jsx). The
   // `submitting` STATE only updates on re-render, so a rapid double-click would otherwise relay
   // TWO rest/prepare intents. The ref blocks the second call within the same tick.
@@ -703,9 +715,15 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
   // Make camp: relay the chosen rest, then advance to the spell-preparation step.
   const completeRest = () => {
     const watch = watchOrder.length > 0 ? ` ${watchOrder.join(", then ")} keep watch.` : "";
+    // RRI-25e55fa optimizer #4: on a short rest, name the exact Hit-Dice count to spend so the
+    // engine's short_rest(hit_dice_to_spend=N) applies precisely that — defaulting to "as needed"
+    // when the player leaves the stepper at 0 (today's behavior, no forced spend).
+    const hdClause = hitDiceToSpend > 0
+      ? ` ${hero.name} spends ${hitDiceToSpend} Hit ${hitDiceToSpend === 1 ? "Die" : "Dice"} to recover HP.`
+      : ` Spend Hit Dice as needed to recover HP.`;
     const text = restType === "long"
       ? `${hero.name} and the party make camp and take a long rest — restore HP, recover all spell slots, and refresh abilities, then advance the clock to morning.${watch}`
-      : `${hero.name} and the party take a short rest — spend Hit Dice to recover HP and refresh short-rest abilities.${watch}`;
+      : `${hero.name} and the party take a short rest to recover HP and refresh short-rest abilities.${hdClause}${watch}`;
     relayMove(text, () => { submittingRef.current = false; setSubmitting(false); setStep("prep"); },
       restType === "long" ? "Long rest" : "Short rest", "Rest");
   };
@@ -756,6 +774,7 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                 <RestCard
                   selected={restType === "short"}
                   onClick={() => setRestType("short")}
+                  testId="rest-card-short"
                   title="Short Rest"
                   hand="One hour. A second wind."
                   body="Restores hit points spent from class features. Spell slots and abilities remain spent. Watch is not required."
@@ -764,12 +783,50 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                 <RestCard
                   selected={restType === "long"}
                   onClick={() => setRestType("long")}
+                  testId="rest-card-long"
                   title="Long Rest"
                   hand="Eight hours. The whole road forgiven."
                   body="Full HP. All spell slots restored. Abilities refresh. Watch order required; one in four sleeps light."
                   cost="8 hours · 1 ration each"
                 />
               </div>
+
+              {/* RRI-25e55fa optimizer #4: on a SHORT rest, a Hit-Dice-SPEND control — the sheet
+                  shows e.g. "11/11d10" but had no way to spend them for HP. Shown only on the short
+                  rest AND only when the hero actually has dice remaining (never a dead stepper). The
+                  chosen count rides the relayed move; the engine's short_rest(hit_dice_to_spend=N)
+                  applies it (the viewer stays a move-sink — it never edits HP itself). */}
+              {restType === "short" && hitDiceRemaining > 0 && (
+                <div data-worldos-testid="short-rest-hit-dice" style={{ marginTop: 18 }}>
+                  <SectionTitle right={
+                    <span className="muted body-sm">{hitDiceRemaining}/{hitDicePool || hitDiceRemaining} available</span>
+                  }>Spend Hit Dice</SectionTitle>
+                  <div className="muted body-sm" style={{ marginBottom: 8 }}>
+                    {hero.name} has {hitDiceRemaining} of {hitDicePool || (hitDiceRemaining + " Hit Dice")} to spend. Each Hit Die rolls its die + your Constitution modifier back as hit points. Leave at 0 to let the DM spend them as needed.
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <BrassButton size="sm" tone="ghost"
+                      testId="short-rest-hd-dec"
+                      ariaLabel="Spend one fewer Hit Die"
+                      onClick={() => setHitDiceToSpend((n) => Math.max(0, n - 1))}>−</BrassButton>
+                    <div style={{
+                      minWidth: 56, textAlign: "center",
+                      background: "linear-gradient(180deg, var(--p-100), var(--p-300))",
+                      boxShadow: "inset 0 0 0 1px var(--b-500)",
+                      padding: "6px 0",
+                      fontFamily: "var(--f-display)", fontSize: 18,
+                      color: hitDiceToSpend > 0 ? "var(--emerald)" : "var(--ink-900)",
+                    }} aria-live="polite">{hitDiceToSpend}</div>
+                    <BrassButton size="sm" tone="ghost"
+                      testId="short-rest-hd-inc"
+                      ariaLabel="Spend one more Hit Die"
+                      onClick={() => setHitDiceToSpend((n) => Math.min(hitDiceRemaining, n + 1))}>+</BrassButton>
+                    <span className="hand muted" style={{ fontSize: 12, marginLeft: 4 }}>
+                      {hitDiceToSpend === 0 ? "DM spends as needed" : `spend ${hitDiceToSpend} of ${hitDiceRemaining}`}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <Divider />
 
@@ -889,9 +946,9 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
   );
 }
 
-function RestCard({ selected, onClick, title, hand, body, cost }) {
+function RestCard({ selected, onClick, title, hand, body, cost, testId }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} data-worldos-testid={testId} aria-pressed={selected ? "true" : "false"} style={{
       textAlign: "left",
       padding: 14,
       background: selected
@@ -1078,6 +1135,95 @@ function titleCaseWord(s) {
   return String(s || "").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+// RRI-25e55fa optimizer #1 (the "#1 min-maxer pain point") — the CLASS-FEATURE INSPECTOR.
+// Every class/subclass feature (Extra Attack, Action Surge, Indomitable, …) used to be static
+// text with NO click-through to its full rules. The /character-surface read-model ALREADY carries
+// the SRD rules text on each feature as `detail` (server _feature_desc + data/srd/class_features.json);
+// this surfaces it on demand. Mirrors the #872 item-Examine read-only PANEL pattern: a feature with
+// rules text becomes a clickable row that opens a read-only dialog with the full text; a feature the
+// engine couldn't resolve (no detail) keeps today's static blurb (graceful degrade — additive).
+function _featureSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// The read-only rules panel for one class/subclass feature. Pure reader — props in, no /move,
+// no fetch, no engine write. Escape / Close dismisses (no keyboard trap, WCAG 2.1.2).
+function FeatureInspector({ feature, contextLabel, onClose }) {
+  React.useEffect(() => {
+    const esc = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+  if (!feature) return null;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(15, 8, 2, 0.7)",
+      display: "grid", placeItems: "center",
+      backdropFilter: "blur(2px)",
+    }} onClick={onClose} role="dialog" aria-modal="true" aria-label={"Feature — " + (feature.name || "")}
+      data-worldos-testid="feature-inspector">
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>
+        <Panel framed>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="eyebrow" style={{ color: "var(--royal)" }}>{contextLabel || "Class Feature"}</div>
+            <BrassButton tone="ghost" size="sm" onClick={onClose} testId="feature-inspector-close" ariaLabel="Close feature panel">Close</BrassButton>
+          </div>
+          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>{feature.name}</h2>
+          <Divider />
+          {/* Full SRD rules text — a plain React text node (never dangerouslySetInnerHTML). */}
+          <p className="body" style={{ marginTop: 0, fontSize: 15, lineHeight: 1.5 }}>{feature.detail}</p>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+// A list of class/subclass features. A feature WITH rules text (detail) renders as a click-through
+// row (testid class-feature-<slug>) opening the FeatureInspector; a feature WITHOUT detail keeps the
+// static blurb (no dead click). `contextLabel` (e.g. "Level 9 · Fighter · Champion") rides the panel.
+function ClassFeatureList({ features, contextLabel }) {
+  const [open, setOpen] = React.useState(null);
+  const list = Array.isArray(features) ? features : [];
+  if (!list.length) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {list.map((c) => {
+        const hasRules = !!(c && typeof c.detail === "string" && c.detail.trim());
+        const card = (
+          <div style={{ padding: 10, background: "rgba(176,141,87,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.12em", color: "var(--ink-900)" }}>{c.name}</span>
+              {/* A subtle affordance so the reader knows the row opens the rules. Only on rows
+                  that have rules text — a detail-less feature shows no misleading "read" cue. */}
+              {hasRules && <span className="eyebrow" style={{ fontSize: 8, color: "var(--royal)" }}>Rules ▸</span>}
+            </div>
+            {c.detail && <div className="body-sm muted" style={{ marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.detail}</div>}
+          </div>
+        );
+        if (!hasRules) {
+          // Graceful degrade: no rules text -> today's static blurb (not a dead click-through).
+          return <div key={c.name}>{card}</div>;
+        }
+        return (
+          <button
+            key={c.name}
+            type="button"
+            onClick={() => setOpen(c)}
+            aria-haspopup="dialog"
+            aria-label={"Read the rules for " + c.name}
+            data-worldos-testid={"class-feature-" + _featureSlug(c.name)}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: 0, background: "transparent", border: "none", cursor: "pointer" }}
+          >
+            {card}
+          </button>
+        );
+      })}
+      {open && <FeatureInspector feature={open} contextLabel={contextLabel} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
 function AbilitiesTab({ hero }) {
   // `hero.abilities` is reserved for richly-modeled active-ability CARDS (name + detail);
   // the engine does not populate those today, so it is empty. But the engine DOES carry the
@@ -1105,20 +1251,16 @@ function AbilitiesTab({ hero }) {
         </div>
       )}
 
-      {/* Class & subclass features the engine granted at this level (Arcane Recovery, a
-          School-of-Magic feature, etc.). Names come straight from the engine's `features`
-          list; detail is shown only when the data carries it (the engine models names, not
-          descriptions today — so most show name-only, never fabricated text). */}
+      {/* Class & subclass features the engine granted at this level (Arcane Recovery, Extra
+          Attack, Action Surge, …). RRI-25e55fa optimizer #1: each feature with SRD rules text
+          (detail, from the read-model) is now CLICK-THROUGH to a read-only rules panel — the
+          optimizer's "#1 min-maxer pain point". A feature with no detail keeps its static blurb
+          (ClassFeatureList handles both, never fabricating rules text). */}
       {classFeatures.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <>
           {classLine && <div className="eyebrow" style={{ marginBottom: 2 }}>{classLine}</div>}
-          {classFeatures.map((c) => (
-            <div key={c.name} style={{ padding: 10, background: "rgba(176,141,87,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)" }}>
-              <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.12em", color: "var(--ink-900)" }}>{c.name}</div>
-              {c.detail && <div className="body-sm muted" style={{ marginTop: 2 }}>{c.detail}</div>}
-            </div>
-          ))}
-        </div>
+          <ClassFeatureList features={classFeatures} contextLabel={classLine} />
+        </>
       )}
 
       {nothing && (
@@ -1648,16 +1790,14 @@ function FeatsTab({ hero }) {
       </ul>
       <Divider />
       <SectionTitle>Class Features</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {hero.classFeatures.map((c) => (
-          <div key={c.name} style={{ padding: 10, background: "rgba(176,141,87,0.06)", boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)" }}>
-            <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.12em", color: "var(--ink-900)" }}>{c.name}</div>
-            {c.detail && <div className="body-sm muted" style={{ marginTop: 2 }}>{c.detail}</div>}
-          </div>
-        ))}
-      </div>
+      {/* RRI-25e55fa optimizer #1: the Feats tab's Class Features are click-through to the SAME
+          read-only rules panel the Abilities tab uses (the optimizer hit it on BOTH tabs). */}
+      <ClassFeatureList
+        features={hero.classFeatures}
+        contextLabel={[hero.level != null ? `Level ${hero.level}` : null, hero.class ? titleCaseWord(hero.class) : null, hero.archetype || null].filter(Boolean).join(" · ")}
+      />
     </div>
   );
 }
 
-Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, characterPortraitScope, spellMeta });
+Object.assign(window, { ScreenCharacter, AbilityScore, StatLine, ResourcesStatus, HeroEquipDoll, equippedStat, AbilitiesTab, SkillsTab, SpellsTab, SpellbookBrowser, SpellSlotTrack, SpellRules, SpellRuleChip, hasSpellRules, LineagePanel, FeatsTab, AbilityCard, FeatRow, ClassFeatureList, FeatureInspector, RestPrepareModal, RestCard, ProficiencyDot, ProficiencyBadge, characterPortraitScope, spellMeta });

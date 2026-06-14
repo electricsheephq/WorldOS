@@ -166,6 +166,41 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         self.assertEqual(kv["Damage"], "1d4 piercing")
         self.assertNotIn("two-handed", kv["Damage"])
 
+    # --- RRI-25e55fa optimizer #3: weapon RANGE + VALUE rows --------------------
+    def test_ranged_weapon_shows_range_row(self):
+        """A ranged weapon must render a Range row reading its real bracket — the optimizer's
+        'Heavy Crossbow no 100/320 ft'. The display string comes from the read-model."""
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Heavy Crossbow', type: 'weapon', "
+            "  damage: '1d10', damageType: 'piercing', rangeDisplay: '100/400 ft' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Range"), "100/400 ft")
+
+    def test_melee_weapon_omits_range_row(self):
+        """A pure melee weapon (no rangeDisplay) must NOT render a Range row — never '0/0 ft'."""
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Longsword', type: 'weapon', "
+            "  damage: '1d8', damageType: 'slashing', rangeDisplay: '' });"
+        )
+        self.assertNotIn("Range", {r["k"] for r in rows})
+
+    def test_value_falls_back_to_catalog_cost_when_blank(self):
+        """The optimizer's 'Value — blank while Price populated': when an item carries no own
+        `value` but a catalog cost is known (costValue), the Value row reads the cost — never '—'."""
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Heavy Crossbow', type: 'weapon', costValue: '50 gp' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Value"), "50 gp")
+
+    def test_value_prefers_items_own_value_over_cost_fallback(self):
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Thing', value: '12 gp', costValue: '99 gp' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Value"), "12 gp")
+
     # --- symptom 3: compare-to-equipped --------------------------------------
     def test_compare_to_equipped_armor_shows_ac_delta(self):
         """The inspector compares a candidate to the equipped peer in the same slot — the
@@ -213,6 +248,37 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         self.assertEqual(out["damage"], "1d6")
         self.assertEqual(out["versatile"], "1d8")
         self.assertIn("Versatile", out["properties"])
+
+    def test_enrich_ware_folds_weapon_range(self):
+        """RRI-25e55fa optimizer #3: the Market's Heavy Crossbow ware (no range) gains the
+        catalog range bracket so the Market inspector can finally show '100/400 ft'."""
+        out = self._run(
+            "return win.enrichWare("
+            "  { name: 'Heavy crossbow', type: 'weapon', weight: '8 lb', price: 50 },"
+            "  { 'Heavy crossbow': { resolved: true, damage: '1d10', damageType: 'piercing',"
+            "      range: 100, rangeLong: 400, rangeDisplay: '100/400 ft', properties: [] } });"
+        )
+        self.assertEqual(out["rangeDisplay"], "100/400 ft")
+
+    def test_enrich_ware_backfills_value_from_catalog_for_value_row(self):
+        """The optimizer's 'Value — blank while Price populated' in the Market: a ware carries
+        `price` but no `value`; enrichWare folds the catalog `value` (gp string) so the Value
+        row reads it. The ware's own price is preserved (Price row unchanged)."""
+        out = self._run(
+            "return win.enrichWare("
+            "  { name: 'Heavy crossbow', type: 'weapon', weight: '8 lb', price: 50 },"
+            "  { 'Heavy crossbow': { resolved: true, value: '50 gp', properties: [] } });"
+        )
+        self.assertEqual(out["value"], "50 gp")
+        self.assertEqual(out["price"], 50)
+        rows = self._run(
+            "var ware = win.enrichWare("
+            "  { name: 'Heavy crossbow', type: 'weapon', weight: '8 lb', price: 50 },"
+            "  { 'Heavy crossbow': { resolved: true, value: '50 gp', properties: [] } });"
+            "return win.itemStatRows(ware);"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Value"), "50 gp")
 
     def test_enrich_ware_unresolved_name_is_untouched(self):
         """An item the catalog can't resolve (resolved:false / absent) is returned AS-IS —
@@ -327,6 +393,33 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertEqual(rec["versatile"], "1d8")
         self.assertIn("Versatile", rec["properties"])
 
+    # RRI-25e55fa optimizer #3: the catalog endpoint (the Market's source of truth) composes a
+    # weapon's RANGE bracket so the Market/Stash inspector reads "100/400 ft" for a Heavy
+    # Crossbow — the optimizer's "ranged weapon missing RANGE field" finding. Re-derived against
+    # data/srd/srd524/Weapon.json (SRD 5.2 Heavy Crossbow is 100/400).
+    def test_item_catalog_endpoint_composes_weapon_range(self):
+        status, _ctype, body = self._get("/item-catalog?name=Heavy%20Crossbow&name=Dagger&name=Longsword")
+        items = json.loads(body)["items"]
+        hc = items["Heavy Crossbow"]
+        self.assertTrue(hc["resolved"])
+        self.assertEqual(hc["range"], 100)
+        self.assertEqual(hc["rangeLong"], 400)
+        self.assertEqual(hc["rangeDisplay"], "100/400 ft")
+        # a thrown melee weapon reads its throwing bracket
+        self.assertEqual(items["Dagger"]["rangeDisplay"], "20/60 ft")
+        # a pure melee weapon has no range bracket -> empty display (the row is hidden)
+        self.assertEqual(items["Longsword"]["rangeDisplay"], "")
+
+    # RRI-25e55fa optimizer #3 (the "Value —" blank): the catalog endpoint already carries the
+    # gp value string; a resolved weapon with a real cost must expose a non-blank value so the
+    # inspector's Value row matches Price instead of reading "—".
+    def test_item_catalog_endpoint_value_is_not_blank_for_priced_item(self):
+        status, _ctype, body = self._get("/item-catalog?name=Longsword")
+        rec = json.loads(body)["items"]["Longsword"]
+        self.assertTrue(rec["resolved"])
+        self.assertNotEqual(rec["value"], "—")
+        self.assertIn("gp", rec["value"])
+
     def test_item_catalog_endpoint_unresolved_name_is_honest(self):
         status, _ctype, body = self._get("/item-catalog?name=Totally%20Made%20Up%20Gizmo")
         rec = json.loads(body)["items"]["Totally Made Up Gizmo"]
@@ -377,6 +470,18 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertIn("Versus Equipped", src)       # compare-to-equipped block
         self.assertIn("itemStatRows", src)
         self.assertIn("itemCompareRows", src)
+
+    # RRI-25e55fa optimizer #5 (Stash/Market examine PARITY): the Stash inspector must enrich
+    # its selected item from the SAME read-only /item-catalog endpoint the Market uses, so a
+    # stash item missing a stat (range/value/properties the granted item didn't persist) backfills
+    # from the catalog exactly like a Market ware — closing the "Stash thinner than Market" gap.
+    def test_inventory_enriches_selected_item_from_item_catalog(self):
+        _status, _ctype, body = self._get("/openworlds/screen-inventory.jsx")
+        src = body.decode("utf-8")
+        # the Stash fetches the catalog…
+        self.assertIn("/item-catalog?", src)
+        # …and merges it through the SAME shared enrichWare helper the Market uses.
+        self.assertIn("window.enrichWare", src)
 
     def test_merchant_reads_item_catalog_and_enriches(self):
         _status, _ctype, body = self._get("/openworlds/screen-merchant.jsx")

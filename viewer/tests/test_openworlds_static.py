@@ -725,8 +725,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
 
     def test_character_modals_close_on_escape_key(self):
         # WCAG 2.1.2 (No Keyboard Trap): every role="dialog" modal on the character
-        # screen (Level Up, Rest & Prepare, Spellbook) must dismiss on Escape, mirroring
-        # the toast.jsx pattern (keydown effect: e.key === "Escape" && onClose()).
+        # screen (Level Up, Rest & Prepare, Spellbook, and the RRI-25e55fa class-feature
+        # inspector) must dismiss on Escape, mirroring the toast.jsx pattern (keydown
+        # effect: e.key === "Escape" && onClose()).
         character = (server._OPENWORLDS_DIR / "screen-character.jsx").read_text(encoding="utf-8")
         toast = (server._OPENWORLDS_DIR / "toast.jsx").read_text(encoding="utf-8")
 
@@ -736,8 +737,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         dialog_count = character.count('role="dialog"')
         escape_count = character.count('e.key === "Escape" && onClose()')
         # Guards against a new modal shipping without an Escape handler (the regression
-        # this test exists to catch): one handler per dialog, no fewer.
-        self.assertEqual(3, dialog_count)
+        # this test exists to catch): one handler per dialog, no fewer. Four dialogs:
+        # Level Up, Rest & Prepare, Spellbook, and the class-feature inspector (#1).
+        self.assertEqual(4, dialog_count)
         self.assertEqual(
             dialog_count,
             escape_count,
