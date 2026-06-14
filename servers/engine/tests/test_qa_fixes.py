@@ -654,6 +654,9 @@ def test_long_rest_hints_camp_only_when_companions_present(tmp_path, monkeypatch
     pc = server.create_character(cid, "Lone", kind="player")["id"]
     assert "camp_hint" not in server.long_rest(cid, pc)           # solo -> no camp nudge
     server.create_character(cid, "Karlach", kind="companion")
+    # advance to the NEXT day before resting again — the one-long-rest-per-day guard (F04-3)
+    # refuses a repeat rest the same calendar day, so move the clock first (the realistic flow).
+    server.advance_time(cid, to="morning")  # roll to the next dawn
     assert "camp_hint" in server.long_rest(cid, pc)              # a companion in the party -> nudge
 
 

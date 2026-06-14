@@ -88,6 +88,11 @@ def long_rest(ch: Character) -> dict:
     total_hd = ch.total_level
     recovered = max(1, total_hd // 2)
     ch.hit_dice_remaining = min(total_hd, ch.hit_dice_remaining + recovered)
+    # SRD 5.2: temporary hit points last "until depleted or you finish a long rest" —
+    # clear them so a stale temp-HP buffer doesn't survive the night (F04-4). Reported
+    # via the `temp_hp_cleared` key so the DM can narrate the ward fading.
+    temp_hp_cleared = ch.temp_hp
+    ch.temp_hp = 0
     ch.current_hp = ch.max_hp
     ch.exhaustion = max(0, ch.exhaustion - 1)
     for slot in ch.spell_slots.values():
@@ -105,4 +110,5 @@ def long_rest(ch: Character) -> dict:
         "exhaustion": ch.exhaustion,
         "spell_slots_restored": True,
         "resources_restored": resources_restored,
+        "temp_hp_cleared": temp_hp_cleared,
     }

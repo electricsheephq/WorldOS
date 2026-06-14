@@ -694,6 +694,13 @@ class Character(_StrictModel):
     conditions: list[Condition] = Field(default_factory=list)
     exhaustion: int = 0  # 0-6
     concentration: Optional[str] = None  # spell currently concentrated on
+    # The campaign `day` on which this character LAST finished a long rest (the morning
+    # the rest landed). The long_rest seam stamps it after rolling the clock and refuses a
+    # second long rest the same calendar day (SRD: at most one long rest per 24h) — closing
+    # the "rest 6x at dawn to instantly clear exhaustion 6->0 for free" exploit (audit F04-3).
+    # Default -1 == "never rested" == today's behavior; old snapshots round-trip and a fresh
+    # day-1 character can rest immediately. Per-character so a party still converges on one dawn.
+    last_long_rest_day: int = -1
     # Engine-tracked timed spell effects (Bless 10 rounds, Hex 1 hour, Mage Armor 8h)
     # that auto-expire via next_turn / clock-advance tools instead of relying on the DM
     # to remember. Empty == today's behavior. See ActiveEffect; set by cast_spell.

@@ -988,6 +988,9 @@ def add_location(
         # — current_location stuck at the previous place while the prose described the new one).
         world_beats: list[str] = []
         world_developments: list[str] = []
+        strategic_events: list = []
+        expired_effects: list[dict] = []
+        wandering_encounter: Optional[dict] = None
         arrived = False
         party_relocated: list[str] = []
         if make_current and c.current_location_id != loc.id:
@@ -1003,10 +1006,34 @@ def add_location(
             # make_current targets the place the party is already standing in (no travel = no time
             # passes). Gating on `arrived` stops a self-target add_location from burning a phase.
             if advance_time and arrived:
+                before_day = c.day
                 travel.advance_clock(c, 1)
                 world_beats = [b.text for b in worldsim.tick(c, max_beats=1)]
                 # The proactive backlog rides the same arrival time-passage (idempotent by day).
                 world_developments = [_backlog_line(d) for d in worldsim.tick_backlog(c, max_events=1)]
+                # F04-6: this advance path previously stopped here, omitting the sibling
+                # side-effects that travel_to's advance runs — the strategic clock, the timed-
+                # effect expiry sweep, and the destination wander roll. So a fight staged
+                # immediately on a live-gen arrival used STALE buffs (Bless/Mage Armor past their
+                # deadline) and never sprang a wandering encounter. Mirror travel_to here.
+                strategic_events = worldsim.tick_strategic(c) if c.day > before_day else []
+                # A phase elapsed (a journey to the new scene): expire timed spell effects whose
+                # duration ran out (minute/round-scale die on any phase advance).
+                expired_effects = _expire_clock_effects_all(c)
+                # Kingmaker-style WANDERING ENCOUNTER on arrival, mirroring travel_to: roll for
+                # the new location's region (composite match per F04-1) and stage a TYPED
+                # encounter on a hit. Skipped if a fight is already live (combat never auto-
+                # starts). The `arrived` gate already keeps a self-target call a clock no-op.
+                if not c.combat.active:
+                    staged = _stage_wandering_encounter(
+                        c,
+                        loc.region,
+                        difficulty="medium",
+                        location_id=loc.id,
+                        match_region=_composite_region_match(loc),
+                    )
+                    if staged:
+                        wandering_encounter = staged
         # Orphan guard: a non-current location with no edges can never be reached.
         if loc.id != c.current_location_id and not loc.connections:
             warnings.append(
@@ -1014,7 +1041,7 @@ def add_location(
                 f"again with connections=[an existing location id] to wire it into the map"
             )
         save_campaign(c)
-    return {
+    result = {
         "id": loc.id,
         "name": loc.name,
         "connections": loc.connections,
@@ -1029,6 +1056,15 @@ def add_location(
         "location_count": len(c.locations),
         "warnings": warnings,
     }
+    # F04-6: additive keys surfaced ONLY when the advance path actually ran (mirrors
+    # travel_to's conditional keys), so the non-advancing / update paths stay byte-identical.
+    if strategic_events:
+        result["strategic_events"] = strategic_events
+    if expired_effects:
+        result["expired_effects"] = expired_effects
+    if wandering_encounter is not None:
+        result["wandering_encounter"] = wandering_encounter
+    return result
 
 
 @mcp.tool()
@@ -7688,6 +7724,23 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
         if c.combat.active:
             raise ValueError("cannot rest during active combat — call end_combat first")
         ch = _char(c, character_id)
+        # ONE-LONG-REST-PER-DAY GUARD (SRD 5.2: at most one long rest per 24h). A long
+        # rest landing on a morning costs zero clock time (steps == 0), so without this a
+        # party could re-rest 6x at dawn and clear exhaustion 6->0 for free. Refuse a second
+        # long rest the same calendar day the character last finished one — checked at ENTRY,
+        # BEFORE rests.long_rest mutates, so a blocked call changes NO state (F04-3). The stamp
+        # (set after the clock advance below) records the day the rest landed; this compares it
+        # to today's `day`. Per-character so a party still converges on a single dawn: each
+        # member gets their one rest, and only a REPEAT by the same member that day is blocked.
+        if ch.last_long_rest_day == c.day:
+            return {
+                "ok": False,
+                "error": (f"{ch.name} has already taken a long rest today (day {c.day}); a "
+                          f"character can benefit from only one long rest per day. Advance the "
+                          f"clock (travel / advance_time / downtime) before resting again."),
+                "day": c.day,
+                "time_of_day": c.time_of_day,
+            }
         out = rests.long_rest(ch)
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
         # A long rest is an overnight (~8h) and ends the next morning: advance the
@@ -7710,10 +7763,35 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
         day, tod = travel.advance_clock(c, steps)
         out["day"] = day
         out["time_of_day"] = tod
+        # F04-3: stamp the day this rest LANDED on (the morning it ended) so a second long
+        # rest the same calendar day is refused by the entry guard above. Mutate the
+        # re-validated copy that is persisted (not the pre-validation `ch`).
+        c.characters[character_id].last_long_rest_day = c.day
         # An overnight (~8h) ends timed spell effects: minute/round-scale, hour/day-scale
         # past their deadline, AND every hour-scale buff (Mage Armor/Aid/Longstrider) via
         # long_rest=True — even when resting in the morning is a clock no-op (steps == 0).
-        out["expired_effects"] = _expire_clock_effects_all(c, long_rest=True)
+        expired = _expire_clock_effects_all(c, long_rest=True)
+        # F04-4: a long rest ends concentration. The clock sweep above already drops a
+        # TWINNED concentration effect (via _commit_expiry), but a DEGRADED-path concentration
+        # (a duration-less concentration spell sets ch.concentration without an effect twin —
+        # server.py cast_spell) survives the sweep. Clear it on the RESTER (others' buffs are
+        # the clock sweep's job) and surface the released effect names so the DM narrates it.
+        rester = c.characters[character_id]
+        if rester.concentration is not None:
+            for name in combat.expire_concentration_effects(rester):
+                expired.append({"character_id": rester.id, "name": name})
+            rester.concentration = None
+        out["expired_effects"] = expired
+        # F04-7: a long rest rolls the day over but every OTHER day-moving seam (travel_to,
+        # advance_time, downtime) also ticks the world. Without this the overnight's standing
+        # threads / proactive backlog / strategic clock land LATE (at the next tick-bearing
+        # seam, mid-next-leg) instead of "the world moved while you slept". Gate on the same
+        # once-per-overnight `steps > 0` so a per-member party rolls ONCE; idempotent by
+        # elapsed days so a second member's morning rest is a no-op (no double-advance).
+        if steps > 0:
+            out["world_beats"] = [b.text for b in worldsim.tick(c, max_beats=2)]
+            out["world_developments"] = [_backlog_line(d) for d in worldsim.tick_backlog(c, max_events=2)]
+            out["strategic_events"] = worldsim.tick_strategic(c)
         # CAMP-WATCH AMBUSH — gated on `steps > 0` so it rolls ONCE per overnight (the
         # member whose rest actually rolls the clock to morning), NOT once per party
         # member resting the same night. Region = the camp's current location; a careful/
@@ -9780,16 +9858,38 @@ def downtime(campaign_id: str, days: int, note: str = "") -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         elapsed = max(0, int(days))
+        # F04-5: a zero/negative downtime is a no-op, NOT a clock rewind. The unconditional
+        # `c.time_of_day = "morning"` reset below would turn "day 3 night" into "day 3 morning"
+        # (time runs BACKWARD) for downtime(0) or any negative span — the only non-monotonic
+        # clock path in the engine. worldsim.tick also fires+re-arms a due thread regardless of
+        # elapsed, so a 0-day downtime could consume a standing beat. Return early WITHOUT
+        # touching the clock or running any tick/expiry sweep; point the DM at advance_time for
+        # within-day passage. (advance_time itself floors at 0 steps and is a true no-op.)
+        if elapsed <= 0:
+            return {
+                "day": c.day,
+                "days_elapsed": 0,
+                "note": note,
+                "no_op": True,
+                "message": ("downtime needs at least 1 day; the clock was not changed. To move "
+                            "time within the current day, use advance_time (phases / to)."),
+                "due_consequences": [],
+                "world_beats": [],
+                "world_developments": [],
+                "strategic_events": [],
+                "expired_effects": [],
+            }
         c.day += elapsed
         c.time_of_day = "morning"
         due = consequences_mod.due(c)
         beats = worldsim.tick(c, max_beats=2)  # a long span → a couple of threads stirred
         dev = worldsim.tick_backlog(c, max_events=2)  # ...and the backlog advances over the span
-        strategic = worldsim.tick_strategic(c) if elapsed > 0 else []
+        strategic = worldsim.tick_strategic(c)
         # The clock jumped forward days — expire timed effects like every sibling time-seam
         # (advance_time/travel_to/long_rest/short_rest). A multi-day downtime clears hour/day-scale
         # buffs (Mage Armor) and any sub-hour leftover; this was the only seam that omitted it.
-        expired = _expire_clock_effects_all(c) if elapsed > 0 else []
+        # (elapsed is guaranteed > 0 here — the zero/negative case returned early above.)
+        expired = _expire_clock_effects_all(c)
         save_campaign(c)
         return {
             "day": c.day,

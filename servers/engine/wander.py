@@ -294,6 +294,59 @@ def _count_for_budget(party_levels: list[int], unit_xp: int, target_difficulty: 
     return best_count
 
 
+_BAND_ORDER = {d: i for i, d in enumerate(("trivial",) + encounter.DIFFICULTIES)}
+
+
+def _level_band_pool(
+    pool: list[tuple[str, str, int]],
+    party_levels: list[int],
+    target_difficulty: str,
+) -> list[tuple[str, str, int]]:
+    """Pre-filter a resolved creature pool to those that can stage a `target_difficulty`-ish
+    fight for `party_levels`, BEFORE the seeded kind draw (F04-8). The raw pool is a single
+    flavor band (ascending CR), so a uniform draw can stage a CR-5 Wraith against an L1 party
+    (deadly as a SOLO) or twelve trivial Bandits against an L15 party — both violate the
+    module's own "sized to the party's XP budget" contract.
+
+    Drops a candidate when, for this party, it is EITHER:
+      * too strong — its band as a SINGLE unit is >= 2 bands over the target (a chunky solo a
+        party of this level shouldn't be ambushed by); OR
+      * too weak — even 12 of it (the sizing cap) can't reach the target band.
+
+    Returns the survivors preserving order. When the filter empties (no candidate lands near
+    the target — e.g. a flavor pool entirely out of the party's league), returns the
+    NEAREST-band candidates instead of [] so a non-empty pool always yields a foe (the caller
+    treats [] only as "no resolvable creature"). Pure; party_levels is assumed non-empty."""
+    want = _BAND_ORDER.get(target_difficulty, _BAND_ORDER["medium"])
+    survivors: list[tuple[str, str, int]] = []
+    # (candidate, distance-from-target of its best achievable single-unit-or-capped band)
+    scored: list[tuple[tuple[str, str, int], int]] = []
+    for cand in pool:
+        unit_xp = cand[2]
+        solo_band = _BAND_ORDER.get(
+            encounter.encounter_difficulty(party_levels, [unit_xp]), 0)
+        max_band = _BAND_ORDER.get(
+            encounter.encounter_difficulty(party_levels, [unit_xp] * 12), 0)
+        # The band window this candidate can actually hit: from its solo band up to its
+        # capped (x12) band. Distance to target = how far that window is from `want`.
+        if max_band < want:
+            dist = want - max_band          # too weak even at the cap
+        elif solo_band > want:
+            dist = solo_band - want         # too strong even as a single unit
+        else:
+            dist = 0                        # the window straddles the target
+        scored.append((cand, dist))
+        too_strong = solo_band >= want + 2
+        too_weak = max_band < want
+        if not too_strong and not too_weak:
+            survivors.append(cand)
+    if survivors:
+        return survivors
+    # Nearest-band fallback: keep only the candidate(s) closest to the target band.
+    best = min(d for _c, d in scored)
+    return [c for c, d in scored if d == best]
+
+
 def pick_encounter(
     party_levels: list[int],
     region: str = "",
@@ -324,6 +377,10 @@ def pick_encounter(
     pool = _resolved_pool(region)
     if not pool:
         return []
+    # F04-8: level-band the pool BEFORE the seeded draw so a uniform pick can't stage a
+    # party-wiping solo (CR-5 Wraith vs an L1 party) or a trivial all-12 swarm (Bandits vs
+    # L15s). Falls back to nearest-band so a non-empty pool always yields a foe.
+    pool = _level_band_pool(pool, list(party_levels), target_difficulty)
     r = rng or random.Random()
     canonical, _pool_name, unit_xp = r.choice(pool)
     count = _count_for_budget(list(party_levels), unit_xp, target_difficulty)
