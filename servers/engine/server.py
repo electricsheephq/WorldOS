@@ -469,13 +469,7 @@ def roll(
     disadvantage: bool = False,
     reason: str = "",
 ) -> dict:
-    """Roll dice using D&D notation, e.g. '1d20+5', '2d6', '4d6kh3'.
-
-    Use this for EVERY die roll — never narrate a number you did not roll here.
-    Supports advantage/disadvantage on a single d20 (they cancel if both set) and
-    keep-highest/lowest (khN / klN). Returns the total, the individual dice, a
-    human-readable breakdown, and natural-20/natural-1 crit/fumble flags.
-    """
+    """Roll dice using D&D notation, e.g. '1d20+5', '2d6', '4d6kh3'."""
     r = dice_mod.roll(expression, advantage=advantage, disadvantage=disadvantage)
     return {
         "expression": r.expression,
@@ -510,16 +504,7 @@ def active_campaign(world_id: str = "") -> dict:
     """The LIVE campaign in this state dir — the one a harness must re-ground a
     lean/fast beat against (issue #640). Resolved deterministically by the engine
     (the sole source of truth for which save is live) as the MOST-RECENTLY-UPDATED
-    campaign, optionally scoped to ``world_id``.
-
-    Harnesses previously picked the lean re-ground ``campaign_id`` by the LARGEST
-    snapshot on disk; when a parallel campaign coexists in the state dir (a cold-open
-    ``start_world`` retry, or a stale prior save) that can be the WRONG campaign, and
-    because ``scene_context`` is strictly campaign-pure it then faithfully folds a
-    DIFFERENT save's opening scene into the fast re-ground (cross-chronicle
-    contamination). Ask the engine which save is live instead of guessing from file
-    sizes. Read-only. Returns ``{"campaign_id": <id> | None}`` (None when no matching
-    campaign exists yet)."""
+    campaign, optionally scoped to ``world_id``."""
     return {"campaign_id": _active_campaign_id(world_id)}
 
 
@@ -561,31 +546,9 @@ def list_worlds() -> dict:
 def start_world(world_id: str, start_at: str = "", resume: str = "", ending: str = "") -> dict:
     """Seed a NEW campaign from a persistent WORLD bible
     (content/worlds/<world_id>/world.json) — a living setting you GENERATE WITHIN,
-    not a fixed plot.
-
-    Seeds the world's regions as a navigable map, its factions, a roster of pullable
-    NPCs, and its history + standing-threads as `lore` (indexed into recall, so a
-    generated story stays consistent with the canon and never forgets it). Drops the
-    party at `start_at` (a region id) or the world's first starting option. Then YOU
-    run a LIVING SANDBOX: generate the specific scene on arrival and PERSIST it
-    (add_location / create_character / remember / add_quest) so the world grows and is
-    carried across sessions.
-
-    Pass `ending`=<ending_id> to seed the world in a specific POST-STATE rather than its
-    default present — e.g. a post-campaign aftermath where a war ended one way or another
-    (content/worlds/<world_id>/endings/<ending_id>.json). The overlay rewrites the era,
-    folds its standing threads + history into recallable lore, and sets each named
-    figure's fate. `ending="random"` picks one of the world's overlays; omitting it (the
-    default) seeds the BASE world exactly as before. The result echoes the chosen
-    `ending`, its `name`, and a one-line `ending_state` so you can ANNOUNCE the world's
-    aftermath at the table. After start_world, call `start_character` to build the PC
-    (a new nobody — never one of this era's top heroes), then start_session.
-
-    Pass `resume`=<campaign_id> to CONTINUE an existing campaign in this world rather
-    than starting fresh — re-running start_world otherwise mints a NEW campaign and
-    orphans the old living world. If campaigns already exist for this world, the result
-    lists them under `existing_campaigns` with a `resume_hint`. Returns the world's
-    premise, tone, DM guidance, threads, seeds, and the seeded regions/factions/roster."""
+    not a fixed plot. Re-entering a world you've played? Pass
+    ``resume=<campaign_id>`` to CONTINUE it rather than mint a fresh campaign and
+    orphan the living world (the result lists ``existing_campaigns`` to resume)."""
     world = content_mod.load_world_data(world_id)
 
     # Resume an existing campaign in this world instead of abandoning it.
@@ -812,13 +775,7 @@ def get_state(campaign_id: str) -> dict:
 
 @mcp.tool()
 def look_around(campaign_id: str) -> dict:
-    """Describe the party's current location and the exits they can take.
-
-    Read-only. Returns the current location (name, description, notes, visited)
-    plus each reachable exit with whether it's been visited, and the in-world
-    day / time-of-day. Use this to ground exploration before narrating or
-    prompting the player to move.
-    """
+    """Describe the party's current location and the exits they can take."""
     c = _require(campaign_id)
     return travel.look_around(c)
 
@@ -826,18 +783,7 @@ def look_around(campaign_id: str) -> dict:
 @mcp.tool()
 def get_scene(campaign_id: str, location_id: str = "") -> dict:
     """Read the AUTHORED scene guidance for a location — your beat sheet for running
-    the adventure as written instead of improvising blind.
-
-    Call this on ARRIVAL at a new location/beat. Returns each authored scene whose
-    `location_id` matches (defaults to the party's current location): its
-    `read_aloud` boxed text to set the scene, `dm_notes` (what to STAGE — which NPCs
-    to put on screen, the emotional turn, the villain beat, the menace to show),
-    any `checks` with their DCs, and the scene `name`/`summary`. The DM should voice
-    the read_aloud in its own words and play the dm_notes beats — the heartbreak
-    line, the antagonist's warmth, the felt threat — rather than leaving them buried.
-    Returns an empty list if the adventure shipped no scene for this location (then
-    improvise from get_state / look_around). Read-only.
-    """
+    the adventure as written instead of improvising blind."""
     c = _require(campaign_id)
     loc_id = location_id or c.current_location_id or ""
     scenes = [s for s in c.scenes if s.get("location_id") == loc_id] if loc_id else []
@@ -851,18 +797,7 @@ def get_scene(campaign_id: str, location_id: str = "") -> dict:
 
 @mcp.tool()
 def lookup_lore(campaign_id: str, query: str, limit: int = 5) -> dict:
-    """Look up established WORLD LORE on demand — the DM's wiki for a universe seed.
-
-    When the party reaches a city/region or meets a figure tied to the setting, call
-    this to pull the canon, then GROUND your generation in it (and invent the specifics
-    on top — a city's lord can be noble one game and fallen the next, but the city is
-    the city). Searches the world seed's lore corpus (content/worlds/<id>/lore/) and
-    returns the most relevant pages as {title, excerpt, source}, ranked by relevance.
-
-    Also returns `era` — the in-world date/chronology. RESPECT IT: don't bring on
-    figures who are long dead or events that haven't happened yet. Returns empty hits
-    if this campaign isn't from a world seed, or the world ships no lore corpus — then
-    generate freely and use `recall` for the facts you've established this game."""
+    """Look up established WORLD LORE on demand — the DM's wiki for a universe seed."""
     c = _require(campaign_id)
     # De-conflict the .md corpus against the chosen ending on the SAME basis the overlay
     # de-conflicts c.lore (recall's surface): demote/drop authored hits asserting a fact
@@ -902,36 +837,14 @@ def add_location(
     discovered: bool = True,
 ) -> dict:
     """Create — or update — a location in the world DURING live play. The key
-    world-building primitive for generated / sandbox campaigns.
-
-    It puts the place into ENGINE STATE so it can be traveled to (`travel_to`),
-    re-grounded (`look_around`), recalled, and carried into future sessions — instead
-    of living only in your narration (where it's lost and `look_around` returns null).
-    `connections` are existing location ids, wired BIDIRECTIONALLY so the party can
-    walk both ways. Pass `location_id` to fill in a generator placeholder or update an
-    existing place; omit it to mint a new one. If the campaign had no current location,
-    this becomes it. `hex` is optional axial [q, r] map coords (presentation only).
-    `region` is the parent zone this nests in ("Lower City"); `travel_times` is an
-    optional `{connected_location_id: walk_minutes}` map that `look_around` surfaces as
-    fables-style walk-times to nearby places.
-
-    **When you're GENERATING the scene the party is walking into, pass `make_current=True`
-    — that arrives them HERE in this one call** (sets current_location_id, marks the place
-    visited), instead of leaving the party's location pointing at the place they just left
-    while your prose describes the new room. This is the common live-gen pattern: create the
-    Siltwharf Steps and step onto them in a single move. `advance_time=True` also rolls the
-    clock one phase (a journey, not a step next door) and stirs a standing thread.
-
-    `discovered` (default True) controls Atlas visibility for the new place. The Location
-    model defaults `discovered=False` so a fog-of-war seed must opt IN (#261/#371), but a
-    place the DM names into the world mid-play is, by that act, KNOWN — so the runtime
-    default here is True, matching `seed_world`'s day-1 regions and the pre-#371 behavior
-    where add_location'd places appeared on the Atlas immediately. Pass `discovered=False`
-    to add a RUMOURED/far-off place that stays fog-of-war until the party visits it. (Use
-    the separate `hidden` flag to suppress a place from the Atlas entirely.) On the UPDATE
-    path — when `location_id` matches an existing place — the existing `discovered` state is
-    PRESERVED, never clobbered by this default; reveal a hidden place through its own path.
-    """
+    world-building primitive for generated / sandbox campaigns: it puts the place
+    into ENGINE STATE so it can be traveled to, re-grounded, and recalled instead of
+    living only in narration. `connections` are existing location ids wired
+    BIDIRECTIONALLY. Pass `location_id` to update/fill a placeholder; omit it to mint.
+    Pass `make_current=True` to ARRIVE the party here in this one call (the common
+    live-gen pattern); `advance_time=True` also rolls the clock one phase.
+    `discovered` (default True) controls Atlas visibility — pass False for a
+    rumoured/far-off place; on the update path existing `discovered` is preserved."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         conns = [str(x) for x in (connections or [])]
@@ -1073,18 +986,8 @@ def travel_to(campaign_id: str, destination_id: str = "", advance_time: bool = F
               destination: str = "", to: str = "", location_id: str = "") -> dict:
     """Move the party to a connected location along the map graph.
 
-    The destination must be reachable from the current location (listed in its
-    connections); travel to an unconnected or unknown location is rejected with
-    the reachable exits. Marks the destination visited. The clock advances a
-    time-of-day phase only when advance_time=True — leave it False for short
-    moves within a site (room to room) so a quick crawl doesn't burn a day; pass
-    True for a long or overland journey. Returns ``{from, to, to_name,
-    first_visit, day, time_of_day, reachable}`` so the DM knows whether to read
-    first-visit boxed text.
-
     Name the destination via ``destination_id`` (canonical) or the aliases ``destination`` /
-    ``to`` / ``location_id`` — ``destination_id`` wins if more than one is given.
-    """
+    ``to`` / ``location_id`` — ``destination_id`` wins if more than one is given."""
     destination_id = destination_id or destination or to or location_id  # accept the id the DM reaches for
     if not destination_id:
         raise ValueError("travel_to needs a destination (pass `destination_id` or an alias: `destination`/`to`/`location_id`)")
@@ -1610,22 +1513,9 @@ def create_character(
     house: str = "",
     biography: str = "",
 ) -> dict:
-    """Create a character (player, companion, npc, or monster) and persist it.
-
-    `abilities` is an optional dict like {"strength": 15, "dexterity": 14, ...}.
-    If `apply_srd_defaults=True` and `class_name` is a known SRD class, the engine
-    sets saving-throw proficiencies, proficiency bonus, hit dice, level-1 HP
-    (max hit die + CON), spell slots, and a class-appropriate AC (only when
-    armor_class is left at the unarmored default of 10) from that class; otherwise
-    the explicit max_hp/armor_class are used as-is. Returns the new character id.
-
-    `met` marks whether the PARTY has encountered this NPC — it drives the dashboard's
-    Relationships view, which must not list strangers the player hasn't met. Pass
-    met=True when you create an NPC the party is meeting ON-SCREEN right now (a named
-    figure they walk up to and talk with); leave it False for a background/off-screen
-    NPC you're only registering. Players and companions are always met. (social_check
-    and recruit_companion also flip met=True automatically on first contact.)
-    """
+    """Create a character (player, companion, npc, or monster) and persist it. Pass
+    ``apply_srd_defaults=True`` to fill saves/HP/AC/features from class+level (HP is
+    auto-set only at level 1 — pass ``max_hp`` for a higher-level build)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if kind == "companion":
@@ -1739,28 +1629,7 @@ def start_character(
     skills: Optional[list] = None,
     voice_id: str = "narrator-dm",
 ) -> dict:
-    """Build the PLAYER character via a chosen ORIGIN, and add them to the party.
-
-    The intended flow: after start_world, present a 4-item menu, then call this with the
-    player's pick. In a post-ending world the PC is always a NEW nobody — the famous
-    heroes of the era are NPCs/quest-givers, never a hero the player embodies.
-
-    `origin` selects how the PC is built:
-      - "nobody_l1"  (DEFAULT) — a fresh level-1 character (a BG4-style nobody). If a
-                       `class_name` is given, a real SRD level-1 sheet is filled
-                       (saves, HP, proficiency, class AC/features); otherwise a blank
-                       sheet the DM fleshes out. This is exactly today's create_character
-                       level-1 player path.
-      - "veteran_l5" — a level-5 character via the SRD class tables (a seasoned but still
-                       original PC). Requires `class_name`.
-      - "template:<id>" — a premade build from content/worlds/<world>/origins/<id>.json
-                       (race/class/level/abilities/skills/background/subclass and flavor),
-                       finished with SRD class defaults. Explicit args override the file.
-      - "pickup:<canon_name>" — adopt a MINOR canon figure as the PLAYER (their real
-                       race/class + canon identity), finished with SRD defaults. REJECTED
-                       for a top hero (playable: false) — they appear as an NPC, not a PC.
-
-    Returns the created PC (id, name, kind, origin, level)."""
+    """Build the PLAYER character via a chosen ORIGIN, and add them to the party."""
     spec = (origin or "nobody_l1").strip()
     lower = spec.lower()
     pickup_canon_name = ""  # set for pickup: so we can promote an existing roster NPC
@@ -2159,30 +2028,7 @@ def reroll_character(
     D&D-table answer to "no save states". Death is one-way (the engine never resurrects
     the fallen); this is *forward* motion: a new hero, at the dead PC's level, joins the
     ongoing campaign. The world-state — quests, day, locations, lore, factions, surviving
-    companions and their memories — is untouched (it lives on the Campaign, not the PC).
-
-    Atomic swap under the campaign lock:
-      1. Validate `dead_id` is a player/companion record that is actually `dead` (re-roll
-         is for death, not a live swap — refuses a living target).
-      2. Build the new PC at the dead PC's `total_level` by default (pass `level` to
-         override), `kind="player"`, with a full SRD sheet when `class_name` is a known
-         class (saves/HP/AC/features), else a blank sheet the DM fleshes out.
-      3. DEMOTE the corpse OFF `kind=="player"` → `kind="npc"`, and REMOVE it from the
-         party. This is the keystone: the player facade resolves the active PC by
-         `kind=="player"` (party-order-first, no dead-filter), so the corpse MUST be
-         demoted or the facade keeps handing moves to it and the new PC can't act. The
-         record is KEPT in `characters` (a memorial — the fallen hero the world remembers).
-      4. Add the new PC to the party as the sole `kind=="player"`.
-
-    The DEAD PC's gear and gold are LOST with the body — they stay on the corpse, never
-    transferred to the new hero (use `add_item`/`adjust_currency` if the fiction lets the party
-    loot it). The new character is seated with their OWN class-appropriate starting kit (a modest
-    purse + the armor/weapon that justify their AC), at the party's current location. HOW the new
-    hero arrives in the world is the DM's narration, not this tool's job. On a party WIPE, call
-    this once per fallen member (there is no separate batch tool).
-
-    Returns ``{new_pc: {id, name, kind, level, in_party}, memorial: {id, name, now_kind}}``.
-    """
+    companions and their memories — is untouched (it lives on the Campaign, not the PC)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         dead = _char(c, dead_id)  # raises if the id isn't in the campaign
@@ -2268,24 +2114,7 @@ def generate_image(kind: str, prompt: str, seed: Optional[int] = None,
     """Kick off (fire-and-forget) an image for the campaign and return IMMEDIATELY.
     `kind` is 'map' (region/dungeon), 'portrait' (NPC/PC), or 'scene' (illustration);
     `prompt` is the visual brief. The active provider is chosen by CLAWDND_IMAGE_PROVIDER
-    (default 'null' → a deterministic placeholder, no network).
-
-    Pass `scope` as the ENTITY id the viewer fetches by, NOT a world/campaign id:
-    `portrait-<character_id>` for an NPC/PC face, or the `<location_id>` for a scene/map.
-    The viewer keys /image and /portrait-* off that exact scope, so a mismatched scope
-    leaves the art unfetchable.
-
-    This is an OPTIONAL OVERLAY that never blocks the engine or the DM's turn: a cache
-    hit returns the descriptor straight away (`status="ready"`); when the world's ingested
-    art already covers the scope it returns `status="ingested"` without spending; a miss
-    enqueues a background resolver and returns a `status="pending"` handle (with the
-    `scope`/`hash` the viewer keys off) in well under a second — the actual generation
-    (which can take tens of seconds against a real gateway) happens off the turn path. The
-    dashboard's /image?scope=… serves a placeholder until the image lands, so play never
-    waits on art. Pass `force=True` to regenerate even when ingested art exists.
-
-    The image cache is a derived, rebuildable artifact written by the resolver; it never
-    touches campaign state (engine stays sole writer)."""
+    (default 'null' → a deterministic placeholder, no network)."""
     return imagegen.async_generate(kind, prompt, seed=seed, scope=scope, force=force)
 
 
@@ -2364,16 +2193,6 @@ def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
                   monster: str = "", monster_name: str = "", creature: str = "") -> dict:
     """Spawn combat-ready monster(s) from the bundled SRD bestiary by name.
 
-    Looks the creature up (case-insensitive) in the ~330-creature SRD data and
-    creates Character(kind="monster") records with HP, AC, abilities, proficiency
-    and initiative bonuses, and damage resistances/immunities/vulnerabilities all
-    pre-filled — so you never hand-transcribe a stat block (and never leave a
-    duplicate NPC record). The creature's actions/attacks are stored on the
-    monster's `notes` (with the to-hit/damage text) for you to drive `attack`.
-    count>1 spawns numbered copies. Unknown name -> {"error", "suggestions"} from a
-    fuzzy search (try e.g. 'Goblin Warrior', 'Wolf'). Returns the spawned ids + a
-    stat summary incl. xp_each (the encounter reward); pass the ids to start_combat.
-
     Name the creature via ``name`` (canonical) or any of the aliases ``monster`` /
     ``monster_name`` / ``creature`` — ``name`` wins if more than one is given."""
     name = name or monster or monster_name or creature  # accept the name the DM reaches for
@@ -2448,13 +2267,9 @@ def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
 
 @mcp.tool()
 def list_bestiary(query: str = "", limit: int = 20, player_safe: bool = True) -> dict:
-    """Read-only bestiary/codex lookup.
-
-    Defaults to the player-safe projection: identity, type/size/CR, action names,
-    and authored-content license/source/provenance metadata only. It never mutates
-    bestiary packs, campaign state, or combat state. Pass ``player_safe=False`` only
-    for a DM-side preview that may include mechanical stat blocks.
-    """
+    """Read-only bestiary/codex lookup. Defaults to the player-safe projection (identity,
+    type/size/CR, action names, provenance); pass ``player_safe=False`` for a DM-side
+    preview that may include mechanical stat blocks. Never mutates state."""
     n = max(1, min(int(limit), 50))
     if player_safe:
         return bestiary.player_bestiary(query, n)
@@ -2718,25 +2533,9 @@ def list_canon_characters(
     campaign_id: str, playable_only: bool = False, q: str = "", limit: int = 100
 ) -> dict:
     """Who's available to pull into THIS world from the ingested canon roster. Use
-    load_canon_character to bring one in as an NPC/companion.
-
-    The flagship world ships a LARGE roster (the post-BG3 wiki-first ingest is ~2,000
-    canon records), so this surface is BOUNDED: filter with `q` and page with `limit`
-    instead of dumping the whole cast (~180KB) every call. For a STRUCTURED pull
-    ("the merchant in this region", "a Harper", "an antagonist") reach for `find_npcs`
-    (tags / faction / role / location) — it is the precise picker.
-
-      * `q`      — case-insensitive substring of the display name (e.g. "shadow",
-                   "minsc"). Empty (default) lists the roster head.
-      * `limit`  — max rows returned (default 100, capped at 200). When more match than
-                   fit, `truncated` is True and `note` points at `find_npcs`/`q`.
-
-    Returns ``{world_id, total, returned, available:[{name, race, class, playable,
-    role}], truncated, note?}`` — `total` is the full match count, `available` the
-    bounded page. The top heroes of the era (the BG3 origin companions) are
-    `playable: false` — legends/quest-givers/encounterable NPCs, not a hero the player
-    embodies; pass `playable_only=True` for just the minor figures a player may pick up
-    as their PC via start_character(origin="pickup:<name>")."""
+    load_canon_character to bring one in as an NPC/companion. Pass
+    ``playable_only=True`` to seat the PLAYER's hero (excludes the 7 BG3 origin heroes);
+    ``limit`` caps the returned roster."""
     c = _require(campaign_id)
     if not c.world_id:
         return {"world_id": "", "total": 0, "returned": 0, "available": [], "truncated": False}
@@ -2777,22 +2576,10 @@ def find_npcs(
     "this merchant in this region", "this Harper", "a traveling merchant near the party" surface.
     Filters the world's ingested canon roster (content/worlds/<id>/characters/*.json) on the
     structured tagging fields and returns the matches with their key fields. READ-ONLY.
-
-    Filters (give any subset; they AND-combine — a match satisfies ALL the ones you pass):
-      * `tag`            — membership in the record's `tags` ("merchant", "companion", "noble", …)
-      * `faction_id`     — canonical faction key ("harpers", "flaming-fist", "zhentarim")
-      * `is_merchant`    — pass True to keep only traveling-merchant / shopkeeper NPCs (False, the
-                           default, is treated as "don't filter on this" — it does NOT exclude
-                           merchants; use `tag="merchant"` if you want the inverse intent)
-      * `canon_location_id` — where the NPC is canonically found ("last-light-inn", "lower-city")
-      * `arc_role`       — "companion" | "origin-hero" | "antagonist" | "minor"
-      * `name_contains`  — case-insensitive substring of the display name
-      * `limit`          — cap on returned matches (default 50)
-
-    Returns {world_id, count, matches:[{name, race, class, tags, faction_id, is_merchant,
-    canon_location_id, arc_role, role, playable, source_url}]}. Bring one in with
-    load_canon_character. An empty result means nothing matched (or the world ships no tagged
-    roster yet)."""
+    Filters (any subset, AND-combined): ``tag`` (record tag, e.g. "merchant"), ``faction_id``,
+    ``is_merchant`` (True keeps only merchants; False = don't filter), ``canon_location_id``,
+    ``arc_role`` ("companion"|"origin-hero"|"antagonist"|"minor"), ``name_contains`` (ci
+    substring), ``limit`` (default 50)."""
     c = _require(campaign_id)
     if not c.world_id:
         return {"world_id": "", "count": 0, "matches": []}
@@ -3060,27 +2847,13 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
                      target_id: str = "", id: str = "") -> dict:
     """Apply a partial update to a character and persist it.
 
-    `patch` is a dict of fields to change (deep-merged for nested objects), e.g.
-    {"current_hp": 12, "armor_class": 15}. Unknown field names are REJECTED.
-
-    CLASS / LEVEL: level lives inside `classes` (a list of {name, level, subclass}),
-    so the canonical retier patch is `{"classes":[{"name":"Wizard","level":3}]}`. As a
-    convenience the flat aliases `level`, `class_name`, and `subclass` are also accepted
-    and folded into the head class entry. When the class/level changes — by EITHER form —
-    the engine recomputes the level-scaled SRD math for the new level: proficiency bonus,
-    saves, hit dice, max HP, and extra attacks (so a down-level retier doesn't keep the old
-    tier's inflated stats). Any stat the SAME patch sets explicitly is honored (a DM-chosen
-    HP/AC wins), and a DM-chosen AC is never auto-clobbered. A genuine unknown field (a typo)
-    is still rejected.
-
     WARNING: list fields (conditions, inventory, spells_known, classes) are
     REPLACED wholesale by the patch, not merged. To change a single condition
     use add_condition / remove_condition; for HP use set_hp. Vitals are clamped
     to valid ranges (current_hp to 0..max_hp, exhaustion to 0..6).
     Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
     ``id`` — equivalent; ``character_id`` wins if more than one is given (this is the
-    character-identity arg, distinct from the flat class aliases inside ``patch``).
-    """
+    character-identity arg, distinct from the flat class aliases inside ``patch``)."""
     character_id = character_id or target_id or id  # accept the id the DM reaches for
     if not character_id:
         raise ValueError("update_character needs a character (pass `character_id` or an alias: `target_id`/`id`)")
@@ -3226,17 +2999,6 @@ def add_condition(
     the whole conditions list. Valid values: blinded, charmed, deafened,
     frightened, grappled, incapacitated, invisible, paralyzed, petrified,
     poisoned, prone, restrained, stunned, unconscious.
-
-    SAVE-ENDS conditions (#209): for a "the target repeats the save at the end of
-    each of its turns" effect (Hold Person → paralyzed, Hold Monster, a monster's
-    hold), pass `repeat_save_ability` (str/dex/con/int/wis/cha) + `repeat_save_dc`
-    (the caster's spell save DC) so the ENGINE rolls that recurring save in next_turn
-    and frees the target on a success — instead of the target staying locked because
-    the DM forgot to prompt the save. `source_id` (the caster) + `spell_name` link the
-    effect to its concentration so a successful escape also ends the caster's
-    concentration. ADDITIVE: omit these and the condition behaves exactly as before
-    (no end-of-turn save — the DM resolves any save by hand). cast_spell surfaces the
-    `condition_rider` hint telling you exactly which values to pass here.
 
     Identify the character via ``character_id`` (canonical) or the aliases ``target_id`` /
     ``id`` — ``character_id`` wins if more than one is given."""
@@ -3713,17 +3475,7 @@ def start_combat(
 ) -> dict:
     """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
     and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight.
-
-    surpriser_ids (optional): ids of combatants who initiated the fight with a
-    surprise attack (an ambush, a betrayal opener, an attack on an unready target).
-    They are placed FIRST in the turn order so they act before initiative would
-    otherwise allow; everyone else follows in normal rolled initiative order.
-    The return carries a ``surprise`` key signalling the opening attack should
-    use advantage=True (the edge is going-first + advantage; the target's AC still
-    applies — no auto-kill). Unknown ids in surpriser_ids are silently skipped.
-    Default [] = today's exact initiative-only behaviour (purely additive).
-    # v2 idea: also apply the 5e "surprised creatures skip round 1" rule."""
+    Pass the character ids of everyone in the fight."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
     surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
@@ -3875,16 +3627,7 @@ def set_zones(campaign_id: str, zones: list[dict]) -> dict:
     """Declare the TACTICAL ZONES of the current scene — the engine's positional
     model for combat (S2.7). OPTIONAL: use it only when terrain matters (a doorway
     to hold, rafters to climb to, an altar dais to reach). With no zones declared,
-    combat is theater-of-the-mind and nothing about range or movement changes.
-
-    Each zone is `{"name", "description"?, "adjacent"?}` — `adjacent` is a list of
-    OTHER zone names directly reachable from it (a melee step / move_to_zone hop).
-    Adjacency is treated as symmetric, so you only wire each edge once: if "doorway"
-    lists "hall", the hall is reachable from the doorway and vice-versa. NOT a
-    coordinate grid — name regions the way you'd describe them at the table ("the
-    rafters", "the altar dais"), which an LLM reasons about far more reliably than
-    (x, y). REPLACES the scene's zone set wholesale; call again to reshape terrain.
-    Then place_combatant each fighter into a zone. Returns the stored zones."""
+    combat is theater-of-the-mind and nothing about range or movement changes."""
     parsed = [Zone.model_validate(z) for z in zones]
     names = {z.name for z in parsed}
     warnings: list[str] = []
@@ -3953,11 +3696,6 @@ def move_to_zone(campaign_id: str, combatant_id: str = "", zone: str = "",
     reaction (a melee attack via attack(); track it with use_action(kind=reaction)).
     The engine does NOT auto-roll the OA — staying-vs-disengage and who reacts is a
     table call.
-
-    `zone` should be the SAME as or ADJACENT to the current zone (a single move);
-    a non-adjacent hop is allowed but flagged in `warnings` (advisory, never
-    blocked — the DM may rule a Dash or special movement). Returns the combat view
-    plus `from`, `to`, `opportunity_attack`, and `provokers`.
 
     Identify the combatant via ``combatant_id`` (canonical) or the aliases ``character_id`` /
     ``id`` — ``combatant_id`` wins if more than one is given."""
@@ -4233,15 +3971,7 @@ def next_turn(campaign_id: str) -> dict:
     dead or removed combatants are skipped). Returns whose turn it is, whether
     they owe a death save (downed and unstable), and a ``turn_brief`` with their
     authoritative attack line + available limited resources so the DM never drifts
-    from the sheet numbers mid-combat (#166).
-
-    Also self-enforces SAVE-ENDS effects (#209): the OUTGOING combatant (whose turn
-    just ended) automatically rolls any repeat-save it carries (Hold Person → a WIS
-    save to shake off paralysis), reported in ``repeat_saves`` — a success frees it
-    (clearing the condition + the caster's concentration); a failure keeps the lock.
-    A paralyzed target whose caster loses concentration is freed here too (the inverse
-    link), surfaced in ``expired_effects``. So nothing stays locked because the DM
-    forgot to prompt the save."""
+    from the sheet numbers mid-combat (#166)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         order = c.combat.order
@@ -4505,22 +4235,14 @@ def next_turn(campaign_id: str) -> dict:
 @mcp.tool()
 def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dict:
     """Track a combatant's action economy. kind: action | bonus | reaction | free | skip
-    | disengage.
-    `action`/`bonus` are legal only on the creature's OWN turn and only once each
-    per turn; `reaction` is legal any time but once per round (it refreshes at the
-    start of the creature's turn via next_turn); `free`/movement isn't rate-limited.
-    `skip` (a.k.a. pass) declares an intentional do-nothing turn for the current
-    combatant — sets action_used so next_turn's PC-skip guard is satisfied without
-    actually attacking or casting. Use it when a PC Dodges, Dashes, Readies, or simply
-    passes their turn.
-    `disengage` (F01-8) is the 5e DISENGAGE ACTION: it spends the current combatant's
-    action (like skip) AND sets a per-turn `disengaged` flag so a following move_to_zone
-    provokes NO opportunity attacks — the engine then suppresses every provoker until the
-    creature's turn ends (the flag resets at the start of its next turn). Use it instead of
-    skip when a PC steps away from a foe without drawing an attack.
-    Returns {ok, reason, action_available, bonus_available, reaction_available, disengaged}
-    so you can flag an illegal double-action. NOTE: multiattack (Extra Attack) is ONE
-    action — declare a single `action`, then make several attack() calls under it."""
+    | disengage. `action`/`bonus` are legal only on the creature's OWN turn and once each
+    per turn; `reaction` is once per round (refreshes at the start of its turn); `free`/
+    movement isn't rate-limited. `skip` (a.k.a. pass) declares a do-nothing turn (Dodge/
+    Dash/Ready/pass) — sets action_used so next_turn's PC-skip guard is satisfied.
+    `disengage` (F01-8) spends the action AND sets a per-turn `disengaged` flag so a
+    following move_to_zone provokes NO opportunity attacks. Returns {ok, reason,
+    action_available, bonus_available, reaction_available, disengaged}. NOTE: multiattack
+    is ONE action — declare a single `action`, then make several attack() calls under it."""
     kind = kind.lower()
     if kind not in ("action", "bonus", "reaction", "free", "movement", "skip", "disengage"):
         raise ValueError("kind must be action | bonus | reaction | free | skip | disengage")
@@ -4628,13 +4350,6 @@ def add_combatant(campaign_id: str, character_id: str = "", initiative: Optional
     the order, so a mid-fight spawn either (a) never joined initiative, or (b) attacked with
     EVERY combat gate bypassed (attack()'s economy gates only engage for combatants in the
     order). This is the missing verb.
-
-    The ENGINE ROLLS the newcomer's initiative (1d20 + their initiative_bonus) and inserts
-    them into the order at their initiative position (desc, ties broken by DEX then by going
-    after existing same-count combatants). The current combatant's turn is preserved (the
-    pointer is adjusted exactly like remove_combatant's index math). Pass an explicit
-    ``initiative`` to override the roll (a readied ambush, a fixed slot). Once added, the
-    reinforcement is subject to the SAME turn-order/action-economy gates as everyone else.
 
     Identify the character via ``character_id`` (canonical) or the alias ``id``. Raises if no
     combat is active or the character is already in the order. No model change — additive."""
@@ -4841,29 +4556,7 @@ def attack(
     natural 20 and auto-misses on a natural 1, doubles damage dice on a crit, and
     applies the damage. Condition-based advantage/disadvantage is detected (set
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
-    combined with the explicit flags (they cancel if both apply).
-
-    MULTI-COMPONENT DAMAGE (#210): an attack that deals more than one damage type in
-    a single strike — e.g. a Ghoul Bite (1d6+2 piercing PLUS 1d6 necrotic) — passes
-    ``damage_rolls=[{"dice": "1d6+2", "type": "piercing"}, {"dice": "1d6", "type":
-    "necrotic"}]``. EACH component is rolled, crit-doubles its OWN dice, and has the
-    target's resistance/immunity/vulnerability applied for ITS OWN type before the
-    components are summed and applied as one hit. The per-component breakdown is
-    surfaced under result["damage"]["components"]. When ``damage_rolls`` is given it
-    supersedes ``damage_dice``/``damage_type``; omit it (the default) and the single
-    ``damage_dice``/``damage_type`` path is byte-identical to before. The monster_combat
-    / turn_brief surfaces emit ready-to-pass ``damage_rolls`` for multi-type attacks.
-
-    TURN ORDER + ACTION ECONOMY (enforced while a combat is active and the attacker
-    is in the initiative order): an attack as your ACTION is legal only on your own
-    turn, and only up to one Attack action's worth of strikes — 1 attack, or
-    `extra_attacks + 1` with the Extra Attack feature. A further attack needs another
-    Attack action: spend Action Surge (use_resource(resource='action_surge')) first.
-    OFF-TURN attacks are treated as a REACTION (an opportunity attack): legal once
-    per round and gated by the combatant's reaction — pass is_reaction=True to mark
-    an opportunity attack explicitly. An illegal attack (wrong turn / out of attacks /
-    no reaction left) is REJECTED with a clear error and NO state change (no roll,
-    no damage). Inert when no combat is active or the attacker isn't a combatant."""
+    combined with the explicit flags (they cancel if both apply)."""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -5556,18 +5249,12 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
 
 @mcp.tool()
 def drop_concentration(campaign_id: str, character_id: str, reason: str = "") -> dict:
-    """VOLUNTARILY end a caster's concentration — the verb for the most common narrative
-    concentration event: the caster lets a spell lapse, or it's broken without a damage
-    save (the DM narrates "the Hold Person shatters"). Until this tool existed, the only
-    paths that cleared `concentration` were a failed concentration_save, incapacitation/0
-    HP/death, and casting a NEW concentration spell — so a DM who narrated a drop with no
-    follow-up cast left `concentration` (and its tracked effect) set, desyncing state into
-    the next session (QA ow-cs2: a phantom multi-round Hold Person persisted past close and
-    corrupted a later session). This clears the caster's `concentration` field, expires the
-    caster's concentration-flagged ActiveEffects, AND frees every TARGET still locked by a
-    repeat-save twin of this concentration (e.g. a paralyzed Hold Person victim) — the same
-    inverse-link reconciliation next_turn performs, run NOW instead of next round. A no-op
-    (concentration stays None) when the caster wasn't concentrating."""
+    """VOLUNTARILY end a caster's concentration — the verb for the common narrative event
+    of letting a spell lapse or it breaking without a save (the DM narrates "the Hold Person
+    shatters"). Clears the caster's `concentration` field, expires its concentration-flagged
+    ActiveEffects, AND frees every TARGET still locked by a repeat-save twin of this
+    concentration (e.g. a paralyzed Hold Person victim). A no-op when the caster wasn't
+    concentrating."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -5727,22 +5414,7 @@ def _award_milestone_xp(c: Campaign, amount: int, reason: str) -> "dict | None":
 @mcp.tool()
 def end_combat(campaign_id: str, resolution: str = "") -> dict:
     """End combat (clears initiative, round, and turn order). Character HP and
-    conditions persist past the encounter.
-
-    If the campaign is in "xp" `leveling_mode` (the default), the XP of monsters
-    defeated THIS encounter is auto-awarded to the party, split evenly — so
-    progression isn't a manual chore. Returns `xp_awarded` + per-character `grants`
-    (with `can_level_up`) when any was granted. "milestone" mode leaves leveling to
-    the DM (no auto-XP).
-
-    `resolution`: REQUIRED when you end combat while hostile monsters are still alive
-    (a flee / surrender / capture / retreat / parley) — a short clause naming HOW they
-    left, e.g. "the surviving bandits flee into the alley" / "the captain surrenders".
-    It is recorded into the combat_end event so the save isn't a continuity break (a
-    fight left with enemies standing and no reason logged). If every hostile was brought
-    to 0 HP, omit it. When hostiles remain and you pass nothing, the result carries
-    `needs_resolution: true` + `warning_live_hostiles` — resolve them or narrate the
-    disengagement and pass `resolution`."""
+    conditions persist past the encounter."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         result: dict = {"active": False}
@@ -6138,13 +5810,7 @@ def preview_level_up(
     feat: Optional[str] = None,
     seed: Optional[int] = None,
 ) -> dict:
-    """Preview a level-up without writing campaign state.
-
-    Returns the requested class/level transition, HP gain, class features,
-    spell-slot and class-resource max deltas, required ASI/feat choices, and any
-    rule errors. This intentionally clones the persisted character and never
-    calls save_campaign, so the engine remains the sole writer for real level-ups.
-    """
+    """Preview a level-up without writing campaign state."""
     c = _require(campaign_id)
     original = _char(c, character_id)
     before = Character.model_validate(original.model_dump(mode="json"))
@@ -6325,13 +5991,7 @@ def _subclass_block_for(cname: str, next_class_level: int, current_subclass: Opt
 
 @mcp.tool()
 def build_options(campaign_id: str, character_id: str) -> dict:
-    """Return legal one-level build paths for a character without mutating state.
-
-    This is the engine-owned build-planner surface: it derives each candidate by
-    calling preview_level_up, exposes legal options for the dashboard to render,
-    and keeps illegal multiclass/rule-blocked paths in blocked_options for
-    diagnostics instead of offering them as actionable choices.
-    """
+    """Return legal one-level build paths for a character without mutating state."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     before = Character.model_validate(ch.model_dump(mode="json"))
@@ -6485,30 +6145,11 @@ def cast_spell(
     concentration if the spell concentrates (breaking any prior). If spells_known/
     prepared are set, the spell must be among them (skipped leniently when empty).
 
-    RITUAL CASTING (#813): pass ``as_ritual=True`` for a ritual-tagged spell (Detect
-    Magic, Identify…) to cast it WITHOUT spending a slot — the ritual takes 10 extra
-    minutes instead, so it is refused during active combat. Concentration/duration
-    semantics are unchanged. A normal cast of a ritual spell surfaces
-    ``ritual_available: true`` so you know the slot-free option exists.
-
-    For the hand-authored spells the engine fully resolves the effect (returns
-    `automated:true` + `effect` with upcast/cantrip-scaled damage/heal). For every
-    other SRD spell it DEGRADES GRACEFULLY (returns `automated:false`): the slot is
-    spent and concentration set, and it hands you the structured values to resolve
-    by hand — `save_ability`, `attack_roll`, `base_damage`, `upcast`, plus the
-    `spell_save_dc`/`spell_attack_bonus`. It never errors on an un-modeled spell.
-    Resolve: attack-roll spells via attack(); save spells via saving_throw + then
-    apply_damage(half=<save succeeded>); heals via apply_healing.
-
-    ZONES (S2.7): pass `target_id` + `is_melee=True` for a TOUCH/melee spell (e.g.
-    Shocking Grasp, Inflict Wounds) to get the same advisory `range_warning` as a
-    melee attack when caster and target aren't in the same or an adjacent zone.
-    Ranged spells reach any zone — leave `is_melee` False (the default) and they're
-    never gated. Inert when no zones are declared (theater-of-the-mind).
-
     Name the spell via ``spell_name`` (canonical) or ``spell`` (alias); identify an explicit
     target via ``target_id`` (canonical) or the aliases ``npc_id`` / ``id``. (``character_id``
-    is the CASTER and is unchanged.) Canonical names win if more than one is given."""
+    is the CASTER and is unchanged.) Canonical names win if more than one is given. Pass
+    ``as_ritual=True`` (#813) to cast a ritual-tagged spell WITHOUT a slot (takes 10 extra
+    minutes; refused in combat)."""
     # Coalesce intuitive arg-name aliases to the canonical params. `character_id` (the caster)
     # is canonical and untouched; the alias ids resolve only the explicit `target_id`.
     spell_name = spell_name or spell
@@ -7088,12 +6729,7 @@ def cast_spell(
 @mcp.tool()
 def saving_throw(campaign_id: str, character_id: str, ability: str, dc: int) -> dict:
     """Roll a saving throw for a character against a DC. ability is one of
-    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded.
-
-    Enforces the SRD condition rules so save outcomes don't depend on the DM
-    remembering them: paralyzed / petrified / stunned / unconscious AUTO-FAIL STR
-    and DEX saves; restrained gives DISADVANTAGE on DEX saves. A forced failure
-    still reports the roll, plus a `reason`."""
+    str/dex/con/int/wis/cha. Returns the roll and whether it succeeded."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     ab = Ability(ability.lower())
@@ -7122,20 +6758,7 @@ def grapple(
     target_id: str,
     save_ability: str = "",
 ) -> dict:
-    """Resolve a Grapple attempt (SRD 5.2 / 2024 Unarmed Strike option).
-
-    The target makes a Strength or Dexterity saving throw (target's choice — by
-    default the engine picks whichever gives the higher bonus) against
-    DC = 8 + attacker's Strength modifier + attacker's proficiency bonus.
-
-    On a FAILED save: the target gains the Grappled condition (Speed 0, disadvantage
-    on attack rolls against anyone other than the grappler). On a SUCCESS: no effect.
-
-    To escape: the grappled creature uses its action and calls `escape_grapple`.
-
-    Returns {dc, save_ability, save_roll, natural, success, applied, attacker, target}.
-    `applied` is true when the Grappled condition was added (i.e. the save failed AND
-    the target is not immune to the grappled condition)."""
+    """Resolve a Grapple attempt (SRD 5.2 / 2024 Unarmed Strike option)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         attacker = _char(c, attacker_id)
@@ -7206,17 +6829,7 @@ def shove(
     target_id: str,
     mode: str = "prone",
 ) -> dict:
-    """Resolve a Shove attempt (SRD 5.2 / 2024 Unarmed Strike option).
-
-    Same save as Grapple: DC = 8 + attacker's Strength modifier + attacker's proficiency
-    bonus. The target makes a STR or DEX save (best of the two by default).
-
-    `mode` controls what happens on a FAILED save:
-      - "prone"  (default): the target gains the Prone condition (must use movement to
-                 stand; melee attacks against it have Advantage, ranged have Disadvantage).
-      - "push":  the target is pushed 5 feet away (no condition; narrative only).
-
-    Returns {dc, save_ability, save_roll, natural, success, mode, applied, pushed, attacker, target}."""
+    """Resolve a Shove attempt (SRD 5.2 / 2024 Unarmed Strike option)."""
     mode = mode.lower()
     if mode not in ("prone", "push"):
         raise ValueError(f"shove mode must be 'prone' or 'push', got {mode!r}")
@@ -7284,17 +6897,7 @@ def escape_grapple(
     character_id: str,
     grappler_id: str,
 ) -> dict:
-    """Attempt to escape a Grapple (SRD 5.2 / 2024).
-
-    The grappled creature uses its action to make a Strength (Athletics) or Dexterity
-    (Acrobatics) check — the engine picks whichever gives the higher total — against the
-    same DC the grappler used: 8 + grappler's Strength modifier + grappler's proficiency
-    bonus.
-
-    On a SUCCESS: the Grappled condition is removed. On a FAILURE: the creature remains
-    grappled.
-
-    Returns {dc, skill, skill_roll, natural, success, escaped, character, grappler}."""
+    """Attempt to escape a Grapple (SRD 5.2 / 2024)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         escapee = _char(c, character_id)
@@ -7528,13 +7131,7 @@ def add_item(
     requires_attunement: Optional[bool] = None, description: str = "", item_name: str = "",
 ) -> dict:
     """Add an item to a character's inventory (stacks with an identical unequipped,
-    non-attuned item).
-
-    Pass `item_name` to grant a REAL SRD item by name: weight, attunement, and a
-    rich description (with damage/AC/rarity tags) are filled from the bundled
-    catalog. Any value you also pass explicitly (name, weight, requires_attunement,
-    description) overrides the catalog fill. Omit `item_name` for the original
-    free-text path (then `name` is required)."""
+    non-attuned item)."""
     name, weight, requires_attunement, description, rec = _apply_item_catalog(
         item_name, name, weight, requires_attunement, description
     )
@@ -7597,18 +7194,7 @@ def adjust_currency(
     campaign_id: str, character_id: str, cp: int = 0, sp: int = 0, ep: int = 0, gp: int = 0,
     pp: int = 0, spend_gp: float = 0.0, earn_gp: float = 0.0,
 ) -> dict:
-    """Adjust a character's purse. Two paths (additive — use either or both):
-
-    - DENOMINATION path (cp/sp/ep/gp/pp): add or subtract SPECIFIC coins. Exact, but
-      cannot "make change" — subtracting more gp than the character holds in gp coins
-      raises, even when the total value is affordable in mixed coin.
-    - VALUE path (F09-10): `spend_gp` deducts a gp VALUE making change from the whole
-      purse (so 5 gp comes out of 50 sp), and `earn_gp` credits a gp value. Use these to
-      spend/earn money WITHOUT itemizing coins — the change-making the denomination path
-      can't do. Decimal-exact for 2-decimal gp.
-
-    Raises (and persists nothing) on a negative result; the denomination-underflow error
-    points you at `spend_gp` when the value is actually affordable."""
+    """Adjust a character's purse. Two paths (additive — use either or both):"""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -7646,17 +7232,7 @@ def buy_item(
     weight: float = 0.0, requires_attunement: Optional[bool] = None, description: str = "", item_name: str = "",
 ) -> dict:
     """Buy an item: pay cost_gp PER UNIT x quantity (making change from the purse)
-    and add it to inventory. Raises if the character can't afford the total.
-
-    Pass `item_name` to buy a REAL SRD item by name: name, weight, attunement, a
-    rich description, AND the catalog price are filled from the bundled catalog
-    (leave `cost_gp` unset to charge the SRD price, or pass `cost_gp` to override —
-    e.g. a haggled or marked-up price). Items with NO listed SRD price (every magic
-    item) require an explicit cost_gp — the DM sets the price (cost_gp=0 only for a
-    deliberate free grant; or just use add_item). Omit `item_name` for the original
-    free-text path (then `name` and `cost_gp` are required).
-
-    Returns the updated purse + inventory plus {unit_cost_gp, total_cost_gp}."""
+    and add it to inventory. Raises if the character can't afford the total."""
     name, weight, requires_attunement, description, rec = _apply_item_catalog(
         item_name, name, weight, requires_attunement, description
     )
@@ -7711,13 +7287,7 @@ def _sell_price_reference(name: str, ch: Character) -> Optional[float]:
 @mcp.tool()
 def sell_item(campaign_id: str, character_id: str, name: str, price_gp: float, quantity: int = 1) -> dict:
     """Sell an item: remove `quantity` of it and add price_gp PER UNIT x quantity to the
-    purse. Returns the updated purse + inventory plus {unit_price_gp, total_price_gp}.
-
-    F09-9 — price sanity (TELL, don't block by default): the response carries
-    `catalog_cost_gp` (the item's listed/owned reference price, or null) and, when the sale
-    price is implausibly above it, a `warning`. The DM sees list price in-context at the
-    moment of sale. House-rule `enforce_sell_cap` (off by default) turns the rail hard:
-    a price above `sell_cap_multiple`× the reference is then REJECTED instead of warned."""
+    purse. Returns the updated purse + inventory plus {unit_price_gp, total_price_gp}."""
     if quantity <= 0:
         raise ValueError("quantity must be positive")
     if price_gp < 0:
@@ -7797,25 +7367,10 @@ def short_rest(campaign_id: str, character_id: str, hit_dice_to_spend: int = 0) 
 def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
     """Take a long rest: restore all HP, recover half total Hit Dice (min 1), reset
     all spell slots, reduce exhaustion by 1, and end the dying state. The DM should
-    call this for each party member. Cannot rest while dead.
-
-    A long rest is ~8 in-world hours (overnight), so it advances the campaign clock
-    to the NEXT MORNING (``time_of_day = 'morning'``, rolling ``day`` over) and returns
-    the new ``day``/``time_of_day`` so the DM narrates the new dawn. Resting from
-    afternoon/evening/night rolls the day forward by one; resting when it is ALREADY
-    morning is a clock no-op, so calling long_rest once per party member on the same
-    night converges on a single morning instead of each member burning a day. The
-    rollover is persisted with the rest.
-
-    CAMP WATCH (Kingmaker-style): the night the rest actually rolls the clock over (the
-    FIRST member's rest that overnight — so a per-member party rolls ONCE, not once each)
-    rolls a wandering-encounter check for the camp's region. On a hit the result carries a
-    `wandering_encounter` payload with a `type` (combat / skill / social / hazard / boon —
-    most are NOT a night ambush): combat stages sized foes + an `outlook` for the DM to
-    `start_combat`; the other types hand the DM a descriptor (an obstacle to skill-check, a
-    visitor to parley, a hazard to save against, or a quiet boon). Pass `watch` (e.g.
-    "careful", "camouflaged", "hidden") to lower the chance — a well-kept watch / concealed
-    camp is safer. Disabled by `house_rules.wandering_encounters = False`."""
+    call this for each party member. Cannot rest while dead. Advances the clock to the
+    next morning (rolling the day once per party, not per member). The first member's
+    overnight rest rolls a camp wandering-encounter check; pass ``watch`` (e.g.
+    "careful", "hidden") to lower the chance."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -7936,22 +7491,7 @@ def use_resource(
     spend). Returns ``{ok: True, remaining, max, used}`` on success; ``{ok: False,
     error, remaining, max}`` without changing state when the character lacks that
     pool or hasn't enough left, so the DM gets a clean signal instead of an
-    exception. Pools refresh via short_rest / long_rest.
-
-    DAMAGE MANEUVER (Battle Master, #213): pass ``maneuver`` (the maneuver's name, e.g.
-    "Trip Attack" / "Menacing Attack") when the spent die is a DAMAGE maneuver — "add the
-    superiority die to the attack's damage roll." The engine ROLLS the pool's die (`amount`
-    × the resource's `size`, e.g. 1d8) at spend time and stashes the rolled total as a
-    PENDING damage bonus on the character; the NEXT ``attack()`` by this character folds it
-    into that strike's damage and clears it (consumed once — never double-applied), so the
-    maneuver's damage is REAL without the DM remembering to add it. The rolled die + bonus
-    are surfaced under ``maneuver_damage``. ``damage_type`` optionally types the added
-    damage (default "" == the same type as the weapon strike). A maneuver only makes sense
-    for a die pool: spending a POINT pool (no `size`) for a maneuver is refused with a clean
-    signal and NO state change. The maneuver's save/condition (Trip → prone, Menacing →
-    frightened) stays a separate DM ``saving_throw`` call — only the DAMAGE bonus is wired
-    here. ADDITIVE: omit ``maneuver`` (the default) and a spend is byte-identical to before
-    — no pending bonus is ever set, so a non-maneuver pool behaves exactly as today."""
+    exception. Pools refresh via short_rest / long_rest."""
     if amount < 1:
         raise ValueError("amount must be >= 1")
     with campaign_lock(campaign_id):
@@ -8058,17 +7598,7 @@ def set_class_resource(
     Dice**, a Psi Warrior's **Energy Dice**, an Arcane Archer's **Arcane Shots**, etc. are
     invisible to the engine until you register them here. The engine supplies the *mechanism*
     (a tracked pool `use_resource` spends and rests recharge); YOU supply the subclass numbers
-    (the engine stays SRD-only and ships no non-SRD subclass tables).
-
-    `resource` is an id (e.g. "superiority_dice"); `max` the pool size; `recharge` one of
-    short|long|none; `size` the die it rolls ("d8" for Superiority Dice) or "" for a point
-    pool; `used` how many are already spent (default 0 — a fresh pool). Idempotent: calling
-    again with the same id updates max/recharge/size in place and clamps `used` to the new max.
-    Marked `custom` so a level-up re-derive never wipes it. Returns the pool's new state.
-
-    Seed these at character creation for any subclassed martial/caster (a Battle Master 5 →
-    `set_class_resource(.., "superiority_dice", 6, "short", "d8")`) so the first combat has a
-    pool to track Riposte / Precision Attack / etc. against."""
+    (the engine stays SRD-only and ships no non-SRD subclass tables)."""
     if int(max) < 0:
         raise ValueError("max must be >= 0")
     rech = recharge if recharge in ("short", "long", "none") else "short"
@@ -8187,12 +7717,6 @@ def set_attitude(
 ) -> dict:
     """Set an NPC's attitude (free text, e.g. 'guarded', or a track value:
     hostile / wary / indifferent / friendly / helpful).
-
-    Pass `value` (-100..+100, 0 = neutral) to ALSO set the numeric per-NPC
-    relationship the dashboard bar reads; omit it to leave the number untouched
-    (the free-text track keeps working exactly as before). Pass `attitude=""`
-    (omit it) to leave the free-text LABEL untouched — a value-only call moves
-    just the number and keeps the disposition word it doesn't mention.
 
     Identify the NPC via ``character_id`` (canonical) or the aliases ``target_id`` /
     ``npc_id`` / ``id`` — ``character_id`` wins if more than one is given."""
@@ -8328,33 +7852,14 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str = "", skill: str =
                  target_name: str = "", target_id: str = "", character_id: str = "",
                  id: str = "", ability: str = "", skill_name: str = "", check: str = "") -> dict:
     """An actor's skill check against a tracked NPC, monster, or COMPANION, with
-    read-vs-influence semantics.
-
-    The target (``npc_id``) may be an NPC, a monster, or a COMPANION — a party member is
-    a legitimate social target (persuade/intimidate/read a companion); it moves the SAME
-    attitude/approval track an NPC uses (the gauge companion arcs evaluate). Only a PLAYER
-    character cannot be the target. Identify the target via ``npc_id`` (canonical) or any
-    of the aliases ``target_id`` / ``character_id`` / ``id`` — equivalent; ``npc_id`` wins
-    if more than one is given. Name the skill via ``skill`` (canonical) or the aliases
-    ``ability`` / ``skill_name`` / ``check``.
-
-    INFLUENCE skills (persuasion / deception / intimidation / …) try to move the
-    target: on success the attitude improves one step on the track (hostile -> wary ->
-    indifferent -> friendly -> helpful), on failure it worsens one step.
-
-    READ skills (insight / perception / investigation) only PERCEIVE the target and
-    NEVER change its attitude — reading or misreading someone is observer clarity,
-    not influence. A read returns a `read` block (an accurate sense of the target's
-    stance on success; a deliberately uncertain, almost-grasped impression on a
-    miss) for the DM to narrate — never a flat attitude penalty for a failed read.
-
-    For a SCENE-LOCAL EXTRA you won't track — a fishmonger, a gate guard, a barkeep —
-    pass ``npc_id=""`` and ``target_name="the fishmonger"``: the engine rolls the check
-    and returns pass/fail WITHOUT creating or mutating any roster NPC. Use a real
-    ``npc_id`` ONLY when you mean to move a tracked NPC's relationship — reusing a
-    standing NPC's id as a throwaway target silently corrupts their attitude across the
-    whole campaign (QA: a Deception vs a dock extra accidentally shifted a seeded
-    companion's standing because her id was passed as the target)."""
+    read-vs-influence semantics. INFLUENCE skills (persuasion/deception/intimidation)
+    move the target's attitude one step (up on success, down on failure); READ skills
+    (insight/perception/investigation) only PERCEIVE and never change attitude. For a
+    scene-local extra you won't track, pass ``npc_id=""`` + ``target_name="the guard"``
+    (rolls without creating/mutating any roster NPC) — reusing a standing NPC's id as a
+    throwaway target silently corrupts their attitude. Identify the target via
+    ``npc_id`` (canonical) or aliases ``target_id`` / ``character_id`` / ``id``; name the
+    skill via ``skill`` (canonical) or ``ability`` / ``skill_name`` / ``check``."""
     # Coalesce intuitive arg-name aliases to the canonical params BEFORE any branching.
     # `npc_id` (canonical) wins; the id MUST resolve before the ephemeral/target_name path
     # below, or an alias-only call would wrongly take the scene-extra branch (npc_id="").
@@ -8579,43 +8084,10 @@ def generate_parley_options(
     companion's in-character take) or `get_scene` (the authored scene beats) — it returns
     the lead PC's own alignment + the actual skill modifiers off their sheet + a suggested
     DC per skill, so you write 2-4 tagged choices WITHOUT hand-computing anything.
-
-    Returns ``{actor, alignment, skills:[{skill, modifier, suggested_dc}], free_form: true,
-    guidance}``. `actor_id` defaults to the lead PC. `skills` defaults to the actor's
-    proficient/expertise skills plus persuasion/deception/intimidation/insight. `modifier`
-    is the sheet-correct bonus (ability mod + proficiency, doubled on expertise — the engine
-    computes it via the character's skill_bonus, you never invent it). `suggested_dc` comes
-    from a fixed band (easy 10 / medium 14 / hard 18) keyed off `difficulty`, shifted +2 when
-    HouseRules.difficulty is 'hard' and -2 when 'easy'.
-
-    Bind the parley to a TRACKED NPC (F10-2/SYN-07) by passing ``npc_id`` (aliases
-    ``target_id`` / ``character_id`` / ``id``): the surface then carries an ``npc`` block
-    {id, name, attitude, attitude_value, met, difficulty} so the menu reflects WHO the party
-    is talking to (and the viewer's Parley header stays pinned to a stable id, never drifting
-    to another speaker mid-scene). When you pass an npc_id and DON'T pass an explicit
-    ``difficulty``, the DEFAULT difficulty is DERIVED from the target's attitude — a hostile/
-    wary NPC makes the ask HARD, a friendly/helpful one EASY, indifferent stays MEDIUM — so a
-    hostile -80 NPC and a helpful +80 NPC no longer hand you the identical menu. An explicit
-    ``difficulty`` always wins. An unknown npc_id (typo / wrong campaign) degrades to a
-    freeform parley (no npc block) rather than erroring mid-scene. ``situation`` (the scene
-    prose you supply) is echoed back on the surface so it round-trips for the menu you author.
-
-    This tool authors NOTHING and never rolls — it hands you slots, not lines. Voice the
-    prose yourself, tag each option by alignment + skill+DC + a reputation/consequence hint,
-    and ALWAYS leave a free-form path (`free_form` is always true). Then ROUTE the pick:
-    a chosen skill option -> ``skill_check(actor, skill, dc)``; a social option vs a tracked
-    NPC -> ``social_check`` (or ``target_name`` for a scene extra); a combat option ->
-    ``start_combat``; a free-form/alignment beat you adjudicate, then ``record_decision``
-    (and optional ``adjust_reputation``). Read-only.
-
-    Quest & Arc engine, Layer 3 — `event_id` (OPTIONAL): when a first-class stumble-into Event
-    is live (from ``present_events``), pass its id to attach the Event's AUTHORED options to the
-    surface as ``event: {id, prompt, options:[{label, tag, skill, dc}]}``. The Event's options
-    are the menu slots; the free-form path is STILL always present (never a closed set). A picked
-    Event option routes to ``resolve_event(campaign_id, event_id, option_label)`` (the engine
-    applies its deterministic ripple) — not to skill_check/record_decision. An unknown
-    `event_id` or one that is already resolved simply omits the block (degrades to today's
-    freeform parley)."""
+    Bind to a TRACKED NPC via ``npc_id`` (aliases ``target_id`` / ``character_id`` / ``id``)
+    so the surface carries an ``npc`` block and the default ``difficulty`` is derived from the
+    target's attitude (hostile=HARD, friendly=EASY, indifferent=MEDIUM); an explicit
+    ``difficulty`` always wins, an unknown npc_id degrades to a freeform parley."""
     c = _require(campaign_id)
     aid = actor_id or _lead_pc_id(c)
     if not aid:
@@ -8738,18 +8210,7 @@ def encounter_outlook(
     The engine NEVER alters combat — the dragon stays a dragon. Returns the SRD difficulty
     band PLUS an `overmatch_ratio` (the band alone caps at 'deadly' and can't tell a
     winnable 1.12x troll from a guaranteed-wipe 6.25x dragon) and a `must_offer_out` flag
-    that fires only in the unwinnable low-level zone.
-
-    Returns ``{band, overmatch_ratio, avg_party_level, must_offer_out, guidance}``.
-    `overmatch_ratio = adjusted_xp(xps) / xp_thresholds(party_levels)["deadly"]`, where xps
-    come from `monster_xps` or are resolved from `monster_ids` (a staged foe's xp_value, or
-    the bestiary by name). `must_offer_out = (avg_party_level <= 5) and (overmatch_ratio >=
-    2.0)` — empirically the line that passes a deadly-but-fair troll and catches a dragon.
-
-    When `must_offer_out` is true, you MUST surface at least one non-combat branch WITH A
-    COST (escape leaving something behind, parley/relent, a hazard buying retreat) via
-    generate_parley_options — do NOT auto-soften, do NOT TPK. Over level 5, a chosen fight
-    may kill. Read-only."""
+    that fires only in the unwinnable low-level zone."""
     c = _require(campaign_id)
     xps = _resolve_monster_xps(c, monster_xps, monster_ids)
     if not xps:
@@ -8836,15 +8297,7 @@ def companion_advise(campaign_id: str, companion_id: str, situation: str = "") -
     a short `situation` (the choice/discovery/lull at hand); it pulls relevant
     memory callbacks via recall and returns the companion's voice_id + personality
     + callbacks + a prompt to voice from. Speak the companion's line in its voice,
-    then let the player respond / deliberate with it. Read-only.
-
-    Also folds in the companion's STANDING (the approval band derived from its gauge),
-    its dossier's `approval_likes`/`approval_dislikes` (so the DM can judge whether THIS
-    moment wins or loses the companion's regard), and an `arc` summary (gates + how far
-    the next locked gate is) — so the voiced line already carries the relationship,
-    instead of a blank-neutral opinion. The engine reads the gauge; the DM judges the
-    cause (it never auto-moves approval here). Best-effort: a companion with no dossier/
-    arc still returns the base frame (F06-3)."""
+    then let the player respond / deliberate with it. Read-only."""
     c = _require(campaign_id)
     comp = _char(c, companion_id)
     callbacks = ledger_mod.recall(campaign_id, situation, limit=3) if situation.strip() else []
@@ -9009,12 +8462,7 @@ def record_camp_beat(
     note: str = "",
     resolved: bool = False,
 ) -> dict:
-    """Persist that a camp beat actually fired.
-
-    This is the explicit write path for camp-beat history. `camp_scene` and the pure scheduler
-    are read-only; they only propose frames. For normal use, pass a `beat_id` returned by
-    `camp_scene`. The optional explicit fields support recording an externally-framed beat
-    without letting prompt generation mutate state."""
+    """Persist that a camp beat actually fired."""
     if not beat_id.strip():
         raise ValueError("beat_id is required")
     with campaign_lock(campaign_id):
@@ -9191,13 +8639,7 @@ def end_session(campaign_id: str, summary: str = "") -> dict:
 
 @mcp.tool()
 def save_slot(campaign_id: str, slot: str = "quicksave") -> dict:
-    """Copy the campaign's CURRENT state into a named save slot (default 'quicksave').
-
-    A slot is a point-in-time anchor the player can return to (e.g. before a risky fight or a
-    fork). It copies the live snapshot verbatim — non-destructive, the live game is untouched —
-    so a later load_slot can roll the chronicle back to exactly this moment. Pairs with load_slot.
-    Raises if the campaign has no saved state yet. The engine is the sole writer; runs under the
-    campaign lock so it can't race a concurrent tool call."""
+    """Copy the campaign's CURRENT state into a named save slot (default 'quicksave')."""
     with campaign_lock(campaign_id):
         _require(campaign_id)  # 404 cleanly on an unknown campaign
         path = _save_slot_store(campaign_id, slot)
@@ -9206,14 +8648,7 @@ def save_slot(campaign_id: str, slot: str = "quicksave") -> dict:
 
 @mcp.tool()
 def load_slot(campaign_id: str, slot: str = "quicksave") -> dict:
-    """Restore a named save slot, OVERWRITING the campaign's current live state with it.
-
-    This rolls the whole chronicle back to the moment the slot was written (default 'quicksave').
-    DESTRUCTIVE to unsaved progress: anything that happened since that slot is discarded. The slot
-    is validated as belonging to this campaign before it is restored, so a corrupt/foreign snapshot
-    can never clobber the live game. The engine is the sole writer; runs under the campaign lock,
-    and the very next tool call re-loads the restored state. Pair with save_slot. Raises if the
-    slot is absent, corrupt, or for a different campaign."""
+    """Restore a named save slot, OVERWRITING the campaign's current live state with it."""
     with campaign_lock(campaign_id):
         _require(campaign_id)  # the campaign must exist to be restored over
         c = _load_slot_store(campaign_id, slot)
@@ -9382,13 +8817,7 @@ def world_tick(campaign_id: str) -> dict:
     """Surface BACKGROUND world events — the world's standing threads (a contested
     seat of power, a cult recruiting, factions maneuvering) move on their own, whether
     or not the party is pursuing them, so the world feels alive and the scope stays
-    bigger than the room the party is standing in.
-
-    Returns any due "world beats" for the DM to weave in — a crier's notice, an
-    overheard rumor, an off-screen development — then escalate it and `remember` what
-    changed. Each thread re-arms a few days out, so the world keeps living. This fires
-    automatically on time-advancing `travel_to` and `downtime`; call it explicitly to
-    check whether the wider world has stirred. Read-only to the party; world-level only."""
+    bigger than the room the party is standing in."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         beats = worldsim.tick(c)
@@ -9519,20 +8948,7 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
     or betrayal REAL, not a line that evaporates. Call it each beat (like
     `check_consequences`): when a gate UNLOCKS (a personal_quest opens, a romance turns,
     loyalty deepens) play that beat; when a betrayal AGENDA FIRES, the companion turns
-    NOW — resolve it as a real `attack`, never soften it to narration.
-
-    Pass `companion_id` to evaluate one companion, or leave it blank to evaluate ALL
-    companions that carry an arc. A gate unlocks when the companion's `attitude_value`
-    (the approval gauge) reaches its threshold; the sealed agenda fires when its trigger
-    holds. Idempotent — a gate/agenda already resolved on a prior call is NOT reported
-    again, so calling every beat is safe.
-
-    A result may also carry an ADVISORY `betrayal_warning` (Layer 2): when a companion's
-    unfired `attitude_below` agenda sits in the danger band (~ -20..-40 approval), this
-    telegraphs an approaching turn so you can FORESHADOW it — it never fires the agenda
-    or mutates state. A `decision_flag` set by a recorded choice (set_flag /
-    record_decision sets_flag) spikes that betrayal's odds; the warning flags when one is
-    already active."""
+    NOW — resolve it as a real `attack`, never soften it to narration."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if companion_id:
@@ -9584,10 +9000,7 @@ def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None
 
 @mcp.tool()
 def set_companion_quest_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
-    """Create or replace an engine-owned companion personal quest arc.
-
-    CompanionQuestArc is the lifecycle owner for personal quests. Linked tracked Quests
-    remain optional player-facing projections and must already exist when referenced."""
+    """Create or replace an engine-owned companion personal quest arc."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         _require_companion(c, companion_id)
@@ -9633,13 +9046,7 @@ def advance_companion_quest_arc(
     quest_status: str = "",
 ) -> dict:
     """Explicitly advance a companion personal quest arc and optionally project that
-    change into linked tracked Quests.
-
-    `status` updates the CompanionQuestArc. `stage_id` + `stage_status` updates one
-    stage. `quest_id` links a tracked Quest to the arc (and stage when provided).
-    If a quest is linked and no `quest_status` is given, the engine derives a one-way
-    projection from the companion status: available/active -> active, resolved ->
-    completed, failed -> failed. Prose never advances this state."""
+    change into linked tracked Quests."""
     next_status = _companion_quest_status(status, "status") if status else ""
     next_stage_status = _companion_quest_status(stage_status, "stage_status") if stage_status else ""
     next_quest_status = _tracked_quest_status(quest_status) if quest_status else ""
@@ -9828,21 +9235,7 @@ def complete_quest(
     evolves_to: str = "",
     callback_in_days: int = 0,
 ) -> dict:
-    """Resolve a quest. status: completed | failed | active.
-
-    Rule-of-three evolution (Quest & Arc engine, Layer 1): close a won thread with an
-    ECHO so a session becomes a saga. Pass ``evolves_to`` (a follow-on hook/quest id or
-    a free seed tag the DM weaves on callback) and optionally ``callback_in_days`` (the
-    in-world days before it returns; 0 = due immediately) — when the quest resolves
-    (status -> completed) the engine schedules a Consequence that surfaces later via
-    ``check_consequences`` / ``scene_context``. The grateful family becomes a feud, the
-    spared villain returns. You may instead pre-set ``evolves_to`` on the quest (content/
-    questgen) and call this without the kwarg — a field already on the quest is honored.
-
-    Additive + idempotent: omit ``evolves_to`` (and leave the field empty) == today's
-    behavior, byte-for-byte; passing an empty ``evolves_to`` never clobbers a field the
-    quest already carries; re-resolving never double-schedules (the ``evolves_from:<id>``
-    note guards it)."""
+    """Resolve a quest. status: completed | failed | active."""
     if status not in ("completed", "failed", "active"):
         raise ValueError("status must be completed | failed | active")
     with campaign_lock(campaign_id):
@@ -10088,13 +9481,7 @@ def advance_time(campaign_id: str, phases: int = 0, to: str = "", note: str = ""
     downtime call — a long city day, an afternoon of legwork, "by the time they're back the
     evening bell has rung twice." Without this the clock silently stays put (`time_of_day`
     frozen at 'morning') even though the fiction moved hours; this writes day/time_of_day to
-    campaign state so the sheet, recall, and time-deferred consequences agree with the story.
-
-    Pass EITHER `phases` (how many time-of-day steps to step forward: morning→afternoon→
-    evening→night, rolling `day` over at night) OR `to` (a target phase name to jump to —
-    advancing into the *next* day if that phase is already past or current, so `to='morning'`
-    at morning means the following dawn). `to` wins if both are given. Stirs at most one
-    standing thread, like travel_to. Returns {day, time_of_day, phases_advanced, world_beats}."""
+    campaign state so the sheet, recall, and time-deferred consequences agree with the story."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         # Combat time is measured in ROUNDS (6s) via next_turn, NOT world phases. Advancing the
@@ -10214,10 +9601,7 @@ def grant_standing(campaign_id: str, faction_id: str, amount: int, reason: str =
     job, proving themselves) — standing is what unlocks the next stage of a faction questline
     gated on `gauge="standing"`. Floored at 0 (it never goes negative — you don't un-rise through
     service; `reputation` is the gauge that can be burned). The faction must already exist (join
-    it / earn reputation first). Returns the faction's new standing.
-
-    NOTE: this does NOT auto-advance a faction arc — call `check_faction_arcs` after to see whether
-    a stage just unlocked, then `advance_faction_arc` to take it (the advise-not-act contract)."""
+    it / earn reputation first). Returns the faction's new standing."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -10230,17 +9614,7 @@ def grant_standing(campaign_id: str, faction_id: str, amount: int, reason: str =
 
 @mcp.tool()
 def set_faction_arc(campaign_id: str, arc: dict) -> dict:
-    """Create or replace an engine-owned FACTION questline (the join->grow->lead state machine).
-
-    `arc` is `{faction_id, title, stages:[{title, unlock_at, gauge?, location_id?, quest_id?,
-    note?, finale_effect?}], requires_joined?, note?}`. `gauge` is "reputation" (default) or
-    "standing" — which faction gauge a stage's `unlock_at` threshold reads. `finale_effect` is an
-    Outcome-shaped world ripple (flag / faction_id+reputation_delta / controller_id+location_id /
-    npc_name / decision_flag / schedule_in_days+schedule_text / narrate) applied ONCE when the
-    stage resolves — the world-changing finale. The faction must already exist; any stage
-    `quest_id` must point at an existing tracked Quest. LINKS the arc to its faction
-    (`questline_arc_id`). The engine evaluates the gauge gates each beat via `check_faction_arcs`;
-    `join_faction` arms the arc; `advance_faction_arc` advances a stage / applies the finale."""
+    """Create or replace an engine-owned FACTION questline (the join->grow->lead state machine)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         parsed = FactionArc.model_validate(dict(arc or {}))
@@ -10258,12 +9632,7 @@ def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
     join->grow->lead loop). Sets the faction `joined=True` and its starting `rank` (default 1 —
     the lowest membership tier), then ARMS any linked FactionArc: a `requires_joined` arc that was
     `locked` opens to `available`, and any stage whose gauge gate ALREADY holds unlocks. Use it
-    when the party formally enlists with / is inducted into a group.
-
-    The faction must already exist (earn some reputation first, or it's seeded by the world).
-    Idempotent on the membership latch (re-joining just re-evaluates the arc). Returns the
-    faction's membership state + any stages that just became available. After this, grow
-    `reputation`/`standing` through service, then `advance_faction_arc` to climb the questline."""
+    when the party formally enlists with / is inducted into a group."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -10313,14 +9682,7 @@ def check_faction_arcs(campaign_id: str, faction_id: str = "") -> dict:
     """Advance faction questlines' gauge gates against the CURRENT state and surface the rank-ups
     that just became live — the faction analog of `check_companion_arc`. Call it each beat: when a
     stage UNLOCKS (the faction's reputation/standing reached its `unlock_at` and the party has
-    joined), play that "you've earned a promotion / the next mission opens" beat.
-
-    Pass `faction_id` to evaluate one faction's arc, or leave blank to evaluate ALL armed arcs. A
-    stage flips locked->available when its gauge gate holds AND the faction is joined; the engine
-    NEVER auto-advances past `available` — taking a stage (active/resolved/failed) and rippling its
-    finale is an EXPLICIT `advance_faction_arc` call (advise-not-act). Idempotent — an
-    already-unlocked stage is not re-reported. Also returns an ADVISORY `nudges` list (available /
-    in-flight questline stages) mirroring the Director's scene-debt surface; read-only, never acts."""
+    joined), play that "you've earned a promotion / the next mission opens" beat."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if faction_id and faction_id not in c.factions:
@@ -10360,19 +9722,7 @@ def advance_faction_arc(
 ) -> dict:
     """Explicitly advance a FACTION questline — take an available stage, resolve a finale, fail a
     branch (the faction analog of `advance_companion_quest_arc`). The engine ripples a resolved
-    stage's world-changing finale ONCE; you narrate it.
-
-    `stage_id` + `stage_status` advances one stage (e.g. `available`->`active`->`resolved`).
-    `status` advances the arc-level lifecycle. `rank` (optional) sets the faction's new membership
-    rank (a promotion). GATE-CHECKED: a stage can only leave `locked`/`available` toward `active`
-    when its gauge gate holds (the party earned it) — advancing an un-earned stage is rejected.
-
-    When a stage moves to `resolved` AND carries a `finale_effect`, the engine applies that ripple
-    through the SAME path the living world uses (a set flag, a faction reputation shift, a
-    control/arrival marker, an optional `decision_flag` that arms a companion flip, an optional
-    follow-on Consequence). IDEMPOTENT: re-resolving an already-resolved stage applies the finale
-    NOTHING further (the `effect_applied` latch) — calling it twice is safe. Returns the updated
-    arc view + what the finale moved (`finale`)."""
+    stage's world-changing finale ONCE; you narrate it."""
     next_stage_status = _companion_quest_status(stage_status, "stage_status") if stage_status else ""
     next_status = _companion_quest_status(status, "status") if status else ""
     if not any((next_stage_status, next_status, rank)):
@@ -10433,16 +9783,7 @@ def record_decision(
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
     `summary` (the decision; pass it as `summary` (canonical) or `decision` (alias) —
     equivalent, `summary` wins if both given), `options` (what was on the table),
-    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
-
-    `sets_flag` (optional, Quest & Arc engine Layer 2) ties this CHOICE to a CONTENT-
-    defined campaign flag it raises — the one-step path for the owner's model ("let the
-    farmer's daughter die → the knight-companion turns on you"). When set, the named flag
-    is flipped True in `Campaign.flags` (same store as `set_flag`), which ESCALATES any
-    `attitude_below` companion agenda whose `decision_flag` matches (the betrayal chance
-    spikes). The flag NAME is yours (e.g. "let_daughter_die", "took_bribe") — never
-    engine-coded. Equivalent to a `set_flag` call alongside the record; omit it (or use
-    plain `set_flag`) when no agenda is gated on the choice. Returns the flag in `flag`."""
+    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
@@ -10477,19 +9818,7 @@ def update_decision(
     """Record the OUTCOME of a decision that was offered earlier but left pending — the DM
     calls this once the party actually commits (F05-5). Sets the decision's ``chosen`` (and
     optionally enriches its ``rationale``); this is the resolution for a
-    ``choice_without_outcome`` scene-debt the Director nudges you about.
-
-    Use it when a previous ``record_decision`` (or a present_events options layout) recorded a
-    choice with ``options`` but no ``chosen`` yet, and the party has now decided. ``chosen``
-    must be non-empty (the whole point is to fill the outcome); pass the option the party took
-    (free text — it need not be one of the listed options, since the player may always act
-    outside the menu). ``rationale`` is optional and APPENDED to any existing rationale, never
-    overwriting it.
-
-    Narrow + additive: it mutates ONLY ``chosen``/``rationale`` on an existing Decision under
-    the campaign lock (engine = sole writer); it never re-orders, deletes, or invents a
-    decision, and it does not touch flags (use ``record_decision(sets_flag=)`` for that).
-    Returns the updated decision view."""
+    ``choice_without_outcome`` scene-debt the Director nudges you about."""
     if not chosen or not chosen.strip():
         raise ValueError("update_decision needs a non-empty `chosen` — what did the party decide?")
     with campaign_lock(campaign_id):
@@ -10517,14 +9846,7 @@ def present_events(campaign_id: str) -> dict:
     beat like `check_consequences` / `check_companion_arc`: it returns the unresolved Events
     whose CONTRACT-SAFE trigger holds (a set flag, a faction's reputation reaching a level, or a
     reached day — never fiction), so you can drop a soft nudge ("a man in Flaming-Fist colors
-    falls into step beside you...") and lay out its tagged options.
-
-    Each returned Event carries its `prompt` (the situation you voice), its `options` (tagged
-    choices the player picks — relay them via the parley surface; a free-form path is ALWAYS
-    also allowed), and any `anchor_npc_id` (bind the scene to that canon NPC). READ-ONLY: it
-    never fires or mutates anything; resolved Events are skipped (idempotent). When the player
-    picks an option, call `resolve_event(campaign_id, event_id, option_label)` to apply its
-    deterministic ripple — that is the engine resolution; you narrate the result."""
+    falls into step beside you...") and lay out its tagged options."""
     c = _require(campaign_id)
     available = events_mod.present(c)
     return {
@@ -10551,20 +9873,7 @@ def resolve_event(campaign_id: str, event_id: str, option_label: str) -> dict:
     (Quest & Arc engine, Layer 3) — the engine ripples; you narrate. Call this AFTER the player
     picks one of the options `present_events` laid out (a free-form pick the player invents is
     NOT an Event option — adjudicate that yourself, then record_decision / adjust_reputation as
-    usual).
-
-    Looks up the Event by `event_id` and the chosen `option_label` (case-insensitive), then
-    applies that option's `Outcome` through the SAME engine path the living world uses: a set
-    `flag`, a clamped faction `reputation_delta`, a `control:`/`arrival:` marker, an optional
-    follow-on Consequence scheduled `schedule_in_days` out (the thread lingers), and — the
-    decision-gated flip — an optional `decision_flag` set True in `Campaign.flags`, which ARMS a
-    matching `attitude_below` companion agenda (the owner's "take the bribe -> the knight turns";
-    same store as `record_decision(sets_flag=...)`). Then marks the Event resolved.
-
-    IDEMPOTENT: re-resolving an already-resolved Event is a no-op (applies nothing) — calling it
-    twice is safe. Returns the narrated line + what moved (`flags_set`, `rep_shift`, `scheduled`,
-    `decision_flag`) for you to weave. If you set a `decision_flag`, follow up with
-    `check_companion_arc` to see whether the spiked betrayal fires."""
+    usual)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         event = c.events.get(event_id)
@@ -10615,29 +9924,7 @@ def encounter_difficulty(party_levels: list[int], monster_xps: list[int]) -> dic
 @mcp.tool()
 def roll_wandering_encounter(campaign_id: str, region: str = "", difficulty: str = "medium") -> dict:
     """EXPLICITLY stage a Kingmaker-style wandering encounter (the manual trigger for
-    the DM, a QA harness, or the "Stir the world" UI button).
-
-    Unlike the automatic checks on time-advancing `travel_to` / `long_rest` (which only
-    fire on a probabilistic per-region roll), this ALWAYS stages an encounter. It picks a
-    TYPED encounter for the region (`wander.pick_typed_encounter`) — most are NOT fights:
-
-      * ``{type:"combat", ...}`` — region foe(s) sized to the LIVING party's XP budget
-        for `difficulty`, spawned as monster Characters anchored at the party's current
-        location, plus `surprise`, `encounter_xp`, and an `outlook`
-        ``{band, overmatch_ratio, must_offer_out, guidance}`` (the `encounter_outlook`
-        math, folded in): narrate the ambush, honor `surprise`, surface a cost-bearing
-        OUT when `must_offer_out`, then `start_combat` with the returned foe ids. (Combat
-        is never auto-started.)
-      * ``{type:"skill", challenge, skill, dc}`` — a region obstacle; run `skill_check`.
-      * ``{type:"social", who, stance, skill, dc}`` — a road-meeting; voice the NPC + a
-        Parley moment, then `social_check`.
-      * ``{type:"hazard", peril, save_or_skill, dc}`` — a danger; run a save or skill.
-      * ``{type:"boon", find}`` — a small positive find; just narrate it.
-
-    Every payload carries `staged`, `type`, and `region`. `region` defaults to the
-    party's current location's region. Returns ``{"staged": False}`` only if a combat
-    pick's foes all failed to spawn (an empty/all-down party is floored to level 1, and a
-    combat pick that can't size degrades to a boon, so it effectively always stages)."""
+    the DM, a QA harness, or the "Stir the world" UI button)."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if c.combat.active:
@@ -10849,54 +10136,14 @@ def set_house_rules(campaign_id: str, patch: dict) -> dict:
 
 @mcp.tool()
 def get_campaign_director(campaign_id: str) -> dict:
-    """Campaign Director — advisory beat-start tool (issue #72).
-
-    ADVISORY ONLY. Detects structural story debts from the current campaign state
-    and returns the top 3 (by severity) with a one-line nudge each. Read-only:
-    the engine NEVER acts on debts, mutates fiction, or forces a resolution.
-
-    Call this at the start of a beat to see what the campaign structurally OWES.
-    The DM reads the advisory and CHOOSES what to honour. One nudge at a time —
-    this is not a mandatory checklist. Resolution is always explicit via
-    resolve_scene_debt.
-
-    Returns::
-
-        {
-            "debts": [<top 3 SceneDebt dicts, highest severity first>],
-            "advisory": ["one-line nudge per debt"],
-            "total_debts": <int>,
-        }
-
-    An empty ``debts`` list means no structural debts — today's behavior.
-    """
+    """Campaign Director — advisory beat-start tool (issue #72)."""
     c = _require(campaign_id)
     return director.compute(c)
 
 
 @mcp.tool()
 def get_scene_debts(campaign_id: str) -> dict:
-    """Campaign Director — raw scene-debt list (issue #72).
-
-    ADVISORY ONLY. Returns the full list of structural scene-debts detected from
-    the current campaign state — all kinds and severities, unranked. Use
-    get_campaign_director for the prioritised top-3 advisory instead.
-
-    Read-only: the engine NEVER acts on debts or mutates fiction.
-
-    Also includes any previously-resolved debts persisted on the campaign snapshot
-    (resolved=True) as an audit trail, accessible from Campaign.scene_debts.
-    Live-detected debts (from detect()) are merged with the resolved persisted ones
-    so the DM can see what was owed and what was cleared.
-
-    Returns::
-
-        {
-            "live_debts": [<all currently detected SceneDebt dicts>],
-            "resolved_debts": [<SceneDebt dicts with resolved=True from snapshot>],
-            "total_live": <int>,
-        }
-    """
+    """Campaign Director — raw scene-debt list (issue #72)."""
     c = _require(campaign_id)
     # F05-4: live() = detect() minus the still-snoozed resolved debts, so a debt the DM
     # cleared via resolve_scene_debt stops re-surfacing in this list every beat.
@@ -10911,20 +10158,7 @@ def get_scene_debts(campaign_id: str) -> dict:
 
 @mcp.tool()
 def resolve_scene_debt(campaign_id: str, debt_id: str, evidence: str) -> dict:
-    """Campaign Director — mark a scene-debt resolved (issue #72).
-
-    EXPLICIT RESOLUTION ONLY. The DM calls this when they have addressed a debt
-    in play (e.g. called add_quest for a hook_untracked, surfaced a consequence,
-    gave an NPC a line). The engine NEVER auto-resolves debts.
-
-    ``debt_id`` must match the ``id`` field of a SceneDebt in the live-detected
-    list (from get_scene_debts). ``evidence`` is a DM-written note explaining
-    what was done (required; must be non-empty). The resolved debt is persisted
-    on the campaign snapshot (scene_debts) as an audit trail with resolved=True
-    and the provided evidence.
-
-    Returns the persisted SceneDebt record.
-    """
+    """Campaign Director — mark a scene-debt resolved (issue #72)."""
     if not evidence or not evidence.strip():
         raise ValueError("evidence is required — describe what was done to resolve this debt.")
 
@@ -11001,27 +10235,7 @@ def set_seed_param(campaign_id: str, param: str, value, force: bool = False) -> 
     """Set ONE World-Seed parameter on a campaign — the OpenWorlds Seed screen's mutable
     write-lane (#266). The engine is the SOLE WRITER: this mutates under campaign_lock then
     save_campaign. ADDITIVE — every seed field defaults to today's behavior, so old snapshots
-    round-trip and an unset param reads as its default.
-
-    Mutability (the matrix is fixed; ``get_seed_surface`` in the viewer mirrors it):
-
-    - FREE (cosmetic / DM-guidance, always settable): tone, narration, gm_strictness,
-      chronicle_voice, anachronism, chronicler_notes.
-    - GATED (rules-affecting / retroactive): difficulty, permadeath, fate_dice,
-      item_destruction. Settable freely BEFORE a session has started (Campaign.session_ids
-      is empty). ONCE a session has started the change is REFUSED (applied=False, a
-      ``warning`` explains why) unless ``force=True``, in which case it applies AND the
-      return carries a ``warning`` describing the retroactive risk so the UI can confirm.
-      (``difficulty`` routes to house_rules.difficulty; it is not stored on seed_params.
-      Note permadeath only governs FUTURE death handling — it never resurrects an
-      already-dead PC; the warning says so.)
-    - LOCKED: system (the ruleset). A whole-ruleset swap post-seed is a re-seed, not a param
-      edit — this raises.
-
-    ``value`` is validated against the field's type (a bad Literal/bool raises). Returns::
-
-        {"id", "param", "value", "applied": bool, "warning": str, "mutability": "free|gated|locked"}
-    """
+    round-trip and an unset param reads as its default."""
     param = str(param).strip()
     cls = _seed_param_class(param)
     if not cls:
@@ -11441,71 +10655,7 @@ def scene_context(
     recent_narration: int = 0,
 ) -> dict:
     """ONE-CALL beat re-ground — the whole start-of-beat read cluster in a single
-    round-trip (latency collapse; additive — the individual tools all still exist).
-
-    Returns, in one payload, exactly what the DM reads at the top of every beat
-    (SKILL.md step 1) so it makes 1 call instead of 3–4. Field ordering is STABLE
-    and durable-first (the threads that persist across the campaign come before the
-    volatile clock/HP in ``state``) so a re-grounding DM — and prompt caches — see
-    the unchanging spine first:
-
-      - ``durable``   — the continuity-CRITICAL standing threads pinned so a
-                        transcript-free (lean) re-ground loses NOTHING: every
-                        ``open_quests`` (+ its still-open objectives),
-                        ``npc_relationships`` the party has MET (approval +
-                        relationship tags), each companion's standing bond
-                        (``companions``: approval / arc / sealed betrayal agenda),
-                        ``factions`` (reputation + standing gauges), and the set
-                        ``flags``. Always present; empty collections == today.
-      - ``director``  — get_campaign_director(campaign_id): the top structural
-                        debts the campaign OWES right now (advisory, read-only).
-      - ``events``    — the THROTTLED stumble-into decisionals (SYN-04): at most ONE
-                        not-yet-presented Event surfaces in FULL per beat (``events``);
-                        the engine stamps its ``first_presented_day`` so a later beat
-                        renders it as a compact STUB (``presented``) instead of re-sending
-                        its full ~1KB prose every turn; the rest queue as ``manual_queued``
-                        (a count, rotating in over later beats). Resolve any of them by id
-                        via ``resolve_event``. The standalone ``present_events`` tool still
-                        returns the FULL, read-only payload when you want every option.
-      - ``consequences_due`` — the authored Consequences that come DUE this beat, FIRED
-                        (and surfaced) here so the deferred world actually moves (F14-4).
-                        Always present; ``[]`` when nothing is due. Idempotent: each fires
-                        exactly once (worldsim thread-beats are left for ``world_tick``).
-      - ``companion_arcs`` — check_companion_arc(campaign_id): bonds that just
-                        turned / a ``betrayal_warning`` to foreshadow. (This is the
-                        one sub-call that persists arc progress — same effect as
-                        calling the tool directly; idempotent across beats.)
-      - ``recent_narration`` — present ONLY when ``recent_narration`` (the param)
-                        is > 0: the last N player-facing beats (narration/dialogue)
-                        across ALL of the campaign's session logs, chronological,
-                        each ``{text, speaker?}``. This is the lean-beat memory: in
-                        fast-turn mode the beat runs with NO prior transcript AND
-                        each beat opens a fresh session, so reading campaign-wide
-                        (not just the current session) is what makes this prose
-                        tail (plus ``durable``) the actual story-so-far.
-                        Default 0 = omitted (no log read, today's behavior).
-      - ``recall``    — present ONLY when ``recall_query`` is non-empty: the same
-                        fuzzy memory search recall(query, limit) returns. Pass it
-                        when the moment touches the past ("have we met this NPC?",
-                        "what did we decide about the cult?"); leave it blank
-                        otherwise and no recall is run (no wasted work).
-      - ``state``     — get_state(campaign_id): scene, party vitals, day/time,
-                        active quests, combat status, pacing_mode, seed_params.
-                        LAST because it carries the volatile values (clock, HP).
-
-    Read-MOSTLY: ``durable`` / ``recent_narration`` / ``recall`` / ``state`` are pure
-    reads/derivations. Three sub-paths persist engine-mutated progress under the
-    campaign_lock — the same shape check_companion_arc has always had on this bundle:
-    ``companion_arcs`` saves arc progress, ``events`` stamps each surfaced Event's
-    ``first_presented_day`` (so it stops re-riding every beat, SYN-04), and
-    ``consequences_due`` marks fired the consequences it surfaces (so the deferred world
-    actually moves AND never re-fires, F14-4). Each save is guarded — it happens only when
-    that sub-path actually changed state, so a beat with nothing to fire/stamp writes only
-    what check_companion_arc already wrote. Use this every beat in place of the separate
-    get_state / get_campaign_director / present_events / check_companion_arc /
-    check_consequences calls. For a returning NPC you still want recall_npc(npc_id) /
-    get_scene on arrival — those stay their own calls.
-    """
+    round-trip (latency collapse; additive — the individual tools all still exist)."""
     # Each delegate takes (and fully releases) the per-campaign flock before the
     # next runs — sequential, never nested — so this is deadlock-free even though
     # check_companion_arc acquires the lock. (Nesting campaign_lock in one process
@@ -11548,51 +10698,13 @@ def persist_beat(
     """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md
     step 7) into a single round-trip AND a single disk write (latency collapse;
     additive — log_event / remember / record_decision / advance_time all still
-    exist for one-off use).
-
-    Persistence is OFF the player's critical path: write the player-facing prose
-    FIRST, then make ONE persist_beat call LAST with everything the beat produced.
-    N writes become 1 MCP hop and 1 atomic snapshot save (the individual tools each
-    take the lock + fsync separately; this takes them ONCE).
-
-    All fields are optional — pass only what the beat produced; an empty call is a
-    no-op. Order of application: events -> memories -> decision, all inside ONE
-    campaign_lock + ONE save, then (if given) advance_time as its OWN locked call.
-
-      - ``events``   — list of beat log entries, each a dict
-                       ``{"kind","text","speaker"?,"payload"?}`` (kind:
-                       narration|dialogue|roll|system|combat). Same as log_event.
-                       NOTE: player-facing narration/dialogue should be STREAMED
-                       live via log_event DURING the turn (the viewer tails the
-                       session log mid-beat), NOT batched here — passing prose you
-                       already streamed re-logs it twice. Leave events empty unless
-                       you have a record row you did NOT already log live.
-      - ``memories`` — list of facts to append, each
-                       ``{"character_id","fact"}`` (``character_id`` also accepts the
-                       ``id``/``npc_id`` aliases and is resolved tolerantly — a slug or
-                       a name finds the character, an unknown id raises with a
-                       did-you-mean). Same as remember (de-duped per character). Target
-                       the COMPANION's id after a character beat AND the PC's id for what
-                       the hero learns — symmetric memory.
-      - ``decision`` — a single dict ``{"summary", "options"?, "chosen"?,
-                       "rationale"?, "actor_ids"?, "sets_flag"?}``. Same as
-                       record_decision (records the choice; sets_flag arms a gated
-                       companion agenda). Omit when the beat had no real decision.
-      - ``advance``  — a dict ``{"phases"?, "to"?, "note"?}`` to move the in-world
-                       clock when the fiction moved time forward. Same as
-                       advance_time (no-op / skipped during combat). For a real
-                       JOURNEY or a rest keep using travel_to(advance_time=True) /
-                       long_rest — those are their own beats, not a persist step.
-
-    Returns a per-section summary: ``{"logged":[...], "remembered":[...],
-    "decision":{...}|None, "time":{...}|None}``. Each ``remembered`` row is the slim
-    ``{"id","fact","memory_count"}`` (the applied fact + the character's new fact count),
-    not the whole memory list.
-
-    The whole batch is VALIDATED before the first write: an unresolvable memories id, a
-    text-less events item, or a bad decision raises BEFORE any session-log row is
-    appended, so a failed call leaves no partial chronicle (retry-safe).
-    """
+    exist for one-off use). Pass any subset of:
+    ``events`` (log rows ``{"kind","text","speaker"?,"payload"?}``; leave empty for prose
+    you already streamed live via log_event — re-passing double-logs it),
+    ``memories`` (``[{"character_id","fact"}]``; character_id accepts ``id``/``npc_id``
+    aliases, resolved tolerantly), ``decision`` (one ``{"summary","options"?,"chosen"?,
+    "rationale"?,"actor_ids"?,"sets_flag"?}``), and ``advance`` (``{"phases"?,"to"?,"note"?}``
+    to move the clock; skipped during combat)."""
     logged: list[dict] = []
     remembered: list[dict] = []
     decision_out: Optional[dict] = None
