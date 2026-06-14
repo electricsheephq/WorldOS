@@ -87,10 +87,35 @@ def has_corpus(world_id: str) -> bool:
     return bool(_pages(world_id))
 
 
+# F10-1 — tier-0 noise floor. An authored (tier-0) page keeps absolute precedence over the wiki
+# tier only if its FTS |rank| is at least this FRACTION of the best-matching page overall — i.e.
+# it must match RELATIVE to the strongest hit this query produced. The floor is intentionally
+# relative (not a fixed absolute epsilon): bm25 |rank| magnitudes are corpus-size-dependent (in a
+# 2-page corpus every match ranks ≈ 2e-6; in the 356-page shipped corpus genuine matches rank
+# ≈ 5.8), so an absolute cutoff would wrongly demote a genuine authored page in a tiny corpus.
+# The fraction is small (0.01) so it ONLY catches near-zero noise: a pure-stopword match ranks
+# ~6 ORDERS OF MAGNITUDE below a real match (the "the Counting House" repro: noise ≈ 2e-6 vs best
+# ≈ 8.97 → ratio ~3e-7 ≪ 0.01, demoted), while a genuine-but-modest authored match (≈ 5.8, ratio
+# ~0.65) is comfortably kept. best == 0 (every page matched every token) → floor 0 → no demotion
+# → today's behavior.
+_NOISE_FLOOR_FRACTION = 0.01
+
+
 def _safe_match(query: str) -> str:
-    """OR-of-quoted-tokens (relevance, not all-terms-required) — same fix as recall."""
+    """OR-of-quoted-tokens (relevance, not all-terms-required) — same fix as recall.
+
+    F10-1: DROP sub-2-char tokens. A possessive query like ``"Wyrm's Crossing"`` tokenizes to
+    ``["Wyrm", "s", "Crossing"]``; the bare 1-char ``"s"`` matches the apostrophe-s of EVERY
+    page and drags unrelated pages above the dedicated one (the possessive-query failure class).
+    Single letters carry no retrieval signal, so we drop ``len < 2`` tokens — UNLESS that would
+    empty the match (a degenerate all-short query), in which case we keep them so the search
+    still runs rather than silently returning nothing. A query with no word-chars stays empty,
+    exactly as before."""
     toks = re.findall(r"[A-Za-z0-9]+", query or "")
-    return " OR ".join(f'"{t}"' for t in toks)
+    kept = [t for t in toks if len(t) >= 2]
+    if not kept:
+        kept = toks  # all tokens were short — don't empty the match; search them as-is
+    return " OR ".join(f'"{t}"' for t in kept)
 
 
 def _excerpt(text: str, tokens: list[str], width: int = 600) -> str:
@@ -201,26 +226,48 @@ def lookup_lore(
             [(i, p["title"], p["text"], p["source"], p.get("tier", 1)) for i, p in enumerate(pages)],
         )
 
-        def _match_tier(tier: int, n: int) -> list[int]:
+        def _match_tier(tier: int, n: int) -> list[tuple[int, float]]:
             # Filter on the UNINDEXED tier column alongside MATCH so authored matches
             # are found regardless of how many wiki pages also match (a bm25 over-fetch
             # over a 250-page corpus would otherwise bury the few short authored pages).
+            # Returns (rowid, rank) so the caller can apply the tier-0 NOISE FLOOR (F10-1):
+            # FTS `rank` is negative; a smaller |rank| ≈ a weaker match (≈0 == matched only a
+            # stopword), and we use |rank| to decide whether a tier-0 hit genuinely matches.
             try:
-                return [r[0] for r in conn.execute(
-                    "SELECT rowid FROM lore WHERE lore MATCH ? AND tier = ? ORDER BY rank LIMIT ?",
+                return [(r[0], r[1]) for r in conn.execute(
+                    "SELECT rowid, rank FROM lore WHERE lore MATCH ? AND tier = ? ORDER BY rank LIMIT ?",
                     (match, tier, n),
                 ).fetchall()]
             except sqlite3.OperationalError:
                 return []
 
         cap = max(limit, 1)
-        # Over-fetch each tier so the de-confliction can demote/drop contradicting hits
-        # and still fill `cap` with clean ones (without it, dropping a top hit would just
-        # shrink the result instead of promoting the next clean page).
-        fetch = cap * 3 if supersedes else cap
-        ids = _match_tier(0, fetch) + _match_tier(1, fetch)  # authored canon first, then wiki to fill
+        # Over-fetch each tier so the de-confliction (and the F10-1 noise-floor demotion below)
+        # can drop/demote a hit and still fill `cap` with clean ones — without it, dropping a
+        # top hit would just shrink the result instead of promoting the next clean page. (The
+        # noise floor needs the over-fetch too: a demoted noise-rank tier-0 page must be able to
+        # be replaced by a genuinely-matching tier-1 page that the old `fetch=cap` never read.)
+        fetch = cap * 3
+        t0 = _match_tier(0, fetch)  # authored canon
+        t1 = _match_tier(1, fetch)  # ingested wiki
     finally:
         conn.close()
+
+    # F10-1 — tier-0 NOISE FLOOR (tighten the authored-canon precedence to GENUINE matches).
+    # The tier-0-first guarantee exists so a short authored page isn't bm25-buried by the
+    # 351-page wiki tier (the post-canon de-confliction guard). But a stopword-heavy query
+    # ("the Counting House") makes a few authored pages match at NOISE rank (≈0, on "the"
+    # alone), and the old absolute precedence let those noise matches fill the cap and bury the
+    # dedicated wiki page. We keep tier-0-FIRST only for authored pages whose |rank| clears a
+    # noise floor — within a bounded fraction of the best-matching page overall, or a tiny
+    # absolute epsilon — and DEMOTE the rest below the wiki tier (kept as a fallback, never
+    # dropped). A clean query (every tier-0 match is genuine) leaves `weak0` empty, so the order
+    # reduces to today's `t0 + t1` and the output is byte-identical.
+    best_overall = max((abs(r) for _, r in (t0 + t1)), default=0.0)
+    floor = _NOISE_FLOOR_FRACTION * best_overall
+    strong0 = [rid for rid, rank in t0 if abs(rank) >= floor]
+    weak0 = [rid for rid, rank in t0 if abs(rank) < floor]
+    ids = strong0 + [rid for rid, _ in t1] + weak0  # genuine authored, then wiki, then noise authored
     tokens = re.findall(r"[A-Za-z0-9]+", query or "")
     subs = [s.lower() for s in (supersedes or []) if str(s).strip()]
 
