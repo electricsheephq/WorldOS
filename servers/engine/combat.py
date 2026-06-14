@@ -92,6 +92,19 @@ def double_dice(expr: str) -> str:
     return _DICE.sub(lambda m: f"{(int(m.group(1) or 1)) * 2}d{m.group(2)}", expr)
 
 
+def crit_extra_dice(expr: str) -> str:
+    """The expression for the EXTRA dice a crit adds on top of an ALREADY-ROLLED value
+    (the Battle Master superiority-die case, #213/A). SRD Critical Hits: the maneuver's
+    superiority die is "other damage dice" and doubles on a crit — but the die was already
+    rolled once when the maneuver was declared, so a crit needs only ONE MORE copy of the
+    dice (flat modifiers never double). '1d8' -> '1d8'; '2d6' -> '2d6'; '1d8+3' -> '1d8';
+    a flat-only or empty expression has no dice to repeat -> '' (nothing to roll). Pure."""
+    dice_only = [
+        f"{int(c or 1)}d{s}" for c, s in _DICE.findall(expr or "")
+    ]
+    return "+".join(dice_only)
+
+
 def attack_modifiers(attacker: Character, target: Character, is_ranged: bool = False) -> tuple[bool, bool]:
     """(advantage, disadvantage) implied by the combatants' conditions AND any
     advantage-granting active_effect on the TARGET (Guiding Bolt's "next attack against it

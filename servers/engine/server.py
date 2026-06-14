@@ -4574,6 +4574,9 @@ def attack(
     is_ranged: bool = False,
     is_reaction: bool = False,
     damage_rolls: list[dict] | None = None,
+    maneuver: str = "",
+    maneuver_resource: str = "superiority_dice",
+    maneuver_damage_type: str = "",
     character_id: str = "",
     npc_id: str = "",
     id: str = "",
@@ -4583,7 +4586,18 @@ def attack(
     natural 20 and auto-misses on a natural 1, doubles damage dice on a crit, and
     applies the damage. Condition-based advantage/disadvantage is detected (set
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
-    combined with the explicit flags (they cancel if both apply)."""
+    combined with the explicit flags (they cancel if both apply).
+
+    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack')
+    to declare a maneuver ATOMICALLY on this strike — the engine rolls + spends ONE
+    superiority die ONLY when the attack HITS (SRD: the die is spent "when you hit"),
+    folds it into the damage, and DOUBLES it on a crit (SRD Critical Hits: the
+    superiority die is "other damage dice"). A MISS spends nothing. ``maneuver_resource``
+    is the die pool to spend from (default 'superiority_dice'); ``maneuver_damage_type``
+    overrides the bonus's type (default: the weapon's). Empty ``maneuver`` == today's
+    behavior. (The older two-step path — use_resource(superiority_dice, maneuver=…) then
+    attack — still works and now also crit-doubles; declaring via attack() is preferred
+    because a miss no longer burns the die.)"""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -4670,6 +4684,29 @@ def attack(
         man_bonus = attacker.pending_damage_bonus
         if man_bonus is not None:
             attacker.pending_damage_bonus = None
+        # ATOMIC maneuver (#213/B): a maneuver declared ON this attack rolls + spends its
+        # superiority die ONLY when the strike HITS (SRD: spent "when you hit"). Validate the
+        # pool NOW (before the roll) so a bad pool surfaces cleanly without burning state, but
+        # defer the spend/roll until after hit/crit is known. A refused maneuver does NOT void
+        # the attack — the strike still lands; only the bonus is dropped (with maneuver_error).
+        # Empty ``maneuver`` == today's behavior; the two paths are mutually exclusive (a
+        # declared-here maneuver wins over any pending bonus, which would be a double-declare).
+        man_decl = maneuver.strip()
+        man_decl_error = None
+        man_res = None
+        if man_decl:
+            man_res = attacker.class_resources.get(maneuver_resource)
+            if man_res is None:
+                man_decl_error = f"{attacker.name} has no {maneuver_resource!r} pool"
+            elif man_res.max - man_res.used < 1:
+                man_decl_error = f"no {maneuver_resource} left to spend on {man_decl}"
+            elif not man_res.size.strip():
+                man_decl_error = (
+                    f"{maneuver_resource!r} is a point pool (no die) — a damage maneuver "
+                    f"needs a die pool like Superiority Dice"
+                )
+            if man_decl_error is not None:
+                man_decl = ""  # refused: fall through as a plain attack, surface the error below
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
@@ -4768,16 +4805,44 @@ def attack(
         # clears it but is Character-pure and can't free the victim) — see the release after.
         was_conc_target = target.concentration
         if hit:
-            # A pending DAMAGE-maneuver bonus (#213) folds the already-rolled superiority die
-            # into THIS strike as one extra typed component. The die is NOT re-rolled and NOT
-            # crit-doubled (5e: only weapon dice double; the maneuver die is added once),
-            # which is exactly what apply_damage_components does — it takes pre-rolled amounts.
-            # Defaults to the weapon's damage_type when the maneuver didn't specify one, so the
-            # bonus shares the strike's resistance treatment unless typed otherwise.
+            # ATOMIC maneuver (#213/B): the strike HIT, so NOW spend one superiority die and
+            # roll it (SRD: the die is spent "when you hit"). Synthesize the same
+            # PendingDamageBonus shape the two-step path produces so the fold/surface code
+            # below is shared. Validated above; man_res/maneuver_resource are live here.
+            if man_decl and man_res is not None:
+                man_res.used += 1
+                die_expr = f"1{man_res.size.strip()}"
+                man_roll = dice_mod.roll(die_expr)
+                man_bonus = PendingDamageBonus(
+                    amount=max(0, man_roll.total),
+                    source=man_decl,
+                    resource=maneuver_resource,
+                    expr=die_expr,
+                    detail=man_roll.detail,
+                    damage_type=maneuver_damage_type.strip(),
+                )
+            # CRIT doubles the superiority die (#213/A). SRD Critical Hits: the maneuver die is
+            # "other damage dice" and doubles on a crit. The die was already rolled once (at
+            # spend time, whichever path), so a crit rolls ONE MORE copy of the dice (flat mods
+            # never double) and adds it. man_extra_detail is surfaced so the DM sees the bump.
+            man_crit_doubled = False
+            man_extra = 0
+            man_extra_detail = ""
+            if man_bonus is not None and is_crit:
+                extra_expr = combat.crit_extra_dice(man_bonus.expr)
+                if extra_expr:
+                    man_extra_roll = dice_mod.roll(extra_expr)
+                    man_extra = max(0, man_extra_roll.total)
+                    man_extra_detail = man_extra_roll.detail
+                    man_crit_doubled = True
+            # The total maneuver damage folded into THIS strike: the spend-time die plus any
+            # crit-extra. None == no maneuver. Defaults to the weapon's damage_type so the
+            # bonus shares the strike's resistance treatment unless the maneuver typed it.
+            man_total = (man_bonus.amount + man_extra) if man_bonus is not None else 0
             man_part = None
-            if man_bonus is not None and man_bonus.amount > 0:
+            if man_bonus is not None and man_total > 0:
                 man_part = {
-                    "amount": man_bonus.amount,
+                    "amount": man_total,
                     "type": man_bonus.damage_type or damage_type,
                 }
             if damage_rolls or man_part is not None:
@@ -4806,13 +4871,16 @@ def attack(
                     )
                     parts_for_apply.append({"amount": ctotal, "type": ct})
                 if man_part is not None:
-                    # The maneuver die is a flat pre-rolled add (no expr to re-roll/double).
+                    # The maneuver die was pre-rolled (spend time) and, on a crit, doubled by
+                    # rolling one more die above — so it's a flat add here (the total, already
+                    # crit-aware). apply_damage_components takes pre-rolled amounts as-is.
                     comp_results.append({
                         "type": man_part["type"],
-                        "total": man_bonus.amount,
+                        "total": man_total,
                         "expr": man_bonus.expr,
                         "detail": man_bonus.detail,
                         "maneuver": man_bonus.source,
+                        "crit_doubled": man_crit_doubled,
                     })
                     parts_for_apply.append(man_part)
                 outcome = combat.apply_damage_components(
@@ -4841,14 +4909,22 @@ def attack(
                 result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             if man_bonus is not None:
                 # Surface the maneuver's contribution explicitly so the DM/log sees the die
-                # that landed (and that it WAS applied), distinct from the weapon dice.
-                result["maneuver_damage"] = {
+                # that landed (and that it WAS applied), distinct from the weapon dice. On a
+                # crit, ``rolled`` is the DOUBLED total (spend-time die + crit-extra) and
+                # crit_doubled flags it so the distilled transcript shows the doubling (#213/A).
+                md = {
                     "maneuver": man_bonus.source,
                     "die": man_bonus.expr,
-                    "rolled": man_bonus.amount,
+                    "rolled": man_total,
                     "detail": man_bonus.detail,
-                    "applied": man_bonus.amount > 0,
+                    "applied": man_total > 0,
+                    "crit_doubled": man_crit_doubled,
                 }
+                if man_crit_doubled:
+                    md["base_rolled"] = man_bonus.amount
+                    md["crit_extra"] = man_extra
+                    md["crit_extra_detail"] = man_extra_detail
+                result["maneuver_damage"] = md
             result["target_state"] = outcome
             # F3-6: if this strike downed/killed a concentrating caster, free its held targets
             # NOW (Hold Person paralysis, an allied Bless child) — the combat layer cleared the
@@ -4872,6 +4948,24 @@ def attack(
                 "applied": False,
                 "note": "attack missed — superiority die spent but no damage added",
             }
+        elif man_decl:
+            # ATOMIC maneuver (#213/B) on a MISS: NO die was spent (the spend happens only
+            # inside the hit branch). Surface that the maneuver was declared but cost nothing —
+            # the whole point of moving the spend onto the attack ("spent only when you hit").
+            result["maneuver_damage"] = {
+                "maneuver": man_decl,
+                "applied": False,
+                "spent": False,
+                "note": (
+                    "attack missed — maneuver declared but NO superiority die was spent "
+                    "(the die is spent only on a hit)"
+                ),
+            }
+        # If the declared maneuver was REFUSED (bad/point pool), surface why — the strike still
+        # resolved as a plain attack (no die spent, no bonus folded). Additive: only present on
+        # an invalid maneuver= declaration.
+        if man_decl_error is not None:
+            result["maneuver_error"] = man_decl_error
         # ON-HIT RIDER RESOLUTION (#186). An attack-roll spell (Guiding Bolt) recorded a
         # PENDING rider on the caster at cast_spell time instead of writing its timed effect
         # to the target. This attack resolves that spell attack when it's the caster striking
