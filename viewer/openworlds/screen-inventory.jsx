@@ -553,7 +553,14 @@ function itemStatRows(item) {
     const v = item.versatile ? `${dmg} (${item.versatile} two-handed)` : dmg;
     rows.push({ k: "Damage", v });
   }
-  if (typeof item.ac === "number") rows.push({ k: "Armor Class", v: String(item.ac) });
+  // F09-6 armor dex rule: the server composes acDisplay from REAL fields — medium reads
+  // "AC 14 + DEX (max +2)", a shield reads its bonus "+2" (not the misleading flat "AC 2").
+  // Fall back to the bare AC only for an older surface that predates acDisplay.
+  if (item.acDisplay) {
+    rows.push({ k: item.armorCategory === "shield" ? "Shield" : "Armor", v: item.acDisplay });
+  } else if (typeof item.ac === "number") {
+    rows.push({ k: "Armor Class", v: String(item.ac) });
+  }
   if (item.attunement) rows.push({ k: "Attunement", v: "Required" });
   return rows;
 }
@@ -713,12 +720,14 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
         </>
       )}
 
-      {/* Stat block — Weight/Value always (catalog-backfilled), plus the REAL combat stats the
-          read-model now surfaces from the SRD item catalog: damage dice + type for weapons (with
-          the Versatile two-handed die folded in, #756), base AC for armor/shields. A field absent
-          from the catalog record is simply not rendered — never a fabricated number (e.g. a
-          free-text "Longsword +1" the catalog can't resolve shows weight/value only). Built from
-          the pure itemStatRows() so the harness drives the exact shipped rows. */}
+      {/* Stat block — Weight/Value always, plus the REAL combat stats the read-model surfaces:
+          damage dice + type for weapons (Versatile two-handed die folded in, #756), and the
+          F09-6 armor line for armor/shields (medium "AC 14 + DEX (max +2)", a shield's bonus
+          "+2"). The stats come from the item's OWN persisted fields first (F09-7 / #756),
+          falling back to the SRD catalog only for a datum it lacks — so a renamed/enchanted
+          "Longsword +1" the catalog can't resolve still shows its real numbers, while an item
+          with no stat renders no row (never a fabricated number). Built from the pure
+          itemStatRows() so the harness drives the exact shipped rows. */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 14 }}>
         {statRows.map((r) => <StatLine key={r.k} k={r.k} v={r.v} />)}
       </div>

@@ -946,11 +946,13 @@ function StatLine({ k, v }) {
 }
 
 // A short stat line for an equipped item's tooltip / slot caption from the read-model's
-// REAL catalog stats — "1d8 slashing" for a weapon, "AC 18" for armor — or "" when the
-// item is a catalog-miss (then we show just its name; never a fabricated stat).
+// REAL stats — "1d8 slashing" for a weapon, "AC 14 + DEX (max +2)" for armor, a shield's
+// bonus "+2" — or "" when neither the item's persisted stats nor the catalog have one (then
+// we show just its name; never a fabricated stat). acDisplay carries the F09-6 dex rule.
 function equippedStat(it) {
   if (!it) return "";
   if (it.damage) return [it.damage, it.damageType].filter(Boolean).join(" ");
+  if (it.acDisplay) return it.acDisplay;
   if (typeof it.ac === "number") return `AC ${it.ac}`;
   return "";
 }
