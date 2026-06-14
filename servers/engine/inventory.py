@@ -22,7 +22,8 @@ _COINS_PER_POUND = 50  # SRD variant: 50 coins weigh 1 lb
 # the audit's watch-item is that _split_one MUST carry these or a split stack loses them.
 _STAT_FIELDS = (
     "kind", "rarity", "cost_gp", "damage", "damage_type",
-    "ac", "armor_category", "ac_dex_mod", "ac_dex_cap", "properties",
+    "ac", "armor_category", "ac_dex_mod", "ac_dex_cap",
+    "weapon_category", "mastery", "properties",
 )
 
 

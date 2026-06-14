@@ -307,3 +307,134 @@ def test_preview_subclass_block_is_additive_no_mutation(cid):
     out = server.preview_level_up(cid, wid, "Wizard")  # L1 -> L2, below the choice level
     assert out.get("subclass_choice") is None  # not due yet
     assert server.get_character(cid, wid) == before  # preview never mutates
+
+
+# ── #888 / optimizer+veteran: subclass features populate THROUGH the levels ──────
+# "Level 10 Paladin has NO Sacred Oath subclass — missing 7 levels of subclass
+# features." SRD 5.2 ships exactly ONE shippable Paladin oath (Oath of Devotion),
+# whose higher features land at 7 (Aura of Devotion) / 15 (Smite of Protection) /
+# 20 (Holy Nimbus) — exactly the "Subclass Feature" placeholders. The fix: a
+# Paladin seated/leveled AT or PAST those levels with the oath actually RECEIVES
+# the oath features it is owed, not just the level-3 pair.
+
+
+def test_subclass_features_through_paladin_oath_of_devotion():
+    # The pure table: through L10 an Oath of Devotion Paladin is owed Sacred Weapon +
+    # Oath of Devotion Spells (choice level 3) AND Aura of Devotion (7) — but NOT yet
+    # Smite of Protection (15) or Holy Nimbus (20).
+    through10 = {f["name"]: f.get("level")
+                 for f in srd_tables.subclass_features_through("paladin", "Oath of Devotion", 10)}
+    assert "Sacred Weapon" in through10 and through10["Sacred Weapon"] == 3
+    assert "Oath of Devotion Spells" in through10
+    assert through10.get("Aura of Devotion") == 7, "an L10 oath Paladin is owed Aura of Devotion (7)"
+    assert "Smite of Protection" not in through10  # a level-15 feature isn't owed at 10
+    assert "Holy Nimbus" not in through10           # a level-20 feature isn't owed at 10
+    # …and at L20 it has the FULL oath progression (no fabricated levels).
+    through20 = {f["name"]: f.get("level")
+                 for f in srd_tables.subclass_features_through("paladin", "Devotion", 20)}
+    assert through20.get("Aura of Devotion") == 7
+    assert through20.get("Smite of Protection") == 15
+    assert through20.get("Holy Nimbus") == 20
+
+
+def test_subclass_features_through_below_choice_level_is_empty():
+    # Below the subclass-choice level nothing is owed (additive — today's behavior).
+    assert srd_tables.subclass_features_through("paladin", "Oath of Devotion", 2) == []
+    # an unknown subclass is honest-empty too (never a fabrication)
+    assert srd_tables.subclass_features_through("paladin", "not-an-oath", 10) == []
+
+
+def test_create_paladin_at_l10_with_oath_populates_higher_features(cid):
+    # A Paladin CREATED directly at L10 with Oath of Devotion (the seed path,
+    # _apply_srd_class_defaults) gets the choice-level features AND Aura of Devotion (7) —
+    # the optimizer's "missing 7 levels of subclass features" is closed.
+    pid = server.create_character(
+        cid, "Zevlor", kind="player", class_name="Paladin", level=10, subclass="Oath of Devotion",
+        abilities={"strength": 16, "charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    sheet = server.get_character(cid, pid)
+    assert sheet["classes"][0]["subclass"] == "Oath of Devotion"
+    assert "Sacred Weapon" in sheet["features"]
+    assert "Oath of Devotion Spells" in sheet["features"]
+    assert "Aura of Devotion" in sheet["features"], "an L10 oath Paladin must have Aura of Devotion (7)"
+    # a level-15/20 oath feature is NOT granted early (no fabrication)
+    assert "Smite of Protection" not in sheet["features"]
+    assert "Holy Nimbus" not in sheet["features"]
+
+
+def test_level_up_existing_oath_paladin_gains_higher_oath_feature(cid):
+    # The verifier-found gap: NORMAL-progression oath features were never granted. A Paladin who
+    # ALREADY has Oath of Devotion at L6 (no Aura yet — Aura lands at 7) must GAIN Aura of Devotion
+    # when leveling 6 -> 7. subclass_features_at(7) returns only the choice-level pair, so the grant
+    # must come from the through-features path, which used to be gated to a NEWLY-set subclass.
+    pid = server.create_character(
+        cid, "Wyll", kind="player", class_name="Paladin", level=6, subclass="Oath of Devotion",
+        abilities={"strength": 16, "charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    before = server.get_character(cid, pid)
+    assert "Aura of Devotion" not in before["features"], "Aura is a level-7 feature; not owed at L6"
+    server.level_up(cid, pid, "Paladin")  # 6 -> 7
+    after = server.get_character(cid, pid)
+    assert after["classes"][0]["level"] == 7
+    assert "Aura of Devotion" in after["features"], "leveling an existing-oath Paladin to 7 must grant Aura of Devotion"
+    # No early fabrication of the 15/20 features.
+    assert "Smite of Protection" not in after["features"]
+
+
+def test_create_paladin_loose_oath_name_normalizes_and_populates(cid):
+    # The DM/record may name the oath loosely ("Devotion") — it normalizes to the canonical
+    # SRD name and still grants the through-features.
+    pid = server.create_character(
+        cid, "Karlach", kind="player", class_name="Paladin", level=10, subclass="Devotion",
+        abilities={"charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    sheet = server.get_character(cid, pid)
+    assert sheet["classes"][0]["subclass"] == "Oath of Devotion"
+    assert "Aura of Devotion" in sheet["features"]
+
+
+def test_level_up_late_oath_choice_populates_through_features(cid):
+    # The "OR" branch the task names: an L10 Paladin with NO oath (overdue) who finally
+    # CHOOSES Oath of Devotion at level-up gets the oath features THROUGH the levels —
+    # Sacred Weapon + Oath Spells AND the already-earned Aura of Devotion (7), not just
+    # the level-3 pair.
+    pid = server.create_character(
+        cid, "Wyll", kind="player", class_name="Paladin", level=10,
+        abilities={"charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    assert "Aura of Devotion" not in server.get_character(cid, pid)["features"]
+    out = server.level_up(cid, pid, "Paladin", subclass="Oath of Devotion")  # -> level 11
+    gained = {f["name"] for f in out["_features_gained"]}
+    assert {"Sacred Weapon", "Oath of Devotion Spells", "Aura of Devotion"} <= gained
+    sheet = server.get_character(cid, pid)
+    assert {"Sacred Weapon", "Oath of Devotion Spells", "Aura of Devotion"} <= set(sheet["features"])
+
+
+def test_update_character_setting_oath_late_populates_through_features(cid):
+    # Setting the oath via update_character on an L10 Paladin (the sheet edit path) re-derives
+    # the class defaults and grants the owed oath features through the levels.
+    pid = server.create_character(
+        cid, "Minsc", kind="player", class_name="Paladin", level=10,
+        abilities={"charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    server.update_character(cid, pid, patch={"subclass": "Oath of Devotion"})
+    sheet = server.get_character(cid, pid)
+    assert sheet["classes"][0]["subclass"] == "Oath of Devotion"
+    assert "Aura of Devotion" in sheet["features"]
+
+
+def test_champion_through_features_unchanged_additive(cid):
+    # Additivity guard: a Fighter created at L10 with Champion now also receives its owed
+    # higher features (Additional Fighting Style 7, Heroic Warrior 10) — the same
+    # through-the-levels grant, proving the change generalizes and isn't Paladin-special.
+    fid = server.create_character(
+        cid, "Lae'zel", kind="player", class_name="Fighter", level=10, subclass="Champion",
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    sheet = server.get_character(cid, fid)
+    assert "Improved Critical" in sheet["features"]
+    assert "Additional Fighting Style" in sheet["features"]
+    assert "Heroic Warrior" in sheet["features"]
+    # Superior Critical (15) / Survivor (18) are NOT owed at 10 (no fabrication)
+    assert "Superior Critical" not in sheet["features"]
+    assert "Survivor" not in sheet["features"]

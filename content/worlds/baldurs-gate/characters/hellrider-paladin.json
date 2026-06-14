@@ -2,6 +2,7 @@
   "name": "Hellrider Paladin",
   "race": "Tiefling",
   "class": "Paladin",
+  "subclass": "Oath of Devotion",
   "level": "10",
   "alignment": "",
   "appearance": "",

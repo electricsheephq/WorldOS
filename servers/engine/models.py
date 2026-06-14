@@ -166,6 +166,8 @@ class Item(_StrictModel):
     armor_category: str = ""           # light / medium / heavy / shield ("" = n/a)
     ac_dex_mod: str = ""               # full / capped / none ("" = n/a)
     ac_dex_cap: Optional[int] = None   # +N DEX cap for medium armor, else None
+    weapon_category: str = ""          # #888: Simple / Martial weapon-proficiency tier ("" = n/a)
+    mastery: str = ""                  # #888: 2024 Weapon Mastery property (Topple/Vex/Sap/...; "" = none)
     properties: list[str] = Field(default_factory=list)  # SRD tags (stealth-disadvantage, str-13, attune:...)
 
 

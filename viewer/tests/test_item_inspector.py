@@ -166,6 +166,59 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         self.assertEqual(kv["Damage"], "1d4 piercing")
         self.assertNotIn("two-handed", kv["Damage"])
 
+    # --- #888: Stash Examine DEPTH — attack bonus, weapon category, Weapon Mastery ----
+    def test_weapon_inspector_shows_attack_bonus_category_and_mastery(self):
+        """The veteran/optimizer "Stash Examine is SHALLOW — no attack bonus, weapon category,
+        or Mastery property" finding: a weapon inspector must render the sheet-correct to-hit,
+        the Simple/Martial category, and the 2024 Weapon Mastery property."""
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Longsword', type: 'weapon', damage: '1d8', "
+            "  damageType: 'slashing', attackBonus: 6, weaponCategory: 'Martial', mastery: 'Sap' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Attack"), "+6", "the to-hit must read as a signed bonus")
+        self.assertEqual(kv.get("Category"), "Martial Weapon")
+        self.assertEqual(kv.get("Mastery"), "Sap")
+
+    def test_negative_attack_bonus_renders_with_sign(self):
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Club', type: 'weapon', damage: '1d4', attackBonus: -1 });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Attack"), "-1")
+
+    def test_zero_attack_bonus_still_renders(self):
+        # +0 is a real, meaningful to-hit — it must show (typeof-number gate, not truthiness).
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Sling', type: 'weapon', damage: '1d4', attackBonus: 0 });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Attack"), "+0")
+
+    def test_nonweapon_omits_attack_category_mastery_rows(self):
+        # An item with no weapon stats must NOT fabricate an Attack/Category/Mastery row.
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Healing Potion', type: 'potion', weight: '0.5 lb' });"
+        )
+        keys = {r["k"] for r in rows}
+        self.assertNotIn("Attack", keys)
+        self.assertNotIn("Category", keys)
+        self.assertNotIn("Mastery", keys)
+
+    def test_enrich_ware_folds_category_and_mastery_for_market_parity(self):
+        """Stash/Market parity: the Market ware gains the catalog's weapon category + mastery so
+        the Market inspector reads them too (it carries no owner, so no attack bonus)."""
+        rows = self._run(
+            "var ware = win.enrichWare("
+            "  { name: 'Greataxe', type: 'weapon', weight: '7 lb', price: 30 },"
+            "  { 'Greataxe': { resolved: true, damage: '1d12', damageType: 'slashing',"
+            "      weaponCategory: 'Martial', mastery: 'Cleave', properties: [] } });"
+            "return win.itemStatRows(ware);"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Category"), "Martial Weapon")
+        self.assertEqual(kv.get("Mastery"), "Cleave")
+
     # --- RRI-25e55fa optimizer #3: weapon RANGE + VALUE rows --------------------
     def test_ranged_weapon_shows_range_row(self):
         """A ranged weapon must render a Range row reading its real bracket — the optimizer's
@@ -433,6 +486,24 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertTrue(items["Plate"]["resolved"])
         self.assertEqual(items["Plate"]["ac"], 18)
 
+    # #888: the catalog endpoint (the Market's source of truth) exposes the weapon CATEGORY
+    # (Simple/Martial) + the 2024 Weapon MASTERY property so the Market/Stash inspector can read
+    # them — the veteran/optimizer "Examine missing category + Mastery" finding.
+    def test_item_catalog_endpoint_exposes_weapon_category_and_mastery(self):
+        status, _ctype, body = self._get("/item-catalog?name=Longsword&name=Dagger&name=Studded%20Leather")
+        items = json.loads(body)["items"]
+        ls = items["Longsword"]
+        self.assertTrue(ls["resolved"])
+        self.assertEqual(ls["weaponCategory"], "Martial")
+        self.assertEqual(ls["mastery"], "Sap")   # SRD 5.2 Longsword Mastery is Sap
+        dg = items["Dagger"]
+        self.assertEqual(dg["weaponCategory"], "Simple")
+        self.assertEqual(dg["mastery"], "Nick")
+        # armor carries NO weapon category/mastery (honest empties — the row is hidden)
+        sl = items["Studded Leather"]
+        self.assertEqual(sl["weaponCategory"], "")
+        self.assertEqual(sl["mastery"], "")
+
     # F09-6 / #874: the catalog endpoint (the Market's source of truth) composes the SAME
     # honest armor dex-rule the Stash inspector carries — medium armor reads its DEX cap and
     # a shield reads its bonus, so the Market never re-exhibits the flat "AC 14"/"AC 2" bug.
@@ -490,6 +561,68 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertIn("enrichWare", src)            # …and merges it into the detail pane
         self.assertIn("window.itemStatRows", src)   # rendering the real stat rows (AC/damage)
         self.assertIn("Versus ", src)               # compare block in the Market inspector
+
+
+class StashAttackBonusReadModelTests(unittest.TestCase):
+    """#888: the Stash read-model computes the SHEET-CORRECT to-hit + carries weapon category /
+    mastery for an owner's weapon — exercised directly against the viewer read-model helpers
+    (no HTTP), so the wiring the JSX harness can't see (the owner-aware attack bonus) is proven."""
+
+    # A STR 18 (+4) / DEX 14 (+2), proficiency +3 fighter-ish owner.
+    OWNER = {
+        "abilities": {"strength": 18, "dexterity": 14, "constitution": 14,
+                      "intelligence": 10, "wisdom": 10, "charisma": 10},
+        "proficiency_bonus": 3,
+    }
+
+    def test_str_melee_weapon_attack_bonus(self):
+        # A Longsword (no Finesse, melee) uses STR: +3 prof + 4 STR = +7.
+        item = {"name": "Longsword", "damage": "1d8", "properties": []}
+        meta = server._catalog_meta("Longsword")
+        self.assertEqual(server._weapon_attack_bonus(self.OWNER, item, meta), 7)
+
+    def test_finesse_weapon_uses_better_ability(self):
+        # A Rapier (Finesse) uses max(STR 4, DEX 2) = 4: +3 + 4 = +7 here.
+        item = {"name": "Rapier", "damage": "1d8", "properties": ["Finesse"]}
+        meta = server._catalog_meta("Rapier")
+        self.assertEqual(server._weapon_attack_bonus(self.OWNER, item, meta), 7)
+        # …and a DEX-heavy owner's finesse weapon uses DEX.
+        dexy = {"abilities": {"strength": 8, "dexterity": 18}, "proficiency_bonus": 3}
+        self.assertEqual(server._weapon_attack_bonus(dexy, item, meta), 3 + 4)
+
+    def test_ranged_weapon_uses_dex(self):
+        # A Heavy Crossbow (Ammunition, ranged) uses DEX: +3 + 2 = +5.
+        item = {"name": "Heavy Crossbow", "damage": "1d10", "properties": ["Ammunition"]}
+        meta = server._catalog_meta("Heavy Crossbow")
+        self.assertEqual(server._weapon_attack_bonus(self.OWNER, item, meta), 5)
+
+    def test_thrown_melee_weapon_uses_str(self):
+        # A Javelin (Thrown, not Finesse, not Ammunition) is a STR melee weapon: +3 + 4 = +7.
+        item = {"name": "Javelin", "damage": "1d6", "properties": ["Thrown"]}
+        meta = server._catalog_meta("Javelin")
+        self.assertEqual(server._weapon_attack_bonus(self.OWNER, item, meta), 7)
+
+    def test_non_weapon_has_no_attack_bonus(self):
+        item = {"name": "Healing Potion", "damage": ""}
+        self.assertIsNone(server._weapon_attack_bonus(self.OWNER, item, server._catalog_meta("Healing Potion")))
+
+    def test_inventory_items_carry_attack_bonus_category_mastery(self):
+        # The full read-model projection: an owner holding a Longsword surfaces its to-hit, the
+        # Martial category, and the Sap mastery — the end-to-end Stash Examine depth.
+        ch = {**self.OWNER, "inventory": [{"name": "Longsword"}]}
+        items = server._inventory_items("c1", ch)
+        self.assertEqual(len(items), 1)
+        it = items[0]
+        self.assertEqual(it["attackBonus"], 7)
+        self.assertEqual(it["weaponCategory"], "Martial")
+        self.assertEqual(it["mastery"], "Sap")
+
+    def test_inventory_nonweapon_item_has_null_attack_bonus(self):
+        ch = {**self.OWNER, "inventory": [{"name": "Studded Leather"}]}
+        it = server._inventory_items("c1", ch)[0]
+        self.assertIsNone(it["attackBonus"])
+        self.assertEqual(it["weaponCategory"], "")
+        self.assertEqual(it["mastery"], "")
 
 
 if __name__ == "__main__":
