@@ -620,25 +620,24 @@ def test_paralyzed_does_not_autofail_the_wis_repeat_save(monkeypatch):
 
 def test_caster_losing_concentration_frees_the_paralyzed_target(monkeypatch):
     """INVERSE direction (#209): if the CASTER's concentration ends (here: incapacitated),
-    Hold Person is over — so next_turn frees the target (drops the marker + the paralyzed
-    condition) instead of leaving it locked indefinitely. One source of truth, both ways."""
+    Hold Person is over — the target is freed. F3-6 moved that release to the concentration-end
+    SITE (the add_condition call), so the foe is freed IMMEDIATELY, not a round later — and the
+    next_turn inverse-link sweep is then a clean no-op backstop (nothing left to reconcile)."""
     cid = server.create_campaign("S")["id"]
     caster = _hold_caster(cid)
     foe = _humanoid(cid, wis=8)
     _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
     assert "paralyzed" in server.get_character(cid, foe)["conditions"]
-    # Break the caster's concentration directly (stun it) — its twin effect drops immediately,
-    # but the TARGET's marker + paralyzed persist until the reconciliation pass in next_turn.
+    # Break the caster's concentration directly (stun it). F3-6: the target's marker + paralyzed
+    # are now freed in this SAME call, not deferred to next_turn.
     server.add_condition(cid, caster, "stunned")
     assert server.get_character(cid, caster)["concentration"] is None  # concentration broke
-    assert "paralyzed" in server.get_character(cid, foe)["conditions"]  # not yet reconciled
-    # A FAILED foe save would normally KEEP the lock — but the caster no longer concentrates,
-    # so the reconciliation frees the foe regardless of the (irrelevant) save roll.
+    assert _effects(cid, foe) == []  # freed NOW (was: locked until next_turn)
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+    # The next_turn sweep is now a no-op backstop for this foe — nothing left to expire.
     monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(1))
     v = server.next_turn(cid)
-    assert {"character_id": foe, "name": "Hold Person"} in v["expired_effects"]
-    assert _effects(cid, foe) == []
-    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]  # freed via the link
+    assert {"character_id": foe, "name": "Hold Person"} not in v["expired_effects"]
 
 
 def test_non_concentration_save_ends_source_is_not_concentration_swept(monkeypatch):
@@ -1120,3 +1119,111 @@ def test_plain_buff_clock_expiry_regression_conditions_untouched():
     assert _effects(cid, cleric) == []
     assert server.get_character(cid, cleric)["concentration"] is None
     assert "poisoned" in server.get_character(cid, cleric)["conditions"]
+
+
+# --- F3-6: ALL concentration-end paths release the held victim IMMEDIATELY -----
+# drop_concentration already frees (test_drop_concentration_clears_field_and_linked_effect
+# + #830); these cover the OTHER four end paths that previously only cleared the caster side
+# and left the victim locked until the next next_turn sweep.
+def _ic_hold_pair(cid, monkeypatch):
+    """Set up an in-combat Hold Person lock and return (caster, foe). Leaves the foe paralyzed
+    with a self-enforcing marker linked to the caster's concentration."""
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    _lock_foe_with_hold_person(cid, caster, foe, monkeypatch)
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    return caster, foe
+
+
+def test_failed_concentration_save_frees_held_victim_immediately(monkeypatch):
+    """F3-6: a FAILED concentration_save ends the spell — its paralyzed victim is freed in the
+    SAME call (surfaced in freed_targets), not a round later at next_turn."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ic_hold_pair(cid, monkeypatch)
+    out = server.concentration_save(cid, caster, 999)  # forced fail
+    assert out["maintained"] is False
+    assert {"character_id": foe, "name": "Hold Person"} in out["freed_targets"]
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+    assert server.get_character(cid, caster)["concentration"] is None
+
+
+def test_caster_incapacitation_frees_held_victim_immediately(monkeypatch):
+    """F3-6: incapacitating the caster (stunned) breaks concentration — the Hold Person victim
+    is freed in the SAME add_condition call, not a round later."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ic_hold_pair(cid, monkeypatch)
+    server.add_condition(cid, caster, "stunned")  # incapacitating -> breaks concentration
+    assert server.get_character(cid, caster)["concentration"] is None
+    assert _effects(cid, foe) == []  # freed NOW (was: still locked until next_turn)
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+
+
+def test_recast_displacing_concentration_frees_prior_victim_immediately(monkeypatch):
+    """F3-6: casting a NEW concentration spell that displaces a prior Hold Person frees that
+    hold's victim in the SAME cast_spell call (one source of truth)."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ic_hold_pair(cid, monkeypatch)
+    # Give the caster a second concentration spell to displace Hold Person with.
+    server.learn_spells(cid, caster, ["Hold Person", "Shield of Faith"])
+    server.prepare_spells(cid, caster, ["Hold Person", "Shield of Faith"])
+    # The caster (back on its own turn) recasts a different concentration spell, displacing
+    # Hold Person — its held victim must be freed in the SAME cast call.
+    _advance_to(cid, caster)
+    server.cast_spell(cid, caster, "Shield of Faith")  # different concentration spell
+    assert server.get_character(cid, caster)["concentration"] == "Shield of Faith"
+    assert _effects(cid, foe) == []  # the displaced hold's victim is freed immediately
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+
+
+def test_caster_downed_via_apply_damage_frees_held_victim_immediately(monkeypatch):
+    """F3-6: dropping the caster to 0 HP via apply_damage ends concentration AND frees the
+    Hold Person victim in the SAME call (the combat layer is Character-pure, so the server
+    tool does the campaign-wide release)."""
+    cid = server.create_campaign("S")["id"]
+    caster, foe = _ic_hold_pair(cid, monkeypatch)
+    hp = server.get_character(cid, caster)["max_hp"]
+    out = server.apply_damage(cid, caster, hp + 50)  # massive -> down/dead, concentration ends
+    assert server.get_character(cid, caster)["concentration"] is None
+    assert {"character_id": foe, "name": "Hold Person"} in out["freed_targets"]
+    assert _effects(cid, foe) == []
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+
+
+def test_caster_downed_via_attack_frees_held_victim_immediately(monkeypatch):
+    """F3-6: a melee strike that downs the concentrating caster frees the Hold Person victim
+    in the SAME attack() call (the OTHER server-side damage path the spec calls out)."""
+    cid = server.create_campaign("S")["id"]
+    caster = _hold_caster(cid)
+    foe = _humanoid(cid, wis=8)
+    bruiser = server.create_character(cid, "Bruiser", kind="monster", max_hp=40,
+                                      abilities={"strength": 18})["id"]
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(10))
+    server.start_combat(cid, [caster, foe, bruiser])
+    _advance_to(cid, caster)
+    out = server.cast_spell(cid, caster, "Hold Person", target_id=foe)
+    server.add_condition(cid, foe, "paralyzed", **{
+        k: out["condition_rider"][k]
+        for k in ("repeat_save_ability", "repeat_save_dc", "source_id", "spell_name")
+    })
+    assert "paralyzed" in server.get_character(cid, foe)["conditions"]
+    # Drop the caster to 1 HP so any landed hit downs it; advance to the bruiser's turn.
+    server.set_hp(cid, caster, 1)
+    _advance_to(cid, bruiser)
+    # Force a nat-20 (guaranteed crit hit) so the strike lands and downs the 1-HP caster.
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(20))
+    res = server.attack(cid, bruiser, caster, damage_dice="2d6")
+    assert res["hit"] is True
+    assert server.get_character(cid, caster)["concentration"] is None
+    assert {"character_id": foe, "name": "Hold Person"} in res["freed_targets"]
+    assert "paralyzed" not in server.get_character(cid, foe)["conditions"]
+
+
+def test_concentration_save_release_inert_when_no_held_victim(monkeypatch):
+    """ADDITIVE: a failed concentration_save with no held victim surfaces an empty
+    freed_targets — byte-compatible with the prior return plus the new (empty) key."""
+    cid = server.create_campaign("S")["id"]
+    c = _cleric(cid)
+    server.cast_spell(cid, c, "Bless")  # self-buff, no held target
+    out = server.concentration_save(cid, c, 999)
+    assert out["maintained"] is False and out["freed_targets"] == []
