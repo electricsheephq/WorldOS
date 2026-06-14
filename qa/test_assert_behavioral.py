@@ -470,3 +470,69 @@ def test_quest_objectives_progress_passes_when_recorded(tmp_path):
              "objectives": ["reach the crypt"], "completed_objectives": ["reach the crypt"]}}}
     rc, out = _run_gate(tmp_path, [], state)
     assert "[PASS] quest_objectives_progress" in out
+
+
+# ── signature_feature_exercised (WARN, csmed-1/2/4) — coverage signal ──────────────
+# The combat-sprints left War-Cleric Channel Divinity + Fighter Action Surge / Second Wind at
+# used:0 EVERY time (medium/low omission — untested resource plumbing). These checks WARN when
+# a seeded party member HAS the feature on its sheet but the run never exercised it, and must
+# NOT false-fire when the feature is absent. Source: mech-climb evidence agent (combat-sprints).
+
+def _char_with_pool(name, kind, cls, pool_id, max_, used):
+    return {"name": name, "kind": kind,
+            "classes": [{"name": cls, "level": 4}],
+            "class_resources": {pool_id: {"max": max_, "used": used, "recharge": "short"}}}
+
+
+def test_signature_feature_warns_when_seeded_but_unused(tmp_path):
+    # Aldric (fighter) has second_wind + action_surge; Maren (cleric) has channel_divinity —
+    # all seeded, all used:0 (the exact csmed-1/2/4 omission). WARN each, run stays GREEN.
+    state = {"leveling_mode": "milestone", "party": ["pc1", "c1"], "characters": {
+        "pc1": {"name": "Aldric", "kind": "player", "classes": [{"name": "fighter", "level": 4}],
+                "class_resources": {"second_wind": {"max": 3, "used": 0, "recharge": "short"},
+                                    "action_surge": {"max": 1, "used": 0, "recharge": "short"}}},
+        "c1": _char_with_pool("Maren", "companion", "cleric", "channel_divinity", 2, 0)}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out  # WARN, not RED
+    assert "[WARN] signature_feature_exercised" in out
+    for token in ("second_wind", "action_surge", "channel_divinity", "Aldric", "Maren"):
+        assert token in out, token
+
+
+def test_signature_feature_passes_when_used_in_final_state(tmp_path):
+    # used>0 on the final sheet ⇒ exercised ⇒ PASS (no need to scan the tool stream).
+    state = {"leveling_mode": "milestone", "party": ["pc1", "c1"], "characters": {
+        "pc1": _char_with_pool("Aldric", "player", "fighter", "second_wind", 3, 1),
+        "c1": _char_with_pool("Maren", "companion", "cleric", "channel_divinity", 2, 1)}}
+    # action_surge still 0 on Aldric → keep only the exercised pools so this asserts the clean PASS.
+    state["characters"]["pc1"]["class_resources"]["action_surge"] = {"max": 1, "used": 1, "recharge": "short"}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[PASS] signature_feature_exercised" in out
+
+
+def test_signature_feature_passes_when_use_resource_called(tmp_path):
+    # Even if the final-snapshot `used` were reset (e.g. a short rest after the spend), a
+    # use_resource(resource=…) call in the stream proves the feature was exercised → PASS.
+    events = [
+        _assistant_tool_use("u1", "mcp__engine__use_resource",
+                            {"character_id": "pc1", "resource": "action_surge"}),
+        _user_tool_result("u1", json.dumps({"ok": True, "resource": "action_surge",
+                                            "spent": 1, "remaining": 0, "used": 1})),
+    ]
+    state = {"leveling_mode": "milestone", "party": ["pc1"], "characters": {
+        "pc1": _char_with_pool("Aldric", "player", "fighter", "action_surge", 1, 0)}}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] signature_feature_exercised" in out
+
+
+def test_signature_feature_silent_when_party_lacks_feature(tmp_path):
+    # A party with NO channel_divinity/action_surge/second_wind pool must NOT be flagged
+    # (additive: a wizard-only party never trips this). The check is absent ⇒ neither WARN nor PASS line.
+    state = {"leveling_mode": "milestone", "party": ["pc1"], "characters": {
+        "pc1": {"name": "Gale", "kind": "player", "classes": [{"name": "wizard", "level": 4}],
+                "class_resources": {}}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "signature_feature_exercised" not in out  # no party member has the feature → check skipped

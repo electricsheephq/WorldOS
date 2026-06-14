@@ -74,6 +74,41 @@ def test_paladin_creation_populates_pools(cid):
     assert sheet["class_resources_view"]["channel_divinity"]["remaining"] == 2
 
 
+# --- SEAT-PATH SRD guard (csmed-5): a seeded Fighter's Second Wind / Action Surge are
+#     the SRD-5.2.4 values, NOT the legacy 2014 flat "1" ---
+def test_fighter_seat_path_second_wind_is_srd_524_not_legacy_one(cid):
+    """csmed-5 (combat-sprint scorecard) flagged 'Aldric second_wind shows max=3, should be 1
+    for a Fighter'. That premise is a 2014-PHB edition error: under SRD 5.2.4 the Fighter's
+    Second Wind is **2 uses at L1, 3 at L4, 4 at L10** (data/srd/srd524/ClassFeature.json:
+    'You can use this feature twice ... you gain more uses ... as shown in the Second Wind
+    column'). Aldric is seeded as a level-4 Fighter (qa/pre_seed_combat.py), so max=3 is
+    CORRECT — applying the scorer's 'fix to 1' would be an SRD-5.2.4 regression (audit F02-11).
+
+    This locks the SRD-correct values at the REAL seat path (create_character +
+    apply_srd_defaults), which the existing test_resource_formulas_across_classes covers only
+    at the pure srd_tables layer. If a future change reverts to the flat-1, this RED-flags it.
+    Source: mech-climb evidence agent (combat-sprint scorecards), finding csmed-5."""
+    # L1 seat path: SRD 5.2.4 Second Wind = 2 (NOT the legacy 2014 flat 1).
+    f1 = server.create_character(
+        cid, "AldricL1", kind="player", class_name="Fighter", level=1,
+        apply_srd_defaults=True, abilities={"constitution": 14},
+    )["id"]
+    sw1 = server.get_character(cid, f1)["class_resources"]["second_wind"]
+    assert sw1["max"] == 2, "SRD 5.2.4 Fighter starts with 2 Second Wind uses, not the 2014 flat 1"
+    assert sw1["used"] == 0 and sw1["recharge"] == "short"
+
+    # L4 seat path = Aldric's actual combat-sprint seed level: Second Wind 3, Action Surge 1.
+    f4 = server.create_character(
+        cid, "AldricL4", kind="player", class_name="Fighter", level=4, subclass="Battle Master",
+        apply_srd_defaults=True, abilities={"strength": 18, "constitution": 16},
+    )["id"]
+    pools = server.get_character(cid, f4)["class_resources"]
+    assert pools["second_wind"]["max"] == 3 and pools["second_wind"]["used"] == 0
+    assert pools["action_surge"]["max"] == 1 and pools["action_surge"]["used"] == 0
+    # fables-style bar view renders the SRD-correct 3/3 (the csmed scorer read a real max=3).
+    assert server.get_character(cid, f4)["class_resources_view"]["second_wind"]["label"] == "3/3"
+
+
 # --- use_resource depletes + refuses when empty ---
 def test_use_resource_depletes_and_refuses_when_empty(cid):
     pid = server.create_character(

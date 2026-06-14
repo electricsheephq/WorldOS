@@ -740,6 +740,52 @@ def main() -> int:
                              f"and ended with Second Wind unused")
     chk("fighter_second_wind_considered", not sw_unused, "; ".join(sw_unused), fatal=False)
 
+    # SIGNATURE-FEATURE COVERAGE (csmed-1/2/4, WARN, scope-guarded). The combat-sprints left
+    # War-Cleric Channel Divinity and Fighter Action Surge / Second Wind at used:0 EVERY run —
+    # the Angry-DM lens repeatedly flagged these signature class features as an OMISSION (a due
+    # capability never invoked). This is a pure COVERAGE signal: when a seeded party member HAS
+    # one of these pools on its sheet, the session should exercise it at least once. "Exercised"
+    # is read from BOTH the final snapshot (class_resources[<pool>].used > 0) AND the tool stream
+    # (a use_resource(resource=<pool>) call) — so a spend that a later short_rest reset still
+    # counts. Scope-guarded so it NEVER false-fires when the party lacks the feature: the check
+    # is only emitted for pools that are actually present on a player/companion sheet. A4 above
+    # is a TACTICAL-adherence smell (Second Wind unused *after taking HP*); THIS is the broader
+    # coverage floor (the feature was never touched at all). WARN, never fatal — a short fight
+    # may legitimately not need every cooldown. Additive: a party with none of these pools is
+    # byte-identical (no key emitted). Source: mech-climb evidence agent (combat-sprint scorecards).
+    _SIGNATURE_POOLS = ("channel_divinity", "action_surge", "second_wind")
+    # Pools a use_resource call exercised this run (snapshot may have been reset by a rest).
+    used_via_stream = {
+        (inp.get("resource") or "").lower()
+        for (n, inp, r, err, _) in evs
+        if n == "use_resource" and not err
+    }
+    sig_unused: list[str] = []
+    for c in chars_all.values():
+        if not isinstance(c, dict) or c.get("kind") not in ("player", "companion"):
+            continue
+        pools = c.get("class_resources") or {}
+        for pool_id in _SIGNATURE_POOLS:
+            res = pools.get(pool_id)
+            if not isinstance(res, dict):
+                continue  # feature absent on this sheet → never flagged (additive)
+            exercised = (res.get("used", 0) or 0) > 0 or pool_id in used_via_stream
+            if not exercised:
+                sig_unused.append(f"{c.get('name', '?')} never used {pool_id}")
+    # Only emit the check when at least one seeded party member HAS a signature pool — a party
+    # with none of these features produces no key at all (no false PASS, no false WARN).
+    has_signature_pool = any(
+        isinstance(c, dict) and c.get("kind") in ("player", "companion")
+        and isinstance((c.get("class_resources") or {}).get(p), dict)
+        for c in chars_all.values() for p in _SIGNATURE_POOLS
+    )
+    if has_signature_pool:
+        chk("signature_feature_exercised", not sig_unused,
+            "; ".join(sig_unused) + " — seeded signature feature(s) never invoked this session "
+            "(channel_divinity / action_surge / second_wind); the combat seed should exercise them "
+            "(csmed-1/2/4 coverage omission)" if sig_unused else "",
+            fatal=False)
+
     # A2 (WARN) — a melee attack HIT a parry-capable monster (state parry>0) but the attack
     # RESULT recorded no parry (parry in {None,0,False}) AND no reaction call fired all fight.
     # The cleanest new result-field read: the attack payload's own `parry` field.
