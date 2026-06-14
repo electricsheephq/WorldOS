@@ -238,10 +238,15 @@ class InventoryPolishPassTests(unittest.TestCase):
         self.assertIn("setSortKey(", src)
 
     def test_electrum_and_copper_hidden_when_zero(self):
-        """I-09: EP/CP coin slots render only when the hero actually holds them."""
+        """I-09: EP/CP coin slots render only when the hero actually holds them.
+        RRI-5e98e6f: the purse now flows through the shared window.partyPurse normalizer, so the
+        hide-when-zero guard reads off the normalized `purse` (purse.ep/purse.cp), not the raw
+        hero.currency — same behavior, one shared source-of-truth with the Market."""
         src = self._src()
-        self.assertIn("(hero.currency?.ep ?? 0) > 0", src)
-        self.assertIn("(hero.currency?.cp ?? 0) > 0", src)
+        self.assertIn("purse.ep > 0", src)
+        self.assertIn("purse.cp > 0", src)
+        # …and the purse is derived from the SHARED selector both screens use (no per-screen drift).
+        self.assertIn("window.partyPurse", src)
 
 
 if __name__ == "__main__":
