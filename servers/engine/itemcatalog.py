@@ -187,15 +187,83 @@ def _weapon_armor_join() -> tuple[dict, dict]:
     return weapons, armors
 
 
-def _flatten(model: str, fields: dict) -> dict:
+@functools.lru_cache(maxsize=None)
+def _weapon_property_join() -> dict[str, dict]:
+    """{weapon_pk: {"properties": [name, …], "versatile": "1d8"}} from the SRD
+    ``WeaponProperty.json`` + ``WeaponPropertyAssignment.json`` tables (#756).
+
+    A weapon's classic properties (Versatile, Finesse, Light, Thrown, Two-Handed,
+    Heavy, Reach, Ammunition, Loading, Reach) and — for a Versatile weapon — its
+    two-handed damage die are stored ONLY in the assignment join, not inline on the
+    Weapon record. The flatten dropped them, so the inspector showed "no Versatile
+    property" and no 1d8 two-handed damage (the RRI-5e98e6f optimizer findings). We
+    recover them read-only here.
+
+    The 2024 weapon-MASTERY properties (Topple/Nick/Sap/Graze/Slow/Vex/Cleave…,
+    ``type == "Mastery"``) are an advanced combat-option layer, not item descriptors a
+    buyer evaluates, so they are deliberately excluded from the chip list — only the
+    base properties (``type`` null) are surfaced. ``versatile`` carries the assignment
+    ``detail`` (the two-handed die, e.g. "1d8"); absent → "". Keyed by pk (the FK)."""
+    # property_pk -> {name, type}
+    prop_meta: dict[str, dict] = {}
+    for d in _dirs():
+        for r in _rows(d / "WeaponProperty.json"):
+            if not isinstance(r, dict):
+                continue
+            pk = r.get("pk")
+            f = r.get("fields") or {}
+            if pk and pk not in prop_meta:
+                prop_meta[pk] = {"name": str(f.get("name") or ""), "type": f.get("type")}
+    out: dict[str, dict] = {}
+    seen: dict[str, set] = {}
+    for d in _dirs():
+        for r in _rows(d / "WeaponPropertyAssignment.json"):
+            if not isinstance(r, dict):
+                continue
+            f = r.get("fields") or {}
+            wpk = f.get("weapon")
+            ppk = f.get("property")
+            if not wpk or not ppk:
+                continue
+            meta = prop_meta.get(ppk)
+            if not meta or not meta["name"]:
+                continue
+            slot = out.setdefault(wpk, {"properties": [], "versatile": ""})
+            seen_for = seen.setdefault(wpk, set())
+            name = meta["name"]
+            # Versatile: keep its two-handed die (the assignment `detail`).
+            if name.lower() == "versatile" and not slot["versatile"]:
+                slot["versatile"] = str(f.get("detail") or "")
+            # Base (non-Mastery) properties become item-descriptor chips; Mastery
+            # options are excluded. De-dupe per weapon, preserve first-seen order.
+            if meta["type"] is None and name not in seen_for:
+                seen_for.add(name)
+                slot["properties"].append(name)
+    return out
+
+
+def _flatten(model: str, fields: dict, pk: str = "") -> dict:
     """Flatten one source record (any of the 4 shapes) into the common catalog
     item dict. ``model`` is the fixture model tail ('magicitem'/'item'/'weapon'/
-    'armor') used to pick the right shape."""
+    'armor') used to pick the right shape. ``pk`` is the source record's primary
+    key — used (#756) to look up a weapon's property assignments (Versatile/Finesse/
+    Two-Handed + the versatile two-handed die) by FK."""
     weapons, armors = _weapon_armor_join()
+    wprops = _weapon_property_join()
     name = fields.get("name", "")
 
     if model == "weapon":
         # Bare Weapon.json record: damage inline, no cost/desc/category.
+        props = [
+            p for p, on in (("simple", fields.get("is_simple")),
+                            ("improvised", fields.get("is_improvised"))) if on
+        ]
+        # #756: fold in the SRD weapon properties (Versatile/Finesse/…) + the
+        # versatile two-handed die from the assignment join, keyed by this pk.
+        extra = wprops.get(pk, {})
+        for chip in extra.get("properties", []):
+            if chip not in props:
+                props.append(chip)
         return {
             "name": name,
             "kind": "weapon",
@@ -204,12 +272,10 @@ def _flatten(model: str, fields: dict) -> dict:
             "weight": _num(fields.get("weight")),
             "cost": _cost(fields.get("cost")),
             "description": fields.get("desc", "") or "",
-            "properties": [
-                p for p, on in (("simple", fields.get("is_simple")),
-                                ("improvised", fields.get("is_improvised"))) if on
-            ],
+            "properties": props,
             "damage": fields.get("damage_dice") or "",
             "damage_type": fields.get("damage_type") or "",
+            "versatile": extra.get("versatile", ""),
         }
 
     if model == "armor":
@@ -260,6 +326,14 @@ def _flatten(model: str, fields: dict) -> dict:
         wf = weapons[wfk]
         record["damage"] = wf.get("damage_dice") or ""
         record["damage_type"] = wf.get("damage_type") or ""
+        # #756: a magic weapon inherits its base weapon's SRD properties + versatile
+        # two-handed die via the same FK (de-duped onto the attunement clause above).
+        wp = wprops.get(wfk, {})
+        for chip in wp.get("properties", []):
+            if chip not in record["properties"]:
+                record["properties"].append(chip)
+        if wp.get("versatile"):
+            record["versatile"] = wp["versatile"]
     afk = fields.get("armor")
     if afk and afk in armors:
         af = armors[afk]
@@ -296,24 +370,44 @@ def _index() -> dict[str, dict]:
                 key = name.lower()
                 if key not in out:  # FIRST-WINS — earlier dir/source takes precedence
                     try:  # one malformed record must never sink the whole catalog (H1)
-                        out[key] = _flatten(model, fields)
+                        out[key] = _flatten(model, fields, r.get("pk") or "")
                     except (TypeError, ValueError, AttributeError, KeyError):
                         continue
     return out
 
 
+# #756: the canonical-name suffixes a base item name is shortened FROM. Markets/
+# inventories carry the colloquial short form ("Studded Leather", "Leather", "Plate")
+# but the SRD catalog keys the full canonical name ("Studded Leather Armor"). A bare
+# substring of the short form is AMBIGUOUS (it also matches "Glamoured Studded
+# Leather", "Armor of Resistance (Studded Leather)", …) -> None -> no AC value, the
+# CRITICAL gate-flipper. Trying the base name + a canonical suffix gives an EXACT key
+# hit, which is precise and never ambiguous.
+_BASE_NAME_SUFFIXES = (" Armor", " Weapon")
+
+
 def resolve(name: str) -> Optional[dict]:
     """The catalog record for an item by (case-insensitive) name, or None.
 
-    Tries an exact normalized match first, then a single unambiguous substring
-    match (so 'bag of holding' and ' Longsword ' both resolve). Returns None when
-    absent or ambiguous — the caller should then offer ``find()`` suggestions."""
+    Tries an exact normalized match first, then a base-name + canonical-suffix exact
+    match (so 'Studded Leather' -> 'Studded Leather Armor'; #756), then a single
+    unambiguous substring match (so 'bag of holding' and ' Longsword ' both resolve).
+    Returns None when absent or ambiguous — the caller should then offer ``find()``
+    suggestions."""
     if not name:
         return None
     idx = _index()
-    rec = idx.get(name.strip().lower())
+    norm = name.strip().lower()
+    rec = idx.get(norm)
     if rec is not None:
         return rec
+    # #756: the colloquial short form + a canonical suffix is an EXACT (unambiguous)
+    # key — preferred over the fuzzy substring branch so "Studded Leather" resolves to
+    # "Studded Leather Armor" (carrying its real AC) instead of going ambiguous->None.
+    for suffix in _BASE_NAME_SUFFIXES:
+        rec = idx.get(norm + suffix.lower())
+        if rec is not None:
+            return rec
     matches = find(name, limit=2)
     if len(matches) == 1:
         # find() returns the flattened records themselves (F09-1: this used to

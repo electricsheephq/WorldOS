@@ -10,6 +10,32 @@ function mItemScope(item) {
   return s ? "item-" + s : "";
 }
 
+// #756: merge a ware's hardcoded display fields with the read-only /item-catalog stat
+// block (AC / damage / versatile two-handed die / properties / weight / value) so the
+// Market inspector can show what an item IS — the optimizer's CRITICAL "Studded Leather
+// shows no AC value — impossible to evaluate the upgrade". `catalog` is the {name: rec}
+// map fetched from /item-catalog; an unresolved name (rec absent or resolved:false) leaves
+// the ware exactly as today (weight/price only — never a fabricated stat). Pure + additive.
+function enrichWare(item, catalog) {
+  if (!item) return item;
+  const rec = catalog && catalog[item.name];
+  if (!rec || rec.resolved === false) return item;
+  const merged = { ...item };
+  // The ware's OWN explicit fields win; the catalog only fills gaps + supplies the combat
+  // stats the hardcoded stock never carried.
+  if (typeof merged.ac !== "number" && typeof rec.ac === "number") merged.ac = rec.ac;
+  if (!merged.damage && rec.damage) { merged.damage = rec.damage; merged.damageType = rec.damageType; }
+  if (!merged.versatile && rec.versatile) merged.versatile = rec.versatile;
+  if (!merged.weight || merged.weight === "—") { if (rec.weight && rec.weight !== "—") merged.weight = rec.weight; }
+  if (!merged.kind && rec.kind) merged.kind = rec.kind;
+  if (!merged.rarity && rec.rarity) merged.rarity = rec.rarity;
+  if ((!Array.isArray(merged.properties) || !merged.properties.length) && Array.isArray(rec.properties) && rec.properties.length) {
+    merged.properties = rec.properties;
+  }
+  if (rec.attunement) merged.attunement = true;
+  return merged;
+}
+
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
   // MK-02/#548: the initial id MUST match a MERCHANTS entry and the first playable BG session
@@ -94,6 +120,43 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const presentTypes = Array.from(new Set((baseInv || []).map((i) => i.type).filter(Boolean)));
   const inv = typeFilter === "all" ? baseInv : baseInv.filter((i) => i.type === typeFilter);
 
+  // #756: enrich the wares with their real SRD stats from the read-only /item-catalog
+  // endpoint (AC / damage / Versatile two-handed / properties), so the Market inspector can
+  // show what an item IS and the player can evaluate an upgrade. Fetched once per merchant
+  // stock change; an unresolved name leaves the ware untouched (weight/price only).
+  const [catalog, setCatalog] = React.useState({});
+  React.useEffect(() => {
+    const names = Array.from(new Set((baseInv || []).map((i) => i && i.name).filter(Boolean)));
+    if (!names.length) { setCatalog({}); return; }
+    let cancelled = false;
+    const q = names.map((n) => "name=" + encodeURIComponent(n)).join("&");
+    fetch("/item-catalog?" + q, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && d.items) setCatalog(d.items); })
+      .catch(() => { /* keep last good; the ware still shows weight/price */ });
+    return () => { cancelled = true; };
+  }, [merchantId, tab]);
+
+  // #756: the party's equipped gear (live inventory surface) so the Market inspector can
+  // compare a ware to what the player already wears ("is this an upgrade?"). Read-only.
+  const [equipped, setEquipped] = React.useState([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/inventory-surface" + surfaceQuery, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d || !Array.isArray(d.party)) return;
+        const all = [];
+        for (const m of d.party) for (const it of (m.equipped || [])) if (it && it.name) all.push(it);
+        setEquipped(all);
+      })
+      .catch(() => { /* no compare peers — the inspector just omits the Versus block */ });
+    return () => { cancelled = true; };
+  }, [surfaceQuery]);
+
+  const enrichedDetail = enrichWare(detailItem, catalog);
+  const detailCompare = window.itemCompareRows ? window.itemCompareRows(enrichedDetail, equipped) : null;
+
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 8, padding: 14 }}>
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 280px", gap: 14, minHeight: 0 }}>
@@ -162,27 +225,56 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             ("Market items have no properties or compare pane"). Shows the last-hovered ware's
             facts; honest empty-state until a row is hovered. */}
         <SectionTitle>Item Detail</SectionTitle>
-        {detailItem ? (
+        {enrichedDetail ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <Img scope={mItemScope(detailItem)} label={detailItem.glyph || detailItem.name} w={44} h={44} fit="contain" framed />
+              <Img scope={mItemScope(enrichedDetail)} label={enrichedDetail.glyph || enrichedDetail.name} w={44} h={44} fit="contain" framed />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: detailItem.type === "rare" ? "var(--royal)" : "var(--ink-900)" }}>{detailItem.name}</div>
-                <Pill>{(window.ITEM_TYPES && window.ITEM_TYPES[detailItem.type]) || detailItem.type || "—"}</Pill>
+                <div style={{ fontFamily: "var(--f-display)", fontSize: 14, color: enrichedDetail.type === "rare" ? "var(--royal)" : "var(--ink-900)" }}>{enrichedDetail.name}</div>
+                <Pill>{(window.ITEM_TYPES && window.ITEM_TYPES[enrichedDetail.type]) || enrichedDetail.type || "—"}</Pill>
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span className="muted body-sm">Weight</span>
-              <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>{detailItem.weight || "—"}</span>
-            </div>
+            {/* #756: the REAL stat block — AC for armor, damage (+ Versatile two-handed die) for
+                weapons — built from the same pure itemStatRows() the inventory inspector uses, so
+                the Market can finally answer "what is this?". A field the catalog can't resolve is
+                simply omitted; weight/price always show. */}
+            {(window.itemStatRows ? window.itemStatRows(enrichedDetail) : []).map((r) => (
+              <div key={r.k} style={{ display: "flex", justifyContent: "space-between" }}>
+                <span className="muted body-sm">{r.k}</span>
+                <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>{r.v}</span>
+              </div>
+            ))}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span className="muted body-sm">Price</span>
               <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>
-                {detailItem.price || (typeof detailItem.value === "string" && detailItem.value.match(/(\d+) gp/) ? parseInt(detailItem.value.match(/(\d+) gp/)[1]) : "—")}
+                {enrichedDetail.price || (typeof enrichedDetail.value === "string" && enrichedDetail.value.match(/(\d+) gp/) ? parseInt(enrichedDetail.value.match(/(\d+) gp/)[1]) : "—")}
                 <span className="muted" style={{ fontSize: 9, marginLeft: 2 }}>gp</span>
               </span>
             </div>
-            {detailItem.desc && <p className="body-sm" style={{ marginTop: 2, color: "var(--ink-700)" }}>{detailItem.desc}</p>}
+            {Array.isArray(enrichedDetail.properties) && enrichedDetail.properties.length > 0 && (
+              <div className="tag-row" style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
+                {enrichedDetail.properties.map((p) => <Pill key={p}>{p}</Pill>)}
+              </div>
+            )}
+            {detailCompare && (
+              <div style={{ marginTop: 4, paddingTop: 6, borderTop: "1px solid rgba(140,100,60,0.25)" }}>
+                <div className="eyebrow" style={{ fontSize: 9 }}>Versus {detailCompare.peer}</div>
+                {detailCompare.rows.map((r) => (
+                  <div key={r.k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <span className="muted body-sm">{r.k}</span>
+                    <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>
+                      {String(r.mine)} <span className="muted">vs {String(r.theirs)}</span>
+                      {typeof r.delta === "number" && r.delta !== 0 && (
+                        <span style={{ marginLeft: 6, color: r.delta > 0 ? "var(--emerald)" : "var(--crimson)", fontFamily: "var(--f-display)" }}>
+                          {r.delta > 0 ? "+" + r.delta : String(r.delta)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {enrichedDetail.desc && <p className="body-sm" style={{ marginTop: 2, color: "var(--ink-700)" }}>{enrichedDetail.desc}</p>}
           </div>
         ) : (
           <div className="hand muted" style={{ fontSize: 12, marginBottom: 4 }}>Hover a ware to inspect its properties.</div>
@@ -495,4 +587,4 @@ const MERCHANTS = [
   },
 ];
 
-Object.assign(window, { ScreenMerchant, MERCHANTS, mItemScope });
+Object.assign(window, { ScreenMerchant, MERCHANTS, mItemScope, enrichWare });

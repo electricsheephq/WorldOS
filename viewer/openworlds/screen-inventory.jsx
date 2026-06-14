@@ -52,6 +52,9 @@ function ScreenInventory({ onNavigate, state, setState }) {
   const [activeHero, setActiveHero] = React.useState("");
   const [selectedItem, setSelectedItem] = React.useState(null);
   const [ctxMenu, setCtxMenu] = React.useState(null);
+  // #756: a monotonically-bumped nonce the right-click "Examine" raises so the detail
+  // pane opens its read-only Examine PANEL (not a toast). ItemDetail watches it.
+  const [examineNonce, setExamineNonce] = React.useState(0);
   const toast = window.useToast ? window.useToast() : (() => {});
 
   // Phase-4 wiring: when a live session is attached the surface reports can_act +
@@ -292,7 +295,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
 
       {/* RIGHT — Item detail */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
-        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} /> : <div className="muted">Select an item.</div>}
+        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} examineSignal={examineNonce} /> : <div className="muted">Select an item.</div>}
       </Panel>
 
       {ctxMenu && (
@@ -300,7 +303,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
           x={ctxMenu.x} y={ctxMenu.y}
           onClose={() => setCtxMenu(null)}
           items={[
-            { label: "Examine", icon: "◈", hint: "E", onClick: () => toast({ kind: "item", title: ctxMenu.item.name, body: ctxMenu.item.desc }) },
+            { label: "Examine", icon: "◈", hint: "E", title: "Open the read-only Examine panel", onClick: () => { setSelectedItem(ctxMenu.item); setExamineNonce((n) => n + 1); } },
             canAct
               ? { label: "Equip", icon: "⚔", hint: "Q", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("do", { text: "I equip " + ctxMenu.item.name + "." }, { kind: "item", title: "Equipping " + ctxMenu.item.name, body: hero.name + " takes it up — relayed to the DM." }) }
               : { label: "Equip (preview)", icon: "⚔", hint: "Q", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "item", title: "Equipped: " + ctxMenu.item.name, body: hero.name + " takes it up." }) },
@@ -517,7 +520,102 @@ function ItemSlot({ item, selected, onClick, onContextMenu, onContextKey }) {
   );
 }
 
-function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
+// #756: pure stat-row builder for the item inspector — the SAME logic the harness
+// drives so "an armor inspector shows its AC" / "a versatile weapon shows 1d8 two-handed"
+// is proven against the real code, not a string grep. Each row is {k, v}; a field the
+// catalog didn't resolve is simply omitted (never a fabricated number). Damage folds the
+// Versatile two-handed die inline ("1d6 bludgeoning (1d8 two-handed)") — the optimizer's
+// "Examine is missing the Versatile property and the 1d8 two-handed damage" finding.
+function itemStatRows(item) {
+  if (!item) return [];
+  const rows = [];
+  rows.push({ k: "Weight", v: item.weight || "—" });
+  rows.push({ k: "Value", v: item.value || "—" });
+  if (item.damage) {
+    const dmg = [item.damage, item.damageType].filter(Boolean).join(" ");
+    const v = item.versatile ? `${dmg} (${item.versatile} two-handed)` : dmg;
+    rows.push({ k: "Damage", v });
+  }
+  if (typeof item.ac === "number") rows.push({ k: "Armor Class", v: String(item.ac) });
+  if (item.attunement) rows.push({ k: "Attunement", v: "Required" });
+  return rows;
+}
+
+// #756: compare a candidate item against what the hero currently has equipped in the
+// same conceptual slot, so the inspector can answer "is this an upgrade?" — the
+// optimizer's "no compare-on-hover anywhere in inventory or market". Returns null when
+// there is nothing comparable (no equipped peer, or neither carries a comparable stat).
+// Pure + display-only: reads hero.equipped (live read-model), writes nothing.
+function itemCompareRows(item, equipped) {
+  if (!item || !Array.isArray(equipped) || !equipped.length) return null;
+  // The peer is the equipped item inferred into the SAME doll slot as this candidate.
+  const slotOf = window.inferEquipSlotId ? window.inferEquipSlotId : () => "";
+  const mySlot = slotOf(item.name);
+  if (!mySlot) return null;
+  const peer = equipped.find((e) => e && e.name && slotOf(e.name) === mySlot && e.name !== item.name);
+  if (!peer) return null;
+  const rows = [];
+  // AC delta (armor): both numeric.
+  if (typeof item.ac === "number" && typeof peer.ac === "number") {
+    rows.push({ k: "Armor Class", mine: item.ac, theirs: peer.ac, delta: item.ac - peer.ac });
+  }
+  // Damage (weapons): compared as strings (dice exprs aren't linearly orderable), so just
+  // surface both sides — the player reads the upgrade. delta is null (no numeric ordering).
+  if (item.damage && peer.damage && item.damage !== peer.damage) {
+    rows.push({ k: "Damage", mine: item.damage, theirs: peer.damage, delta: null });
+  }
+  if (!rows.length) return null;
+  return { peer: peer.name, rows };
+}
+
+function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
+  // #756: Examine opens a real read-only PANEL (the full description + every resolved
+  // stat), not a fleeting toast — the optimizer's "Examine fires a toast ONLY". Local
+  // display state; closing returns to the standard inspector. Reset when the item changes.
+  const [examineOpen, setExamineOpen] = React.useState(false);
+  React.useEffect(() => { setExamineOpen(false); }, [item && item.id]);
+  // The right-click "Examine" raises examineSignal (a nonce). Open the panel when it
+  // changes to a truthy value (the first bump after a fresh selection).
+  React.useEffect(() => { if (examineSignal) setExamineOpen(true); }, [examineSignal]);
+  const statRows = itemStatRows(item);
+  const compare = itemCompareRows(item, hero && hero.equipped);
+
+  if (examineOpen) {
+    return (
+      <div role="dialog" aria-label={"Examine " + (item.name || "item")}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="eyebrow" style={{ color: "var(--royal)" }}>Examining</div>
+          <BrassButton tone="ghost" size="sm" onClick={() => setExamineOpen(false)} aria-label="Close examine panel">Close</BrassButton>
+        </div>
+        <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginTop: 6 }}>
+          <Img scope={itemScope(item)} label={item.name} w={88} h={88} framed />
+          <div style={{ minWidth: 0 }}>
+            <h2 className="h1" style={{ fontSize: 20, lineHeight: 1.1 }}>{item.name}</h2>
+            <div className="hand" style={{ fontSize: 13, color: "var(--ink-700)" }}>{itemCategory(item)}</div>
+          </div>
+        </div>
+        <Divider />
+        <p className="body" style={{ marginTop: 0, fontSize: 15 }}>{item.desc}</p>
+        {statRows.length > 0 && (
+          <>
+            <div className="eyebrow">Particulars</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+              {statRows.map((r) => <StatLine key={r.k} k={r.k} v={r.v} />)}
+            </div>
+          </>
+        )}
+        {Array.isArray(item.properties) && item.properties.length > 0 && (
+          <>
+            <div className="eyebrow" style={{ marginTop: 12 }}>Properties</div>
+            <div className="tag-row" style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {item.properties.map((p) => <Pill key={p}>{p}</Pill>)}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
@@ -546,17 +644,39 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
       </p>
 
       {/* Stat block — Weight/Value always (catalog-backfilled), plus the REAL combat stats the
-          read-model now surfaces from the SRD item catalog: damage dice + type for weapons, base
-          AC for armor/shields. A field absent from the catalog record is simply not rendered —
-          never a fabricated number (e.g. a free-text "Longsword +1" the catalog can't resolve
-          shows weight/value only, exactly today's behavior). */}
+          read-model now surfaces from the SRD item catalog: damage dice + type for weapons (with
+          the Versatile two-handed die folded in, #756), base AC for armor/shields. A field absent
+          from the catalog record is simply not rendered — never a fabricated number (e.g. a
+          free-text "Longsword +1" the catalog can't resolve shows weight/value only). Built from
+          the pure itemStatRows() so the harness drives the exact shipped rows. */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 14 }}>
-        <StatLine k="Weight" v={item.weight || "—"} />
-        <StatLine k="Value" v={item.value || "—"} />
-        {item.damage && <StatLine k="Damage" v={[item.damage, item.damageType].filter(Boolean).join(" ")} />}
-        {typeof item.ac === "number" && <StatLine k="Armor Class" v={`${item.ac}`} />}
-        {item.attunement && <StatLine k="Attunement" v="Required" />}
+        {statRows.map((r) => <StatLine key={r.k} k={r.k} v={r.v} />)}
       </div>
+
+      {/* #756: compare-to-equipped — "is this an upgrade?" The optimizer flagged the absence of any
+          compare affordance. Shown only when a comparable peer is equipped in the same slot. */}
+      {compare && (
+        <>
+          <Divider />
+          <div className="eyebrow">Versus Equipped</div>
+          <div className="muted body-sm" style={{ marginTop: 2 }}>Compared to {compare.peer}</div>
+          <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+            {compare.rows.map((r) => (
+              <div key={r.k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span className="muted body-sm">{r.k}</span>
+                <span style={{ fontFamily: "var(--f-mono)", fontSize: 12 }}>
+                  {String(r.mine)} <span className="muted">vs {String(r.theirs)}</span>
+                  {typeof r.delta === "number" && r.delta !== 0 && (
+                    <span style={{ marginLeft: 6, color: r.delta > 0 ? "var(--emerald)" : "var(--crimson)", fontFamily: "var(--f-display)" }}>
+                      {r.delta > 0 ? "+" + r.delta : String(r.delta)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {Array.isArray(item.properties) && item.properties.length > 0 && (
         <>
@@ -593,7 +713,7 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove }) {
             Use (preview)
           </BrassButton>
         )}
-        <BrassButton tone="ghost" size="sm" onClick={() => toast && toast({ kind: "item", title: item.name, body: item.desc })}>Examine</BrassButton>
+        <BrassButton tone="ghost" size="sm" aria-haspopup="dialog" onClick={() => setExamineOpen(true)}>Examine</BrassButton>
         {canAct ? (
           <BrassButton tone="ghost" size="sm" title="Relays to the DM via /move — the engine resolves it" onClick={() => postInvMove("do", { text: "I drop the " + item.name + "." }, { kind: "danger", title: "Dropping " + item.name, body: "Relayed to the DM." })}>
             Drop
@@ -632,4 +752,4 @@ function itemCategory(item) {
 
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope, itemStatRows, itemCompareRows });
