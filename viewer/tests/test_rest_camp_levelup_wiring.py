@@ -430,5 +430,157 @@ class LevelUpNoXpTooltipTests(_Harness):
         self.assertIn("no xp", out["text"])
 
 
+# RRI-25e55fa optimizer #1 (the L11-no-archetype case): a Fighter PAST its subclass-choice level
+# (3) with NO archetype set, leveling into L11 — a level that grants NO fresh "subclass" feature in
+# features_gained, and the hero carries no `pendingSubclass` flag. The ENGINE still flags the missed
+# choice as OVERDUE on the build option (`option.subclass.required: true`). The picker must surface
+# the subclass prompt from THAT engine flag, not only from a pendingSubclass / a /subclass/ feature
+# name — otherwise an L11 sheet reads "Choose your subclass" nowhere and the archetype goes unenforced.
+_PLANNER_OVERDUE_SUBCLASS = json.dumps({
+    "ok": True,
+    "planner": {
+        "options": [{
+            "class_name": "fighter",
+            "from": {"level": 10}, "to": {"level": 11, "class_level": 11},
+            "hp_gain": 7,
+            # L11 fighter gains Extra Attack (2) — NOT a subclass feature; the name has no /subclass/.
+            "features_gained": [{"name": "Extra Attack (2)"}],
+            "choices": {"asi_required": False, "feat_allowed": False, "multiclass_allowed": True},
+            "subclass": {
+                "required": True,            # the engine flags the OVERDUE archetype choice
+                "group_label": "Martial Archetype",
+                "current": None,
+                "options": [
+                    {"name": "Champion", "desc": "Improved Critical.",
+                     "features": [{"name": "Improved Critical", "desc": "Crit on 19-20."}]},
+                    {"name": "Battle Master", "desc": "Combat maneuvers.",
+                     "features": [{"name": "Combat Superiority", "desc": "Maneuvers + dice."}]},
+                ],
+            },
+        }],
+    },
+})
+# The hero has NO pendingSubclass flag — the prompt must come purely from the engine's option.subclass.required.
+_HERO_L10_NO_ARCHETYPE = (
+    "{ id: 'char_1', name: 'Karlach', class: 'fighter', level: 10, archetype: '', "
+    "xp: 100000, xpMax: 120000, spells: [], spellSlots: {} }"
+)
+
+
+# RRI-25e55fa optimizer #4 — a hero with Hit Dice available to spend on a short rest. The sheet
+# shows "11/11d10" but had no control to actually spend them for HP; the engine
+# short_rest(hit_dice_to_spend=N) supports it.
+_HERO_WITH_HIT_DICE = (
+    "{ id: 'char_1', name: 'Karlach', class: 'fighter', level: 11, "
+    "xp: 100, xpMax: 999999, spells: [], spellSlots: {}, "
+    "stats: { hitDice: '11d10', hitDiceRemaining: 11 } }"
+)
+
+
+class ShortRestHitDiceTests(_Harness):
+    """RRI-25e55fa optimizer #4 — the Short Rest flow gains a Hit-Dice-SPEND control; the chosen
+    count rides the relayed `do` move so the engine's short_rest(hit_dice_to_spend=N) can apply it.
+    The viewer stays a move-sink: it composes the intent, the engine resolves the HP."""
+
+    def _mount(self):
+        return (
+            "h.mountRest({ hero: " + _HERO_WITH_HIT_DICE + ", party: [{ id:'char_1', name:'Karlach' }],"
+            " campaignId: 'camp1', canAct: true, dmBusy: false,"
+            " onClose: function(){}, onDone: function(){}, toast: function(){}, setState: function(){} });"
+        )
+
+    def test_hit_dice_control_appears_on_short_rest(self):
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-card-short');"
+            "return ({ control: h.exists('short-rest-hit-dice'), text: h.text() });"
+        )
+        self.assertGreaterEqual(out["control"], 1, "the short rest must expose a Hit-Dice-spend control")
+        # the available pool (11/11d10) is shown so the player knows how many they can spend
+        self.assertIn("11", out["text"])
+
+    def test_hit_dice_count_rides_the_short_rest_move(self):
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-card-short');"
+            "await h.click('short-rest-hd-inc');"
+            "await h.click('short-rest-hd-inc');"
+            "await h.click('rest-make-camp');"
+            "return ({ posts: h.posts() });"
+        )
+        moves = [p for p in out["posts"] if p["url"] == "/move"]
+        self.assertTrue(moves, "Make camp must relay a /move")
+        text = moves[0]["body"]["text"].lower()
+        self.assertIn("short rest", text)
+        # the chosen hit-dice count must be in the relayed intent so the engine can spend exactly N.
+        self.assertIn("2 hit dice", text)
+
+    def test_hit_dice_control_absent_when_none_remaining(self):
+        """A hero with no hit dice remaining (0/11d10) shows no spend control — never a dead stepper."""
+        hero0 = _HERO_WITH_HIT_DICE.replace("hitDiceRemaining: 11", "hitDiceRemaining: 0")
+        out = self._run(
+            "h.mountRest({ hero: " + hero0 + ", party: [{ id:'char_1', name:'Karlach' }],"
+            " campaignId: 'camp1', canAct: true, dmBusy: false,"
+            " onClose: function(){}, onDone: function(){}, toast: function(){}, setState: function(){} });"
+            "await h.click('rest-card-short');"
+            "return ({ control: h.exists('short-rest-hit-dice') });"
+        )
+        self.assertEqual(out["control"], 0, "no hit dice remaining -> no spend control")
+
+    def test_long_rest_has_no_hit_dice_control(self):
+        """Hit-dice spend is a SHORT-rest mechanic; switching to a long rest hides the control."""
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-card-long');"
+            "return ({ control: h.exists('short-rest-hit-dice') });"
+        )
+        self.assertEqual(out["control"], 0, "the long-rest path shows no hit-dice spend control")
+
+
+class LevelUpOverdueSubclassTests(_Harness):
+    """RRI-25e55fa optimizer #1 — the engine's overdue-archetype flag (option.subclass.required)
+    drives the subclass prompt even when the level grants no fresh subclass feature + no
+    pendingSubclass flag (the L11-no-archetype case)."""
+
+    def _mount(self, hero=_HERO_L10_NO_ARCHETYPE, planner=_PLANNER_OVERDUE_SUBCLASS):
+        return (
+            "h.setPlanner(" + planner + ");"
+            "h.mountLevelUp({ hero: " + hero + ", campaignId: 'camp1',"
+            " onClose: function(){}, onDone: function(){}, toast: function(){} });"
+            "await h.settle();"
+        )
+
+    def test_overdue_subclass_prompt_shows_from_engine_required_flag(self):
+        out = self._run(
+            self._mount() +
+            "return ({"
+            "  section: h.exists('levelup-subclass-section'),"
+            "  champion: h.exists('levelup-subclass-option-champion'),"
+            "  battlemaster: h.exists('levelup-subclass-option-battle-master'),"
+            "  text: h.text() });"
+        )
+        self.assertGreaterEqual(out["section"], 1,
+                                "the subclass section must render for an OVERDUE archetype (engine required flag)")
+        self.assertGreaterEqual(out["champion"], 1, "Champion option must render")
+        self.assertGreaterEqual(out["battlemaster"], 1,
+                                "Battle Master must render — ALL engine-returned options show, not just Champion")
+        self.assertIn("Martial Archetype", out["text"])
+
+    def test_overdue_confirm_blocks_until_archetype_named(self):
+        """With the archetype overdue + unnamed, Confirm is disabled with the group-label reason —
+        so an L11 level-up can't silently skip the missed subclass (archetype stays enforced)."""
+        out = self._run(
+            self._mount() +
+            "var before = h.props('levelup-confirm');"
+            "await h.click('levelup-subclass-option-battle-master');"
+            "var after = h.props('levelup-confirm');"
+            "return ({ disabled_before: !!before.disabled, title: (before.title || ''),"
+            "  disabled_after: !!after.disabled });"
+        )
+        self.assertTrue(out["disabled_before"], "an overdue, unnamed archetype must block Confirm")
+        self.assertIn("Martial Archetype", out["title"], "the reason must name the overdue archetype group")
+        self.assertFalse(out["disabled_after"], "naming the archetype enables Confirm")
+
+
 if __name__ == "__main__":
     unittest.main()

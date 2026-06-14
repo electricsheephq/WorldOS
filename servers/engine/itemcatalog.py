@@ -130,6 +130,20 @@ def _int(value, default: int = 0) -> int:
         return default
 
 
+def _weapon_range(fields: dict) -> dict:
+    """RRI-25e55fa optimizer #3 — recover the SRD weapon RANGE the bare flatten threw away.
+
+    SRD ``Weapon.json`` carries ``range`` (normal range in feet) and ``long_range`` (the
+    disadvantaged-attack bracket). A ranged weapon (Heavy Crossbow 100/400) AND a thrown
+    melee weapon (Dagger 20/60) both carry these; a pure melee weapon (Longsword) carries
+    0/0. We surface them verbatim so the inspector can read the real "100/400 ft" bracket —
+    and a 0 range honestly hides the row (never a fabricated number)."""
+    return {
+        "range": _int(fields.get("range")),
+        "range_long": _int(fields.get("long_range")),
+    }
+
+
 def _armor_dex_rule(fields: dict, ac_base: int, name: str) -> dict:
     """F09-6 — recover the SRD armor DEX-mod rule the bare ``ac_base`` throws away.
 
@@ -276,6 +290,8 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
             "damage": fields.get("damage_dice") or "",
             "damage_type": fields.get("damage_type") or "",
             "versatile": extra.get("versatile", ""),
+            # RRI-25e55fa optimizer #3: the SRD weapon range bracket (0/0 for pure melee).
+            **_weapon_range(fields),
         }
 
     if model == "armor":
@@ -326,6 +342,9 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
         wf = weapons[wfk]
         record["damage"] = wf.get("damage_dice") or ""
         record["damage_type"] = wf.get("damage_type") or ""
+        # RRI-25e55fa optimizer #3: a magic weapon inherits its base weapon's range bracket
+        # via the same FK (0/0 for a melee polearm — never a fabricated thrown range).
+        record.update(_weapon_range(wf))
         # #756: a magic weapon inherits its base weapon's SRD properties + versatile
         # two-handed die via the same FK (de-duped onto the attunement clause above).
         wp = wprops.get(wfk, {})

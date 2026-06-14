@@ -83,6 +83,11 @@ function ScreenInventory({ onNavigate, state, setState }) {
     } catch (error) { /* keep last good / demo fallback */ }
   }, [surfaceQuery]);
 
+  // RRI-25e55fa optimizer #5 (Stash/Market examine PARITY): the read-only /item-catalog map the
+  // Stash inspector backfills from. Declared here so the fetch effect (after the stash list is
+  // derived below) can populate it; merged through the SAME window.enrichWare the Market uses.
+  const [catalog, setCatalog] = React.useState({});
+
   React.useEffect(() => {
     let cancelled = false;
     let timer = null;
@@ -108,6 +113,26 @@ function ScreenInventory({ onNavigate, state, setState }) {
   // The stash is the active hero's own pack (live surface); never the demo stash.
   const stash = (hero && Array.isArray(hero.items)) ? hero.items
     : (Array.isArray(surface?.stash) ? surface.stash : []);
+
+  // Fetch the SRD catalog for the current stash's item names (read-only), so the Stash
+  // inspector can backfill a stat the granted item didn't persist (range / value / properties)
+  // through the SAME window.enrichWare helper the Market uses. Refetched only when the set of
+  // names changes; an unreachable endpoint degrades to the item's own persisted fields.
+  const stashNamesKey = React.useMemo(
+    () => Array.from(new Set((stash || []).map((i) => i && i.name).filter(Boolean))).sort().join("\u0000"),
+    [stash],
+  );
+  React.useEffect(() => {
+    const names = stashNamesKey ? stashNamesKey.split("\u0000") : [];
+    if (!names.length) { setCatalog({}); return; }
+    let cancelled = false;
+    const q = names.map((n) => "name=" + encodeURIComponent(n)).join("&");
+    fetch("/item-catalog?" + q, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && d.items) setCatalog(d.items); })
+      .catch(() => { /* keep last good; the inspector still shows the item's persisted fields */ });
+    return () => { cancelled = true; };
+  }, [stashNamesKey]);
 
   React.useEffect(() => {
     if (party.length && !party.some((p) => p.id === activeHero)) {
@@ -310,9 +335,12 @@ function ScreenInventory({ onNavigate, state, setState }) {
         </div>
       </Panel>
 
-      {/* RIGHT — Item detail */}
+      {/* RIGHT — Item detail. RRI-25e55fa optimizer #5: enrich the selected item from the SAME
+          /item-catalog via the SAME window.enrichWare the Market uses (Stash/Market PARITY), so a
+          stash item missing a stat the granted item didn't persist backfills to the same depth.
+          The item's OWN persisted fields win; an unresolved name returns the item untouched. */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
-        {selectedItem ? <ItemDetail item={selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} examineSignal={examineNonce} /> : <div className="muted">Select an item.</div>}
+        {selectedItem ? <ItemDetail item={window.enrichWare ? window.enrichWare(selectedItem, catalog) : selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} examineSignal={examineNonce} /> : <div className="muted">Select an item.</div>}
       </Panel>
 
       {ctxMenu && (
@@ -547,11 +575,20 @@ function itemStatRows(item) {
   if (!item) return [];
   const rows = [];
   rows.push({ k: "Weight", v: item.weight || "—" });
-  rows.push({ k: "Value", v: item.value || "—" });
+  // RRI-25e55fa optimizer #3 ("Value — blank while Price populated"): prefer the item's OWN
+  // value, then fall back to the catalog cost string (costValue) so a priced item never reads a
+  // bare "—" beside a populated Price. Only "—" when neither is known (honest, never fabricated).
+  rows.push({ k: "Value", v: item.value || item.costValue || "—" });
   if (item.damage) {
     const dmg = [item.damage, item.damageType].filter(Boolean).join(" ");
     const v = item.versatile ? `${dmg} (${item.versatile} two-handed)` : dmg;
     rows.push({ k: "Damage", v });
+  }
+  // RRI-25e55fa optimizer #3: a ranged/thrown weapon shows its real range bracket
+  // ("100/400 ft"); the server composes rangeDisplay from the SRD weapon range, blank for a
+  // pure melee weapon — so the row is rendered ONLY when there is a real bracket (never "0/0 ft").
+  if (item.rangeDisplay) {
+    rows.push({ k: "Range", v: item.rangeDisplay });
   }
   // F09-6 armor dex rule: the server composes acDisplay from REAL fields — medium reads
   // "AC 14 + DEX (max +2)", a shield reads its bonus "+2" (not the misleading flat "AC 2").

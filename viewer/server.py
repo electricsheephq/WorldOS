@@ -4199,6 +4199,11 @@ def _catalog_stat_block(name: str) -> dict:
     ac_dex_mod = _text(meta.get("ac_dex_mod"))
     cap_raw = meta.get("ac_dex_cap")
     ac_dex_cap = int(cap_raw) if isinstance(cap_raw, (int, float)) else None
+    # RRI-25e55fa optimizer #3: the weapon range bracket (only meaningful alongside a damage
+    # expr — a thrown/ranged weapon; a pure melee weapon's range is 0 -> blank display).
+    rng = _num(meta.get("range"))
+    rng_long = _num(meta.get("range_long"))
+    range_display = _weapon_range_display(rng, rng_long) if damage else ""
     return {
         "resolved": True,
         "name": _text(meta.get("name"), name),
@@ -4209,6 +4214,11 @@ def _catalog_stat_block(name: str) -> dict:
         "damage": damage,
         "damageType": _text(meta.get("damage_type")) if damage else "",
         "versatile": _text(meta.get("versatile")) if damage else "",
+        # Weapon range bracket: `range`/`rangeLong` (ints) + composed `rangeDisplay`
+        # ("100/400 ft"). Empty display for a pure melee weapon (the screen hides the row).
+        "range": int(rng) if rng is not None and rng > 0 else 0,
+        "rangeLong": int(rng_long) if rng_long is not None and rng_long > 0 else 0,
+        "rangeDisplay": range_display,
         "ac": ac,
         "armorCategory": armor_category,
         "acDexMod": ac_dex_mod,
@@ -4218,6 +4228,21 @@ def _catalog_stat_block(name: str) -> dict:
         "properties": _catalog_property_chips(meta),
         "description": _text(meta.get("description")),
     }
+
+
+def _weapon_range_display(rng: "int | None", rng_long: "int | None") -> str:
+    """RRI-25e55fa optimizer #3 — compose the weapon RANGE bracket for the inspector from REAL
+    SRD fields only. A ranged/thrown weapon reads "100/400 ft" (normal/long); when only a normal
+    range is known it reads "100 ft"; a pure melee weapon (range 0) returns "" so the screen
+    renders NO Range row (HONEST — never the misleading "0/0 ft"). Re-derived against
+    data/srd/srd524/Weapon.json via itemcatalog's `range`/`range_long`."""
+    n = rng if isinstance(rng, (int, float)) else 0
+    if not n or n <= 0:
+        return ""
+    long = rng_long if isinstance(rng_long, (int, float)) else 0
+    if long and long > n:
+        return f"{int(n)}/{int(long)} ft"
+    return f"{int(n)} ft"
 
 
 def _armor_ac_display(ac: "int | None", armor_category: str, ac_dex_mod: str, ac_dex_cap: "int | None") -> str:
@@ -4268,6 +4293,10 @@ def _item_stat_block(item: dict, meta: dict) -> dict:
         return v if v is not None else _num(meta.get(meta_key or field))
 
     damage = pick_str("damage")
+    # RRI-25e55fa optimizer #3: the weapon range bracket — prefer the item's own persisted
+    # range (forward-compatible), fall back to the by-name SRD catalog (range/range_long).
+    rng_num = pick_num("range")
+    rng_long_num = pick_num("range_long")
     ac_num = pick_num("ac")
     ac = int(ac_num) if ac_num is not None else None
     armor_category = pick_str("armor_category")
@@ -4296,6 +4325,10 @@ def _item_stat_block(item: dict, meta: dict) -> dict:
         # #756 Versatile two-handed die — not a persisted Item field today, so it resolves from
         # the catalog (persisted-first via pick_str keeps it forward-compatible). Damage-gated.
         "versatile": pick_str("versatile") if damage else "",
+        # RRI-25e55fa optimizer #3: weapon range bracket (damage-gated; empty for melee).
+        "range": int(rng_num) if rng_num is not None and rng_num > 0 else 0,
+        "rangeLong": int(rng_long_num) if rng_long_num is not None and rng_long_num > 0 else 0,
+        "rangeDisplay": (_weapon_range_display(rng_num, rng_long_num) if damage else ""),
         "ac": ac,
         "armorCategory": armor_category,
         "acDexMod": ac_dex_mod,
@@ -4362,6 +4395,10 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             "damage": stats["damage"],
             "damageType": stats["damageType"],
             "versatile": stats["versatile"],
+            # RRI-25e55fa optimizer #3: weapon range bracket ("100/400 ft"; "" for melee).
+            "range": stats["range"],
+            "rangeLong": stats["rangeLong"],
+            "rangeDisplay": stats["rangeDisplay"],
             "ac": stats["ac"],
             "armorCategory": stats["armorCategory"],
             "acDexMod": stats["acDexMod"],
