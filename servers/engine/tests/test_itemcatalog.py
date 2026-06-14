@@ -63,6 +63,54 @@ def test_resolve_magic_weapon_resolves_damage_via_fk():
     assert rec["damage"] == "1d10"  # joined from the glaive weapon record
 
 
+# --- weapon RANGE (B / RRI-25e55fa optimizer: "Heavy Crossbow has no 100/400 ft") ----
+# A ranged or thrown weapon carries a normal/long range from the SRD Weapon record; the
+# catalog dropped it so the inspector showed no range. Additive `range` field ("100/400")
+# from the SRD `range`/`long_range`. A pure-melee weapon (range 0) carries no range string.
+
+
+def test_resolve_ranged_weapon_has_range():
+    rec = itemcatalog.resolve("Heavy Crossbow")
+    assert rec is not None
+    assert rec["kind"] == "weapon"
+    assert rec["damage"] == "1d10"
+    # SRD 5.2 Heavy Crossbow: normal 100 ft / long 400 ft.
+    assert rec["range"] == "100/400"
+    # The cost (a buyer's "value") is carried consistently alongside price.
+    assert rec["cost"] == 50.0
+    assert rec["value"] == 50.0
+
+
+def test_resolve_longbow_range_matches_srd():
+    rec = itemcatalog.resolve("Longbow")
+    assert rec is not None
+    assert rec["range"] == "150/600"  # SRD 5.2 Longbow
+
+
+def test_resolve_thrown_weapon_has_range():
+    rec = itemcatalog.resolve("Dagger")
+    assert rec is not None
+    # A thrown weapon also has a (shorter) range band.
+    assert rec["range"] == "20/60"
+
+
+def test_melee_weapon_carries_no_range_string():
+    # A pure-melee weapon (SRD range 0/0) must NOT fabricate a range — empty string.
+    rec = itemcatalog.resolve("Longsword")
+    assert rec is not None
+    assert rec.get("range", "") == ""
+
+
+def test_catalog_record_carries_value_alias_for_cost():
+    # B: the read-model carries the catalog cost as the item's `value` (the optimizer saw
+    # "Value —" blank while Price populated). A priced item has value == cost; an unpriced
+    # magic item has value None (never fabricated — priceless is not free).
+    sword = itemcatalog.resolve("Longsword")
+    assert sword["value"] == sword["cost"] == 15.0
+    bag = itemcatalog.resolve("Bag of Holding")
+    assert bag["value"] is None and bag["cost"] is None
+
+
 def test_flattened_record_shape():
     rec = itemcatalog.resolve("Bag of Holding")
     # Every record carries the common keys; weapons/armor add damage/ac.

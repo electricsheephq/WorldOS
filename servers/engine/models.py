@@ -162,6 +162,7 @@ class Item(_StrictModel):
     cost_gp: Optional[float] = None    # listed SRD price in gp, or None (unpriced/free-text)
     damage: str = ""                   # weapon damage dice ("1d8"), "" for non-weapons
     damage_type: str = ""              # "slashing" / "piercing" / ...
+    range: str = ""                    # ranged/thrown weapon range band ("100/400"), "" for melee/non-weapon
     ac: Optional[int] = None           # armor base AC (or shield bonus), None for non-armor
     armor_category: str = ""           # light / medium / heavy / shield ("" = n/a)
     ac_dex_mod: str = ""               # full / capped / none ("" = n/a)
