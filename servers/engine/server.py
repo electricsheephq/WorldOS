@@ -5391,6 +5391,39 @@ def _release_held_targets(c, caster_id: str, spell_name: str) -> list[dict]:
     return freed
 
 
+def _aoe_damage_spec(curated, srd, slot_level: int, caster_level: int, casting_mod: int):
+    """The damage expression + save ability + on-save rule + damage type for an AoE/multi-target
+    SAVE spell (F03-4), from whichever data source carries it, or None when the spell isn't a
+    resolvable save-for-damage area spell. Returns ``{damage, save_ability, on_save, damage_type}``
+    (save_ability/damage_type as short strings). Curated spells use resolve_effect (so upcast is
+    applied); an srd524-only spell uses its base damage_roll (upcast is prose-only there — kept
+    consistent with cast_spell's documented degrade contract: the BASE dice are rolled, the DM
+    upcasts by hand if the prose says so)."""
+    if curated is not None:
+        eff = spells.resolve_effect(curated, slot_level, caster_level, casting_mod)
+        if eff.get("kind") != "save" or not eff.get("damage"):
+            return None
+        return {
+            "damage": eff["damage"],
+            "save_ability": (eff.get("save_ability") or "dex"),
+            "on_save": (eff.get("on_save") or "half"),
+            "damage_type": (eff.get("damage_type") or ""),
+        }
+    if srd is not None:
+        save_ab = (srd.get("saving_throw_ability") or "").strip().lower()
+        dmg = srd.get("damage_roll") or ""
+        if not save_ab or not dmg:
+            return None  # not a save-for-damage area spell (e.g. Hold Person: save, no damage)
+        types = srd.get("damage_types") or []
+        return {
+            "damage": dmg,
+            "save_ability": save_ab,
+            "on_save": "half",  # SRD area save-for-half is the overwhelming default
+            "damage_type": (types[0] if types else ""),
+        }
+    return None
+
+
 @mcp.tool()
 def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
     """Roll a concentration saving throw (CON save) at the given DC (usually
@@ -6327,6 +6360,8 @@ def cast_spell(
     npc_id: str = "",
     id: str = "",
     as_ritual: bool = False,
+    innate: bool = False,
+    target_ids: Optional[list] = None,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -6396,6 +6431,27 @@ def cast_spell(
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
+        # AoE / MULTI-TARGET VALIDATION (F03-4): validate-BEFORE-spend. Resolve EVERY id in
+        # `target_ids` up front; if ANY is unknown, reject the WHOLE cast cleanly here — BEFORE
+        # the slot spend / concentration set (the engine's rejection-before-state-change
+        # discipline). A non-empty list means "the engine resolves the area's per-target damage
+        # saves itself" (one shared damage roll, full/half per save). Empty/None = today's
+        # single-target behavior, byte-identical. Order-preserving + de-duped.
+        aoe_targets: list = []
+        if target_ids:
+            seen_ids: set[str] = set()
+            for tid in target_ids:
+                tid = str(tid)
+                if tid in seen_ids:
+                    continue
+                tgt = c.characters.get(tid)
+                if tgt is None:
+                    raise ValueError(
+                        f"unknown target id {tid!r} in target_ids — the whole AoE cast is "
+                        f"rejected (no slot spent). Check the id and re-cast."
+                    )
+                seen_ids.add(tid)
+                aoe_targets.append(tgt)
         # SRD: an incapacitated creature can't take an action — and a spell's casting time is
         # (almost always) an action/bonus/reaction, so refuse the cast outright rather than
         # spend the caster's slot / set concentration. Mirrors the attack() guard. (extends #42)
@@ -6463,14 +6519,35 @@ def cast_spell(
             if cf not in known_cf:
                 raise ValueError(f"{ch.name} doesn't know or have {canonical!r} prepared")
         slot_used = None
+        # INNATE CASTING (F03-11): a monster/NPC casts a leveled spell from an innate/at-will
+        # trait (a Mage Hand Press archmage, a drow's Darkness) — there is no Vancian slot to
+        # spend. `innate=True` skips the slot CHECK and SPEND but keeps every other cast
+        # semantic (concentration, duration, the on-hit/save-ends rider, the DC), so an enemy
+        # Hold Person routes through cast_spell and composes with F03-6's release. No-slot
+        # state integrity: slot_used is reported as "innate" (not a level). Still honors the
+        # downcast guard so you can't claim a sub-level cast.
+        if spell_level > 0 and not as_ritual and innate:
+            lvl = spell_level if slot_level is None else slot_level
+            if lvl < spell_level:
+                raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
+            slot_used = "innate"
         # A ritual cast consumes NO slot (#813) — the +10 minutes is the cost; the
         # spell resolves at its base level (a ritual can't be upcast).
-        if spell_level > 0 and not as_ritual:
+        elif spell_level > 0 and not as_ritual:
             lvl = spell_level if slot_level is None else slot_level
             if lvl < spell_level:
                 raise ValueError(f"cannot cast a level-{spell_level} spell with a level-{lvl} slot")
             slot = ch.spell_slots.get(lvl)
             if slot is None or slot.used >= slot.maximum:
+                # Enrich the affordance for a monster/NPC caster (F03-11): no spawn path seeds
+                # spell_slots, so a stat-block caster has none — point at innate=True rather than
+                # leaving a dead end. PCs keep the plain slot-exhausted message.
+                if ch.kind in ("monster", "npc"):
+                    raise ValueError(
+                        f"{ch.name} has no level-{lvl} spell slot — a monster/NPC stat block "
+                        f"carries no Vancian slots. For an innate/at-will trait cast, pass "
+                        f"innate=True (no slot spent); otherwise seed spell_slots first."
+                    )
                 raise ValueError(f"no level-{lvl} spell slot available")
             slot.used += 1
             slot_used = lvl
@@ -6608,6 +6685,87 @@ def cast_spell(
             c.characters[rider_child_target.id] = Character.model_validate(
                 rider_child_target.model_dump(mode="json")
             )
+        # AoE / MULTI-TARGET RESOLUTION (F03-4). Targets were validated up front (before the
+        # slot spend). Now the area save-for-damage spell is resolved by the ENGINE: ONE shared
+        # damage roll for the whole area, then a per-target saving throw vs the caster's DC,
+        # applying full damage on a fail and half on a success (5e area-save default). Existing
+        # save discipline applies per target via combat.save_modifiers (a paralyzed target
+        # auto-fails its DEX save; restrained → disadvantage), and damage runs through the same
+        # combat.apply_damage pipeline as everything else (resistances, temp HP, downing, the
+        # concentration-check DC). One lock, one write. Surfaced as a per-target result table.
+        aoe_result = None
+        if aoe_targets:
+            spec = _aoe_damage_spec(
+                curated, srd,
+                slot_used if isinstance(slot_used, int) else spell_level,
+                ch.total_level, mod,
+            )
+            save_dc = 8 + prof + mod
+            if spec is None:
+                # A non-damage area spell (or an un-resolvable record): we still validated the
+                # ids and report them, but the DM resolves the effect (no engine damage to roll).
+                aoe_result = {
+                    "shared_damage": None,
+                    "save_dc": save_dc,
+                    "note": (
+                        "No engine-resolvable area damage for this spell — the targets are "
+                        "validated; resolve the effect per target by hand (saving_throw + "
+                        "apply_damage / add_condition)."
+                    ),
+                    "targets": [{"character_id": t.id, "name": t.name} for t in aoe_targets],
+                }
+            else:
+                save_ab = Ability(spec["save_ability"])
+                dmg = dice_mod.roll(spec["damage"])  # ONE roll shared across the whole area
+                rows: list[dict] = []
+                for t in aoe_targets:
+                    auto_fail, disadvantage = combat.save_modifiers(t, save_ab)
+                    sr = dice_mod.roll(
+                        f"1d20+{t.saving_throw_bonus(save_ab)}", disadvantage=disadvantage
+                    )
+                    saved = (not auto_fail) and sr.total >= save_dc
+                    half = saved and spec["on_save"] == "half"
+                    # A successful save vs an on_save != "half" spell (rare for pure damage)
+                    # negates entirely; resolve that as zero applied.
+                    if saved and spec["on_save"] != "half":
+                        outcome = {**combat.status(t), "damage_to_hp": 0, "absorbed": 0,
+                                   "concentration_dc": None}
+                    else:
+                        was_tc = t.concentration  # F03-6: free this target's held victims if downed
+                        outcome = combat.apply_damage(
+                            t, dmg.total, half=half, damage_type=spec["damage_type"]
+                        )
+                        if was_tc and t.concentration is None:
+                            _release_held_targets(c, t.id, was_tc)
+                    c.characters[t.id] = Character.model_validate(t.model_dump(mode="json"))
+                    kx = _award_kill_xp(c, t)
+                    row = {
+                        "character_id": t.id,
+                        "name": t.name,
+                        "save_roll": sr.total,
+                        "natural": sr.natural,
+                        "saved": saved,
+                        "damage_taken": outcome.get("damage_to_hp", 0),
+                        "current_hp": outcome.get("current_hp"),
+                        "halved": half,
+                    }
+                    if auto_fail:
+                        row["auto_fail"] = True
+                    if disadvantage:
+                        row["disadvantage"] = True
+                    if outcome.get("concentration_dc"):
+                        row["concentration_dc"] = outcome["concentration_dc"]
+                    if kx:
+                        row["kill_xp"] = kx
+                    rows.append(row)
+                aoe_result = {
+                    "shared_damage": {"total": dmg.total, "expr": spec["damage"],
+                                      "type": spec["damage_type"], "detail": dmg.detail},
+                    "save_ability": save_ab.value,
+                    "save_dc": save_dc,
+                    "on_save": spec["on_save"],
+                    "targets": rows,
+                }
         # An off-turn / reaction cast spends the caster's reaction (the combatant record
         # is separate from the character, so the re-validation above didn't touch it).
         if cast_consumes_reaction and caster_cb is not None:
@@ -6629,6 +6787,20 @@ def cast_spell(
                 str(lv): s.maximum - s.used for lv, s in updated.spell_slots.items()
             },
         }
+        # AoE / multi-target table (F03-4): the engine-resolved per-target save+damage outcomes
+        # (one shared damage roll, full/half per save). Present only when target_ids was passed.
+        if aoe_result is not None:
+            result["aoe"] = aoe_result
+        # AREA SHAPE (F03-4): surface the spell's geometry (Cone/Sphere/Line + size) from the
+        # srd524 record so the DM can describe the area and pick who's caught — 52 spells carry
+        # it and it was previously never told. Additive; absent when the record has no shape.
+        shape_rec = srd or {}
+        if shape_rec.get("shape_type"):
+            shape = {"type": shape_rec.get("shape_type")}
+            if shape_rec.get("shape_size"):
+                shape["size"] = shape_rec.get("shape_size")
+                shape["unit"] = shape_rec.get("shape_size_unit") or "feet"
+            result["shape"] = shape
         # Ritual surfacing (#813): a ritual cast is told to the DM explicitly (no slot
         # was spent); a NORMAL cast of a ritual-tagged spell advertises the slot-free
         # option so the DM learns it exists. Both fields are additive.

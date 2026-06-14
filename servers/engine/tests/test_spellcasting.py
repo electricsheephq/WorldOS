@@ -427,3 +427,197 @@ def test_both_lists_empty_stays_fully_lenient():
     cid = server.create_campaign("S")["id"]
     w = _blank_wizard(cid)
     server.cast_spell(cid, w, "Magic Missile")  # no known/prepared -> lenient pass
+
+
+# --- F03-11: innate casting — monsters/NPCs route a leveled spell through cast_spell ---
+def test_monster_leveled_cast_without_slot_is_rejected_with_innate_hint():
+    """F03-11 (THE GAP): no spawn path seeds spell_slots, so a monster casting a leveled spell
+    fails for lack of a slot — but the error now POINTS at innate=True instead of dead-ending."""
+    cid = server.create_campaign("S")["id"]
+    foe = server.create_character(cid, "Drow Mage", kind="monster", max_hp=40,
+                                  abilities={"charisma": 16})["id"]
+    with pytest.raises(ValueError, match="innate=True"):
+        server.cast_spell(cid, foe, "Hold Person")  # no slots seeded
+
+
+def test_innate_leveled_cast_skips_slot_and_sets_concentration():
+    """F03-11: innate=True casts a leveled spell with NO slot spent (slot_used='innate') while
+    keeping concentration/duration — an enemy caster's spell state is now engine-tracked."""
+    cid = server.create_campaign("S")["id"]
+    foe = server.create_character(cid, "Drow Mage", kind="monster", max_hp=40,
+                                  abilities={"charisma": 16})["id"]
+    out = server.cast_spell(cid, foe, "Hold Person", innate=True)
+    assert out["slot_used"] == "innate"
+    assert out["concentration"] == "Hold Person"
+    assert server.get_character(cid, foe)["concentration"] == "Hold Person"
+
+
+def test_innate_monster_hold_person_concentration_and_release_compose_with_f0306():
+    """F03-11 + F03-6: a spawned monster casts Hold Person innate=True on a PC, the PC is
+    paralyzed with a self-enforcing marker linked to the MONSTER's concentration — and
+    breaking the monster's concentration (drop_concentration) frees the PC immediately."""
+    cid = server.create_campaign("S")["id"]
+    monster = server.create_character(cid, "Drow Mage", kind="monster", max_hp=40,
+                                      abilities={"charisma": 16})["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=30,
+                                 abilities={"wisdom": 8})["id"]
+    out = server.cast_spell(cid, monster, "Hold Person", target_id=pc, innate=True)
+    assert out["slot_used"] == "innate"
+    rider = out["condition_rider"]  # the save-ends rider is still surfaced
+    server.add_condition(cid, pc, "paralyzed", **{
+        k: rider[k] for k in ("repeat_save_ability", "repeat_save_dc", "source_id", "spell_name")
+    })
+    assert "paralyzed" in server.get_character(cid, pc)["conditions"]
+    # Breaking the monster's concentration frees the PC (composes with F03-6's release).
+    freed = server.drop_concentration(cid, monster)
+    assert {"character_id": pc, "name": "Hold Person"} in freed["freed_targets"]
+    assert "paralyzed" not in server.get_character(cid, pc)["conditions"]
+
+
+def test_innate_downcast_still_rejected():
+    """F03-11: innate skips the SLOT check but still honors the downcast guard — you can't
+    claim a level-2 spell cast at level 1."""
+    cid = server.create_campaign("S")["id"]
+    foe = server.create_character(cid, "Drow Mage", kind="monster", max_hp=40,
+                                  abilities={"charisma": 16})["id"]
+    with pytest.raises(ValueError, match="level-1 slot"):
+        server.cast_spell(cid, foe, "Hold Person", slot_level=1, innate=True)
+
+
+def test_innate_false_default_is_byte_identical_for_pc():
+    """ADDITIVE: innate defaults False — a PC's normal slot-spending cast is unchanged."""
+    cid = server.create_campaign("S")["id"]
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    out = server.cast_spell(cid, w, "Magic Missile")  # default innate=False -> spends a slot
+    assert out["slot_used"] == 1
+    assert out["slots_remaining"]["1"] == 1  # a slot was consumed
+
+
+def test_innate_cantrip_unaffected_no_slot_either_way():
+    """F03-11 regression: a cantrip needs no slot regardless of innate — the flag is inert for
+    a level-0 spell (a monster could already cast cantrips; this stays true)."""
+    cid = server.create_campaign("S")["id"]
+    foe = server.create_character(cid, "Drow Mage", kind="monster", max_hp=40,
+                                  abilities={"charisma": 16})["id"]
+    out = server.cast_spell(cid, foe, "Fire Bolt", innate=True)
+    assert out["slot_used"] is None  # cantrip path untouched by innate
+
+
+# --- F03-4: AoE / multi-target cast path (validate-before-spend) ------------------
+from dice import DiceRoll  # noqa: E402
+
+
+def _fixed_roll(d20_natural: int, dmg_total: int):
+    """A dice stub: every 1d20 save rolls the given natural (+ the expression's flat mod);
+    every other expression (the shared AoE damage) returns dmg_total. Deterministic per-target
+    save outcomes + a single known damage figure."""
+    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+        if expression.startswith("1d20"):
+            mod = 0
+            if "+" in expression:
+                mod = int(expression.split("+", 1)[1])
+            return DiceRoll(expression=expression, total=d20_natural + mod, rolls=[d20_natural],
+                            modifier=mod, detail="", is_d20=True, natural=d20_natural,
+                            crit=(d20_natural == 20), fumble=(d20_natural == 1))
+        return DiceRoll(expression=expression, total=dmg_total, rolls=[dmg_total], detail="")
+    return _roll
+
+
+def _aoe_wizard(cid, level=3):
+    w = server.create_character(cid, "Gale", kind="player", class_name="Wizard", level=level,
+                                apply_srd_defaults=True, abilities={"intelligence": 16})["id"]
+    server.learn_spells(cid, w, ["Burning Hands"])
+    server.prepare_spells(cid, w, ["Burning Hands"], mode="add")
+    return w
+
+
+def test_aoe_burning_hands_one_shared_roll_per_target_halving(monkeypatch):
+    """F03-4: Burning Hands at three targets — ONE shared damage roll, a per-target DEX save,
+    full damage on a fail and half on a save. Slot spent once."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid)
+    # Three monsters: one with low DEX (fails) and one with high DEX (we'll force the roll to
+    # decide outcome) — outcome is driven by the forced d20 natural below.
+    a = server.create_character(cid, "Orc A", kind="monster", max_hp=30, abilities={"dexterity": 10})["id"]
+    b = server.create_character(cid, "Orc B", kind="monster", max_hp=30, abilities={"dexterity": 10})["id"]
+    c2 = server.create_character(cid, "Orc C", kind="monster", max_hp=30, abilities={"dexterity": 10})["id"]
+    # Force a low save (nat 2 -> total 2, under any DC) so all three FAIL -> full damage.
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll(2, 12))
+    out = server.cast_spell(cid, w, "Burning Hands", target_ids=[a, b, c2])
+    assert out["slot_used"] == 1  # one slot, even for three targets
+    aoe = out["aoe"]
+    assert aoe["shared_damage"]["total"] == 12  # ONE roll shared across the area
+    assert aoe["save_ability"] == "dex" and aoe["save_dc"] == out["spell_save_dc"]
+    assert len(aoe["targets"]) == 3
+    for row in aoe["targets"]:
+        assert row["saved"] is False and row["damage_taken"] == 12 and row["halved"] is False
+    # Every target actually lost 12 HP through the shared apply_damage pipeline.
+    for tid in (a, b, c2):
+        assert server.get_character(cid, tid)["current_hp"] == 18
+
+
+def test_aoe_successful_save_halves(monkeypatch):
+    """F03-4: a target who SAVES takes half the shared damage (5e area save-for-half)."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid)
+    tgt = server.create_character(cid, "Nimble", kind="monster", max_hp=30,
+                                  abilities={"dexterity": 20})["id"]
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll(20, 12))  # nat 20 -> save succeeds
+    out = server.cast_spell(cid, w, "Burning Hands", target_ids=[tgt])
+    row = out["aoe"]["targets"][0]
+    assert row["saved"] is True and row["halved"] is True and row["damage_taken"] == 6  # 12 // 2
+    assert server.get_character(cid, tgt)["current_hp"] == 24
+
+
+def test_aoe_paralyzed_target_auto_fails_dex_save(monkeypatch):
+    """F03-4: a paralyzed target AUTO-FAILS its DEX save (combat.save_modifiers) — full damage
+    even though the forced roll would otherwise succeed."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid)
+    tgt = server.create_character(cid, "Held", kind="monster", max_hp=30,
+                                  abilities={"dexterity": 20})["id"]
+    server.add_condition(cid, tgt, "paralyzed")
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll(20, 12))  # nat 20 would save...
+    out = server.cast_spell(cid, w, "Burning Hands", target_ids=[tgt])
+    row = out["aoe"]["targets"][0]
+    assert row["saved"] is False and row.get("auto_fail") is True  # ...but paralysis auto-fails DEX
+    assert row["damage_taken"] == 12
+    assert server.get_character(cid, tgt)["current_hp"] == 18
+
+
+def test_aoe_unknown_id_rejected_before_slot_spend(monkeypatch):
+    """F03-4 (THE INVARIANT): an unknown id ANYWHERE in target_ids rejects the WHOLE cast
+    BEFORE the slot is spent — rejection-before-state-change. The slot is untouched."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid)
+    real = server.create_character(cid, "Real", kind="monster", max_hp=30)["id"]
+    before = server.get_character(cid, w)["spell_slots"]["1"]["used"]
+    with pytest.raises(ValueError, match="unknown target id"):
+        server.cast_spell(cid, w, "Burning Hands", target_ids=[real, "ghost_id"])
+    after = server.get_character(cid, w)["spell_slots"]["1"]["used"]
+    assert after == before  # slot UNSPENT — clean rejection
+    assert server.get_character(cid, w)["concentration"] is None
+    assert server.get_character(cid, real)["current_hp"] == 30  # no damage applied
+
+
+def test_aoe_upcast_scales_shared_damage(monkeypatch):
+    """F03-4: an upcast AoE rolls the upcast-scaled dice once. Burning Hands at slot 2 is 4d6
+    (3d6 + 1d6 upcast) — the shared roll uses that expr."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid, level=3)  # has a 2nd-level slot
+    tgt = server.create_character(cid, "Orc", kind="monster", max_hp=40, abilities={"dexterity": 10})["id"]
+    monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll(2, 14))
+    out = server.cast_spell(cid, w, "Burning Hands", slot_level=2, target_ids=[tgt])
+    assert out["slot_used"] == 2
+    assert out["aoe"]["shared_damage"]["expr"] == "4d6"  # 3d6 base + 1d6 upcast, rolled once
+    assert out["shape"]["type"] == "cone" and out["shape"]["size"] == 15  # F03-4 shape surfacing
+
+
+def test_single_target_cast_unchanged_no_aoe_key():
+    """ADDITIVE: a normal single-target / no-target cast carries NO `aoe` key — byte-identical
+    for every existing caller (empty/omitted target_ids = today's behavior)."""
+    cid = server.create_campaign("S")["id"]
+    w = _aoe_wizard(cid)
+    out = server.cast_spell(cid, w, "Burning Hands")  # no target_ids
+    assert "aoe" not in out
