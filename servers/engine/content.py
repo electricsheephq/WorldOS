@@ -1611,6 +1611,13 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             description=reg.get("description", ""),
             connections=reg.get("connections", []),
             notes=" ".join(reg.get("tags", [])),
+            # F04-1: stamp `region` on authored regions (was '' — they omitted the kwarg,
+            # so the wander resolver fell through to the wilderness BASE_RATE). Mirror the
+            # ingested-area path (content.py uses area["region"]); an authored region IS its
+            # own parent zone, so its name is the natural region label. A world MAY override
+            # by declaring an explicit `region` on the source record. Additive: old snapshots
+            # already carry the (defaulted-'') field, so they round-trip unchanged.
+            region=str(reg.get("region", reg.get("name", ""))),
             hex=reg.get("hex"),
             # The world's authored regions are KNOWN day-1 — they are the shipped nav
             # graph the player can already see in the atlas (issue #261). A world MAY

@@ -194,6 +194,62 @@ def test_compound_region_danger_adjective_wins(region, expected_tier, expected_r
 
 
 # =========================================================================
+# F04-1: URBAN keywords + composite match string (city scenes must read civilized,
+#        not roll wilderness ambushes). The matcher only ever sees a region string;
+#        the engine seams pass a COMPOSITE "<region> <name> <notes>" so a Baldur's
+#        Gate area (region="Baldur's Gate", tags="market city hub") resolves to the
+#        civilized tier instead of the BASE_RATE wilderness default.
+# =========================================================================
+
+
+def test_city_keyword_is_civilized_low_rate():
+    # the bare "city" keyword (already present) — a city scene is patrolled, low risk
+    assert wander.encounter_chance("city") == wander.REGION_RATES["city"]
+    assert wander.encounter_chance("city") <= 0.12
+
+
+def test_bg_composite_match_string_resolves_civilized():
+    # all 14 BG areas ship region="Baldur's Gate" (no keyword) + city/market/etc tags
+    # joined into notes; the COMPOSITE the seam builds catches "city" -> civilized 0.08,
+    # NOT the BASE_RATE 0.30 wilderness default that the bare region string yields.
+    bare = wander.encounter_chance("Baldur's Gate")
+    composite = wander.encounter_chance("Baldur's Gate The Lower City market city hub")
+    assert bare == wander.BASE_RATE  # the bug: the bare region matches nothing
+    assert composite <= 0.12  # the fix: the composite reads civilized
+    assert composite == wander.REGION_RATES["city"]
+    # and the creature pool for that composite is civilized, not wilderness
+    assert wander._region_tier("Baldur's Gate The Lower City market city hub") == "civilized"
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    ["market", "tavern", "harbor", "dock", "port", "slum", "warren", "quarter", "temple", "palace"],
+)
+def test_new_urban_keywords_are_civilized(keyword):
+    """The urban keywords F04-1 adds must land in the civilized band (low rate, civilized
+    creature pool) so a market/tavern/harbor/temple scene doesn't roll a wilderness ambush."""
+    assert keyword in wander.REGION_RATES, f"{keyword!r} missing from REGION_RATES"
+    assert wander.REGION_RATES[keyword] <= 0.12, f"{keyword!r} not in the civilized rate band"
+    assert wander._region_tier(f"the {keyword} district") == "civilized"
+
+
+def test_sewer_and_undercity_are_non_civilized():
+    """`sewer`/`undercity` are urban-UNDERGROUND — dungeon-flavored, NOT civilized — and
+    must match BEFORE the `city` substring (note "undercity" CONTAINS "city")."""
+    for region in ("the undercity sewers crime dungeon", "a flooded sewer tunnel"):
+        tier = wander._region_tier(region)
+        assert tier != "civilized", f"{region!r} resolved civilized; expected non-civilized ({tier})"
+        # the chance must NOT be the tame civilized 0.08 — these are dangerous places
+        assert wander.encounter_chance(region) > wander.REGION_RATES["city"]
+
+
+def test_undercity_substring_does_not_leak_to_city():
+    # "The Undercity" (an authored BG region whose name contains "city") must NOT read as
+    # a tame civilized city — the undercity/sewer keyword wins the ordering tie.
+    assert wander._region_tier("The Undercity") != "civilized"
+
+
+# =========================================================================
 # INTEGRATION: engine seams stage real monster Characters + the payload
 # =========================================================================
 

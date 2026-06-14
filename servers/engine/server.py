@@ -1075,6 +1075,10 @@ def travel_to(campaign_id: str, destination_id: str = "", advance_time: bool = F
                     dest_loc.region if dest_loc is not None else "",
                     difficulty="medium",
                     location_id=destination_id,
+                    # F04-1: resolve danger off the destination's region + name + tags so
+                    # a city street doesn't roll a wilderness ambush (the bare region of a
+                    # Baldur's Gate area matches no keyword); the payload region stays bare.
+                    match_region=_composite_region_match(dest_loc),
                 )
                 if staged:
                     result["wandering_encounter"] = staged
@@ -2312,6 +2316,23 @@ def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) 
     return spawned
 
 
+def _composite_region_match(loc) -> str:
+    """The MATCH string the wander resolver should see for a location (F04-1).
+
+    A location's danger signal lives across THREE fields: `region` (the parent zone,
+    often a bare name like "Baldur's Gate" that matches no keyword), `name` (e.g.
+    "The Lower City"), and `notes` (where ingest joins the area's tags — "market city
+    hub"). The bare `region` alone is what the resolver historically saw, so every
+    Baldur's Gate scene fell through to the wilderness BASE_RATE. Joining all three
+    lets the substring matcher catch the real keyword ("city"/"market"/"sewer"). The
+    payload's WIRE `region` value stays `loc.region` (the seams pass this only to the
+    resolver, never as the displayed region) so the contract's semantics don't shift."""
+    if loc is None:
+        return ""
+    parts = [loc.region or "", loc.name or "", loc.notes or ""]
+    return " ".join(p for p in parts if p).strip()
+
+
 def _stage_wandering_encounter(
     c: Campaign,
     region: str,
@@ -2321,6 +2342,7 @@ def _stage_wandering_encounter(
     location_id=None,
     force: bool = False,
     rng: random.Random | None = None,
+    match_region: str | None = None,
 ) -> Optional[dict]:
     """Roll + (on a hit) STAGE a Kingmaker-style wandering encounter (mutates; caller
     holds the lock + saves). Composes the pure `wander` module with the existing spawn
@@ -2350,17 +2372,28 @@ def _stage_wandering_encounter(
 
     Returns None when nothing was staged (flag off, roll missed) so the seam simply
     omits the key. A combat pick that can't spawn / can't size degrades to a boon
-    inside `pick_typed_encounter`, so a hit always yields SOME staged encounter."""
+    inside `pick_typed_encounter`, so a hit always yields SOME staged encounter.
+
+    F04-1: `match_region` (when given) is the composite "<region> <name> <notes>" the
+    seam built so the resolver can read the location's danger keyword from its NAME +
+    tags, not just the bare parent zone (a Baldur's Gate area's region="Baldur's Gate"
+    matches no keyword). The chance/pool/type are picked off `match_region`; the
+    returned payload's `region` key stays the DISPLAY `region` so the wire value's
+    semantics are unchanged. `match_region=None` (the default) reproduces today's
+    behavior exactly (resolve off `region`)."""
     if not force and not c.house_rules.wandering_encounters:
         return None
     region = region or ""
-    if not force and not wander.roll_encounter(region, modifiers, rng=rng):
+    # The resolver reads the COMPOSITE (region + name + notes) when the seam supplied
+    # one; the displayed `region` stays bare. Default None -> resolve off `region`.
+    resolve_region = match_region if match_region is not None else region
+    if not force and not wander.roll_encounter(resolve_region, modifiers, rng=rng):
         return None
     levels = _party_levels(c)
     r = rng or random.Random()
     picked = wander.pick_typed_encounter(
         levels,
-        region,
+        resolve_region,
         rng=r,
         target_difficulty=difficulty,
         house_difficulty=c.house_rules.difficulty,
@@ -6620,6 +6653,9 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
                 difficulty="medium",
                 modifiers=modifiers,
                 location_id=c.current_location_id,
+                # F04-1: resolve the camp-watch danger off the camp location's region +
+                # name + tags (a city camp is a guarded inn, not a wilderness bivouac).
+                match_region=_composite_region_match(cur_loc),
             )
             if staged:
                 out["wandering_encounter"] = staged
@@ -9075,11 +9111,19 @@ def roll_wandering_encounter(campaign_id: str, region: str = "", difficulty: str
         if c.combat.active:
             raise ValueError("combat already active — resolve it (end_combat) before staging another encounter")
         region_in = region.strip()
+        # F04-1: when `region` is defaulted to the current location, resolve danger off
+        # that location's COMPOSITE (region + name + tags) so a city scene reads civilized.
+        # An EXPLICIT `region` arg matches off itself (no location context to enrich) — the
+        # caller chose that string deliberately.
         if not region_in:
             cur_loc = c.locations.get(c.current_location_id) if c.current_location_id else None
             region_in = cur_loc.region if cur_loc is not None else ""
+            match_region = _composite_region_match(cur_loc)
+        else:
+            match_region = region_in
         staged = _stage_wandering_encounter(
-            c, region_in, difficulty=difficulty, location_id=c.current_location_id, force=True
+            c, region_in, difficulty=difficulty, location_id=c.current_location_id,
+            force=True, match_region=match_region,
         )
         if staged is None:
             return {"staged": False, "region": region_in, "difficulty": difficulty}

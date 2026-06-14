@@ -867,10 +867,35 @@ sys.exit(0 if seated else 1)
 PY
 }
 
+# The state-dir-scoped CARRY-FORWARD file (F04-2). The soft-tick advances the world
+# clock between beats and the engine's advance_time DISCLOSES the world beats / backlog
+# developments / effect expiries it processed — but the harness historically printed only
+# day/time_of_day and DISCARDED that living-world content to stderr, so a thread beat that
+# fired "while the party slept" was lost before the DM ever saw it (invariant-4 breach, on
+# the CALLER side — the engine already returns it). We persist those lines HERE, then the
+# NEXT beat's runbook prepends them as a "While time passed:" block so the DM weaves them in.
+# One file per run state-dir; read-and-cleared each beat (see clawdnd_take_carryforward).
+clawdnd_carryforward_path() {
+  printf '%s/.worldos_softtick_carry.txt' "$1"
+}
+
+# Read-and-CLEAR the carry-forward block for this state dir (F04-2). Echoes the stored
+# "While time passed:" block (possibly multi-line) and removes the file so each surfaced
+# beat is woven EXACTLY once — never re-fed on a later beat. Empty (and a clean no-op) when
+# nothing was carried. $1 = STATE_DIR.
+clawdnd_take_carryforward() {
+  local f; f="$(clawdnd_carryforward_path "$1")"
+  [ -f "$f" ] || return 0
+  cat "$f" 2>/dev/null
+  rm -f "$f" 2>/dev/null
+}
+
 # The C backstop. After a DM beat, compare the live clock to the clock BEFORE the beat; if the
 # DM did NOT advance it this beat, advance ONE phase through the engine (advance_time(phases=1))
 # so the day cannot freeze at morning. Engine stays the sole writer. No-op (and silent) until a
-# snapshot exists. Echoes a short "[tick] …" status to stderr for the run log.
+# snapshot exists. Echoes a short "[tick] …" status to stderr for the run log. F04-2: also
+# persists the engine's returned world beats / developments / effect-expiries to the carry-
+# forward file so the NEXT beat's runbook surfaces them to the DM (they were being discarded).
 # $1 = ROOT (repo root)  $2 = STATE_DIR  $3 = prev_day  $4 = prev_tod
 clawdnd_soft_tick() {
   local root="$1" state_dir="$2" prev_day="$3" prev_tod="$4"
@@ -899,14 +924,45 @@ clawdnd_soft_tick() {
   # blanket-suppress, so a real engine failure is visible. On a contended host `uv` can return a
   # transient cache error; that's non-fatal here (the NEXT beat re-reads the clock and re-ticks),
   # so we never let the tick's exit status fail the loop (the function always returns 0).
-  local camp out; camp="$(basename "$(dirname "$snap")")"
-  out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>&1 <<'PY'
+  local camp out carry; camp="$(basename "$(dirname "$snap")")"
+  carry="$(clawdnd_carryforward_path "$state_dir")"
+  out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" "$carry" 2>&1 <<'PY'
 import sys
 import server
 camp = sys.argv[1]
+carry_path = sys.argv[2] if len(sys.argv) > 2 else ""
 try:
     r = server.advance_time(camp, phases=1, note="harness soft clock-tick backstop")
     print(f"[tick] clock frozen this beat -> engine advanced to day {r.get('day')} {r.get('time_of_day')}")
+    # F04-2: the engine DISCLOSES the living-world content it processed this tick. Persist it
+    # so the NEXT runbook surfaces it to the DM instead of dropping it to the run log.
+    # Only the genuinely-narratable channels (world beats fired, backlog developments,
+    # effect expiries). Empty channels add NOTHING (no carry file, no token cost on a quiet
+    # tick). Best-effort: a write failure never fails the loop (the tick already advanced).
+    def _lines(v):
+        return [str(x).strip() for x in (v or []) if str(x).strip()]
+    beats = _lines(r.get("world_beats"))
+    devs = _lines(r.get("world_developments"))
+    exps = _lines(r.get("expired_effects"))
+    if (beats or devs or exps) and carry_path:
+        chunks = []
+        for line in beats:
+            chunks.append(f"- {line}")
+        for line in devs:
+            chunks.append(f"- {line}")
+        if exps:
+            chunks.append("- effects that ran out overnight: " + ", ".join(exps))
+        block = ("While time passed (the world moved between beats — weave these into THIS "
+                 "scene; do not silently drop them):\n" + "\n".join(chunks))
+        try:
+            # APPEND so a second frozen tick before the next beat does not clobber the first
+            # tick content; the next beat reads-and-clears the whole accumulation.
+            with open(carry_path, "a", encoding="utf-8") as fh:
+                if fh.tell() > 0:
+                    fh.write("\n")
+                fh.write(block + "\n")
+        except OSError as e:
+            print(f"[tick] (carry-forward write skipped: {e})")
 except Exception as e:
     print(f"[tick] soft-tick FAILED ({e})")
 PY
@@ -926,8 +982,29 @@ PY
 #   4. stuck (no move in N beats) -> "travel/peopling" — move the party OR bring a new named NPC.
 #   5. otherwise                  -> "rising-action" — escalate; keep friction that sticks.
 # Echoes the runbook text (a short paragraph). Never empty.
+# F04-2: BEFORE the runbook body, this prepends the soft-tick CARRY-FORWARD block (the
+# living-world content the engine processed while the clock advanced last beat) so the DM
+# is TOLD what moved between beats instead of it being discarded. The carry is read-and-
+# cleared, so it surfaces exactly once. A quiet tick carries nothing -> byte-identical to
+# the old single-paragraph runbook.
 # $1 = beat (1-based)  $2 = total beats  $3 = prev_location_id (loc at beat start)  $4 = STATE_DIR
 clawdnd_runbook_for_beat() {
+  local state_dir="$4" carry body
+  carry="$(clawdnd_take_carryforward "$state_dir")"
+  body="$(_clawdnd_runbook_body "$@")"
+  if [ -n "$carry" ]; then
+    # The world-moved block leads (it's the freshest fact the DM must honor), then the
+    # moment-specific runbook. Two newlines so the DM reads them as distinct directives.
+    printf '%s\n\n%s' "$carry" "$body"
+  else
+    printf '%s' "$body"
+  fi
+}
+
+# The runbook BODY — the moment-specific story directive (the original selector). Kept as an
+# inner helper so clawdnd_runbook_for_beat can prepend the F04-2 carry-forward block in ONE
+# place that BOTH opener paths (play.sh / play_party.sh) already route through.
+_clawdnd_runbook_body() {
   local beat="$1" beats="$2" prev_loc="$3" state_dir="$4"
   local prog day tod visited npcs_met cur_loc cur_visited
   prog="$(clawdnd_read_progress "$state_dir")"
