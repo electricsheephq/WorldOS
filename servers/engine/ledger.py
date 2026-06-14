@@ -29,6 +29,34 @@ from wrapper_progress import is_wrapper_progress_line
 
 KINDS = ("events", "dialogue", "decision", "npc_fact", "quest_milestone", "consequence", "lore")
 
+# F07-1 (issue #772): combat/system BOOKKEEPING must not enter the FTS index and
+# outrank story in recall (a recall('Rolan') probe returned 4 of 6 top hits as
+# bookkeeping). Two sources of contamination, decontaminated by EXACT discipline so the
+# documented DM-system-note path (SKILL.md:47 — a terse DM-authored kind=system note IS
+# meant to feed recall) is preserved:
+#   1. engine combat-event rows, stamped this schema in payload by _log_combat_event;
+#   2. the engine's two session markers ("Session N began" / "Session ended."), written
+#      by start_session/end_session — matched by exact prefix (same exact-match
+#      discipline as #749's wrapper-line filter), so a DM note that merely mentions a
+#      session is still indexed.
+_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+# Anchored to the engine's own marker text; \b/(:|$) so a DM prose row that starts with
+# the same words but continues differently is NOT swallowed.
+_SESSION_MARKER_RE = re.compile(r"^(Session \d+ began\b|Session ended\.)")
+
+
+def _is_combat_event(e) -> bool:
+    """True iff a session-log entry is an engine combat-event bookkeeping row."""
+    if e.kind != "combat":
+        return False
+    payload = getattr(e, "payload", None)
+    return isinstance(payload, dict) and payload.get("schema") == _COMBAT_EVENT_SCHEMA
+
+
+def _is_session_marker(e) -> bool:
+    """True iff a kind=system row is one of the engine's two session markers."""
+    return e.kind == "system" and bool(_SESSION_MARKER_RE.match(e.text or ""))
+
 
 def _db_path(campaign_id: str):
     return store._campaign_dir(campaign_id) / "ledger.db"
@@ -192,6 +220,13 @@ def backfill(campaign_id: str) -> int:
                     # #749: never index the wrapper progress heartbeat — it is mid-turn
                     # liveness filler, not campaign memory; recall must never surface it.
                     if is_wrapper_progress_line(e.text):
+                        continue
+                    # F07-1 (#772): combat-event rows and the engine's session markers
+                    # are bookkeeping, not memory — skip them so recall ranks story, not
+                    # "Tough 1 takes 5 force damage" / "Session 2 began". A DM-authored
+                    # kind=system note (non-marker) still falls through and stays indexed
+                    # (SKILL.md:47 contract).
+                    if _is_combat_event(e) or _is_session_marker(e):
                         continue
                     _ins("dialogue" if e.kind == "dialogue" else "events", e.text, who=e.speaker or "")
         for ch in campaign.characters.values():

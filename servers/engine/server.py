@@ -9941,9 +9941,12 @@ def persist_beat(
                        already streamed re-logs it twice. Leave events empty unless
                        you have a record row you did NOT already log live.
       - ``memories`` — list of facts to append, each
-                       ``{"character_id","fact"}``. Same as remember (de-duped per
-                       character). Target the COMPANION's id after a character beat
-                       AND the PC's id for what the hero learns — symmetric memory.
+                       ``{"character_id","fact"}`` (``character_id`` also accepts the
+                       ``id``/``npc_id`` aliases and is resolved tolerantly — a slug or
+                       a name finds the character, an unknown id raises with a
+                       did-you-mean). Same as remember (de-duped per character). Target
+                       the COMPANION's id after a character beat AND the PC's id for what
+                       the hero learns — symmetric memory.
       - ``decision`` — a single dict ``{"summary", "options"?, "chosen"?,
                        "rationale"?, "actor_ids"?, "sets_flag"?}``. Same as
                        record_decision (records the choice; sets_flag arms a gated
@@ -9955,7 +9958,13 @@ def persist_beat(
                        long_rest — those are their own beats, not a persist step.
 
     Returns a per-section summary: ``{"logged":[...], "remembered":[...],
-    "decision":{...}|None, "time":{...}|None}``.
+    "decision":{...}|None, "time":{...}|None}``. Each ``remembered`` row is the slim
+    ``{"id","fact","memory_count"}`` (the applied fact + the character's new fact count),
+    not the whole memory list.
+
+    The whole batch is VALIDATED before the first write: an unresolvable memories id, a
+    text-less events item, or a bad decision raises BEFORE any session-log row is
+    appended, so a failed call leaves no partial chronicle (retry-safe).
     """
     logged: list[dict] = []
     remembered: list[dict] = []
@@ -9966,46 +9975,102 @@ def persist_beat(
     # lock+load+fsync-save per write. (advance_time is handled AFTER, as its own
     # locked call, because its body — worldsim ticks, effect expiry, combat guard —
     # is non-trivial and re-entering campaign_lock here would deadlock.)
+    #
+    # F14-3 (#795): VALIDATE-THEN-APPLY. _log_session_entry writes the session jsonl
+    # IMMEDIATELY (append_log -> disk), so the old apply-and-validate interleave left a
+    # crash mid-batch with the events leg already on disk and the rest dropped — a retry
+    # then duplicated the chronicle rows. The non-atomic window is EVENTS ONLY (memories/
+    # decision mutate the in-memory snapshot and persist only at the block-end save, so a
+    # raise discards them). So we resolve EVERY item — coalesce event text + reject empty,
+    # resolve every memories character_id via the _char resolver (#786, F14-8) with id
+    # aliases, build the Decision with null-coerced str fields — BEFORE the first
+    # append_log. Any failure now precedes the first write -> atomic-in-effect, retry-safe.
     if events or memories or decision:
         with campaign_lock(campaign_id):
             c = _require(campaign_id)
-            for ev in (events or []):
+
+            # ---- PHASE 1: validate the whole batch (no writes) ----
+            planned_events: list[dict] = []
+            for i, ev in enumerate(events or []):
                 if not isinstance(ev, dict):
-                    raise ValueError("each events item must be a dict {kind,text,...}")
-                entry = _log_session_entry(
-                    c,
-                    kind=ev.get("kind", "narration"),
-                    text=ev.get("text", ""),
-                    speaker=ev.get("speaker") or "",
-                    payload=ev.get("payload"),
-                )
-                logged.append(entry.model_dump())
-            for mem in (memories or []):
+                    raise ValueError(f"events index {i}: each item must be a dict {{kind,text,...}}")
+                # log_event's alias set: text | message | content | note (text wins).
+                text = ev.get("text") or ev.get("message") or ev.get("content") or ev.get("note") or ""
+                if not text:
+                    raise ValueError(
+                        f"events index {i}: needs text (pass `text` or an alias: "
+                        f"`message`/`content`/`note`)"
+                    )
+                planned_events.append({
+                    "kind": ev.get("kind") or "narration",
+                    "text": text,
+                    "speaker": ev.get("speaker") or "",
+                    "payload": ev.get("payload"),
+                })
+
+            planned_memories: list[tuple] = []  # (Character, fact)
+            for i, mem in enumerate(memories or []):
                 if not isinstance(mem, dict):
-                    raise ValueError("each memories item must be a dict {character_id,fact}")
-                ch = _char(c, mem["character_id"])
-                fact = mem.get("fact", "")
-                if fact and fact not in ch.memory:  # de-dupe identical facts (matches remember)
-                    ch.memory.append(fact)
-                remembered.append({"id": ch.id, "name": ch.name, "memory": ch.memory})
+                    raise ValueError(f"memories index {i}: each item must be a dict {{character_id,fact}}")
+                # Accept character_id or the id/npc_id aliases the top-level tools tolerate,
+                # instead of a bare KeyError ('character_id') — the worst string on the surface.
+                cid_in = mem.get("character_id") or mem.get("id") or mem.get("npc_id")
+                if not cid_in:
+                    raise ValueError(
+                        f"memories index {i}: missing character_id "
+                        f"(pass `character_id`, or the alias `id`/`npc_id`)"
+                    )
+                try:
+                    ch = _char(c, cid_in)  # resolve-then-suggest (raises ValueError w/ did-you-mean)
+                except ValueError as e:
+                    raise ValueError(f"memories index {i}: {e}") from None
+                fact = mem.get("fact") or ""
+                planned_memories.append((ch, fact))
+
+            planned_decision: Optional[Decision] = None
+            decision_flag = ""
             if decision:
                 if not isinstance(decision, dict):
                     raise ValueError("decision must be a dict {summary,...}")
-                d = Decision(
+                # None-coerce every str field: the DM legitimately passes chosen=null for a
+                # still-open decision; `.get(k, "")` only defaults a MISSING key, an explicit
+                # null still reaches pydantic's str field and string_type-crashes the batch.
+                planned_decision = Decision(
                     day=c.day,
-                    summary=decision.get("summary", ""),
+                    summary=decision.get("summary") or "",
                     options=list(decision.get("options") or []),
-                    chosen=decision.get("chosen", ""),
-                    rationale=decision.get("rationale", ""),
+                    chosen=decision.get("chosen") or "",
+                    rationale=decision.get("rationale") or "",
                     actor_ids=list(decision.get("actor_ids") or []),
                 )
-                c.decisions.append(d)
-                flag = str(decision.get("sets_flag", "") or "").strip()
-                if flag:
-                    c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
-                decision_out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
-                if flag:
-                    decision_out["flag"] = flag
+                decision_flag = str(decision.get("sets_flag") or "").strip()
+
+            # ---- PHASE 2: apply (every item validated; first write is here) ----
+            for pe in planned_events:
+                entry = _log_session_entry(
+                    c,
+                    kind=pe["kind"],
+                    text=pe["text"],
+                    speaker=pe["speaker"],
+                    payload=pe["payload"],
+                )
+                logged.append(entry.model_dump())
+            for ch, fact in planned_memories:
+                if fact and fact not in ch.memory:  # de-dupe identical facts (matches remember)
+                    ch.memory.append(fact)
+                # Slim row (#795): the FACT just applied + a count, NOT the whole growing
+                # memory list per item (the old O(items x memory) quadratic echo).
+                remembered.append({"id": ch.id, "fact": fact, "memory_count": len(ch.memory)})
+            if planned_decision is not None:
+                c.decisions.append(planned_decision)
+                if decision_flag:
+                    c.flags[decision_flag] = True  # content-defined; arms a matching agenda's decision_flag
+                decision_out = {
+                    "id": planned_decision.id, "summary": planned_decision.summary,
+                    "chosen": planned_decision.chosen, "day": planned_decision.day,
+                }
+                if decision_flag:
+                    decision_out["flag"] = decision_flag
             save_campaign(c)  # ONE atomic write for all of the above
 
     # advance_time as its own locked call (sequential, not nested → no deadlock).

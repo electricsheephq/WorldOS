@@ -70,6 +70,58 @@ def test_format_recap_dialogue_without_speaker():
     assert out.startswith("Previously on your adventure...")
 
 
+# ── F07-1: schema-stamped combat bookkeeping is decontaminated from the recap ──
+# (issue #772). The cold-open "previously on" must recite STORY, not the engine's
+# mechanical combat-event rows (`_log_combat_event` stamps payload schema
+# clawdnd.combat_event.v1). A NARRATIVE combat beat (no schema-stamped payload)
+# still survives — that is the existing goblins line above.
+
+_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+
+
+def test_format_recap_drops_schema_stamped_combat_bookkeeping():
+    entries = [
+        SessionLogEntry(t=1.0, kind="narration", text="The party kicked in the cellar door."),
+        # Engine bookkeeping rows — mechanical, schema-stamped. Must NOT recite.
+        SessionLogEntry(
+            t=2.0, kind="combat", text="Tough 1 takes 5 force damage (12 -> 7).",
+            payload={"schema": _COMBAT_EVENT_SCHEMA, "target": "tough-1", "damage": 5},
+        ),
+        SessionLogEntry(
+            t=3.0, kind="combat", text="Turn advances to Tough 2.",
+            payload={"schema": _COMBAT_EVENT_SCHEMA, "current": "tough-2"},
+        ),
+        # A narrative combat beat (no schema-stamped payload) IS story — keep it.
+        SessionLogEntry(t=4.0, kind="combat", text="The ogre roared and the floor shook."),
+    ]
+    out = recap.format_recap(entries)
+    assert "cellar door" in out
+    assert "ogre roared" in out
+    # Mechanical bookkeeping is gone.
+    assert "force damage" not in out
+    assert "Turn advances" not in out
+
+
+def test_format_recap_keeps_combat_without_payload():
+    # A combat row with payload=None is a narrative beat and must survive (guards the
+    # existing goblins-ambush line semantics).
+    out = recap.format_recap(
+        [SessionLogEntry(t=1.0, kind="combat", text="A pack of goblins ambushed the heroes.")]
+    )
+    assert "goblins" in out
+
+
+def test_format_recap_keeps_combat_with_unrelated_payload():
+    # A combat row carrying a payload that is NOT the combat-event schema is still story.
+    out = recap.format_recap(
+        [SessionLogEntry(
+            t=1.0, kind="combat", text="The duel ended at the river's edge.",
+            payload={"mood": "tense"},
+        )]
+    )
+    assert "duel ended" in out
+
+
 def test_recap_from_store(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     campaign_id = "camp_test123"

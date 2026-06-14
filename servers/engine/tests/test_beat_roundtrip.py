@@ -450,3 +450,107 @@ def test_persist_beat_does_not_advance_clock_during_combat(cid):
     assert out["time"]["phases_advanced"] == 0  # guarded
     after = store.load_campaign(cid)
     assert (after.day, after.time_of_day) == (before.day, before.time_of_day)
+
+
+# ── F14-3 (issue #795): validate-before-write, chosen:null guard, no bare KeyError ──
+
+
+def _session_log_lines(cid: str) -> list:
+    """Every session-log entry across the campaign (to assert atomic non-application)."""
+    c = store.load_campaign(cid)
+    entries = []
+    for sid in c.session_ids:
+        entries.extend(store.read_log(cid, sid))
+    return entries
+
+
+def test_persist_beat_chosen_null_does_not_crash(cid):
+    # The DM legitimately records a still-open decision with chosen=null. It must
+    # succeed (coerced to "") instead of pydantic string_type-crashing the batch.
+    out = server.persist_beat(
+        cid,
+        decision={"summary": "Trust the broker or walk", "chosen": None},
+    )
+    assert out["decision"] is not None
+    assert out["decision"]["chosen"] == ""
+    after = store.load_campaign(cid)
+    assert after.decisions[-1].chosen == ""
+
+
+def test_persist_beat_decision_null_str_fields_coerced(cid):
+    # summary / rationale passed as null must coerce, not crash (same latent class).
+    out = server.persist_beat(
+        cid,
+        decision={"summary": None, "options": None, "chosen": None,
+                  "rationale": None, "actor_ids": None},
+    )
+    assert out["decision"] is not None
+    after = store.load_campaign(cid)
+    d = after.decisions[-1]
+    assert d.summary == "" and d.chosen == "" and d.rationale == ""
+
+
+def test_persist_beat_bad_memory_id_is_actionable_not_bare_keyerror(cid):
+    # A mis-keyed / unknown memories character_id must yield an ACTIONABLE error
+    # (names the section + index + did-you-mean), never a bare KeyError 'character_id'.
+    with pytest.raises(Exception) as ei:
+        server.persist_beat(cid, memories=[{"fact": "no id here"}])
+    msg = str(ei.value)
+    assert "character_id" not in msg or "memories" in msg  # not the bare KeyError string
+    assert "memories" in msg and ("index 0" in msg or "[0]" in msg)
+
+
+def test_persist_beat_events_not_applied_when_later_section_fails(cid):
+    # ATOMICITY (events-only window, F14-3): a good event + a bad memory item must
+    # leave ZERO new session-log rows — validation precedes the first append_log.
+    char = _a_char(cid)
+    before = len(_session_log_lines(cid))
+    with pytest.raises(Exception):
+        server.persist_beat(
+            cid,
+            events=[{"kind": "narration", "text": "This line must NOT persist."}],
+            memories=[{"character_id": "no-such-id", "fact": "x"}],
+        )
+    after = len(_session_log_lines(cid))
+    assert after == before  # the events leg was NOT applied
+
+
+def test_persist_beat_event_text_alias_honored(cid):
+    # An events item keyed `message` (log_event's alias) must log the text, not empty.
+    out = server.persist_beat(
+        cid, events=[{"kind": "narration", "message": "Alias text lands."}]
+    )
+    assert out["logged"][0]["text"] == "Alias text lands."
+
+
+def test_persist_beat_event_all_text_aliases_missing_is_rejected(cid):
+    # An events item with no text under any alias must be REJECTED (not empty-logged).
+    before = len(_session_log_lines(cid))
+    with pytest.raises(Exception):
+        server.persist_beat(cid, events=[{"kind": "narration"}])
+    assert len(_session_log_lines(cid)) == before  # nothing written
+
+
+def test_persist_beat_memory_id_alias_resolves(cid):
+    # A memories item keyed `id` (instead of character_id) must resolve, not KeyError.
+    char = _a_char(cid)
+    out = server.persist_beat(cid, memories=[{"id": char, "fact": "Reached via id alias."}])
+    assert out["remembered"][0]["id"] == char
+    assert "Reached via id alias." in store.load_campaign(cid).characters[char].memory
+
+
+def test_persist_beat_remembered_return_is_not_quadratic(cid):
+    # 4 facts for one character must return O(items) rows carrying the FACT + a count,
+    # NOT the whole growing memory list per item (the quadratic echo).
+    char = _a_char(cid)
+    facts = [f"Fact number {i}." for i in range(4)]
+    out = server.persist_beat(
+        cid, memories=[{"character_id": char, "fact": f} for f in facts]
+    )
+    assert len(out["remembered"]) == 4
+    for row in out["remembered"]:
+        assert "memory" not in row  # no embedded growing list
+        assert row["id"] == char
+        assert "fact" in row and "memory_count" in row
+    # the per-item fact echoes back, not the whole list
+    assert [r["fact"] for r in out["remembered"]] == facts
