@@ -139,6 +139,13 @@ const _STAGE_DIRECTION = new RegExp(
 // `_STRUCT` is the structural-unit noun ("beat"/"scene"/"part of the story"/"act"/"chapter") these
 // stage-directions move between; the patterns require it next to a transition verb/marker.
 const _STRUCT = "(?:beat|scene|act|chapter|part of the story|part)";
+// The "end of <struct>" / "beginning the <struct>" arms are the over-eager ones: `act`/
+// `chapter`/`part` are common in REAL fiction ("the end of the act left them breathless",
+// "the close of the scene", "the act of contrition"), so those arms use ONLY the engine's own
+// structural terms AND require a forward-transition qualifier (next/this/current/following) —
+// the META form is always a forward move ("beginning the next scene"), never a descriptive
+// "the close of the scene". This spares real prose (story quality is the north star).
+const _STRUCT_FWD = "(?:beat|scene)";
 const _BEAT_TRANSITION = new RegExp(
   "(?:" +
     // "moving on/move on/we (now) move … to the next <struct>" (the verbatim leak form)
@@ -148,10 +155,13 @@ const _BEAT_TRANSITION = new RegExp(
     "\\btransition(?:ing|s|ed)?\\b[^.]{0,18}\\bto the (?:next |following )?" + _STRUCT + "\\b|" +
     // a bare "<struct> transition" note ("Scene transition.", "Beat transition")
     "\\b" + _STRUCT + "\\s+transition\\b|" +
-    // "end of (the) (this) <struct>" / "beginning/start of the next <struct>"
-    "\\b(?:end|close|beginning|start) of (?:the |this )?(?:next |current )?" + _STRUCT + "\\b|" +
-    // "beginning/starting the next <struct>"
-    "\\b(?:begin(?:ning)?|start(?:ing)?) the (?:next |following )?" + _STRUCT + "\\b|" +
+    // "end of (the/this/next) <struct>" — TERMINAL only: the meta note IS the (short) sentence and
+    // ends on the engine's own struct ("End of beat.", "End of the scene."). Descriptive fiction
+    // embeds the phrase mid-sentence ("by the close of the scene, three lay dead") so the struct is
+    // NOT at the end → not matched. Uses beat|scene only (act/chapter/part are real-fiction words).
+    "\\b(?:end|close|beginning|start) of (?:the |this )?(?:next |current |following )?" + _STRUCT_FWD + "\\s*[.!?]?\\s*$|" +
+    // "beginning/starting the (next) <struct>" — terminal only, same rationale.
+    "\\b(?:begin(?:ning)?|start(?:ing)?) the (?:next |following )?" + _STRUCT_FWD + "\\s*[.!?]?\\s*$|" +
     // "(time passes) between the beats/scenes" — the interstitial seam phrasing. NOT "between the
     // beats OF the drum" (real fiction): the meta form is terminal, so forbid a following " of ".
     "\\bbetween (?:the |these )?(?:beats|scenes)\\b(?!\\s+of\\b)|" +

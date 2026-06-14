@@ -179,6 +179,14 @@ def test_real_prose_mentioning_a_beat_or_transition_survives():
         "Your heart skips a beat as the blade whistles past.",
         "The tavern scene is loud with laughter and spilled ale.",
         "She makes a smooth transition from the parapet to the rope.",
+        # The over-strip class the first cut missed (adversarial review): "act"/"chapter"/"part"
+        # are real-fiction words, and the "end/close of the <struct>" form is descriptive prose
+        # when the struct sits mid-sentence (trailing prose follows) — must NOT be stripped.
+        "The end of the act left the audience breathless.",
+        "By the close of the scene, three lay dead on the cathedral steps.",
+        "Start of the chapter that defined her, though she did not yet know it.",
+        "Beginning the act of contrition, the old priest knelt in the ash.",
+        "He took up his part of the story and carried it to the gate.",
     ):
         out = _sanitize(prose)
         assert out.strip() == prose.strip(), f"real in-world prose was wrongly stripped: {prose!r} -> {out!r}"
