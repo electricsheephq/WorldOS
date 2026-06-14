@@ -39,7 +39,19 @@ cd /root/worldos-qa/WorldOS || { echo "NO REPO"; exit 1; }
 RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
 note(){ echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-rm -f "$RES/DONE" "$RES/CANARY_FAIL" 2>/dev/null
+rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" 2>/dev/null
+
+# QUOTA-ABORT detection (the rc3 lesson). A `claude -p` DM beat that 429s on the account
+# session limit writes "session limit" / "HTTP 429" into the persona backend.log. A sweep
+# that 429s is INFRA-aborted, NOT a product measurement — detect it so we abort honestly
+# instead of rolling up quota-corpses into a misleading RRI (rc3 rolled a fake 1.8 from a
+# 429-storm). Sequential personas (below) mean the FIRST 429 aborts before the rest spend.
+quota_tripped(){  # $1 = a run dir or a log path; rc 0 if a session-limit/429 is present
+  grep -qriE "session limit|HTTP 429|hit your (session|usage) limit" "$1" 2>/dev/null
+}
+quota_reset_hint(){  # echoes e.g. "resets 3:50pm UTC" from the log(s), if present
+  grep -hroiE "resets [0-9: ]*[ap]m \(?(UTC|[A-Za-z/_]+)\)?" "$@" 2>/dev/null | head -1
+}
 
 # 0) kill the stuck v1 orchestrator + any stray vm- play procs; free ports
 note "killing v1 orchestrator + stray procs..."
@@ -112,22 +124,62 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
 # 1) CANARY: newbie alone. Verify scoring works before spending on the batch.
 note "CANARY: newbie (verifying part-B produces a score on the VM)..."
 run_persona newbie 8810
+CANARY_BL="qa/ui_playtest_runs/vm2-newbie/backend.log"
 if [ ! -f "$RES/score-newbie.json" ]; then
+  # Distinguish a QUOTA abort (account 429) from a genuine product/harness failure: a
+  # 429-killed canary means the account is already over its session limit, so the whole
+  # batch would 429 too — abort honestly with the reset hint rather than burning it.
+  if quota_tripped "$CANARY_BL"; then
+    note "QUOTA ABORT at the canary — claude account session limit ($(quota_reset_hint "$CANARY_BL")). The batch would 429 too; not spending it. INFRA abort, NOT a product measurement."
+    echo "newbie $(quota_reset_hint "$CANARY_BL")" > "$RES/QUOTA_ABORT"
+    touch "$RES/DONE"; exit 0
+  fi
   note "CANARY FAILED - no score-newbie.json. Aborting batch; see vm2-newbie.log for the cause."
   note "  --- vm2-newbie.log tail ---"; tail -25 "$RES/vm2-newbie.log" >> "$LOG" 2>/dev/null
   touch "$RES/CANARY_FAIL"; touch "$RES/DONE"; exit 0
 fi
-note "CANARY OK - scoring works. Launching the other 4 personas IN PARALLEL (staggered 30s)..."
+# Even a SCORED canary can be followed by a quota trip on its own retries; check before the batch.
+if quota_tripped "$CANARY_BL"; then
+  note "QUOTA ABORT — the canary scored but its backend 429'd ($(quota_reset_hint "$CANARY_BL")); the account is at its session limit. Not spending the batch."
+  echo "newbie $(quota_reset_hint "$CANARY_BL")" > "$RES/QUOTA_ABORT"
+  touch "$RES/DONE"; exit 0
+fi
+note "CANARY OK - scoring works. Running the other 4 personas SEQUENTIALLY (quota-safe)."
 
-# 2) Parallel batch: veteran/adversarial/narrative/optimizer, staggered starts
-i=0
+# 2) Sequential batch: veteran/adversarial/narrative/optimizer. WHY sequential, not parallel
+# (the rc3 lesson): cold-open is API-generation-bound, NOT VM-CPU-bound (worldos-latency-
+# forensics), so the old "parallel = use the 16 vCPUs" premise does not speed up generation —
+# it just bursts the account session-quota 4x and, when the limit trips mid-batch, wastes 3-4
+# cold-opens on 429 corpses AND rolls up a junk RRI. Sequential spends one cold-open at a time
+# and the FIRST 429 aborts the remainder. (Set SWEEP_PERSONA_CONCURRENCY>1 for a quota-rich window.)
 for pp in "veteran 8812" "adversarial 8814" "narrative 8816" "optimizer 8818"; do
   set -- $pp
-  run_persona "$1" "$2" &
-  i=$((i+1)); sleep 30
+  run_persona "$1" "$2"
+  bl="qa/ui_playtest_runs/vm2-$1/backend.log"
+  if quota_tripped "$bl"; then
+    note "QUOTA ABORT after '$1' — claude account session limit ($(quota_reset_hint "$bl")). Stopping; remaining personas NOT spent. INFRA abort, NOT a product result."
+    echo "$1 $(quota_reset_hint "$bl")" > "$RES/QUOTA_ABORT"
+    break
+  fi
 done
-wait
-note "all 5 personas done."
+note "persona batch done."
+
+# QUOTA-ABORT short-circuit: if the persona batch 429'd, do NOT spend the duo on a dead
+# account, and do NOT roll up an RRI from quota-corpses (rc3 emitted a misleading 1.8 this
+# way). Emit an explicit ABORTED status the ledger/scorecard can never read as a product score.
+if [ -f "$RES/QUOTA_ABORT" ]; then
+  note "=== RRI SKIPPED — QUOTA_ABORT ($(cat "$RES/QUOTA_ABORT")) — not a product measurement ==="
+  python3 - "$RES/RRI.json" "$SHA" "$(cat "$RES/QUOTA_ABORT")" <<'PY' 2>/dev/null
+import json, sys
+out, sha, detail = sys.argv[1], sys.argv[2], sys.argv[3]
+json.dump({"status": "ABORTED", "abort_reason": "quota_session_limit",
+           "detail": detail, "build_sha": sha, "release_ready": False,
+           "note": "claude account session limit (HTTP 429) tripped mid-sweep; "
+                   "this is an INFRA abort, NOT a product RRI. Re-run after the quota resets."},
+          open(out, "w"), indent=2)
+PY
+  note "=== SWEEP COMPLETE (QUOTA-ABORTED) -> $RES ==="; touch "$RES/DONE"; exit 0
+fi
 
 # 3) duo (story/mech) + behavioral + audit - run after personas (sequential, cheap-ish)
 note "3-lens duo..."

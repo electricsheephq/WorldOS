@@ -2437,6 +2437,111 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertEqual(payload["harness_failures"][0]["missing"], "score.json required fields")
             self.assertIn("console_errors must be integer", payload["harness_failures"][0]["detail"])
 
+    # --- Quota-abort attribution (the rc3 lesson): a 429-storm is an INFRA abort, not a
+    # product RRI. The rollup must say ABORTED/QUOTA-ABORTED, not roll up a misleading number. ---
+
+    def _seat_clean_canary(self, tmp: Path) -> Path:
+        newbie = tmp / "vm2-newbie"
+        newbie.mkdir()
+        (newbie / "score.json").write_text(json.dumps({
+            "run": "vm2-newbie", "persona": "newbie", "completed_intro_flow": True,
+            "persona_satisfaction": 7, "gave_up": False, "bug_reports_critical": 0,
+            "console_errors": 0, "image_404s": 0,
+        }), encoding="utf-8")
+        (newbie / "run.json").write_text(json.dumps(
+            {"build_sha": "deadbee", "part_a": {"result": "PASS"},
+             "part_b": {"persona_loop": "PASS", "score_pass": True}}), encoding="utf-8")
+        return newbie
+
+    def test_429_in_backend_log_marks_quota_aborted_not_a_product_rri(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._seat_clean_canary(tmp)
+            opt = tmp / "vm2-optimizer"
+            opt.mkdir()
+            # No score.json (the backend never seated) + a 429 in backend.log = a QUOTA abort.
+            (opt / "run.json").write_text(json.dumps(
+                {"part_b": {"persona_loop": "backend_not_ready",
+                            "failure_bucket": "no_provider"}}), encoding="utf-8")
+            (opt / "backend.log").write_text(
+                "[dm-attempt] DM turn failed (rc=1): HTTP 429 is_error=true result=You've hit "
+                "your session limit · resets 3:50pm (UTC)\n", encoding="utf-8")
+            story = tmp / "story.json"; mech = tmp / "mech.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+
+            rc, text, payload = self.run_rri(
+                tmp, "--runs", f"{tmp/'vm2-newbie'},{opt}",
+                "--expected-personas", "newbie,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--ui-audit", "PASS", "--palette-live", "true",
+                "--build-sha", "deadbee", "--scorecard-row",
+            )
+            self.assertEqual(rc, 1)
+            self.assertTrue(payload["aborted"])
+            self.assertEqual(payload["status"], "ABORTED")
+            self.assertEqual(payload["abort_reason"], "quota_session_limit")
+            self.assertFalse(payload["release_ready"])
+            personas = [p["persona"] for p in payload["infra_aborted_personas"]]
+            self.assertIn("optimizer", personas)
+            self.assertIn("resets 3:50pm (UTC)", payload["abort_detail"])
+            # The scorecard row + human line must NOT present this as a clean measurement.
+            self.assertIn("QUOTA-ABORTED", text)
+            self.assertIn("NOT a product RRI", text)
+
+    def test_backend_not_ready_without_429_stays_product_failure_not_quota_abort(self):
+        # The discriminator: a genuinely-broken seating (no 429 anywhere) must remain a
+        # product/harness failure, NOT get excused as an infra/quota abort.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._seat_clean_canary(tmp)
+            opt = tmp / "vm2-optimizer"
+            opt.mkdir()
+            (opt / "run.json").write_text(json.dumps(
+                {"part_b": {"persona_loop": "backend_not_ready"}}), encoding="utf-8")
+            (opt / "backend.log").write_text(
+                "[B] backend never became player-ready (can_act=0 seatedPC=0)\n", encoding="utf-8")
+            story = tmp / "story.json"; mech = tmp / "mech.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+
+            rc, text, payload = self.run_rri(
+                tmp, "--runs", f"{tmp/'vm2-newbie'},{opt}",
+                "--expected-personas", "newbie,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--ui-audit", "PASS", "--palette-live", "true",
+                "--build-sha", "deadbee", "--scorecard-row",
+            )
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["aborted"])
+            self.assertEqual(payload["status"], "NOT_READY")
+            self.assertEqual(payload["infra_aborted_personas"], [])
+            self.assertTrue(payload["harness_contaminated"])  # still a real product/harness failure
+            self.assertIn("PARTIAL/HARNESS", text)
+            self.assertNotIn("QUOTA-ABORTED", text)
+
+    def test_abort_marker_forces_aborted(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._seat_clean_canary(tmp)
+            marker = tmp / "QUOTA_ABORT"
+            marker.write_text("optimizer resets 3:50pm (UTC)\n", encoding="utf-8")
+            story = tmp / "story.json"; mech = tmp / "mech.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            rc, _text, payload = self.run_rri(
+                tmp, "--runs", f"{tmp/'vm2-newbie'}",
+                "--expected-personas", "newbie",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--ui-audit", "PASS", "--palette-live", "true",
+                "--build-sha", "deadbee", "--abort-marker", str(marker),
+            )
+            self.assertEqual(rc, 1)
+            self.assertTrue(payload["aborted"])
+            self.assertEqual(payload["status"], "ABORTED")
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("resets 3:50pm (UTC)", payload["abort_detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

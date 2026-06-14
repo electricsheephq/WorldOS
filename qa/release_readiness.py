@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -559,6 +560,26 @@ def infer_persona(run_dir: Path) -> str:
     return name
 
 
+# A persona whose DM beats 429'd on the account session limit is INFRA-aborted, not a
+# product failure (the rc3 lesson — a 429-storm rolled up a misleading 1.8). Detect it so
+# the rollup attributes "quota" vs "broken build" correctly and never reads as a clean score.
+_QUOTA_RE = re.compile(r"session limit|HTTP 429|hit your (?:session|usage) limit", re.I)
+_RESET_RE = re.compile(r"resets [0-9: ]*[ap]m \(?(?:UTC|[A-Za-z/_]+)\)?", re.I)
+
+
+def infra_abort_hint(run_dir: Path) -> str:
+    """Return a non-empty reset hint (or the literal '429') if this run's backend 429'd, else ''."""
+    bl = run_dir / "backend.log"
+    try:
+        text = bl.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    if not _QUOTA_RE.search(text):
+        return ""
+    m = _RESET_RE.search(text)
+    return m.group(0) if m else "429"
+
+
 def build_sha_evidence_gaps(persona_scores: list[dict], build_sha: str,
                             release_personas: list[str]) -> list[dict]:
     """native_gate's build-SHA contract, SCOPED to the canonical release personas.
@@ -609,6 +630,8 @@ def main() -> int:
     ap.add_argument("--handoff-json", default="", help="Mac app handoff gate JSON proving built-app smoke/play evidence")
     ap.add_argument("--support-preflight-json", default="", help="Support VM preflight JSON proving same-SHA heavy-lane readiness")
     ap.add_argument("--build-sha", dest="build_sha", default="")
+    ap.add_argument("--abort-marker", default="", help="path to a sweep QUOTA_ABORT marker; if it "
+                    "exists the rollup is forced to an ABORTED status (infra abort, not a product RRI)")
     ap.add_argument("--out", default="qa/RRI.json")
     ap.add_argument("--scorecard-row", action="store_true")
     args = ap.parse_args()
@@ -969,8 +992,37 @@ def main() -> int:
     # the gate logic into the helper and left this output reference dangling -> NameError at rollup time.
     build_shas = sorted({str(p["run_build_sha"]) for p in persona_scores if p.get("run_build_sha")})
 
+    # Infra-abort attribution (the rc3 lesson): a harness-failed persona whose DM beats 429'd on
+    # the account session limit is a QUOTA abort, not a broken build. An explicit --abort-marker
+    # (the sweep's QUOTA_ABORT file) also forces ABORTED. When infra-aborted, this rollup is NOT a
+    # product RRI — the status/verdict say so loudly so it can never be recorded as a clean score.
+    infra_aborted_personas = []
+    for rd in run_dirs:
+        hint = infra_abort_hint(rd)
+        if hint:
+            infra_aborted_personas.append(
+                {"persona": infer_persona(rd), "run": rd.name, "reset_hint": hint})
+    abort_marker_present = bool(args.abort_marker and Path(args.abort_marker).is_file())
+    abort_detail = ""
+    if abort_marker_present:
+        try:
+            abort_detail = Path(args.abort_marker).read_text(encoding="utf-8").strip()
+        except OSError:
+            abort_detail = "abort marker present"
+    elif infra_aborted_personas:
+        abort_detail = "; ".join(
+            f"{p['persona']}: {p['reset_hint']}" for p in infra_aborted_personas)
+    aborted = bool(infra_aborted_personas or abort_marker_present)
+    if aborted:
+        release_ready = False  # a quota-aborted sweep is never release-ready, regardless of gates
+
     result = {
         "rri": rri,
+        "status": "ABORTED" if aborted else ("READY" if release_ready else "NOT_READY"),
+        "aborted": aborted,
+        "abort_reason": "quota_session_limit" if aborted else "",
+        "abort_detail": abort_detail,
+        "infra_aborted_personas": infra_aborted_personas,
         "release_ready": release_ready,
         "release_verdict_gate": RELEASE_VERDICT_GATE,
         "gate_split_contract": GATE_SPLIT_CONTRACT,
@@ -1041,6 +1093,10 @@ def main() -> int:
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     # human line
+    if aborted:
+        print(f"QUOTA-ABORTED — claude account session limit (HTTP 429): {abort_detail}")
+        print(f"  This is an INFRA abort, NOT a product RRI. The {rri}/10 below is NOT a measurement; "
+              f"re-run after the quota resets.")
     print(f"RRI {rri}/10  ({passed}/{total_gates} gates)  release_ready={release_ready}")
     if failed:
         details = []
@@ -1057,7 +1113,12 @@ def main() -> int:
 
     if args.scorecard_row:
         sha = (args.build_sha or "?")[:7]
-        verdict = "PARTIAL/HARNESS" if (missing_personas or evidence_gaps or harness_failures) else ("**GREEN**" if release_ready else "RED")
+        if aborted:
+            verdict = "QUOTA-ABORTED"
+        elif missing_personas or evidence_gaps or harness_failures:
+            verdict = "PARTIAL/HARNESS"
+        else:
+            verdict = "**GREEN**" if release_ready else "RED"
         row = (f"| RRI-{sha} | (date) | baldurs-gate | {len(expected_personas) or len(persona_scores)}-persona | sonnet | gate | "
                f"{verdict} | {story_overall or '—'} | "
                f"{mech_overall or '—'} | — | **{rri}** | "
