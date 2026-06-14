@@ -10,6 +10,8 @@ front door used by the server's recap tool.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from models import SessionLogEntry
 from wrapper_progress import is_wrapper_progress_line
 
@@ -34,6 +36,19 @@ def _is_combat_bookkeeping(entry: SessionLogEntry) -> bool:
         return False
     payload = entry.payload
     return isinstance(payload, dict) and payload.get("schema") == _COMBAT_EVENT_SCHEMA
+
+
+def _story_entries(entries: list[SessionLogEntry]) -> list[SessionLogEntry]:
+    """The story beats inside a log: narration/dialogue/combat, minus the wrapper
+    progress heartbeat (#749) and schema-stamped combat bookkeeping (F07-1). Shared
+    by format_recap and the recap_resume blind-spot check so "has story?" means
+    exactly what the recap renders."""
+    return [
+        e for e in entries
+        if e.kind in _STORY_KINDS
+        and not is_wrapper_progress_line(e.text)
+        and not _is_combat_bookkeeping(e)
+    ]
 
 
 _INTRO = "Previously on your adventure..."
@@ -123,12 +138,7 @@ def format_recap(
     # "Previously on…" recap reads as canned filler. Exact-match excluded.
     # F07-1 (#772): schema-stamped combat-event rows are engine bookkeeping, not story —
     # excluded here while narrative combat beats stay.
-    story = [
-        e for e in entries
-        if e.kind in _STORY_KINDS
-        and not is_wrapper_progress_line(e.text)
-        and not _is_combat_bookkeeping(e)
-    ]
+    story = _story_entries(entries)
     recent = story[-max_entries:]
 
     lines = [b for b in (_beat(e, max_entry_chars) for e in recent) if b]
@@ -166,3 +176,41 @@ def recap_from_store(campaign_id: str, session_id: str) -> str:
 
     entries = store.read_log(campaign_id, session_id)
     return format_recap(entries)
+
+
+# F07-4 (issue #803): the campaign-wide tail size for the cross-session fallback —
+# more than max_entries raw rows so the post-filter recap still has enough story.
+_RESUME_TAIL = 64
+
+
+def recap_resume(
+    campaign_id: str,
+    session_id: Optional[str],
+    all_session_ids: Optional[list[str]] = None,
+) -> str:
+    """Resume-time recap that fixes the single-session blind spot (F07-4).
+
+    ``recap_from_store``/``session_recap`` read exactly ONE session file. Under
+    lean play each beat auto-starts a fresh session, so the resolved session is
+    routinely story-empty (only the engine's "Session N began" marker) even though
+    the story-so-far lives in earlier session files — and the recap collapsed to
+    the new-adventure string mid-campaign. This recaps the resolved session when it
+    has at least one story beat (today's behavior, no cross-session bleed), and ONLY
+    when that session is story-empty AND other sessions exist falls back to the
+    campaign-wide tail (``read_log_all``), applying the same story filters. A truly
+    new campaign — no story anywhere — still returns the new-adventure message.
+
+    Read-only: only reads session logs; never writes (sole-writer invariant)."""
+    import store
+
+    entries = store.read_log(campaign_id, session_id) if session_id else []
+    if _story_entries(entries):
+        return format_recap(entries)
+    # The resolved session has no story. Fall back to the campaign-wide tail only if
+    # there is more than this one session to look at, so a genuinely-new campaign
+    # stays _EMPTY (no spurious recap) and we never re-read when there's nothing more.
+    others = [s for s in (all_session_ids or []) if s != session_id]
+    if not others:
+        return format_recap(entries)
+    wide = store.read_log_all(campaign_id, all_session_ids, tail=_RESUME_TAIL)
+    return format_recap(wide)

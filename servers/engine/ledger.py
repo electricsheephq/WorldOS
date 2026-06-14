@@ -19,6 +19,7 @@ ledger never touches the campaign_lock or the snapshot.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sqlite3
 import time
@@ -79,15 +80,58 @@ def _connect(campaign_id: str) -> sqlite3.Connection:
     return conn
 
 
+def _snapshot_projection_digest(campaign_id: str) -> str:
+    """F07-8 (issue #803): a CONTENT digest of exactly the snapshot fields the
+    backfill indexes (character memory facts, decisions, consequences, quests,
+    lore). The old signature keyed the snapshot by mtime:size, so EVERY state save
+    (HP, clock, arc progress, currency) flipped it and forced a full DROP+reparse
+    even though none of the indexed projection changed — the genuinely-false-positive
+    invalidations the audit names.
+
+    Digesting CONTENT (not lengths/counts) is load-bearing: a forget(Y)+remember(X)
+    pair restores the same len(ch.memory) and an ending-overlay lore de-confliction
+    can REPLACE lore items without changing count, so a length digest would keep a
+    stale index. We hash the exact strings backfill reads — a small projection, cheap
+    to materialize — so the digest changes iff the indexed memory changes. Missing
+    snapshot -> "" (no projection), same as before."""
+    campaign = store.load_campaign(campaign_id)
+    if campaign is None:
+        return ""
+    h = hashlib.sha256()
+
+    def feed(*vals) -> None:
+        for v in vals:
+            h.update(b"\x1f")
+            h.update(str(v if v is not None else "").encode("utf-8", "replace"))
+        h.update(b"\x1e")
+
+    # Order mirrors backfill so the digest is a faithful fingerprint of what is indexed.
+    for ch in campaign.characters.values():
+        for fact in ch.memory:
+            feed("npc_fact", ch.id, fact)
+    for d in campaign.decisions:
+        feed("decision", d.id, d.day, d.summary, d.chosen, d.rationale)
+    for cq in campaign.consequences:
+        feed("consequence", cq.id, cq.trigger_day, cq.text)
+    for q in campaign.quests.values():
+        feed("quest", q.id, q.title, q.status)
+    for fact in getattr(campaign, "lore", []):
+        feed("lore", fact)
+    return h.hexdigest()
+
+
 def _signature(campaign_id: str) -> str:
-    """A cheap fingerprint of the authoritative sources — changes whenever the
-    snapshot or any session log changes, so we know when to rebuild."""
+    """A fingerprint of the authoritative sources that changes whenever the indexed
+    memory changes, so we know when to rebuild. The snapshot term is a CONTENT digest
+    of the indexed projection (F07-8) — NOT the snapshot's mtime/size — so a pure-state
+    save (HP/clock/currency, none of it indexed) is no longer a false-positive
+    invalidation. Session logs are append-only and the new row legitimately needs
+    indexing, so they stay keyed by byte size (a grown log == new memory to index)."""
     d = store._campaign_dir(campaign_id)
     parts: list[str] = []
     snap = d / "snapshot.json"
     if snap.exists():
-        st = snap.stat()
-        parts.append(f"snap:{st.st_mtime_ns}:{st.st_size}")
+        parts.append("snap:" + _snapshot_projection_digest(campaign_id))
     sessions = d / "sessions"
     if sessions.exists():
         for f in sorted(sessions.glob("*.jsonl")):
@@ -155,16 +199,67 @@ def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: in
     return [_row(r) for r in rows]
 
 
+def _resolve_npc_keys(campaign_id: str, npc_id: str) -> tuple[list[str], Optional[str]]:
+    """SYN-10 (F07-2 + F10-5): resolve a recall_npc argument to ALL of the stable
+    keys it could be indexed under, so a query by id OR by name returns BOTH the
+    facts (indexed who=ch.id) AND the dialogue (indexed who=ch.name).
+
+    The ledger has a split-brain: backfill writes who=ch.id for npc_facts but
+    who=speaker for dialogue, and the engine logs dialogue with speaker=ch.name
+    (server.py:4000/4411/4451/4644/5290/...). models.py documents speaker as
+    "character id or name", so the argument itself is ambiguous too.
+
+    Read-only against the snapshot (load_campaign, never _require/save): match the
+    argument against the roster by id OR casefolded name. On a hit, return both the
+    canonical id and name as keys, plus the canonical id to match the dialogue
+    `ref` belt that backfill stamps. On a MISS (an ad-hoc free-text speaker that is
+    not a roster character) return just the argument — single-key behavior, so
+    free-text speakers are unaffected and the resolution never invents a
+    cross-match (Guard 2)."""
+    arg = (npc_id or "").strip()
+    keys: list[str] = [arg] if arg else []
+    ref: Optional[str] = None
+    try:
+        campaign = store.load_campaign(campaign_id)
+    except Exception:
+        campaign = None
+    if campaign is not None and arg:
+        folded = arg.casefold()
+        for ch in campaign.characters.values():
+            if ch.id == arg or (ch.name or "").casefold() == folded:
+                for k in (ch.id, ch.name):
+                    if k and k not in keys:
+                        keys.append(k)
+                ref = ch.id
+                break
+    return keys, ref
+
+
 def recall_npc(campaign_id: str, npc_id: str, limit: int = 12) -> list[dict]:
-    """Everything recorded about / said by one character (by `who`). Read-only."""
+    """Everything recorded about / said by one character — facts, dialogue,
+    consequences — retrievable by EITHER the character's id OR name (SYN-10).
+    Read-only (it may rebuild a stale index first; never writes state)."""
+    keys, ref = _resolve_npc_keys(campaign_id, npc_id)
+    if not keys:
+        return []
     _ensure_fresh(campaign_id)
     if not _db_path(campaign_id).exists():
         return []
+    # Match any of the resolved keys (id and/or name) case-insensitively, OR the
+    # `ref` belt (the canonical id backfill stamps onto a roster speaker's dialogue
+    # rows) — so dialogue (who=name) and facts (who=id, ref=id) both come back no
+    # matter which stable key the caller passed.
+    where = " OR ".join("who = ? COLLATE NOCASE" for _ in keys)
+    params: list = list(keys)
+    if ref:
+        where += " OR ref = ?"
+        params.append(ref)
+    params.append(limit)
     conn = _connect(campaign_id)
     try:
         rows = conn.execute(
-            "SELECT kind, who, text, ref, day FROM ledger WHERE who = ? ORDER BY t DESC LIMIT ?",
-            (npc_id, limit),
+            f"SELECT kind, who, text, ref, day FROM ledger WHERE {where} ORDER BY t DESC LIMIT ?",
+            params,
         ).fetchall()
     finally:
         conn.close()
@@ -214,6 +309,18 @@ def backfill(campaign_id: str) -> int:
                 )
                 n += 1
 
+        # SYN-10 belt: a speaker string -> canonical character id, keyed by BOTH the
+        # id and the casefolded name (the engine logs dialogue with speaker=ch.name).
+        # When a dialogue row's speaker resolves to a roster character we stamp the
+        # row's ref=<id>, so recall_npc(id) finds the dialogue via the `ref` belt even
+        # before query-time resolution and the two keys stay in lock-step. A free-text
+        # speaker (no roster hit) gets ref="" and is reachable only by its exact key.
+        speaker_to_id: dict[str, str] = {}
+        for ch in campaign.characters.values():
+            speaker_to_id[ch.id] = ch.id
+            if ch.name:
+                speaker_to_id.setdefault(ch.name.casefold(), ch.id)
+
         for sid in campaign.session_ids:
             for e in store.read_log(campaign_id, sid):
                 if e.kind in ("narration", "dialogue", "combat", "system"):
@@ -228,7 +335,12 @@ def backfill(campaign_id: str) -> int:
                     # (SKILL.md:47 contract).
                     if _is_combat_event(e) or _is_session_marker(e):
                         continue
-                    _ins("dialogue" if e.kind == "dialogue" else "events", e.text, who=e.speaker or "")
+                    speaker = e.speaker or ""
+                    ref = speaker_to_id.get(speaker) or speaker_to_id.get(speaker.casefold(), "")
+                    _ins(
+                        "dialogue" if e.kind == "dialogue" else "events",
+                        e.text, who=speaker, ref=ref,
+                    )
         for ch in campaign.characters.values():
             for fact in ch.memory:
                 _ins("npc_fact", fact, who=ch.id, ref=ch.id)
