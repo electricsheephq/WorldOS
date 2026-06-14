@@ -180,6 +180,28 @@ def _slot_path(campaign_id: str, slot: str) -> Path:
     return _slots_dir(campaign_id) / f"{safe_path_segment(slot, 'slot')}.json"
 
 
+def _slot_sessions_manifest_path(campaign_id: str, slot: str) -> Path:
+    """Path to a slot's SESSION-LOG manifest sidecar (F08-1).
+
+    Lives under ``slots/.manifests/<slot>.json`` — a dedicated subdir so the non-recursive
+    ``slots/*.json`` glob in :func:`list_slots` never mistakes it for a restore point. The
+    manifest records each session file's byte length at slot time, so :func:`load_slot` can
+    roll the session logs back to match the rolled-back snapshot (a slot that restored only
+    snapshot.json left a discarded timeline — an undone TPK, a post-slot orphan session —
+    permanently canon in read_log_all / recap, the DM's lean-beat memory)."""
+    return _slots_dir(campaign_id) / ".manifests" / f"{safe_path_segment(slot, 'slot')}.json"
+
+
+def _session_files(campaign_id: str) -> dict[str, Path]:
+    """The campaign's live session-log files: ``{filename: path}`` for ``sessions/*.jsonl``
+    (non-recursive — the same glob shape read_log_all sees, so archived files under a
+    ``rolled-back-*`` subdir are invisible here too)."""
+    sessions_dir = _campaign_dir(campaign_id) / "sessions"
+    if not sessions_dir.is_dir():
+        return {}
+    return {p.name: p for p in sessions_dir.glob("*.jsonl") if p.is_file()}
+
+
 def save_slot(campaign_id: str, slot: str = "quicksave") -> Path:
     """Copy a campaign's CURRENT live snapshot into a named save slot.
 
@@ -187,14 +209,89 @@ def save_slot(campaign_id: str, slot: str = "quicksave") -> Path:
     the live snapshot (campaigns/<id>/slots/<slot>.json). The live snapshot.json is the unit of
     persistence the engine already maintains, so we copy IT verbatim (not a re-serialized model)
     — the slot is byte-for-byte the campaign as last saved. Raises ValueError if the campaign has
-    no live snapshot yet. Caller holds campaign_lock (sole-writer)."""
+    no live snapshot yet. Caller holds campaign_lock (sole-writer).
+
+    F08-1: ALSO captures a SESSION-LOG manifest (each ``sessions/*.jsonl`` file's byte length at
+    slot time) into a sidecar, so a later load_slot can roll the append-only logs back to match
+    the rolled-back snapshot instead of leaving a discarded timeline canon in recap/lean-memory."""
     live = _campaign_dir(campaign_id) / "snapshot.json"
     if not live.exists():
         raise ValueError(f"no live snapshot for campaign {campaign_id!r} to save")
     data = live.read_text(encoding="utf-8")
     dest = _slot_path(campaign_id, slot)
     _atomic_write(dest, data)
+    # Capture the session-log state alongside the snapshot. The manifest maps each live session
+    # file name -> its current byte length; load_slot uses it to archive post-slot orphans and
+    # truncate grown sessions back to here. Best-effort: a manifest-write failure must not abort
+    # the slot save (the slot still restores the snapshot; logs degrade to today's behavior).
+    import json
+    try:
+        manifest = {name: p.stat().st_size for name, p in _session_files(campaign_id).items()}
+        _atomic_write(_slot_sessions_manifest_path(campaign_id, slot), json.dumps(manifest, indent=2))
+    except OSError as exc:
+        log.warning("save_slot(%s,%s): could not write sessions manifest: %s", campaign_id, slot, exc)
     return dest
+
+
+def _rollback_sessions_to_manifest(campaign_id: str, slot: str) -> None:
+    """Roll the campaign's session logs back to the state captured in a slot's manifest (F08-1).
+
+    Called by :func:`load_slot` AFTER the snapshot is restored, under the caller's campaign_lock
+    (sole-writer). For every live ``sessions/*.jsonl`` file:
+      * NOT in the manifest (created after the slot) -> ARCHIVE the whole file (a post-slot
+        orphan timeline) under ``sessions/rolled-back-<ts>/``;
+      * LONGER than its manifest byte length (grown after the slot) -> archive the discarded
+        TAIL, then truncate the live file back to the manifested length;
+      * SHORTER than or equal to the manifest length -> LEAVE AS-IS (degrade, never pad/raise:
+        a shorter file can arise after an intervening restore of an older slot).
+    Archiving (not deleting) keeps the discarded timeline recoverable; the archive subdir is
+    invisible to read_log_all's non-recursive ``*.jsonl`` glob, so recap/lean-memory match the
+    rolled-back snapshot. A MANIFEST-LESS slot (legacy, pre-F08-1) is a no-op -> today's
+    behavior (snapshot restored, logs untouched)."""
+    import json
+    mpath = _slot_sessions_manifest_path(campaign_id, slot)
+    if not mpath.exists():
+        return  # legacy / manifest-less slot: degrade to today (leave session logs alone)
+    try:
+        manifest: dict = json.loads(mpath.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        # A corrupt manifest must not brick a restore — degrade to today (logs untouched).
+        log.warning("load_slot(%s,%s): unreadable sessions manifest, leaving logs as-is: %s",
+                    campaign_id, slot, exc)
+        return
+
+    live = _session_files(campaign_id)
+    if not live:
+        return
+    archive_dir = _campaign_dir(campaign_id) / "sessions" / f"rolled-back-{int(time.time() * 1000)}"
+    for name, path in live.items():
+        try:
+            if name not in manifest:
+                # A whole session created after the slot — archive it out of the live set.
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                os.replace(path, archive_dir / name)
+                continue
+            kept_len = int(manifest[name])
+            cur_len = path.stat().st_size
+            if cur_len <= kept_len:
+                continue  # unchanged or shorter — leave as-is (never pad/raise)
+            # Grown: archive the discarded tail, then truncate the live file back to slot length.
+            with open(path, "rb") as f:
+                head = f.read(kept_len)
+                tail = f.read()
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            (archive_dir / name).write_bytes(tail)
+            # Atomic truncate via temp-then-replace so a crash never leaves a half-written log.
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with open(tmp, "wb") as f:
+                f.write(head)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except OSError as exc:
+            # One unreadable/locked session file must not abort the whole rollback.
+            log.warning("load_slot(%s,%s): could not roll back session %s: %s",
+                        campaign_id, slot, name, exc)
 
 
 def load_slot(campaign_id: str, slot: str = "quicksave") -> Campaign:
@@ -204,7 +301,11 @@ def load_slot(campaign_id: str, slot: str = "quicksave") -> Campaign:
     campaign it was saved from — we refuse to clobber the live state with a foreign/corrupt
     snapshot), then writes it to live via save_campaign (atomic + version-stamped). Raises
     FileNotFoundError if the slot is absent and ValueError if it is corrupt or mismatched.
-    OVERWRITES the live snapshot — caller holds campaign_lock and has confirmed intent."""
+    OVERWRITES the live snapshot — caller holds campaign_lock and has confirmed intent.
+
+    F08-1: ALSO rolls the append-only SESSION LOGS back to the slot's manifest, so a discarded
+    timeline (an undone TPK, a post-slot orphan session) can't stay canon in read_log_all /
+    recap (the DM's lean-beat memory). A manifest-less (legacy) slot leaves logs untouched."""
     src = _slot_path(campaign_id, slot)
     if not src.exists():
         raise FileNotFoundError(f"no save slot {slot!r} for campaign {campaign_id!r}")
@@ -220,6 +321,8 @@ def load_slot(campaign_id: str, slot: str = "quicksave") -> Campaign:
             f"save slot {slot!r} belongs to campaign {c.id!r}, not {campaign_id!r}; refusing to restore"
         )
     save_campaign(c)  # atomic replace of the live snapshot.json + fresh version stamp
+    # Fence the session logs to the slot AFTER the snapshot lands (both under the caller's lock).
+    _rollback_sessions_to_manifest(campaign_id, slot)
     return c
 
 

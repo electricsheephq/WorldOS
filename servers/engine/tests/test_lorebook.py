@@ -224,6 +224,117 @@ def test_redact_superseded_helper_sentence_granularity():
     assert did4 is True and gut4 is True and out4 == "[…superseded…]"
 
 
+# --- F10-1: natural-query reachability (possessive token-drop + tier-0 noise floor) ----
+# The dedicated lore page must be reachable for (a) possessive queries — the 1-char "s" token
+# of "Wyrm's Crossing" used to anchor unrelated pages — and (b) stopword-heavy queries — a few
+# authored pages matched ONLY a stopword ("the") at noise rank yet took tier-0's absolute
+# precedence and buried the genuinely-matching wiki page. The fix drops <2-char tokens and adds
+# a NOISE FLOOR to the tier-0-first guarantee (an authored page leads only if it genuinely
+# matches), WITHOUT regressing the authored-canon precedence for genuine matches.
+
+def test_safe_match_drops_one_char_tokens_but_never_empties(tmp_path, monkeypatch):
+    # Possessive: "Wyrm's Crossing" -> ["Wyrm","s","Crossing"]; the 1-char "s" matched 's'
+    # everywhere and dragged unrelated pages up. Drop sub-2-char tokens.
+    assert lorebook._safe_match("Wyrm's Crossing") == '"Wyrm" OR "Crossing"'
+    assert lorebook._safe_match("the Counting House") == '"the" OR "Counting" OR "House"'
+    # ...unless dropping would EMPTY the match (a query of only short tokens) — then keep them,
+    # so a degenerate query still searches rather than silently returning nothing.
+    assert lorebook._safe_match("a I") == '"a" OR "I"'
+    assert lorebook._safe_match("x") == '"x"'
+    assert lorebook._safe_match("") == ""  # no tokens at all -> empty (unchanged)
+
+
+def test_possessive_query_reaches_dedicated_page(tmp_path, monkeypatch):
+    # A possessive natural query must reach the page whose slug IS that place — the 1-char "s"
+    # token previously dragged unrelated 's'-bearing pages up and buried it. Enough decoy pages
+    # contain a bare "s" word that, with the "s" token live, they crowd the dedicated page out of
+    # the top-`limit`; dropping the 1-char token surfaces it.
+    lore = _world(tmp_path, monkeypatch)
+    (lore / "wiki" / "wyrm-s-crossing.md").write_text(
+        "# Wyrm's Crossing\nWyrm's Crossing is the great bridge district spanning the river.\n",
+        encoding="utf-8",
+    )
+    # Decoys: tier-0 authored pages that match ONLY the bare 1-char "s" token (no Wyrm/Crossing).
+    # With the "s" token live they out-rank the dedicated wiki page (tier-0 precedence) and fill
+    # the small cap; with it dropped they no longer match at all.
+    for i in range(4):
+        (lore / f"decoy{i}.md").write_text(
+            f"# Decoy {i}\nThe letter s s s appears s often here, s s, but nothing else.\n",
+            encoding="utf-8",
+        )
+    hits = lorebook.lookup_lore("tw", "Wyrm's Crossing", 3)
+    assert any("wyrm-s-crossing" in h["source"] for h in hits), \
+        "possessive query must reach the dedicated wiki page (1-char 's' token must not bury it)"
+
+
+def test_stopword_query_does_not_let_noise_authored_pages_bury_real_page(tmp_path, monkeypatch):
+    # Stopword-heavy query: authored pages that match ONLY the stopword ("the") at noise rank
+    # must NOT take tier-0 absolute precedence and bury the genuinely-matching wiki page. Enough
+    # noise-rank authored decoys exist to fill the small cap under the old tier-0-first rule.
+    lore = _world(tmp_path, monkeypatch)
+    # Authored decoys that contain ONLY the stopword "the" (no Counting / House) — they match at
+    # noise rank yet under the old rule took tier-0 absolute precedence and filled the cap.
+    for i in range(4):
+        (lore / f"legend{i}.md").write_text(
+            f"# Legend {i}\nThe heroes and the deeds and the days of the realm number {i}.\n",
+            encoding="utf-8",
+        )
+    # The genuinely-matching page (the actual subject) lives in the wiki tier.
+    (lore / "wiki" / "counting-house.md").write_text(
+        "# The Counting House\nThe Counting House is the great bank of the Lower City, "
+        "where the Counting House clerks weigh every coin in the House vaults.\n",
+        encoding="utf-8",
+    )
+    hits = lorebook.lookup_lore("tw", "the Counting House", 3)
+    assert any("counting-house" in h["source"] for h in hits), \
+        "a noise-rank stopword match in tier-0 must not bury the genuinely-matching wiki page"
+
+
+def test_authored_canon_still_wins_a_GENUINE_tie(tmp_path, monkeypatch):
+    # The noise floor only demotes pages that match at NOISE rank. A tier-0 page that GENUINELY
+    # matches the query must STILL out-rank a tier-1 page (the post-canon de-confliction guard).
+    lore = _world(tmp_path, monkeypatch)
+    (lore / "gortash.md").write_text(
+        "# Gortash\n*Era: 1492 DR*\nEnver Gortash is dead, slain in the Battle of Baldur's Gate.\n",
+        encoding="utf-8",
+    )
+    (lore / "wiki" / "gortash.md").write_text(
+        "# Gortash\n" + "Enver Gortash is the living Archduke of Baldur's Gate. " * 60,
+        encoding="utf-8",
+    )
+    hits = lorebook.lookup_lore("tw", "Gortash Archduke", 3)
+    assert hits and hits[0]["title"] == "Gortash" and "dead" in hits[0]["excerpt"].lower(), \
+        "a genuinely-matching authored page must still beat the stale wiki page"
+
+
+def test_possessive_and_stopword_reach_real_corpus_dedicated_pages():
+    # The shipped corpus repros from the audit (F10-1): both query classes must reach the
+    # dedicated page. (Guards against a regression on the real 356-page baldurs-gate corpus.)
+    possessive = lorebook.lookup_lore("baldurs-gate", "Wyrm's Crossing", 5)
+    assert any("wyrm-s-crossing" in h["source"] for h in possessive), \
+        "real-corpus possessive query must reach wyrm-s-crossing.md"
+    stopword = lorebook.lookup_lore("baldurs-gate", "the Counting House", 5)
+    assert any("counting-house" in h["source"] for h in stopword), \
+        "real-corpus stopword query must reach counting-house-baldur-s-gate.md"
+
+
+def test_clean_query_output_byte_identical_to_pre_fix_ordering():
+    # ADDITIVE guarantee: when no 1-char/stopword-noise is involved, every authored match clears
+    # the noise floor (weak0 is empty), so ordering reduces to today's tier-0-then-tier-1 — the
+    # output is byte-identical to before the fix. Pinned for a battery of clean queries.
+    pinned = {
+        "Gortash Archduke": ["the-absolute-and-the-dead-three.md", "baldurs-gate.md",
+                             "factions.md", "the-legends.md", "council-of-four.md"],
+        "Flaming Fist": ["factions.md", "baldurs-gate.md", "flaming-fist.md",
+                         "ulder-ravengard.md", "wyrm-s-rock.md"],
+        "Steel Watch": ["the-absolute-and-the-dead-three.md", "baldurs-gate.md",
+                        "factions.md", "watch-citadel.md", "guthmere.md"],
+    }
+    for q, expected in pinned.items():
+        got = [h["source"] for h in lorebook.lookup_lore("baldurs-gate", q, 5)]
+        assert got == expected, f"clean query {q!r} must be byte-identical: {got!r} != {expected!r}"
+
+
 def test_legends_page_covers_all_eleven_shipped_heroes():
     # S6 audit (content gap): the authored hero roster the-legends.md must name ALL 11 major
     # heroes so lookup_lore("Gale"/"Halsin") resolves to the authored bio page instead of
