@@ -89,6 +89,9 @@ def _isolate_env(monkeypatch, tmp_path):
     monkeypatch.delenv("CLAWDND_IMAGE_PROVIDER", raising=False)
     # Tight poll budget so the no-image timeout test is fast.
     monkeypatch.setenv("CLAWDND_OPENCLAW_POLL_TIMEOUT", "0.5")
+    # F11-4: the claimed-path registry is module-level; reset it so cross-attribution
+    # tests start clean and don't leak claims into each other.
+    openclaw_image._reset_claimed_paths()
     return tmp_path
 
 
@@ -440,3 +443,121 @@ def test_provider_generate_wraps_any_openclaw_error(monkeypatch):
     monkeypatch.setattr(OpenClawImageClient, "generate_image", fake_generate_image)
     with pytest.raises(RuntimeError, match="openclaw image provider failed"):
         imagegen.OpenClawImageProvider().generate("scene", "x")
+
+
+# --------------------------------------------------------------------------- #
+# F11-4: media-dir cross-attribution. A shared media dir + concurrent scene+portrait
+# generations must claim DISTINCT files (in drop order), never the same path twice.
+# --------------------------------------------------------------------------- #
+
+import os as _os  # noqa: E402
+import time as _time  # noqa: E402
+
+
+def test_await_claims_oldest_unclaimed_fifo(tmp_path):
+    """When two fresh files are present, _await_new_media claims the OLDEST (FIFO), and a
+    second await claims the NEXT — never the same path twice (F11-4)."""
+    media = tmp_path / "media"
+    media.mkdir(parents=True)
+    since = _time.time()
+    first = media / "scene.png"
+    second = media / "portrait.png"
+    first.write_bytes(b"A")
+    second.write_bytes(b"B")
+    # Both fresh (>= since-1s); `first` strictly older so FIFO is deterministic.
+    _os.utime(first, (since, since))
+    _os.utime(second, (since + 0.5, since + 0.5))
+
+    c = OpenClawImageClient(token="t", media_dir=media, poll_timeout=1.0)
+    claim_a = c._await_new_media(set(), since=since)
+    claim_b = c._await_new_media(set(), since=since)
+    assert claim_a == first       # oldest first
+    assert claim_b == second      # second await gets the NEXT file, not the same one
+    assert claim_a != claim_b
+
+
+def test_two_concurrent_generations_claim_distinct_files(tmp_path, monkeypatch):
+    """Two clients sharing one media dir, with two files landing during the POSTs, must
+    return DISTINCT paths — the core cross-attribution bug (F11-4). Today both can return
+    the same (newest) path."""
+    media = tmp_path / "media"
+    media.mkdir(parents=True)
+
+    # Each client's _open drops ITS OWN file during the POST, so both files exist by the
+    # time either claim runs — the exact concurrent-burst shape.
+    drops = {"scene": media / "scene.png", "portrait": media / "portrait.png"}
+
+    def _make_open(which, mtime):
+        def _open(self, req):  # noqa: ANN001
+            drops[which].write_bytes(which.encode())
+            _os.utime(drops[which], (mtime, mtime))
+            return json.dumps(_started_envelope(f"task_{which}")).encode("utf-8")
+        return _open
+
+    base = _time.time()
+    c_scene = OpenClawImageClient(token="t", media_dir=media, poll_timeout=1.0)
+    c_portrait = OpenClawImageClient(token="t", media_dir=media, poll_timeout=1.0)
+    monkeypatch.setattr(OpenClawImageClient, "_open", _make_open("scene", base))
+
+    res_scene = c_scene.generate_image("a tavern")
+    # The portrait client lands its own (newer) file and must NOT re-claim the scene file.
+    monkeypatch.setattr(OpenClawImageClient, "_open", _make_open("portrait", base + 0.5))
+    res_portrait = c_portrait.generate_image("a face")
+
+    assert res_scene.path is not None and res_portrait.path is not None
+    assert res_scene.path != res_portrait.path, "two scopes claimed the SAME image (F11-4)"
+    assert {res_scene.path, res_portrait.path} == {str(drops["scene"]), str(drops["portrait"])}
+
+
+def test_claimed_file_is_skipped_by_later_await(tmp_path):
+    """A file already claimed by one generation is invisible to a later await for the
+    same dir — it polls past it and times out rather than re-claiming (F11-4)."""
+    media = tmp_path / "media"
+    media.mkdir(parents=True)
+    since = _time.time()
+    only = media / "lonely.png"
+    only.write_bytes(b"X")
+    _os.utime(only, (since, since))
+
+    c = OpenClawImageClient(token="t", media_dir=media, poll_timeout=0.3)
+    first = c._await_new_media(set(), since=since)
+    assert first == only  # claimed
+    # A second await for the same single file finds nothing unclaimed -> times out (None).
+    second = c._await_new_media(set(), since=since)
+    assert second is None
+
+
+def test_cross_process_claim_lockfile_blocks_reclaim(tmp_path):
+    """A `.claimed` lock file survives across processes: simulate a SECOND resolver
+    process (fresh in-memory registry) — it must NOT re-claim a file the first already
+    owns via the on-disk lock (F11-3/F11-4 cross-process claim)."""
+    media = tmp_path / "media"
+    media.mkdir(parents=True)
+    since = _time.time()
+    img = media / "shared.png"
+    img.write_bytes(b"X")
+    _os.utime(img, (since, since))
+
+    c = OpenClawImageClient(token="t", media_dir=media, poll_timeout=0.3)
+    first = c._await_new_media(set(), since=since)
+    assert first == img
+    # The on-disk lock now exists.
+    assert openclaw_image._claim_lockfile(img).exists()
+
+    # Simulate a separate process: clear ONLY the in-memory registry (the lock file
+    # persists on disk, as it would across a real process boundary).
+    openclaw_image._reset_claimed_paths()
+    second = c._await_new_media(set(), since=since)
+    assert second is None, "a second process re-claimed a file the lock file owns"
+
+
+def test_generate_post_only_does_not_claim(tmp_path, monkeypatch):
+    """wait=False (post-only) returns the task id and must NOT consume a claim — a later
+    waiting generation can still claim the file (F11-4 keeps the post-only path clean)."""
+    media = tmp_path / "media"
+    media.mkdir(parents=True)
+    monkeypatch.setattr(OpenClawImageClient, "_open", _stub_open(_started_envelope("task_nw")))
+    res = OpenClawImageClient(token="t", media_dir=media).generate_image("x", wait=False)
+    assert res.task_id == "task_nw"
+    # No claim was recorded (the registry stays empty for the post-only path).
+    assert not openclaw_image._CLAIMED_PATHS

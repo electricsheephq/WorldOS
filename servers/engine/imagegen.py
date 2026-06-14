@@ -394,6 +394,124 @@ def _safe_scope(scope: Optional[str]) -> str:
     return "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(scope))[:128]
 
 
+# --------------------------------------------------------------------------- #
+# Ingested-art catalog consult (F11-6) — don't spend to regenerate art that the
+# 2,359-dir _private ingest already provides. The VIEWER resolves ingested art FIRST
+# (_latest_descriptor -> _ingested_descriptor across all _private worlds), so a
+# generated canon-scope image is NEVER displayed when ingested art exists — pure spend.
+# This is the engine-side gate: consult the catalog before enqueuing a worker.
+#
+# Read-only: the engine reading content/_private is allowed (it never writes there, and
+# the sole-writer invariant covers campaign state, not the gitignored art tree). Mirrors
+# the viewer's resolution conservatively — exact safe-scope dir, then a normalized
+# scope-key match — so at worst a slug-drift miss falls through to generate (never a
+# wrong skip of a genuinely-absent scope).
+# --------------------------------------------------------------------------- #
+
+# Leading kind/entity prefix tokens dropped when normalizing a scope to a NAME key —
+# kept in sync with the viewer's _SCOPE_PREFIXES so the engine and viewer agree on what
+# "the same scope" means (portrait-npc-shadowheart and portrait:shadowheart both ->
+# shadowheart). A drift here only costs a redundant regen, never a wrong skip.
+_SCOPE_PREFIXES = frozenset({
+    "portrait", "scene", "item", "map", "npc", "char", "pc", "loc", "location",
+    "region", "scope", "faction", "creature", "class", "race",
+})
+
+
+def _scope_key(scope: Optional[str]) -> str:
+    """Normalize a scope to a separator/prefix-agnostic NAME key (mirrors the viewer's
+    _scope_key): lowercase; unify `:`/`_`/space to `-`; drop leading kind/entity prefix
+    tokens. So portrait-<id> / portrait:<slug> reconcile to the same key."""
+    s = str(scope or "").lower().replace(":", "-").replace("_", "-").replace(" ", "-")
+    toks = [t for t in s.split("-") if t]
+    while toks and toks[0] in _SCOPE_PREFIXES:
+        toks.pop(0)
+    return "-".join(toks)
+
+
+def _ingested_art_root() -> Optional[Path]:
+    """Root of the gitignored _private ingested-art tree, world-neutral:
+    <content>/worlds/_private/. Honors the same env contract the viewer uses so a
+    cross-checkout launcher (the .app / a Lexar worktree running code from one checkout
+    while the private art lives in the canonical one) resolves the right tree:
+    WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT (an art checkout), then
+    WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT, then CONTENT_DIR, then the in-repo content/.
+    Returns None when no _private tree exists (art-less host -> caller falls through)."""
+    candidates: list[Path] = []
+    for raw in (env_var("ART_REPO_ROOT"), env_var("REPO_ROOT")):
+        if raw:
+            candidates.append(Path(raw).expanduser() / "content" / "worlds" / "_private")
+    content_raw = env_var("CONTENT_DIR")
+    if content_raw:
+        candidates.append(Path(content_raw).expanduser() / "worlds" / "_private")
+    # In-repo fallback: servers/engine/imagegen.py -> repo root is parents[2].
+    candidates.append(Path(__file__).resolve().parents[2] / "content" / "worlds" / "_private")
+    for c in candidates:
+        try:
+            if c.is_dir():
+                return c
+        except OSError:
+            continue
+    return None
+
+
+def has_ingested_art(scope: Optional[str]) -> bool:
+    """True when the _private ingest already provides a SERVABLE wiki_ingest.json for
+    `scope` (F11-6). Mirrors the viewer's ingested-first resolution conservatively:
+    an exact safe-scope dir match, else a normalized scope-key match across all
+    _private worlds. Read-only; path-containment-guarded; never raises (a probe error
+    is treated as "no art" so the caller still generates rather than crash)."""
+    seg = _safe_scope(scope)
+    if not seg:
+        return False
+    root = _ingested_art_root()
+    if root is None:
+        return False
+    try:
+        root_resolved = root.resolve()
+    except OSError:
+        return False
+    # 1. Exact safe-scope dir (the common, fast case).
+    try:
+        for world_dir in root.iterdir():
+            if not world_dir.is_dir():
+                continue
+            desc = world_dir / "images" / seg / "wiki_ingest.json"
+            if not desc.exists():
+                continue
+            try:
+                if root_resolved in desc.resolve().parents:
+                    return True
+            except OSError:
+                continue
+    except OSError:
+        return False
+    # 2. Normalized scope-key fallback (UI engine-id scope vs manifest slug).
+    want = _scope_key(scope)
+    if not want:
+        return False
+    try:
+        for world_dir in root.iterdir():
+            images_dir = world_dir / "images"
+            if not images_dir.is_dir():
+                continue
+            for sub in images_dir.iterdir():
+                desc = sub / "wiki_ingest.json"
+                if not desc.exists():
+                    continue
+                try:
+                    if root_resolved not in desc.resolve().parents:
+                        continue
+                    d = json.loads(desc.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if isinstance(d, dict) and _scope_key(d.get("scope")) == want:
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def content_hash(kind: str, prompt: str, *, seed: Optional[int] = None, provider: str = "null") -> str:
     """Stable content hash for a generation request. Same inputs -> same key, so a
     repeat request hits the cache instead of regenerating. Independent of wall-clock
@@ -408,6 +526,15 @@ def content_hash(kind: str, prompt: str, *, seed: Optional[int] = None, provider
 
 def cache_path(hash_: str, scope: Optional[str] = None) -> Path:
     return _images_dir(scope) / f"{hash_}.json"
+
+
+def error_path(hash_: str, scope: Optional[str] = None) -> Path:
+    """Sibling sidecar for a FAILED generation (F11-7): <scope>/<hash>.error.
+
+    Deliberately a bare ``.error`` suffix (NOT ``.error.json``) so the viewer's
+    descriptor resolvers — which glob ``*.json`` only — never pick it up as a real
+    descriptor. It is a derived, rebuildable artifact like the rest of the cache."""
+    return _images_dir(scope) / f"{hash_}.error"
 
 
 def _atomic_write(path: Path, data: str) -> None:
@@ -453,6 +580,79 @@ def cache_write(descriptor: dict, scope: Optional[str] = None) -> Path:
     path = cache_path(hash_, scope)
     _atomic_write(path, json.dumps(record, ensure_ascii=False, indent=2))
     return path
+
+
+def write_error(hash_: str, error: str, scope: Optional[str] = None, *,
+                provider: str = "", kind: str = "", prompt: str = "") -> Path:
+    """Record a FAILED background generation as a derived ``.error`` sidecar (F11-7).
+
+    Today a background-worker generation failure is completely silent — generate()'s
+    degrade-to-null result is discarded by the worker, leaving no artifact, no event,
+    nothing under the images/ tree. That makes a failed provider lane indistinguishable
+    from "not yet generated", which the image-evidence gate cannot classify. This writes
+    a small JSON observability record next to where the descriptor WOULD have landed,
+    keyed by the same content hash, via the same atomic writer. Sole-writer-safe: it
+    touches only the derived, rebuildable image cache, never snapshot.json.
+
+    Returns the path written."""
+    record = {
+        "hash": hash_,
+        "status": "error",
+        "error": str(error)[:500],
+        "provider": provider,
+        "kind": kind,
+        "prompt": prompt,
+        "failed_at": time.time(),
+    }
+    path = error_path(hash_, scope)
+    _atomic_write(path, json.dumps(record, ensure_ascii=False, indent=2))
+    return path
+
+
+def read_error(hash_: str, scope: Optional[str] = None) -> Optional[dict]:
+    """Return the ``.error`` sidecar for `hash_`, or None if none/corrupt (F11-7)."""
+    path = error_path(hash_, scope)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def clear_error(hash_: str, scope: Optional[str] = None) -> None:
+    """Delete any stale ``.error`` sidecar for `hash_` (F11-7).
+
+    Called when a generation SUCCEEDS so a later success supersedes an earlier failure
+    record — the sidecar reflects the most recent outcome, never a fossil. Missing file
+    is a no-op; never raises (the cache is rebuildable)."""
+    path = error_path(hash_, scope)
+    try:
+        path.unlink()
+    except (FileNotFoundError, OSError):
+        pass
+
+
+def _strip_inline_bytes(descriptor: dict) -> dict:
+    """Return a shallow copy of `descriptor` with the inline image payload replaced by
+    metadata (F11-5). A provider-lane descriptor may carry `bytes_b64` (base64 of the raw
+    image, up to MAX_INLINE_BYTES=16MB); returning that verbatim from the generate_image
+    tool injects megabytes of base64 into the DM's context for ONE beat. No tool-side
+    consumer reads the bytes — only the viewer (/image, /portrait-*) does, and it reads the
+    on-disk cache entry, not this return value. So we hand the tool a compact, equivalent
+    descriptor: drop `bytes_b64`, add `has_bytes` + `byte_len` so a caller can still tell
+    an image landed. Pure: the input dict and the on-disk cache file are untouched."""
+    b64 = descriptor.get("bytes_b64")
+    if not isinstance(b64, str) or not b64:
+        return descriptor
+    out = dict(descriptor)
+    out.pop("bytes_b64", None)
+    out["has_bytes"] = True
+    # Approximate decoded byte length from the base64 text length (4 b64 chars -> 3 bytes),
+    # net of '=' padding — cheap and exact enough for an at-a-glance size, no decode needed.
+    pad = b64.count("=")
+    out["byte_len"] = max(0, (len(b64) * 3) // 4 - pad)
+    return out
 
 
 def _newest_descriptor(scope: Optional[str]) -> Optional[dict]:
@@ -551,11 +751,30 @@ def generate(
         descriptor["cache_hit"] = False
         descriptor["degraded_from"] = getattr(provider, "name", "provider")
         descriptor["error"] = str(exc)[:200]
+        # F11-7: a failed generation used to vanish silently — the worker discarded this
+        # degraded descriptor, leaving no artifact. Record a derived `.error` sidecar so the
+        # failure is observable (and the image-evidence gate can classify it as `error`,
+        # distinct from "not yet generated"). Keyed by the FAILED provider's content hash so
+        # a later success under the same key clears it. Best-effort: a sidecar write must
+        # never itself crash the degrade path. The degraded descriptor stays UNCACHED (a
+        # transient gateway blip must remain retryable).
+        if use_cache:
+            try:
+                write_error(
+                    key, descriptor["error"], scope,
+                    provider=getattr(provider, "name", "provider"),
+                    kind=_normalize_kind(kind), prompt=prompt,
+                )
+            except Exception:  # pragma: no cover - sidecar is observability, never load-bearing
+                pass
         return descriptor
 
     descriptor["cache_hit"] = False
     if use_cache:
         cache_write(descriptor, scope)
+        # F11-7: a success supersedes any earlier failure record for this key, so the
+        # sidecar always reflects the most recent outcome (never a fossil `.error`).
+        clear_error(key, scope)
 
     return descriptor
 
@@ -602,19 +821,184 @@ def _worker(kind: str, prompt: str, seed: Optional[int], scope: Optional[str],
             _inflight.discard((key, scope))
 
 
+# --------------------------------------------------------------------------- #
+# F11-3: detached resolver — art that survives the per-beat `claude -p` exit.
+#
+# scripts/play.sh runs ONE `claude -p` per beat (--resume per beat); the engine MCP
+# server is a stdio CHILD of each `claude -p`. When the interpreter exits at end of beat,
+# its daemon threads (the _worker above) die abruptly mid-provider-call. A real provider
+# (openclaw) polls the gateway media dir up to 180s, so art started late in a beat is
+# LOST — and worse, the paid image is never claimed (a later identical call cache-misses,
+# re-POSTs new spend, and its pre-POST snapshot already contains the orphaned PNG).
+#
+# Fix: spawn a process-group-DETACHED subprocess (start_new_session=True, stdio to
+# DEVNULL) running THIS module's `--resolve` entrypoint. It outlives the parent and calls
+# the SAME generate() — writing only the derived, rebuildable cache via the atomic writer
+# (sole-writer-safe: never snapshot.json). A `generating` marker is written first so a
+# re-POST within a TTL is suppressed (no double spend). Opt-in via env so today's default
+# (daemon-thread) behavior is unchanged; the marker degrades like today's 404→placeholder.
+# --------------------------------------------------------------------------- #
+
+ENV_DETACHED_RESOLVER = "IMAGE_DETACHED_RESOLVER"
+# How long a `generating` marker suppresses a re-spawn (seconds). Just over the gateway's
+# own ~180s poll budget so a still-running resolver isn't double-spawned, but stale markers
+# from a crashed resolver expire and let a later call retry.
+ENV_GENERATING_TTL = "IMAGE_GENERATING_TTL"
+DEFAULT_GENERATING_TTL = 210.0
+
+
+def _detached_resolver_enabled() -> bool:
+    """True when the detached-resolver path is opted in via env (default OFF, so the
+    daemon-thread behavior is preserved exactly — additive, no behavior change today)."""
+    return (env_var(ENV_DETACHED_RESOLVER, "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _generating_ttl() -> float:
+    try:
+        v = env_var(ENV_GENERATING_TTL)
+        return float(v) if v else DEFAULT_GENERATING_TTL
+    except (TypeError, ValueError):
+        return DEFAULT_GENERATING_TTL
+
+
+def generating_path(hash_: str, scope: Optional[str] = None) -> Path:
+    """Sibling `generating` marker for an in-flight detached resolution (F11-3).
+
+    Bare `.generating` suffix (NOT `.json`) so the viewer's `*.json` descriptor glob
+    never treats it as a real descriptor. Derived, rebuildable, sole-writer-safe."""
+    return _images_dir(scope) / f"{hash_}.generating"
+
+
+def _generating_is_fresh(hash_: str, scope: Optional[str]) -> bool:
+    """True when a `generating` marker exists and is younger than the TTL — meaning a
+    resolver is (still plausibly) in flight for this key, so a re-spawn would double-spend.
+    A stale/missing/corrupt marker returns False so a later call can retry."""
+    path = generating_path(hash_, scope)
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        started = float(rec.get("started_at", 0.0))
+    except (OSError, ValueError, TypeError):
+        return False
+    return (time.time() - started) < _generating_ttl()
+
+
+def _write_generating_marker(hash_: str, scope: Optional[str], *, pid: Optional[int] = None) -> None:
+    """Write the `generating` marker that suppresses a re-spawn (F11-3). Best-effort."""
+    rec = {"hash": hash_, "status": "generating", "started_at": time.time()}
+    if pid is not None:
+        rec["resolver_pid"] = pid
+    try:
+        _atomic_write(generating_path(hash_, scope), json.dumps(rec, ensure_ascii=False, indent=2))
+    except OSError:  # pragma: no cover - marker is advisory, never load-bearing
+        pass
+
+
+def _clear_generating_marker(hash_: str, scope: Optional[str]) -> None:
+    """Remove the `generating` marker (resolver finished/failed). Never raises."""
+    try:
+        generating_path(hash_, scope).unlink()
+    except (FileNotFoundError, OSError):
+        pass
+
+
+def _spawn_detached_resolver(kind: str, prompt: str, seed: Optional[int],
+                             scope: Optional[str], key: str, pname: str) -> bool:
+    """Spawn a process-group-detached resolver subprocess for one generation (F11-3).
+
+    Returns True if a resolver was spawned, False if a young `generating` marker meant we
+    suppressed the spawn (a resolver is already in flight for this key). The subprocess
+    runs THIS module's `--resolve` entrypoint under `sys.executable`, detached via
+    start_new_session=True with stdio to DEVNULL, so it survives the parent `claude -p`
+    exit. Falls back to the in-process daemon worker if the subprocess can't be launched
+    (so art is never worse off than today)."""
+    import subprocess
+    import sys
+
+    # Suppress a re-spawn while a young resolver is still plausibly running (no double spend).
+    if _generating_is_fresh(key, scope):
+        return False
+
+    # Mark generating BEFORE the spawn so a racing call sees it immediately. The resolver
+    # re-stamps with its own pid and clears the marker when done.
+    _write_generating_marker(key, scope)
+
+    payload = json.dumps({
+        "kind": kind, "prompt": prompt, "seed": seed, "scope": scope,
+        "key": key, "provider": pname,
+        "state_dir": str(store.state_dir()),
+    })
+    try:
+        subprocess.Popen(
+            [sys.executable, _resolver_module_path(), "--resolve", payload],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # detach from the parent's process group/session
+            close_fds=True,
+            env=dict(os.environ),    # carry CLAWDND_*/WORLDOS_* provider + gateway config
+        )
+        return True
+    except (OSError, ValueError):
+        # Couldn't launch the detached process — fall back to the in-process daemon worker
+        # so we degrade no worse than today. Clear our pre-spawn marker first.
+        _clear_generating_marker(key, scope)
+        t = threading.Thread(
+            target=_worker, args=(kind, prompt, seed, scope, key),
+            name=f"imagegen-fb-{key[:8]}", daemon=True,
+        )
+        with _inflight_lock:
+            self_spawned = (key, scope) not in _inflight
+            if self_spawned:
+                _inflight.add((key, scope))
+        if self_spawned:
+            t.start()
+        return self_spawned
+
+
+def _resolver_module_path() -> str:
+    """Absolute path to THIS module, so the detached subprocess runs the same resolver
+    code regardless of the parent's cwd or sys.path."""
+    return str(Path(__file__).resolve())
+
+
+def _resolve_entry(spec: dict) -> int:
+    """Detached-resolver body (run in the child subprocess). Does the real generate()
+    and writes the derived cache, then clears the `generating` marker. NEVER raises out
+    (a resolver failure is benign — generate() already wrote a `.error` sidecar and the
+    viewer keeps its placeholder). Returns a process exit code."""
+    kind = spec.get("kind", "")
+    prompt = spec.get("prompt", "")
+    seed = spec.get("seed")
+    scope = spec.get("scope")
+    key = spec.get("key", "")
+    try:
+        _write_generating_marker(key, scope, pid=os.getpid())
+        generate(kind, prompt, seed=seed, scope=scope)
+        return 0
+    except Exception:
+        return 0  # benign: degrade is already handled inside generate()
+    finally:
+        _clear_generating_marker(key, scope)
+
+
 def async_generate(
     kind: str,
     prompt: str,
     *,
     seed: Optional[int] = None,
     scope: Optional[str] = None,
+    force: bool = False,
 ) -> dict:
     """Enqueue an image generation and return IMMEDIATELY with a cache handle.
 
     Fast path (always <500ms, no network on the calling thread):
     - On a content-hash cache HIT, returns the cached descriptor right away
       (``status="ready"``, ``cache_hit=True``) — nothing to enqueue.
-    - On a MISS, spawns a daemon worker to do the real generate() (provider +
+    - When the _private ingest already provides SERVABLE art for ``scope`` (and not
+      ``force``), returns ``status="ingested"`` WITHOUT spending — the viewer serves the
+      ingested asset ahead of any generated one anyway, so generating would be pure spend
+      for a face that's never displayed (F11-6).
+    - On a MISS, spawns a background worker to do the real generate() (provider +
       cache write) and returns a ``status="pending"`` descriptor carrying the
       ``scope`` + ``hash`` the viewer keys off. The image lands in the cache when
       the worker finishes; the viewer's /image endpoint 404→placeholder until then.
@@ -623,6 +1007,8 @@ def async_generate(
     ``kind``, ``prompt``, ``seed``, ``placeholder`` — so it is a drop-in for the old
     synchronous ``generate()`` return on the fire-and-forget DM path. ``status`` and
     ``hash`` are additive (new keys; nothing pre-existing is removed or repurposed).
+    ``force`` (additive, default False) bypasses the catalog consult to regenerate
+    even when ingested art exists.
 
     Provider selection happens here (cheap: env read + a lazy client import for
     ``configured()`` — no network), so the cache ``hash`` matches what the worker's
@@ -636,9 +1022,54 @@ def async_generate(
     # Cache hit -> hand it straight back; no worker, no wait.
     hit = cache_read(key, scope)
     if hit is not None:
+        # F11-5: a payload-bearing hit (provider lane wrote inline bytes_b64) must NOT
+        # be returned verbatim — a single hit would inject ~1-5M chars of base64 into the
+        # DM's beat. Strip the inline bytes to METADATA-ONLY (has_bytes/byte_len) for the
+        # tool-side return; the on-disk cache entry is untouched, so the viewer's /image
+        # endpoint still serves the bytes. No tool-side consumer reads bytes_b64.
+        hit = _strip_inline_bytes(hit)
         hit["cache_hit"] = True
         hit.setdefault("status", "ready")
         return hit
+
+    # F11-6: catalog consult. The viewer serves ingested _private art ahead of any
+    # generated cache, so if the ingest already has servable art for this scope,
+    # generating is pure spend for a face that never displays. Skip (unless force).
+    if not force and has_ingested_art(scope):
+        return {
+            "provider": pname,
+            "kind": _normalize_kind(kind),
+            "prompt": prompt,
+            "seed": seed,
+            "placeholder": False,   # the viewer has servable ingested art for this scope
+            "status": "ingested",   # additive: "served by the catalog, not generated"
+            "hash": key,
+            "scope": scope,
+            "cache_hit": False,
+            "already_pending": False,
+        }
+
+    # F11-3: detached-resolver path. A daemon thread dies with the per-beat `claude -p`
+    # process (the engine MCP server is its stdio child), so fire-and-forget art started
+    # late in a beat is silently lost AND the paid image is never claimed. When enabled,
+    # spawn a process-group-detached resolver that outlives the parent and writes the
+    # derived cache itself. A young `generating` marker suppresses a re-POST (double spend).
+    if _detached_resolver_enabled():
+        spawned = _spawn_detached_resolver(kind, prompt, seed, scope, key, pname)
+        return {
+            "provider": pname,
+            "kind": _normalize_kind(kind),
+            "prompt": prompt,
+            "seed": seed,
+            "placeholder": True,
+            "status": "pending",
+            "hash": key,
+            "scope": scope,
+            "cache_hit": False,
+            # already_pending: a young `generating` marker meant we suppressed a re-spawn.
+            "already_pending": not spawned,
+            "detached": True,  # additive: resolver runs in a detached subprocess
+        }
 
     # Miss -> enqueue exactly one worker per (key, scope) and return a pending handle.
     with _inflight_lock:
@@ -666,3 +1097,34 @@ def async_generate(
         "cache_hit": False,
         "already_pending": already,  # additive: a worker for this key was already running
     }
+
+
+# --------------------------------------------------------------------------- #
+# Detached-resolver CLI entrypoint (F11-3). Invoked ONLY as a subprocess by
+# _spawn_detached_resolver: `python imagegen.py --resolve <json-spec>`. Not used by
+# the test suite directly (tests call _resolve_entry); not a manual tool.
+# --------------------------------------------------------------------------- #
+
+def _main(argv: Optional[list] = None) -> int:
+    import sys
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) >= 2 and args[0] == "--resolve":
+        try:
+            spec = json.loads(args[1])
+        except (ValueError, TypeError):
+            return 2
+        if not isinstance(spec, dict):
+            return 2
+        # The child inherits the parent's env (state dir, provider, gateway config). As a
+        # belt-and-braces fallback, seed the state dir from the spec if the env didn't
+        # carry it, so the resolver writes the cache where the viewer reads it.
+        sd = spec.get("state_dir")
+        if sd and not (env_var("STATE_DIR")):
+            os.environ["WORLDOS_STATE_DIR"] = str(sd)
+        return _resolve_entry(spec)
+    return 2
+
+
+if __name__ == "__main__":  # pragma: no cover - subprocess entrypoint
+    raise SystemExit(_main())
