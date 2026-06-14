@@ -122,6 +122,28 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         )
         self.assertNotIn("Armor Class", {r["k"] for r in rows})
 
+    def test_acdisplay_dex_rule_row_for_medium_armor(self):
+        # F09-6: when the read-model supplies the composed acDisplay, the armor row reads the
+        # full dex rule under an "Armor" label (not the redundant "Armor Class AC 14…").
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Breastplate', type: 'armor', ac: 14, "
+            "  armorCategory: 'medium', acDisplay: 'AC 14 + DEX (max +2)' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Armor"), "AC 14 + DEX (max +2)")
+        self.assertNotIn("Armor Class", kv)  # the acDisplay branch supersedes the bare row
+
+    def test_acdisplay_shield_shows_bonus_not_flat_ac(self):
+        # F09-6: a shield grants a +N bonus, so the row reads "+2" under a "Shield" label —
+        # never the misleading flat "AC 2".
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Shield', type: 'armor', ac: 2, "
+            "  armorCategory: 'shield', acDisplay: '+2' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Shield"), "+2")
+        self.assertNotIn("Armor Class", kv)
+
     # --- symptom 2: a VERSATILE weapon shows its 1d8 two-handed damage --------
     def test_versatile_weapon_shows_two_handed_die(self):
         """A Versatile weapon must read its one-handed damage AND its two-handed die — the

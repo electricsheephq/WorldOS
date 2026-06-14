@@ -534,6 +534,110 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertTrue(cloak["attunement"])
         self.assertIn("Attuned", cloak["properties"])
 
+    def test_inventory_surface_prefers_persisted_stats_when_catalog_cannot_resolve(self):
+        # #756 / F09-7 root-cause fix: a renamed/enchanted item the SRD catalog can NOT resolve
+        # by name still renders its REAL stats — because the engine now persists them on the
+        # Item at grant time (add_item/buy_item). The viewer prefers those persisted fields over
+        # the (failing) by-name catalog re-resolve. The by-name path used to drop these entirely.
+        self.assertEqual(server._catalog_meta("Moonsteel Saber +1"), {})  # the catalog truly misses
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].append({
+            "name": "Moonsteel Saber +1", "quantity": 1, "equipped": False,
+            "kind": "weapon", "rarity": "very rare", "cost_gp": 750,
+            "damage": "1d6", "damage_type": "slashing", "properties": ["finesse"],
+        })
+        self._write("camp_persist", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_persist")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        blade = {i["name"]: i for i in cassian["items"]}["Moonsteel Saber +1"]
+        self.assertEqual(blade["damage"], "1d6")
+        self.assertEqual(blade["damageType"], "slashing")
+        self.assertEqual(blade["kind"], "weapon")
+        self.assertEqual(blade["rarity"], "very rare")
+        self.assertEqual(blade["value"], "750 gp")          # cost_gp -> the "value" gp string
+        self.assertIn("finesse", blade["properties"])       # persisted SRD tag surfaces as a chip
+
+    def test_inventory_surface_persisted_stats_win_over_resolvable_catalog(self):
+        # Preference is PERSISTED-FIRST, not catalog-first: a "Dwarven Plate" the catalog DOES
+        # resolve (base AC 18) but whose snapshot persists a different AC (20) renders the
+        # persisted 20 — the engine, not the read-time catalog, is the source of truth (F09-7).
+        self.assertEqual(server._catalog_meta("Dwarven Plate").get("ac"), 18)  # catalog says 18
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].append({
+            "name": "Dwarven Plate", "quantity": 1, "kind": "armor", "ac": 20,
+            "armor_category": "heavy", "ac_dex_mod": "none",
+        })
+        self._write("camp_persistwin", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_persistwin")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        plate = {i["name"]: i for i in cassian["items"]}["Dwarven Plate"]
+        self.assertEqual(plate["ac"], 20)
+        self.assertEqual(plate["acDisplay"], "AC 20")
+
+    def test_inventory_surface_armor_dex_rule_display(self):
+        # F09-6 armor dex rule, surfaced from PERSISTED fields (names the catalog can't resolve).
+        # Medium armor caps the DEX bonus -> "AC 14 + DEX (max +2)"; a shield grants a BONUS, so
+        # it reads "+2" (NOT the misleading flat "AC 2"); heavy armor adds no DEX -> flat "AC 20";
+        # light armor adds the full DEX -> "AC 11 + DEX".
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].extend([
+            {"name": "Bronze Breastplate", "quantity": 1, "kind": "armor", "ac": 14,
+             "armor_category": "medium", "ac_dex_mod": "capped", "ac_dex_cap": 2},
+            {"name": "Battered Shield", "quantity": 1, "kind": "armor", "ac": 2,
+             "armor_category": "shield", "ac_dex_mod": "none"},
+            {"name": "Ironwall Plate", "quantity": 1, "kind": "armor", "ac": 20,
+             "armor_category": "heavy", "ac_dex_mod": "none"},
+            {"name": "Quilted Jerkin", "quantity": 1, "kind": "armor", "ac": 11,
+             "armor_category": "light", "ac_dex_mod": "full"},
+        ])
+        self._write("camp_armor", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_armor")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        items = {i["name"]: i for i in cassian["items"]}
+        bp = items["Bronze Breastplate"]
+        self.assertEqual(bp["acDisplay"], "AC 14 + DEX (max +2)")
+        self.assertEqual(bp["armorCategory"], "medium")
+        self.assertEqual(bp["acDexCap"], 2)
+        self.assertEqual(items["Battered Shield"]["acDisplay"], "+2")
+        self.assertEqual(items["Battered Shield"]["armorCategory"], "shield")
+        self.assertEqual(items["Ironwall Plate"]["acDisplay"], "AC 20")
+        self.assertEqual(items["Quilted Jerkin"]["acDisplay"], "AC 11 + DEX")
+
+    def test_inventory_surface_armor_dex_rule_falls_back_to_catalog(self):
+        # Pre-F09-7 snapshot: a free-text armor with NO persisted stat fields still renders the
+        # F09-6 dex rule via the by-name catalog re-resolve — so old saves don't regress. The
+        # real catalog "Breastplate" is medium/cap-2; the real "Shield" is a +2 bonus.
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].extend([
+            {"name": "Breastplate", "quantity": 1},
+            {"name": "Shield", "quantity": 1},
+        ])
+        self._write("camp_armorfb", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_armorfb")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        items = {i["name"]: i for i in cassian["items"]}
+        self.assertEqual(items["Breastplate"]["acDisplay"], "AC 14 + DEX (max +2)")
+        self.assertEqual(items["Shield"]["acDisplay"], "+2")
+
+    def test_equipped_items_prefer_persisted_stats_and_dex_rule(self):
+        # The heroes-screen paper-doll projection (_equipped_items) gets the same persisted-first
+        # treatment: an EQUIPPED renamed blade the catalog can't resolve still carries its damage,
+        # and an equipped shield carries the "+2" dex-rule display (not "AC 2").
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["cassian"]["inventory"].extend([
+            {"name": "Moonsteel Saber +1", "quantity": 1, "equipped": True,
+             "kind": "weapon", "damage": "1d6", "damage_type": "slashing"},
+            {"name": "Battered Shield", "quantity": 1, "equipped": True, "kind": "armor",
+             "ac": 2, "armor_category": "shield", "ac_dex_mod": "none"},
+        ])
+        self._write("camp_equip", snap)
+        _status, surface = self._get_json("/inventory-surface?campaign=camp_equip")
+        cassian = {m["id"]: m for m in surface["party"]}["cassian"]
+        equipped = {e["name"]: e for e in cassian["equipped"]}
+        self.assertEqual(equipped["Moonsteel Saber +1"]["damage"], "1d6")
+        self.assertEqual(equipped["Moonsteel Saber +1"]["damageType"], "slashing")
+        self.assertEqual(equipped["Battered Shield"]["acDisplay"], "+2")
+
     # ── relations ───────────────────────────────────────────────────────────────
 
     def test_relations_surface_projects_factions_npcs_and_arcs(self):

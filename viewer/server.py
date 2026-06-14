@@ -3547,12 +3547,14 @@ _ABILITY_KEYS = ("strength", "dexterity", "constitution", "intelligence", "wisdo
 def _equipped_items(ch: dict) -> list[dict]:
     """Projected list of a character's EQUIPPED gear for the heroes-screen paper-doll +
     the inventory equip slots. Each entry carries name/slot/glyph plus the item's REAL SRD
-    combat stats (kind / damage / damageType / ac / rarity / attunement) when the catalog
-    resolves the name — so the doll's slot tooltip can read "Main Hand · 1d8 slashing"
-    honestly, and stays just the name when the catalog has no record. The engine carries no
-    canonical slot on the Item model, so `slot` is whatever the snapshot recorded (else "Worn");
-    the screen's name->slot inference places it in the doll cell (forward-compatible if the
-    engine ever emits a real slot id)."""
+    combat stats (kind / damage / damageType / ac / rarity / attunement, plus the F09-6 armor
+    dex-rule fields) — PREFERRING the item's own persisted F09-7 stats and falling back to the
+    by-name catalog only for a field it lacks (so the doll's slot tooltip reads "Main Hand ·
+    1d8 slashing" honestly even for a renamed/enchanted blade the catalog can't resolve, and
+    stays just the name when neither source has a stat). The engine carries no canonical slot
+    on the Item model, so `slot` is whatever the snapshot recorded (else "Worn"); the screen's
+    name->slot inference places it in the doll cell (forward-compatible if the engine ever
+    emits a real slot id)."""
     out: list[dict] = []
     for it in (ch.get("inventory") or []):
         if not isinstance(it, dict) or not bool(it.get("equipped")):
@@ -3561,17 +3563,20 @@ def _equipped_items(ch: dict) -> list[dict]:
         if not name:
             continue
         meta = _catalog_meta(name)
-        damage = _text(meta.get("damage")) if meta else ""
-        ac_raw = meta.get("ac") if meta else None
+        stats = _item_stat_block(it, meta)
         out.append({
             "slot": _text(it.get("slot"), "Worn"),
             "name": name,
             "glyph": name.lower(),
-            "kind": _text(meta.get("kind")) if meta else "",
-            "damage": damage,
-            "damageType": _text(meta.get("damage_type")) if (meta and damage) else "",
-            "ac": int(ac_raw) if isinstance(ac_raw, (int, float)) else None,
-            "rarity": (_text(it.get("rarity")) or (_text(meta.get("rarity")) if meta else "")) or "",
+            "kind": stats["kind"],
+            "damage": stats["damage"],
+            "damageType": stats["damageType"],
+            "ac": stats["ac"],
+            "armorCategory": stats["armorCategory"],
+            "acDexMod": stats["acDexMod"],
+            "acDexCap": stats["acDexCap"],
+            "acDisplay": stats["acDisplay"],
+            "rarity": stats["rarity"],
             "attunement": bool(it.get("requires_attunement") or (meta.get("requires_attunement") if meta else False)),
         })
     return out
@@ -4201,6 +4206,92 @@ def _catalog_stat_block(name: str) -> dict:
     }
 
 
+def _armor_ac_display(ac: "int | None", armor_category: str, ac_dex_mod: str, ac_dex_cap: "int | None") -> str:
+    """Compose the F09-6 armor-class line for the item inspector from REAL fields only.
+
+    A SHIELD grants a +N BONUS to AC (not a flat AC), so it reads "+2" — never the bare "AC 2"
+    that misreads as a flat armor class. BODY armor reads its base AC plus exactly the DEX rule
+    its category allows: medium caps the modifier ("AC 14 + DEX (max +2)"), light adds it in
+    full ("AC 11 + DEX"), heavy adds none ("AC 18"). Returns "" when there is no AC datum at
+    all, so the screen renders no AC row (HONEST — never a fabricated number)."""
+    if ac is None:
+        return ""
+    if (armor_category or "").lower() == "shield":
+        return f"+{ac}"
+    mod = (ac_dex_mod or "").lower()
+    if mod == "capped" and ac_dex_cap is not None:
+        return f"AC {ac} + DEX (max +{ac_dex_cap})"
+    if mod == "full":
+        return f"AC {ac} + DEX"
+    return f"AC {ac}"
+
+
+def _item_stat_block(item: dict, meta: dict) -> dict:
+    """Resolve an item's mechanical stat block for the read-model, PREFERRING the item's own
+    persisted F09-7 fields (kind / rarity / cost_gp / damage / damage_type / ac /
+    armor_category / ac_dex_mod / ac_dex_cap / properties — stamped onto the Item at grant time
+    by add_item/buy_item) and falling back to the by-name SRD catalog record (``meta``) ONLY for
+    a field the item itself lacks.
+
+    This is the #756 / F09-7 fix: an item's stats now live on the Item, so a renamed/enchanted
+    item the catalog can't resolve ("Longsword +1", "Healing Potion") still renders its REAL
+    numbers — while a pre-F09-7 snapshot (no stat fields at all) still backfills from the catalog
+    exactly as before. HONEST: a datum neither persisted nor catalog-resolvable stays "" / None,
+    never fabricated.
+
+    Returns camelCase keys for the screen contract (``damage_type`` -> ``damageType``;
+    ``cost_gp`` -> the numeric ``costGp`` the caller renders as a gp "value" string), the raw
+    armor dex-rule fields (``armorCategory`` / ``acDexMod`` / ``acDexCap``), and a composed
+    ``acDisplay`` honouring the F09-6 rule."""
+    meta = meta if isinstance(meta, dict) else {}
+
+    def pick_str(field: str, meta_key: "str | None" = None) -> str:
+        v = _text(item.get(field))
+        return v if v else _text(meta.get(meta_key or field))
+
+    def pick_num(field: str, meta_key: "str | None" = None):
+        v = _num(item.get(field))
+        return v if v is not None else _num(meta.get(meta_key or field))
+
+    damage = pick_str("damage")
+    ac_num = pick_num("ac")
+    ac = int(ac_num) if ac_num is not None else None
+    armor_category = pick_str("armor_category")
+    ac_dex_mod = pick_str("ac_dex_mod")
+    cap_num = pick_num("ac_dex_cap")
+    ac_dex_cap = int(cap_num) if cap_num is not None else None
+    # The item persists `cost_gp`; the catalog record carries the same datum under `cost`. A
+    # legacy free-text grant may instead carry a bare `cost`, so honour that last.
+    cost = pick_num("cost_gp", "cost")
+    if cost is None:
+        cost = _num(item.get("cost"))
+
+    # Property chips: prefer the item's own persisted SRD tags (stealth-disadvantage, str-13,
+    # attune:…); fall back to the catalog's only when the item carries none. Same formatter.
+    raw_props = item.get("properties")
+    if not (isinstance(raw_props, list) and raw_props):
+        raw_props = meta.get("properties")
+    prop_chips = _catalog_property_chips({"properties": raw_props or []})
+
+    return {
+        "kind": pick_str("kind"),
+        "rarity": pick_str("rarity"),
+        # Damage type is only meaningful alongside a dice expression (mirrors today's contract).
+        "damage": damage,
+        "damageType": pick_str("damage_type") if damage else "",
+        # #756 Versatile two-handed die — not a persisted Item field today, so it resolves from
+        # the catalog (persisted-first via pick_str keeps it forward-compatible). Damage-gated.
+        "versatile": pick_str("versatile") if damage else "",
+        "ac": ac,
+        "armorCategory": armor_category,
+        "acDexMod": ac_dex_mod,
+        "acDexCap": ac_dex_cap,
+        "acDisplay": _armor_ac_display(ac, armor_category, ac_dex_mod, ac_dex_cap),
+        "costGp": cost,
+        "propertyChips": prop_chips,
+    }
+
+
 def _inventory_items(cid: str, ch: dict) -> list[dict]:
     inventory = ch.get("inventory")
     out: list[dict] = []
@@ -4213,63 +4304,55 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
         if not name:
             continue
         qty = _num(item.get("quantity"))
-        weight = _num(item.get("weight"))
-        cost = _num(item.get("cost"))
-        rarity = _text(item.get("rarity"))
-        # Resolve the SRD catalog record ONCE. It is the source of the item's stat block
-        # (damage dice / damage type / base AC / weapon properties / attunement clause) and
-        # also backfills weight/value/rarity the granted item omits. The engine stays the
-        # source of truth — a granted item's own value always wins; the catalog only fills
-        # gaps and supplies combat stats the Item model has no field for. A name the catalog
-        # can't resolve (e.g. "Longsword +1", "Healing Potion") yields {} -> the stat fields
-        # stay empty exactly as today (HONEST: never fabricate a number the engine lacks).
+        # Resolve the SRD catalog record ONCE — used both as the FALLBACK source for any stat
+        # the item itself doesn't persist and to backfill weight the granted item omits. The
+        # item's OWN persisted stats win (F09-7 / #756): a name the catalog can't resolve
+        # ("Longsword +1", "Healing Potion") still renders its persisted numbers, and a
+        # pre-F09-7 snapshot (no stat fields) still backfills from the catalog exactly as today.
+        # HONEST: a datum neither persisted nor resolvable stays empty — never fabricated.
         meta = _catalog_meta(name)
-        if meta:
-            if weight is None or weight <= 0:
-                weight = _num(meta.get("weight"))
-            if cost is None or cost <= 0:
-                cost = _num(meta.get("cost"))
-            if not rarity:
-                rarity = _text(meta.get("rarity"))
-        # Damage / AC: real catalog stats. Damage type is only meaningful with a dice expr.
-        damage = _text(meta.get("damage")) if meta else ""
-        damage_type = _text(meta.get("damage_type")) if (meta and damage) else ""
-        # #756: a Versatile weapon's two-handed damage die (e.g. "1d8") — only meaningful
-        # alongside the one-handed `damage`; absent for non-versatile gear.
-        versatile = _text(meta.get("versatile")) if (meta and damage) else ""
-        ac_raw = meta.get("ac") if meta else None
-        ac = int(ac_raw) if isinstance(ac_raw, (int, float)) else None
-        # Catalog `kind` ("weapon"/"armor"/"wondrous"/"potion"/"ring"/…) is the SRD's own
-        # classification; carry it through as the item's category alongside the coarse `type`
-        # the grid filters on (so the detail can read "Martial Weapon" / "Wondrous Item").
-        kind = _text(meta.get("kind")) if meta else ""
-        attunement = bool(item.get("requires_attunement") or (meta.get("requires_attunement") if meta else False))
-        # Property chips: the granted item's recorded "attuned" state first, then the catalog's
-        # real per-item properties (weapon simple/improvised, attunement clause). De-duped, no fab.
+        stats = _item_stat_block(item, meta)
+        # Weight prefers the item's recorded value (model default 0.0 -> backfill from catalog).
+        weight = _num(item.get("weight"))
+        if (weight is None or weight <= 0) and meta:
+            weight = _num(meta.get("weight"))
+        cost = stats["costGp"]
+        # Property chips: the granted item's recorded "attuned" state first, then its own
+        # (or the catalog's) per-item property tags. De-duped, never fabricated.
         properties = ["Attuned"] if item.get("attuned") else []
-        for chip in (_catalog_property_chips(meta) if meta else []):
+        for chip in stats["propertyChips"]:
             if chip not in properties:
                 properties.append(chip)
+        attunement = bool(item.get("requires_attunement") or (meta.get("requires_attunement") if meta else False))
         out.append({
             "id": f"{cid}:{idx}:{name}",
             "owner": cid,
             "name": name,
             "qty": int(qty) if qty is not None else 1,
             "type": _infer_item_type(name, item),
-            "kind": kind,
+            # Catalog `kind` ("weapon"/"armor"/"wondrous"/"potion"/…) is the SRD's own
+            # classification; carried alongside the coarse `type` the grid filters on (so the
+            # detail can read "Martial Weapon" / "Wondrous Item").
+            "kind": stats["kind"],
             "glyph": _text(item.get("glyph"), name.lower()),
             "equipped": bool(item.get("equipped")),
             "weight": f"{weight:g} lb" if weight is not None and weight > 0 else "—",
             "value": f"{cost:g} gp" if cost is not None and cost > 0 else "—",
-            "rarity": rarity or "common",
+            "rarity": stats["rarity"] or "common",
             "desc": _text(item.get("description"), "No description recorded."),
-            # Combat stat block (empty string / None when the catalog has no such datum —
+            # Combat stat block (empty string / None when neither persisted nor resolvable —
             # the screen hides each row that is blank). damage e.g. "1d8", damageType "slashing",
-            # ac e.g. 18 (base AC for armor / shields). versatile e.g. "1d8" (two-handed die, #756).
-            "damage": damage,
-            "damageType": damage_type,
-            "versatile": versatile,
-            "ac": ac,
+            # versatile e.g. "1d8" (two-handed die, #756), ac e.g. 18 (base AC for armor / +N for
+            # a shield). armorCategory / acDexCap drive the F09-6 dex-rule line (acDisplay:
+            # "AC 14 + DEX (max +2)" / a shield's "+2").
+            "damage": stats["damage"],
+            "damageType": stats["damageType"],
+            "versatile": stats["versatile"],
+            "ac": stats["ac"],
+            "armorCategory": stats["armorCategory"],
+            "acDexMod": stats["acDexMod"],
+            "acDexCap": stats["acDexCap"],
+            "acDisplay": stats["acDisplay"],
             "attunement": attunement,
             "attuned": bool(item.get("attuned")),
             "properties": properties,
