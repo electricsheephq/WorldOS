@@ -49,9 +49,17 @@ def _audit_fields(res) -> list[str]:
         )
     md = data.get("maneuver_damage")
     if isinstance(md, dict):
+        # On a CRIT the superiority die doubles (SRD Critical Hits, #213/A): show that the
+        # doubling WAS applied (rolled is the doubled total) so the Angry-DM lens reads the
+        # crit-doubled die as tool-sourced, not a hallucinated number.
+        crit_tag = ""
+        if md.get("crit_doubled"):
+            crit_tag = (
+                f" CRIT×2 ({md.get('base_rolled', '?')}+{md.get('crit_extra', '?')})"
+            )
         out.append(
             f"    `↳ maneuver-damage: {md.get('maneuver', '?')} {md.get('die', '?')}="
-            f"{md.get('rolled', '?')} applied={md.get('applied', md.get('applies_to', '?'))}`"
+            f"{md.get('rolled', '?')}{crit_tag} applied={md.get('applied', md.get('applies_to', '?'))}`"
         )
     # #792 auto-concentration: attack/apply_damage auto-roll the CON save when a
     # concentrating creature takes damage. The result sits AFTER target_state in the JSON,

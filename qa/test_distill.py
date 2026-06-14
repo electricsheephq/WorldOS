@@ -54,6 +54,19 @@ def test_audit_fields_surfaces_maneuver_damage():
     assert "maneuver-damage: Trip Attack 1d8=6 applied=True" in lines[0]
 
 
+def test_audit_fields_surfaces_crit_doubled_maneuver_damage():
+    # On a crit the superiority die DOUBLES (#213/A) — the distill must show the doubling
+    # was applied (CRIT×2 + the base/extra split) so the Angry-DM lens reads it tool-sourced.
+    res = json.dumps(
+        {"ok": True, "maneuver_damage": {"maneuver": "Trip Attack", "die": "1d8",
+                                         "rolled": 12, "applied": True, "crit_doubled": True,
+                                         "base_rolled": 6, "crit_extra": 6}}
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "maneuver-damage: Trip Attack 1d8=12 CRIT×2 (6+6) applied=True" in lines[0]
+
+
 def test_audit_fields_surfaces_concentration_save():
     # The #792 auto-concentration roll sits after target_state in the result JSON, so the
     # 240-char preview truncates it and the Angry-DM lens mis-scores a tool-sourced save as a

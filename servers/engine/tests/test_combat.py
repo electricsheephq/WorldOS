@@ -51,6 +51,24 @@ def test_double_dice(expr, expected):
     assert combat.double_dice(expr) == expected
 
 
+# --- crit-extra dice (the ADDITIONAL dice a crit adds to an already-rolled add, #213/A) ---
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("1d8", "1d8"),       # superiority die: a crit rolls one more 1d8
+        ("2d6", "2d6"),       # a 2-die maneuver pool: a crit rolls 2 more d6
+        ("1d8+3", "1d8"),     # flat mods never double — only the dice repeat
+        ("1d10-1", "1d10"),
+        ("5", ""),            # no dice -> nothing to double on a crit
+        ("", ""),
+    ],
+)
+def test_crit_extra_dice(expr, expected):
+    """The expression for the EXTRA dice a crit adds on top of an already-rolled value:
+    only the dice repeat (flat modifiers never double), so 1d8 -> 1d8, 1d8+3 -> 1d8."""
+    assert combat.crit_extra_dice(expr) == expected
+
+
 # --- damage resolution order ---
 def test_temp_hp_absorbs_first():
     ch = mk(max_hp=20, current_hp=20, temp_hp=5)
@@ -2253,3 +2271,260 @@ def test_end_combat_resolution_records_disposition_for_living_hostiles(tmp_path,
     # start_combat clears the prior disposition so a later clean kill never inherits it
     server.start_combat(cid, [pid, mid])
     assert store.load_campaign(cid).last_combat_resolution == ""
+
+
+# =========================================================================
+# (A) CRIT doubles the Battle Master superiority die (#213/A).
+# SRD Critical Hits: the maneuver's superiority die is "other damage dice" and
+# MUST double on a crit. The legacy path pre-rolls the die at use_resource time;
+# on a crit the engine rolls the SAME die again and folds the extra in.
+# (B) ATOMIC maneuver on attack(): attack(maneuver=…) rolls+consumes the die only
+# on a HIT — a MISS spends nothing; a HIT folds it (doubling on a crit).
+# =========================================================================
+
+
+def _bm_roller(*, d20: int, crit: bool, fixed: dict[str, int]):
+    """A deterministic dice_mod.roll for Battle-Master tests that records every NON-d20
+    expression it rolled (so a test can assert the crit-extra superiority die was rolled).
+    d20 -> a hit/miss/crit-controlled d20 roll; any other expr -> fixed.get(stripped, 0)."""
+    from dice import DiceRoll
+
+    seen: list[str] = []
+
+    def _roll(expr, advantage=False, disadvantage=False, seed=None):
+        e = expr.replace(" ", "").lower()
+        if e.startswith("1d20"):
+            nat = 20 if crit else max(1, min(19, d20 - 5))
+            return DiceRoll(
+                expression=expr, total=d20, rolls=[nat], modifier=5,
+                detail=f"{expr}={d20}", is_d20=True, natural=nat, crit=crit,
+            )
+        seen.append(e)
+        total = fixed.get(e, 0)
+        return DiceRoll(expression=expr, total=total, rolls=[total], detail=f"{expr}[{total}]={total}")
+
+    return _roll, seen
+
+
+def _bm_fight(server, monkeypatch, tmp_path):
+    """A Hero(with a 1d8 superiority pool)-vs-Goblin fight with the Hero current."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("BM crit")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=20, armor_class=12)["id"]
+    gob = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    server.set_class_resource(cid, hero, "superiority_dice", max=6, recharge="short", size="d8")
+    server.start_combat(cid, [hero, gob])
+    if server.get_state(cid)["current_turn"] != hero:
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == hero
+    return cid, hero, gob
+
+
+# ---- (A) legacy use_resource path: crit doubles the pre-rolled superiority die ----
+def test_crit_doubles_legacy_maneuver_die(tmp_path, monkeypatch):
+    """RED for (A): on a CRIT, a Trip Attack's superiority die must DOUBLE. The die is
+    pre-rolled (1d8 -> 6) at use_resource; on a crit the engine rolls one more 1d8 (-> 6)
+    so the maneuver contributes 12 (6 + 6), not 6. Weapon 1d6+3 -> 7 doubles to 2d6+3 -> 8."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    # use_resource rolls 1d8 -> 6; the attack's crit-extra 1d8 -> 6 (same stub); weapon 2d6+3 -> 8.
+    roll, seen = _bm_roller(d20=30, crit=True, fixed={"1d8": 6, "2d6+3": 8})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["crit"] is True and res["hit"] is True
+    # The crit-extra superiority die WAS rolled (a second 1d8 beyond the spend-time roll).
+    assert seen.count("1d8") == 2, f"crit must re-roll the superiority die; rolled exprs: {seen}"
+    md = res["maneuver_damage"]
+    assert md["rolled"] == 12, f"6 (spend) + 6 (crit-extra) = 12; got {md}"
+    assert md.get("crit_doubled") is True and md.get("base_rolled") == 6 and md.get("crit_extra") == 6
+    # weapon (8, crit-doubled) + maneuver (12) folded into ONE strike = 20.
+    assert res["damage"]["total"] == 20
+    assert server.get_character(cid, gob)["current_hp"] == 80 - 20
+
+
+def test_non_crit_legacy_maneuver_die_not_doubled(tmp_path, monkeypatch):
+    """A normal HIT (no crit) folds the pre-rolled die ONCE — the crit-extra path is inert
+    (regression guard so (A) only fires on a crit)."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, seen = _bm_roller(d20=18, crit=False, fixed={"1d8": 6, "1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["crit"] is False and res["hit"] is True
+    assert seen.count("1d8") == 1  # only the spend-time roll, no crit-extra
+    assert res["maneuver_damage"]["rolled"] == 6
+    assert res["maneuver_damage"].get("crit_doubled") in (False, None)
+    assert res["damage"]["total"] == 13  # weapon 7 + die 6
+
+
+# ---- (B) atomic attack(maneuver=…): roll+consume only on a hit ----
+def test_attack_maneuver_on_miss_consumes_no_die(tmp_path, monkeypatch):
+    """RED for (B): attack(maneuver='Trip Attack') on a MISS must spend NO superiority die
+    (the die is spent only 'when you hit'). The pool stays full and no damage lands."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    server.update_character(cid, gob, {"armor_class": 30})  # force a miss
+    roll, _ = _bm_roller(d20=6, crit=False, fixed={"1d8": 6, "1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=0, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack")
+    assert res["hit"] is False
+    # NO die spent on a miss (the whole point of the atomic path).
+    assert server.get_character(cid, hero)["class_resources"]["superiority_dice"]["used"] == 0
+    assert server.get_character(cid, gob)["current_hp"] == 80
+    assert res.get("maneuver_damage", {}).get("applied") in (False, None)
+    assert server.get_character(cid, hero)["pending_damage_bonus"] is None
+
+
+def test_attack_maneuver_on_hit_consumes_one_and_folds_damage(tmp_path, monkeypatch):
+    """attack(maneuver='Trip Attack') on a HIT spends exactly ONE die and folds the rolled
+    superiority die into THIS strike's damage (weapon 7 + die 6 = 13)."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d8": 6, "1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack")
+    assert res["hit"] is True and res["crit"] is False
+    assert server.get_character(cid, hero)["class_resources"]["superiority_dice"]["used"] == 1
+    assert res["maneuver_damage"]["maneuver"] == "Trip Attack"
+    assert res["maneuver_damage"]["rolled"] == 6 and res["maneuver_damage"]["applied"] is True
+    assert res["damage"]["total"] == 13
+    assert server.get_character(cid, gob)["current_hp"] == 80 - 13
+    # No lingering pending bonus (the atomic path consumes it in-line).
+    assert server.get_character(cid, hero)["pending_damage_bonus"] is None
+
+
+def test_attack_maneuver_on_crit_doubles_the_die(tmp_path, monkeypatch):
+    """attack(maneuver='Trip Attack') on a CRIT spends one die and DOUBLES it (6 + 6 = 12),
+    composing (A)+(B): the atomic path rolls the crit-extra superiority die too."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, seen = _bm_roller(d20=30, crit=True, fixed={"1d8": 6, "2d6+3": 8})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack")
+    assert res["crit"] is True and res["hit"] is True
+    assert server.get_character(cid, hero)["class_resources"]["superiority_dice"]["used"] == 1
+    assert seen.count("1d8") == 2  # spend roll + crit-extra
+    assert res["maneuver_damage"]["rolled"] == 12
+    assert res["maneuver_damage"].get("crit_doubled") is True
+    assert res["damage"]["total"] == 20  # weapon 8 (2d6+3) + maneuver 12
+
+
+def test_attack_maneuver_refused_on_point_pool_no_spend(tmp_path, monkeypatch):
+    """attack(maneuver=…) against a non-existent or point pool is refused cleanly with no
+    spend and no damage applied — the atomic path validates the pool like use_resource does."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    server.set_class_resource(cid, hero, "ki", max=5, recharge="short")  # point pool, no size
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack", maneuver_resource="ki")
+    # The strike still lands (a refused maneuver doesn't void the attack), but NO die spent
+    # and the refusal is surfaced.
+    assert res["hit"] is True
+    assert res["damage"]["total"] == 7  # weapon only, no maneuver folded
+    assert server.get_character(cid, hero)["class_resources"]["ki"]["used"] == 0
+    assert "maneuver_error" in res
+
+
+def test_attack_maneuver_additive_normal_attack_unchanged(tmp_path, monkeypatch):
+    """ADDITIVE: an attack with NO maneuver= is byte-identical to today (no die, no
+    maneuver_damage, no pool touched)."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["hit"] is True and res["damage"]["total"] == 7
+    assert "maneuver_damage" not in res
+    assert server.get_character(cid, hero)["class_resources"]["superiority_dice"]["used"] == 0
+
+
+def test_attack_maneuver_no_pool_refused_no_void(tmp_path, monkeypatch):
+    """attack(maneuver=…) when the attacker has NO such pool at all: refused cleanly (the
+    strike still lands, no spend) with maneuver_error surfaced — the atomic-path equivalent
+    of use_resource's 'no pool' signal."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack",
+                        maneuver_resource="energy_dice")  # no such pool
+    assert res["hit"] is True and res["damage"]["total"] == 7
+    assert "maneuver_error" in res and "energy_dice" in res["maneuver_error"]
+    assert "maneuver_damage" not in res
+
+
+def test_attack_maneuver_exhausted_pool_refused(tmp_path, monkeypatch):
+    """attack(maneuver=…) with the pool fully spent is refused (no negative spend), strike
+    still lands."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    server.update_character(cid, hero, {"class_resources": {"superiority_dice": {
+        "max": 6, "used": 6, "recharge": "short", "size": "d8"}}})
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack")
+    assert res["hit"] is True and res["damage"]["total"] == 7
+    assert "maneuver_error" in res
+    assert server.get_character(cid, hero)["class_resources"]["superiority_dice"]["used"] == 6
+
+
+def test_attack_maneuver_typed_damage_respects_resistance_on_crit(tmp_path, monkeypatch):
+    """An atomic maneuver with an explicit (resisted) damage type halves ONLY the maneuver
+    component, AND the crit-doubling is applied before resistance. weapon 1d6+3 -> 7 slashing
+    (full), maneuver fire die 6 doubled to 12, halved by resistance -> 6; HP -13."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    server.update_character(cid, gob, {"damage_resistances": ["fire"]})
+    roll, seen = _bm_roller(d20=30, crit=True, fixed={"1d8": 6, "2d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Trip Attack", maneuver_damage_type="fire")
+    assert res["crit"] is True and res["hit"] is True
+    assert res["maneuver_damage"]["rolled"] == 12 and res["maneuver_damage"]["crit_doubled"] is True
+    # weapon 7 (slashing, full) + maneuver 12 fire -> halved to 6 = 13 to HP.
+    assert server.get_character(cid, gob)["current_hp"] == 80 - 13
+
+
+def test_attack_maneuver_atomic_takes_precedence_over_pending(tmp_path, monkeypatch):
+    """If a player BOTH pre-declares via use_resource AND passes maneuver= on the attack
+    (a double-declare), the atomic path wins deterministically — exactly one die's worth of
+    bonus is folded (not two), and no stale pending bonus lingers."""
+    import server
+    cid, hero, gob = _bm_fight(server, monkeypatch, tmp_path)
+    roll, _ = _bm_roller(d20=18, crit=False, fixed={"1d8": 6, "1d6+3": 7})
+    monkeypatch.setattr(server.dice_mod, "roll", roll)
+    server.use_resource(cid, hero, "superiority_dice", maneuver="Trip Attack")  # pending (1 die)
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3",
+                        damage_type="slashing", maneuver="Menacing Attack")  # atomic (1 die)
+    assert res["hit"] is True
+    # Exactly ONE die folded (the atomic one) — not both. weapon 7 + die 6 = 13.
+    assert res["damage"]["total"] == 13
+    assert res["maneuver_damage"]["maneuver"] == "Menacing Attack"
+    assert server.get_character(cid, hero)["pending_damage_bonus"] is None
+
+
+def test_attack_param_additive_old_snapshot_round_trips(tmp_path, monkeypatch):
+    """ADDITIVE invariant: the new attack() params add NO model field. A character snapshot
+    written without any maneuver state round-trips byte-identically (no pending_damage_bonus,
+    no new keys), and the attack signature defaults preserve today's behavior."""
+    import server
+    from models import Character
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("RT")["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
+    # The persisted snapshot (the strict model) carries no maneuver state by default.
+    stored = store.load_campaign(cid).characters[hero]
+    snap = stored.model_dump(mode="json")
+    again = Character.model_validate(snap).model_dump(mode="json")
+    assert again == snap  # byte-identical round-trip
+    assert again["pending_damage_bonus"] is None
+    assert again["pending_on_hit_riders"] == []
