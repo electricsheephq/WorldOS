@@ -30,6 +30,7 @@ import dice as dice_mod
 import encounter
 import events as events_mod
 import faction_arc as faction_arc_mod
+import feature_catalog as feature_catalog_mod
 import generator
 import imagegen
 import inventory
@@ -5952,6 +5953,19 @@ def preview_level_up(
         if f.get("sneak_attack_dice"):
             preview.sneak_attack_dice = f["sneak_attack_dice"]
 
+    # #607 (RRI-25e55fa optimizer): surface the subclass picker on the level-up data path
+    # itself — the legal SRD archetype options WITH full feature text + a due/overdue flag —
+    # so the viewer renders a real list (not a one-option box) and prompts the L11-fighter-
+    # with-no-archetype overdue case. Reads the ORIGINAL subclass (from `before`, before the
+    # preview copy set it), so a `subclass=` passed for THIS preview doesn't suppress the
+    # block. Additive: None when no choice is due (unchanged for the common case).
+    before_subclass = next(
+        (cl.subclass for cl in before.classes if cl.name.lower() == cname), None
+    )
+    subclass_choice = _subclass_block_for(
+        cname, new_class_level, before_subclass, full_features=True
+    )
+
     return {
         "ok": not errors,
         "character_id": character_id,
@@ -5975,6 +5989,7 @@ def preview_level_up(
         "resource_deltas": _resource_deltas(before, preview),
         "choice_requirements": choice_requirements,
         "applied_choice": applied,
+        "subclass_choice": subclass_choice,
         "errors": errors,
     }
 
@@ -6001,28 +6016,45 @@ def _build_option_from_preview(preview: dict, feats_allowed: bool, multiclass_al
     }
 
 
-def _subclass_block_for(cname: str, next_class_level: int, current_subclass: Optional[str]) -> Optional[dict]:
-    """#624: the subclass-choice block a build option carries when leveling INTO a
-    class's subclass-choice level without a subclass already set — the legal SRD
-    options (each with a brief feature preview) so the surface renders a real list
-    instead of a free-text box. None when no choice is due at this level.
+def _subclass_block_for(
+    cname: str,
+    next_class_level: int,
+    current_subclass: Optional[str],
+    *,
+    full_features: bool = False,
+) -> Optional[dict]:
+    """#624 / #607: the subclass-choice block a build option / level-up preview carries
+    when leveling INTO a class's subclass-choice level without a subclass already set —
+    the legal SRD options (each with a feature preview) so the surface renders a real
+    list instead of a free-text box. None when no choice is due at this level.
 
     Backfill (rc2 audit): a character ALREADY PAST the choice level with the
     subclass still unset (the pendingSubclass case — e.g. an L5 wizard with no
-    Arcane Tradition leveling to L6) is offered the missed choice at the next
-    level-up, matching common-practice 5e table rules. With a subclass already
-    set, nothing is offered past the choice level (unchanged)."""
+    Arcane Tradition leveling to L6, or the RRI-25e55fa optimizer's L11 fighter with
+    no archetype) is offered the missed choice at the next level-up, matching
+    common-practice 5e table rules. With a subclass already set, nothing is offered
+    past the choice level (unchanged).
+
+    ``due``/``overdue`` (#607): ``due`` is True whenever the block is offered;
+    ``overdue`` is True when the character is PAST the choice level with no subclass set
+    (the optimizer's "L11 sheet with 'Choose your subclass' unfilled = not enforced at the
+    level it's due"), so the viewer can prompt distinctly. ``full_features=True`` lists
+    every archetype feature (choice-level + higher, each with full SRD rules text)."""
     slvl = srd_tables.subclass_level(cname)
     if slvl is None:
         return None
     unset = not bool((current_subclass or "").strip())
     if next_class_level != slvl and not (unset and next_class_level > slvl):
         return None
-    options = srd_tables.subclass_options(cname)
+    options = srd_tables.subclass_options(cname, full_features=full_features)
     if not options:
         return None
+    overdue = bool(unset and next_class_level > slvl)
     return {
         "required": unset,
+        "due": True,
+        "overdue": overdue,
+        "choice_level": slvl,
         "group_label": srd_tables.subclass_group_label(cname),
         "current": current_subclass,
         "options": options,
@@ -6056,7 +6088,12 @@ def build_options(campaign_id: str, character_id: str) -> dict:
         # #624: surface the subclass picker (options + previews) when this path
         # levels into the class's subclass-choice level without one chosen yet.
         next_class_level = preview["to"]["class_level"]
-        sub_block = _subclass_block_for(cname, next_class_level, existing_subclass.get(cname))
+        # #607: full_features so the viewer's subclass picker (GET /build-options) shows
+        # every archetype's features WITH rules text — the optimizer must COMPARE subclasses,
+        # not just see the level-3 pair. Mirrors preview_level_up's block (which already does).
+        sub_block = _subclass_block_for(
+            cname, next_class_level, existing_subclass.get(cname), full_features=True
+        )
         if sub_block is not None:
             option["subclass"] = sub_block
         if option["legal"]:
@@ -7081,6 +7118,7 @@ def _catalog_item_stats(rec: dict | None) -> dict | None:
         "cost_gp": rec.get("cost"),
         "damage": rec.get("damage", "") or "",
         "damage_type": rec.get("damage_type", "") or "",
+        "range": rec.get("range", "") or "",
         "ac": rec.get("ac"),
         "armor_category": rec.get("armor_category", "") or "",
         "ac_dex_mod": rec.get("ac_dex_mod", "") or "",
@@ -7181,6 +7219,67 @@ def find_items(query: str, limit: int = 10) -> dict:
     first `limit` items. The DM's catalog browser for handing out loot."""
     matches = itemcatalog.find(query, max(1, min(int(limit), 50)))
     return {"query": query, "count": len(matches), "items": matches}
+
+
+@mcp.tool()
+def lookup_feature(name: str, class_name: str = "") -> dict:
+    """Look up a class/subclass feature's FULL SRD 5.2 rules text by name (#756-family,
+    from the RRI-25e55fa optimizer sweep — "every feature is static text with no
+    click-through to full rules text").
+
+    `class_name` (a class OR subclass name, e.g. "Fighter" or "Champion") disambiguates a
+    feature whose name is shared across classes ("Extra Attack", "Spellcasting") and lets a
+    subclass feature fall back to its parent class's feature. Returns {name, desc, owner}
+    with the complete rules text, or {"error"} on a miss. Read-only; mirrors lookup_item."""
+    rec = (
+        feature_catalog_mod.lookup(class_name, name)
+        if class_name
+        else feature_catalog_mod.lookup_any(name)
+    )
+    if rec is None:
+        return {"error": f"no feature named {name!r}" + (f" for {class_name!r}" if class_name else "")}
+    return rec
+
+
+@mcp.tool()
+def feature_catalog(owner: str) -> dict:
+    """List every class/subclass feature for a class OR subclass NAME (e.g. "Fighter",
+    "Champion"), each {name, desc, owner} with FULL SRD 5.2 rules text — the feature-rules
+    catalog the viewer reads for click-through on a feature (mirrors find_items/the
+    /item-catalog read pattern, #872). Empty list for an unknown owner. Read-only."""
+    feats = feature_catalog_mod.features_for(owner)
+    return {"owner": owner, "count": len(feats), "features": feats}
+
+
+@mcp.tool()
+def character_feature_rules(campaign_id: str, character_id: str) -> dict:
+    """The FULL SRD rules text for each feature a character actually has — resolved against
+    the PC's own class(es)/subclass(es) so a shared name ("Extra Attack", "Spellcasting")
+    reads the RIGHT class's rules. Returns {features: [{name, desc, owner}]} for the
+    sheet's feature click-through (the optimizer's "class-feature inspector absent"). A
+    feature whose rules text the SRD dump doesn't carry is returned with an empty desc
+    (HONEST — the curated short desc still renders inline); never a fabrication. Read-only."""
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    # The PC's class + subclass names are the disambiguation hints (subclass first so a
+    # subclass feature resolves on the archetype before the base class).
+    hints: list[str] = []
+    for cl in ch.classes:
+        if cl.subclass:
+            hints.append(cl.subclass)
+        hints.append(cl.name)
+    seen: set[str] = set()
+    out: list[dict] = []
+    for fname in ch.features:
+        if fname in seen:
+            continue
+        seen.add(fname)
+        rec = feature_catalog_mod.lookup_any(fname, class_hints=tuple(hints))
+        if rec is not None:
+            out.append(rec)
+        else:
+            out.append({"name": fname, "desc": "", "owner": ""})
+    return {"character_id": character_id, "features": out}
 
 
 @mcp.tool()

@@ -169,14 +169,102 @@ def subclass_group_label(class_name: str) -> str:
     return _subclasses().get("classes", {}).get(class_name.lower(), {}).get("group_label", "")
 
 
-def subclass_options(class_name: str) -> list[dict]:
+# Canonical SRD 5.2 levels at which each subclass feature is gained, keyed by
+# (subclass_name_lower, feature_name). The choice-level features (gained at
+# subclass_level, 3) are derived automatically; this map pins the HIGHER-level
+# features whose level the bare srd524 ClassFeature dump doesn't carry. Anything not
+# in this map (and not a choice-level feature) resolves to level None — HONEST: we
+# surface the feature's rules text but never fabricate a level we can't verify.
+_SUBCLASS_FEATURE_LEVELS: dict[tuple[str, str], int] = {
+    # Fighter — Champion (SRD 5.2 / 2024 PHB progression). Only levels we can state with
+    # confidence are pinned; every OTHER subclass's higher feature resolves to level None
+    # (HONEST — its rules text still surfaces; we never fabricate an unverifiable level).
+    ("champion", "additional fighting style"): 7,
+    ("champion", "heroic warrior"): 10,
+    ("champion", "superior critical"): 15,
+    ("champion", "survivor"): 18,
+}
+
+
+def subclass_full_features(class_name: str, subclass_name: str, choice_level: int) -> list[dict]:
+    """Every SRD feature a subclass grants, each ``{name, desc, level}`` with the FULL
+    SRD rules text (from feature_catalog) and its gained-at level where known.
+
+    The choice-level features (curated in subclasses.json) are pinned to ``choice_level``;
+    the remaining features come from the srd524 ClassFeature dump with the canonical SRD
+    5.2 level from _SUBCLASS_FEATURE_LEVELS, or ``None`` when the dump+map don't pin one
+    (HONEST — the rules text is real even when the level isn't verifiable). Ordered by
+    level (None last), then name, so the picker reads as a progression. Additive: with no
+    feature_catalog available it degrades to the curated choice-level features only."""
+    sub_slug = name_to_slug(subclass_name)
+    # Choice-level features (curated short list) — pinned to the choice level, with their
+    # full rules text upgraded from feature_catalog when available.
+    choice_names: set[str] = set()
+    merged: dict[str, dict] = {}
+    for opt in _subclasses().get("classes", {}).get(class_name.lower(), {}).get("options", []):
+        if opt.get("name") != subclass_name:
+            continue
+        for f in opt.get("features", []):
+            nm = f.get("name", "")
+            if not nm:
+                continue
+            choice_names.add(nm.lower())
+            merged[nm.lower()] = {"name": nm, "desc": f.get("desc", "") or "", "level": choice_level}
+    # The richer/full feature set from the SRD dump (full rules text + higher features).
+    try:
+        import feature_catalog  # local import: pure module, no cycle with srd_tables
+        full = feature_catalog.features_for(subclass_name)
+    except Exception:
+        full = []
+    for f in full:
+        nm = f.get("name", "")
+        if not nm:
+            continue
+        key = nm.lower()
+        if key in choice_names:
+            # Upgrade the curated short desc to the full SRD rules text, keep choice level.
+            if f.get("desc"):
+                merged[key]["desc"] = f["desc"]
+            continue
+        lvl = _SUBCLASS_FEATURE_LEVELS.get((sub_slug, key))
+        merged[key] = {"name": nm, "desc": f.get("desc", "") or "", "level": lvl}
+    out = list(merged.values())
+    out.sort(key=lambda f: (f["level"] is None, f["level"] if f["level"] is not None else 99, f["name"]))
+    return out
+
+
+def name_to_slug(name: str) -> str:
+    """Lowercase hyphenated slug of a class/subclass name ('Circle of the Land' ->
+    'circle-of-the-land'), matching the srd524 pk convention. Shared by the subclass +
+    feature lookups so an owner name maps to the same key everywhere."""
+    import re
+    s = (name or "").strip().lower()
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+def subclass_options(class_name: str, *, full_features: bool = False) -> list[dict]:
     """Legal SRD subclass options for a class, each ``{name, desc, aliases, features}``
     where `features` are the choice-level (level-3) features that subclass grants.
-    Empty if the class has no SRD subclass entry."""
+    Empty if the class has no SRD subclass entry.
+
+    With ``full_features=True`` each option's `features` is the FULL feature set (choice-
+    level PLUS higher-level archetype features, each ``{name, desc, level}`` with full SRD
+    rules text) — the data the level-up subclass picker shows so the optimizer can read
+    every feature, not just the level-3 pair. Default (``False``) keeps the legacy curated
+    choice-level list (additive — existing callers are unchanged)."""
     entry = _subclasses().get("classes", {}).get(class_name.lower())
     if not entry:
         return []
-    return [dict(o) for o in entry.get("options", [])]
+    choice_lvl = subclass_level(class_name) or 3
+    out: list[dict] = []
+    for o in entry.get("options", []):
+        opt = dict(o)
+        if full_features:
+            opt["features"] = subclass_full_features(class_name, o["name"], choice_lvl)
+        else:
+            opt["features"] = [dict(f) for f in o.get("features", [])]
+        out.append(opt)
+    return out
 
 
 def resolve_subclass(class_name: str, name: str | None) -> str | None:

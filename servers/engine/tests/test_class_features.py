@@ -133,6 +133,29 @@ def test_build_options_exposes_subclass_choice_at_subclass_level(cid):
     assert all(o.get("desc") for o in sub["options"])
 
 
+def test_build_options_subclass_options_carry_full_feature_detail(cid):
+    # #607 (RRI-25e55fa optimizer): the viewer subclass picker reads build_options (GET
+    # /build-options). The optimizer asked to COMPARE archetypes by their features. The
+    # SRD 5.2.1 ships exactly ONE subclass per class (Champion for Fighter — Battle Master /
+    # Eldritch Knight are licensed PHB content, not shippable), so the real, in-scope fix is
+    # that the available archetype carries its FULL feature set (choice-level PLUS higher-
+    # level features, each with rules text + level) — not just the lone level-3 entry.
+    # The bug: build_options omitted full_features (preview_level_up already passed it).
+    wid = server.create_character(
+        cid, "Lyra", kind="player", class_name="Fighter", level=2,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, wid)
+    fopt = next(o for o in planner["options"] if o["class_name"] == "fighter")
+    sub = fopt.get("subclass")
+    assert sub and sub["required"] is True
+    champion = next(o for o in sub["options"] if o["name"] == "Champion")
+    feats = champion.get("features") or []
+    # Full set (>1 = more than the lone choice-level entry), each with rules text + level.
+    assert len(feats) >= 2, f"expected full feature list, got {feats}"
+    assert all(f.get("desc") and f.get("level") for f in feats), feats
+
+
 # ── #624 backfill (rc2 audit): a MISSED subclass choice is offered at the NEXT
 # level-up — an L5 wizard with no Arcane Tradition (the pendingSubclass case) must
 # still get the options block, not the free-text fallback. ──────────────────────
@@ -182,3 +205,105 @@ def test_level_up_backfill_applies_choice_level_features(cid):
     sheet = server.get_character(cid, wid)
     assert "Evocation Savant" in sheet["features"]
     assert "Sculpt Spells" in sheet["features"]
+
+
+# ── #607 / RRI-25e55fa optimizer: preview_level_up EXPOSES the subclass picker ──
+# The optimizer's #1 finding: the subclass picker showed only ONE option and no
+# feature text, and an L11 sheet with "Choose your subclass" unfilled didn't flag
+# the choice as overdue. preview_level_up — the single-class level-up data path —
+# must carry the legal SRD subclass options (WITH feature text) AND a due/overdue
+# signal. (SRD 5.2 licenses ONE subclass per class — Champion / Evoker / … — so the
+# list is the SRD-correct set; the bug was that it was empty/featureless/unflagged.)
+
+
+def test_preview_level_up_exposes_subclass_choice_at_choice_level(cid):
+    # A Fighter L2 -> L3 (the subclass-choice level) must carry the subclass-choice
+    # block: the legal SRD options, each with a description AND its features.
+    fid = server.create_character(
+        cid, "Aria", kind="player", class_name="Fighter", level=2,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.preview_level_up(cid, fid, "Fighter")  # -> level 3
+    sub = out.get("subclass_choice")
+    assert sub is not None, "preview at the subclass-choice level must carry the picker block"
+    assert sub["required"] is True
+    assert sub["due"] is True and sub["overdue"] is False
+    assert sub["group_label"] == "Martial Archetype"
+    names = {o["name"] for o in sub["options"]}
+    assert "Champion" in names  # the SRD 5.2 Martial Archetype
+    champ = next(o for o in sub["options"] if o["name"] == "Champion")
+    assert champ.get("desc"), "each subclass option carries a description"
+    assert champ.get("features"), "each subclass option lists the features it grants"
+    feat_names = {f["name"] for f in champ["features"]}
+    assert "Improved Critical" in feat_names  # the level-3 archetype feature
+    # each feature carries rules text the picker can show (not a bare name)
+    assert all(f.get("desc") for f in champ["features"])
+
+
+def test_preview_subclass_options_carry_higher_level_features(cid):
+    # The task: each option lists "the level-3 (and where known, higher) features".
+    # Champion gains Improved Critical + Remarkable Athlete at the choice level (3) AND
+    # higher-level archetype features (Additional Fighting Style, Superior Critical,
+    # Survivor, …) — surfaced from the licensed SRD ClassFeature text.
+    fid = server.create_character(
+        cid, "Bren", kind="player", class_name="Fighter", level=2,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.preview_level_up(cid, fid, "Fighter")
+    champ = next(o for o in out["subclass_choice"]["options"] if o["name"] == "Champion")
+    feat_names = {f["name"] for f in champ["features"]}
+    # the choice-level set is always present…
+    assert "Improved Critical" in feat_names and "Remarkable Athlete" in feat_names
+    # …and the higher-level archetype features are surfaced too (Champion gains more
+    # past 3 in the SRD: Additional Fighting Style, Superior Critical, Survivor).
+    assert len(champ["features"]) > 2, "higher-level archetype features must be surfaced"
+    assert {"Additional Fighting Style", "Superior Critical", "Survivor"} <= feat_names
+    # Every listed feature carries its rules text; the choice-level features carry level 3,
+    # additional features carry an int level when SRD-known or None (never a fabricated level).
+    assert all(f.get("desc") for f in champ["features"])
+    by_name = {f["name"]: f for f in champ["features"]}
+    assert by_name["Improved Critical"]["level"] == 3
+    assert by_name["Remarkable Athlete"]["level"] == 3
+    assert all((f["level"] is None) or (isinstance(f["level"], int) and f["level"] >= 3)
+               for f in champ["features"])
+
+
+def test_preview_no_subclass_block_when_not_due_and_already_chosen(cid):
+    # A Fighter who ALREADY has an archetype gets NO subclass block on a later level-up
+    # (the choice is not re-offered) — additive/unchanged for the common case.
+    fid = server.create_character(
+        cid, "Cael", kind="player", class_name="Fighter", level=4, subclass="Champion",
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.preview_level_up(cid, fid, "Fighter")  # -> level 5
+    assert out.get("subclass_choice") is None
+
+
+def test_preview_flags_overdue_subclass_choice_l11_fighter(cid):
+    # The optimizer's L11 case: a Fighter at L11 with NO archetype set is OVERDUE for
+    # its subclass choice (due at 3). Leveling to L12 the preview must flag the choice
+    # as required AND overdue so the viewer can prompt — not silently skip it.
+    fid = server.create_character(
+        cid, "Dax", kind="player", class_name="Fighter", level=11,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    out = server.preview_level_up(cid, fid, "Fighter")  # -> level 12
+    sub = out.get("subclass_choice")
+    assert sub is not None, "an overdue subclass choice must still surface the picker"
+    assert sub["required"] is True
+    assert sub["due"] is True
+    assert sub["overdue"] is True, "a choice due at 3 but unset at 11 is OVERDUE"
+    assert {o["name"] for o in sub["options"]} >= {"Champion"}
+
+
+def test_preview_subclass_block_is_additive_no_mutation(cid):
+    # The new block must not mutate state and must not appear for a multiclass step into
+    # a class below its subclass level (no false picker).
+    wid = server.create_character(
+        cid, "Eir", kind="player", class_name="Wizard", level=1,
+        abilities={"intelligence": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    before = server.get_character(cid, wid)
+    out = server.preview_level_up(cid, wid, "Wizard")  # L1 -> L2, below the choice level
+    assert out.get("subclass_choice") is None  # not due yet
+    assert server.get_character(cid, wid) == before  # preview never mutates

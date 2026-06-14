@@ -63,6 +63,11 @@ def test_resolve_magic_weapon_resolves_damage_via_fk():
     assert rec["damage"] == "1d10"  # joined from the glaive weapon record
 
 
+# --- weapon RANGE (B / RRI-25e55fa optimizer: "Heavy Crossbow has no 100/400 ft") ----
+# A ranged or thrown weapon carries a normal/long range from the SRD Weapon record; the
+# catalog dropped it so the inspector showed no range. Additive `range` field ("100/400")
+# from the SRD `range`/`long_range`. A pure-melee weapon (range 0) carries no range string.
+
 def test_flattened_record_shape():
     rec = itemcatalog.resolve("Bag of Holding")
     # Every record carries the common keys; weapons/armor add damage/ac.
