@@ -440,9 +440,27 @@ class TestResolveSceneDebt:
         raw = server.get_scene_debts(cid)
         debt_id = raw["live_debts"][0]["id"]
         server.resolve_scene_debt(cid, debt_id, "Done once.")
-        # Re-resolving the same debt should not raise, just return "already resolved"
+        # F05-4: re-resolving the SAME debt WHILE STILL SNOOZED (same day, within the
+        # suppression window) should not raise, just return "already resolved".
         result = server.resolve_scene_debt(cid, debt_id, "Trying again.")
         assert result["message"] == "already resolved"
+
+    def test_resolved_debt_suppressed_from_live(self, cid, tmp_path, monkeypatch):
+        # F05-4: once resolved, the debt must STOP re-surfacing in the live list (it no
+        # longer re-detects forever). This is the behavior the old graceful-refusal test
+        # could not give us — the resolution actually clears the advisory.
+        with store.campaign_lock(cid):
+            c = store.load_campaign(cid)
+            c.consequences.append(Consequence(trigger_day=1, text="The ritual.", fired=False))
+            c.day = 5
+            store.save_campaign(c)
+        raw = server.get_scene_debts(cid)
+        debt_id = next(d["id"] for d in raw["live_debts"] if d["kind"] == "due_consequence")
+        server.resolve_scene_debt(cid, debt_id, "Surfaced it.")
+        raw2 = server.get_scene_debts(cid)
+        assert debt_id not in [d["id"] for d in raw2["live_debts"]]
+        # …but it stays in the resolved audit trail.
+        assert debt_id in [d["id"] for d in raw2["resolved_debts"]]
 
 
 # ── Additive round-trip ───────────────────────────────────────────────────────

@@ -116,6 +116,25 @@ def _easter_egg_ids(world: dict) -> set[str]:
     return {str(n.get("id")) for n in roster if isinstance(n, dict) and n.get("easter_egg") and n.get("id")}
 
 
+def _non_meetable_ids(world: dict) -> set[str]:
+    """Roster NPC ids flagged ``prelude_meetable: false`` — kept OUT of the cold-open MEETING
+    pool only (F05-10). These are villains / deities / patrons (Raphael, Withers, The Emperor in
+    BG) who canonically appear LATER and whose generic "you meet them in a scuffle" cold-open is
+    tonal mis-staging — a third of real seeded BG campaigns opened on one. They stay fully valid
+    quest givers / targets / canon NPCs; only the random ``_build_prelude`` companion draw skips
+    them. ADDITIVE + setting-agnostic: a roster with no such flag yields an empty set, so a
+    flagless world's prelude distribution is byte-identical to today's. ``prelude_meetable``
+    DEFAULTS to true — only an EXPLICIT ``false`` excludes."""
+    roster = world.get("npc_roster") if isinstance(world, dict) else None
+    if not isinstance(roster, list):
+        return set()
+    return {
+        str(n.get("id"))
+        for n in roster
+        if isinstance(n, dict) and n.get("prelude_meetable") is False and n.get("id")
+    }
+
+
 def _derive_hooks(c: Campaign, world: dict, rng: random.Random, exclude: set[str]) -> list[QuestHook]:
     """Promote each resolved quest_outcome into a typed hook: its follow-on `hook` text is a wrong
     the world now contains (a grievance), bound to the campaign's own nouns via apophenia. NPCs in
@@ -181,15 +200,36 @@ def _mark_spine(c: Campaign, hooks: list[QuestHook]) -> None:
             h.arc_back = f"feeds the main arc: {spine.grievance}"
 
 
-def _build_prelude(c: Campaign, hooks: list[QuestHook], rng: random.Random, exclude: set[str]) -> list[PreludeBeat]:
+def _build_prelude(
+    c: Campaign,
+    hooks: list[QuestHook],
+    rng: random.Random,
+    exclude: set[str],
+    meet_exclude: set[str] | None = None,
+) -> list[PreludeBeat]:
     """The guaranteed 4-beat cold-open. Binds a start place, a suggested companion + shared stake,
     and the spine grievance — so a session never opens mid-quest. The DM owns order/framing/prose.
-    Easter-egg NPCs (`exclude`) are never the companion you 'meet' — the cold open stays canon."""
-    start_place = c.current_location_id or (next(iter(c.locations), "") if c.locations else "")
-    companions = [ch for ch in c.characters.values()
-                  if getattr(ch, "kind", "") in ("npc", "companion") and ch.id not in exclude]
-    companion = rng.choice(companions) if companions else None
+    Easter-egg NPCs (`exclude`) are never the companion you 'meet' — the cold open stays canon.
+
+    F05-10: ``meet_exclude`` additionally bars villain/deity/patron roster NPCs (flagged
+    ``prelude_meetable: false`` — Raphael / Withers / The Emperor in BG) from the MEETING pool,
+    because a generic "you meet them in a scuffle" cold-open mis-stages a figure who canonically
+    arrives later. They remain valid quest givers/targets — only this random draw skips them.
+    When ``meet_exclude`` is None/empty (a flagless world), the pool and distribution are
+    byte-identical to today's. Among the remaining eligible NPCs, prefer the one whose name/desc
+    most overlaps the spine grievance (deterministic apophenia), so the 'meet' is thematically
+    coupled to the story instead of a bare uniform draw — falling back to a seeded pick on a tie."""
     spine = next((h for h in hooks if h.spine), (hooks[0] if hooks else None))
+    start_place = c.current_location_id or (next(iter(c.locations), "") if c.locations else "")
+    bar = set(exclude) | set(meet_exclude or set())
+    companions = [ch for ch in c.characters.values()
+                  if getattr(ch, "kind", "") in ("npc", "companion") and ch.id not in bar]
+    # Prefer the eligible NPC most thematically tied to the spine grievance; uniform fallback.
+    if companions and spine is not None:
+        want = _toks(getattr(spine, "grievance", "")) | _toks(getattr(spine, "note", ""))
+        companion = _best_overlap(want, companions, rng) if want else rng.choice(companions)
+    else:
+        companion = rng.choice(companions) if companions else None
 
     meet_note = rng.choice(_MEETING_STAKES)
     if companion is not None:
@@ -217,6 +257,9 @@ def generate(c: Campaign, world: dict, rng: random.Random) -> None:
     populated). Degrade-not-abort: any section that raises is skipped, never failing seed_world.
     Additive: a world with no quest_variants / no facts yields an empty graph (today's behavior)."""
     exclude = _easter_egg_ids(world)  # easter-egg givers (Claudan) kept out of the default flow
+    # F05-10: villain/deity/patron NPCs flagged prelude_meetable:false are kept out of the
+    # cold-open MEETING pool only (they stay valid givers/targets). Empty for a flagless world.
+    meet_exclude = exclude | _non_meetable_ids(world)
     try:
         hooks = _derive_hooks(c, world, rng, exclude)
         _mark_spine(c, hooks)
@@ -228,6 +271,6 @@ def generate(c: Campaign, world: dict, rng: random.Random) -> None:
         # Only build a cold-open when there's a world to open INTO (locations seeded). A bare
         # synthetic world with no locations leaves prelude empty == today's behavior.
         if c.locations:
-            c.prelude = _build_prelude(c, hooks, rng, exclude)
+            c.prelude = _build_prelude(c, hooks, rng, exclude, meet_exclude)
     except Exception as e:  # pragma: no cover - defensive
         print(f"[questgen] skipping prelude generation: {e!r}")

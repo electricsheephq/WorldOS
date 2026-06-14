@@ -62,6 +62,25 @@ def _nudge(debt: SceneDebt) -> str:
             f"give them a line or record their first memory with remember."
         )
 
+    if debt.kind == "faction_rank_available":
+        fac = ev.get("faction_name") or debt.subject
+        title = ev.get("arc_id", "this questline")
+        earned_locked = ev.get("earned_locked_stage_ids") or []
+        available = ev.get("available_stage_ids") or []
+        # F05-6: an EARNED-but-locked stage must point at check_faction_arcs (the flipper);
+        # an already-available stage points at advance_faction_arc (take it). Distinct advice
+        # so the engine never misstates whether the rank-up is unlocked yet.
+        if earned_locked:
+            return (
+                f"Faction questline '{fac}' has an EARNED rank-up still locked — "
+                f"call check_faction_arcs to unlock it, then play the promotion "
+                f"and advance_faction_arc."
+            )
+        return (
+            f"Faction questline '{fac}' has an available rank-up "
+            f"({len(available)} stage(s)) — play the promotion and call advance_faction_arc."
+        )
+
     # fallback
     return f"{debt.kind}: {debt.detail[:80]}"
 
@@ -87,7 +106,10 @@ def compute(c: Campaign) -> dict:
     Advisory contract: the engine detects + advises; the DM decides + acts.
     Resolution is EXPLICIT via resolve_scene_debt, never automatic.
     """
-    all_debts = _sd.detect(c)
+    # F05-4: use the LIVE list (detect minus still-snoozed resolved debts) so a debt the
+    # DM already cleared via resolve_scene_debt does not eternally re-surface and crowd out
+    # a top-3 slot. detect() itself stays pure; live() just filters the suppressed ids.
+    all_debts = _sd.live(c)
     # Rank: high → med → low; stable (preserves detection order within a tier)
     ranked = sorted(all_debts, key=lambda d: (_SEV_RANK.get(d.severity, 9), 0))
     top = ranked[:_TOP_N]
