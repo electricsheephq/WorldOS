@@ -1020,7 +1020,22 @@ try:
     # effect expiries). Empty channels add NOTHING (no carry file, no token cost on a quiet
     # tick). Best-effort: a write failure never fails the loop (the tick already advanced).
     def _lines(v):
-        return [str(x).strip() for x in (v or []) if str(x).strip()]
+        # Channels differ in item shape: world_beats / world_developments are plain
+        # strings, but expired_effects is list[{character_id, name}] (see
+        # _expire_clock_effects_all in servers/engine/server.py). Render the human-
+        # readable name for a dict item (falling back to str(x) only if it has no usable
+        # "name"), and pass strings through unchanged — so the expiry line reads
+        # "Bless, Mage Armor", NOT the raw "{'character_id': 'pc-1', 'name': 'Bless'}"
+        # dict repr the player would otherwise see (F04-2 follow-up).
+        out = []
+        for x in (v or []):
+            if isinstance(x, dict):
+                s = str(x.get("name") or "").strip() or str(x).strip()
+            else:
+                s = str(x).strip()
+            if s:
+                out.append(s)
+        return out
     beats = _lines(r.get("world_beats"))
     devs = _lines(r.get("world_developments"))
     exps = _lines(r.get("expired_effects"))
