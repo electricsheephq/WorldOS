@@ -29,7 +29,10 @@
 # FAST routine beats — lean-OFF would replay the growing Opus transcript (3-5+ min/beat), risking
 # latency give-ups / per-persona timeouts (the wasted-sweep vector). Set explicitly below.
 # -----------------------------------------------------------------------------
-# v2 VM gate sweep: canary-first, then PARALLEL personas (the 30GB/16vCPU advantage).
+# v2 VM gate sweep: canary-first, then SEQUENTIAL personas (#844 quota-safe — the old
+# "PARALLEL = use the 30GB/16vCPU" premise was wrong: cold-open is API-generation-bound,
+# not VM-CPU-bound, so parallel bought no speed and burst the account session-quota 4x;
+# rc3 429'd mid-batch and rolled a junk 1.8. Sequential lets the FIRST 429 abort the rest).
 # lean is ON (production-matching; #683/#685-fixed) — see the header block for the supersession rationale.
 # no set -e (one persona failing must not abort the batch). Explicit PATH + IS_SANDBOX.
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$PATH
@@ -61,7 +64,7 @@ pkill -f 'play.sh baldurs-gate vm-' 2>/dev/null; pkill -f 'play_party.sh baldurs
 pkill -f 'play.sh baldurs-gate leanchk' 2>/dev/null
 for p in $(seq 8810 8830) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 2>/dev/null; done
 sleep 4
-note "start build=$SHA (parallel mode, lean ON — production-matching, fast Opus beats)"
+note "start build=$SHA (sequential personas — quota-safe #844, lean ON — production-matching, fast Opus beats)"
 
 # 0.5) SUPPORT-VM PREFLIGHT (#730) — run BEFORE any persona spend so a blocked host is
 # recorded up front, and so the split VM+Mac RRI rollup can prove same-SHA heavy-lane
