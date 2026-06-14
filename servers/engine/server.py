@@ -5886,7 +5886,12 @@ def level_up(
         # finally picks Oath of Devotion at level-up gets Sacred Weapon + Oath Spells AND Aura of
         # Devotion — not just the level-3 pair. _features_gained de-dupes against ch.features below.
         slvl = srd_tables.subclass_level(cname)
-        if subclass_newly_set and slvl is not None and new_class_level > slvl:
+        # Grant EVERY oath/archetype feature owed THROUGH the current level whenever the character
+        # HAS a subclass and is past its choice level — NOT only when it was just set. subclass_at()
+        # returns only the choice-level pair, so a NORMAL-progression Paladin leveling to L7 would
+        # otherwise never gain Aura of Devotion (it's computed by subclass_features_through). The
+        # grant loop below de-dupes by feature name, so re-running it each level-up is idempotent.
+        if cur_subclass and (cur_subclass or "").strip() and slvl is not None and new_class_level > slvl:
             gained = gained + srd_tables.subclass_features_through(cname, cur_subclass, new_class_level)
         for f in gained:
             if f["name"] not in ch.features:

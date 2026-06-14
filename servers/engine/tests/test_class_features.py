@@ -362,6 +362,25 @@ def test_create_paladin_at_l10_with_oath_populates_higher_features(cid):
     assert "Holy Nimbus" not in sheet["features"]
 
 
+def test_level_up_existing_oath_paladin_gains_higher_oath_feature(cid):
+    # The verifier-found gap: NORMAL-progression oath features were never granted. A Paladin who
+    # ALREADY has Oath of Devotion at L6 (no Aura yet — Aura lands at 7) must GAIN Aura of Devotion
+    # when leveling 6 -> 7. subclass_features_at(7) returns only the choice-level pair, so the grant
+    # must come from the through-features path, which used to be gated to a NEWLY-set subclass.
+    pid = server.create_character(
+        cid, "Wyll", kind="player", class_name="Paladin", level=6, subclass="Oath of Devotion",
+        abilities={"strength": 16, "charisma": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    before = server.get_character(cid, pid)
+    assert "Aura of Devotion" not in before["features"], "Aura is a level-7 feature; not owed at L6"
+    server.level_up(cid, pid, "Paladin")  # 6 -> 7
+    after = server.get_character(cid, pid)
+    assert after["classes"][0]["level"] == 7
+    assert "Aura of Devotion" in after["features"], "leveling an existing-oath Paladin to 7 must grant Aura of Devotion"
+    # No early fabrication of the 15/20 features.
+    assert "Smite of Protection" not in after["features"]
+
+
 def test_create_paladin_loose_oath_name_normalizes_and_populates(cid):
     # The DM/record may name the oath loosely ("Devotion") — it normalizes to the canonical
     # SRD name and still grants the through-features.
