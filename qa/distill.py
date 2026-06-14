@@ -24,13 +24,58 @@ def _short(v, n=220) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _multiattack_rejection_line(text: str) -> str | None:
+    """Render a one-line audit note when ``text`` is the engine's attack-budget rejection
+    (the per-action ceiling that enforces a monster's stat-block Multiattack or a PC's
+    Extra-Attack/Action-Surge limit). Matches the exact engine phrasings from
+    combat.check_action_attack so ordinary error prose never trips it. Returns None when the
+    text is not such a rejection."""
+    import re as _re
+
+    m = _re.search(
+        r"(this creature's Multiattack grants \d+ attack\(s\) per turn[^\"']*)",
+        text,
+        _re.IGNORECASE,
+    )
+    if m is None:
+        m = _re.search(
+            r"((?:no attacks left this turn|already attacked this turn)[^\"']*)",
+            text,
+            _re.IGNORECASE,
+        )
+    if m is None:
+        return None
+    reason = " ".join(m.group(1).split()).rstrip(".")
+    return f"    `↳ attack-rejected: {reason}`"
+
+
 def _audit_fields(res) -> list[str]:
     """Surface engine-auto-fired mechanics that the 240-char tool_result preview truncates,
     so the scorer can AUDIT them tool-sourced rather than only in DM prose (a recurring
     Angry-DM finding). Currently: next_turn's ``repeat_saves`` (Hold Person/Monster
-    end-of-turn escape saves, #209) and attack/use_resource ``maneuver_damage`` (the Battle
-    Master superiority die, #213). Best-effort: a non-JSON or shape-mismatched result yields
-    nothing (the normal truncated `← …` preview line still stands)."""
+    end-of-turn escape saves, #209), attack/use_resource ``maneuver_damage`` (the Battle
+    Master superiority die, #213), and attack()'s Multiattack/Extra-Attack BUDGET — both the
+    ``attacks_made/allowed_this_turn`` ceiling on a swing AND the engine's REJECTION of an
+    over-budget attack (F01-1 / csmed-4: the Ghoul's two-Bite Multiattack ceiling IS enforced
+    in the engine, but the 585-char attack result truncates at 240 so the scorer never sees
+    the budget — it then reads a DM that 'conjured a Multiattack that doesn't exist'). The
+    rejection arrives as either a plain exception string or an ``{"error": …}`` envelope.
+    Best-effort: a non-JSON, non-dict, irrelevant result yields nothing (the normal truncated
+    `← …` preview line still stands)."""
+    # A plain-string is_error tool_result (the MCP layer renders the exception text directly,
+    # not JSON) — surface a Multiattack/attack-budget REJECTION before the JSON parse, since a
+    # bare string would otherwise json.loads-fail straight to []. Only fires on the engine's
+    # exact ceiling phrasing so ordinary error prose stays untouched.
+    if isinstance(res, str):
+        try:
+            json.loads(res)  # is it actually JSON? if so, fall through to the dict path
+            is_plain = False
+        except (json.JSONDecodeError, ValueError):
+            is_plain = True
+        if is_plain:
+            line = _multiattack_rejection_line(res)
+            return [line] if line else []
+
     try:
         data = json.loads(res) if isinstance(res, str) else res
     except (json.JSONDecodeError, TypeError, ValueError):
@@ -38,6 +83,29 @@ def _audit_fields(res) -> list[str]:
     if not isinstance(data, dict):
         return []
     out: list[str] = []
+    # A JSON-enveloped error ({"error": "…cannot attack: …Multiattack grants N…"}).
+    err = data.get("error") or data.get("detail")
+    if isinstance(err, str):
+        line = _multiattack_rejection_line(err)
+        if line:
+            out.append(line)
+    # A resolved attack swing: surface the per-turn attack BUDGET when it is > 1 (a real
+    # Multiattack or Extra-Attack ceiling). Single-attack swings (allowed == 1, the 95% case)
+    # surface nothing — no noise, mirroring repeat_saves/maneuver_damage firing only when
+    # there is a mechanic to audit. This is the tool-sourced proof the engine constrained the
+    # monster to its stat-block Multiattack (csmed-4): "Ghoul 1/2 attacks this turn".
+    allowed = data.get("attacks_allowed_this_turn")
+    made = data.get("attacks_made_this_turn")
+    if isinstance(allowed, int) and allowed > 1 and isinstance(made, int):
+        # The engine surfaces ``multiattack_grants`` (the stat-block Multiattack count) only
+        # when the budget IS a monster Multiattack; its absence means the budget came from
+        # Extra Attack / Action Surge (a PC). Label accordingly — never guess "Multiattack"
+        # for a PC's Extra Attack.
+        kind = "Multiattack" if isinstance(data.get("multiattack_grants"), int) else "Extra Attack"
+        actor = data.get("attacker", "the attacker")  # always present on an attack() return
+        out.append(
+            f"    `↳ attack-budget: {actor} {made}/{allowed} attacks this turn ({kind})`"
+        )
     for rs in data.get("repeat_saves", []) or []:
         if not isinstance(rs, dict):
             continue

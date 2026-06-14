@@ -1372,6 +1372,75 @@ def test_monster_combat_no_multiattack_key_for_single_attack_monster(tmp_path, m
     assert "multiattack" not in w, "no-Multiattack monster must not gain a composition key"
 
 
+# --- F01-1 / csmed-4 end-to-end: the Ghoul's enforced Multiattack budget must reach the
+#     DISTILLED transcript (the surface the Angry-DM lens reads) ----------------------------
+
+
+def test_ghoul_multiattack_budget_and_rejection_survive_distill(tmp_path, monkeypatch):
+    """csmed-4: "the Ghoul conjured a two-Claw Multiattack that doesn't exist." The engine
+    DOES enforce the Ghoul's two-Bite ceiling (a 3rd attack raises), but the 585-char attack
+    result truncates at 240 in qa/distill.py — so the scorer never SEES the tool-sourced
+    budget and reads the DM as improvising attacks. This wires the REAL engine results through
+    distill._audit_fields and asserts the budget on each legal swing AND the ceiling rejection
+    on the over-budget swing both surface as auditable, tool-sourced lines."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import json as _json
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[3] / "qa"))
+    import distill  # noqa: E402
+
+    import server
+
+    cid = server.create_campaign("Ghoul csmed-4")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=60)["id"]
+    gid = server.spawn_monster(cid, "Ghoul")["spawned"][0]["id"]
+    server.start_combat(cid, [pc, gid])
+    if server.get_state(cid)["current_turn"] == pc:
+        server.use_action(cid, pc, "skip")
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == gid
+
+    # Two legal Bites — each return must surface "Ghoul 1/2" then "Ghoul 2/2".
+    r1 = server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6")
+    r2 = server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6")
+    assert r1["attacks_allowed_this_turn"] == 2
+    # The engine surfaces the stat-block Multiattack grant explicitly (tool-sourced label).
+    assert r1["multiattack_grants"] == 2
+    assert r2["multiattack_grants"] == 2
+    lines1 = distill._audit_fields(_json.dumps(r1, default=str))
+    lines2 = distill._audit_fields(_json.dumps(r2, default=str))
+    assert any("attack-budget: Ghoul 1/2 attacks this turn (Multiattack)" in ln for ln in lines1)
+    assert any("attack-budget: Ghoul 2/2 attacks this turn (Multiattack)" in ln for ln in lines2)
+
+    # The over-budget 3rd attack raises — and its message, surfaced as a plain-string
+    # is_error tool_result, distills to an attack-rejected audit line.
+    with pytest.raises(ValueError, match="Multiattack grants 2 attack") as ei:
+        server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6")
+    rej = distill._audit_fields(str(ei.value))
+    assert len(rej) == 1
+    assert "attack-rejected: this creature's Multiattack grants 2 attack(s) per turn" in rej[0]
+
+
+def test_pc_attack_omits_multiattack_grants(tmp_path, monkeypatch):
+    """Additive-default invariant: a PC swing (no stat-block Multiattack) must NOT carry the
+    new ``multiattack_grants`` key — the field is monster-only, so PC attack results stay
+    byte-identical to before (distill then labels any PC multi-strike as Extra Attack)."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("PC no multiattack_grants")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=40)["id"]
+    gob = server.spawn_monster(cid, "Goblin")["spawned"][0]["id"]
+    server.start_combat(cid, [pc, gob])
+    if server.get_state(cid)["current_turn"] == gob:
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == pc
+    r = server.attack(cid, pc, gob, attack_bonus=4, damage_dice="1d8")
+    assert "multiattack_grants" not in r
+
+
 # --- #210 end-to-end through attack() ---
 
 
