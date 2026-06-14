@@ -1940,6 +1940,57 @@ def _bump_intel(c: Campaign, slug: str, tier: int) -> None:
     c.bestiary_intel[slug] = max(c.bestiary_intel.get(slug, 0), int(tier))
 
 
+def _monster_character_from_statblock(sb: dict, label: str, *, location_id=None) -> Character:
+    """Build a combat-ready monster Character from a bestiary stat block — the SINGLE
+    construction path shared by spawn_monster and _spawn_creature_chars (F01-2, #773;
+    the two hand-rolled ctors had drifted: the wandering path silently lost Parry —
+    F01-11). Transfers abilities, AC/HP/hit dice, the CR-derived proficiency bonus,
+    initiative, R/I/V + condition immunities, Parry, actions-on-notes, XP value, and
+    the creature slug — plus the creature's PRINTED save proficiencies:
+      - ``saving_throw_proficiencies``: a flag per save the stat block lists (with the
+        CR-derived PB, mod + PB reproduces the printed total for 128/132 creatures);
+      - ``save_bonus_overrides``: the printed total for the residual srd524 data
+        quirks, so ``saving_throw_bonus`` == the printed stat block for ALL creatures.
+    Pure construction: the caller registers the Character on the campaign and saves
+    (sole-writer), anchoring at ``location_id`` (wandering) or leaving it None."""
+    scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
+    actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
+    summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
+    pb = int(sb["proficiency_bonus"])
+    save_profs: list[Ability] = []
+    overrides: dict[str, int] = {}
+    for short, printed in (sb.get("saves") or {}).items():
+        try:
+            ab = Ability(short)
+        except ValueError:
+            continue  # defensive: unknown ability key in authored data
+        save_profs.append(ab)
+        if scores.modifier(ab) + pb != int(printed):
+            overrides[ab.value] = int(printed)
+    return Character(
+        name=label,
+        kind="monster",
+        abilities=scores,
+        max_hp=sb["hp"],
+        current_hp=sb["hp"],
+        armor_class=sb["ac"],
+        hit_dice=sb["hit_dice"],
+        proficiency_bonus=pb,
+        saving_throw_proficiencies=save_profs,
+        save_bonus_overrides=overrides,
+        initiative_bonus=sb["initiative_bonus"] or scores.modifier(Ability.DEX),
+        damage_resistances=sb["damage_resistances"],
+        damage_immunities=sb["damage_immunities"],
+        damage_vulnerabilities=sb["damage_vulnerabilities"],
+        condition_immunities=sb["condition_immunities"],
+        parry=bestiary.parry_bonus(sb),
+        notes=summary,
+        xp_value=sb["xp"],
+        location_id=location_id,
+        creature_slug=bestiary.creature_slug(sb["name"]),
+    )
+
+
 @mcp.tool()
 def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
                   monster: str = "", monster_name: str = "", creature: str = "") -> dict:
@@ -1970,9 +2021,6 @@ def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
             sugg = [s for s in ("Bandit", "Guard", "Cultist", "Tough", "Scout") if bestiary.resolve(s)]
         return {"error": f"no creature named {name!r} in the bestiary", "suggestions": sugg}
     n = max(1, min(int(count), 20))
-    scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
-    actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
-    summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
     slug = bestiary.creature_slug(sb["name"])  # stable intel/art join key for this TYPE
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
@@ -2012,25 +2060,7 @@ def spawn_monster(campaign_id: str, name: str = "", count: int = 1,
                 ch.name = label
                 spawned.append({"id": ch.id, "name": ch.name, "reused": True})
                 continue
-            ch = Character(
-                name=label,
-                kind="monster",
-                abilities=scores,
-                max_hp=sb["hp"],
-                current_hp=sb["hp"],
-                armor_class=sb["ac"],
-                hit_dice=sb["hit_dice"],
-                proficiency_bonus=sb["proficiency_bonus"],
-                initiative_bonus=sb["initiative_bonus"] or scores.modifier(Ability.DEX),
-                damage_resistances=sb["damage_resistances"],
-                damage_immunities=sb["damage_immunities"],
-                damage_vulnerabilities=sb["damage_vulnerabilities"],
-                condition_immunities=sb["condition_immunities"],
-                parry=bestiary.parry_bonus(sb),
-                notes=summary,
-                xp_value=sb["xp"],
-                creature_slug=slug,
-            )
+            ch = _monster_character_from_statblock(sb, label)
             c.characters[ch.id] = ch
             spawned.append({"id": ch.id, "name": ch.name})
         # Tier 1 — sighted: spawning puts the creature on the table; the party has laid
@@ -2069,42 +2099,21 @@ def list_bestiary(query: str = "", limit: int = 20, player_safe: bool = True) ->
 
 def _spawn_creature_chars(c: Campaign, canonical: str, count: int, location_id) -> list[dict]:
     """Add `count` combat-ready monster Characters for a canonical bestiary name to the
-    campaign (mutates; caller holds the lock + saves). Mirrors `spawn_monster`'s
-    construction EXACTLY — same stat-block flattening, abilities, AC/HP, resistances,
-    actions-on-notes, and `xp_value` — but anchors each spawn at `location_id` (the
-    scene the wandering encounter erupts in) so the local cast shows it, and returns
-    nothing on an unresolvable name (defensive; the picker only hands us resolvable
-    names). Returns `[{"id","name"}]` for the spawned foes."""
+    campaign (mutates; caller holds the lock + saves). Constructs through the SAME
+    `_monster_character_from_statblock` factory as `spawn_monster` (F01-2; the old
+    hand-rolled copy had drifted and silently lost Parry — F01-11) — but anchors each
+    spawn at `location_id` (the scene the wandering encounter erupts in) so the local
+    cast shows it, and returns nothing on an unresolvable name (defensive; the picker
+    only hands us resolvable names). Returns `[{"id","name"}]` for the spawned foes."""
     sb = bestiary.stat_block(canonical)
     if sb is None:
         return []
     n = max(1, min(int(count), 20))
-    scores = AbilityScores(**{_SHORT_TO_FULL_AB[k]: v for k, v in sb["abilities"].items()})
-    actions_note = " | ".join(f"{a['name']}: {a['desc']}" for a in sb["actions"][:10])
-    summary = f"CR {sb['cr']}, {sb['xp']} XP. {sb['size']} {sb['type']}. Actions: {actions_note}"
     slug = bestiary.creature_slug(sb["name"])  # stable intel/art join key for this TYPE
     spawned: list[dict] = []
     for i in range(n):
         label = f"{sb['name']} {i + 1}" if n > 1 else sb["name"]
-        ch = Character(
-            name=label,
-            kind="monster",
-            abilities=scores,
-            max_hp=sb["hp"],
-            current_hp=sb["hp"],
-            armor_class=sb["ac"],
-            hit_dice=sb["hit_dice"],
-            proficiency_bonus=sb["proficiency_bonus"],
-            initiative_bonus=sb["initiative_bonus"] or scores.modifier(Ability.DEX),
-            damage_resistances=sb["damage_resistances"],
-            damage_immunities=sb["damage_immunities"],
-            damage_vulnerabilities=sb["damage_vulnerabilities"],
-            condition_immunities=sb["condition_immunities"],
-            notes=summary,
-            xp_value=sb["xp"],
-            location_id=location_id,
-            creature_slug=slug,
-        )
+        ch = _monster_character_from_statblock(sb, label, location_id=location_id)
         c.characters[ch.id] = ch
         spawned.append({"id": ch.id, "name": ch.name})
     # Tier 1 — sighted: a wandering encounter erupting into the scene = the party sees it.
@@ -2797,6 +2806,33 @@ def set_hp(
         return out
 
 
+def _multiattack_counting_clause(desc: str) -> str:
+    """Reduce a Multiattack desc to its COUNTING clause before parsing (#771, F01-1).
+
+    Two SRD wording families inflated the naive number-sum for 13/344 creatures
+    (~+50% DPR, ENFORCED by attack()'s ceiling and INSTRUCTED via "Run N attack
+    call(s)"):
+      - substitution riders: "It can replace one attack with a Bite attack." (+1)
+      - alternatives: "..., or it makes two Hurl Flame attacks." (both branches summed)
+    1) sentence-split and drop any sentence containing 'replace' / 'instead of';
+    2) split on the alternative-CLAUSE pattern ',? or (it|the X) makes' and keep the
+       FIRST alternative — NOT bare ' or ', which also appears INSIDE counting
+       clauses ("two Javelin or Morningstar attacks" — Bugbear Stalker; "using
+       Shortsword or Light Crossbow in any combination" — Assassin) and must
+       survive untouched.
+    Falls back to the raw desc when filtering leaves nothing (defensive). Pure."""
+    import re as _re
+    sentences = _re.split(r"(?<=[.!?])\s+", desc)
+    kept = [
+        s for s in sentences
+        if not _re.search(r"\breplace\b|\binstead of\b", s, _re.IGNORECASE)
+    ]
+    clause = _re.split(
+        r",?\s+or\s+(?:it|the\s+\w+)\s+makes\b", " ".join(kept), flags=_re.IGNORECASE
+    )[0]
+    return clause if clause.strip() else desc
+
+
 def _parse_multiattack_count(desc: str) -> int:
     """Return the total number of attack rolls a monster makes when it uses Multiattack.
 
@@ -2804,11 +2840,14 @@ def _parse_multiattack_count(desc: str) -> int:
     - "makes two X attacks"              → 2
     - "makes one X attack and one Y attack" → 1+1 = 2
     - "makes one Ram attack, one Bite attack, and one Claw attack" → 3
-    Counts every (number + 'attack/attacks') clause, summing them.
+    Counts every (number + 'attack/attacks') clause, summing them — AFTER reducing
+    the desc to its counting clause (replace/instead-of riders and ', or it makes'
+    alternatives dropped; see _multiattack_counting_clause, #771).
     Falls back to the first number word in the desc when no clause matches,
     and ultimately defaults to 1 (conservative).
     """
     import re as _re
+    desc = _multiattack_counting_clause(desc)
     _WORD_TO_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
     # Split on 'and' and ',' to get individual attack clauses
     parts = _re.split(r"\band\b|\,", desc, flags=_re.IGNORECASE)
@@ -2840,8 +2879,11 @@ def _parse_multiattack_composition(desc: str) -> list[str]:
     returns [] when no '<count> <Name> attack(s)' clause parses (the caller then
     degrades to the count-only surfacing — never aborts). Title-cases each name so it
     matches the stat-block action names (which the resolver looks up case-sensitively
-    only for display)."""
+    only for display). Shares _parse_multiattack_count's counting-clause pre-filter
+    (#771) so the sequence never spans a ', or it makes' alternative (Medusa surfaced
+    a fully-resolving wrong 6-attack sequence) or a 'replace one attack' rider."""
     import re as _re
+    desc = _multiattack_counting_clause(desc)
     _WORD_TO_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
     names: list[str] = []
     # <count> <name words> attack(s) — name is 1-3 words, stops at 'attack(s)'.

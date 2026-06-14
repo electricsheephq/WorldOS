@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 import re
+from fractions import Fraction
 from pathlib import Path
 from typing import Optional
 
@@ -202,7 +204,9 @@ def _authored_entries() -> tuple[dict[str, dict], tuple[str, ...]]:
                 "abilities": _authored_abilities(row.get("abilities")),
                 "challenge_rating": _norm_cr(row.get("challenge_rating", row.get("cr", "0"))),
                 "experience_points": int(row.get("experience_points", row.get("xp", 0)) or 0),
-                "proficiency_bonus": int(row.get("proficiency_bonus", 2) or 2),
+                # 0 == "not specified" so the stat-block flattening can fall back to
+                # the CR-derived PB (F01-2); an authored explicit value still wins.
+                "proficiency_bonus": int(row.get("proficiency_bonus") or 0),
                 "initiative_bonus": int(row.get("initiative_bonus", 0) or 0),
                 "damage_resistances": _as_list(row.get("damage_resistances")),
                 "damage_immunities": _as_list(row.get("damage_immunities")),
@@ -239,6 +243,22 @@ def _norm_cr(cr) -> str:
     if val in fractions:
         return fractions[val]
     return str(int(val))
+
+
+def _pb_from_cr(cr: str) -> int:
+    """Standard 5e proficiency bonus for a challenge rating: PB = 2 + (⌈CR⌉−1)//4
+    (CR 0–4 → +2, 5–8 → +3, 9–12 → +4, 13–16 → +5, 17–20 → +6, 21–24 → +7,
+    25–28 → +8, 29–30 → +9). The srd524 Creature dump carries
+    ``proficiency_bonus: null`` for EVERY creature, so the old flat-2 fallback
+    flattened all 344 stat blocks to PB 2 — wrong saves, skill checks, and grapple
+    DCs for every high-CR monster (audit F01-2, #773). Accepts the engine's
+    canonical CR strings ('0', '1/8', '1/4', '1/2', '1'..'30'); unparseable input
+    keeps the conservative 2. Pure."""
+    try:
+        val = float(Fraction(str(cr).strip()))
+    except (ValueError, ZeroDivisionError):
+        return 2
+    return 2 + (max(math.ceil(val), 1) - 1) // 4
 
 
 def _as_list(value) -> list[str]:
@@ -335,7 +355,8 @@ def _stat_block_from_authored(entry: dict, fallback_name: str) -> dict:
         "abilities": dict(f.get("abilities") or {}),
         "cr": cr,
         "xp": xp,
-        "proficiency_bonus": int(f.get("proficiency_bonus") or 2),
+        # srd524 stores proficiency_bonus as null universally — derive from CR (F01-2).
+        "proficiency_bonus": int(f.get("proficiency_bonus") or _pb_from_cr(cr)),
         "initiative_bonus": int(f.get("initiative_bonus") or 0),
         "damage_resistances": _as_list(f.get("damage_resistances")),
         "damage_immunities": _as_list(f.get("damage_immunities")),
@@ -389,7 +410,8 @@ def stat_block(name: str) -> Optional[dict]:
         "abilities": abilities,
         "cr": cr,
         "xp": xp,
-        "proficiency_bonus": int(f.get("proficiency_bonus") or 2),
+        # srd524 stores proficiency_bonus as null universally — derive from CR (F01-2).
+        "proficiency_bonus": int(f.get("proficiency_bonus") or _pb_from_cr(cr)),
         "initiative_bonus": int(f.get("initiative_bonus") or 0),
         "damage_resistances": _as_list(f.get("damage_resistances")),
         "damage_immunities": _as_list(f.get("damage_immunities")),

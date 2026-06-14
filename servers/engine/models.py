@@ -625,6 +625,12 @@ class Character(_StrictModel):
     skill_proficiencies: list[str] = Field(default_factory=list)
     skill_expertise: list[str] = Field(default_factory=list)
     saving_throw_proficiencies: list[Ability] = Field(default_factory=list)
+    # Printed-total escape hatch for monster saves whose source data doesn't decompose
+    # as ability mod + CR-derived proficiency bonus (4/344 srd524 quirks, e.g. the
+    # Octopus's CON 30). Keys are Ability values ('dex'); consulted FIRST by
+    # saving_throw_bonus. Set at spawn time by _monster_character_from_statblock.
+    # Empty == today's behavior; old snapshots round-trip (audit F01-2, #773).
+    save_bonus_overrides: dict[str, int] = Field(default_factory=dict)
 
     # vitals
     armor_class: int = 10
@@ -804,6 +810,11 @@ class Character(_StrictModel):
         return bonus
 
     def saving_throw_bonus(self, ability: Ability) -> int:
+        # Printed-total override first (monster spawns whose stat-block save totals
+        # don't decompose as mod + PB — see save_bonus_overrides; F01-2, #773).
+        override = self.save_bonus_overrides.get(ability.value)
+        if override is not None:
+            return override
         bonus = self.ability_modifier(ability)
         if ability in self.saving_throw_proficiencies:
             bonus += self.proficiency_bonus
