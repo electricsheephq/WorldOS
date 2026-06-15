@@ -408,3 +408,48 @@ def test_shared_vocabulary_lets_one_tag_move_several_companions(tmp_path, monkey
     assert all(ids[n] in moved for n in ids), "a shared `mercy` tag should move every mercy-liking companion"
     for n in ids:
         assert server.get_character(bg, ids[n])["attitude_value"] == 10
+
+
+# --- rostered origin companion gets the canon dossier on in-place promotion (#940 completion) -
+
+def test_rostered_origin_companion_dossier_merged_on_load_and_moves_on_decision(tmp_path, monkeypatch):
+    """The BG origin cast is SEEDED into the world roster. Shadowheart's roster entry carries no
+    `companion_dossier`, so load_canon_character matches her by name and promotes the rostered
+    record IN PLACE (already_present) instead of taking the fresh-load path. That in-place
+    promotion used to drop her authored canon dossier — leaving `approval_likes` empty, so the
+    approval-on-decisions feature had nothing to match and her regard could never move. The
+    promotion must MERGE the canon JSON's dossier onto the rostered record when it lacks one."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+
+    # Shadowheart is the rostered origin companion — exact-name match => the already_present path.
+    res = server.load_canon_character(bg, "Shadowheart", kind="companion", add_to_party=True)
+    assert res.get("already_present") is True, "Shadowheart should match her seeded roster record"
+    sh_id = res["id"]
+
+    # The authored canon approval vocabulary is now live on the promoted record (was None before).
+    doss = server.get_character(bg, sh_id)["companion_dossier"]
+    assert doss is not None, "the canon dossier must be merged onto the rostered record"
+    assert "mercy" in [k.lower() for k in doss["approval_likes"]]
+
+    # Recruit her (the short-circuit's note directs the DM here); recruit PRESERVES the merged
+    # dossier (its synthesis is None-guarded). A merciful choice then MOVES her regard.
+    server.recruit_companion(bg, sh_id)
+    before = server.get_character(bg, sh_id)["attitude_value"]
+    out = server.record_decision(bg, summary="spared the captive cultist", approval_tags=["mercy"])
+    assert sh_id in {r["id"] for r in out["approval_results"]}, "the `mercy` tag should move Shadowheart"
+    assert server.get_character(bg, sh_id)["attitude_value"] > before
+
+
+def test_load_canon_does_not_clobber_an_explicitly_seeded_roster_dossier(tmp_path, monkeypatch):
+    """No-clobber guard: Astarion's roster entry SHIPS its own companion_dossier, so promoting
+    him in place must leave that authored dossier byte-for-byte intact — the canon-merge only
+    fills a MISSING dossier, it never overrides one the world deliberately seeded."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    seeded = server.get_character(bg, "npc-astarion")["companion_dossier"]
+    assert seeded is not None, "Astarion's roster entry ships its own dossier (the no-clobber case)"
+    res = server.load_canon_character(bg, "Astarion", kind="companion", add_to_party=True)
+    assert res.get("already_present") is True
+    after = server.get_character(bg, "npc-astarion")["companion_dossier"]
+    assert after == seeded, "an explicitly-seeded roster dossier must NEVER be clobbered by the canon merge"

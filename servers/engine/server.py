@@ -2833,10 +2833,33 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
             # DM tries to load them) — return a SUCCESS-shaped response, not a hard error, so the
             # DM proceeds straight to recruit_companion without an error-handling detour. (QA: the
             # error path forced a needless two-step + read as a failure.)
+            #
+            # ADDITIVE (#940 completion): the rostered record was seeded from the world's
+            # npc_roster, which for the BG origin cast (e.g. Shadowheart) carries NO
+            # companion_dossier — so promoting it IN PLACE left the authored canon dossier (the
+            # approval_likes/dislikes the BG "soul" reads) on the floor, and record_decision(
+            # approval_tags=...) could never move them. MERGE the canon record's dossier onto the
+            # existing record when it LACKS one, via the same _coerce_dossier path the fresh-load
+            # branch below uses. Strictly additive + bounded:
+            #   * only fills a MISSING dossier — an explicitly-seeded roster dossier (e.g.
+            #     Astarion/Karlach) is NEVER clobbered;
+            #   * a canon record with no dossier coerces to None => no change (today's behavior);
+            #   * we save ONLY when we actually merged, so the unmerged path stays byte-identical.
+            # Persist under the held campaign_lock (engine = sole writer) so the merged dossier
+            # survives the next disk reload (_require reloads from snapshot each call).
+            if dup.companion_dossier is None:
+                merged = content_mod._coerce_dossier(
+                    rec.get("companion_dossier", rec.get("dossier")),
+                    where=f"canon character {canonical!r}",
+                )
+                if merged is not None:
+                    dup.companion_dossier = merged
+                    save_campaign(c)
             return {
                 "already_present": True,
                 "id": dup.id, "name": dup.name, "kind": dup.kind,
                 "in_party": dup.id in c.party,
+                "dossier_present": dup.companion_dossier is not None,
                 "note": (f"{canonical} is already in this campaign — recruit_companion({dup.id!r}) "
                          f"to bring them into the party, or update_character to flesh them out."),
             }
