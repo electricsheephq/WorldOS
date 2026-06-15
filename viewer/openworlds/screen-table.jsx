@@ -904,9 +904,15 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     };
   }, [loadSurface]);
 
+  // #seat-order (live-update correction): if the active hero leaves the roster mid-session (companion
+  // churn or a campaign switch) re-seed through the SAME authoritative resolver the initial seed uses
+  // (resolveActiveHeroId — surface.actor → first kind="player" PC → party[0]), NOT party[0]. Re-seeding
+  // from party[0] here re-introduced the "ACTIVE ASTARION / Lvl 1 Adventurer" bug #932 fixed, on the
+  // live path: if a companion sorts to party[0] it would be picked as the displayed hero. `party` is a
+  // fresh reference on every applied surface poll, so the resolver always reads the current surface.actor.
   React.useEffect(() => {
     if (!party.some((p) => p.id === activeHero)) {
-      setActiveHero(party[0]?.id || "");
+      setActiveHero(resolveActiveHeroId(surface, party));
     }
   }, [party, activeHero]);
 
