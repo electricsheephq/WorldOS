@@ -61,6 +61,25 @@ function enrichWare(item, catalog) {
   return merged;
 }
 
+// #755: the haggle price cell rendered the LIST price and the DISCOUNTED price adjacently, so
+// "24" + "23" read as one run-together number "2423gp" (rc2 adversarial bug). This PURE helper
+// returns the cell's structured parts so the two numbers can NEVER collapse into one string: the
+// caller renders `list` (struck) → `price` only when `separated` is true. A null/equal discount
+// (no haggle, or a rounding no-op) collapses to a single `price` with `separated:false` — never a
+// struck list adjacent to the same number. Pure + side-effect-free (testable under the JSX harness).
+function marketPriceCellParts(shownPrice, haggledPrice) {
+  const base = Number(shownPrice);
+  const haggled = haggledPrice !== null && haggledPrice !== undefined && Number(haggledPrice) !== base;
+  return {
+    list: base,
+    price: haggled ? Number(haggledPrice) : base,
+    haggled: haggled,
+    // `separated` drives the explicit arrow between the struck list + the discounted price; it is
+    // the SAME condition as `haggled`, named for the render so the two prices are never adjacent.
+    separated: haggled,
+  };
+}
+
 function ScreenMerchant({ onNavigate, state, setState }) {
   const [tab, setTab] = React.useState("buy");
   // MK-02/#548: the initial id MUST match a MERCHANTS entry and the first playable BG session
@@ -80,6 +99,18 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   // fire-and-forget and only clears the cart in the async .then, so a fast second click
   // would relay a SECOND purchase before the first resolves. Synchronous ref lock.
   const submittingRef = React.useRef(false);
+  // #755: the 'Take' (add-to-cart) button had NO debounce — a fast double-click queued the SAME
+  // ware twice. Guard it with a synchronous ref lock that releases on the next frame (mirrors
+  // submittingRef on Confirm), so one human click adds exactly one ware.
+  const takingRef = React.useRef(false);
+  const addToCart = React.useCallback((entry) => {
+    if (takingRef.current) return;
+    takingRef.current = true;
+    setCart((prev) => [...prev, entry]);
+    // Release after the click settles so a genuine second click (a new intent) still works, but a
+    // double-fire from one press is dropped. setTimeout(0) is enough to coalesce the bounce.
+    setTimeout(() => { takingRef.current = false; }, 0);
+  }, []);
   // MK-06: real type filter for the wares table — no dead "Filter…" button.
   const [typeFilter, setTypeFilter] = React.useState("all");
 
@@ -136,11 +167,51 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   const purseTotalGp = window.currencyTotalGp(coins);
   const toast = window.useToast ? window.useToast() : (() => {});
 
-  // Sell-tab inventory. The Market is a display-only prototype and has NO live shop/stash
-  // read-model, so this stays empty — we never fall back to the bundled demo stash (PF1e
-  // leak). If a live merchant surface is ever wired, prefer it here; until then [].
-  const stash = Array.isArray(state?.merchantStash) ? state.merchantStash : [];
-  const merchant = MERCHANTS.find((m) => m.id === merchantId) || MERCHANTS[0];
+  // #602: the LIVE merchant supply chain. /merchant-surface projects the world's REAL is_merchant
+  // canon NPCs (the canonical content.find_canon_characters slice find_npcs uses) + the bundled
+  // SRD item catalog, replacing the old hardcoded demo merchants + demo stock array. The
+  // hardcoded MERCHANTS block stays ONLY as the read-only preview fallback (no live surface yet —
+  // e.g. a brand-new game before the world is attached); the live surface always wins when present.
+  const [merchSurface, setMerchSurface] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/merchant-surface" + surfaceQuery, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setMerchSurface(d && Array.isArray(d.merchants) ? d : null); })
+      .catch(() => { if (!cancelled) setMerchSurface(null); });
+    return () => { cancelled = true; };
+  }, [surfaceQuery]);
+  // The live merchant roster (real is_merchant NPCs); each shares the SRD `catalog` wares as its
+  // stock (a real per-merchant inventory is a separate, larger change — the world tags WHO trades,
+  // not yet WHAT each stocks). Falls back to the demo MERCHANTS in read-only preview.
+  const liveCatalog = merchSurface && Array.isArray(merchSurface.catalog) ? merchSurface.catalog : [];
+  const liveMerchants = merchSurface && merchSurface.merchants.length
+    ? merchSurface.merchants.map((m) => ({ ...m, stock: liveCatalog }))
+    : null;
+  const merchantList = liveMerchants || MERCHANTS;
+
+  // #604: the Sell tab lists the party's REAL pack from the existing /inventory-surface (already
+  // fetched below for the equipped compare). The always-empty `state.merchantStash` stub is gone —
+  // we surface what the party actually carries. Empty until a live inventory is present (honest).
+  const [sellStash, setSellStash] = React.useState([]);
+  const stash = sellStash;
+  const rawMerchant = merchantList.find((m) => m.id === merchantId) || merchantList[0] || MERCHANTS[0];
+  // A live merchant carries only its canon identity (id/name/race/class/faction/location/stock); the
+  // narrative display fields (subtitle/greeting/location/disposition) are demo-only flavor, so fill
+  // honest defaults derived from the REAL record rather than fabricating a backstory. A demo merchant
+  // already carries them, so this is a no-op for the preview fallback.
+  const merchant = {
+    ...rawMerchant,
+    short: rawMerchant.short || rawMerchant.name,
+    subtitle: rawMerchant.subtitle
+      || ((rawMerchant.race || rawMerchant.class)
+        ? [rawMerchant.race, rawMerchant.class].filter(Boolean).join(" · ") + " trader"
+        : "A trader of this world."),
+    location: rawMerchant.location || rawMerchant.canon_location_id || "this region",
+    waresName: rawMerchant.waresName || rawMerchant.name,
+    greeting: rawMerchant.greeting || "Coin first, then the catalogue. Look over the wares.",
+    disposition: rawMerchant.disposition || "open for trade",
+  };
   const buyTotal = cart.reduce((s, i) => s + (i.mode === "buy" ? i.price : 0), 0);
   const sellTotal = cart.reduce((s, i) => s + (i.mode === "sell" ? i.price : 0), 0);
   const adjustedBuyTotal = Math.round(buyTotal * (1 - haggle / 100));
@@ -158,17 +229,21 @@ function ScreenMerchant({ onNavigate, state, setState }) {
   // show what an item IS and the player can evaluate an upgrade. Fetched once per merchant
   // stock change; an unresolved name leaves the ware untouched (weight/price only).
   const [catalog, setCatalog] = React.useState({});
+  // The distinct ware NAMES on the current table — a stable string key so the enrichment refetches
+  // when the LIVE stock/stash actually changes (the async /merchant-surface + /inventory-surface
+  // loads), not only on merchant/tab toggle (the old [merchantId, tab] deps missed the live load).
+  const enrichNames = Array.from(new Set((baseInv || []).map((i) => i && i.name).filter(Boolean)));
+  const enrichKey = enrichNames.join("");
   React.useEffect(() => {
-    const names = Array.from(new Set((baseInv || []).map((i) => i && i.name).filter(Boolean)));
-    if (!names.length) { setCatalog({}); return; }
+    if (!enrichNames.length) { setCatalog({}); return; }
     let cancelled = false;
-    const q = names.map((n) => "name=" + encodeURIComponent(n)).join("&");
+    const q = enrichNames.map((n) => "name=" + encodeURIComponent(n)).join("&");
     fetch("/item-catalog?" + q, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (!cancelled && d && d.items) setCatalog(d.items); })
       .catch(() => { /* keep last good; the ware still shows weight/price */ });
     return () => { cancelled = true; };
-  }, [merchantId, tab]);
+  }, [enrichKey]);
 
   // #756: the party's equipped gear (live inventory surface) so the Market inspector can
   // compare a ware to what the player already wears ("is this an upgrade?"). Read-only.
@@ -182,6 +257,15 @@ function ScreenMerchant({ onNavigate, state, setState }) {
         const all = [];
         for (const m of d.party) for (const it of (m.equipped || [])) if (it && it.name) all.push(it);
         setEquipped(all);
+        // #604: the Sell tab lists the party's REAL pack from this SAME inventory surface — the
+        // shared stash (all party items) the Stash screen reads. Replaces the always-empty
+        // `state.merchantStash` stub. A backpack with no `type` defaults to "common" so the kind
+        // filter + pill render; quest items are excluded from the sell list downstream.
+        const sellable = (Array.isArray(d.stash) ? d.stash : []).map((it) => ({
+          ...it,
+          type: it.type || "common",
+        }));
+        setSellStash(sellable);
       })
       .catch(() => { /* no compare peers — the inspector just omits the Versus block */ });
     return () => { cancelled = true; };
@@ -357,14 +441,24 @@ function ScreenMerchant({ onNavigate, state, setState }) {
             </thead>
             <tbody>
               {inv.map((it, i) => {
-                const price = it.price || (typeof it.value === "string" && it.value.match(/(\d+) gp/) ? parseInt(it.value.match(/(\d+) gp/)[1]) : 12);
-                const sellPrice = Math.round(price * 0.4);
-                const shownPrice = tab === "buy" ? price : sellPrice;
+                // F09-3 honesty: a priceless live ware (price === null — every SRD magic item) has
+                // NO listed price; resolve it from a `value` string if present, else leave it
+                // unpriced (null) so the cell reads "—" and Take is disabled — never the fabricated
+                // 12 gp the old `|| 12` fallback charged for a Bag of Holding.
+                const listedPrice = (typeof it.price === "number")
+                  ? it.price
+                  : (typeof it.value === "string" && it.value.match(/(\d+) gp/) ? parseInt(it.value.match(/(\d+) gp/)[1]) : null);
+                const priced = typeof listedPrice === "number";
+                const sellPrice = priced ? Math.round(listedPrice * 0.4) : null;
+                const shownPrice = tab === "buy" ? listedPrice : sellPrice;
                 // MK-09: when haggling on the buy tab, show the discounted price per row with the
                 // list price struck through — the player sees the deal in-line, not only on the
                 // total. (Display only; the cart still stores the list price and the running total
                 // applies the haggle once, so there's no double-discount.)
-                const haggledPrice = tab === "buy" && haggle > 0 ? Math.round(shownPrice * (1 - haggle / 100)) : null;
+                const haggledPrice = (tab === "buy" && haggle > 0 && priced) ? Math.round(shownPrice * (1 - haggle / 100)) : null;
+                // #755: route the cell through the pure helper so the struck list + discounted price
+                // can NEVER render adjacent ("24"+"23"→"2423"). `parts.separated` gates the arrow.
+                const parts = marketPriceCellParts(shownPrice, haggledPrice);
                 return (
                   <tr key={it.id || i}
                     onMouseEnter={() => { setHoverItem(it); setDetailItem(it); }}
@@ -395,24 +489,33 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                       {it.weight || "—"}
                     </td>
                     <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                      {/* MK-12: the struck list price + discounted price MUST be visually
-                          separated (an explicit arrow) — rendered adjacent they read as one
-                          run-together number, e.g. "24" + "23" → "2423" (adversarial bug). */}
-                      {haggledPrice !== null && haggledPrice !== shownPrice && (
-                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 4 }}>
-                          {shownPrice}
-                        </span>
+                      {/* #755 / MK-12: the struck list price + discounted price are SEPARATED via
+                          the pure marketPriceCellParts helper (explicit arrow) — rendered adjacent
+                          they read as one run-together number, e.g. "24"+"23" → "2423" (the rc2
+                          adversarial bug). An unpriced ware reads "—" (never a fabricated number). */}
+                      {!priced ? (
+                        <span style={{ fontFamily: "var(--f-mono)", fontSize: 12, color: "var(--ink-600)" }}>—</span>
+                      ) : (
+                        <>
+                          {parts.separated && (
+                            <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--ink-600)", textDecoration: "line-through", marginRight: 4 }}>
+                              {parts.list}
+                            </span>
+                          )}
+                          {parts.separated && (
+                            <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--emerald)", marginRight: 4 }}>→</span>
+                          )}
+                          <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: parts.haggled ? "var(--emerald)" : "var(--ink-900)" }}>
+                            {parts.price}
+                          </span>
+                          <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)", marginLeft: 4 }}>gp</span>
+                        </>
                       )}
-                      {haggledPrice !== null && haggledPrice !== shownPrice && (
-                        <span aria-hidden="true" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--emerald)", marginRight: 4 }}>→</span>
-                      )}
-                      <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: haggledPrice !== null ? "var(--emerald)" : "var(--ink-900)" }}>
-                        {haggledPrice !== null ? haggledPrice : shownPrice}
-                      </span>
-                      <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)", marginLeft: 4 }}>gp</span>
                     </td>
                     <td style={{ ...tdStyle, width: 60 }}>
-                      <button onClick={() => setCart([...cart, { ...it, price: shownPrice, mode: tab }])} className="btn ghost sm" style={{ padding: "4px 10px", fontSize: 9 }}>
+                      {/* #755: 'Take'/'Sell' adds via the debounced addToCart (one click = one ware).
+                          An unpriced ware can't be transacted (no list price), so the button is off. */}
+                      <button onClick={() => addToCart({ ...it, price: shownPrice, mode: tab })} disabled={!priced} className="btn ghost sm" style={{ padding: "4px 10px", fontSize: 9, opacity: priced ? 1 : 0.4, cursor: priced ? "pointer" : "not-allowed" }}>
                         {tab === "buy" ? "Take" : "Sell"}
                       </button>
                     </td>
@@ -426,7 +529,9 @@ function ScreenMerchant({ onNavigate, state, setState }) {
                       {tab === "buy" ? "No wares on offer" : "Nothing to sell"}
                     </div>
                     <div className="hand muted" style={{ fontSize: 13, marginTop: 6 }}>
-                      Merchant — prototype. Not yet wired to a live shop read-model.
+                      {tab === "buy"
+                        ? (merchSurface ? "This merchant's catalogue is empty." : "Begin a chronicle to browse a merchant's wares.")
+                        : (surface?.party ? "Your pack holds nothing to sell." : "Open a live game to sell from your pack.")}
                     </div>
                   </td>
                 </tr>
@@ -593,25 +698,12 @@ const tdStyle = {
   verticalAlign: "middle",
 };
 
-const GATE_MARKET_STOCK = [
-  { id: "m1", name: "Crossbow bolts", type: "weapon", glyph: "bolts", qty: 30, weight: "3 lb", price: 6, desc: "Standard. Iron-tipped. The fletching is reused." },
-  { id: "m2", name: "Travel rations", type: "common", glyph: "rations", qty: 12, weight: "12 lb", price: 24, desc: "Hardtack, salted pork, hard cheese, dried apple." },
-  { id: "m3", name: "Iron lantern", type: "common", glyph: "lantern", qty: 1, weight: "2 lb", price: 7, desc: "Wick included. Oil sold separately, by the stall two rows over." },
-  { id: "m4", name: "Lantern oil", type: "common", glyph: "oil flask", qty: 4, weight: "1 lb", price: 1, desc: "One pint. Burns six hours, four in the river wind off the Chionthar." },
-  { id: "m5", name: "Studded leather", type: "armor", glyph: "leather armor", qty: 1, weight: "20 lb", price: 25, desc: "Sized for a medium frame. Belt may need a hole punched." },
-  { id: "m6", name: "Handaxes", type: "weapon", glyph: "axe pair", qty: 6, weight: "4 lb", price: 8, desc: "A set of three, light and balanced for throwing. Forged upriver, edged here at the Gate." },
-  { id: "m7", name: "Bandage roll", type: "common", glyph: "bandage", qty: 8, weight: "0.5 lb", price: 1, desc: "Linen. Clean. Mostly clean." },
-  { id: "m8", name: "Potion of Healing", type: "spell", glyph: "red potion", qty: 3, weight: "0.5 lb", price: 50, desc: "Restores 2d4+2 HP. Tastes of iron and elderberry." },
-  { id: "m9", name: "Antitoxin", type: "spell", glyph: "green vial", qty: 2, weight: "0.5 lb", price: 50, desc: "Advantage on saving throws against poison for 1 hour." },
-  { id: "m10", name: "Climbing kit", type: "common", glyph: "rope & pitons", qty: 2, weight: "10 lb", price: 80, desc: "Rope, pitons, hammer. Used. The hammer is new." },
-  { id: "m11", name: "Compass", type: "common", glyph: "brass compass", qty: 1, weight: "0.5 lb", price: 25, desc: "Brass. The needle drifts twelve degrees east of true. Dell knows this and has not said so." },
-  { id: "m12", name: "Heavy crossbow", type: "weapon", glyph: "heavy crossbow", qty: 1, weight: "8 lb", price: 50, desc: "Reliable. Slow. The kind of weapon you have time to be sorry about firing." },
-  { id: "m13", name: "Iron chain (10ft)", type: "common", glyph: "iron chain", qty: 3, weight: "10 lb", price: 30, desc: "Forged upriver. Tested at Wyrm's Crossing, by a man no longer with us." },
-  { id: "m14", name: "Spellbook (blank)", type: "spell", glyph: "blank book", qty: 1, weight: "3 lb", price: 15, desc: "Quality paper, oxblood binding. She rarely stocks them — Sorcerous Sundries keeps the good paper." },
-  { id: "m15", name: "Salt", type: "rare", glyph: "salt pouch", qty: 4, weight: "1 lb", price: 12, desc: "Coarse. Hauled up the salt-roads south. Useful against more things than you think." },
-  { id: "m16", name: "Wax candle (×6)", type: "common", glyph: "candles", qty: 4, weight: "1 lb", price: 4, desc: "Beeswax. Burns long. Useful for vigils and for less wholesome purposes." },
-];
-
+// #602: the demo MERCHANTS roster is the READ-ONLY PREVIEW FALLBACK only — used when no live
+// /merchant-surface is attached (a brand-new game before a world is bound). The old fabricated
+// demo ware array (a PF1e-style invented stock) is REMOVED: the live surface supplies
+// the REAL SRD catalog as each merchant's wares, and in pure preview the buy table is honestly empty
+// ("not yet wired to a live shop read-model"). These two flavor records keep the screen renderable
+// before a world loads; the live is_merchant roster always wins when present.
 const MERCHANTS = [
   {
     id: "old-troutman",
@@ -620,11 +712,9 @@ const MERCHANTS = [
     subtitle: "A shield dwarven trader working the docks east of Philgrave's Mansion.",
     location: "Baldur's Gate — Lower City",
     waresName: "Old Troutman",
-    greeting: "Aye, you found the right crate. Bolts, rations, rope, oil, and a few things the Watch forgot to inventory. Keep your purse where I can see it and your questions shorter than the tide.",
-    repLabel: "Wary but open",
-    rep: 28,
+    greeting: "Aye, you found the right crate. Keep your purse where I can see it and your questions shorter than the tide.",
     disposition: "dockside trade · open while the tide holds",
-    stock: GATE_MARKET_STOCK,
+    stock: [],
   },
   {
     id: "talli",
@@ -633,12 +723,10 @@ const MERCHANTS = [
     subtitle: "The Harpers' quartermaster, and the woman the road found.",
     location: "the Last Light Inn",
     waresName: "Talli",
-    greeting: "Come in, then. Mind the curse outside — the lantern's covenant ends a step past the threshold. The bolts are sharp, the rations dry, the draughts honest. Coin first, then the catalogue. Harpers don't quibble, but we don't subsidize the careless either.",
-    repLabel: "Cautiously fond",
-    rep: 42,
+    greeting: "Come in, then. Coin first, then the catalogue. Harpers don't quibble, but we don't subsidize the careless either.",
     disposition: "open until dusk · shuttered when the Watch patrols",
-    stock: GATE_MARKET_STOCK,
+    stock: [],
   },
 ];
 
-Object.assign(window, { ScreenMerchant, MERCHANTS, mItemScope, enrichWare });
+Object.assign(window, { ScreenMerchant, MERCHANTS, mItemScope, enrichWare, marketPriceCellParts });
