@@ -174,8 +174,11 @@ struct CodexProvider: ProviderAdapter {
         let command = configuredCommand.isEmpty ? defaultCodexCommand : configuredCommand
         return ProviderLaunchRequest(
             name: "Codex game",
+            // #892: `-f -c` skips ALL rc files (incl. ~/.zshenv) — a login/rc shell would source the
+            // user's profile and fire its side effects (keychain/Eva/removable-disk prompts). The CLIs
+            // are on PATH via the startup tool-dir prepend (EnvironmentBootstrap), inherited here.
             executable: "/bin/zsh",
-            arguments: ["-lc", command],
+            arguments: ["-f", "-c", command],
             environment: providerEnvironment(
                 kind: kind,
                 world: world,
@@ -259,8 +262,11 @@ struct OpenClawProvider: ProviderAdapter {
         }
         return ProviderLaunchRequest(
             name: "OpenClaw game",
+            // #892: `-f -c` skips ALL rc files (incl. ~/.zshenv) so app/game start never sources the
+            // user's profile (keychain/Eva/removable-disk side effects). CLIs are on PATH via the
+            // startup tool-dir prepend (EnvironmentBootstrap), inherited here.
             executable: "/bin/zsh",
-            arguments: ["-lc", command],
+            arguments: ["-f", "-c", command],
             environment: providerEnvironment(
                 kind: kind,
                 world: world,
@@ -356,8 +362,9 @@ struct ScriptedProvider: ProviderAdapter {
         }
         return ProviderLaunchRequest(
             name: "Scripted smoke game",
+            // #892: `-f -c` skips ALL rc files so launching never sources the user's profile.
             executable: "/bin/zsh",
-            arguments: ["-lc", "scripts/play_scripted_dm.sh"],
+            arguments: ["-f", "-c", "scripts/play_scripted_dm.sh"],
             environment: providerEnvironment(
                 kind: kind,
                 world: world,
