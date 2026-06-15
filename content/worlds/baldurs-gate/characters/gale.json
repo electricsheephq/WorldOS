@@ -35,14 +35,15 @@
       "respect for the Weave"
     ],
     "approval_likes": [
-      "scholarship",
-      "careful use of magic",
+      "knowledge",
+      "ambition",
+      "sacrifice",
       "mercy"
     ],
     "approval_dislikes": [
-      "wanton destruction",
-      "ignorance worn proudly",
-      "cold cynicism"
+      "ignorance",
+      "waste",
+      "wanton_destruction"
     ],
     "banter_tags": [
       "mystra",

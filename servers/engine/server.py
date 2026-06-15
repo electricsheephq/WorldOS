@@ -10219,6 +10219,88 @@ def advance_faction_arc(
         return out
 
 
+# Default approval swing per matched tag. A like nudges +, a dislike -, unless the DM passes
+# an explicit per-tag delta (then the explicit value — sign and magnitude — is authoritative).
+_APPROVAL_DEFAULT_DELTA = 10
+
+
+def _normalize_approval_tags(approval_tags) -> list[tuple[str, Optional[int]]]:
+    """Coerce the DM's `approval_tags` into ``[(key, explicit_delta_or_None), ...]``.
+
+    Accepts EITHER a flat list of string keys (``["mercy", "cruelty"]`` — each uses the
+    +/-10 default) OR a list of ``{"key": str, "delta": int}`` dicts (an explicit per-tag
+    swing). A bare string and a dict may be mixed. ``None`` / empty -> ``[]`` (the additive
+    no-op). Keys are lowercased + stripped so they match the dossier's lowercase_snake
+    vocabulary regardless of the DM's casing; an empty/blank key is dropped."""
+    if not approval_tags:
+        return []
+    out: list[tuple[str, Optional[int]]] = []
+    for item in approval_tags:
+        if isinstance(item, dict):
+            key = str(item.get("key") or "").strip().lower()
+            raw_delta = item.get("delta")
+            delta = None if raw_delta is None else int(raw_delta)
+        else:
+            key = str(item or "").strip().lower()
+            delta = None
+        if key:
+            out.append((key, delta))
+    return out
+
+
+def _apply_approval_tags(c: "Campaign", approval_tags) -> list[dict]:
+    """Move every PARTY companion's approval gauge by the decision's tagged causes (the BG
+    "soul"): each tag matching a companion's ``dossier.approval_likes`` applies +10 (or the
+    tag's explicit delta), each matching ``approval_dislikes`` applies -10 (or the explicit
+    delta); the per-companion sum is clamped to [-100, 100] and written to ``attitude_value``.
+
+    This is the ENGINE owning the number while the DM owns the cause (gauge-not-fiction):
+    the engine never reads prose to decide a tag — the DM supplied the tags, the deltas are
+    fixed/explicit. MUTATES ``c`` in place (the caller holds campaign_lock and saves); returns
+    one row per MOVED companion (``{id,name,old_value,new_value,delta,matched_keys}``) or [].
+
+    Scope is ``c.party`` companions WITH a dossier — non-companions, dossier-less companions,
+    and companions not in the party are skipped. Empty/None ``approval_tags`` -> [] (no move),
+    so the caller's return shape stays byte-identical to today."""
+    pairs = _normalize_approval_tags(approval_tags)
+    if not pairs:
+        return []
+    results: list[dict] = []
+    for cid in getattr(c, "party", []) or []:
+        ch = c.characters.get(cid)
+        if ch is None or getattr(ch, "kind", None) != "companion":
+            continue
+        dossier = getattr(ch, "companion_dossier", None)
+        if dossier is None:
+            continue
+        likes = {str(k).strip().lower() for k in (getattr(dossier, "approval_likes", []) or [])}
+        dislikes = {str(k).strip().lower() for k in (getattr(dossier, "approval_dislikes", []) or [])}
+        intended = 0
+        matched: list[str] = []
+        for key, explicit in pairs:
+            if key in likes:
+                intended += explicit if explicit is not None else _APPROVAL_DEFAULT_DELTA
+                matched.append(key)
+            elif key in dislikes:
+                intended += explicit if explicit is not None else -_APPROVAL_DEFAULT_DELTA
+                matched.append(key)
+        if not matched:
+            continue
+        old = ch.attitude_value
+        new = _clamp_attitude(old + intended)
+        ch.attitude_value = new
+        results.append({
+            "id": ch.id,
+            "name": ch.name,
+            "old_value": old,
+            "new_value": new,
+            # the REALIZED move after clamp (intended may overshoot the [-100,100] wall)
+            "delta": new - old,
+            "matched_keys": matched,
+        })
+    return results
+
+
 @mcp.tool()
 def record_decision(
     campaign_id: str,
@@ -10229,12 +10311,22 @@ def record_decision(
     actor_ids: Optional[list] = None,
     sets_flag: str = "",
     decision: str = "",
+    *,
+    approval_tags: Optional[list] = None,
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
     `summary` (the decision; pass it as `summary` (canonical) or `decision` (alias) —
     equivalent, `summary` wins if both given), `options` (what was on the table),
-    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id."""
+    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+
+    `approval_tags` (optional) MOVES companion approval on a moral choice — pass the
+    lowercase_snake cause-keys the choice aligns with (e.g. `["mercy", "cruelty"]`, or
+    `[{"key": "power", "delta": 25}]` for an explicit swing). For each PARTY companion whose
+    dossier lists a matching `approval_likes` (+10 default) / `approval_dislikes` (-10), the
+    ENGINE moves `attitude_value` (clamped to ±100) and reports it under `approval_results`.
+    This is how a player's choices turn a companion's arc (the BG "soul") — the DM TAGS the
+    cause, the engine OWNS the number. Omit it (the default) for a choice no companion weighs."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
@@ -10247,15 +10339,25 @@ def record_decision(
             chosen=chosen,
             rationale=rationale,
             actor_ids=list(actor_ids or []),
+            # store the DM-supplied causes for RECALL (normalized keys); the gauge move below
+            # is applied ONCE here, never re-derived on load.
+            approval_tags=[k for k, _ in _normalize_approval_tags(approval_tags)],
         )
         c.decisions.append(d)
         flag = sets_flag.strip()
         if flag:
             c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
+        # GAUGE-NOT-FICTION: move every party companion's approval by the tagged causes, under
+        # the SAME lock+save as the decision row (engine = sole writer). Empty/None tags == [].
+        approval_results = _apply_approval_tags(c, approval_tags)
         save_campaign(c)
         out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
         if flag:
             out["flag"] = flag
+        # ADDITIVE: only surface the key when a companion actually moved — an untagged decision
+        # (today's default) returns the exact four-key shape it always has.
+        if approval_results:
+            out["approval_results"] = approval_results
         return out
 
 
@@ -10862,6 +10964,19 @@ def _scene_durable_threads(c: Campaign) -> dict:
                 and getattr(agenda, "trigger", None) == "attitude_below"
             ),
         }
+        # F6-2: surface the approval CAUSES at stake so the DM SEES what wins/loses this
+        # companion's regard every beat — the adoption reminder that makes record_decision's
+        # `approval_tags` actually fire (a dead read brought to life). Pure projection of the
+        # authored dossier; ABSENT (not empty) when the companion has no dossier or no causes,
+        # so a dossier-less companion's payload is byte-for-byte today's.
+        dossier = getattr(ch, "companion_dossier", None)
+        if dossier is not None:
+            likes = list(getattr(dossier, "approval_likes", []) or [])
+            dislikes = list(getattr(dossier, "approval_dislikes", []) or [])
+            if likes:
+                entry["approval_likes"] = likes
+            if dislikes:
+                entry["approval_dislikes"] = dislikes
         # D2 (cue-first experiment): surface the FORWARD-LOOKING gate-distance every beat. The
         # nearest un-unlocked ArcGate's points_away-to-unlock was computed by _camp_arc_summary
         # but lived ONLY in the camp view — the DM never saw, at re-ground, how close a present
@@ -11171,8 +11286,10 @@ def persist_beat(
     you already streamed live via log_event — re-passing double-logs it),
     ``memories`` (``[{"character_id","fact"}]``; character_id accepts ``id``/``npc_id``
     aliases, resolved tolerantly), ``decision`` (one ``{"summary","options"?,"chosen"?,
-    "rationale"?,"actor_ids"?,"sets_flag"?}``), and ``advance`` (``{"phases"?,"to"?,"note"?}``
-    to move the clock; skipped during combat)."""
+    "rationale"?,"actor_ids"?,"sets_flag"?,"approval_tags"?}`` — ``approval_tags`` MOVES party
+    companion approval exactly like the standalone ``record_decision`` (flat cause-keys or
+    ``{key,delta}``; reported under ``approval_results`` when a companion moves), and
+    ``advance`` (``{"phases"?,"to"?,"note"?}`` to move the clock; skipped during combat)."""
     # Tolerate a bare/empty campaign_id (a recurring DM model-slip). SKILL.md step 7 says
     # "never emit a bare persist_beat()", but the model occasionally emits {} anyway — and a
     # hard "Field required" rejection RED-caps the WHOLE behavioral gate (the FATAL
@@ -11189,6 +11306,7 @@ def persist_beat(
     logged: list[dict] = []
     remembered: list[dict] = []
     decision_out: Optional[dict] = None
+    approval_results: list[dict] = []  # companion approval moves from the decision's tagged causes
 
     # ONE critical section for every simple write (log/remember/decision). This is
     # the batching win: a single load -> mutate-all -> save, instead of one
@@ -11255,12 +11373,18 @@ def persist_beat(
 
             planned_decision: Optional[Decision] = None
             decision_flag = ""
+            decision_approval_tags = None  # raw tags (flat keys OR {key,delta}); applied in PHASE 2
             if decision:
                 if not isinstance(decision, dict):
                     raise ValueError("decision must be a dict {summary,...}")
                 # None-coerce every str field: the DM legitimately passes chosen=null for a
                 # still-open decision; `.get(k, "")` only defaults a MISSING key, an explicit
                 # null still reaches pydantic's str field and string_type-crashes the batch.
+                # F6-2: a batched decision moves companion approval too — thread the same
+                # `approval_tags` the standalone record_decision accepts (flat keys OR
+                # {key,delta}). Absent key == today's behavior (no move). Normalized keys are
+                # stored on the Decision for recall; the gauge move is applied in PHASE 2.
+                decision_approval_tags = decision.get("approval_tags")
                 planned_decision = Decision(
                     day=c.day,
                     summary=decision.get("summary") or "",
@@ -11268,6 +11392,7 @@ def persist_beat(
                     chosen=decision.get("chosen") or "",
                     rationale=decision.get("rationale") or "",
                     actor_ids=list(decision.get("actor_ids") or []),
+                    approval_tags=[k for k, _ in _normalize_approval_tags(decision_approval_tags)],
                 )
                 decision_flag = str(decision.get("sets_flag") or "").strip()
 
@@ -11297,6 +11422,10 @@ def persist_beat(
                 }
                 if decision_flag:
                     decision_out["flag"] = decision_flag
+                # F6-2 / GAUGE-NOT-FICTION: move party companions' approval by the decision's
+                # tagged causes, under the SAME lock+save (engine = sole writer). Empty/None
+                # tags == [] (no move), so an untagged decision leg is byte-identical to today.
+                approval_results = _apply_approval_tags(c, decision_approval_tags)
             save_campaign(c)  # ONE atomic write for all of the above
 
     # advance_time as its own locked call (sequential, not nested → no deadlock).
@@ -11311,12 +11440,17 @@ def persist_beat(
             note=str(advance.get("note", "") or ""),
         )
 
-    return {
+    out = {
         "logged": logged,
         "remembered": remembered,
         "decision": decision_out,
         "time": time_out,
     }
+    # ADDITIVE: only surface the key when a companion actually moved — an untagged batch
+    # (today's default) returns the exact four-key shape it always has.
+    if approval_results:
+        out["approval_results"] = approval_results
+    return out
 
 
 if __name__ == "__main__":

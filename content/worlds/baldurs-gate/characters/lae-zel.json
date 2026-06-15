@@ -34,14 +34,15 @@
       "kin (truly seen)"
     ],
     "approval_likes": [
-      "competence in battle",
       "directness",
-      "respect earned by deed"
+      "competence",
+      "defiance",
+      "discipline"
     ],
     "approval_dislikes": [
       "cowardice",
-      "wasted time",
-      "soft sentiment in place of action"
+      "weakness",
+      "waste"
     ],
     "banter_tags": [
       "vlaakith",
