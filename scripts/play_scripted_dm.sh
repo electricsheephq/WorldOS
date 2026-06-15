@@ -9,6 +9,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Shared launcher helpers (clawdnd_choose_port / clawdnd_port_available), sourced like play.sh
+# so the scripted provider can pick a free dashboard port instead of colliding on a busy 8765.
+COMMON="$ROOT/scripts/launch_common.sh"
+# shellcheck source=launch_common.sh
+[ -f "$COMMON" ] && . "$COMMON"
+
 if [ "${1:-}" = "--dry-run" ]; then
   printf 'scripted provider dry-run: requires no Claude, Codex, or OpenClaw\n'
   printf 'gate=%s world=%s run=%s port=%s\n' \
@@ -32,8 +38,24 @@ done
 
 WORLD="${CLAWDND_WORLD:-baldurs-gate}"
 RUN="${CLAWDND_RUN_ID:-scripted-smoke-$(date +%H%M%S)}"
-PORT="${CLAWDND_PLAY_PORT:-8765}"
 STATE_DIR="$ROOT/play-state/$RUN"
+# Pin BOTH state-dir env names to THIS run's hermetic play-state dir. The native .app's
+# startProviderSession injects WORLDOS_STATE_DIR (its launcher stateDir) into our environment
+# (#933); the engine resolves WORLDOS_STATE_DIR BEFORE CLAWDND_STATE_DIR, so without this the
+# cold-open bootstrap (which set only CLAWDND_STATE_DIR) leaks the campaign into the launcher's
+# dir while the viewer reads this one — a split write/read that yields an empty can_act:false
+# surface. Mirror play.sh:142 and export both up front so every child (bootstrap, viewer,
+# move-resolver) agrees on one dir regardless of inherited env.
+export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
+# Choose a free dashboard port like play.sh: unless CLAWDND_PLAY_PORT is set explicitly, fall
+# back off a busy 8765 (the native launcher viewer) so the game viewer doesn't crash-loop on bind.
+PORT_REQUESTED="${CLAWDND_PLAY_PORT:-8765}"
+PORT_EXPLICIT=0; [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
+if command -v clawdnd_choose_port >/dev/null 2>&1; then
+  PORT="$(clawdnd_choose_port "$PORT_REQUESTED" "$PORT_EXPLICIT")" || PORT="$PORT_REQUESTED"
+else
+  PORT="$PORT_REQUESTED"
+fi
 TRACE_DIR="$STATE_DIR/scripted-provider"
 MOVES="$STATE_DIR/player_moves.jsonl"
 CHAT="$STATE_DIR/chat.jsonl"
