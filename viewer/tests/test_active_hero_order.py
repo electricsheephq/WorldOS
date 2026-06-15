@@ -137,3 +137,16 @@ def test_actor_preferred_even_when_a_different_player_card_exists():
         {"id": "pc-two", "name": "Bryn", "kind": "player"},
     ]
     assert _resolve(surface, party) == "pc-two"
+
+
+def test_live_correction_reseeds_to_pc_not_party0_companion_when_active_hero_leaves_roster():
+    # The LIVE-UPDATE correction path (screen-table.jsx effect ~907): the previously active hero
+    # ("pc-old") has left the roster mid-session (companion churn / campaign switch) and a COMPANION
+    # has sorted to party[0]. The effect re-seeds through this resolver — it MUST land on the engine's
+    # authoritative kind=player actor (the PC), NEVER party[0]. #932 fixed the initial seed but left
+    # this correction effect on the old party[0] path, which would re-pick the companion and resurrect
+    # the "ACTIVE ASTARION / Lvl 1 Adventurer" bug on the live path. (Under Node, the old line 909 —
+    # `party[0]?.id` — returned "astarion-1" for this exact shape; the resolver returns "pc-tav".)
+    surface = {"actor": {"id": "pc-tav", "name": "Tav", "kind": "player"}}
+    party = [_ASTARION, _PC]  # companion at party[0], the real PC later; "pc-old" is gone
+    assert _resolve(surface, party) == "pc-tav"

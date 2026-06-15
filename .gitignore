@@ -88,3 +88,4 @@ venv/
 
 # fast-gate rotation counter (Tier 1)
 /qa/.fast_gate_iter
+.qa-archive/
