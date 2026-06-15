@@ -26,6 +26,12 @@ import server
 WORLD = "baldurs-gate"
 DAL = "Dal Lightspark"          # canon-DEAD: "a dead gold dwarven Harper whose corpse is in …"
 LIVING_PC = "Aubree"            # living half-elf ranger of the Flaming Fist, has an ingested portrait
+# canon-DEAD where the death is declared NOT in the opener but later in the bio (dogfood MAJOR):
+# Alexander Rainforest's opener reads as a living citizen — "… Rainforest is already dead." lands
+# in the THIRD sentence, so the opener-only scan missed it and the picker offered a corpse as a PC.
+RAINFOREST = "Alexander Rainforest"  # "… When the party reach him in Act Three, Rainforest is already dead."
+PEARTREE = "Franc Peartree"          # "… Peartree (if encountered) is already dead."
+PRINSKI = "Waldemar Prinski"         # "… he is found dead in the Iron Throne soon after."
 
 
 def _seed(tmp_path, monkeypatch):
@@ -75,6 +81,39 @@ def test_is_dead_record_does_not_false_positive_on_a_living_figure():
         assert content.is_dead_record(rec) is False, rec["name"]
 
 
+def test_is_dead_record_flags_a_self_death_declared_later_in_the_bio():
+    # Dogfood MAJOR: a corpse whose death is declared NOT in the opener but mid-bio. The opener
+    # ("Alexander Rainforest was a citizen of Baldur's Gate.") reads as a living NPC, so the
+    # opener-only scan let the picker offer him as a playable hero. The body cue must catch the
+    # later self-declaration ("… Rainforest is already dead.").
+    for nm in (RAINFOREST, PEARTREE, PRINSKI):
+        rec = content.load_canon_character(WORLD, nm)
+        assert rec is not None, nm
+        assert content.is_dead_record(rec) is True, nm
+
+
+def test_body_dead_cue_does_not_false_positive_on_a_third_party_death():
+    # FALSE-POSITIVE GUARD for the widened (whole-bio) scan: a LIVING figure whose bio mentions
+    # SOMEONE ELSE's death — "appears … if Alfira is dead", "if he is dead" (a different NPC),
+    # "declaration that Aylin was dead" — must NOT be flagged. The cue is subject-anchored and
+    # ignores the conditional "if X is dead" third-party form.
+    # NB: the third-party death cue lands in a LATER sentence (the opener is a clean living
+    # intro), mirroring the real corpus — so this exercises the widened whole-bio scan, not the
+    # separate opener cue. A conditional "if X is dead" must never flag the SUBJECT.
+    living = [
+        {"name": "Chell-like", "class": "Bard", "level": "3",
+         "backstory": "Chell is a tiefling bard of the Lower City. She appears as a replacement character for Alfira during the camp celebration if Alfira is dead."},
+        {"name": "Kavil-like", "class": "Fighter", "level": "4",
+         "backstory": "Kavil is a stout dwarf of the Flaming Fist. He appears as a replacement for Bex during the camp celebration if he is dead."},
+        {"name": "Olys-like", "class": "Ranger", "level": "5",
+         "backstory": "Olys is an Asmodeus tiefling ranger and Harper. If one of the original Harper allies is dead, he can take their place during the assault."},
+        {"name": "Isobel-like", "class": "Cleric", "level": "6",
+         "backstory": "Isobel is a cleric of Selune who lives at Last Light Inn. She saw a change in her father, and with his declaration that Aylin was dead, she could see no recourse but to run."},
+    ]
+    for rec in living:
+        assert content.is_dead_record(rec) is False, rec["name"]
+
+
 def test_living_canon_pc_is_not_flagged_dead():
     aubree = content.load_canon_character(WORLD, LIVING_PC)
     assert aubree is not None
@@ -105,6 +144,73 @@ def test_roster_surface_excludes_the_dead_from_cards_and_facets():
     assert LIVING_PC in names
     # the dead-only id slug must not be present either
     assert "dal-lightspark" not in {c["id"] for c in surf["characters"]}
+
+
+def test_roster_surface_excludes_a_mid_bio_dead_figure():
+    # The UI complement to #912: the picker must never OFFER what the seat REFUSES. A corpse
+    # whose death is declared mid-bio (Alexander Rainforest) must be absent from every card.
+    surf = content.roster_surface(WORLD, playable_only=True, limit=0)
+    names = {c["name"] for c in surf["characters"]}
+    for nm in (RAINFOREST, PEARTREE, PRINSKI):
+        assert nm not in names, nm
+    assert "alexander-rainforest" not in {c["id"] for c in surf["characters"]}
+
+
+# --- require_stats: drop entries illegible in a level-based picker ----------
+
+def test_roster_surface_require_stats_drops_records_lacking_both_class_and_level():
+    # "Amanita Szarr — Vampire or Vampire Spawn" has neither class nor level — confusing in a
+    # level-based picker. require_stats=True drops records missing BOTH (a townsperson with a
+    # level but no class, or a class but no level, still rides along — only the doubly-blank go).
+    full = content.roster_surface(WORLD, playable_only=True, limit=0)
+    stats = content.roster_surface(WORLD, playable_only=True, require_stats=True, limit=0)
+    full_names = {c["name"] for c in full["characters"]}
+    stats_names = {c["name"] for c in stats["characters"]}
+    assert "Amanita Szarr" in full_names, "default surface keeps the classless/levelless figure"
+    assert "Amanita Szarr" not in stats_names, "require_stats drops the doubly-blank figure"
+    # Every surviving card has at least ONE of class / level so it is legible in the picker.
+    for c in stats["characters"]:
+        assert (c.get("class") or "").strip() or (c.get("level") or "").strip(), c["name"]
+    # require_stats is additive-narrowing: a strict subset, and it never re-admits the dead.
+    assert stats_names <= full_names
+    assert RAINFOREST not in stats_names
+
+
+def test_roster_surface_require_stats_defaults_off_so_default_surface_is_unchanged():
+    # The default (require_stats unset) call is byte-identical to before — no silent narrowing.
+    a = content.roster_surface(WORLD, playable_only=True, limit=0)
+    b = content.roster_surface(WORLD, playable_only=True, require_stats=False, limit=0)
+    assert a == b
+
+
+# --- recommended_only: a curated beginner subset ----------------------------
+
+def test_roster_surface_recommended_only_is_a_small_curated_legible_subset():
+    # BEGINNER ENTRY: a newcomer should not be dropped into ~2,000 alphabetical names. The
+    # recommended subset leads with playable+alive mid-tier figures that carry BOTH a class AND
+    # a level AND a backstory — legible, characterful picks — and is small.
+    rec = content.roster_surface(WORLD, playable_only=True, recommended_only=True)
+    cards = rec["characters"]
+    assert cards, "the recommended subset should not be empty for the shipped roster"
+    assert rec["recommended"] is True
+    assert len(cards) <= 24, "the beginner subset stays small (not the whole roster)"
+    full = content.roster_surface(WORLD, playable_only=True, limit=0)
+    assert rec["total"] < full["total"], "recommended is a strict narrowing of the full roster"
+    rec_names = {c["name"] for c in cards}
+    for c in cards:
+        assert (c.get("class") or "").strip(), c["name"]
+        assert (c.get("level") or "").strip(), c["name"]
+        assert (c.get("backstory") or "").strip(), c["name"]
+    # never the dead, never a malformed figure
+    assert RAINFOREST not in rec_names and DAL not in rec_names
+    assert "Amanita Szarr" not in rec_names
+
+
+def test_roster_surface_recommended_only_defaults_off():
+    a = content.roster_surface(WORLD, playable_only=True, limit=0)
+    b = content.roster_surface(WORLD, playable_only=True, recommended_only=False, limit=0)
+    assert a == b
+    assert a.get("recommended") in (None, False)
 
 
 # --- the hard seat gate ------------------------------------------------------

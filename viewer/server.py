@@ -913,16 +913,22 @@ def build_roster_response(
     level: str = "",
     limit: int = 120,
     world_id: Optional[str] = "",
+    require_stats: bool = False,
+    recommended_only: bool = False,
 ) -> dict:
     """GET /roster-surface read model — the canon-NPC PICKER ("reverse character creator").
 
     Bridges to the engine-owned canon-roster projection (``content.roster_surface``): the
-    PLAYABLE roster (origins/legends EXCLUDED via the record ``playable`` flag), filtered by
-    race / class / level, each row carrying {id, name, race, class, level, role, backstory
-    snippet, portrait_scope}. Also returns the distinct race/class/level ``facets`` so the picker
-    can offer filter chips. The world is resolved from the campaign's snapshot (or the shipped
-    default for a brand-new game). READ-ONLY — exposes no write/seat path; the bind happens via
-    the native startProviderSession bridge / load_canon_character, never here. Mirrors
+    PLAYABLE+ALIVE roster (origins/legends EXCLUDED via the record ``playable`` flag, canon-DEAD
+    figures excluded via ``is_dead_record`` — the picker must never OFFER a hero the seat path
+    REFUSES, #912), filtered by race / class / level, each row carrying {id, name, race, class,
+    level, role, backstory snippet, portrait_scope}. Also returns the distinct race/class/level
+    ``facets`` so the picker can offer filter chips. ``require_stats`` drops records that carry
+    neither a class nor a level (illegible in a level-based picker); ``recommended_only`` returns a
+    small curated beginner subset (and marks the payload ``recommended:true``). Both default off, so
+    the unparametrized call is unchanged. The world is resolved from the campaign's snapshot (or the
+    shipped default for a brand-new game). READ-ONLY — exposes no write/seat path; the bind happens
+    via the native startProviderSession bridge / load_canon_character, never here. Mirrors
     build_bestiary_response: a graceful empty payload when the engine can't be imported."""
     engine = _load_engine_server()
     if world_id is None:
@@ -948,6 +954,8 @@ def build_roster_response(
             char_class=char_class,
             level=level,
             playable_only=True,
+            require_stats=require_stats,
+            recommended_only=recommended_only,
             limit=limit,
         )
     except Exception as exc:
@@ -7784,6 +7792,12 @@ class _Handler(BaseHTTPRequestHandler):
             race = (qs.get("race") or [""])[0]
             char_class = (qs.get("class") or qs.get("char_class") or [""])[0]
             level = (qs.get("level") or [""])[0]
+            # ?require_stats drops records with neither a class nor a level (illegible in a
+            # level-based picker, e.g. "Amanita Szarr — Vampire or Vampire Spawn"); ?recommended
+            # returns the small curated beginner subset. Both default OFF — the bare call is
+            # byte-identical to before. (Same truthy convention as ?once / ?reference above.)
+            require_stats = (qs.get("require_stats") or ["0"])[0].strip().lower() in ("1", "true", "yes", "on")
+            recommended_only = (qs.get("recommended") or ["0"])[0].strip().lower() in ("1", "true", "yes", "on")
             # Cap the returned cards so the picker grid stays renderable (the unfiltered playable
             # roster is ~2,000). ?limit tunes it; bounded to [1, 500] (a bad value -> the default).
             try:
@@ -7799,9 +7813,15 @@ class _Handler(BaseHTTPRequestHandler):
                     if isinstance(raw_world_id, str) and raw_world_id.strip()
                     else None
                 )
-                self._json(build_roster_response(cid, race, char_class, level, limit, world_id=world_id))
+                self._json(build_roster_response(
+                    cid, race, char_class, level, limit, world_id=world_id,
+                    require_stats=require_stats, recommended_only=recommended_only,
+                ))
                 return
-            self._json(build_roster_response(cid, race, char_class, level, limit))
+            self._json(build_roster_response(
+                cid, race, char_class, level, limit,
+                require_stats=require_stats, recommended_only=recommended_only,
+            ))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).

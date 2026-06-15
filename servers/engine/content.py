@@ -118,6 +118,29 @@ _SELF_DEAD_CUE = re.compile(
     r"|\b(?:died|perished)\b"         # intransitive: "who died on the beach"
     r"|\b(?:killed|slain|murdered)\s+by\b",  # passive victim: "killed by a githyanki patrol"
 )
+
+# A SELF-death declared NOT in the opener but LATER in the bio (#912 UI complement / dogfood MAJOR).
+# Alexander Rainforest opens as a living citizen — "When the party reach him in Act Three, Rainforest
+# is already dead." lands in the THIRD sentence, so the opener-only scan (above) missed it and the
+# picker offered a corpse as a playable hero. This second cue scans the WHOLE backstory, but is far
+# NARROWER than `_SELF_DEAD_CUE` because a whole-bio scan is far more exposed to false positives (a
+# bio that merely mentions a third party's death — "appears … if Alfira is dead", "if he is dead").
+# Guards that make it safe to run over the whole bio:
+#   • subject-anchored: a capitalized Name token or a subject pronoun (he/she/they/it) must sit
+#     within ~6 words BEFORE the cue (so the death attaches to the SUBJECT, not a clause object);
+#   • the cue is a STATE/RESULT phrase that a conditional third party never carries: "already/now
+#     dead", "found dead/slain", "lies dead" — NOT a bare "is dead" (which "if Alfira is dead" has);
+#   • a `(?<!if )` lookbehind drops the conditional "if X is dead/found dead" third-party form.
+# This catches the genuinely-dead (Rainforest, Peartree, Prinski) with zero corpus false positives.
+_BODY_DEAD_CUE = re.compile(
+    r"(?<!if )"
+    r"(?:\b[A-Z][a-z'’-]+\b|\bhe\b|\bshe\b|\bthey\b|\bit\b)"
+    r"(?:\s+[a-z'’(),-]+){0,6}\s+"
+    r"(?:(?:is|was|are|were)\s+(?:already|now)\s+dead"
+    r"|(?:is|was)\s+found\s+(?:dead|slain)"
+    r"|lies\s+dead)\b",
+    re.IGNORECASE,
+)
 # Leading wiki magic-word directives (e.g. __notoc__, __NOTOC__) to strip off an opener.
 _WIKI_DIRECTIVE_PREFIX = re.compile(r"^(?:__[a-z]+__\s*)+", re.IGNORECASE)
 # F10-7: the SAME wiki magic words anywhere in a string (not just the opener), with any
@@ -165,8 +188,15 @@ def is_dead_record(rec: dict) -> bool:
     for field in ("status", "fate", "life_status"):
         if ending_role_from_status(str(rec.get(field, "") or "")) == "died":
             return True
-    opener = _death_opener(rec.get("backstory", ""))
-    return bool(opener) and bool(_SELF_DEAD_CUE.search(opener))
+    backstory = rec.get("backstory", "")
+    opener = _death_opener(backstory)
+    if opener and _SELF_DEAD_CUE.search(opener):
+        return True
+    # A self-death declared LATER in the bio (the dogfood MAJOR: the picker offered "Alexander
+    # Rainforest", a corpse whose death lands in the third sentence). Scanned with the much
+    # narrower, subject-anchored `_BODY_DEAD_CUE` so a third party's death never false-positives.
+    body = strip_wiki_directives(" ".join(str(backstory or "").split()))
+    return bool(body) and bool(_BODY_DEAD_CUE.search(body))
 
 
 def list_canon_characters(
@@ -351,6 +381,14 @@ def _backstory_snippet(text: str, limit: int = 220) -> str:
     return (cut or s[:limit]) + "…"
 
 
+# The curated beginner subset (`recommended_only`): playable + alive figures that are legible AND
+# characterful in a level-based picker — a real class, a mid-tier level (not the level-1 long tail
+# nor the level-12 capstones), and a backstory. Bounded so a newcomer sees a handful, not a wall.
+_RECOMMENDED_MIN_LEVEL = 3
+_RECOMMENDED_MAX_LEVEL = 10
+_RECOMMENDED_CAP = 18
+
+
 def roster_surface(
     world_id: str,
     *,
@@ -359,6 +397,8 @@ def roster_surface(
     level: str = "",
     playable_only: bool = True,
     alive_only: "bool | None" = None,
+    require_stats: bool = False,
+    recommended_only: bool = False,
     limit: int = 120,
 ) -> dict:
     """Read-only roster projection for the canon-NPC PICKER (the "reverse character creator").
@@ -381,6 +421,18 @@ def roster_surface(
     Dead figures don't contribute facet chips either (the filter runs before the tallies). Any
     of race / char_class / level narrows the result (case-insensitive exact match on the record's
     field; an empty filter is ignored). De-duplicated by name (a figure on two wikis collapses).
+
+    `require_stats` (default False — the default call is byte-identical to before) drops records
+    that carry NEITHER a class NOR a level: a level-based picker that lists "Amanita Szarr — Vampire
+    or Vampire Spawn" (no class, no level) is confusing. A record with EITHER stat still rides along
+    (most canon townsfolk have a level but no class — they should stay pickable), only the
+    doubly-blank are dropped. The facets are tallied BEFORE this filter so the chips are unchanged.
+
+    `recommended_only` (default False) returns a small CURATED beginner subset instead of the full
+    roster, so a newcomer is not dropped into ~2,000 alphabetical names: playable + alive figures
+    that carry a class AND a mid-tier level (3–10) AND a backstory — legible, characterful picks —
+    capped to a handful. The response carries `recommended: True` and the full list stays reachable
+    via a normal (recommended_only=False) call. `race`/`class`/`level` filters still apply on top.
 
     Also returns `facets` — the distinct race / class / level values present in the playable
     roster (BEFORE the race/class/level filters narrow it, frequency-ordered so the densest chips
@@ -449,6 +501,24 @@ def roster_surface(
             if levell and rlevel.lower() != levell:
                 continue
 
+            # Legibility filter: in a level-based picker, a record with NEITHER a class NOR a level
+            # is just a name (e.g. "Amanita Szarr — Vampire or Vampire Spawn"). Drop the doubly-blank
+            # when asked; a record with EITHER stat survives. (Runs AFTER the facet tallies above.)
+            if require_stats and not rclass and not rlevel:
+                continue
+
+            # Beginner subset: a class + a mid-tier numeric level + a backstory — legible AND
+            # characterful. Skips the level-1 long tail, the capstones, and the bare names.
+            if recommended_only:
+                if not rclass or not str(rec.get("backstory", "") or "").strip():
+                    continue
+                try:
+                    lvn = int(rlevel)
+                except (TypeError, ValueError):
+                    continue
+                if not (_RECOMMENDED_MIN_LEVEL <= lvn <= _RECOMMENDED_MAX_LEVEL):
+                    continue
+
             slug = p.stem  # the file slug IS the portrait/id key (portrait-<slug> resolves)
             out.append({
                 "id": slug,
@@ -467,9 +537,12 @@ def roster_surface(
     # `total` is the FULL matched count; the returned list is capped to `limit` so the picker
     # grid stays renderable (the unfiltered playable roster is ~2,000 — far too many cards/images
     # to paint at once). The UI shows "showing N of total" and narrows via the facet chips. A
-    # `limit <= 0` means "no cap" (the test/headless path that wants the whole slice).
+    # `limit <= 0` means "no cap" (the test/headless path that wants the whole slice). The
+    # recommended subset is intentionally a handful, so it ignores `limit` and caps to its own size.
     total = len(out)
-    if limit and limit > 0:
+    if recommended_only:
+        out = out[:_RECOMMENDED_CAP]
+    elif limit and limit > 0:
         out = out[:limit]
 
     def _by_count(store: dict) -> list[str]:
@@ -486,7 +559,7 @@ def roster_surface(
                 return (1, dc[0].lower())
         return [v[0] for v in sorted(store.values(), key=_key)]
 
-    return {
+    resp = {
         "world_id": world_id,
         "total": total,            # full matched count (before the render cap)
         "returned": len(out),      # how many cards this payload actually carries
@@ -498,6 +571,12 @@ def roster_surface(
             "levels": _sorted_levels(facet_levels),
         },
     }
+    if recommended_only:
+        # Beginner-surface marker the picker reads to show its "Recommended for beginners" framing
+        # and a "see the full roster" affordance. Only set when asked, so the default payload shape
+        # (and the existing tests asserting it) are unchanged.
+        resp["recommended"] = True
+    return resp
 
 
 # The free-prose fields a canon record exposes to the DM / portrait prompt. F10-7 scrubs
