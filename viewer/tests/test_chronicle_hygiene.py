@@ -143,7 +143,14 @@ def _render_log_entries(entries: list[dict]) -> list[str]:
         + " props: props||{}, children: children.flat(Infinity).filter(c=>c!=null) }; }\n"
         + "const React = { useState:()=>[null,()=>{}], useRef:()=>({}), useCallback:f=>f, useEffect:()=>{},"
         + " createElement:h, Fragment:'F' };\n"
-        + "const sb = { React }; sb.window = sb; vm.createContext(sb); vm.runInContext(code, sb);\n"
+        # #943: in the browser, screen-table.jsx and chrome.jsx are sibling <script type='text/babel'>
+        # tags that share one global scope, so screen-table can reference chrome's <Img> (the speaker
+        # portrait now rendered inline on dialogue/named-action rows) as a global. This harness transpiles
+        # ONLY screen-table.jsx in isolation, so we stub the cross-file <Img> on the shared sandbox global
+        # exactly as chrome.jsx publishes it (`Object.assign(window, { Img })`). The stub returns no text,
+        # so every visible-text assertion below is unchanged — this only resolves the bare cross-file ref.
+        + "const Img = (props) => h('Img', props);\n"
+        + "const sb = { React, Img }; sb.window = sb; vm.createContext(sb); vm.runInContext(code, sb);\n"
         + "const LogEntry = sb.window.LogEntry;\n"
         + "if (typeof LogEntry !== 'function') throw new Error('LogEntry not exported on window');\n"
         + "function textOf(n){ if(n==null) return ''; if(typeof n==='string'||typeof n==='number') return String(n);"
