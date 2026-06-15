@@ -75,7 +75,7 @@ URL="http://127.0.0.1:$PORT/openworlds/"
 # (Identical to run_duo.sh — guards the version-skew that RED-caps a run if the DM
 #  engine runs older models.py than the snapshot writer.)
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" "$ROOT" <<'PY'
-import json, sys
+import json, os, sys
 cfg_path, state, out, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(cfg_path))
 for name, srv in cfg.get("mcpServers", {}).items():
@@ -89,6 +89,14 @@ for name, srv in cfg.get("mcpServers", {}).items():
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "clawdnd-engine":
         srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
+        # Dogfood FIDELITY (parity with scripts/play.sh:142 + qa/run_duo.sh): PIN the engine tools
+        # (un-defer) so the DM stops burning a ~9s ToolSearch round-trip re-discovering the engine MCP
+        # tools EVERY move — production has alwaysLoad default-on, so without this the dogfood overstates
+        # per-move latency vs the real player surface. Set CLAWDND_ENGINE_ALWAYSLOAD=0 for the deferred
+        # baseline (the latency A/B arm). This generation block is LOCAL to this QA runner (it re-roots
+        # qa/qa.mcp.example.json into the run's own $DM_CFG) — NOT shared with the production play.sh gen.
+        if os.environ.get("CLAWDND_ENGINE_ALWAYSLOAD", "1") == "1":
+            srv["alwaysLoad"] = True
 json.dump(cfg, open(out, "w"))
 PY
 
@@ -157,6 +165,14 @@ dm_turn() {
   # SYN-01: pre-beat log-tail mark (once per beat — this driver is single-attempt) so the
   # caller's resolve can tell a GENUINE #357 recovery from RECYCLED pre-beat prose.
   clawdnd_dm_prebeat_mark "$STATE_DIR"
+  # #623 dogfood FIDELITY: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE
+  # in qa/lib_beat_driver.sh — parity with scripts/play.sh:288 + scripts/play_party.sh + the codex DM)
+  # so the DM logs an EARLY /events narration beat. Its ABSENCE here mirrored the SOLO-path #623 bug:
+  # the dogfood DM emitted nothing to /events until the full ~82s beat completed, so the viewer stayed
+  # blank and the playtest OVERSTATED perceived latency vs production. This is the MODEL-COOPERATIVE
+  # half; the caller ALSO emits the model-INDEPENDENT heartbeat (clawdnd_emit_progress_heartbeat) per
+  # move before the resolve, exactly like scripts/play.sh:620. Additive — engine stays the sole writer.
+  msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
   beat_timeout="$(clawdnd_dm_timeout "$first")"
   out="$RUNDIR/dm/turn.$(date +%s%N).jsonl"
@@ -203,6 +219,9 @@ fi
 # until the harness kills it (player done / beats hit / budget out).
 (
   MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
+  # #623 dogfood FIDELITY: a 0-based continuing-beat index so the per-move heartbeat ROTATES its
+  # teaser (clawdnd_emit_progress_heartbeat, below) exactly as scripts/play.sh:620 rotates off DM_TURNS.
+  DMLOOP_BEAT=0
   while true; do
     total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
     if [ "$total" -gt "$MCURSOR" ]; then
@@ -210,6 +229,21 @@ fi
       PMSG="$(printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text // .name // "")") | join("  ")' 2>/dev/null)"
       [ -z "$PMSG" ] && continue
       chatlog player "$PMSG"
+      # #623 dogfood FIDELITY: emit the IMMEDIATE, model-INDEPENDENT progress heartbeat NOW — right
+      # after the player's move is echoed and BEFORE the long DM think — so /events has a wrapper
+      # `narration` row within ~1s and the OpenWorlds viewer flips its spinner to "the scene is
+      # arriving above" (app.jsx isWrapperProgressLine → notePendingProgress), exactly as production
+      # (scripts/play.sh:620). Without this the dogfood's chronicle stayed BLANK until the final
+      # persist (~+82s), making the GUI playtest OVERSTATE perceived latency vs the real player surface.
+      # This lane has no CAMPAIGN_ID var, so derive the LIVE id the way play.sh does (the engine-
+      # authoritative most-recently-played save; #640 — never a blind first-dir pick when the engine
+      # can answer), falling back to the first subdir only if the engine can't. A blank id no-ops the
+      # helper (best-effort; never fails a beat) — so the derivation is the crux. Engine stays the SOLE
+      # writer (the heartbeat routes through log_engine_narration). first=0 + DMLOOP_BEAT → rotates.
+      HB_CID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+      [ -z "$HB_CID" ] && HB_CID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
+      clawdnd_emit_progress_heartbeat "$HB_CID" 0 "$DMLOOP_BEAT"
+      DMLOOP_BEAT=$((DMLOOP_BEAT + 1))
       DMSG="$(dm_turn 0 "The player does:
 
 $PMSG
