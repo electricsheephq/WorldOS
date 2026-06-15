@@ -107,6 +107,21 @@ function RosterCard({ npc, onPlay, busy }) {
             <span style={{ fontFamily: "var(--f-display)", fontSize: 14, color: "var(--ink-900)", marginLeft: 4 }}>{npc.level}</span>
           </div>
         ) : null}
+        {/* #dogfood onboarding (option b): the obvious safe FIRST pick. The engine flags a small
+            easy-starter subset of the recommended set (simple classes, low-ish level); the card
+            wears a "Great for your first session" ribbon so a newcomer has a clear safe choice. */}
+        {npc.easy_starter ? (
+          <div style={{
+            position: "absolute", top: 8, left: 8,
+            padding: "3px 9px",
+            background: "linear-gradient(180deg, var(--b-200), var(--b-400))",
+            boxShadow: "inset 0 0 0 1px var(--b-600), inset 0 1px 0 rgba(255,250,220,0.6)",
+          }}>
+            <span className="eyebrow" style={{ fontSize: 9, color: "var(--w-300)", letterSpacing: "0.08em" }}>
+              Great for your first session
+            </span>
+          </div>
+        ) : null}
       </div>
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div style={{ fontFamily: "var(--f-display)", fontSize: 17, letterSpacing: "0.04em", color: "var(--ink-900)", lineHeight: 1.15 }}>
@@ -115,6 +130,14 @@ function RosterCard({ npc, onPlay, busy }) {
         <div className="eyebrow" style={{ color: "var(--crimson)", marginTop: 3, fontSize: 10 }}>
           {ident || "of the Sword Coast"}
         </div>
+        {/* #dogfood onboarding (option a): a plain-language playstyle hint so a no-prior-knowledge
+            player has a BASIS TO CHOOSE — each card teaches itself how the figure PLAYS. Derived
+            engine-side from the class (pure class→phrase, no fabricated lore); absent-safe. */}
+        {npc.playstyle ? (
+          <div className="body-sm" style={{ color: "var(--ink-600)", marginTop: 4, fontSize: 11, fontStyle: "italic" }}>
+            {npc.playstyle}
+          </div>
+        ) : null}
         {npc.backstory ? (
           <p className="hand" style={{ fontSize: 13, color: "var(--ink-700)", margin: "8px 0 0", lineHeight: 1.4 }}>
             {npc.backstory}

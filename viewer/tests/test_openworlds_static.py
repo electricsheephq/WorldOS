@@ -1408,6 +1408,17 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertIn('params.set("run", activeCampaign.runId);', source)
         self.assertNotIn('params.set("campaign", campaignId);', source)
 
+    def test_roster_card_renders_beginner_playstyle_guidance(self):
+        # #dogfood onboarding: the roster card must give a newcomer a BASIS TO CHOOSE — a
+        # plain-language playstyle hint (option a) AND an "easy starter" tag (option b). Both are
+        # read straight off the additive roster-surface fields; the viewer fabricates no lore.
+        source = (Path(__file__).resolve().parents[1] / "openworlds" / "screen-roster.jsx").read_text(encoding="utf-8")
+        # the card renders the class-derived playstyle hint carried on the surface
+        self.assertIn("npc.playstyle", source)
+        # the easy-starter subset is surfaced with a beginner-friendly label
+        self.assertIn("npc.easy_starter", source)
+        self.assertIn("Great for your first session", source)
+
     def test_monitor_play_campaign_links_openworlds_not_legacy_dashboard(self):
         source = (Path(__file__).resolve().parents[1] / "monitor.html").read_text(encoding="utf-8")
 

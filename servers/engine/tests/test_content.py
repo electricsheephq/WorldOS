@@ -707,6 +707,63 @@ def test_roster_surface_caps_the_unfiltered_roster():
     assert full["total"] == capped["total"]
 
 
+def test_class_playstyle_hint_is_a_pure_class_derived_phrase():
+    # The class->playstyle helper is a pure, read-only lookup: a plain-language teaser for the
+    # newcomer ("what is it like to play this class?"). Known simple classes get a hint; an
+    # unknown/blank class returns "" (absent-safe — the card just shows no hint).
+    assert content.class_playstyle_hint("Fighter")  # a real phrase, not empty
+    assert content.class_playstyle_hint("Wizard")
+    # case-insensitive on the class name
+    assert content.class_playstyle_hint("fighter") == content.class_playstyle_hint("Fighter")
+    # absent-safe: no class -> no hint (the card stays clean, never a fabricated phrase)
+    assert content.class_playstyle_hint("") == ""
+    assert content.class_playstyle_hint("Some Unknown Homebrew Class") == ""
+    # the hint is short, plain language (a single clause), never lore — bounded length
+    assert len(content.class_playstyle_hint("Fighter")) <= 60
+
+
+def test_roster_cards_carry_a_playstyle_hint_derived_from_class():
+    # ADDITIVE: every card that HAS a class exposes a plain-language `playstyle` hint derived from
+    # that class (option a — each card teaches itself). Cards without a class have it blank.
+    r = content.roster_surface("baldurs-gate", char_class="Wizard")
+    assert r["characters"]
+    for c in r["characters"]:
+        assert "playstyle" in c  # the field is always present (absent-safe shape)
+        assert c["playstyle"] == content.class_playstyle_hint(c.get("class", ""))
+    # a Wizard card carries the wizard hint specifically (not empty)
+    assert all(c["playstyle"] for c in r["characters"])
+
+
+def test_recommended_cards_flag_an_easy_starter_subset():
+    # BEGINNER ENTRY (option b): the recommended set marks a small EASY-STARTER subset — simple,
+    # forgiving classes at a low-ish level — with `easy_starter:true` so a first-timer has an
+    # obvious safe pick. The flag is additive and present (bool) on every recommended card.
+    rec = content.roster_surface("baldurs-gate", recommended_only=True)
+    cards = rec["characters"]
+    assert cards, "the recommended set should not be empty for the shipped roster"
+    for c in cards:
+        assert isinstance(c.get("easy_starter"), bool)  # always a bool, never missing
+        assert "playstyle" in c  # recommended cards also teach themselves
+    starters = [c for c in cards if c["easy_starter"]]
+    assert starters, "at least one easy-starter should be flagged for a newcomer"
+    # an easy-starter is a SIMPLE, forgiving class at a low-ish level (never a fragile caster)
+    simple = {"fighter", "barbarian", "cleric", "rogue", "paladin", "ranger"}
+    for c in starters:
+        assert (c.get("class") or "").strip().lower() in simple, c.get("name")
+        assert int(c.get("level") or "99") <= content._EASY_STARTER_MAX_LEVEL, c.get("name")
+    # the easy-starter subset is a STRICT subset (curation, not the whole recommended set)
+    assert len(starters) <= len(cards)
+
+
+def test_easy_starter_flag_absent_safe_off_recommended_path():
+    # The easy-starter flag only rides the recommended surface; the full-roster path is byte-stable
+    # except for the additive playstyle field — easy_starter defaults False there (absent-safe).
+    full = content.roster_surface("baldurs-gate", char_class="Wizard")
+    for c in full["characters"]:
+        # a fragile caster on the full surface is never auto-flagged an easy starter
+        assert c.get("easy_starter", False) is False
+
+
 def test_start_character_origins(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
