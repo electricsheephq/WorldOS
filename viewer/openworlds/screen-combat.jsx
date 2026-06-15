@@ -99,6 +99,12 @@ function ScreenCombat({ onNavigate, state }) {
   const zones = Array.isArray(surface?.zones) ? surface.zones : [];
   const battleLog = Array.isArray(surface?.battleLog) ? surface.battleLog : [];
   const encounter = surface?.encounter || { active: false, name: "No active encounter" };
+  // FIX A (combat scene backdrop): the servable scene scope the server projects on
+  // the location block (`location:<id>`). Mirror the dialogue screen's sceneScope
+  // fallback so an older surface without imageScope still resolves via location.id;
+  // empty string -> CombatMap renders no backdrop (graceful, transparent).
+  const sceneScope = surface?.location?.imageScope ||
+    (surface?.location?.id ? `location:${surface.location.id}` : "");
   const commandCenter = surface?.commandCenter || {};
   const economy = surface?.actionEconomy || {};
   const canAct = Boolean(surface?.can_act);
@@ -212,7 +218,7 @@ function ScreenCombat({ onNavigate, state }) {
           </div>
 
           {encounter.active ? (
-            <CombatMap tokens={tokens} zones={zones} selected={selected?.id} onSelect={setSelectedToken} />
+            <CombatMap tokens={tokens} zones={zones} selected={selected?.id} onSelect={setSelectedToken} sceneScope={sceneScope} />
           ) : (
             <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
           )}
@@ -444,7 +450,7 @@ function CombatEmptyState({ status, onNavigate }) {
    A real measured-tile grid (range/LoS/flanking) is the evidence-gated #461 future: it requires
    the engine to gain authoritative coordinates (positionAuthority:"engine" + grid.mode==="grid").
    When that lands, a grid board plugs in here behind that flag; until then, zones are the truth. */
-function CombatMap({ tokens, zones, selected, onSelect }) {
+function CombatMap({ tokens, zones, selected, onSelect, sceneScope }) {
   const named = (zones || []).map((z) => (typeof z === "string" ? z : z && z.name)).filter(Boolean);
   const FIELD = "The Field";
   let zoneNames = named.slice();
@@ -467,9 +473,36 @@ function CombatMap({ tokens, zones, selected, onSelect }) {
       overflow: "hidden",
       display: "flex", gap: 10, padding: 12,
     }}>
+      {/* FIX A (combat scene backdrop): render the location/scene art as an
+          absolute-inset cover image BEHIND the zone bands (zIndex 0), mirroring the
+          dialogue screen's backdrop (screen-dialogue.jsx:177). The zone bands keep
+          their semi-transparent fills so the place reads through. <Img> degrades to a
+          silhouette/placeholder when the scope is empty/unservable, so an empty
+          sceneScope is a graceful no-op (the gradient base layer stays visible). */}
+      {sceneScope ? (
+        <Img
+          scope={sceneScope}
+          label="scene · battlefield"
+          w="100%"
+          h="100%"
+          fit="cover"
+          style={{ position: "absolute", inset: 0, zIndex: 0 }}
+        />
+      ) : null}
+      {/* Darkening scrim so token art / HP bars / zone labels keep contrast over a
+          bright backdrop (matches the dialogue vignette intent). Behind the bands. */}
+      {sceneScope ? (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 0,
+          background: "radial-gradient(ellipse at 50% 50%, rgba(20,10,4,0.35), rgba(20,10,4,0.72) 100%)",
+          pointerEvents: "none",
+        }} />
+      ) : null}
       {zoneNames.map((zn) => (
         <div key={zn} style={{
           flex: 1, minWidth: 0,
+          // FIX A: sit the zone bands above the absolute backdrop + scrim (zIndex 0).
+          position: "relative", zIndex: 1,
           display: "flex", flexDirection: "column",
           background: "rgba(30,18,10,0.30)",
           boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.18)",
@@ -535,9 +568,39 @@ function hpBarFillInit(t, isFoe, ratio) {
 /* A single combatant token — now a FLOW element laid out inside its zone band (no absolute
    x/y on a fake grid). Visual language (circle, foe/ally tint, selection glow, honest HP bar,
    name) is preserved; only positioning changed from x/y-on-grid to zone-grouped flow. */
+/* FIX B (condition chips): a single compact status badge below a token, styled after
+   the existing CueChip (~line 397). Kept tiny so a row of 2-3 never overflows the
+   48px token column. Harmless slug-casing of the engine's condition string. */
+function ConditionChip({ condition }) {
+  const text = String(condition || "");
+  if (!text) return null;
+  return (
+    <span title={text} style={{
+      fontFamily: "var(--f-mono)",
+      fontSize: 7,
+      lineHeight: 1.2,
+      textTransform: "uppercase",
+      letterSpacing: "0.04em",
+      color: "var(--ink-700)",
+      padding: "1px 3px",
+      background: "rgba(176,141,87,0.16)",
+      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.30)",
+      maxWidth: 44,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    }}>{text}</span>
+  );
+}
+
 function CombatToken({ t, selected, onClick }) {
   const isFoe = t.team === "foe";
   const hpRatio = healthRatio(t);
+  // FIX B: render the first ~3 engine-supplied conditions as chips. No-op ([]/missing
+  // -> nothing renders) so a clean token is byte-for-byte unchanged. The engine is the
+  // sole writer; the viewer only reflects the conditions list already on the token.
+  const conditions = Array.isArray(t.conditions) ? t.conditions.filter(Boolean) : [];
+  const shownConditions = conditions.slice(0, 3);
   return (
     <button onClick={onClick} title={t.name} style={{
       position: "relative",
@@ -581,6 +644,17 @@ function CombatToken({ t, selected, onClick }) {
           background: hpBarFill(t, isFoe),
         }} />
       </div>
+      {/* FIX B: condition chips below the HP bar. No-op when there are none. */}
+      {shownConditions.length ? (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 2,
+          justifyContent: "center", maxWidth: 64,
+        }}>
+          {shownConditions.map((c, i) => (
+            <ConditionChip key={`${c}-${i}`} condition={c} />
+          ))}
+        </div>
+      ) : null}
       <div style={{
         fontFamily: "var(--f-display)", fontSize: 8, letterSpacing: "0.1em",
         textTransform: "uppercase", whiteSpace: "nowrap", maxWidth: 64,
