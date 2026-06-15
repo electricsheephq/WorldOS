@@ -152,6 +152,23 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode, liveSession }) {
       return;
     }
     setBusyTravel(option.to);
+    // #913/#623 (map leg): map click-to-travel posts a move to /move that resolves a ~100s DM beat,
+    // then navigates to the table — but it never armed the app-level narrating indicator, so the
+    // table opened on a SPINNER-LESS dead wait (the frozen-feel #826/#648 killed for the table's own
+    // postMove). Mirror ScreenTable.postMove EXACTLY: arm the pending gate + record the chronicle echo
+    // OPTIMISTICALLY, the instant the player commits and BEFORE the /move round-trip resolves, so the
+    // "Narrating…" affordance is already up when we navigate to the table. Both live on the app-level
+    // liveSession hook, so the arm + echo SURVIVE this screen unmounting on onNavigate("table").
+    // Pure viewer presentation: no engine write, no /move-contract change — reuses armPending/
+    // abandonPending (never forks the pending state machine).
+    const travelText = option.name || option.to;
+    const armText = window.neutralizeMarkup ? window.neutralizeMarkup(String(travelText)) : String(travelText);
+    // The chronicle echo's `who` is cosmetic here — the atlas surface (unlike the table's
+    // /session-surface) carries no party roster, so a player-initiated travel is echoed as "You".
+    if (typeof liveSession?.recordPlayerEcho === "function") {
+      liveSession.recordPlayerEcho("You", armText, option.move);
+    }
+    if (typeof liveSession?.armPending === "function") liveSession.armPending(armText);
     try {
       const response = await fetch("/move", {
         method: "POST",
@@ -162,9 +179,15 @@ function ScreenMap({ onNavigate, state, campMode, setCampMode, liveSession }) {
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.reason || `move ${response.status}`);
       }
-      toast({ kind: "quest", title: "Travel intent sent", body: option.name || option.to });
+      toast({ kind: "quest", title: "Travel intent sent", body: travelText });
       onNavigate("table");
     } catch (error) {
+      // The POST was rejected — the move never started, so authoritatively roll back the optimistic
+      // arm (abandonPending bypasses the #648 arm-grace; it's surgical — clears ONLY the move we just
+      // armed, never a newer live turn). Falls back to clearPending on an older bundle that predates
+      // abandonPending. No phantom "Narrating…" stranded on the table after a dead /move sink.
+      if (typeof liveSession?.abandonPending === "function") liveSession.abandonPending(armText);
+      else if (typeof liveSession?.clearPending === "function") liveSession.clearPending();
       toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
     } finally {
       setBusyTravel("");
