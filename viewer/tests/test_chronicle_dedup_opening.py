@@ -187,6 +187,12 @@ def test_real_prose_mentioning_a_beat_or_transition_survives():
         "Start of the chapter that defined her, though she did not yet know it.",
         "Beginning the act of contrition, the old priest knelt in the ash.",
         "He took up his part of the story and carried it to the gate.",
+        # The "act of <X>" idiom (mercy/war/treason) is the worst over-strip risk, and the
+        # arm-1 "<end/start/beginning of the …>" form must spare it: the engine seam note ends
+        # on its own struct (beat|scene), but here the struct is "act"/"chapter" or sits
+        # mid-sentence with prose trailing, so the terminal-anchored arms leave it untouched.
+        "At the start of the act, the curtain rose on a darkened stage.",
+        "The beginning of the act of treason was a single forged letter.",
     ):
         out = _sanitize(prose)
         assert out.strip() == prose.strip(), f"real in-world prose was wrongly stripped: {prose!r} -> {out!r}"
