@@ -18,6 +18,37 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.4-rc1] — 2026-06-16
+
+**Player-Ready Beta candidate — the first genuinely independent, resumable game.**
+Cut as a save-checkpoint: WorldOS can now be cold-opened, played, quit, and **resumed**
+as a real independent game on the production path (`play.sh` + the OpenWorlds viewer —
+the exact path the native `.app` runs).
+
+- **State isolation + Resume re-attach (#933):** the app saves to an isolated per-user
+  state dir (`~/.worldos/state`); the launcher catalog surfaces layered saves as
+  resumable; `play.sh` re-attaches the saved campaign via `WORLDOS_RESUME_CAMPAIGN`
+  (move sink preserved, no fresh cold-open). Fresh launch truncates; resume appends —
+  proven by `test_play_state_isolation_resume.sh`, `test_resume_reattach.py`, and
+  `test_launcher_catalog_layering.py`.
+- **Active hero is the authoritative `kind=player` actor (#932, #935):** the seated PC is
+  the engine's actor (`surface.actor` → first `kind=player` PC → `party[0]`), never a
+  companion the engine happened to order first — on both the initial seed (#932) and the
+  live-update correction (#935). Fixes the "ACTIVE ASTARION / Lvl 1 Adventurer" mis-seat.
+- **Scripted provider hermetic vs injected state dir (#934):** the QA scripted provider
+  pins both state-dir env names + chooses a free port, so the part-A native gate mints a
+  live `can_act:true` surface under the app's `WORLDOS_STATE_DIR` injection.
+
+Proven end-to-end (real claude DM, headless production path): cold-open seated a proper
+PC (Rolan, Tiefling Wizard 3 Evoker), live surface, a real player move resolved, save
+persisted, quit → catalog shows it resumable → resume re-attached the same campaign live.
+The scripted part-A native gate PASSES on the real built `.app`.
+
+Known: the literal `.app` GUI cold-open fires a one-time per-build macOS Keychain prompt
+(ad-hoc signature); `claude setup-token` → `~/.worldos/claude-token` makes it popup-free.
+
+---
+
 ## [1.0.3] — 2026-05-29
 
 **Renamed ClawDnD → WorldOS.** The product is now **WorldOS** — "simulate living,
