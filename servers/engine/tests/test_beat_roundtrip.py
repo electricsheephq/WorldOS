@@ -637,3 +637,27 @@ def test_persist_beat_remembered_return_is_not_quadratic(cid):
         assert "fact" in row and "memory_count" in row
     # the per-item fact echoes back, not the whole list
     assert [r["fact"] for r in out["remembered"]] == facts
+
+
+# ── tolerance: a bare/empty campaign_id resolves the active campaign ──────────
+# The DM occasionally emits a bare persist_beat() (a model slip — SKILL.md step 7 forbids it).
+# A hard "Field required" rejection RED-caps the WHOLE behavioral gate (FATAL
+# no_rejected_tool_calls), tanking every lens to 2.5 on an otherwise-coherent session — the
+# recurring #897 / RRI-27d8002 false-cap. persist_beat now resolves the active campaign.
+
+
+def test_persist_beat_bare_campaign_id_resolves_active_not_rejected(cid):
+    # No campaign_id passed: resolve the active (sole) campaign and persist there, NOT reject.
+    # `cid` is the only campaign in the state dir, so active_campaign_id == cid.
+    out = server.persist_beat(events=[{"kind": "narration", "text": "bare-call resolved event"}])
+    assert "error" not in out, out
+    assert any("bare-call resolved event" in (e.get("text") or "") for e in out["logged"])
+    rows = store.read_log_all(cid)
+    assert any("bare-call resolved event" in str(getattr(r, "text", r)) for r in rows)
+
+
+def test_persist_beat_bare_no_args_is_graceful_noop(cid):
+    # The exact slip that was rejecting: persist_beat() with NO args. A graceful no-op now.
+    out = server.persist_beat()
+    assert "error" not in out, out
+    assert out["logged"] == [] and out["remembered"] == [] and out["decision"] is None

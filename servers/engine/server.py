@@ -11157,7 +11157,7 @@ def scene_context(
 
 @mcp.tool()
 def persist_beat(
-    campaign_id: str,
+    campaign_id: str = "",
     events: Optional[list] = None,
     memories: Optional[list] = None,
     decision: Optional[dict] = None,
@@ -11173,6 +11173,19 @@ def persist_beat(
     aliases, resolved tolerantly), ``decision`` (one ``{"summary","options"?,"chosen"?,
     "rationale"?,"actor_ids"?,"sets_flag"?}``), and ``advance`` (``{"phases"?,"to"?,"note"?}``
     to move the clock; skipped during combat)."""
+    # Tolerate a bare/empty campaign_id (a recurring DM model-slip). SKILL.md step 7 says
+    # "never emit a bare persist_beat()", but the model occasionally emits {} anyway — and a
+    # hard "Field required" rejection RED-caps the WHOLE behavioral gate (the FATAL
+    # no_rejected_tool_calls assertion), tanking every lens to 2.5 on an otherwise-coherent
+    # session (the recurring #897 / RRI-27d8002 false-cap). Resolve the active (most-recent)
+    # campaign the SAME way the read-only player facade does (store.active_campaign_id), so the
+    # slip degrades to a graceful checkpoint/no-op instead of a fatal contract-looking error.
+    # Additive: an explicit campaign_id is used verbatim; only the empty case changes.
+    campaign_id = (campaign_id or "").strip()
+    if not campaign_id:
+        campaign_id = _active_campaign_id() or ""
+    if (events or memories or decision or advance is not None) and not campaign_id:
+        return {"error": "persist_beat: no campaign_id provided and no active campaign to resolve — pass campaign_id"}
     logged: list[dict] = []
     remembered: list[dict] = []
     decision_out: Optional[dict] = None
