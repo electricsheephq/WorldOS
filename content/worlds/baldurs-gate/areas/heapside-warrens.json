@@ -3,6 +3,7 @@
   "name": "the Heapside Warrens",
   "description": "The oldest and lowest district of the Lower City, heaped against the original harbor wall and rebuilt so many times that no two buildings share a right angle. The streets are shoulder-width, the tenements lean into one another for structural support, and the alleys beneath them are a permanent dusk. Heapside was already the Gate's poorest quarter before the crisis; after, it swallowed the overflow — families from the Netherbrain's scar, discharged Fist soldiers without pensions, tadpole-survivors who could not go home. A dozen unofficial 'ward bosses' keep an uneasy order the watch no longer attempts, and their negotiations are conducted in the language of debt.",
   "region": "Baldur's Gate",
+  "hex": [-2, 2],
   "connections": [
     "Baldur's Gate — Lower City",
     "the Siltwharf Steps",

@@ -3,6 +3,7 @@
   "name": "the Siltwharf Steps",
   "description": "A long flight of weathered stone stairs descending from the lower districts to a muddy tidewater wharf, slick with river-silt and loud with gulls. Fisherfolk and smugglers share the lower landings, and a half-sunk barge serves as an impromptu tavern at the waterline. The Steps are the quickest way down to the boats for anyone who would rather not pass the toll-gates, which makes them a favorite of those with reasons to avoid the watch.",
   "region": "Baldur's Gate",
+  "hex": [-2, 1],
   "connections": [
     "Bloomridge Market",
     "Wyrm's Crossing & the Risen Road"

@@ -495,6 +495,53 @@ class AtlasSurfaceTests(unittest.TestCase):
         # the fogged place never leaks
         self.assertNotIn("Fogged", json.dumps(surface))
 
+    def test_atlas_surface_positions_pins_from_authored_hex(self):
+        # sprint2/atlas-hex-coords: authored axial-hex (PRESENTATION ONLY) must drive the
+        # atlas pin's screen position via _atlas_hex_position (x = 50 + q*18 + r*9;
+        # y = 50 + r*14, clamped). Without authored coords the viewer force-sims pins into
+        # a meaningless idx-grid scatter ("locations all over the place"). This locks the
+        # hub at center and two outlying areas at their authored, DISTINCT positions, so a
+        # regression that drops the hex authoring (or stops projecting it) fails here.
+        snapshot = {
+            "id": "camp_hex",
+            "title": "Atlas Coords",
+            "world_id": "baldurs-gate",
+            "current_location_id": "loc-lower-city",
+            "locations": {
+                # the hub, anchored at the map center (50, 50)
+                "loc-lower-city": {
+                    "id": "loc-lower-city", "name": "Baldur's Gate — Lower City",
+                    "visited": True, "hex": [0, 0],
+                    "connections": ["loc-wyrms-rock", "loc-gray-harbor"],
+                },
+                # SE fortress-island clamps to the east edge
+                "loc-wyrms-rock": {
+                    "id": "loc-wyrms-rock", "name": "Wyrm's Rock Fortress",
+                    "visited": False, "discovered": True, "hex": [3, 0],
+                    "connections": ["loc-lower-city"],
+                },
+                # W docks clamp to the west edge — distinct from the hub and the fortress
+                "loc-gray-harbor": {
+                    "id": "loc-gray-harbor", "name": "the Gray Harbor",
+                    "visited": False, "discovered": True, "hex": [-3, 1],
+                    "connections": ["loc-lower-city"],
+                },
+            },
+        }
+
+        surface = server.build_atlas_surface(
+            snapshot, campaign_id="camp_hex", live=True, is_live_view=True
+        )
+
+        pins = {loc["id"]: (loc["x"], loc["y"]) for loc in surface["known_locations"]}
+        # hub at center; outliers at their authored, clamped positions
+        self.assertEqual(pins["loc-lower-city"], (50, 50))   # 50 + 0*18 + 0*9 , 50 + 0*14
+        self.assertEqual(pins["loc-wyrms-rock"], (92, 50))   # 50 + 3*18 + 0*9 -> clamp 92
+        self.assertEqual(pins["loc-gray-harbor"], (8, 64))   # 50 - 3*18 + 1*9 -> clamp 8 ; 50 + 1*14
+        # every pin lands on a DISTINCT (x, y) — the whole point of authoring coords
+        coords = list(pins.values())
+        self.assertEqual(len(set(coords)), len(coords))
+
     def assert_no_private_keys(self, value) -> None:
         private_keys = {
             "notes",

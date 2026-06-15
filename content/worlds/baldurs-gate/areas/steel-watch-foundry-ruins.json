@@ -3,6 +3,7 @@
   "name": "the Steel Watch Foundry Ruins",
   "description": "The assembly halls beneath Wyrm's Rock that built the construct army Gortash used to police the city — and which the battle detonated. Access is down a broad freight-ramp off the fortress's inner courtyard, through blast-bent doors that never quite closed again. Inside: vaulted chambers reeking of burnt forge-oil and ozone, assembly-cradles still holding the half-finished husks of war-constructs that never got their command-runes, and a floor carpeted in the burst casings of those that finished badly. The Flaming Fist posted a nominal guard at the ramp's top in the first week; the guard rotation has since become a matter of active negotiation between sergeants who dislike going down there and officers who don't want to admit why. Scavengers have been through, and so has someone more careful — control-cores have been removed from a selective set of husks and the missing slots are clean, not looted-rough. The Gondian artificers who were enslaved here, now free, come back on their own time to reclaim their tools, mourn their dead, and argue in Gnomish about what, if anything, should be rebuilt.",
   "region": "Baldur's Gate",
+  "hex": [2, 1],
   "connections": [
     "Wyrm's Rock Fortress",
     "the Counting House",

@@ -3,6 +3,7 @@
   "name": "the Undercity Sewers",
   "description": "A vast network of vaulted brick tunnels threading beneath the Lower City, older than the walls above and more honestly built. Torchlight carries six feet before the dark closes in; the trickle of water is constant and the smell is everything you expect. The Absolute crisis cracked the deeper chambers — a section near the harbor still runs with something that is not quite water and does not quite dry — and Bhaalist murder-shrines left in the rock-cut alcoves have not all been found. The Guild moves freely here; so, it is increasingly suspected, does something else. Street-access grates are everywhere and the stairs that lead up to the Elfsong's cellar are an open secret.",
   "region": "Baldur's Gate",
+  "hex": [-1, 3],
   "connections": [
     "Baldur's Gate — Lower City",
     "Little Calimshan",

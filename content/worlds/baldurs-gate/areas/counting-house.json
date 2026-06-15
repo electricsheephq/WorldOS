@@ -3,6 +3,7 @@
   "name": "the Counting House",
   "description": "A basalt-faced hall that straddles the boundary between the Upper and Lower cities, its vaulted interior always smelling of ink, candle-wax, and old money. Above ground the patriars' coin-clerks argue over ledgers behind iron grilles; below ground the Guild has long kept its own set of books. The Absolute crisis scarcely touched the facade — the sums still balance, the fees are still collected — but the personnel have changed, and the trapdoor to the lower vaults opens a fraction more freely than it used to.",
   "region": "Baldur's Gate",
+  "hex": [2, -2],
   "connections": [
     "Baldur's Gate — Upper City",
     "Baldur's Gate — Lower City"

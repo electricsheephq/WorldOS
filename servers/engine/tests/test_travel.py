@@ -308,6 +308,36 @@ def test_map_kind_none_without_coords():
     assert c.map_kind == "none" and c.locations["a"].hex is None
 
 
+def test_ingested_area_hex_roundtrips_through_seed_world():
+    """PRESENTATION-ONLY atlas coords authored on an *ingested area* file must survive
+    seed_world's area-ingestion path (content.py) the same way region hex does. This is
+    additive: an area without a `hex` key seeds hex=None (today's behavior). Guards the
+    regression where the area-ingestion Location(...) ctor dropped the authored coords and
+    the atlas force-simmed every area into a meaningless scatter (sprint2/atlas-hex-coords).
+    Travel/adjacency is unaffected — coords are never read for movement."""
+    world = content.load_world_data("baldurs-gate")
+    c = content.seed_world(world)
+    # map_kind derives "hex" because authored locations now carry coords.
+    assert c.map_kind == "hex"
+    # A representative sample of AREA files (content/worlds/baldurs-gate/areas/*.json) and
+    # REGION anchors (world.json) carry their authored axial-hex through the engine snapshot.
+    expected = {
+        "loc-wyrms-rock": (3, 0),          # SE fortress-island
+        "loc-gray-harbor": (-3, 1),        # W docks
+        "loc-patriars-walk": (2, -3),      # far-N patriar district
+        "loc-undercity-sewers": (-1, 3),   # below, south
+        "loc-lower-city": (0, 0),          # the hub anchored at map center
+        "loc-upper-city": (2, -4),         # north region anchor
+    }
+    for lid, want in expected.items():
+        assert c.locations[lid].hex == want, f"{lid}: {c.locations[lid].hex} != {want}"
+    # Every authored hex is DISTINCT once mapped to the viewer's pixel grid (no two pins
+    # collide) — the whole point of authoring coords instead of force-simming.
+    coords = [tuple(loc.hex) for loc in c.locations.values() if loc.hex is not None]
+    assert len(coords) >= 20  # 14 areas + the seeded region anchors
+    assert len(set(coords)) == len(coords)  # all q,r distinct
+
+
 # --- party-location propagation on travel (state_integrity defect 2) --------
 # When the PARTY moves, current_location_id AND every party member's location_id
 # (the PC + companions, who travel together) move to the new place; a standalone

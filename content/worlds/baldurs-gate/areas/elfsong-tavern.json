@@ -3,6 +3,7 @@
   "name": "the Elfsong Tavern",
   "description": "A sprawling, smoke-dark inn on the Lower City's main drag, its common room permanently lit by tallow candles and the glow of argument. Three floors of creaking galleries look down on a bar where Flaming Fist veterans drink beside tiefling refugees and tadpole-survivors who have nowhere quieter to go. The tavern owes its name to a ghostly elven voice that rises, unbidden, between the second and third bell — mournful, wordless, beautiful in the way a wound is beautiful. The barkeep does not comment on it. Neither does anyone who stays more than a night.",
   "region": "Baldur's Gate",
+  "hex": [0, 1],
   "connections": [
     "Baldur's Gate — Lower City",
     "Bloomridge Market"
