@@ -161,10 +161,17 @@ eval('(async () => { ' + script + ' })()')
 """
 
 
+# A REAL user-home save card as the viewer catalog now projects it (#933 follow-up): source
+# "user", id "user:<run>:<campaign>", runId = the per-run dir name under <home>/<run>, canResume
+# True. This is the SHIPPED .app shape — the GA bug was that such a save never reached the catalog
+# at all (it lived at <home>/<run>/campaigns/<id> which the launcher catalog never scanned). The
+# end-to-end proof that the real catalog now PRODUCES this card shape lives in
+# test_launcher_catalog_layering.py; here we drive the launcher's resume affordances against it.
 _SAVED_CARD = {
-    "id": "play:play-20260101-120000:camp_deadbeef",
+    "id": "user:play-20260101-120000:camp_deadbeef",
     "campaign_id": "camp_deadbeef",
     "runId": "play-20260101-120000",
+    "source": "user",
     "title": "The Embergloom Pact",
     "world": "baldurs-gate",
     "canResume": True,

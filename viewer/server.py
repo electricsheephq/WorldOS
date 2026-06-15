@@ -1315,13 +1315,35 @@ def _campaign_catalog_roots() -> list[dict]:
 
     The native app and the exact OpenWorlds surface need the same product answer:
     "what local play or QA runs exist?"  We scan the viewer's active state dir,
+    the user state home's per-run children (the SHIPPED .app layout — see below),
     repo-local play-state/*, and repo-local qa/state/* without importing the
     engine and without opening any write path.
+
+    USER-HOME PER-RUN SCAN (#933 follow-up — the GA blocker): the shipped .app exports a
+    BARE user state home (~/.worldos/state else ~/.clawdnd/state) as WORLDOS_STATE_DIR, and
+    scripts/play.sh nests each game under ``<home>/<run>/campaigns/<id>``. The bare-root
+    "play" scan below only sees ``<home>/campaigns`` (empty under the .app), so a freshly
+    played save would be INVISIBLE to the launcher — no Resume affordance, Group B
+    unreachable. So we ALSO scan each ``<home>/<run>/`` child that has a ``campaigns/`` dir
+    and mark it resumable, projecting the real ``<run>`` (the run-dir name) as run_id — NOT
+    the "state" fallback — so play.sh's resume gate
+    ``[ -f "$STATE_DIR/campaigns/$id/snapshot.json" ]`` (which keys off that same ``<run>``)
+    finds it. Additive: when WORLDOS_STATE_DIR is unset (dev/QA) the home has no
+    ``<run>/campaigns`` children (dev writes to repo-local play-state/), so this scan yields
+    nothing and the catalog is byte-identical.
     """
     roots: list[dict] = []
     seen: set[str] = set()
 
-    def add(source: str, run_id: str, state_root: Path, campaigns_dir: Path, *, current_state: bool = False) -> None:
+    def add(
+        source: str,
+        run_id: str,
+        state_root: Path,
+        campaigns_dir: Path,
+        *,
+        current_state: bool = False,
+        resumable: bool = False,
+    ) -> None:
         key = _resolved(campaigns_dir)
         if key in seen:
             return
@@ -1332,10 +1354,23 @@ def _campaign_catalog_roots() -> list[dict]:
             "state_root": state_root,
             "campaigns_dir": campaigns_dir,
             "current_state": current_state,
+            "resumable": resumable,
         })
 
     state_root = _state_dir()
     add("play", _catalog_run_id(state_root), state_root, state_root / "campaigns", current_state=True)
+
+    # The shipped .app's per-user home holds each game under <home>/<run>/campaigns/<id>.
+    # state_root IS that bare home (mirrors servers/engine/store.state_dir()). Scan its per-run
+    # children so the user's REAL saved campaigns are listed AND resumable, with run_id=<run>
+    # (the run-dir name, passed explicitly — the home's basename is not always "state").
+    if state_root.is_dir():
+        for run in sorted(state_root.iterdir()):
+            if not run.is_dir():
+                continue
+            cdir = run / "campaigns"
+            if cdir.is_dir():
+                add("user", run.name, run, cdir, resumable=True)
 
     play_state = _HERE.parent / "play-state"
     if play_state.is_dir():
@@ -5670,6 +5705,11 @@ def _openworlds_campaigns(attached_campaign: str = "", *, move_sink_live: bool =
             cdir = root["campaigns_dir"]
             campaign_id = snap.parent.name
             root_is_current = bool(root["current_state"]) and _resolved(cdir) == current_campaigns_dir
+            # A user-home per-run root (the shipped .app's <home>/<run>/campaigns) is resumable:
+            # play.sh re-attaches it by runId + campaign_id (#933). It is NOT the bare "current"
+            # state dir, so root_is_current stays False (and `current` below stays False — it is
+            # not the live-attached run), but its card must offer Resume.
+            can_resume = root_is_current or bool(root.get("resumable"))
             try:
                 summary = build_openworlds_campaign_summary(
                     str(root["source"]),
@@ -5680,7 +5720,7 @@ def _openworlds_campaigns(attached_campaign: str = "", *, move_sink_live: bool =
                     state_root=root["state_root"],
                     last_played=recency,
                     current=root_is_current and campaign_id == attached_campaign,
-                    can_resume=root_is_current,
+                    can_resume=can_resume,
                     move_sink_live=move_sink_live,
                     now=now,
                 )

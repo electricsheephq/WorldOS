@@ -84,8 +84,20 @@ grep -q '"env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}
   && pass "play.sh engine config sets both state-dir names" \
   || fail "play.sh engine config no longer sets both state-dir names"
 
-# --- (5) RESUME gate — the exact condition play.sh uses to confirm a re-attach. ----------------
-# play.sh: RESUME=1 iff WORLDOS_RESUME_CAMPAIGN set AND a snapshot exists under STATE_DIR.
+# --- (5) RESUME gate + CATALOG visibility — the REAL LAYERED structure. ------------------------
+# DE-CONFLATED (#933 follow-up): the shipped .app exports the BARE user state home as
+# WORLDOS_STATE_DIR (= $USERDIR here), and play.sh nests THIS game under <home>/$RUN. So the engine
+# (and play.sh's resume gate) operate on the PER-RUN dir $USERDIR/$RUN, while the VIEWER catalog only
+# ever sees the bare home $USERDIR. The earlier fixture pointed the engine state dir straight at the
+# per-run dir AND only checked the gate — hiding the layering, so a catalog that never scans
+# <home>/<run> still passed. We now build the real layout and assert BOTH the gate AND that the
+# viewer catalog, pointed at the bare home, surfaces the save with run_id=$RUN — it FAILS if the
+# catalog doesn't scan the per-run dir or the run_id mismatches.
+USER_HOME="$USERDIR"                 # the BARE state home the .app exports (NOT a per-run dir)
+RUN_ID="play-fixture-run"            # play.sh's $RUN under that home
+PER_RUN_DIR="$USER_HOME/$RUN_ID"     # == play.sh's STATE_DIR = <home>/<run>
+mkdir -p "$PER_RUN_DIR"
+# play.sh: RESUME=1 iff WORLDOS_RESUME_CAMPAIGN set AND a snapshot exists under STATE_DIR (=per-run).
 resume_gate() {  # $1=STATE_DIR $2=RESUME_CAMPAIGN_REQ ; echoes RESUME (1/0)
   local state_dir="$1" req="$2" RESUME=0
   if [ -n "${req//[[:space:]]/}" ] && [ -f "$state_dir/campaigns/$req/snapshot.json" ]; then
@@ -93,8 +105,9 @@ resume_gate() {  # $1=STATE_DIR $2=RESUME_CAMPAIGN_REQ ; echoes RESUME (1/0)
   fi
   echo "$RESUME"
 }
-# Seed a REAL campaign via the engine under the run dir so the gate has a true snapshot to find.
-CID="$(WORLDOS_STATE_DIR="$RUNDIR" CLAWDND_STATE_DIR="$RUNDIR" \
+# Seed a REAL campaign via the engine, pinned to the PER-RUN dir exactly as play.sh pins it, so the
+# save lands at <home>/<run>/campaigns/<id>/snapshot.json — the layered path the catalog must scan.
+CID="$(WORLDOS_STATE_DIR="$PER_RUN_DIR" CLAWDND_STATE_DIR="$PER_RUN_DIR" \
   uv run --directory "$ROOT/servers/engine" python - <<'PY' 2>/dev/null
 import server
 camp = server.start_world("baldurs-gate")["campaign_id"]
@@ -102,19 +115,39 @@ server.start_session(camp, title="resume fixture")
 print(camp)
 PY
 )"
-if [ -z "$CID" ] || [ ! -f "$RUNDIR/campaigns/$CID/snapshot.json" ]; then
+if [ -z "$CID" ] || [ ! -f "$PER_RUN_DIR/campaigns/$CID/snapshot.json" ]; then
   fail "engine fixture seed failed (no snapshot) — CID='$CID'"
 else
-  note "seeded campaign $CID under $RUNDIR"
-  [ "$(resume_gate "$RUNDIR" "$CID")" = "1" ] \
-    && pass "RESUME=1 when the requested campaign's snapshot exists (re-attach armed)" \
+  note "seeded campaign $CID at $PER_RUN_DIR/campaigns/$CID (layered under bare home $USER_HOME)"
+  [ "$(resume_gate "$PER_RUN_DIR" "$CID")" = "1" ] \
+    && pass "RESUME=1 when the requested campaign's snapshot exists under the per-run dir (re-attach armed)" \
     || fail "RESUME gate did NOT arm for an existing saved campaign"
-  [ "$(resume_gate "$RUNDIR" "no-such-campaign-id")" = "0" ] \
+  [ "$(resume_gate "$PER_RUN_DIR" "no-such-campaign-id")" = "0" ] \
     && pass "RESUME=0 for a stale/missing campaign id (falls back to a fresh cold open)" \
     || fail "RESUME gate armed for a NON-existent campaign (would hand a dead table)"
-  [ "$(resume_gate "$RUNDIR" "")" = "0" ] \
+  [ "$(resume_gate "$PER_RUN_DIR" "")" = "0" ] \
     && pass "RESUME=0 when no resume requested (fresh path untouched)" \
     || fail "RESUME gate armed with NO resume request"
+
+  # CATALOG: point the viewer at the BARE home (what the .app exports) and assert it surfaces the
+  # LAYERED save with run_id=$RUN_ID and canResume — the assertion the old fixture lacked. A catalog
+  # that only scans <home>/campaigns (the bug) or projects run_id='state' (the recency fallback) FAILS.
+  CATALOG_OK="$(WORLDOS_STATE_DIR="$USER_HOME" CLAWDND_STATE_DIR="$USER_HOME" \
+    python3 - "$ROOT" "$CID" "$RUN_ID" <<'PY' 2>/dev/null
+import importlib.util, sys
+root, cid, run_id = sys.argv[1], sys.argv[2], sys.argv[3]
+spec = importlib.util.spec_from_file_location("viewer_server", f"{root}/viewer/server.py")
+server = importlib.util.module_from_spec(spec); spec.loader.exec_module(server)
+server._openworlds_catalog_cache = None
+cards = server._openworlds_campaigns("")["campaigns"]
+hit = [c for c in cards if c.get("campaign_id") == cid]
+ok = bool(hit) and hit[0].get("runId") == run_id and hit[0].get("canResume") is True
+print("1" if ok else f"0 cards={len(cards)} match={hit[:1]}")
+PY
+)"
+  [ "$CATALOG_OK" = "1" ] \
+    && pass "viewer catalog (pointed at the bare home) surfaces the layered save with run_id=$RUN_ID + canResume" \
+    || fail "viewer catalog did NOT surface the layered <home>/<run>/campaigns save (got: $CATALOG_OK)"
 fi
 
 # Guard the move-sink-preservation branch is present (append on resume, truncate on fresh).
