@@ -142,6 +142,12 @@ AGENT_TURNS=0
 # Product play state under play-state/ (git-ignored), same layout as play.sh.
 STATE_DIR="$ROOT/play-state/$RUN"
 mkdir -p "$STATE_DIR"
+# #892 follow-up: keep the .app-spawned cold-open `claude -p` (the DM) off the macOS keychain +
+# off any /Volumes TCC prompt so it runs headless. GATED no-op without an env/file credential.
+# Called ONCE here (the ENSEMBLE path; the solo path execs play.sh above, which calls it itself),
+# after STATE_DIR, before the companion pre-seed + DM cold-open below. Defined in
+# qa/lib_beat_driver.sh (sourced above). Never fails a launch.
+clawdnd_isolate_claude_auth
 DM_CFG="$STATE_DIR/dm.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"     # the HUMAN's moves (dashboard /move sink)
 CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"

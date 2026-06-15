@@ -71,6 +71,11 @@ CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
 CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
+# #892 follow-up: keep the cold-open `claude -p` (the DM) off the macOS keychain + off any /Volumes
+# TCC prompt so the duo QA harness runs headless. GATED no-op without an env/file credential (so the
+# Terminal/keychain path is byte-unchanged). Called ONCE here, after STATE_DIR, before the first DM
+# `claude -p` below. Defined in qa/lib_beat_driver.sh (sourced above). Never fails the run.
+clawdnd_isolate_claude_auth
 
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
