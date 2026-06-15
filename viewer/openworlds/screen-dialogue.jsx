@@ -106,7 +106,16 @@ function ParleyEmpty({ status }) {
 
 function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHistory, onNavigate, toast }) {
   const actorName = surface.actor || "Hero";
+  // #751: the conversation TARGET. The header used to name `surface.actor` (the lead PC) — a
+  // parley that named the wrong speaker. When the surface binds an NPC, name THAT NPC and pin to
+  // it for the interaction; the actor's sheet still drives the skill slots below. No npc -> the
+  // header keeps today's behavior (the lead speaker), so the no-target freeform parley is unchanged.
+  const npc = surface.npc && typeof surface.npc === "object" ? surface.npc : null;
+  const npcName = npc && npc.name ? npc.name : "";
   const canAct = Boolean(surface.can_act);
+  // #615: reuse the Relations screen's DispositionDot meter (exported on window) for a live
+  // attitude read while talking — reads the existing disposition band (fine at 0 -> "neutral").
+  const DispositionDot = window.DispositionDot;
   const sceneScope = surface.imageScope ||
     (surface.location_id ? `location:${surface.location_id}` : "");
   // Free-form path: reveal a textarea so the player types their OWN line, then POST that
@@ -184,17 +193,40 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
           display: "flex", justifyContent: "space-between", alignItems: "flex-start",
           zIndex: 3,
         }}>
-          <div style={{
-            padding: "8px 16px",
-            background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
-            color: "var(--b-200)",
-            boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 1px 0 rgba(255,220,170,0.2)",
-            fontFamily: "var(--f-display)",
-            fontSize: 11,
-            letterSpacing: "0.22em",
-            textTransform: "uppercase",
-          }}>
-            Parley · Speaking with {actorName} · {surface.dayLabel || "the table"}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+            <div style={{
+              padding: "8px 16px",
+              background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
+              color: "var(--b-200)",
+              boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 1px 0 rgba(255,220,170,0.2)",
+              fontFamily: "var(--f-display)",
+              fontSize: 11,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+            }}>
+              Parley · Speaking with {npcName || actorName} · {surface.dayLabel || "the table"}
+            </div>
+            {/* #615: live disposition meter for the bound NPC — the same DispositionDot the
+                Relations screen uses, so the player sees where they stand WHILE talking. Reads
+                the existing disposition band (present even at attitude_value 0 -> "neutral"). */}
+            {npc && npc.disposition && DispositionDot && (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "4px 12px",
+                background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
+                boxShadow: "inset 0 0 0 1px var(--w-500)",
+              }}>
+                <span className="eyebrow" style={{ color: "var(--b-300)", letterSpacing: "0.16em", fontSize: 9 }}>
+                  Disposition
+                </span>
+                <DispositionDot d={npc.disposition} />
+                {typeof npc.attitude_value === "number" && (
+                  <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)" }}>
+                    {npc.attitude_value > 0 ? "+" : ""}{npc.attitude_value}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           {/* Approach difficulty for THIS attempt — sets the suggested DC of the check
               the engine projects (easy 10 / medium 14 / hard 18, before any house shift). */}

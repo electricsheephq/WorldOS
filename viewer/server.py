@@ -5164,6 +5164,39 @@ def _live_parley_event(snapshot: dict) -> dict | None:
     return None
 
 
+def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> dict | None:
+    """The conversation TARGET for a parley, projected read-only from the snapshot — or None.
+
+    #751 (header names the NPC, pinned) + #615 (disposition meter): the Parley header used to
+    name ``surface.actor`` (the lead PC) — a conversation that named the wrong speaker. Bind the
+    surface to the NPC the party faces so the header renders THAT NPC and pins to its id for the
+    interaction. Resolution order: an explicit ``npc_id`` (the interlocutor the player opened the
+    conversation with — authoritative, fixes the "switch mid-interaction" half) wins; else the
+    live Event's ``anchor_npc_id`` (the engine already chose WHO a stumble-into is about). An
+    absent/unknown id degrades to None (no block) — exactly like an unknown event_id, never raises.
+
+    The block carries the canonical ``disposition`` bucket (reusing `_attitude_disposition`, the
+    same predicate the Relations screen uses) + the raw ``attitude_value`` (fine at 0 -> "neutral")
+    so the Dialogue screen can render a live disposition meter (DispositionDot). Pure READ —
+    nothing on the NPC is mutated; the actor's sheet still drives the skill slots."""
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    target_id = npc_id or (_text(live_event.get("anchor_npc_id")) if isinstance(live_event, dict) else "")
+    if not target_id:
+        return None
+    ch = chars.get(target_id)
+    if not isinstance(ch, dict):
+        return None  # unknown id -> freeform parley (graceful degrade, like a bad event_id)
+    av = _num(ch.get("attitude_value"))
+    return {
+        "id": _text(ch.get("id"), target_id),
+        "name": _text(ch.get("name"), target_id),
+        "attitude": _text(ch.get("attitude")),
+        "attitude_value": int(av) if av is not None else 0,
+        "met": bool(ch.get("met")),
+        "disposition": _attitude_disposition(ch),
+    }
+
+
 def build_parley_surface(
     snapshot: dict,
     *,
@@ -5171,6 +5204,7 @@ def build_parley_surface(
     live: bool,
     is_live_view: bool,
     difficulty: str = "medium",
+    npc_id: str = "",
 ) -> dict:
     """Project a parley menu for the lead PC: actor + per-skill {skill, modifier,
     suggested_dc} + alignment + free_form. Prefers the engine's own
@@ -5182,7 +5216,13 @@ def build_parley_surface(
     ``{id, prompt, anchor_npc_id, options:[{label, tag, skill, dc}], resolve_with}`` — so the
     authored Event options surface as the menu slots. The free-form path STAYS (never a closed
     set, #141 guard); a picked option still relays via /move and the DM agent calls
-    `resolve_event`. No live Event -> no block (today's freeform parley, byte-for-byte)."""
+    `resolve_event`. No live Event -> no block (today's freeform parley, byte-for-byte).
+
+    #751/#615: when the parley is bound to a tracked NPC (explicit ``npc_id`` query, else the
+    live Event's anchor NPC), an additive ``npc`` block — ``{id, name, attitude, attitude_value,
+    met, disposition}`` — is attached so the header names the conversation TARGET (not the lead
+    PC) and pins to it, and the screen can render a live disposition meter. Absent/unknown target
+    -> no ``npc`` key (byte-identical to today's freeform parley). Read-only throughout."""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     actor_id, actor = _lead_pc(snapshot)
     # Parley backdrop scope (P2 fix): the old behavior reused the SAME `location:<id>` scope
@@ -5233,6 +5273,13 @@ def build_parley_surface(
             base["imageScope"] = f"portrait-{anchor}"
         elif ev_id:
             base["imageScope"] = f"event:{ev_id}"
+    # #751/#615: bind the conversation TARGET (explicit npc_id, else the live event's anchor NPC)
+    # so the header names the NPC + pins it, and the screen can render a disposition meter. Attach
+    # before the empty/no-actor return so a parley with a target still carries the NPC even when no
+    # PC sheet resolves. Absent/unknown target -> no `npc` key (today's freeform parley unchanged).
+    npc_block = _parley_npc_block(snapshot, npc_id, live_event)
+    if npc_block is not None:
+        base["npc"] = npc_block
     if not actor_id or not actor:
         base["source"] = "empty"
         return base
@@ -7693,11 +7740,14 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "/parley-surface":
             # Sheet-correct social options for the lead PC (per-skill modifier + suggested
             # DC + alignment + free_form) — the UI side of #141. ?difficulty tunes the DC band.
+            # ?npc=<id> binds the conversation TARGET so the header names that NPC + pins it
+            # and the disposition meter reads its attitude (#751 + #615); read-only throughout.
             qs = parse_qs(parsed.query)
             difficulty = _text((qs.get("difficulty") or [""])[0], "medium")
+            npc_id = _text((qs.get("npc") or [""])[0])
             self._serve_simple_surface(
                 qs,
-                lambda snap, **kw: build_parley_surface(snap, difficulty=difficulty, **kw),
+                lambda snap, **kw: build_parley_surface(snap, difficulty=difficulty, npc_id=npc_id, **kw),
                 heal=True,
             )
         elif route == _OPENWORLDS_ROUTE:
