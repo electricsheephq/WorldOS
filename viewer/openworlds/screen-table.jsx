@@ -267,6 +267,22 @@ function lastVisibleChronicleIndex(rows) {
   return -1;
 }
 
+// #752: the VISIBLE text length a chronicle row contributes to the accessibility snapshot — the same
+// prose LogEntry renders for that row. narration/dialogue flow through sanitizeNarration (the player-
+// facing filter); every other kind (action/dialog/roll/fallback) renders its raw `text`/`detail`.
+// Used to bound the EXPOSED rows by a cumulative char budget (chronicleA11yExposedCount), so a long
+// run of multi-paragraph DM beats can't overflow the snapshot and slice off the action controls.
+// Pure (no DOM) so the char bound stays unit-testable.
+function chronicleRowVisibleTextLength(entry) {
+  if (!entry) return 0;
+  const kind = entry.kind || "narration";
+  if (kind === "narration" || kind === "dialogue") {
+    return (sanitizeNarration(entry.text) || "").length;
+  }
+  const text = entry.text || entry.detail || "";
+  return String(text).length;
+}
+
 // #337: the quick-action buttons (Continue / Say / Do / Check / Save) and the dice buttons are
 // icon+label only — a first-timer can't tell how they differ from typing free-text + Declare, so
 // the #324 newbie ignored all of them. These short hints surface as native `title=` tooltips
@@ -359,19 +375,63 @@ const CHRONICLE_RENDER_CAP = 50;
 // already-rendered, engine-authored prose is exposed to assistive tech.
 const CHRONICLE_A11Y_TAIL = 8;
 
+// #752 (STILL flagged at sweep 3582dc2 DESPITE the row-count tail above): a ROW count is not a CHAR
+// count. CHRONICLE_A11Y_TAIL=8 bounds the EXPOSED rows to 8, but a normal mid-session beat is a
+// multi-paragraph DM turn (~1000–2000 chars), so 8 exposed rows still total ~12000+ chars of a11y
+// YAML — past the 9000-char `ariaSnapshot().slice(0, 9000)` budget the reader (and the QA
+// blind-player) caps at. The Chronicle (`role="log"`) renders BEFORE the Actions palette + composer,
+// so that overflow STILL slices the action controls off the snapshot entirely ("player can't find
+// the action buttons"). The tail row-count does not bound the CHARACTER footprint. So under the row
+// ceiling we ALSO bound the exposed rows by a cumulative CHARACTER budget: a conservative cap that
+// leaves headroom under 9000 for the YAML inflation + the Actions palette + composer that follow.
+const CHRONICLE_A11Y_CHAR_BUDGET = 2800;
+
+// How many of the most-recent rendered rows to EXPOSE to the accessibility tree, given each rendered
+// row's VISIBLE text length (most-recent LAST, mirroring renderedLog order). Pure + exported so the
+// char bound is unit-testable without mounting the component (mirrors chronicleRowAriaHidden /
+// buildChronicleLog). Accumulate text length from the NEWEST row backward; stop before exceeding the
+// budget; ALWAYS expose at least 1 (the newest beat — the player's most recent DM reply — is never
+// hidden, even a single beat larger than the whole budget); never expose more than the row tail. A
+// short, low-volume session (cumulative text under budget AND rows ≤ tail) still exposes EVERY row.
+function chronicleA11yExposedCount(visibleTextLengths) {
+  const lens = Array.isArray(visibleTextLengths) ? visibleTextLengths : [];
+  const n = lens.length;
+  if (n === 0) return 0;
+  const ceiling = Math.min(n, CHRONICLE_A11Y_TAIL);
+  let exposed = 0;
+  let cumulative = 0;
+  for (let k = 0; k < ceiling; k += 1) {
+    const len = Number(lens[n - 1 - k]) || 0;  // walk newest → older
+    // Always expose the newest beat (k===0) regardless of its size; otherwise stop before the
+    // budget would be exceeded so the action controls stay inside the snapshot.
+    if (k > 0 && cumulative + len > CHRONICLE_A11Y_CHAR_BUDGET) break;
+    cumulative += len;
+    exposed += 1;
+  }
+  return exposed;
+}
+
 // True when the chronicle row at index `i` of `total` rendered rows must be `aria-hidden` — i.e. it
-// is OLDER than the most-recent CHRONICLE_A11Y_TAIL rows. Pure + exported so the bound is
+// falls OUTSIDE the most-recent EXPOSED window. `exposed` is the char-aware cutoff from
+// chronicleA11yExposedCount (defaults to the CHRONICLE_A11Y_TAIL row count for legacy callers that
+// only know the row total, preserving the original row-only bound). Pure + exported so the bound is
 // unit-testable without mounting the component (mirrors buildChronicleLog / computePlayGate). When
-// the rendered list is at/under the tail, NOTHING is hidden (every beat announced).
-function chronicleRowAriaHidden(i, total) {
+// the exposed window covers the whole list, NOTHING is hidden (every beat announced).
+function chronicleRowAriaHidden(i, total, exposed) {
   const n = Number(total) || 0;
   const idx = Number(i);
-  if (!Number.isFinite(idx) || n <= CHRONICLE_A11Y_TAIL) return false;
-  return idx < n - CHRONICLE_A11Y_TAIL;
+  if (!Number.isFinite(idx)) return false;
+  const window_ = Number.isFinite(Number(exposed))
+    ? Math.max(1, Math.min(n, Number(exposed)))
+    : Math.min(n, CHRONICLE_A11Y_TAIL);
+  if (n <= window_) return false;
+  return idx < n - window_;
 }
 if (typeof window !== "undefined") {
   window.CHRONICLE_RENDER_CAP = CHRONICLE_RENDER_CAP;
   window.CHRONICLE_A11Y_TAIL = CHRONICLE_A11Y_TAIL;
+  window.CHRONICLE_A11Y_CHAR_BUDGET = CHRONICLE_A11Y_CHAR_BUDGET;
+  window.chronicleA11yExposedCount = chronicleA11yExposedCount;
   window.chronicleRowAriaHidden = chronicleRowAriaHidden;
 }
 
@@ -700,6 +760,12 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const hiddenLogCount = Math.max(0, visibleLog.length - CHRONICLE_RENDER_CAP);
   const renderedLog = hiddenLogCount > 0 ? visibleLog.slice(visibleLog.length - CHRONICLE_RENDER_CAP) : visibleLog;
   const lastVisibleLogIndex = lastVisibleChronicleIndex(renderedLog);
+  // #752: bound the chronicle's a11y footprint by a cumulative CHARACTER budget (not just the row
+  // tail) — long multi-paragraph DM beats can fill the row tail with ~12000 chars and STILL slice
+  // the action controls off the 9000-char ariaSnapshot. chronicleA11yExposedCount walks the rendered
+  // rows' visible text lengths (most-recent last) and returns how many trailing rows stay exposed;
+  // the rest are aria-hidden (still visible for sighted scroll-back / preserved in the Quest Journal).
+  const chronicleA11yExposed = chronicleA11yExposedCount(renderedLog.map(chronicleRowVisibleTextLength));
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
@@ -1227,11 +1293,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                 ref={i === lastVisibleLogIndex ? latestBeatRef : null}
                 data-worldos-testid={i === lastVisibleLogIndex ? "chronicle-latest-beat" : undefined}
                 // #752: older rendered rows are aria-hidden so the chronicle's accessibility subtree
-                // stays bounded (the most-recent CHRONICLE_A11Y_TAIL rows only) and the action
-                // controls below are never sliced off the (length-capped) a11y snapshot. They remain
-                // fully VISIBLE for sighted scroll-back, and the full history is in the Quest Journal.
-                // The latest beat is never hidden (chronicleRowAriaHidden keeps the tail exposed).
-                aria-hidden={chronicleRowAriaHidden(i, renderedLog.length) ? "true" : undefined}
+                // stays bounded and the action controls below are never sliced off the (length-capped)
+                // a11y snapshot. The exposed window is the most-recent rows whose CUMULATIVE visible
+                // text fits CHRONICLE_A11Y_CHAR_BUDGET (under the CHRONICLE_A11Y_TAIL row ceiling) — a
+                // ROW count alone can't bound the CHAR footprint that overflows the snapshot. Hidden
+                // rows stay fully VISIBLE for sighted scroll-back; the full history is in the Quest
+                // Journal. The latest beat is never hidden (chronicleA11yExposedCount keeps it exposed).
+                aria-hidden={chronicleRowAriaHidden(i, renderedLog.length, chronicleA11yExposed) ? "true" : undefined}
                 style={{ scrollMarginBlock: 12 }}
               >
                 <LogEntry entry={entry} />
