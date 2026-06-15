@@ -221,6 +221,30 @@ _FIGHTER = (
     "xp: 6500, xpMax: 14000, spells: [], spellSlots: [], preparableSpells: [] }"
 )
 
+# A L10 Paladin with a prepared CAP of 5 (floor(10/2) + a +0 CHA mod, the read-model's
+# _prepared_spell_cap) and TWO cantrips in the browsable pool. Cantrips are always-known and must
+# NOT count against the cap. Currently prepares 2 leveled spells (Bless + Cure Wounds) -> 3 leveled
+# slots of the cap remain free. Used by the CAP-enforcement tests.
+_PALADIN_CAP = (
+    "{ id: 'wyll', name: 'Wyll', class: 'paladin', level: 10, preparedCap: 5, "
+    "xp: 64000, xpMax: 85000, "
+    "spells: [{ level: 'Prepared', list: ["
+    "  { name: 'Bless', glyph: 'spell', levelLabel: 'Level 1' },"
+    "  { name: 'Cure Wounds', glyph: 'spell', levelLabel: 'Level 1' } ] }], "
+    "spellSlots: [{ level: 1, max: 4, used: 0 }, { level: 2, max: 3, used: 0 }, { level: 3, max: 2, used: 0 }], "
+    "preparableSpells: ["
+    "  { name: 'Light', level: 0, levelLabel: 'Cantrip', glyph: 'spell' },"
+    "  { name: 'Sacred Flame', level: 0, levelLabel: 'Cantrip', glyph: 'spell' },"
+    "  { name: 'Bless', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
+    "  { name: 'Cure Wounds', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
+    "  { name: 'Divine Smite', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
+    "  { name: 'Command', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
+    "  { name: 'Shield of Faith', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
+    "  { name: 'Aid', level: 2, levelLabel: 'Level 2', glyph: 'spell' },"
+    "  { name: 'Lesser Restoration', level: 2, levelLabel: 'Level 2', glyph: 'spell' },"
+    "  { name: 'Daylight', level: 3, levelLabel: 'Level 3', glyph: 'spell' } ] }"
+)
+
 # The browsable preparable pool (the full Paladin L1-3 list), shared by the browser tests.
 _POOL = (
     "[ { name: 'Bless', level: 1, levelLabel: 'Level 1', glyph: 'spell' },"
@@ -286,6 +310,74 @@ class RestPrepareBrowsablePoolTests(_Harness):
         text = moves[-1]["body"]["text"].lower()
         self.assertIn("bless", text)
         self.assertIn("cure wounds", text)
+
+
+class RestPrepareCapTests(_Harness):
+    """The prepared CAP: a prepared caster prepares only (cap) LEVELED spells. The UI must show
+    "N / cap selected" and block selecting a NEW leveled spell past the cap (cantrips excluded)."""
+
+    def _mount(self):
+        return (
+            "h.mountRest({ hero: " + _PALADIN_CAP + ", party: [{ id:'wyll', name:'Wyll' }],"
+            " campaignId: 'camp1', canAct: true, dmBusy: false,"
+            " onClose: function(){}, onDone: function(){}, toast: function(){}, setState: function(){} });"
+        )
+
+    def test_prep_step_shows_selected_over_cap_counter(self):
+        # The prep step renders an "N / cap selected" counter seeded from the current 2 prepared
+        # leveled spells against the cap of 5 — the optimizer's "3 of 7 prepared" with no visible
+        # budget. (testid prep-cap-counter; text contains "2 / 5".)
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-make-camp');"
+            "return ({ has_counter: h.exists('prep-cap-counter'),"
+            "  counter: (h.props('prep-cap-counter') ? null : null), text: h.text() });"
+        )
+        self.assertGreaterEqual(out["has_counter"], 1,
+                                "the prep step must show an 'N / cap selected' counter against the prepared cap")
+        self.assertIn("2 / 5", out["text"],
+                      "the counter is seeded from the current prepared count (2) and the cap (5)")
+
+    def test_selecting_past_the_cap_is_blocked(self):
+        # Start at 2 prepared (Bless, Cure Wounds). Select 3 MORE leveled spells -> 5 (== cap).
+        # The remaining unselected leveled spells must then be DISABLED (can't exceed the cap).
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-make-camp');"
+            "await h.click('prep-spell-divine-smite');"     # 3
+            "await h.click('prep-spell-command');"          # 4
+            "await h.click('prep-spell-aid');"              # 5 == cap
+            "var smite = h.props('prep-spell-divine-smite');"
+            "var daylight = h.props('prep-spell-daylight');"
+            "return ({ counter: h.text(),"
+            "  daylight_disabled: !!(daylight && daylight.disabled),"
+            "  selected_still_enabled: !!(smite && smite.disabled === false || (smite && !smite.disabled)) });"
+        )
+        self.assertIn("5 / 5", out["counter"], "selecting up to the cap reads 5 / 5")
+        self.assertTrue(out["daylight_disabled"],
+                        "an unselected leveled spell must be DISABLED once the cap is reached")
+        self.assertTrue(out["selected_still_enabled"],
+                        "an already-selected spell must stay clickable so the player can deselect it")
+
+    def test_cantrips_are_excluded_from_the_cap(self):
+        # Fill the leveled cap to 5, then a CANTRIP must remain selectable (cantrips are always-known
+        # and never counted against the prepared cap) — and selecting it must NOT change the counter.
+        out = self._run(
+            self._mount() +
+            "await h.click('rest-make-camp');"
+            "await h.click('prep-spell-divine-smite');"     # 3
+            "await h.click('prep-spell-command');"          # 4
+            "await h.click('prep-spell-aid');"              # 5 == cap
+            "var light_before = h.props('prep-spell-light');"
+            "await h.click('prep-spell-light');"            # a CANTRIP — must be allowed at cap
+            "return ({ cantrip_disabled: !!(light_before && light_before.disabled),"
+            "  counter_after_cantrip: h.text() });"
+        )
+        self.assertFalse(out["cantrip_disabled"],
+                         "a cantrip must stay selectable even when the leveled cap is full (cantrips are excluded)")
+        # The counter still reads 5 / 5 — the cantrip did not consume a leveled prepared slot.
+        self.assertIn("5 / 5", out["counter_after_cantrip"],
+                      "selecting a cantrip must not advance the leveled prepared-cap counter")
 
 
 class SpellbookAvailableSectionTests(_Harness):

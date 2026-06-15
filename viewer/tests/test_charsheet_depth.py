@@ -126,6 +126,41 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertEqual(cast["spellSaveDc"], 15)
         self.assertEqual(cast["spellAttackBonus"], 7)
 
+    # ── prepared-spell CAP (Rest & Prepare budget) ──────────────────────────────
+
+    def test_prepared_cap_full_caster_is_level_plus_ability_mod(self):
+        """A FULL prepared caster (Wizard L3, INT 16 -> +3) prepares level + mod = 3 + 3 = 6."""
+        self.assertEqual(server._prepared_spell_cap(_SNAPSHOT["characters"]["elara"]), 6)
+
+    def test_prepared_cap_half_caster_paladin_is_floor_half_level_plus_mod(self):
+        """A HALF-caster Paladin (L10, CHA 16 -> +3) prepares floor(10/2) + 3 = 8 — the formula the
+        Rest & Prepare task specifies for the L10 Paladin in the complaint."""
+        paladin = {
+            "id": "wyll", "name": "Wyll",
+            "classes": [{"name": "Paladin", "level": 10, "subclass": "Oath of Vengeance"}],
+            "abilities": {"strength": 16, "dexterity": 10, "constitution": 14,
+                          "intelligence": 10, "wisdom": 11, "charisma": 16},
+            "proficiency_bonus": 4,
+        }
+        self.assertEqual(server._prepared_spell_cap(paladin), 8)
+
+    def test_prepared_cap_never_below_one(self):
+        """The cap floors at 1 even when level + a NEGATIVE ability mod would compute lower (a L1
+        half-caster Ranger with WIS 8 -> floor(1/2)=0 + (-1) = -1, clamped to 1)."""
+        ranger = {
+            "id": "r", "name": "Ranger",
+            "classes": [{"name": "Ranger", "level": 1}],
+            "abilities": {"wisdom": 8, "strength": 14, "dexterity": 16,
+                          "constitution": 12, "intelligence": 10, "charisma": 10},
+        }
+        self.assertEqual(server._prepared_spell_cap(ranger), 1)
+
+    def test_prepared_cap_none_for_known_caster_and_non_caster(self):
+        """A KNOWN-caster (Bard — never re-prepares) and a non-caster (Fighter) have NO cap, so the
+        Rest & Prepare UI shows no budget (never a fabricated one)."""
+        self.assertIsNone(server._prepared_spell_cap(_SNAPSHOT["characters"]["lyric"]))   # Bard
+        self.assertIsNone(server._prepared_spell_cap(_SNAPSHOT["characters"]["thornwick"]))  # Fighter
+
     # ── end-to-end via the real /character-surface route ────────────────────────
 
     def setUp(self):
@@ -216,6 +251,16 @@ class CharsheetDepthTests(unittest.TestCase):
         # Key present for a stable shape, value None -> the Spells tab header omits itself.
         self.assertIn("spellcasting", thornwick)
         self.assertIsNone(thornwick["spellcasting"])
+
+    def test_surface_exposes_prepared_cap_for_prepared_caster(self):
+        # The Rest & Prepare "N / cap selected" budget: the read-model emits preparedCap so the
+        # spell-selection UI can enforce the cap. Wizard L3 INT+3 -> 6; a Fighter has no cap (None).
+        self._write("camp_depth", _SNAPSHOT)
+        _status, surface = self._get_json("/character-surface?campaign=camp_depth")
+        party = self._party(surface)
+        self.assertEqual(party["elara"]["preparedCap"], 6)
+        self.assertIn("preparedCap", party["thornwick"])
+        self.assertIsNone(party["thornwick"]["preparedCap"])
 
     def test_surface_surfaces_engine_class_features(self):
         """Bug 2: the engine's `features` NAMES reach the surface (as classFeatures) so the

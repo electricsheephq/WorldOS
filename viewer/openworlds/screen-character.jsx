@@ -339,10 +339,11 @@ function ScreenCharacter({ onNavigate, state, setState, liveSession }) {
   );
 }
 
-// #397 — the build-choice PICKER. Unlike RestPrepareModal (display-only), this writes for real:
-// it reads the engine-owned legal level-up preview from /build-options (HP/features/slots — never
-// faked), and on confirm relays a `do` move-intent to the DM, who resolves it through the engine
-// level_up tool (sole writer) exactly as camp-sidebar.jsx relays "make camp". The subclass is NOT
+// #397 — the build-choice PICKER. Like RestPrepareModal's prepare step (which relays prepare_spells
+// the same way), this writes for real: it reads the engine-owned legal level-up preview from
+// /build-options (HP/features/slots — never faked), and on confirm relays a `do` move-intent to the
+// DM, who resolves it through the engine level_up tool (sole writer) exactly as camp-sidebar.jsx
+// relays "make camp" and RestPrepareModal relays the rest + prepare. The subclass is NOT
 // a hardcoded dropdown — the engine does not enumerate world-canon subclasses (class_data has no
 // subclass list); the player NAMES it and the DM, which knows the world's options, finalizes it.
 function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
@@ -700,8 +701,25 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hero.id]);
 
+  // The prepared CAP (engine-mirrored read-model: prepared-caster-level + casting-ability mod;
+  // half for a Paladin/Ranger). A prepared caster may have only `cap` LEVELED spells prepared at
+  // once — the optimizer's MAJOR "only 3 of 7 prepared" with no visible budget. null/absent for a
+  // known-caster (Bard/Sorcerer/Warlock) or non-caster -> no cap is enforced or shown.
+  const cap = (typeof hero.preparedCap === "number" && hero.preparedCap > 0) ? hero.preparedCap : null;
+  // CANTRIPS (spell level 0) are ALWAYS-known and never count against the prepared cap — only
+  // leveled spells (level >= 1) consume the budget. Count the currently-selected leveled spells.
+  const leveledSelected = Object.keys(prepared)
+    .filter((lv) => Number(lv) > 0)
+    .reduce((sum, lv) => sum + ((prepared[lv] || []).length), 0);
+  const atCap = cap !== null && leveledSelected >= cap;
+
   const toggleSpell = (lv, name) => {
     const cur = prepared[lv] || [];
+    const selecting = !cur.includes(name);
+    // Block SELECTING a new LEVELED spell once the cap is full (deselecting is always allowed; a
+    // cantrip at level 0 is never blocked). The engine remains the sole writer — this is a UI
+    // guard so the relayed preparation can never exceed the caster's legal prepared count.
+    if (selecting && Number(lv) > 0 && atCap) return;
     if (cur.includes(name)) {
       setPrepared({ ...prepared, [lv]: cur.filter((n) => n !== name) });
     } else {
@@ -904,6 +922,26 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                 {hero.name} reads by the dying fire. Choose what will be at hand when the day breaks — the whole class spell list is yours to browse. Unchosen spells remain bound to the page.
               </p>
 
+              {/* The prepared CAP budget: "N / cap selected" of LEVELED spells (cantrips excluded).
+                  The optimizer's MAJOR was "3 of 7 prepared" with no visible budget — this shows
+                  exactly how many leveled spells fit. Shown only when the read-model gives a cap
+                  (a prepared caster); a known-caster/non-caster sees no counter (never a fake cap). */}
+              {cap !== null && prepPool.length > 0 && (
+                <div data-worldos-testid="prep-cap-counter" aria-live="polite" style={{
+                  marginTop: 14, padding: "8px 12px",
+                  display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                  background: atCap ? "rgba(122,40,32,0.10)" : "rgba(176,141,87,0.08)",
+                  boxShadow: atCap ? "inset 0 0 0 1px var(--crimson)" : "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                }}>
+                  <span className="eyebrow" style={{ fontSize: 10, color: atCap ? "var(--crimson)" : "var(--ink-700)" }}>
+                    Leveled spells prepared
+                  </span>
+                  <span style={{ fontFamily: "var(--f-display)", fontSize: 16, color: atCap ? "var(--crimson)" : "var(--emerald)" }}>
+                    {`${leveledSelected} / ${cap} selected`}
+                  </span>
+                </div>
+              )}
+
               {/* #754 — pick from the FULL browsable class list (hero.preparableSpells), grouped
                   by spell level and capped to the caster's highest slot level by the engine. The
                   optimizer could never SELECT a new spell before; now the entire preparable pool
@@ -925,11 +963,17 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                       {group.list.map((sp) => {
                         const isPrepared = cur.includes(sp.name);
+                        // A LEVELED (level >= 1) spell that ISN'T already selected is disabled once
+                        // the cap is full — you can't prepare more than the budget. Cantrips
+                        // (group.level 0) and already-selected spells (to deselect) stay clickable.
+                        const capBlocked = !isPrepared && group.level > 0 && atCap;
                         return (
                           <button
                             key={sp.name}
                             data-worldos-testid={`prep-spell-${slug(sp.name)}`}
                             aria-pressed={isPrepared ? "true" : "false"}
+                            disabled={capBlocked}
+                            title={capBlocked ? `Prepared cap reached (${cap}) — unprepare a spell to make room` : undefined}
                             onClick={() => toggleSpell(group.level, sp.name)}
                             style={{
                               display: "grid", gridTemplateColumns: "40px 1fr auto", gap: 10, alignItems: "center",
@@ -941,7 +985,8 @@ function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, on
                               boxShadow: isPrepared
                                 ? "inset 0 0 0 1px var(--b-500), inset 0 0 0 3px var(--p-100), inset 0 0 0 4px var(--b-400), 0 0 14px -4px var(--gold-glow)"
                                 : "inset 0 0 0 1px rgba(140,100,60,0.25)",
-                              cursor: "pointer",
+                              cursor: capBlocked ? "not-allowed" : "pointer",
+                              opacity: capBlocked ? 0.45 : 1,
                               transition: "all 140ms",
                             }}
                           >
