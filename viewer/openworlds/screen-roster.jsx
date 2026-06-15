@@ -154,12 +154,23 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
   const [race, setRace] = React.useState("");
   const [klass, setKlass] = React.useState("");
   const [level, setLevel] = React.useState("");
+  // BEGINNER ENTRY: the picker OPENS on a small curated "recommended for beginners" set rather than
+  // dropping a newcomer into ~2,000 alphabetical names. Applying any filter, or clicking "Browse the
+  // full roster", flips to the full playable+alive roster (illegible no-class/no-level records still
+  // dropped via ?require_stats). The full list is always one click away — the curation is a default,
+  // never a wall.
+  const [browseAll, setBrowseAll] = React.useState(false);
   const [surface, setSurface] = React.useState(null);  // null until first fetch
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [summoningName, setSummoningName] = React.useState("");
   const [bindNote, setBindNote] = React.useState("");
   const toast = window.useToast ? window.useToast() : (() => {});
+
+  const anyFilter = Boolean(race || klass || level);
+  // The recommended surface is the default ONLY while unfiltered and the player hasn't asked to see
+  // everything — a filter is an explicit "search the whole roster" intent.
+  const recommended = !browseAll && !anyFilter;
 
   // Facets come from the FIRST (unfiltered) load so the chips offer every option regardless of
   // the current narrowing; held separately so a narrowing fetch (which returns facets for the
@@ -177,6 +188,13 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
       if (race) params.set("race", race);
       if (klass) params.set("class", klass);
       if (level) params.set("level", level);
+      if (recommended) {
+        // The curated beginner subset (each card has a class + a mid-tier level + a backstory).
+        params.set("recommended", "1");
+      } else {
+        // The full roster, minus the illegible no-class/no-level records (#dogfood).
+        params.set("require_stats", "1");
+      }
       const qs = params.toString();
       const response = await fetch("/roster-surface" + (qs ? "?" + qs : ""), { cache: "no-store" });
       if (!response.ok) throw new Error(`roster surface ${response.status}`);
@@ -200,7 +218,7 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
     } finally {
       if (!isCancelled()) setLoading(false);
     }
-  }, [rosterCampaignId, activeCampaign.source, activeCampaign.runId, race, klass, level]);
+  }, [rosterCampaignId, activeCampaign.source, activeCampaign.runId, race, klass, level, recommended]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -265,7 +283,8 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
   const total = typeof surface?.total === "number" ? surface.total : characters.length;
   const shown = typeof surface?.returned === "number" ? surface.returned : characters.length;
   const capped = total > shown;  // more heroes match than the grid is painting — narrow to see them
-  const anyFilter = Boolean(race || klass || level);
+  // The payload itself reports whether it's the curated subset (the engine sets recommended:true).
+  const isRecommended = Boolean(surface?.recommended);
 
   return (
     <div className="screen" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 10, padding: 14 }}>
@@ -277,8 +296,9 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
             <div className="eyebrow" style={{ color: "var(--crimson)" }}>Choose your hero</div>
             <h1 className="h1" style={{ fontSize: 26, marginTop: 2 }}>Take up a life already lived</h1>
             <p className="hand" style={{ fontSize: 14, color: "var(--ink-700)", margin: "6px 0 0", maxWidth: 620 }}>
-              Filter the chronicle's living roster and step into a real figure of the Sword Coast —
-              their face, their past, their place in the world. You will play <em>as</em> them.
+              {isRecommended
+                ? <>New to the Sword Coast? Start with a handful of <em>recommended</em> heroes — each a real figure with a class, a level, and a story. Filter or browse the full roster whenever you like; you will play <em>as</em> them.</>
+                : <>Filter the chronicle's living roster and step into a real figure of the Sword Coast — their face, their past, their place in the world. You will play <em>as</em> them.</>}
             </p>
           </div>
           <BrassButton tone="ghost" size="sm" onClick={() => onNavigate("launcher")}>Back to Chronicles</BrassButton>
@@ -290,14 +310,27 @@ function ScreenRoster({ onNavigate, state, setState, preferredProvider = "" }) {
         <FilterRow title="Class" options={facets.classes} value={klass} onChange={setKlass} />
         <FilterRow title="Level" options={facets.levels} value={level} onChange={setLevel} />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, flexWrap: "wrap" }}>
           <div className="body-sm muted">
             {loading
               ? "Reading the roster…"
-              : capped
-                ? `Showing ${shown} of ${total} heroes — narrow by race, class, or level to see the rest`
-                : `${total} ${total === 1 ? "hero" : "heroes"} available${anyFilter ? " · filtered" : ""}`}
+              : isRecommended
+                ? `${shown} ${shown === 1 ? "hero" : "heroes"} recommended for newcomers — or browse the full roster`
+                : capped
+                  ? `Showing ${shown} of ${total} heroes — narrow by race, class, or level to see the rest`
+                  : `${total} ${total === 1 ? "hero" : "heroes"} available${anyFilter ? " · filtered" : ""}`}
           </div>
+          {/* Beginner ⇄ full-roster toggle. A filter implies "search everything", so it lives
+              alongside Clear filters; with no filter it flips the curated default on and off. */}
+          {!anyFilter && (
+            <button
+              type="button"
+              onClick={() => setBrowseAll((x) => !x)}
+              style={{ background: "transparent", border: 0, color: "var(--crimson)", cursor: "pointer", fontFamily: "var(--f-display)", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase" }}
+            >
+              {isRecommended ? "Browse the full roster" : "Show recommended"}
+            </button>
+          )}
           {anyFilter && (
             <button
               type="button"

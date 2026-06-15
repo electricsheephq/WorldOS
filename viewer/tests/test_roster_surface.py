@@ -242,6 +242,54 @@ class RosterSurfaceTests(unittest.TestCase):
         if "2" in levels and "10" in levels:
             self.assertLess(levels.index("2"), levels.index("10"))
 
+    # ── dogfood MAJOR: the picker must never OFFER a dead / malformed figure ──────
+
+    def test_a_mid_bio_dead_figure_is_never_offered(self):
+        # Alexander Rainforest is canon-DEAD (his bio: "… Rainforest is already dead.") but the
+        # death is declared mid-bio, so the opener-only scan once let the picker list him as a
+        # playable hero with a live "Play as" button. He must now be absent from every page.
+        status, surface = self._get_json("/roster-surface?limit=500")
+        self.assertEqual(status, 200)
+        names = {c.get("name") for c in surface.get("characters", [])}
+        ids = {c.get("id") for c in surface.get("characters", [])}
+        self.assertNotIn("Alexander Rainforest", names, "a canon-dead figure must never be offered")
+        self.assertNotIn("alexander-rainforest", ids)
+
+    def test_require_stats_drops_records_lacking_level_and_class(self):
+        # "Amanita Szarr — Vampire or Vampire Spawn" has neither class nor level (illegible in a
+        # level-based picker). ?require_stats=1 drops records missing BOTH; survivors carry at
+        # least one of class / level. The default surface still lists her (no silent narrowing).
+        _, default = self._get_json("/roster-surface?limit=500")
+        default_names = {c.get("name") for c in default.get("characters", [])}
+        self.assertIn("Amanita Szarr", default_names)
+        _, strict = self._get_json("/roster-surface?require_stats=1&limit=500")
+        self.assertEqual(strict.get("world_id"), "baldurs-gate")
+        for c in strict.get("characters", []):
+            self.assertTrue(
+                (c.get("class") or "").strip() or (c.get("level") or "").strip(),
+                f"{c.get('name')} is illegible (no class and no level)",
+            )
+        self.assertNotIn("Amanita Szarr", {c.get("name") for c in strict.get("characters", [])})
+
+    def test_recommended_surface_is_a_small_legible_beginner_set(self):
+        # BEGINNER ENTRY: ?recommended=1 returns a small curated set of playable+alive figures
+        # that each carry a class AND a level AND a backstory — not the ~2,000-name firehose.
+        status, surface = self._get_json("/roster-surface?recommended=1")
+        self.assertEqual(status, 200)
+        self.assertTrue(surface.get("recommended"))
+        cards = surface.get("characters", [])
+        self.assertTrue(cards, "the recommended set should not be empty for the shipped roster")
+        self.assertLessEqual(len(cards), 24)
+        for c in cards:
+            self.assertTrue((c.get("class") or "").strip(), c.get("name"))
+            self.assertTrue((c.get("level") or "").strip(), c.get("name"))
+        names = {c.get("name") for c in cards}
+        self.assertNotIn("Alexander Rainforest", names)  # never the dead
+        self.assertNotIn("Amanita Szarr", names)         # never the malformed
+        # and the full roster is still reachable (recommended is a strict narrowing).
+        _, full = self._get_json("/roster-surface?limit=500")
+        self.assertLess(surface.get("total", 0), full.get("total", 0))
+
 
 if __name__ == "__main__":
     unittest.main()
