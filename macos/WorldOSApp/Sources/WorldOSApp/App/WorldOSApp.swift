@@ -8,6 +8,15 @@ struct WorldOSApp: App {
     @StateObject private var processService = AppProcessService()
     @StateObject private var campaignStore = CampaignStore()
 
+    init() {
+        // #892: launched from Finder/Dock/`open -n`, the app inherits the bare LaunchServices
+        // PATH (`/usr/bin:/bin:/usr/sbin:/sbin`) and cannot find the provider CLIs
+        // (claude/codex/openclaw) or the engine's uv/node — every Shell.which guard returns nil,
+        // so no provider can start and the launch wedges (`no_launcher`). Resolve the login-shell
+        // PATH once here, before any provider detection / Shell.which runs.
+        EnvironmentBootstrap.ensureLoginPATH()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
