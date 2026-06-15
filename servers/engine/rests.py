@@ -35,10 +35,11 @@ def _restore_class_resources(ch: Character, recharges: tuple[str, ...]) -> list[
 
 def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
     """Spend up to dice_to_spend Hit Dice to heal (each: 1d{hit die} + CON mod,
-    floored at 0 per die). A single-class Warlock recovers its (pact) spell slots
-    (multiclass Warlock pact recovery is not modeled). Requires >=1 HP (SRD: a
-    creature at 0 HP can't benefit from a rest). Multiclass mixed hit dice collapse
-    to the single stored die size (model limitation). Mutates ch."""
+    floored at 0 per die). A Warlock recovers its Pact-Magic slots — the separate,
+    short-rest-recovered pool — whether single- OR multiclass (F02-7); regular
+    Vancian slots are untouched (they only refill on a long rest). Requires >=1 HP
+    (SRD: a creature at 0 HP can't benefit from a rest). Multiclass mixed hit dice
+    collapse to the single stored die size (model limitation). Mutates ch."""
     if ch.current_hp < 1:
         raise ValueError("must have at least 1 HP to benefit from a rest")
     die = _hit_die_size(ch)
@@ -54,12 +55,20 @@ def short_rest(ch: Character, dice_to_spend: int, roll_fn) -> dict:
     before = ch.current_hp
     ch.current_hp = min(ch.max_hp, ch.current_hp + healed)
 
+    # Restore ONLY the Pact-Magic pool, never the regular leveled (long-rest) slots.
+    # Two sources, unioned so both old and new records work:
+    #   (a) any `pact=True`-tagged entry — the engine-built path (single- OR multiclass);
+    #   (b) a single-class Warlock's computed pact slot level — the legacy/untagged path,
+    #       kept so pre-tag snapshots and hand-built single-class records still recover.
     pact_recovered = False
+    pact_levels: set[int] = {lvl for lvl, s in ch.spell_slots.items() if s.pact}
     if _is_single_class_warlock(ch):
         pact = srd_tables.warlock_pact_slots(ch.classes[0].level)
         if pact and pact["level"] in ch.spell_slots:
-            ch.spell_slots[pact["level"]].used = 0  # restore only the pact slot
-            pact_recovered = True
+            pact_levels.add(pact["level"])
+    for lvl in pact_levels:
+        ch.spell_slots[lvl].used = 0  # restore only the pact slot pool
+        pact_recovered = True
 
     # Short-rest class-resource pools (Ki, Channel Divinity for clerics, Second
     # Wind, Action Surge, Wild Shape, post-L5 Bardic Inspiration) refresh now.

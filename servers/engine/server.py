@@ -410,20 +410,44 @@ def _validated_asi_choice(asi: dict) -> dict[str, int]:
 
 def _recompute_spellcasting(ch: Character) -> None:
     """Recompute spell-slot maximums from class levels, preserving used slots.
-    Single-class Warlock uses Pact Magic; multiclass Warlock merging is deferred."""
+
+    Regular (Vancian) slots come from the multiclass table, keyed by slot level.
+    A Warlock keeps Pact Magic — the SEPARATE, short-rest-recovered pool sized by
+    WARLOCK level — IN ADDITION to any regular slots, whether single- or multiclass
+    (F02-7). The pact entry is tagged ``pact=True`` so a short rest can find and
+    refill it without a single-class gate. Both pools preserve ``used`` across a
+    re-derive (a class-sig change must never silently refill a half-spent pool).
+    Additive: a non-Warlock is unaffected; a single-class Warlock is byte-identical
+    apart from the now-explicit pact tag (defaults False everywhere else)."""
     class_levels = [(cl.name, cl.level) for cl in ch.classes]
     casters = [(n, l) for (n, l) in class_levels if _safe_caster_type(n) in ("full", "half", "third")]
     new_slots: dict[int, SpellSlotLevel] = {}
     if casters:
         for lvl, maximum in srd_tables.multiclass_slots(casters).items():
             prev = ch.spell_slots.get(lvl)
-            used = min(prev.used, maximum) if prev else 0
+            # Only carry `used` from a previous REGULAR slot at this level — never from a
+            # stray pact entry (its `used` is preserved separately below).
+            used = min(prev.used, maximum) if prev and not prev.pact else 0
             new_slots[lvl] = SpellSlotLevel(maximum=maximum, used=used)
     warlocks = [(n, l) for (n, l) in class_levels if _safe_caster_type(n) == "pact"]
-    if warlocks and len(class_levels) == 1:
+    if warlocks:
         pact = srd_tables.warlock_pact_slots(warlocks[0][1])
         if pact:
-            new_slots[pact["level"]] = SpellSlotLevel(maximum=pact["slots"], used=0)
+            # Preserve pact `used` from the PRIOR pact entry regardless of its slot level
+            # (the pact level shifts as the warlock levels — e.g. Warlock 2->3 moves it
+            # from slot 1 to slot 2), so a recompute never resets a half-spent pact pool.
+            prev_pact = next((s for s in ch.spell_slots.values() if s.pact), None)
+            used = min(prev_pact.used, pact["slots"]) if prev_pact else 0
+            lvl = pact["level"]
+            # The pact pool is distinct from regular slots. When it shares a slot level with
+            # a regular leveled slot (only a Warlock/other-caster multiclass — never observed
+            # in play, and no clean single-dict model exists for two pools at one level), do
+            # NOT destructively merge: keep the regular slot intact rather than corrupt it or
+            # refund leveled slots on a short rest. The pact pool is only seated when it has
+            # its own slot level free — which covers every Warlock + non-caster multiclass and
+            # every single-class Warlock (the confirmed F02-7 case).
+            if lvl not in new_slots:
+                new_slots[lvl] = SpellSlotLevel(maximum=pact["slots"], used=used, pact=True)
     ch.spell_slots = new_slots
 
 

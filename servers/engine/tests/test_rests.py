@@ -88,6 +88,35 @@ def test_short_rest_warlock_resets_only_pact_slot():  # H1
     assert ch.spell_slots[5].used == 1  # stray non-pact entry untouched
 
 
+# --- F02-7: a MULTICLASS Warlock keeps Pact Magic and recovers it on a short rest ----
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F02-7). Pact slots are the SEPARATE,
+# short-rest-recovered pool; they are tagged `pact=True` so a rest can find them without
+# the old single-class gate. A multiclass Warlock's tagged pact pool must recover on a
+# SHORT rest; a co-existing regular (long-rest) leveled slot must NOT.
+
+def test_short_rest_multiclass_warlock_recovers_pact_slot():
+    # Warlock2/Fighter1: the pact pool sits at slot level 1, tagged pact=True.
+    ch = mk(max_hp=10, current_hp=10, hit_dice="1d8", hit_dice_remaining=1,
+            classes=[{"name": "Warlock", "level": 2}, {"name": "Fighter", "level": 1}],
+            spell_slots={1: {"maximum": 2, "used": 2, "pact": True}})
+    out = rests.short_rest(ch, 0, fixed_roll(1))
+    assert out["pact_slots_recovered"] is True
+    assert ch.spell_slots[1].used == 0  # pact pool recovered on a SHORT rest
+
+
+def test_short_rest_multiclass_pact_recovers_without_refilling_leveled_slot():
+    # A pact entry recovers on a short rest; a tagged-regular (non-pact) leveled slot does not.
+    ch = mk(max_hp=10, current_hp=10, hit_dice="1d8", hit_dice_remaining=1,
+            classes=[{"name": "Warlock", "level": 3}, {"name": "Cleric", "level": 1}],
+            spell_slots={
+                1: {"maximum": 2, "used": 2},  # regular (long-rest) leveled slot
+                2: {"maximum": 2, "used": 2, "pact": True},  # pact pool
+            })
+    rests.short_rest(ch, 0, fixed_roll(1))
+    assert ch.spell_slots[2].used == 0  # pact recovered on short rest
+    assert ch.spell_slots[1].used == 2  # regular slot untouched (only a long rest refills it)
+
+
 def test_short_rest_negative_con_floors_at_zero():
     ch = mk(max_hp=20, current_hp=5, hit_dice="2d8", hit_dice_remaining=2,
             abilities={"constitution": 8})  # CON mod -1

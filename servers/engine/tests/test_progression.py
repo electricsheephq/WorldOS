@@ -206,6 +206,53 @@ def test_multiclass_prereq_enforced():
     assert any(cl["name"].lower() == "fighter" for cl in res["classes"])
 
 
+# --- F02-7: a MULTICLASS Warlock keeps Pact Magic ------------------------------------
+# Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F02-7). The pact branch of
+# _recompute_spellcasting was gated `len(class_levels) == 1`, so a Warlock/X multiclass
+# LOST its pact slots entirely (it has NO regular slots — Warlock contributes 0 to the
+# effective caster level). Pact slots are the separate, short-rest-recovered pool sized by
+# WARLOCK level; they must survive the multiclass build, tagged `pact=True`.
+
+def _mk_char(classes, **kw):
+    from models import Character
+    return Character(name="W", classes=classes, **kw)
+
+
+def test_recompute_multiclass_warlock_keeps_pact_slots():
+    ch = _mk_char([{"name": "Warlock", "level": 2}, {"name": "Fighter", "level": 1}])
+    server._recompute_spellcasting(ch)
+    # Warlock2 -> pact pool of 2 slots at slot level 1; the multiclass build must keep it.
+    assert 1 in ch.spell_slots
+    assert ch.spell_slots[1].maximum == 2
+    assert ch.spell_slots[1].pact is True
+
+
+def test_recompute_does_not_reset_multiclass_pact_used():
+    # A recompute / class-sig change must NOT silently refill a half-spent pact pool.
+    ch = _mk_char([{"name": "Warlock", "level": 2}, {"name": "Fighter", "level": 1}],
+                  spell_slots={1: {"maximum": 2, "used": 1, "pact": True}})
+    server._recompute_spellcasting(ch)
+    assert ch.spell_slots[1].used == 1  # preserved, not clobbered to 0
+
+
+def test_recompute_single_class_warlock_unchanged():
+    # NEGATIVE invariant: a single-class Warlock is byte-identical to today (now tagged).
+    ch = _mk_char([{"name": "Warlock", "level": 3}])
+    server._recompute_spellcasting(ch)
+    # Warlock3 -> 2 pact slots at slot level 2; this is the ONLY slot entry.
+    assert set(ch.spell_slots.keys()) == {2}
+    assert ch.spell_slots[2].maximum == 2
+    assert ch.spell_slots[2].used == 0
+
+
+def test_recompute_non_warlock_multiclass_has_no_pact_tag():
+    # NEGATIVE invariant: a non-Warlock multiclass is unaffected — no pact-tagged entry.
+    ch = _mk_char([{"name": "Wizard", "level": 3}, {"name": "Cleric", "level": 2}])
+    server._recompute_spellcasting(ch)
+    assert ch.spell_slots  # has regular leveled slots
+    assert all(s.pact is False for s in ch.spell_slots.values())
+
+
 def _campaign_snapshot(campaign_id: str) -> dict:
     return store.load_campaign(campaign_id).model_dump(mode="json")
 

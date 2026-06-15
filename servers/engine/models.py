@@ -182,6 +182,13 @@ class Currency(_StrictModel):
 class SpellSlotLevel(_StrictModel):
     maximum: int = 0
     used: int = 0
+    # True == this entry is a Warlock PACT-MAGIC pool (the separate, short-rest-recovered
+    # slot pool sized by warlock level), NOT a regular Vancian slot. The tag lets a rest
+    # refill pact slots on a SHORT rest (regular slots only refill on a long rest) without
+    # the old single-class gate, so a MULTICLASS Warlock keeps Pact Magic too (F02-7).
+    # Additive: defaults False, so every existing entry deserializes byte-identical and a
+    # non-Warlock is unaffected.
+    pact: bool = False
 
 
 class ClassResource(_StrictModel):
