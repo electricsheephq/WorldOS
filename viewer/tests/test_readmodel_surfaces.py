@@ -872,6 +872,102 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertIn("event", surface)
         self.assertEqual(surface["event"]["id"], "event_gated")
 
+    # ── parley: #751 NPC binding (header identifies the NPC, pinned) ────────────
+
+    def test_parley_surface_omits_npc_block_without_a_target(self):
+        # No ?npc and no live anchored event -> no npc block (byte-identical to today's
+        # freeform parley). The actor stays the lead PC; the header has nothing to repoint.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertNotIn("npc", surface)
+        self.assertEqual(surface["actor"], "Cassian Frostbreaker")  # actor unchanged
+
+    def test_parley_surface_binds_explicit_npc_id_and_pins_it(self):
+        # #751: ?npc=<id> binds the parley to the NPC the player opened the conversation with,
+        # so the header names the NPC (not the player) and the surface carries a STABLE id the
+        # frontend pins for the interaction.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=olwen")
+        self.assertIn("npc", surface)
+        npc = surface["npc"]
+        self.assertEqual(npc["id"], "olwen")
+        self.assertEqual(npc["name"], "Toll-keeper Olwen")
+        self.assertTrue(npc["met"])
+        # The lead PC is still the ACTOR (whose sheet drives the skill modifiers); the NPC is
+        # the conversation TARGET. Both are carried — the header renders the npc, the slots the actor.
+        self.assertEqual(surface["actor"], "Cassian Frostbreaker")
+        self.assert_no_private_keys(surface)
+
+    def test_parley_surface_npc_falls_back_to_live_event_anchor(self):
+        # With no explicit ?npc but a live Event anchored on an NPC, the surface binds to that
+        # anchor NPC (the engine already chose WHO the stumble-into is about).
+        snap = dict(_SNAPSHOT)
+        snap["events"] = {
+            "event_toll": {
+                "id": "event_toll", "trigger": "manual", "prompt": "Olwen bars the way.",
+                "anchor_npc_id": "olwen",
+                "options": [{"label": "Bargain", "tag": "N", "skill": "persuasion", "dc": 14}],
+            }
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches")
+        self.assertIn("npc", surface)
+        self.assertEqual(surface["npc"]["id"], "olwen")
+        self.assertEqual(surface["npc"]["name"], "Toll-keeper Olwen")
+
+    def test_parley_surface_explicit_npc_wins_over_event_anchor(self):
+        # An explicit ?npc pins THAT NPC even when a live event anchors a different one — the
+        # player's chosen interlocutor is authoritative, fixing the "switch mid-interaction" half.
+        snap = dict(_SNAPSHOT)
+        snap["characters"]["mira"]["met"] = True
+        snap["events"] = {
+            "event_toll": {
+                "id": "event_toll", "trigger": "manual", "prompt": "Olwen bars the way.",
+                "anchor_npc_id": "olwen", "options": [{"label": "Bargain"}],
+            }
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=mira")
+        self.assertIn("npc", surface)
+        self.assertEqual(surface["npc"]["id"], "mira")  # the pinned target, not the event anchor
+
+    def test_parley_surface_unknown_npc_id_degrades_gracefully(self):
+        # An unknown id never raises mid-scene — it degrades to a freeform parley (no npc block),
+        # exactly like an unknown event_id does.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=nobody")
+        self.assertNotIn("npc", surface)
+        self.assertEqual(surface["actor"], "Cassian Frostbreaker")
+
+    # ── parley: #615 disposition meter (attitude band + value on the npc block) ──
+
+    def test_parley_surface_npc_carries_disposition_band_and_value(self):
+        # #615: the bound NPC block carries the canonical disposition bucket (reusing
+        # _attitude_disposition) + the raw attitude_value, so the Dialogue screen can render a
+        # live disposition meter reusing DispositionDot.
+        self._write("camp_marches", _SNAPSHOT)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=olwen")
+        npc = surface["npc"]
+        # olwen is guarded / attitude_value -10 -> _attitude_disposition -> "cool"
+        self.assertEqual(npc["disposition"], server._attitude_disposition(_SNAPSHOT["characters"]["olwen"]))
+        self.assertEqual(npc["disposition"], "cool")
+        self.assertEqual(npc["attitude_value"], -10)
+        self.assertEqual(npc["attitude"], "guarded")
+
+    def test_parley_surface_disposition_renders_even_at_zero_attitude(self):
+        # The meter reads the existing attitude_value and is fine when it's 0 (a freshly-met NPC
+        # with no recorded stance still gets a "neutral" band — never a missing meter).
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["characters"]["greeter"] = {
+            "id": "greeter", "name": "Gate Greeter", "kind": "npc", "met": True,
+            "location_id": "lanternrest", "attitude": "", "attitude_value": 0,
+        }
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=greeter")
+        npc = surface["npc"]
+        self.assertEqual(npc["attitude_value"], 0)
+        self.assertEqual(npc["disposition"], "neutral")
+
 
 if __name__ == "__main__":
     unittest.main()
