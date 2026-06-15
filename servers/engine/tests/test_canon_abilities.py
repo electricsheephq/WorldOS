@@ -184,18 +184,36 @@ def test_canon_paladin_record_carries_subclass_and_gets_oath_features(tmp_path, 
     assert "Aura of Devotion" in ch.features, "an L10 oath Paladin must seat with Aura of Devotion (7)"
 
 
-def test_canon_record_without_subclass_round_trips_unchanged(tmp_path, monkeypatch):
-    # Additivity: a canon record with NO subclass behaves exactly as before (free-text subclass
-    # stays unset). The seated Paladin is OVERDUE for its oath (surfaced by build_options), not
-    # silently granted one.
+def test_canon_record_without_subclass_below_choice_level_stays_unset(tmp_path, monkeypatch):
+    # A canon record with NO subclass, seated BELOW the subclass-choice level (3), still
+    # round-trips unset — the oath is a genuine pending choice, not yet due. (#895 only auto-sets
+    # AT/PAST the choice level; below it, the subclass legitimately stays a real pending choice.)
+    c = _seed(tmp_path, monkeypatch)
+    record = {"name": "Squire Paladin", "class": "Paladin", "level": "2"}
+    monkeypatch.setattr(server.content_mod, "load_canon_character", lambda world_id, name: record)
+    res = server.load_canon_character(c.id, "Squire Paladin", kind="player", add_to_party=True)
+    assert "error" not in res
+    ch = server._require(c.id).characters[res["id"]]
+    assert not (ch.classes[0].subclass or ""), "below the choice level the oath stays a pending choice"
+    assert "Aura of Devotion" not in ch.features
+
+
+def test_canon_record_without_subclass_at_or_past_choice_autosets_sole_oath(tmp_path, monkeypatch):
+    # #895: the L10-canon-Paladin no-oath fix. A canon record with NO subclass seated AT/PAST the
+    # choice level (here L5) now auto-gets the SOLE SRD oath (SRD 5.2.1 ships exactly one subclass
+    # per class), so an L5+ Paladin is never left "Choose Subclass — Sacred Oath not set". The
+    # pre-#895 expectation (subclass stays null at L5) WAS the bug (the seated L10 'Devella
+    # Fountainhead' optimizer finding). At L5 the choice-level oath features are owed; Aura of
+    # Devotion (7) is still not yet due.
     c = _seed(tmp_path, monkeypatch)
     record = {"name": "Plain Paladin", "class": "Paladin", "level": "5"}
     monkeypatch.setattr(server.content_mod, "load_canon_character", lambda world_id, name: record)
     res = server.load_canon_character(c.id, "Plain Paladin", kind="player", add_to_party=True)
     assert "error" not in res
     ch = server._require(c.id).characters[res["id"]]
-    assert not (ch.classes[0].subclass or "")
-    assert "Aura of Devotion" not in ch.features
+    assert ch.classes[0].subclass == "Oath of Devotion", "the sole SRD oath is auto-set at L5"
+    assert "Sacred Weapon" in ch.features
+    assert "Aura of Devotion" not in ch.features  # not owed until level 7
 
 
 def test_shipped_hellrider_paladin_seats_with_oath_of_devotion(tmp_path, monkeypatch):

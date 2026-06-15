@@ -1172,12 +1172,20 @@ def _expertise_count(class_name: str, level: int) -> int:
     return 0
 
 
-def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool) -> None:
+def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool,
+                              autoset_single_subclass: bool = False) -> None:
     """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
     hit dice, level-1 HP (max die + CON), proficiency bonus, class base AC (when
     requested), and class features through `level`. No-op on an unknown class. Shared
     by create_character and recruit_companion so a live-made hero gets a real sheet
-    instead of forcing the DM to invent modifiers."""
+    instead of forcing the DM to invent modifiers.
+
+    `autoset_single_subclass` (#895, default OFF = byte-identical) — when True, a character
+    AT/PAST its subclass-choice level with NO subclass and EXACTLY ONE legal SRD subclass
+    has that sole option auto-set so it receives the owed subclass features. Only the
+    canon-load seat path opts in (a canon figure pulled straight in as a high-level PC has
+    no planner step to choose at); the deliberate create_character + level-up planner path
+    leaves it OFF so the subclass stays a planner-offered 'overdue choice' (the #607 picker)."""
     try:
         cname = class_name.lower()
         ch.saving_throw_proficiencies = [Ability(s) for s in srd_tables.class_saves(cname)]
@@ -1207,6 +1215,24 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
         # subclass also gets that subclass's choice-level features (normalize loose
         # names — 'Evocation' -> 'Evoker' — and persist the canonical form).
         sub = next((cl.subclass for cl in ch.classes if cl.name.lower() == cname), None)
+        if not sub and autoset_single_subclass:
+            # #895 ADDITIVE (opt-in): a canon figure loaded as a PC at/past the subclass-choice
+            # level with NO subclass (the live L10 Paladin "Devella Fountainhead":
+            # classes=[{Paladin, 10, subclass:null}]) kept a NULL subclass and got NONE of its
+            # owed oath features — the optimizer "Level 10 Paladin still showing Choose Subclass —
+            # Sacred Oath not set" finding. SRD 5.2.1 ships EXACTLY ONE subclass per class (every
+            # class returns one subclass_options entry, all at subclass_level 3), so at/past the
+            # choice level a missing subclass has an UNAMBIGUOUS default — the sole legal SRD
+            # option. Auto-set it so the existing resolve+grant block below sets cl.subclass and
+            # grants the owed features THROUGH this level. FUTURE-PROOF: only auto-set when EXACTLY
+            # ONE option exists; if a class ever ships >1 SRD subclass, leave it null (a real
+            # pending choice). Gated to the canon-load seat (autoset_single_subclass=True only
+            # there) so the deliberate create/level-up planner path is byte-identical — there the
+            # subclass stays a planner-offered 'overdue choice' (the #607/#888 picker block).
+            slvl = srd_tables.subclass_level(cname)
+            opts = srd_tables.subclass_options(cname)
+            if slvl is not None and level >= slvl and len(opts) == 1:
+                sub = opts[0]["name"]
         if sub:
             canonical = srd_tables.resolve_subclass(cname, sub)
             if canonical:
@@ -1429,7 +1455,7 @@ def _backfill_seat_abilities(ch, class_name: str, level: int, rec_abilities=None
 
 def _finish_seat_sheet(ch, class_name: str, level: int, *, set_base_ac: bool,
                        rec_abilities=None, backfill_abilities: bool = True,
-                       seed_gear: bool = True) -> str:
+                       seed_gear: bool = True, autoset_single_subclass: bool = False) -> str:
     """EVERY seat path's shared finisher (audit F02-1 + F02-4): ability backfill ->
     SRD class defaults -> starting gear+purse, in that order so HP/AC/initiative are
     computed from REAL ability scores. The five seat paths (create / start fresh +
@@ -1443,7 +1469,8 @@ def _finish_seat_sheet(ch, class_name: str, level: int, *, set_base_ac: bool,
     if backfill_abilities:
         ability_source = _backfill_seat_abilities(ch, class_name, level, rec_abilities)
     if class_name:
-        _apply_srd_class_defaults(ch, class_name, level, set_base_ac=set_base_ac)
+        _apply_srd_class_defaults(ch, class_name, level, set_base_ac=set_base_ac,
+                                  autoset_single_subclass=autoset_single_subclass)
         if seed_gear:
             _seed_starting_gear(ch, class_name)
     return ability_source
@@ -2810,6 +2837,12 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
             set_base_ac=(ch.armor_class == 10),
             rec_abilities=rec.get("abilities"),
             seed_gear=(ch.kind in ("player", "companion")),
+            # #895: a canon figure pulled straight in as a high-level PC has NO planner step to
+            # pick its subclass at (the DM loads it ready-to-play), so at/past the choice level
+            # auto-set the sole SRD subclass and grant the owed features — closing the live L10
+            # canon Paladin "Devella Fountainhead" no-oath / "Choose Subclass" optimizer finding.
+            # ONLY this seat opts in; the deliberate create/level-up planner keeps the choice open.
+            autoset_single_subclass=True,
         )
         # MAX_HP (#352 — canon PC seated with a critically-low max_hp). The Character default is a
         # placeholder max_hp=1, and an identity stub left at 1 HP is an INSTANT-KILL combatant: the
