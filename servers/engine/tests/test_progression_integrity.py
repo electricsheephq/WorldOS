@@ -232,6 +232,35 @@ def test_explicit_max_hp_in_same_patch_wins_over_con_retro():
     assert out["max_hp"] == 99  # DM-authored HP wins; no retro on top
 
 
+def test_non_con_asi_on_level_up_adds_only_the_normal_gain():
+    # Guardrail for the additive-by-default invariant: a NON-CON ASI (STR) leaves the CON
+    # modifier untouched, so the retro term is exactly 0 — the new level adds only its normal
+    # gain (avg + CON mod), never a spurious retro adjustment. A CON ASI moving HP must NOT
+    # mean every ASI moves HP.
+    cid = server.create_campaign("strasi")["id"]
+    fid = server.create_character(cid, "Sword", kind="player", class_name="Fighter",
+                                  apply_srd_defaults=True, abilities={"constitution": 14})["id"]
+    server.level_up(cid, fid, "Fighter")  # L2
+    server.level_up(cid, fid, "Fighter")  # L3
+    before = server.get_character(cid, fid)["max_hp"]
+    out = server.level_up(cid, fid, "Fighter", asi={"strength": 2})  # L4, CON unchanged
+    # Fighter d10 + CON 14 (+2): the L4 gain is avg 6 + 2 = 8, with NO retro term.
+    assert out["abilities"]["constitution"] == 14  # CON untouched
+    assert out["max_hp"] == before + 8
+
+
+def test_non_con_patch_leaves_max_hp_unchanged():
+    # A patch that changes a non-CON ability (STR) must not perturb max HP at all — the CON-retro
+    # branch is gated on a CON-modifier delta, so a STR edit is a pure no-op for HP.
+    cid = server.create_campaign("strpatch")["id"]
+    fid = server.create_character(cid, "Lift", kind="player", class_name="Fighter",
+                                  level=5, apply_srd_defaults=True,
+                                  abilities={"strength": 14, "constitution": 14})["id"]
+    before = server.get_character(cid, fid)["max_hp"]
+    out = server.update_character(cid, fid, {"abilities": {"strength": 16}})
+    assert out["max_hp"] == before  # non-CON ability change leaves HP exactly as it was
+
+
 # --------------------------------------------------------------------------- #
 # F02-3 / F02-15 — pending-choice ledger + feat surfacing                      #
 # --------------------------------------------------------------------------- #
