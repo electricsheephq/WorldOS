@@ -79,8 +79,13 @@ const NAV_GROUPS = [
     id: "g_table", label: "Table", glyph: "dice",
     tabs: [
       { id: "table", label: "Session" },
-      { id: "combat", label: "Battle" },
-      { id: "dialogue", label: "Parley" },
+      // `hint` is the newcomer disambiguator (dogfood: two newbies found "Battle"/"Parley"
+      // opaque D&D jargon — "unclear what they do vs just typing in the box"). TabBar renders it
+      // as a small plain-language sub-label + folds it into the tab's title/aria-label, so a
+      // no-prior-knowledge player (and a screen reader) reads what the tab does — WITHOUT renaming
+      // away the thematic flavor. Only the jargon tabs carry one; plain-English tabs (Session) don't.
+      { id: "combat", label: "Battle", hint: "combat" },
+      { id: "dialogue", label: "Parley", hint: "talk" },
     ],
   },
   {
@@ -100,7 +105,7 @@ const NAV_GROUPS = [
     id: "g_journal", label: "Journal", glyph: "book",
     tabs: [
       { id: "journal", label: "Quests" },
-      { id: "bestiary", label: "Codex" },
+      { id: "bestiary", label: "Codex", hint: "lore & journal" },
       { id: "acts", label: "Acts" },
     ],
   },
@@ -509,7 +514,13 @@ function TabBar({ current, onNavigate }) {
         background: "linear-gradient(180deg, transparent, var(--b-500), transparent)",
         marginRight: 12,
       }} />
-      {group.tabs.map((tab) => (
+      {group.tabs.map((tab) => {
+        // Newcomer disambiguator (dogfood): the jargon tabs (Battle/Parley/Codex) carry a `hint`.
+        // We surface it BOTH ways — a small visible plain-language sub-label under the thematic
+        // label (sighted first-timer) AND folded into the button's title + aria-label (hover
+        // tooltip + screen reader), e.g. "Parley · talk". The flavor label is never replaced.
+        const tip = tab.hint ? `${tab.label} · ${tab.hint}` : tab.label;
+        return (
         <button
           type="button"
           key={tab.id}
@@ -519,8 +530,16 @@ function TabBar({ current, onNavigate }) {
           data-worldos-tab-id={tab.id}
           className={`tab-button ${current === tab.id ? "active" : ""}`}
           onClick={() => onNavigate(tab.id)}
+          title={tip}
+          aria-label={tip}
           style={{
             position: "relative",
+            // a hint adds a sub-label line, so stack the two lines instead of centering one.
+            display: "inline-flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: tab.hint ? 1 : 0,
             padding: "8px 18px",
             marginRight: 2,
             fontFamily: "var(--f-display)",
@@ -541,9 +560,28 @@ function TabBar({ current, onNavigate }) {
           onMouseEnter={(e) => { if (current !== tab.id) e.currentTarget.style.color = "var(--b-100)"; }}
           onMouseLeave={(e) => { if (current !== tab.id) e.currentTarget.style.color = "var(--b-300)"; }}
         >
-          {tab.label}
+          <span>{tab.label}</span>
+          {tab.hint && (
+            <span
+              className="tab-sublabel"
+              data-worldos-testid="screen-tab-hint"
+              style={{
+                fontSize: 8,
+                letterSpacing: "0.12em",
+                fontWeight: 400,
+                opacity: current === tab.id ? 0.85 : 0.7,
+                // keep the plain-language hint readable — no uppercase mangling of "lore & journal".
+                textTransform: "none",
+                lineHeight: 1,
+                marginTop: 1,
+              }}
+            >
+              {tab.hint}
+            </span>
+          )}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

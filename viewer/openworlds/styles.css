@@ -429,6 +429,14 @@ button > :where(span, svg, img, .ow-icon, .ow-icon-fallback) * {
   box-sizing: border-box;
 }
 
+/* Newcomer disambiguator sub-label on the jargon tabs (Battle/Parley/Codex): a small
+   plain-language hint under the thematic label so a first-timer reads what the tab does.
+   The thematic label keeps the display font + tracking; the hint is quiet + lower-case. */
+.tab-sublabel {
+  font-family: var(--f-display);
+  white-space: nowrap;
+}
+
 /* ===== Stage ===== */
 .stage {
   position: relative;
