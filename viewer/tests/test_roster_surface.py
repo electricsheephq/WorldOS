@@ -290,6 +290,65 @@ class RosterSurfaceTests(unittest.TestCase):
         _, full = self._get_json("/roster-surface?limit=500")
         self.assertLess(surface.get("total", 0), full.get("total", 0))
 
+    # ── BEGINNER GUIDANCE: a basis to choose (#dogfood onboarding) ────────────────
+
+    def test_every_recommended_card_exposes_a_plain_language_playstyle_hint(self):
+        # The newbie dogfood gap: ~18 recommended heroes with no hint about how each PLAYS. Every
+        # recommended card (each has a class by construction) must now carry a plain-language
+        # `playstyle` hint derived from its class — so each card teaches itself (option a).
+        status, surface = self._get_json("/roster-surface?recommended=1")
+        self.assertEqual(status, 200)
+        cards = surface.get("characters", [])
+        self.assertTrue(cards, "the recommended set should not be empty")
+        for c in cards:
+            hint = c.get("playstyle")
+            self.assertTrue(
+                isinstance(hint, str) and hint.strip(),
+                f"{c.get('name')} (a {c.get('class')}) exposes no playstyle hint",
+            )
+
+    def test_recommended_surface_flags_an_easy_starter_subset(self):
+        # Option b: an obvious safe pick. At least one recommended card is tagged
+        # `easy_starter:true` ("Great for your first session"), and the flag is a bool on every
+        # card (additive, absent-safe). Easy-starters are simple, forgiving classes.
+        status, surface = self._get_json("/roster-surface?recommended=1")
+        self.assertEqual(status, 200)
+        cards = surface.get("characters", [])
+        self.assertTrue(cards)
+        for c in cards:
+            self.assertIsInstance(c.get("easy_starter"), bool, c.get("name"))
+        starters = [c for c in cards if c.get("easy_starter")]
+        self.assertTrue(starters, "a first-timer needs at least one flagged safe pick")
+        simple = {"fighter", "barbarian", "cleric", "rogue", "paladin", "ranger"}
+        for c in starters:
+            self.assertIn((c.get("class") or "").strip().lower(), simple, c.get("name"))
+
+    def test_full_recommended_set_is_still_reachable_alongside_the_guidance(self):
+        # The guidance is a hint layered ON the curated set, never a further wall: the full
+        # recommended set still rides along (same count as without the new fields would imply),
+        # and the broad full roster is still one click away (a strict superset).
+        _, rec = self._get_json("/roster-surface?recommended=1")
+        rec_cards = rec.get("characters", [])
+        self.assertTrue(rec_cards)
+        # the easy-starter subset never shrinks the recommended set — non-starters remain present
+        non_starters = [c for c in rec_cards if not c.get("easy_starter")]
+        self.assertTrue(non_starters, "the full recommended set stays reachable, not just starters")
+        # the whole roster is still reachable (recommended is a strict narrowing of it)
+        _, full = self._get_json("/roster-surface?limit=500")
+        self.assertLess(rec.get("total", 0), full.get("total", 0))
+
+    def test_playstyle_hint_rides_the_full_roster_too(self):
+        # The hint is derived from class, so it isn't recommended-only: a full-roster card that has
+        # a class carries it too (each card teaches itself everywhere), and a no-class card is
+        # absent-safe (blank hint, never a fabricated phrase).
+        status, surface = self._get_json("/roster-surface?class=Wizard")
+        self.assertEqual(status, 200)
+        cards = surface.get("characters", [])
+        self.assertTrue(cards)
+        for c in cards:
+            self.assertIn("playstyle", c)  # field always present (round-trip-safe shape)
+            self.assertTrue(c["playstyle"].strip(), c.get("name"))  # a classed card has a hint
+
 
 if __name__ == "__main__":
     unittest.main()

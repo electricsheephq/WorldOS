@@ -389,6 +389,49 @@ _RECOMMENDED_MAX_LEVEL = 10
 _RECOMMENDED_CAP = 18
 
 
+# A pure class -> plain-language PLAYSTYLE hint, so a no-prior-knowledge player has a BASIS TO
+# CHOOSE on the roster: each card teaches itself ("what is it like to play this?") without
+# fabricating any lore — the hint is a generic property of the 5e class, not of the figure.
+# Keyed by the lower-cased class name (the record stores e.g. "Fighter"); absent -> no hint.
+_CLASS_PLAYSTYLE: dict[str, str] = {
+    "fighter": "Sturdy front-line — simple to play",
+    "barbarian": "Tough melee bruiser — easy, forgiving",
+    "paladin": "Armoured holy warrior — durable, simple",
+    "rogue": "Sneaky striker — light and nimble",
+    "ranger": "Bow or blade in the wilds — straightforward",
+    "cleric": "Heal and fight — flexible support",
+    "monk": "Fast unarmed fighter — mobile, tricky",
+    "bard": "Charming jack-of-all-trades — versatile",
+    "wizard": "Fragile, but versatile spells — for tinkerers",
+    "sorcerer": "Innate blaster — powerful but fragile",
+    "warlock": "Pact magic and blasts — bursty, fragile",
+    "druid": "Shapeshifter and nature magic — versatile",
+}
+
+# The EASY-STARTER subset of the recommended set: simple, forgiving classes at a low-ish level —
+# the obvious safe pick for a first session. Fragile casters are intentionally excluded.
+_EASY_STARTER_CLASSES = frozenset({"fighter", "barbarian", "cleric", "rogue", "paladin", "ranger"})
+_EASY_STARTER_MAX_LEVEL = 6
+
+
+def class_playstyle_hint(char_class: str) -> str:
+    """Pure, read-only lookup: a short plain-language PLAYSTYLE hint for a 5e class (or "" when the
+    class is blank/unknown — absent-safe, never a fabricated phrase). Lets a roster card teach a
+    newcomer how the figure PLAYS without inventing any lore. Case-insensitive on the class name."""
+    return _CLASS_PLAYSTYLE.get(str(char_class or "").strip().lower(), "")
+
+
+def _is_easy_starter(char_class: str, level: str) -> bool:
+    """Whether a recommended figure is an obvious safe FIRST pick: a simple, forgiving class at a
+    low-ish level. Pure + absent-safe (a blank/odd class or non-numeric level -> not flagged)."""
+    if str(char_class or "").strip().lower() not in _EASY_STARTER_CLASSES:
+        return False
+    try:
+        return int(str(level or "").strip()) <= _EASY_STARTER_MAX_LEVEL
+    except (TypeError, ValueError):
+        return False
+
+
 def roster_surface(
     world_id: str,
     *,
@@ -407,7 +450,14 @@ def roster_surface(
     canon NPC to play AS — they never invent one. This returns the richer per-record shape the
     picker card needs (the light `list_canon_characters` drops level/backstory/id):
 
-      {id, name, race, class, level, role, playable, backstory (short snippet), portrait_scope}
+      {id, name, race, class, level, role, playable, backstory (short snippet), portrait_scope,
+       playstyle, easy_starter}
+
+    `playstyle` is a pure class-derived plain-language hint (e.g. Fighter -> "Sturdy front-line —
+    simple to play"; "" when the class is blank/unknown) so a no-prior-knowledge player has a basis
+    to choose — each card teaches itself, no fabricated lore. `easy_starter` flags the obvious safe
+    FIRST pick (a simple class at a low-ish level); it is only set on the curated recommended
+    surface and defaults False elsewhere. Both are additive + absent-safe (old payloads round-trip).
 
     `id` is the file slug (content/worlds/<id>/characters/<slug>.json) — there is no `id` field on
     the records, and the slug is what `portrait-<slug>` resolves to (the ingested face). `level` is
@@ -532,6 +582,13 @@ def roster_surface(
                 # The /image scope the picker card renders. Ingested canon faces resolve by the
                 # name slug (the viewer's _scope_key folds portrait-<slug> -> <slug>).
                 "portrait_scope": "portrait-" + slug,
+                # #dogfood onboarding: a BASIS TO CHOOSE for a no-prior-knowledge player. The
+                # `playstyle` hint is a pure class->phrase derivation (each card teaches itself, no
+                # fabricated lore); it rides EVERY card and is "" when the class is blank/unknown.
+                # `easy_starter` flags the obvious safe first pick — only meaningful on the curated
+                # recommended surface, so it defaults False on the full roster (absent-safe).
+                "playstyle": class_playstyle_hint(rclass),
+                "easy_starter": bool(recommended_only) and _is_easy_starter(rclass, rlevel),
             })
 
     # `total` is the FULL matched count; the returned list is capped to `limit` so the picker
