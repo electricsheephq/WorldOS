@@ -579,6 +579,31 @@ function buildChronicleLog(recentEvents, chatBeats, log) {
 // Exposed for tests/devtools introspection (additive — the component calls the local fn directly).
 if (typeof window !== "undefined") window.buildChronicleLog = buildChronicleLog;
 
+// GROUP C / #seat-order — resolve WHICH party member is the player's hero (the one whose sheet the
+// header + active-hero chip show) from the SERVER'S AUTHORITATIVE actor, never from party ORDER. The
+// owner saw a banned/stale companion (an "ACTIVE ASTARION / Lvl 1 Adventurer") shown as the hero
+// because the seed read `party[0]?.id`: whoever the engine happened to list first (a stale companion)
+// became the displayed hero, with the no-class "Adventurer" fallback. The engine already publishes the
+// real active actor at `surface.actor` ({id,name,kind}, itself already preferring kind=player — see
+// viewer/server.py _action_actor), and each party card carries its `kind`. So resolve in priority:
+//   1. surface.actor.id            — the engine's authoritative active actor (the truth)
+//   2. the first kind="player" PC  — the real player-controlled hero, regardless of list order
+//   3. party[0].id                 — last-resort fallback (preserves today's behavior when neither
+//                                    an actor nor a kind=player card is present, e.g. a demo surface)
+// PURE + read-only: it only READS the surface the engine already published; it never writes engine
+// state and never breaks the wire contract. Returns the chosen id (a string, possibly "").
+function resolveActiveHeroId(surface, party) {
+  const roster = Array.isArray(party) ? party : [];
+  const actorId = surface && surface.actor && surface.actor.id;
+  if (typeof actorId === "string" && actorId && roster.some((p) => p && p.id === actorId)) {
+    return actorId;
+  }
+  const pc = roster.find((p) => p && p.kind === "player");
+  if (pc && pc.id) return pc.id;
+  return (roster[0] && roster[0].id) || "";
+}
+if (typeof window !== "undefined") window.resolveActiveHeroId = resolveActiveHeroId;
+
 // LOCKOUT P0 — the detach-locks-the-action-bar play gate, as ONE pure function so the exact
 // boolean logic is unit-testable (mirrors app.jsx's `recoveryWindowMs`). Inputs are the surface +
 // app-status facts the component already has; outputs are every derived play-gate flag + the single
@@ -737,7 +762,10 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   const calendar = surface?.calendar?.available ? surface.calendar : null;
   const calendarMoon = Array.isArray(calendar?.moons) ? calendar.moons[0] : null;
   const calendarDetail = calendar ? [calendar.season, calendarMoon ? `${calendarMoon.name}: ${calendarMoon.phase}` : ""].filter(Boolean).join(" · ") : "";
-  const [activeHero, setActiveHero] = React.useState(() => party[0]?.id || "");
+  // #seat-order: seed the active hero from the ENGINE'S authoritative actor (surface.actor), then the
+  // first kind="player" PC, and only THEN party[0] — so the displayed/active hero is always the real
+  // PC, never a stale companion the engine happened to order first (see resolveActiveHeroId).
+  const [activeHero, setActiveHero] = React.useState(() => resolveActiveHeroId(surface, party));
   const hero = party.find((p) => p.id === activeHero) || party[0] || { id: "", name: "Hero", short: "Hero", level: 1, class: "Adventurer", hp: 1, hpMax: 1 };
   const visibleQuests = quests.filter((q) => !q.status || q.status === "active" || q.status === "open");
   const canAct = Boolean(surface?.can_act);
