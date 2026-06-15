@@ -88,6 +88,59 @@ def test_engine_built_l19_rogue_has_10d6_sneak_attack():
     assert server.get_character(cid, rid)["sneak_attack_dice"] == "10d6"
 
 
+def test_rogue_sneak_attack_full_curve_spot_checks():
+    # SRD 5.2 Sneak Attack = ceil(level / 2) d6 — spot the endpoints the audit named.
+    def sneak(level):
+        dice = ""
+        for f in srd_tables.features_through("rogue", level):
+            if f.get("sneak_attack_dice"):
+                dice = f["sneak_attack_dice"]
+        return dice
+    assert sneak(1) == "1d6"
+    assert sneak(19) == "10d6"
+    assert sneak(20) == "10d6"
+
+
+def test_rage_uses_table_has_single_srd_correct_source():
+    """F02-11 (rage half): the Barbarian rage-uses curve must come from ONE
+    SRD-5.2-correct source. The live engine table is srd_tables._RAGE_USES
+    (5 uses at L12 — SRD 5.2). The class_features.json `rage_uses`/`rage_damage`
+    hints were DEAD (no code reads them — server.py only reads extra_attacks /
+    sneak_attack_dice) AND contradicted that table (they asserted 5 uses arrives
+    at L15, not L12). A contradicting dead source is a maintenance trap, so the
+    reconciliation removes those hints, leaving _RAGE_USES the sole authority.
+
+    This test locks BOTH halves: (a) the engine curve is the SRD 5.2 table, and
+    (b) class_features.json carries no rage_uses/rage_damage hint that could
+    silently drift back out of sync with it.
+    """
+    # (a) the live engine rage-uses curve == SRD 5.2 (2/3/4/5/6 @ 1/3/6/12/17).
+    def rage(level):
+        return srd_tables.class_resources_through("barbarian", level)["rage"]["max"]
+    assert rage(1) == 2
+    assert rage(3) == 3
+    assert rage(6) == 4
+    assert rage(11) == 4
+    assert rage(12) == 5   # SRD 5.2: the 5th use arrives at L12 (NOT L15)
+    assert rage(16) == 5
+    assert rage(17) == 6
+    assert rage(20) == 6
+
+    # (b) no contradicting dead hint survives in the class-features table — the
+    # rage curve has exactly one source of truth.
+    barb = srd_tables._load("class_features").get("barbarian", {})
+    offenders = [
+        (lv, f.get("name"))
+        for lv, feats in barb.items()
+        for f in feats
+        if "rage_uses" in f or "rage_damage" in f
+    ]
+    assert offenders == [], (
+        "class_features.json still carries dead rage_uses/rage_damage hints that "
+        f"no code reads and that contradict srd_tables._RAGE_USES: {offenders}"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # F02-5 — class-sig recompute must NOT refill spent hit dice                   #
 # --------------------------------------------------------------------------- #
