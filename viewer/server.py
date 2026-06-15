@@ -4229,6 +4229,29 @@ def _catalog_meta(name: str) -> dict:
         return {}
 
 
+def _mastery_effect(name: str) -> str:
+    """The canonical SRD 5.2 weapon-mastery EFFECT text for a mastery NAME (3582dc2 optimizer
+    MAJOR: "Weapon Mastery 'Sap' unexplained"). The ENGINE is the sole author of the wording —
+    this delegates to itemcatalog's canonical map so the viewer never re-states the strings.
+    A persisted Item carries the mastery NAME (F09-7) but not the effect, so a renamed/enchanted
+    weapon still explains its mastery by deriving the text from that name. Empty string for an
+    empty/unknown mastery, so the inspector hides the row (never fabricated)."""
+    nm = (name or "").strip()
+    if not nm:
+        return ""
+    # Reuse the lazily-loaded engine module _catalog_meta primed; load it the same way.
+    global _ITEMCATALOG, _ITEMCATALOG_TRIED
+    if _ITEMCATALOG is None and not _ITEMCATALOG_TRIED:
+        _ITEMCATALOG_TRIED = True
+        _ITEMCATALOG = _engine_module("itemcatalog")
+    if _ITEMCATALOG is None:
+        return ""
+    try:
+        return _ITEMCATALOG._mastery_effect(nm) or ""
+    except Exception:
+        return ""
+
+
 # Weapon-property slugs the SRD catalog stamps on a Weapon record (`is_simple` ->
 # "simple", `is_improvised` -> "improvised") and the attunement clause it stamps on a
 # MagicItem ("attune:<detail>"). Rendered verbatim as pills; the leading "attune:" is
@@ -4307,6 +4330,9 @@ def _catalog_stat_block(name: str) -> dict:
         # Sap". Empty for non-weapons / unresolved — the screen hides the row (never fabricated).
         "weaponCategory": _text(meta.get("weapon_category")) if damage else "",
         "mastery": _text(meta.get("mastery")) if damage else "",
+        # 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): the canonical SRD effect
+        # text the engine resolved alongside the name, so the Market inspector explains the property.
+        "masteryEffect": _text(meta.get("mastery_effect")) if damage else "",
         "attunement": bool(meta.get("requires_attunement")),
         "properties": _catalog_property_chips(meta),
         "description": _text(meta.get("description")),
@@ -4435,6 +4461,10 @@ def _item_stat_block(item: dict, meta: dict) -> dict:
     if cost is None:
         cost = _num(item.get("cost"))
 
+    # #888: the weapon MASTERY name (persisted-first, then by-name catalog) — gated on damage so
+    # only a weapon carries it. Captured once so the 3582dc2 effect text derives from the SAME name.
+    mastery = pick_str("mastery") if damage else ""
+
     # Property chips: prefer the item's own persisted SRD tags (stealth-disadvantage, str-13,
     # attune:…); fall back to the catalog's only when the item carries none. Same formatter.
     raw_props = item.get("properties")
@@ -4464,7 +4494,11 @@ def _item_stat_block(item: dict, meta: dict) -> dict:
         # (F09-7 Item fields) then by-name catalog fallback, damage-gated. The Stash Examine
         # depth the veteran/optimizer asked for ("category + Weapon Mastery property").
         "weaponCategory": pick_str("weapon_category") if damage else "",
-        "mastery": pick_str("mastery") if damage else "",
+        "mastery": mastery,
+        # 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): the canonical SRD effect
+        # text. The Item persists only the mastery NAME (F09-7), so derive the effect from that
+        # name via the engine's canonical map — a renamed/enchanted weapon still explains its mastery.
+        "masteryEffect": _mastery_effect(mastery) if damage else "",
         "costGp": cost,
         "propertyChips": prop_chips,
     }
@@ -4544,6 +4578,9 @@ def _inventory_items(cid: str, ch: dict) -> list[dict]:
             # asked for. Empty/None for non-weapons so the screen hides each row (never fabricated).
             "weaponCategory": stats["weaponCategory"],
             "mastery": stats["mastery"],
+            # 3582dc2 optimizer (MAJOR): the canonical SRD effect text so the Stash Examine panel
+            # explains the mastery, not just names it. Empty for non-weapons (the row is hidden).
+            "masteryEffect": stats["masteryEffect"],
             "attackBonus": attack_bonus,
             "attunement": attunement,
             "attuned": bool(item.get("attuned")),

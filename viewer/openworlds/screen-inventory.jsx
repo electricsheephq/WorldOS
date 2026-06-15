@@ -598,8 +598,13 @@ function itemStatRows(item) {
   }
   // #888: the 2024 Weapon MASTERY property (Topple/Vex/Sap/…) — the advanced combat option the
   // veteran reads on a weapon. Server-resolved from the SRD Mastery assignment; blank when none.
+  // 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): fold the canonical SRD EFFECT
+  // text in beside the name so the row reads "Sap — <what it does>", not a bare unexplained name.
+  // masteryEffect is server-resolved from the engine's canonical map; fall back to name-only when
+  // an older surface didn't supply it (no regression on #888).
   if (item.mastery) {
-    rows.push({ k: "Mastery", v: item.mastery });
+    const me = item.masteryEffect;
+    rows.push({ k: "Mastery", v: me ? `${item.mastery} — ${me}` : item.mastery });
   }
   // RRI-25e55fa optimizer #3: a ranged/thrown weapon shows its real range bracket
   // ("100/400 ft"); the server composes rangeDisplay from the SRD weapon range, blank for a

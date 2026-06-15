@@ -239,6 +239,79 @@ def test_non_versatile_weapon_has_no_versatile_key_value():
     assert rec.get("versatile", "") == ""
 
 
+# --- weapon-mastery EFFECT text (the optimizer's "Weapon Mastery 'Sap' unexplained") ----
+def test_resolve_weapon_exposes_mastery_effect_alongside_name():
+    """The 3582dc2 optimizer MAJOR: the Examine panel shows a weapon's Mastery NAME ("Sap")
+    but NOT what it does. #888 surfaced `mastery`; this surfaces the canonical SRD 5.2 EFFECT
+    text as `mastery_effect` alongside it so a player reads what the property actually does.
+    A Longsword's Mastery is Sap (disadvantage on the target's next attack)."""
+    rec = itemcatalog.resolve("Longsword")
+    assert rec is not None
+    assert rec["mastery"] == "Sap"                       # the NAME (#888, unchanged)
+    effect = rec.get("mastery_effect", "")
+    assert effect, "a weapon with a Mastery must carry the SRD effect text"
+    assert "disadvantage" in effect.lower()
+    assert "next attack" in effect.lower()
+
+
+def test_mastery_effect_text_matches_srd_for_sap_topple_vex():
+    """Spot-check the canonical SRD 5.2 effect wording for three masteries the optimizer
+    named: Sap (disadvantage on next attack), Topple (Constitution save or knocked prone),
+    Vex (advantage on your next attack against that target)."""
+    sap = itemcatalog.resolve("Longsword")          # SRD: Sap
+    assert sap["mastery"] == "Sap"
+    assert "disadvantage" in sap["mastery_effect"].lower()
+    topple = itemcatalog.resolve("Battleaxe")       # SRD: Topple
+    assert topple["mastery"] == "Topple"
+    te = topple["mastery_effect"].lower()
+    assert "constitution" in te and "prone" in te
+    vex = itemcatalog.resolve("Rapier")             # SRD: Vex
+    assert vex["mastery"] == "Vex"
+    ve = vex["mastery_effect"].lower()
+    assert "advantage" in ve and "next attack" in ve
+
+
+def test_all_eight_srd_masteries_have_effect_text():
+    """Every one of the 8 SRD 5.2 weapon masteries (Cleave/Graze/Nick/Push/Sap/Slow/Topple/
+    Vex) must resolve to non-empty effect text — no mastery name surfaces unexplained."""
+    by_name = {
+        "Cleave": "Greataxe", "Graze": "Greatsword", "Nick": "Scimitar", "Push": "Warhammer",
+        "Sap": "Longsword", "Slow": "Club", "Topple": "Battleaxe", "Vex": "Rapier",
+    }
+    for mastery, weapon in by_name.items():
+        rec = itemcatalog.resolve(weapon)
+        assert rec is not None and rec["mastery"] == mastery, f"{weapon} should be {mastery}"
+        assert rec.get("mastery_effect"), f"{mastery} has no effect text"
+
+
+def test_non_mastery_weapon_has_empty_mastery_effect():
+    """A weapon the SRD gives no Mastery (a Net has no mastery) carries an empty mastery AND
+    an empty mastery_effect — never a fabricated effect for a missing name."""
+    rec = itemcatalog.resolve("Net")
+    assert rec is not None
+    assert rec.get("mastery", "") == ""
+    assert rec.get("mastery_effect", "") == ""
+
+
+def test_non_weapon_has_no_mastery_effect_byte_identical():
+    """ADDITIVE INVARIANT: a non-weapon (Plate Armor) gains no mastery_effect — its record is
+    untouched by this change (the key is absent, exactly as before)."""
+    rec = itemcatalog.resolve("Plate Armor")
+    assert rec is not None
+    assert "mastery" not in rec
+    assert "mastery_effect" not in rec
+
+
+def test_magic_weapon_inherits_mastery_effect_via_fk():
+    """A magic weapon inherits its base weapon's Mastery NAME and EFFECT via the same Weapon FK
+    join that carries damage/category (#888) — so an enchanted Glaive reads Graze's effect."""
+    rec = itemcatalog.resolve("Frost Brand (Glaive)")  # Glaive -> Graze
+    assert rec is not None
+    assert rec["mastery"] == "Graze"
+    assert rec.get("mastery_effect"), "a magic weapon must inherit the mastery effect text"
+    assert "miss" in rec["mastery_effect"].lower()
+
+
 def test_pack_precedence_srd_wins_and_pack_adds(tmp_path, monkeypatch):
     """A content pack never overrides an SRD item of the same name (srd524 is
     first-wins) but DOES contribute its own new items."""
