@@ -352,7 +352,13 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   const [loading, setLoading] = React.useState(true);
   const [chosenClass, setChosenClass] = React.useState((hero.class || "").toLowerCase());
   const [subclassName, setSubclassName] = React.useState("");
-  const [asiNote, setAsiNote] = React.useState("");
+  // #607: the ASI/feat choice is STRUCTURED now (not a free-text note). `asiBumps` maps an ability
+  // abbrev (str/dex/…) to its chosen increment; the engine's contract is +2 to one ability OR +1 to
+  // two (each capped at 20 — server.py `_validated_asi_choice`). `takingFeat` flips to the feat path
+  // (mutually exclusive: the engine rejects both). `featName` carries the chosen feat's name.
+  const [asiBumps, setAsiBumps] = React.useState({});
+  const [takingFeat, setTakingFeat] = React.useState(false);
+  const [featName, setFeatName] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   // #robustness: synchronous in-flight lock (mirrors screen-table.jsx). The `submitting` STATE
   // only updates on re-render, so a rapid double-click would otherwise relay TWO level-up intents
@@ -415,6 +421,41 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   const featAllowed = !!(option && option.choices && option.choices.feat_allowed);
   const toLevel = (option && option.to && option.to.level) || (Number(hero.level) + 1);
 
+  // #607: the structured ability-score stepper. ABILITIES is the canonical 6 in 5e order; each abbrev
+  // maps to the engine's full ability name (the level_up `asi` contract keys on full names). The
+  // current score is read from the engine read-model (hero.stats.<abbrev>) so the 20-cap is honest.
+  const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
+  const ASI_FULL = {
+    str: "strength", dex: "dexterity", con: "constitution",
+    int: "intelligence", wis: "wisdom", cha: "charisma",
+  };
+  const heroStats = (hero && hero.stats) || {};
+  const asiTotal = ABILITIES.reduce((n, ab) => n + (Number(asiBumps[ab]) || 0), 0);
+  const asiAtCap = (ab) => (Number(heroStats[ab]) || 0) + (Number(asiBumps[ab]) || 0) >= 20;
+  // A +1 is legal while: fewer than 2 points spent total; this ability isn't already at +2 (so a
+  // single ability can take at most +2); no THIRD ability would be touched; and the post-bump score
+  // stays ≤ 20 (the engine cap). Mirrors `_validated_asi_choice` so the viewer never composes an
+  // intent the engine would reject.
+  const canBumpAsi = (ab) => {
+    if (asiTotal >= 2) return false;
+    if ((Number(asiBumps[ab]) || 0) >= 2) return false;
+    const distinct = ABILITIES.filter((a) => (Number(asiBumps[a]) || 0) > 0);
+    if (distinct.length >= 2 && !(Number(asiBumps[ab]) || 0)) return false;
+    return !asiAtCap(ab);
+  };
+  const bumpAsi = (ab, delta) => setAsiBumps((prev) => {
+    const cur = Number(prev[ab]) || 0;
+    const nextVal = Math.max(0, cur + delta);
+    const next = Object.assign({}, prev);
+    if (nextVal <= 0) delete next[ab]; else next[ab] = nextVal;
+    return next;
+  });
+  // The structured choice is complete when: in feat mode, a feat is named; otherwise the full +2 ASI
+  // is allocated. Drives both the disabled-Confirm reason and the composed move text.
+  const featChosen = takingFeat && !!featName.trim();
+  const asiComplete = asiTotal === 2;
+  const asiChoiceReady = takingFeat ? featChosen : asiComplete;
+
   const confirm = async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
@@ -423,8 +464,16 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
     const parts = ["I advance " + (hero.name || "my character") + " to level " + toLevel + " as a " + cls];
     if (subclassDue && subclassName.trim()) parts.push("choosing the " + subclassName.trim() + " subclass");
     if (asiRequired) {
-      parts.push("and for my ability score improvement" + (featAllowed ? " (or feat)" : "") + ": " +
-                 (asiNote.trim() || "ask me which to take"));
+      // #607: compose the STRUCTURED choice into an unambiguous intent the DM relays to level_up.
+      // Feat path and ASI path are mutually exclusive (the engine rejects both).
+      if (takingFeat && featName.trim()) {
+        parts.push("and instead of an ability score improvement, I take the " + featName.trim() + " feat");
+      } else {
+        const picks = ABILITIES
+          .filter((ab) => (Number(asiBumps[ab]) || 0) > 0)
+          .map((ab) => "+" + asiBumps[ab] + " " + ab.toUpperCase());
+        parts.push("and for my ability score improvement: " + (picks.join(" and ") || "ask me which to take"));
+      }
     }
     const text = parts.join(", ") + ".";
     try {
@@ -460,15 +509,24 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   // still rides the next earned level-up; until then, block + explain.
   const noLegalLevel = !loading && !error && options.length === 0;
   const subclassNeedsName = subclassDue && !subclassName.trim();
-  // Confirm is blocked while submitting, when a subclass is required but unnamed, or when there is
-  // no XP-legal level to advance into — never PERMANENTLY (that is the old display-only stub). The
-  // reason is surfaced as a hover tooltip so the disabled state is never a mystery (the optimizer
-  // persona's complaint: a dead "Confirm advancement" with no explanation of WHY).
+  // #607: at an ASI level the structured choice must be COMPLETE before confirming — either a full
+  // +2 ability allocation or a named feat. An incomplete choice blocks Confirm with a reason (never a
+  // silently-dead button) so the viewer never composes a half-formed intent the engine would reject.
+  const asiNeedsChoice = asiRequired && !asiChoiceReady;
+  // Confirm is blocked while submitting, when a subclass is required but unnamed, when an ASI/feat
+  // choice is incomplete, or when there is no XP-legal level to advance into — never PERMANENTLY
+  // (that is the old display-only stub). The reason is surfaced as a hover tooltip + inline text so
+  // the disabled state is never a mystery (the optimizer persona's complaint: a dead "Confirm
+  // advancement" with no explanation of WHY).
   const confirmBlockReason = noLegalLevel
     ? "No XP earned yet — there's no level to advance into. Earn more XP first."
     : subclassNeedsName
       ? "Name (or pick) your " + subclassGroupLabel + " to confirm — the DM finalizes it"
-      : "";
+      : asiNeedsChoice
+        ? (takingFeat
+            ? "Name the feat you're taking to confirm"
+            : "Allocate your ability score improvement (+2 to one, or +1 to two) to confirm")
+        : "";
   const confirmDisabled = submitting || !!confirmBlockReason;
 
   return (
@@ -602,16 +660,108 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
               )}
 
               {asiRequired && (
-                <div style={{ marginTop: 16 }}>
+                <div style={{ marginTop: 16 }} data-worldos-testid="levelup-asi-section">
                   <SectionTitle>Ability Score Improvement{featAllowed ? " or feat" : ""}</SectionTitle>
-                  <input type="text" value={asiNote} onChange={(e) => setAsiNote(e.target.value)}
-                    placeholder={featAllowed ? "e.g. +2 STR — or a feat like Great Weapon Master" : "e.g. +2 STR, or +1 STR / +1 CON"}
-                    data-worldos-testid="levelup-asi-input"
-                    style={{
-                      width: "100%", padding: "8px 10px", boxSizing: "border-box",
-                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
-                      background: "rgba(255,250,235,0.5)", fontFamily: "var(--f-body)", fontSize: 14,
-                    }} />
+                  {/* #607: a structured choice, not a free-text note. When the campaign allows feats,
+                      a toggle swaps between the ASI stepper and a named-feat input (mutually exclusive —
+                      the engine rejects taking both). */}
+                  {featAllowed && (
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12 }} role="tablist" aria-label="Improvement type">
+                      <button type="button" onClick={() => setTakingFeat(false)}
+                        aria-pressed={!takingFeat}
+                        data-worldos-testid="levelup-asi-toggle"
+                        style={{
+                          padding: "6px 12px", cursor: "pointer",
+                          background: !takingFeat ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+                          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                          color: !takingFeat ? "var(--w-300)" : "var(--ink-800)",
+                          fontFamily: "var(--f-display)", fontSize: 12,
+                        }}>
+                        Raise abilities
+                      </button>
+                      <button type="button" onClick={() => setTakingFeat(true)}
+                        aria-pressed={takingFeat}
+                        data-worldos-testid="levelup-feat-toggle"
+                        style={{
+                          padding: "6px 12px", cursor: "pointer",
+                          background: takingFeat ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+                          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                          color: takingFeat ? "var(--w-300)" : "var(--ink-800)",
+                          fontFamily: "var(--f-display)", fontSize: 12,
+                        }}>
+                        Take a feat instead
+                      </button>
+                    </div>
+                  )}
+
+                  {takingFeat ? (
+                    <div data-worldos-testid="levelup-feat-pane">
+                      <p className="body-sm muted" style={{ marginTop: 0 }}>
+                        Name the feat your character takes — the DM finalizes it against the world's options.
+                      </p>
+                      <input type="text" value={featName} onChange={(e) => setFeatName(e.target.value)}
+                        placeholder="e.g. Great Weapon Master"
+                        data-worldos-testid="levelup-feat-input"
+                        style={{
+                          width: "100%", padding: "8px 10px", boxSizing: "border-box",
+                          boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                          background: "rgba(255,250,235,0.5)", fontFamily: "var(--f-body)", fontSize: 14,
+                        }} />
+                    </div>
+                  ) : (
+                    <div data-worldos-testid="levelup-asi-stepper">
+                      <p className="body-sm muted" style={{ marginTop: 0 }}>
+                        Spend +2: either +2 into one ability, or +1 into two. Scores cap at 20.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                        {ABILITIES.map((ab) => {
+                          const bump = Number(asiBumps[ab]) || 0;
+                          const base = Number(heroStats[ab]) || 0;
+                          const shown = base + bump;
+                          return (
+                            <div key={ab} style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6,
+                              padding: "6px 8px",
+                              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                              background: bump > 0 ? "rgba(176,141,87,0.14)" : "transparent",
+                            }}>
+                              <div>
+                                <div className="eyebrow" style={{ fontSize: 10 }}>{ab.toUpperCase()}</div>
+                                <div style={{ fontFamily: "var(--f-display)", fontSize: 15, color: "var(--ink-900)" }}>
+                                  {shown}{bump > 0 ? <span style={{ color: "var(--emerald)", fontSize: 11 }}> (+{bump})</span> : null}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button type="button" onClick={() => bumpAsi(ab, -1)} disabled={bump <= 0}
+                                  aria-label={"Lower " + ASI_FULL[ab] + " improvement"}
+                                  data-worldos-testid={"levelup-asi-dec-" + ab}
+                                  style={{
+                                    width: 24, height: 24, cursor: bump <= 0 ? "default" : "pointer",
+                                    opacity: bump <= 0 ? 0.4 : 1,
+                                    boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                                    background: "transparent", fontFamily: "var(--f-display)",
+                                  }}>−</button>
+                                <button type="button" onClick={() => bumpAsi(ab, 1)} disabled={!canBumpAsi(ab)}
+                                  aria-label={"Raise " + ASI_FULL[ab] + " improvement"}
+                                  data-worldos-testid={"levelup-asi-inc-" + ab}
+                                  title={asiAtCap(ab) ? "Already at the 20 cap" : (asiTotal >= 2 ? "Both points are already spent" : "")}
+                                  style={{
+                                    width: 24, height: 24, cursor: !canBumpAsi(ab) ? "default" : "pointer",
+                                    opacity: !canBumpAsi(ab) ? 0.4 : 1,
+                                    boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                                    background: "transparent", fontFamily: "var(--f-display)",
+                                  }}>+</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="hand muted" style={{ fontSize: 11, marginTop: 8 }}
+                        data-worldos-testid="levelup-asi-remaining">
+                        {2 - asiTotal > 0 ? (2 - asiTotal) + " point" + (2 - asiTotal === 1 ? "" : "s") + " left to spend" : "All set — +2 allocated"}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -248,8 +248,19 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
   // no supervisor to summon — fall back to the read-only table so the surface stays reachable.
   const bindHero = async () => {
     if (summoning) return;
+    // #721: outside the native app (a plain browser preview) there is no supervisor to summon. The
+    // old behavior silently called onNavigate("table") — a PHANTOM SUCCESS: the player pressed
+    // "Bind the hero", the wizard vanished onto a read-only table, and no game was ever minted, yet
+    // nothing said so. SURFACE the failure instead (inline error + danger toast) so the player knows
+    // the bind needs the WorldOS app — never a silent no-op. (No bridge => no /move, no state write.)
     if (!window.OpenWorldsNative?.hasBridge?.()) {
-      onNavigate("table");
+      const message = "Hero binding needs the WorldOS app — open the native app to bind a hero.";
+      setSummonError(message);
+      toast({
+        kind: "danger",
+        title: "Could not bind the hero",
+        body: message,
+      });
       return;
     }
     const spec = {
@@ -328,7 +339,7 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
         <Divider />
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {steps.map((s, i) => (
-            <button key={s.id} onClick={() => setStep(i)} style={{
+            <button key={s.id} onClick={() => setStep(i)} data-worldos-testid={"create-step-" + s.id} style={{
               display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 8, alignItems: "center",
               padding: "10px 12px",
               textAlign: "left",
@@ -382,7 +393,7 @@ function ScreenCreate({ onNavigate, state, setState, preferredProvider = "" }) {
           {step < steps.length - 1 ? (
             <BrassButton onClick={next}>Continue →</BrassButton>
           ) : (
-            <BrassButton tone="crimson" onClick={bindHero} disabled={summoning}>
+            <BrassButton tone="crimson" onClick={bindHero} disabled={summoning} testId="bind-hero">
               {summoning ? "Binding the hero…" : "Bind the hero"}
             </BrassButton>
           )}
