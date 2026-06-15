@@ -1185,3 +1185,91 @@ def test_record_decision_without_sets_flag_is_unchanged(camp):
     out = server.record_decision(cid, "A choice with no gated agenda", chosen="x")
     assert "flag" not in out
     assert store.load_campaign(cid).flags == {}
+
+
+# --- D2 (cue-first): per-beat gate-distance cue in scene_context.durable -----
+#
+# The forward-looking points_away-to-next-gate (computed by _camp_arc_summary) lived ONLY in
+# the camp view. These guard that it now ALSO rides the EVERY-BEAT scene_context.durable
+# companions bundle as a compact `next_gate` cue — and that it is strictly ADDITIVE: absent
+# for a companion with no arc / no remaining gates, and for a solo beat the payload is unchanged.
+
+
+def _durable_companion(cid: str, comp_id: str) -> dict:
+    durable = server._scene_durable_threads(store.load_campaign(cid))
+    return next(e for e in durable["companions"] if e["id"] == comp_id)
+
+
+def test_durable_companion_with_unreached_gate_gets_next_gate_cue(camp):
+    """A companion with an arc + an un-unlocked gate gets a next_gate{kind,threshold,points_away}
+    cue in scene_context.durable — the DM now sees, every beat, how close approval is to the gate."""
+    cid, comp = camp
+    server.set_companion_arc(cid, comp, {
+        "arc_gates": [{"kind": "loyalty", "threshold": 40, "note": "stands with you"}],
+    })
+    server.adjust_attitude(cid, comp, 15)  # 15 of 40 -> 25 points away
+
+    entry = _durable_companion(cid, comp)
+    assert entry["next_gate"] == {"kind": "loyalty", "threshold": 40, "points_away": 25}
+
+
+def test_durable_next_gate_points_to_nearest_unreached_gate(camp):
+    """With several locked gates the cue points at the NEAREST (lowest-threshold) one —
+    the same predicate _camp_arc_summary uses for the camp view."""
+    cid, comp = camp
+    server.set_companion_arc(cid, comp, {
+        "arc_gates": [
+            {"kind": "personal_quest", "threshold": 60, "note": "c"},
+            {"kind": "loyalty", "threshold": 20, "note": "a"},
+            {"kind": "romance", "threshold": 40, "note": "b"},
+        ],
+    })
+    server.adjust_attitude(cid, comp, 5)  # attitude 5; nearest gate is loyalty@20
+
+    entry = _durable_companion(cid, comp)
+    assert entry["next_gate"]["kind"] == "loyalty"
+    assert entry["next_gate"]["threshold"] == 20
+    assert entry["next_gate"]["points_away"] == 15  # max(0, 20 - 5)
+
+
+def test_durable_points_away_clamps_at_zero_when_at_or_above_threshold():
+    """points_away = max(0, threshold - attitude_value): a companion already at/above the
+    nearest LOCKED gate's threshold (not yet evaluated/unlocked) reports 0, never negative."""
+    comp = _companion(attitude=50, gates=[ArcGate(kind="loyalty", threshold=40)])
+    c = _campaign_with(comp)
+    entry = next(e for e in server._scene_durable_threads(c)["companions"] if e["id"] == comp.id)
+    assert entry["next_gate"]["points_away"] == 0
+
+
+def test_durable_companion_without_arc_has_no_next_gate_cue():
+    """A companion with NO arc (arc=None) gets no next_gate key — the durable payload is
+    unchanged. (Note: server.create_character auto-attaches a default arc, so build the
+    arc-less companion directly to exercise the None branch.)"""
+    comp = _companion(attitude=0)  # gates=None and agenda=None -> arc stays None
+    assert comp.arc is None
+    c = _campaign_with(comp)
+    entry = next(e for e in server._scene_durable_threads(c)["companions"] if e["id"] == comp.id)
+    assert entry["has_arc"] is False
+    assert "next_gate" not in entry
+
+
+def test_durable_companion_with_all_gates_unlocked_has_no_next_gate_cue(camp):
+    """Once every gate is unlocked there is no remaining gate — the cue is absent (additive)."""
+    cid, comp = camp
+    server.set_companion_arc(cid, comp, {
+        "arc_gates": [{"kind": "loyalty", "threshold": 0, "note": "already earned"}],
+    })
+    server.check_companion_arc(cid, comp)  # threshold 0 -> unlocks immediately
+    assert store.load_campaign(cid).characters[comp].arc.arc_gates[0].unlocked is True
+
+    entry = _durable_companion(cid, comp)
+    assert "next_gate" not in entry
+
+
+def test_durable_solo_run_companions_bundle_is_unchanged():
+    """A SOLO beat (no companions) has an empty companions bundle and never grows a next_gate
+    key — the scene_context.durable payload is byte-for-byte today's shape."""
+    pc = Character(name="Hero", kind="player")
+    c = _campaign_with(pc)
+    durable = server._scene_durable_threads(c)
+    assert durable["companions"] == []

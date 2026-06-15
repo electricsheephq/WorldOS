@@ -10862,6 +10862,23 @@ def _scene_durable_threads(c: Campaign) -> dict:
                 and getattr(agenda, "trigger", None) == "attitude_below"
             ),
         }
+        # D2 (cue-first experiment): surface the FORWARD-LOOKING gate-distance every beat. The
+        # nearest un-unlocked ArcGate's points_away-to-unlock was computed by _camp_arc_summary
+        # but lived ONLY in the camp view — the DM never saw, at re-ground, how close a present
+        # companion is to a loyalty/personal-quest/betrayal beat, so approval stayed frozen and
+        # arc gates never fired. Pure read of the engine-mutated attitude_value + gate thresholds
+        # (no fiction, no write); reuses the EXACT _camp_arc_summary/points_away predicate. ADDITIVE:
+        # the `next_gate` key is ABSENT when the companion has no arc OR every gate is already
+        # unlocked, so a solo / no-companion / all-unlocked beat's payload is byte-for-byte today's.
+        if arc is not None:
+            locked = [g for g in arc.arc_gates if not getattr(g, "unlocked", False)]
+            if locked:
+                nxt = min(locked, key=lambda g: g.threshold)
+                entry["next_gate"] = {
+                    "kind": nxt.kind,
+                    "threshold": nxt.threshold,
+                    "points_away": max(0, nxt.threshold - getattr(ch, "attitude_value", 0)),
+                }
         # F06-10 (audit 2026-06-11): surface this companion's personal QUEST ARCs — until now
         # the engine-complete CompanionQuestArc machine was invisible to the DM at re-ground
         # (durable.companions showed gates/flags only, no quest-arc mention anywhere DM-facing),
