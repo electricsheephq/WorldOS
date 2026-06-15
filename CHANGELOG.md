@@ -18,6 +18,38 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.4-rc2] — 2026-06-16
+
+**The felt bundle — battle, atlas, and a companion soul.** Building on rc1's playable
+foundation, rc2 lands the first wave of felt-quality work plus a measurement-integrity fix
+that had been silently tanking every score.
+
+- **Companions react to your choices (#940, #941).** A new keyword-only `approval_tags` on
+  `record_decision` (and `persist_beat`'s decision leg) moves a present companion's approval
+  when a choice matches their content-authored `approval_likes`/`approval_dislikes` — the DM
+  tags the *cause*, the engine owns the *number* (gauge-not-fiction). Surfaced on
+  `scene_context.durable.companions` every beat. All seven Baldur's Gate origins
+  (incl. the four rostered ones — Shadowheart, Astarion, Karlach, Wyll) carry a shared
+  snake-case approval vocabulary, so one tag can ripple across the party and turn arc gates.
+  Brings the previously-dead likes/dislikes read to life.
+- **Combat *looks* like a battle (#937).** The combat screen now renders the location scene
+  art as a backdrop (reusing the proven `location:<id>` image scope) and shows condition
+  chips on tokens — on top of the already-complete SRD 5.2 turn engine.
+- **A coherent world map (#939).** Authored geographic axial-hex coordinates for the Baldur's
+  Gate seed locations (+ wired area-`hex` through ingestion + `map_kind: hex`), replacing the
+  force-sim scatter with a readable, hub-centered atlas.
+- **The behavioral-gate false-cap is dead (#938).** `persist_beat` now tolerates a bare/empty
+  `campaign_id` (resolves the active campaign) instead of a fatal rejection — a single bare
+  model-slip was RED-capping every quality lens to 2.5 on otherwise-coherent sessions.
+  Validated live: a re-run flipped behavioral RED→GREEN.
+- **The seated hero stays correct (#935).** The live active-hero correction routes through the
+  authoritative `kind=player` resolver (not `party[0]`), so a companion never displaces the PC
+  mid-session.
+
+Additive throughout; old snapshots round-trip; the engine remains the sole writer. Pre-release.
+
+---
+
 ## [1.0.4-rc1] — 2026-06-16
 
 **Player-Ready Beta candidate — the first genuinely independent, resumable game.**
