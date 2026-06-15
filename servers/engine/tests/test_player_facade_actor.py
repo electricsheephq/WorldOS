@@ -319,3 +319,90 @@ def test_pure_facade_read_does_not_flip_the_live_campaign(live, monkeypatch):
     assert before == after  # no updated_at bumped -> the live pointer can't have flipped
     # and the freshest campaign is unchanged (the read didn't make camp-actor "win" by writing)
     assert max(after, key=lambda k: after[k] or 0) == max(before, key=lambda k: before[k] or 0)
+
+
+# --- #928: a companion's wrong-but-intuitive `say` arg shape must NOT be schema-refused ---
+# A companion peer-agent called say({"message": ...}) instead of the canonical {"line": ...}.
+# FastMCP's auto-generated `sayArguments` model rejected it with
+#   `1 validation error for sayArguments / line / Field required [type=missing]`
+# BEFORE the function body ran — a hard schema rejection that trips the FATAL
+# `no_rejected_tool_calls` behavioral gate and REDs the whole party run. The fix is additive:
+# say/do/clarify accept the canonical name OR the aliases message/text, coalescing to the
+# first non-blank, so an agent reaching for the natural field name is never refused. These
+# tests exercise the REAL rejection surface — the MCP tool manager (which builds + validates
+# the pydantic args model), not a direct Python kwargs call — so they would RED pre-fix.
+def _call_tool(name: str, args: dict):
+    """Invoke a registered MCP tool through the tool manager (the path the peer-agent uses),
+    so we validate against the AUTO-GENERATED pydantic args model — the exact layer that
+    raised the #928 `Field required` rejection. Returns the tool's result dict."""
+    import asyncio
+
+    return asyncio.run(ps.mcp._tool_manager.call_tool(name, args))
+
+
+def _result_dict(res):
+    """The tool manager returns a (content, structured) shape across mcp versions; pull the
+    structured ``{"ok": ..., "move": {...}}`` dict the facade actually returns."""
+    if isinstance(res, tuple):
+        for part in res:
+            if isinstance(part, dict):
+                return part.get("result", part)
+        return res[-1]
+    return res
+
+
+def test_companion_say_with_message_alias_is_not_rejected(live, monkeypatch):
+    # THE #928 REPRO: the companion peer-agent's `say` arrived as {"message": ...}. Pre-fix
+    # this raised `1 validation error for sayArguments / line / Field required` through the
+    # tool manager and tripped the FATAL no_rejected_tool_calls gate. Post-fix it succeeds and
+    # records the dialogue verbatim — the move record is byte-identical (kind="say", text=...).
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "companion")
+    res = _result_dict(_call_tool("say", {"message": "Seraphine steadies her mace."}))
+    assert res["ok"] is True
+    row = live.rows()[-1]
+    assert row["kind"] == "say"
+    assert row["text"] == "Seraphine steadies her mace."
+    assert row["role"] == "companion" and row["actor_id"] == "char-ally"
+
+
+def test_say_text_alias_also_accepted(live, monkeypatch):
+    # The other intuitive alias an LLM reaches for: say({"text": ...}).
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    res = _result_dict(_call_tool("say", {"text": "'On your left.'"}))
+    assert res["ok"] is True
+    assert live.rows()[-1]["text"] == "'On your left.'"
+
+
+def test_do_and_clarify_message_alias_not_rejected(live, monkeypatch):
+    # The same additive tolerance covers the other free-text declares (do/clarify) — the
+    # identical schema-rejection class. A wrong-shaped `do`/`clarify` must not RED a run either.
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    do_res = _result_dict(_call_tool("do", {"message": "I move to flank the ogre."}))
+    assert do_res["ok"] is True
+    assert live.rows()[-1]["text"] == "I move to flank the ogre."
+    clr_res = _result_dict(_call_tool("clarify", {"message": "Is the guard armed?"}))
+    assert clr_res["ok"] is True
+    assert live.rows()[-1]["kind"] == "clarify"
+    assert live.rows()[-1]["text"] == "Is the guard armed?"
+
+
+def test_canonical_line_still_works_and_wins_over_alias(live, monkeypatch):
+    # INVARIANT: the canonical `line` is unchanged for the solo/.app + existing duo path, and
+    # if both are somehow supplied, `line` wins (deterministic precedence, like server.py's
+    # alias coalescing). The solo viewer /move sink is a SEPARATE path and unaffected by this.
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    assert ps.say("'Canonical.'")["ok"] is True       # direct positional, today's call
+    assert live.rows()[-1]["text"] == "'Canonical.'"
+    res = _result_dict(_call_tool("say", {"line": "'wins'", "message": "'loses'"}))
+    assert res["ok"] is True
+    assert live.rows()[-1]["text"] == "'wins'"         # canonical takes precedence
+
+
+def test_empty_say_call_records_blank_line_not_a_crash(live, monkeypatch):
+    # All three blank (or omitted) -> coalesces to the canonical "" and records a blank say,
+    # same as a positional empty string would. No KeyError / no schema rejection.
+    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    res = _result_dict(_call_tool("say", {}))
+    assert res["ok"] is True
+    assert live.rows()[-1]["text"] == ""

@@ -305,28 +305,57 @@ def validate_attack(pc: Character, target: str, weapon: str) -> tuple[bool, str]
 
 
 # --- the player's ENTIRE tool surface --------------------------------------------
-@mcp.tool()
-def say(line: str) -> dict:
-    """Speak your character's OWN words (dialogue). Just your line — quotes are fine."""
-    return _record("say", line)
+def _text_arg(canonical: str, *aliases: str) -> str:
+    """Coalesce the canonical free-text arg with the intuitive aliases an LLM reaches for —
+    the SAME additive discipline the engine uses across server.py (``travel_to`` accepts
+    ``destination``/``to``; ``spawn_monster`` accepts ``monster``/``creature``; etc.).
+
+    #928: a companion peer-agent's ``say`` call arrived as ``{message: ...}`` (not the
+    canonical ``line``), so FastMCP's ``sayArguments`` model raised ``Field required
+    [type=missing]`` BEFORE the function body ran — a hard schema rejection that trips the
+    FATAL ``no_rejected_tool_calls`` behavioral gate and REDs the whole party run before a
+    companion thaw can even be measured. The fix is purely additive: accept the canonical
+    name OR the common aliases (``message`` / ``text``), coalescing to the first non-blank.
+    The emitted MOVE record is byte-identical (it always carried ``text``), so the relay
+    (``[\\(.kind)] \\(.text)``) and every existing consumer are unchanged. ``canonical``
+    wins if more than one is supplied."""
+    for v in (canonical, *aliases):
+        if (v or "").strip():
+            return v
+    return canonical
 
 
 @mcp.tool()
-def do(action: str) -> dict:
+def say(line: str = "", message: str = "", text: str = "") -> dict:
+    """Speak your character's OWN words (dialogue). Just your line — quotes are fine.
+
+    Pass your words via ``line`` (canonical) or the aliases ``message`` / ``text`` —
+    ``line`` wins if more than one is given (so a companion agent that reaches for the
+    intuitive ``message``/``text`` is never schema-refused, #928)."""
+    return _record("say", _text_arg(line, message, text))
+
+
+@mcp.tool()
+def do(action: str = "", message: str = "", text: str = "") -> dict:
     """Declare a physical action your character ATTEMPTS — intent only. The DM and the
-    dice decide if it works; do NOT describe the world or assert the result."""
-    return _record("do", action)
+    dice decide if it works; do NOT describe the world or assert the result.
+
+    Pass the action via ``action`` (canonical) or the aliases ``message`` / ``text``."""
+    return _record("do", _text_arg(action, message, text))
 
 
 @mcp.tool()
-def clarify(question: str) -> dict:
+def clarify(question: str = "", message: str = "", text: str = "") -> dict:
     """Ask the DM a CLARIFYING QUESTION before you commit to an action — exactly like asking a
     real Dungeon Master at the table ("Is the guard armed? How far is the door? Do I recognize
     this sigil? What do I actually know about this person?"). This is NOT an action and does NOT
     advance the scene or spend your turn: the DM answers what your character could plausibly
     perceive or know, then you still get to act. Reach for it when the scene is ambiguous and the
     answer would change your choice — better a quick question than a blind guess. Bounded: up to
-    3 questions before you must act (so it can't become an endless back-and-forth)."""
+    3 questions before you must act (so it can't become an endless back-and-forth).
+
+    Pass the question via ``question`` (canonical) or the aliases ``message`` / ``text``."""
+    question = _text_arg(question, message, text)
     if not question.strip():
         return {"ok": False, "error": "ask a real question"}
     if _consecutive_clarifies() >= _CLARIFY_PER_TURN:
