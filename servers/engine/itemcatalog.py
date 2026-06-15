@@ -389,6 +389,14 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
         record["ac"] = ac_base
         # F09-6: a magic armor inherits its base armor's DEX-mod rule via the FK join.
         record.update(_armor_dex_rule(af, ac_base, record["name"]))
+        # An Item/MagicItem armor inherits its base armor's SRD stealth-disadvantage
+        # + STR-requirement via the same FK (mirrors the model=="armor" path above;
+        # SRD Armor: e.g. Chain Mail grants_stealth_disadvantage=true str=13). De-duped
+        # onto any prior props, like the weapon-FK block just above.
+        if af.get("grants_stealth_disadvantage") and "stealth-disadvantage" not in record["properties"]:
+            record["properties"].append("stealth-disadvantage")
+        if af.get("strength_score_required") and f"str-{af['strength_score_required']}" not in record["properties"]:
+            record["properties"].append(f"str-{af['strength_score_required']}")
     elif fields.get("armor_class"):
         # Homebrew/inline armor_class with no DEX-rule data: keep the bare AC. Without
         # ac_add_dexmod we can't infer the category — leave the rule keys absent so the
