@@ -34,14 +34,15 @@
       "mercy (quietly)"
     ],
     "approval_likes": [
+      "mercy",
+      "duty",
       "discretion",
-      "tending to the hurt",
-      "moonlight, when no one's looking"
+      "loyalty"
     ],
     "approval_dislikes": [
-      "careless revelation",
-      "pious bullies",
-      "the loud certainty of zealots"
+      "cruelty",
+      "zealotry",
+      "careless_revelation"
     ],
     "banter_tags": [
       "shar",

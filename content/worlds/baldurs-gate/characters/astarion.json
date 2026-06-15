@@ -34,14 +34,15 @@
       "loyalty to those who earned it"
     ],
     "approval_likes": [
-      "defying tyrants",
-      "ruthlessness when it counts",
-      "biting wit"
+      "cunning",
+      "freedom",
+      "power",
+      "ruthlessness"
     ],
     "approval_dislikes": [
-      "self-righteous moralizing",
-      "trusting predators",
-      "saintly weakness"
+      "naive_altruism",
+      "weakness",
+      "self_righteousness"
     ],
     "banter_tags": [
       "cazador",

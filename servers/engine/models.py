@@ -1217,6 +1217,14 @@ class Decision(_StrictModel):
     chosen: str = ""  # what the party went with
     rationale: str = ""  # why
     actor_ids: list[str] = Field(default_factory=list)  # who weighed in / decided
+    # The companion-approval causes this choice carried (lowercase_snake keys the DM tagged,
+    # matched against each party companion's dossier approval_likes/dislikes when the decision
+    # was recorded). Stored for RECALL — so the chronicle remembers WHY a companion's regard
+    # moved on this beat — never re-applied on load. ADDITIVE default []: an old snapshot with
+    # no `approval_tags` round-trips unchanged (the engine never infers a tag from prose; the
+    # gauge move happened once, at record time, on the DM-supplied tags). The KEY vocabulary
+    # lives in CONTENT (the companion dossiers), never in engine code.
+    approval_tags: list[str] = Field(default_factory=list)
 
 
 CampBeatKind = Literal["solo", "pair_banter", "arc", "decision_callback"]

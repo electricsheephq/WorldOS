@@ -34,13 +34,15 @@
       "patience"
     ],
     "approval_likes": [
-      "mending things",
-      "rest taken when offered",
-      "respect for the wild"
+      "mercy",
+      "kindness",
+      "respect_for_nature",
+      "restoration"
     ],
     "approval_dislikes": [
-      "needless harm to the land",
-      "panic taken for reason"
+      "cruelty",
+      "wanton_destruction",
+      "panic"
     ],
     "banter_tags": [
       "thaniel",
