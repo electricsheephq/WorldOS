@@ -110,6 +110,34 @@ enum RepositoryLocator {
         return FileManager.default.fileExists(atPath: privateWorlds)
     }
 
+    /// The DEFAULT play-state ROOT for a SHIPPED .app. A shipped app must NOT read or write the
+    /// dev repo's play-state/, so the default state dir is the engine's OWN per-user home —
+    /// mirroring servers/engine/store.state_dir() + viewer/server.py:_state_dir():
+    ///   1. an explicit WORLDOS_STATE_DIR / CLAWDND_STATE_DIR env (a power user / QA override),
+    ///   2. else ~/.worldos/state when ~/.worldos already exists (the new home),
+    ///   3. else ~/.clawdnd/state when ~/.clawdnd already exists (the legacy home),
+    ///   4. else ~/.worldos/state (the new home, created lazily by the engine on first write).
+    /// play.sh nests each game under <root>/<run-id>, so this is the play-state ROOT (the same role
+    /// the repo's play-state/ plays for a dev build). The result is passed to startViewer /
+    /// startProviderSession as `stateDir`, which exports WORLDOS_STATE_DIR for the viewer + play.sh.
+    static func defaultUserStateDir() -> String {
+        let environment = ProcessInfo.processInfo.environment
+        if let raw = environment["WORLDOS_STATE_DIR"] ?? environment["CLAWDND_STATE_DIR"],
+           !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return (raw as NSString).expandingTildeInPath
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let worldosHome = home.appendingPathComponent(".worldos")
+        if FileManager.default.fileExists(atPath: worldosHome.path) {
+            return worldosHome.appendingPathComponent("state").path
+        }
+        let clawdndHome = home.appendingPathComponent(".clawdnd")
+        if FileManager.default.fileExists(atPath: clawdndHome.path) {
+            return clawdndHome.appendingPathComponent("state").path
+        }
+        return worldosHome.appendingPathComponent("state").path
+    }
+
     private static func preferLaunchRoots() -> Bool {
         let environment = ProcessInfo.processInfo.environment
         if let raw = environment["WORLDOS_PREFER_LAUNCH_ROOTS"] {

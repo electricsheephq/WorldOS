@@ -50,6 +50,14 @@ PORT_EXPLICIT=0
 if declare -F clawdnd_choose_port >/dev/null 2>&1; then
   PORT="$(clawdnd_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
 fi
+# RESUME re-attach (#356 GA blocker): when the launcher's Resume runs, the .app reuses the SAVED
+# run id (positional $2 → $RUN, so STATE_DIR already points at the saved game's dir) AND passes the
+# saved campaign id as WORLDOS_RESUME_CAMPAIGN. In that mode this launch must NOT mint a new empty
+# world: it re-attaches the EXISTING campaign and restarts the provider serving it. UNSET ⇒ the
+# normal fresh cold-open path, byte-identical. The detection is confirmed against the on-disk save
+# below (after STATE_DIR is known) — a stale/missing id falls back to a fresh cold open, never a
+# dead table.
+RESUME_CAMPAIGN_REQ="$(worldos_env RESUME_CAMPAIGN)"
 # F12-13 (audit 2026-06-11): single-flight launch lock — refuse a SECOND concurrent solo cold-open
 # from this checkout so two play.sh runs can't collide on session ids / the viewer port (the
 # "Session ID already in use" failure observed under memory pressure on the 16GB host). play_party.sh
@@ -114,21 +122,57 @@ CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
 # WORLDOS_/CLAWDND_ fallback as everything else, so an explicit env override still wins.
 PROVIDER="$(worldos_env PROVIDER claude)"
 
-# Product play state lives under the repo's play-state/ (git-ignored), one dir per game,
-# so saves, the chat log, and the move sink stay together and out of the QA sandbox.
-STATE_DIR="$ROOT/play-state/$RUN"
+# Product play state lives under the play-state ROOT (git-ignored), one dir per game, so
+# saves, the chat log, and the move sink stay together and out of the QA sandbox. The ROOT is
+# normally the repo's own play-state/ — but a SHIPPED .app must NOT read/write the dev repo, so
+# it injects WORLDOS_STATE_DIR (legacy CLAWDND_STATE_DIR) pointing at a per-USER play-state root
+# (~/.worldos/state — the engine's own home). When neither is set (dev runs, the QA harness, a
+# bare double-click in a checkout) this is BYTE-IDENTICAL to the old "$ROOT/play-state/$RUN", so
+# no existing path changes. The per-$RUN subdir layout is preserved in every case.
+STATE_ROOT="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"
+STATE_DIR="$STATE_ROOT/$RUN"
 mkdir -p "$STATE_DIR"
+# Re-pin BOTH env names to THIS run's per-$RUN dir for the whole script. A SHIPPED .app exports a
+# BARE WORLDOS_STATE_DIR=<user-root> (the play-state ROOT) to select the user dir above; if it
+# leaked unchanged into the engine subprocesses (the hero pre-seed, clawdnd_live_campaign_id, the
+# soft-tick) those would resolve <user-root>/campaigns instead of this game's <user-root>/$RUN,
+# because the engine reads WORLDOS_STATE_DIR before CLAWDND_STATE_DIR. Overwriting both with the
+# per-$RUN dir here makes EVERY engine call in this script land in the right game. Byte-identical
+# when no override was set (the value equals $ROOT/play-state/$RUN, the engine config's old value).
+export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
 # #892 follow-up: keep the .app-spawned cold-open `claude -p` (the DM) off the macOS keychain +
 # off any /Volumes TCC prompt so it runs headless. GATED no-op without an env/file credential (so
 # the Terminal/keychain path is byte-unchanged); when a credential is resolvable it isolates the
 # config dir + puts the token in the env. Called ONCE here, after STATE_DIR, before the pre-seed +
 # DM cold-open below. Defined in qa/lib_beat_driver.sh (sourced above). Never fails a launch.
 clawdnd_isolate_claude_auth
+# RESUME re-attach confirmation: a resume was requested AND the saved campaign's snapshot is
+# actually on disk under THIS run's STATE_DIR. Only then do we take the resume path; a stale id
+# (the save was deleted, or the run dir is empty) falls through to a fresh cold open so the player
+# is never handed a dead table. RESUME=1 gates: (1) NOT truncating the live move sink, (2) skipping
+# the start_world cold-open in favor of a re-ground-onto-the-existing-campaign opener below.
+RESUME=0; RESUME_CAMPAIGN=""
+if [ -n "${RESUME_CAMPAIGN_REQ//[[:space:]]/}" ] \
+   && [ -f "$STATE_DIR/campaigns/$RESUME_CAMPAIGN_REQ/snapshot.json" ]; then
+  RESUME=1; RESUME_CAMPAIGN="$RESUME_CAMPAIGN_REQ"
+  echo "[play] RESUME — re-attaching saved campaign $RESUME_CAMPAIGN under $STATE_DIR (move sink preserved, no fresh cold open)."
+elif [ -n "${RESUME_CAMPAIGN_REQ//[[:space:]]/}" ]; then
+  echo "[play] resume requested for campaign $RESUME_CAMPAIGN_REQ but no snapshot under $STATE_DIR/campaigns — falling back to a fresh cold open." >&2
+fi
 DM_CFG="$STATE_DIR/dm.mcp.json"
-MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"
-CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"
+# In RESUME mode the move sink + chat + combined stream are APPEND targets for the saved game — do
+# NOT truncate them (truncating resets the cursor and, if a fresh cold-open then failed, left the
+# dead "no live move sink"). Ensure they EXIST (a first-ever resume of a save minted by an older
+# build may lack chat/combined) without clobbering history. A fresh launch truncates as before.
+MOVES="$STATE_DIR/player_moves.jsonl"
+CHAT="$STATE_DIR/chat.jsonl"
 DM_LOG="$STATE_DIR/dm"          # per-turn stream-json files: $DM_LOG.<ts>.jsonl
-COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"
+COMBINED="$STATE_DIR/dm.combined.jsonl"
+if [ "$RESUME" = "1" ]; then
+  : >> "$MOVES"; : >> "$CHAT"; : >> "$COMBINED"
+else
+  : > "$MOVES"; : > "$CHAT"; : > "$COMBINED"
+fi
 VIEWER_LOG="$STATE_DIR/viewer.log"
 # F12-10: the provider-status sidecar path is defined HERE (before the traps are armed) so an EARLY
 # abort — a dead cold open that exits before the loop — still leaves a "failed" sidecar for the viewer
@@ -147,7 +191,14 @@ root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = {"mcpServers": {
     "clawdnd-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
         "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
-        "env": {"CLAWDND_STATE_DIR": state_dir}},
+        # Pin BOTH names to THIS run's per-$RUN dir. The engine resolves WORLDOS_STATE_DIR
+        # FIRST (CLAWDND_STATE_DIR is the v1.x fallback); when a SHIPPED .app exported a bare
+        # WORLDOS_STATE_DIR=<user-root> into play.sh's environment, the MCP env inherits it,
+        # and pinning ONLY CLAWDND_STATE_DIR here would let that inherited bare root win and
+        # point the engine at <user-root>/campaigns instead of this game's <user-root>/$RUN.
+        # Setting both to state_dir keeps every game isolated to its own per-$RUN dir. When
+        # neither was inherited (dev/QA), this is byte-identical (both name the same dir).
+        "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
     "clawdnd-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
         "env": {"CLAWDND_RULES_OFFLINE": "1"}},
@@ -353,7 +404,11 @@ dm_turn() {
     # save) and only on the slow retry path.
     if [ "$first" = "1" ]; then
       local _live_cid; _live_cid="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
-      msg="$(clawdnd_coldopen_retry_msg "$first" "${HERO_CAMP:-}" "$_live_cid" "$WORLD" "$msg")"
+      # In RESUME mode the campaign already exists ($RESUME_CAMPAIGN), exactly like the authored-hero
+      # case — pass it as the "known campaign" arg so the helper keeps the re-attach $msg verbatim
+      # (which already pins campaign_id=$RESUME_CAMPAIGN and forbids start_world) instead of swapping
+      # in the fresh-cold-open re-mint prompt. Falls back to HERO_CAMP for the authored-hero path.
+      msg="$(clawdnd_coldopen_retry_msg "$first" "${RESUME_CAMPAIGN:-${HERO_CAMP:-}}" "$_live_cid" "$WORLD" "$msg")"
     fi
     out="$DM_LOG.$(date +%s%N).jsonl"
     _dm_invoke; rc=$?
@@ -436,7 +491,26 @@ echo "  Save dir: $STATE_DIR"
 # player AUTHORED a hero in the Creation wizard, the campaign + PC ALREADY EXIST (pre-seeded
 # above), so the DM must NOT start_world and must NOT create a character — it re-grounds via
 # get_state and opens a scene around the EXISTING authored PC.
-if [ -n "$HERO_CAMP" ]; then
+if [ "$RESUME" = "1" ]; then
+  # RESUME re-attach: the saved campaign $RESUME_CAMPAIGN ALREADY EXISTS on disk (confirmed above).
+  # Do NOT start_world (it would mint a NEW empty campaign and orphan the save) and do NOT create or
+  # reroll a character — re-ground onto the saved world+party and open a "you're back" scene from
+  # where the chronicle stood. The heartbeat targets the saved campaign so /events shows progress
+  # within ~1s while the re-ground turn runs.
+  clawdnd_emit_progress_heartbeat "$RESUME_CAMPAIGN" 1 0
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+
+RESUME an EXISTING chronicle that is being re-opened — the world, the player's character, and the party ALREADY EXIST. You are NOT starting a new game:
+- This session's campaign ALREADY EXISTS: use campaign_id=$RESUME_CAMPAIGN for EVERY engine call. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN this save.
+- DO NOT create a character, DO NOT reroll stats, DO NOT re-seat the party. The player's PC and any companions are already in the party with their saved sheets and progress.
+- call get_state(\"$RESUME_CAMPAIGN\") FIRST to re-ground: read the world bible, the party (who the player is + any companions), the current location, the world clock (day/time), active quests + standing threads, and the recap of where the chronicle last stood.
+- start_session only if get_state shows no active session (so the recap + continuity are intact); otherwise continue the existing session.
+- Open a short \"welcome back\" scene that PICKS UP exactly where the chronicle left off — same location, same party, the established threads still in motion — with real quoted dialogue from whoever is present, and hand the player an open moment + a clear, real choice. Do NOT reset the stakes or relocate the party; honor everything the save records as canon you already authored.
+
+CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, written as 2nd-person player-facing prose (addressed to \"you\"): where the party IS right now, what they see/hear/smell, who is present and a real quoted line from them, ending on a clear open moment + choice that continues the saved story. The player reads ONLY your final reply text as the scene — so the prose MUST be IN it. Re-ground via the tools FIRST, then CLOSE the turn by writing the scene. NEVER end this turn on a tool call, and NEVER let your reply be a 3rd-person setup brief or game-system notation — that is your private scratchpad, not the player's scene.
+
+Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
+elif [ -n "$HERO_CAMP" ]; then
   # #623 (model-INDEPENDENT heartbeat): the authored-hero campaign ALREADY EXISTS ($HERO_CAMP, pre-
   # seeded above), so write a wrapper-authored opening progress beat to its engine log BEFORE the long
   # cold-open turn — /events renders it within ~1s and the viewer's opening spinner flips to "the scene
@@ -490,7 +564,9 @@ clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 # is exactly one campaign. When a hero was pre-seeded we already know it ($HERO_CAMP). Empty ⇒
 # record_dm_reply falls back to an unflagged row AND lean falls back to the normal --resume path
 # (both are byte-identical to the pre-#720 behavior when the id is unknown).
-CAMPAIGN_ID="$HERO_CAMP"
+# RESUME pins the campaign id to the SAVED campaign (we re-attached it; never let a stray
+# start_world the DM might have run mis-point the lean re-ground / record_dm_reply at a parallel id).
+CAMPAIGN_ID="${RESUME_CAMPAIGN:-$HERO_CAMP}"
 if [ -z "$CAMPAIGN_ID" ] && [ -d "$STATE_DIR/campaigns" ]; then
   # No pre-seeded hero → ask the ENGINE which save is live (the most-recently-played
   # campaign in this world), NOT a blind first-dir pick — so a parallel campaign (a

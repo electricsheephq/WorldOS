@@ -149,6 +149,7 @@ final class AppProcessService: ObservableObject {
         hero: String = "",
         stateDir: String,
         artRepoPath: String = "",
+        resumeCampaignID: String? = nil,
         preferences: ProviderPreferences
     ) throws -> URL {
         let repoURL = URL(fileURLWithPath: repoPath)
@@ -206,6 +207,32 @@ final class AppProcessService: ObservableObject {
             throw error
         }
 
+        // Inject the state-dir override into the launched game subprocess (the play.sh DM),
+        // EXACTLY as startViewer does for the viewer. The adapter builds budget/provider/model
+        // env but never the state dir, so without this the play script falls back to its own
+        // "$ROOT/play-state" default — i.e. it reads/writes the DEV REPO instead of the user's
+        // state dir. play.sh honors WORLDOS_STATE_DIR (legacy CLAWDND_STATE_DIR) as the play-state
+        // ROOT and nests this run under $RUN. We set BOTH names (the viewer/engine prefer
+        // WORLDOS_*; CLAWDND_* is the v1.x warn-only fallback, issue #295). When stateDir is empty
+        // we add nothing, so dev/QA-harness runs are byte-identical (no key written → script default).
+        var launchEnvironment = request.environment
+        let trimmedStateDir = stateDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedStateDir.isEmpty {
+            let expandedStateDir = (trimmedStateDir as NSString).expandingTildeInPath
+            launchEnvironment["WORLDOS_STATE_DIR"] = expandedStateDir
+            launchEnvironment["CLAWDND_STATE_DIR"] = expandedStateDir
+        }
+        // RESUME re-attach: when the launcher's Resume passes a saved campaign id (alongside its
+        // saved runId, which the caller already routed to `runId` → the per-run state dir), tell the
+        // play script to RE-OPEN that existing campaign instead of cold-opening a new empty world.
+        // play.sh reads WORLDOS_RESUME_CAMPAIGN (legacy CLAWDND_RESUME_CAMPAIGN), confirms the
+        // snapshot is on disk under the run's state dir, and re-attaches it (writable move sink,
+        // saved party/progress). Absent → a fresh cold open, byte-identical to before.
+        if let resume = resumeCampaignID?.trimmingCharacters(in: .whitespacesAndNewlines), !resume.isEmpty {
+            launchEnvironment["WORLDOS_RESUME_CAMPAIGN"] = resume
+            launchEnvironment["CLAWDND_RESUME_CAMPAIGN"] = resume
+        }
+
         if let providerProcess {
             intentionallyStoppingProviderPIDs.insert(providerProcess.pid)
             providerProcess.terminate()
@@ -220,7 +247,7 @@ final class AppProcessService: ObservableObject {
             executable: request.executable,
             arguments: request.arguments,
             workingDirectory: request.workingDirectory,
-            environment: request.environment,
+            environment: launchEnvironment,
             providerFamily: kind.providerFamily,
             authSurface: kind.authSurface,
             dmModel: launchPreferences.dmModel(for: kind),
@@ -237,7 +264,7 @@ final class AppProcessService: ObservableObject {
             executable: request.executable,
             arguments: request.arguments,
             workingDirectory: request.workingDirectory,
-            environment: request.environment,
+            environment: launchEnvironment,
             stream: .provider,
             providerMetadata: metadata
         )

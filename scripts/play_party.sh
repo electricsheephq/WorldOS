@@ -139,9 +139,16 @@ if declare -F clawdnd_acquire_launch_lock >/dev/null 2>&1; then
 fi
 AGENT_TURNS=0
 
-# Product play state under play-state/ (git-ignored), same layout as play.sh.
-STATE_DIR="$ROOT/play-state/$RUN"
+# Product play state under the play-state ROOT (git-ignored), same layout + override as play.sh:
+# WORLDOS_STATE_DIR (legacy CLAWDND_STATE_DIR) lets a SHIPPED .app point this at a per-USER root
+# (~/.worldos/state) instead of the dev repo; unset → BYTE-IDENTICAL to the old "$ROOT/play-state".
+STATE_ROOT="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"
+STATE_DIR="$STATE_ROOT/$RUN"
 mkdir -p "$STATE_DIR"
+# Re-pin BOTH env names to THIS run's per-$RUN dir so a bare inherited WORLDOS_STATE_DIR=<user-root>
+# (the play-state ROOT the .app set above) can't leak into the engine subprocesses and resolve
+# <user-root>/campaigns instead of this game's <user-root>/$RUN. (Same rationale as play.sh.)
+export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
 # #892 follow-up: keep the .app-spawned cold-open `claude -p` (the DM) off the macOS keychain +
 # off any /Volumes TCC prompt so it runs headless. GATED no-op without an env/file credential.
 # Called ONCE here (the ENSEMBLE path; the solo path execs play.sh above, which calls it itself),
@@ -178,7 +185,11 @@ root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = {"mcpServers": {
     "clawdnd-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
         "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
-        "env": {"CLAWDND_STATE_DIR": state_dir}},
+        # Pin BOTH names to THIS run's per-$RUN dir (engine reads WORLDOS_STATE_DIR first, then
+        # CLAWDND_STATE_DIR). Prevents an inherited bare WORLDOS_STATE_DIR=<user-root> (set by a
+        # shipped .app) from pointing the engine at <user-root>/campaigns. Byte-identical with no
+        # override (both name $STATE_DIR). Same fix as scripts/play.sh.
+        "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
     "clawdnd-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
         "env": {"CLAWDND_RULES_OFFLINE": "1"}},
@@ -282,7 +293,9 @@ import json, sys
 root, state, moves, actor_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
-  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
+  # Pin BOTH state-dir names to this run's per-$RUN dir (engine prefers WORLDOS_STATE_DIR), so an
+  # inherited bare WORLDOS_STATE_DIR=<user-root> can't repoint the companion's player_server.
+  "env": {"WORLDOS_STATE_DIR": state, "CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
           "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion"}}}}, open(out, "w"))
 PY
   COMP_CFGS+=("$ccfg"); COMP_MOVES+=("$cmoves"); COMP_CURSORS+=("$ccur")

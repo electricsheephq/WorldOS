@@ -8,6 +8,10 @@ struct CampaignsView: View {
     @Binding var artRepoPath: String
     @Binding var preferredPort: Int
     @Binding var webURL: URL?
+    // The per-user play-state ROOT (default ~/.worldos/state). Threaded into CampaignStore.reload
+    // so the shelf lists the user's real campaigns (written by play.sh under <stateDir>/<run-id>),
+    // not only the dev repo's play-state/.
+    var stateDir: String = ""
 
     @State private var selectedCampaignID: CampaignSummary.ID?
     @State private var alertMessage: String?
@@ -23,7 +27,7 @@ struct CampaignsView: View {
                 }
                 Spacer()
                 Button {
-                    campaignStore.reload(repoPath: repoPath)
+                    campaignStore.reload(repoPath: repoPath, stateDir: stateDir)
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
