@@ -7,11 +7,28 @@ final class CampaignStore: ObservableObject {
 
     private var reloadTask: Task<Void, Never>?
 
-    func reload(repoPath: String) {
+    /// Load the campaign shelf. `stateDir` is the .app's per-USER play-state ROOT (the same value
+    /// passed to startViewer / startProviderSession; default ~/.worldos/state). The shipped game
+    /// lane (play.sh) now writes the user's real campaigns under <stateDir>/<run-id>/campaigns, so
+    /// the launcher must scan there — NOT only the dev repo's play-state/. We scan the user dir
+    /// AND the repo-local play-state/qa-state (so an in-tree dev build still lists repo campaigns),
+    /// de-duping by snapshot path. Passing an empty `stateDir` (the default) falls back to the
+    /// per-user home, so callers that don't thread the setting still point at the user dir.
+    func reload(repoPath: String, stateDir: String = "") {
         reloadTask?.cancel()
         let repoURL = URL(fileURLWithPath: repoPath)
+        let trimmedStateDir = stateDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userStateRoot = trimmedStateDir.isEmpty
+            ? RepositoryLocator.defaultUserStateDir()
+            : (trimmedStateDir as NSString).expandingTildeInPath
         reloadTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
+                // The per-USER play-state root the shipped app + play.sh use. Scanned the same
+                // per-<run> way as the repo-local play-state/.
+                let userPlay = try Self.loadCampaigns(
+                    root: URL(fileURLWithPath: userStateRoot),
+                    source: .play
+                )
                 let play = try Self.loadCampaigns(
                     root: repoURL.appendingPathComponent("play-state"),
                     source: .play
@@ -20,7 +37,12 @@ final class CampaignStore: ObservableObject {
                     root: repoURL.appendingPathComponent("qa/state"),
                     source: .qa
                 )
-                let merged = (play + qa).sorted { $0.lastUpdate > $1.lastUpdate }
+                // De-dup by snapshot path: an in-tree dev build whose repo IS the user dir would
+                // otherwise list every campaign twice.
+                var seenSnapshots = Set<String>()
+                let merged = (userPlay + play + qa)
+                    .filter { seenSnapshots.insert($0.snapshotPath.standardizedFileURL.path).inserted }
+                    .sorted { $0.lastUpdate > $1.lastUpdate }
                 guard !Task.isCancelled else { return }
                 await self?.finishReload(campaigns: merged, lastError: nil)
             } catch {

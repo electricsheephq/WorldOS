@@ -34,7 +34,12 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
   // live viewer on a fresh port, so the page reloads and app.jsx auto-lands us in the table.
   // Outside the app (a plain 8799 browser preview) there is no DM to attach — fall back to
   // the read-only table so the surface stays reachable.
-  const startPlay = async (world) => {
+  // `resume` (optional) carries a SAVED card's identity — { runId, campaignId } — so the native
+  // app re-attaches THAT chronicle instead of minting a brand-new empty world. When omitted, this
+  // is the FRESH "Begin a new chronicle" path: a new runId + no resume campaign (byte-identical to
+  // before). The saved runId is reused so play.sh's STATE_DIR lands on the saved game's dir, and
+  // the campaignId tells the DM lane which existing campaign to re-open (see scripts/play.sh RESUME).
+  const startPlay = async (world, resume = null) => {
     if (summoning) return;
     if (!window.OpenWorldsNative?.hasBridge?.()) {
       onNavigate("table");
@@ -46,15 +51,27 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
     // pressed — before the async mint and the reload it triggers. The flag is stamped into
     // sessionStorage so it survives the location.assign reload below and keeps covering the
     // cold-open on the live viewer, handing off to the table when the first narration lands.
-    // (building-universe.jsx; App reads it via useBuildingUniverse.)
-    window.OpenWorldsBuilding?.begin?.({ world: world || "baldurs-gate", kind: "play" });
+    // (building-universe.jsx; App reads it via useBuildingUniverse.) A resume re-opens an existing
+    // chronicle rather than building a new one, so label the overlay accordingly.
+    window.OpenWorldsBuilding?.begin?.({ world: world || "baldurs-gate", kind: resume ? "resume" : "play" });
     const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    const resumeRunId = resume && typeof resume.runId === "string" ? resume.runId.trim() : "";
+    const resumeCampaignId = resume && typeof resume.campaignId === "string" ? resume.campaignId.trim() : "";
     try {
       const payload = {
         world: world || "baldurs-gate",
-        runId: `play-${stamp}`,
+        // RESUME reuses the SAVED run id so the DM lane's per-run state dir lands on the saved
+        // game; a fresh start mints a new one. companions stays "" (the launcher always resumes/
+        // starts solo; companions are recruited in play).
+        runId: resumeRunId || `play-${stamp}`,
         companions: "",
       };
+      // Re-attach signal: when both the saved runId and campaignId are present, the bridge/play.sh
+      // resume the EXISTING campaign (writable move sink, saved party/progress) — NOT a new world.
+      if (resumeRunId && resumeCampaignId) {
+        payload.resume = true;
+        payload.campaignId = resumeCampaignId;
+      }
       if (preferredProvider) payload.provider = preferredProvider;
       const reply = await window.OpenWorldsNative.request("startProviderSession", payload);
       // Drive the reload to the live, sink-wired viewer from JS using the URL the bridge
@@ -88,7 +105,11 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
     if (!nextCampaign) return;
     const c = playerChronicles.find((x) => x.id === nextCampaign);
     setState((s) => ({ ...s, activeCampaign: nextCampaign }));
-    startPlay(c?.world);
+    // Resume re-ATTACHES the saved chronicle: pass its identity (runId + campaign_id, both carried
+    // on the catalog card — viewer/server.py) so play.sh re-opens THAT campaign, live, with its
+    // saved party/progress — not a brand-new empty world. resumeIdentity returns null when the card
+    // lacks the ids (an older catalog), in which case startPlay falls back to a fresh cold open.
+    startPlay(c?.world, resumeIdentity(c));
   };
 
   // #326: drop straight into the live table for an already-playable session. Unlike startPlay
@@ -104,7 +125,9 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
     // bridge (the startPlay path, exactly as onResume does). Only drop straight into the table when the
     // session is ALREADY live (an in-browser already-live run, or a browser preview with no bridge).
     if (window.OpenWorldsNative?.hasBridge?.() && !target.live) {
-      startPlay(target.world);
+      // Same re-attach: a canResume-but-not-yet-live save has no attached DM, so this mints a
+      // provider — but it must RESUME the saved campaign, not a new world. Pass the saved identity.
+      startPlay(target.world, resumeIdentity(target));
       return;
     }
     onNavigate("table");
@@ -392,6 +415,18 @@ function isPlayerChronicle(c) {
   return Boolean(c?.canResume || c?.current);
 }
 
+// The saved card's re-attach identity for Resume: { runId, campaignId }. Both fields are projected
+// by the viewer catalog (viewer/server.py: `runId` + `campaign_id`). Returns null unless BOTH are
+// present and non-empty — an older catalog row (or a non-resumable card) then falls back to a fresh
+// cold open in startPlay rather than half-resuming with a missing id.
+function resumeIdentity(c) {
+  if (!c) return null;
+  const runId = typeof c.runId === "string" ? c.runId.trim() : "";
+  const campaignId = typeof c.campaign_id === "string" ? c.campaign_id.trim() : "";
+  if (!runId || !campaignId) return null;
+  return { runId, campaignId };
+}
+
 // #326: the unmistakable in-browser "Continue / Resume → play" primary. Shown at the very top of
 // the launcher whenever a live/resumable session exists (the #324 harness, or any resumable save).
 // Clicking it binds the table to this chronicle and drops the player straight into the live loop —
@@ -643,4 +678,4 @@ function SegRadio({ value, onChange, options }) {
   );
 }
 
-Object.assign(window, { ScreenLauncher, isPlayerChronicle, ContinueBanner, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });
+Object.assign(window, { ScreenLauncher, isPlayerChronicle, resumeIdentity, ContinueBanner, Stat, CampaignRow, PartyPortrait, NewCampaignModal, FormField, SegRadio, inkInput });

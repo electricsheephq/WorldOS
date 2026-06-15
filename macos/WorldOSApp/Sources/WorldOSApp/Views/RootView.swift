@@ -9,7 +9,9 @@ struct RootView: View {
     @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
     @AppStorage("artRepoPath") private var artRepoPath: String = RepositoryLocator.defaultArtRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
-    @AppStorage("stateDir") private var stateDir: String = ""
+    // A shipped .app must NOT read/write the dev repo — default the state dir to the engine's own
+    // per-user home (~/.worldos/state, else ~/.clawdnd/state). play.sh nests each game under it.
+    @AppStorage("stateDir") private var stateDir: String = RepositoryLocator.defaultUserStateDir()
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
@@ -102,7 +104,7 @@ struct RootView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: activeRepoPath)
+        campaignStore.reload(repoPath: activeRepoPath, stateDir: stateDir)
     }
 
     private func startOpenWorlds() {
@@ -311,6 +313,12 @@ struct RootView: View {
             throw ProviderError.configuration("Scripted provider is disabled. Set WORLDOS_ENABLE_SCRIPTED_PROVIDER=1 for dev/test smoke.")
         }
         let world = stringPayload(payload, "world") ?? defaultWorld
+        // RESUME re-attach: the launcher's Resume passes the SAVED chronicle's identity — its runId
+        // (so the per-run state dir lands on the saved game) AND its campaignId (which existing
+        // campaign to re-open). Both must be present for a resume; otherwise this is a FRESH start
+        // (a brand-new runId is minted, no resume campaign) — byte-identical to before.
+        let resumeCampaignID = stringPayload(payload, "campaignId").flatMap { $0.isEmpty ? nil : $0 }
+        let resumeRequested = boolPayload(payload, "resume") && resumeCampaignID != nil
         let runId = stringPayload(payload, "runId").flatMap { $0.isEmpty ? nil : $0 } ?? Self.newRunID()
         let companions = stringPayload(payload, "companions") ?? ""
         // Optional authored-hero spec (JSON) from the Creation wizard's Bind. When present, the
@@ -327,6 +335,7 @@ struct RootView: View {
             hero: hero,
             stateDir: stateDir,
             artRepoPath: activeArtRepoPath,
+            resumeCampaignID: resumeRequested ? resumeCampaignID : nil,
             preferences: providerPreferences
         )
         try await waitForOpenWorlds(url)
@@ -500,6 +509,18 @@ struct RootView: View {
         return "\(value)".trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func boolPayload(_ payload: [String: Any], _ key: String) -> Bool {
+        guard let value = payload[key] else { return false }
+        if let bool = value as? Bool { return bool }
+        if let number = value as? NSNumber { return number.boolValue }
+        switch "\(value)".trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        default:
+            return false
+        }
+    }
+
     private static let runIDFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -606,7 +627,8 @@ struct DebugControlCenterView: View {
     @AppStorage("repoPath") private var repoPath: String = RepositoryLocator.defaultRepoPath() ?? ""
     @AppStorage("artRepoPath") private var artRepoPath: String = RepositoryLocator.defaultArtRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
-    @AppStorage("stateDir") private var stateDir: String = ""
+    // Same per-user default as RootView — a shipped .app never points the state dir at the dev repo.
+    @AppStorage("stateDir") private var stateDir: String = RepositoryLocator.defaultUserStateDir()
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"
     @AppStorage("codexProviderCommand") private var codexProviderCommand: String = ""
@@ -717,7 +739,8 @@ struct DebugControlCenterView: View {
                 repoPath: activeRepoPathBinding,
                 artRepoPath: activeArtRepoPathBinding,
                 preferredPort: $preferredPort,
-                webURL: $webURL
+                webURL: $webURL,
+                stateDir: stateDir
             )
         case .monitor:
             MonitorView(
@@ -779,7 +802,7 @@ struct DebugControlCenterView: View {
 
     private func refresh() {
         processService.refreshDependencies()
-        campaignStore.reload(repoPath: activeRepoPath)
+        campaignStore.reload(repoPath: activeRepoPath, stateDir: stateDir)
     }
 }
 
