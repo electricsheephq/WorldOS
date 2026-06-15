@@ -39,6 +39,9 @@ function enrichWare(item, catalog) {
   // stock never carries these, so fill them (the ware's own value, if any, still wins).
   if (!merged.weaponCategory && rec.weaponCategory) merged.weaponCategory = rec.weaponCategory;
   if (!merged.mastery && rec.mastery) merged.mastery = rec.mastery;
+  // 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): carry the catalog's canonical
+  // SRD mastery EFFECT text so the Market inspector explains the property too (Stash/Market parity).
+  if (!merged.masteryEffect && rec.masteryEffect) merged.masteryEffect = rec.masteryEffect;
   // RRI-25e55fa optimizer #3: carry the catalog's composed weapon range bracket so the Market
   // inspector reads "100/400 ft" for a Heavy Crossbow (the hardcoded stock never carries it).
   if (!merged.rangeDisplay && rec.rangeDisplay) merged.rangeDisplay = rec.rangeDisplay;

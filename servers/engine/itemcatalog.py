@@ -276,6 +276,52 @@ def _weapon_property_join() -> dict[str, dict]:
     return out
 
 
+# The canonical SRD 5.2 weapon-MASTERY effects, keyed by the mastery NAME the
+# WeaponProperty join resolves (#888). #888 surfaced the NAME ("Sap"); the 3582dc2
+# optimizer's MAJOR was that the Examine panel showed the name but NOT what it does
+# ("Weapon Mastery 'Sap' unexplained"). This is the authoritative effect text — one
+# canonical source so the engine is the sole writer and every surface (Stash/Market
+# inspector) reads the SAME wording. Verified against the SRD 5.2 weapon-mastery list.
+# A name absent from this map (a homebrew pack's novel mastery) resolves to "" so the
+# inspector hides the effect row rather than fabricating one.
+_MASTERY_EFFECTS = {
+    "Cleave": ("If you hit a creature with a melee attack roll using this weapon, you can make a "
+               "melee attack roll with the weapon against a second creature within 5 feet of the "
+               "first that is also within your reach. On a hit, the second creature takes the "
+               "weapon's damage, but don't add your ability modifier to that damage unless that "
+               "modifier is negative. You can make this extra attack only once per turn."),
+    "Graze": ("If your attack roll with this weapon misses a creature, you can deal damage "
+              "to that creature equal to the ability modifier you used to make the attack "
+              "roll. This damage is the same type dealt by the weapon, and it can be "
+              "increased only by increasing the ability modifier."),
+    "Nick": ("When you make the extra attack of the Light property, you can make it as part "
+             "of the Attack action instead of as a Bonus Action. You can make this extra "
+             "attack only once per turn."),
+    "Push": ("If you hit a creature with this weapon, you can push the creature up to 10 "
+             "feet straight away from yourself if it is Large or smaller."),
+    "Sap": ("If you hit a creature with this weapon, that creature has Disadvantage on its "
+            "next attack roll before the start of your next turn."),
+    "Slow": ("If you hit a creature with this weapon and deal damage to it, you can reduce "
+             "its Speed by 10 feet until the start of your next turn. If the creature is hit "
+             "more than once by weapons that have this property, the Speed reduction doesn't "
+             "exceed 10 feet."),
+    "Topple": ("If you hit a creature with this weapon, you can force the creature to make a "
+               "Constitution saving throw (DC 8 plus the ability modifier used to make the "
+               "attack roll and your Proficiency Bonus). On a failed save, the creature has "
+               "the Prone condition."),
+    "Vex": ("If you hit a creature with this weapon and deal damage to the creature, you have "
+            "Advantage on your next attack roll against that creature before the end of "
+            "your next turn."),
+}
+
+
+def _mastery_effect(name: str) -> str:
+    """The canonical SRD 5.2 effect text for a weapon-mastery NAME, or "" when the name is
+    empty or unknown (a homebrew mastery the map doesn't cover). The inspector reads this
+    verbatim so "Sap" no longer surfaces unexplained — never fabricated for a missing name."""
+    return _MASTERY_EFFECTS.get((name or "").strip(), "")
+
+
 def _flatten(model: str, fields: dict, pk: str = "") -> dict:
     """Flatten one source record (any of the 4 shapes) into the common catalog
     item dict. ``model`` is the fixture model tail ('magicitem'/'item'/'weapon'/
@@ -315,6 +361,10 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
             # so the Stash/Market inspector reads "Martial Weapon · Mastery: Sap" — additive.
             "weapon_category": _weapon_category(fields),
             "mastery": extra.get("mastery", ""),
+            # 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): the canonical SRD
+            # 5.2 EFFECT text for that mastery NAME, so the inspector explains what it does.
+            # "" when the weapon has no mastery (or an unknown one) — the row is then hidden.
+            "mastery_effect": _mastery_effect(extra.get("mastery", "")),
             # RRI-25e55fa optimizer #3: the SRD weapon range bracket (0/0 for pure melee).
             **_weapon_range(fields),
         }
@@ -382,6 +432,9 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
             record["versatile"] = wp["versatile"]
         if wp.get("mastery"):
             record["mastery"] = wp["mastery"]
+            # 3582dc2 optimizer (MAJOR): a magic weapon inherits its base weapon's mastery
+            # EFFECT text via the same FK, so an enchanted Glaive explains Graze, not just names it.
+            record["mastery_effect"] = _mastery_effect(wp["mastery"])
     afk = fields.get("armor")
     if afk and afk in armors:
         af = armors[afk]

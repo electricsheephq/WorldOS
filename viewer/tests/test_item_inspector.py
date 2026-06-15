@@ -180,6 +180,41 @@ class ItemInspectorBehaviourTests(unittest.TestCase):
         self.assertEqual(kv.get("Category"), "Martial Weapon")
         self.assertEqual(kv.get("Mastery"), "Sap")
 
+    # --- 3582dc2 optimizer (MAJOR): the Mastery EFFECT, not just the name -----------
+    def test_weapon_inspector_shows_mastery_effect_not_just_name(self):
+        """The 3582dc2 optimizer "Weapon Mastery 'Sap' unexplained": the inspector showed the
+        Mastery NAME but not WHAT IT DOES. The Mastery row must read name + effect so a player
+        understands the property (e.g. "Sap — ...Disadvantage on its next attack roll...")."""
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Longsword', type: 'weapon', damage: '1d8', "
+            "  damageType: 'slashing', mastery: 'Sap', "
+            "  masteryEffect: 'If you hit a creature with this weapon, that creature has "
+            "Disadvantage on its next attack roll before the start of your next turn.' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertIn("Mastery", kv)
+        self.assertIn("Sap", kv["Mastery"])
+        self.assertIn("Disadvantage", kv["Mastery"],
+                      "the Mastery row must explain the effect, not just name it")
+
+    def test_mastery_without_effect_still_shows_name(self):
+        # A weapon whose effect text didn't resolve (older surface) must still show the NAME
+        # (no regression on #888) — the name-only row, never a blank.
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Longsword', type: 'weapon', damage: '1d8', "
+            "  mastery: 'Sap' });"
+        )
+        kv = {r["k"]: r["v"] for r in rows}
+        self.assertEqual(kv.get("Mastery"), "Sap")
+
+    def test_nonweapon_omits_mastery_effect_row(self):
+        # A non-weapon must NOT fabricate a Mastery row even if a masteryEffect leaks in.
+        rows = self._run(
+            "return win.itemStatRows({ name: 'Healing Potion', type: 'potion', "
+            "  masteryEffect: 'should not show' });"
+        )
+        self.assertNotIn("Mastery", {r["k"] for r in rows})
+
     def test_negative_attack_bonus_renders_with_sign(self):
         rows = self._run(
             "return win.itemStatRows({ name: 'Club', type: 'weapon', damage: '1d4', attackBonus: -1 });"
@@ -504,6 +539,20 @@ class ItemInspectorWiringTests(unittest.TestCase):
         self.assertEqual(sl["weaponCategory"], "")
         self.assertEqual(sl["mastery"], "")
 
+    # 3582dc2 optimizer (MAJOR "Weapon Mastery 'Sap' unexplained"): the catalog endpoint also
+    # exposes the mastery EFFECT text alongside the name so the Market/Stash inspector can explain
+    # what the property does — not just name it.
+    def test_item_catalog_endpoint_exposes_mastery_effect(self):
+        status, _ctype, body = self._get("/item-catalog?name=Longsword&name=Studded%20Leather")
+        items = json.loads(body)["items"]
+        ls = items["Longsword"]
+        self.assertEqual(ls["mastery"], "Sap")
+        self.assertIn("masteryEffect", ls)
+        self.assertIn("disadvantage", ls["masteryEffect"].lower())
+        self.assertIn("next attack", ls["masteryEffect"].lower())
+        # armor carries an empty mastery effect (honest empty — the row is hidden)
+        self.assertEqual(items["Studded Leather"]["masteryEffect"], "")
+
     # F09-6 / #874: the catalog endpoint (the Market's source of truth) composes the SAME
     # honest armor dex-rule the Stash inspector carries — medium armor reads its DEX cap and
     # a shield reads its bonus, so the Market never re-exhibits the flat "AC 14"/"AC 2" bug.
@@ -623,6 +672,17 @@ class StashAttackBonusReadModelTests(unittest.TestCase):
         self.assertIsNone(it["attackBonus"])
         self.assertEqual(it["weaponCategory"], "")
         self.assertEqual(it["mastery"], "")
+        # 3582dc2 optimizer: a non-weapon carries an empty mastery effect (row hidden).
+        self.assertEqual(it["masteryEffect"], "")
+
+    def test_inventory_weapon_carries_mastery_effect(self):
+        # 3582dc2 optimizer (MAJOR): the end-to-end Stash read-model surfaces the Sap mastery
+        # EFFECT text alongside the name, so the Examine panel explains what Sap does.
+        ch = {**self.OWNER, "inventory": [{"name": "Longsword"}]}
+        it = server._inventory_items("c1", ch)[0]
+        self.assertEqual(it["mastery"], "Sap")
+        self.assertIn("disadvantage", it["masteryEffect"].lower())
+        self.assertIn("next attack", it["masteryEffect"].lower())
 
 
 if __name__ == "__main__":
