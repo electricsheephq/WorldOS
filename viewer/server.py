@@ -3860,6 +3860,11 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         # currently prepared. A prepared caster (Paladin/Cleric/Druid/Wizard) plans FROM this;
         # empty for a non-caster. Derived from the engine's own srd524 class↔spell map.
         "preparableSpells": _preparable_spells_view(ch),
+        # How many LEVELED spells this prepared caster may have prepared at once (5e cap:
+        # prepared-caster-level + casting-ability mod; half for a Paladin/Ranger). Drives the
+        # Rest & Prepare "N / cap selected" counter + the over-prepare block so the viewer can
+        # enforce the cap without engine math. None for a known-caster / non-caster (no cap UI).
+        "preparedCap": _prepared_spell_cap(ch),
         # Character-level casting summary (Spell Save DC + Spell Attack Bonus) for the top
         # of the Spells tab. None for a non-caster (Fighter/Rogue) — the screen omits it
         # rather than show a fake DC. Derived from the PC's casting ability + proficiency.
@@ -4031,6 +4036,16 @@ _CASTING_ABILITY = {
     "ranger": "wisdom", "sorcerer": "charisma", "warlock": "charisma", "wizard": "intelligence",
 }
 
+# Which classes PREPARE spells each day (vs the known-casters Bard/Sorcerer/Warlock that learn a
+# fixed list and never re-prepare). Mirrors the engine's prepared-caster set — the only classes a
+# Rest & Prepare CAP applies to. Value = the SRD caster-progression tier ("full" or "half") that
+# drives how many prepared-caster levels count toward the cap (a half-caster contributes only half
+# its level, rounded down per the SRD 2024 preparation rule the task specifies).
+_PREPARED_CASTER_TIER = {
+    "cleric": "full", "druid": "full", "wizard": "full",
+    "paladin": "half", "ranger": "half",
+}
+
 
 def _casting_ability(ch: dict) -> str | None:
     """The full ability key (e.g. "intelligence") the character casts with, from their
@@ -4090,6 +4105,51 @@ def _character_spellcasting(ch: dict) -> dict | None:
         "spellSaveDc": _spell_save_dc(ch),
         "spellAttackBonus": _spell_attack_bonus(ch),
     }
+
+
+def _prepared_spell_cap(ch: dict) -> int | None:
+    """How many LEVELED spells a PREPARED caster may have prepared at once (5e prepared-caster
+    rule), so the Rest & Prepare UI can enforce "N / cap selected" and block over-preparation.
+
+    Per SRD: a prepared caster prepares (prepared-caster-level + casting-ability modifier) spells,
+    minimum 1. A FULL prepared caster (Cleric/Druid/Wizard) counts its whole class level; a
+    HALF-caster (Paladin/Ranger) counts floor(class_level / 2) — the formula the task specifies
+    for a L10 Paladin (floor(10/2) = 5, + CHA mod). Multiclass prepared casters sum each prepared
+    class's level contribution, then add the single casting-ability modifier (the engine's
+    _casting_ability picks the first caster class). Cantrips are ALWAYS-known and never counted
+    against this cap — the caller excludes level-0 spells.
+
+    Returns None for a non-preparing caster — the known-casters Bard/Sorcerer/Warlock (no daily
+    preparation) and every non-caster (Fighter/Rogue/NPC). The UI then shows no cap and never
+    fabricates one. Reads only engine-set classes/abilities (read-only; no new engine math)."""
+    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    if not classes:
+        # Fall back to the single `class`/`klass` + top-level `level` for a thin sheet.
+        cname = _text(ch.get("class") or ch.get("klass")).lower()
+        tier = _PREPARED_CASTER_TIER.get(cname)
+        if tier is None:
+            return None
+        lvl = _num(ch.get("level"))
+        lvl = int(lvl) if lvl is not None else 1
+        classes = [{"name": cname, "level": lvl}]
+    prepared_levels = 0
+    has_prepared_class = False
+    for cl in classes:
+        if not isinstance(cl, dict):
+            continue
+        tier = _PREPARED_CASTER_TIER.get(_text(cl.get("name") or cl.get("class_name")).lower())
+        if tier is None:
+            continue
+        has_prepared_class = True
+        lvl = _num(cl.get("level"))
+        lvl = int(lvl) if lvl is not None else 1
+        prepared_levels += lvl if tier == "full" else (lvl // 2)
+    if not has_prepared_class:
+        return None
+    ability = _casting_ability(ch)
+    abilities = ch.get("abilities") if isinstance(ch.get("abilities"), dict) else {}
+    mod = _ability_mod(abilities.get(ability)) if ability else 0
+    return max(1, prepared_levels + mod)
 
 
 def _highest_slot_level_from_sheet(ch: dict) -> int:
