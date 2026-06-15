@@ -3877,6 +3877,11 @@ def _character_sheet(cid: str, ch: dict) -> dict:
         "stable": bool(ch.get("stable")),
         "equipped": equipped,
         "feats": [{"name": f, "glyph": "feat", "detail": ""} for f in feat_names],
+        # The chosen Fighting Style NAME of a martial that gets one (engine sets ch.fighting_style
+        # on canon-loaded Fighters/Paladins/Rangers — #895-pattern). Surfaced so the FeatsTab can
+        # render a NAMED style instead of the blank rules stub (3582dc2 sweep veteran/optimizer).
+        # "" for a non-martial / unset sheet -> the tab omits the section honestly (read-only).
+        "fightingStyle": _text(ch.get("fighting_style")),
         "abilities": [],
         "proficiencies": features,
         "classFeatures": [{"name": f, "detail": _feature_desc(_class_feature_names, f)} for f in features],

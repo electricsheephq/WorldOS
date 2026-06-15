@@ -1893,10 +1893,45 @@ function SpellbookBrowser({ hero, groups, preparable, onClose }) {
   );
 }
 
+// Short SRD 5.2 effect blurbs for the Fighting Styles the engine defaults a canon martial to
+// (plus the other common SRD styles, so a hand-authored/DM-set style still reads with its effect).
+// The engine is the sole writer of hero.fightingStyle; this map is display-only flavor for the tab.
+const FIGHTING_STYLE_EFFECTS = {
+  "Defense": "+1 AC while you are wearing armor.",
+  "Archery": "+2 bonus to attack rolls you make with ranged weapons.",
+  "Dueling": "+2 damage when wielding a melee weapon in one hand and no other weapon.",
+  "Great Weapon Fighting": "Reroll 1s and 2s on a damage die of a two-handed melee weapon.",
+  "Two-Weapon Fighting": "Add your ability modifier to the damage of the off-hand attack.",
+  "Protection": "Use your reaction and shield to impose disadvantage on an attack against a nearby ally.",
+};
+
 function FeatsTab({ hero }) {
+  // The chosen Fighting Style of a canon martial (Fighter/Paladin/Ranger) — a NAMED style with its
+  // short SRD effect, so the slot is no longer the blank stub the sweep flagged. Omitted (honest
+  // empty-state) when the hero has none, matching the tab's other read-only sections.
+  const fightingStyle = String(hero.fightingStyle || "").trim();
   return (
     <div>
-      <SectionTitle ordinal="·">Weapon Proficiency</SectionTitle>
+      {fightingStyle && (
+        <>
+          <SectionTitle ordinal="·">Fighting Style</SectionTitle>
+          <div style={{
+            padding: 10,
+            marginBottom: 8,
+            background: "rgba(176,141,87,0.08)",
+            boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.25)",
+          }}>
+            <div style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-900)" }}>
+              {fightingStyle}
+            </div>
+            {FIGHTING_STYLE_EFFECTS[fightingStyle] && (
+              <div className="body-sm muted" style={{ marginTop: 2 }}>{FIGHTING_STYLE_EFFECTS[fightingStyle]}</div>
+            )}
+          </div>
+          <Divider />
+        </>
+      )}
+      <SectionTitle ordinal={fightingStyle ? undefined : "·"}>Weapon Proficiency</SectionTitle>
       <ul className="body" style={{ paddingLeft: 18, margin: 0 }}>
         {hero.proficiencies.map((p) => (<li key={p}>{p}</li>))}
       </ul>

@@ -1196,6 +1196,27 @@ def _expertise_count(class_name: str, level: int) -> int:
     return 0
 
 
+# Class -> the class-appropriate SRD 5.2 Fighting Style to DEFAULT a canon-loaded martial to when
+# the class grants Fighting Style by the character's level but the field is empty. Defense (+1 AC
+# while wearing armor) is the safe, universally-useful pick for the armored martials; Archery (+2
+# ranged attack) fits the Ranger's bow-first kit. All three are valid SRD 5.2 styles. The grant
+# LEVELS are not hard-coded here — they come from the SRD feature table (Fighter L1, Paladin/Ranger
+# L2; see _grants_fighting_style), so this map only encodes WHICH style, never WHEN.
+_DEFAULT_FIGHTING_STYLE = {"fighter": "Defense", "paladin": "Defense", "ranger": "Archery"}
+
+
+def _grants_fighting_style(class_name: str, level: int) -> bool:
+    """True iff `class_name` is granted a Fighting Style by SRD 5.2 at/through `level` (Fighter L1,
+    Paladin/Ranger L2). Derived from the SRD feature table — features_through carries a "Fighting
+    Style" entry at exactly the grant level — so the WHEN stays single-sourced in the data, not a
+    duplicated literal. A class that never gets one (Wizard) returns False at any level."""
+    try:
+        return any((f.get("name") or "").strip().lower() == "fighting style"
+                   for f in srd_tables.features_through(class_name, level))
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool,
                               autoset_single_subclass: bool = False) -> None:
     """Fill SRD class defaults onto a character in place: saving-throw proficiencies,
@@ -1222,6 +1243,22 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
             ch.max_hp = _class_level_hp(cname, level, con) or ch.max_hp
             ch.current_hp = ch.max_hp
         ch.proficiency_bonus = srd_tables.proficiency_bonus(level)
+        # FIGHTING STYLE (canon-load default, opt-in — mirrors the #895 oath auto-set). A canon
+        # figure loaded straight in as a high-level martial PC (an L10 Paladin, an L11 Champion
+        # Fighter) showed "Fighting Style" as a blank RULES STUB — no style chosen or displayed
+        # (3582dc2 sweep, veteran/optimizer, MAJOR). Unlike a player-built char (whose planner
+        # surfaces the choice), the canon-load seat has NO planner step, so at/past the SRD grant
+        # level we DEFAULT to a class-appropriate style. Gated to the canon-load opt-in
+        # (autoset_single_subclass=True ONLY there), only fills an EMPTY field, and only when the
+        # class actually grants Fighting Style by this level (Fighter L1, Paladin/Ranger L2 — read
+        # from the SRD feature table via _grants_fighting_style). The create/level-up planner path
+        # (flag OFF), a class with no Fighting Style (Wizard), a level below the grant, and a sheet
+        # that already named a style all stay byte-identical to today.
+        if (autoset_single_subclass and not ch.fighting_style
+                and _grants_fighting_style(cname, level)):
+            default_style = _DEFAULT_FIGHTING_STYLE.get(cname)
+            if default_style:
+                ch.fighting_style = default_style
         if set_base_ac:
             # Unarmored Defense is ABILITY-derived, not a flat table value: a Barbarian is
             # 10 + DEX + CON and a Monk is 10 + DEX + WIS when wearing no armor (the abilities are
@@ -1234,6 +1271,18 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 ch.armor_class = 10 + dex + ch.abilities.modifier(Ability.WIS)
             else:
                 ch.armor_class = srd_tables.class_base_ac(cname)
+                # FIGHTING STYLE — Defense (+1 AC while wearing armor). FEASIBILITY-GATED and applied
+                # at this SINGLE clean insertion point: AC is set ONCE here from the worn-armor class
+                # base (16 for Fighter/Paladin/Cleric, 14 for Ranger — all reflect worn armor, > 10);
+                # equip_item is ADVISORY and never mutates armor_class; and a RE-SEAT passes
+                # set_base_ac=False (the canon-load path computes set_base_ac=(armor_class==10), so a
+                # second seat on an already-armored sheet skips this whole block) — so the +1 is
+                # applied exactly once and provably never double-counts. Gated on the Defense style
+                # (Archery is a ranged-attack bonus, not AC) and on a worn-armor base (> 10, so an
+                # unexpected unarmored base never silently gains AC). Only the canon-load opt-in ever
+                # sets ch.fighting_style above, so the create/level-up path never reaches this +1.
+                if ch.fighting_style == "Defense" and ch.armor_class > 10:
+                    ch.armor_class += 1
         through = list(srd_tables.features_through(cname, level))
         # #624: a character created directly at/above its subclass-choice level WITH a
         # subclass also gets that subclass's choice-level features (normalize loose
