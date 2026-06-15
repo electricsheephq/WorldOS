@@ -78,6 +78,23 @@ CODEX_HOME_FOR_APP="${WOS_APP_CODEX_HOME:-${CODEX_HOME:-}}"
 # mint timed out as a spurious FAIL. Give the poll a 420s budget (just past the cold-open
 # deadline), env-overridable for fast inner loops.
 PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-420}"
+# Launcher-viewer readiness window (seconds). The .app's built-in viewer must answer
+# /openworlds/ 200 before we click/auto-start. Two regimes:
+#  * CLICK path (default): a launcher UI shell serves /openworlds/ 200 almost immediately,
+#    THEN the CTA click triggers the cold-open (whose ~400s mint is covered by the separate
+#    PART_A_DEADLINE poll). A short 40s window is correct here (cold Swift start + viewer
+#    spawn + first art-root scan over ~2.3k images).
+#  * AUTOSTART path: the .app spawns play.sh DIRECTLY — there is NO pre-session launcher UI.
+#    play.sh's viewer_supervisor relaunches the viewer until the campaign is minted, so
+#    /openworlds/ only returns 200 AFTER the DM cold-open mints (~280-400s). A 40s window
+#    would spuriously FAIL as `no_launcher` long before the mint. So the autostart window
+#    must cover the cold-open: default it to the cold-open mint budget (PART_A_DEADLINE).
+# Both env-overridable via WOS_APP_LAUNCHER_WAIT_S.
+if [ "$NATIVE_AUTOSTART" = "1" ]; then
+  LAUNCHER_WAIT_S="${WOS_APP_LAUNCHER_WAIT_S:-$PART_A_DEADLINE}"
+else
+  LAUNCHER_WAIT_S="${WOS_APP_LAUNCHER_WAIT_S:-40}"
+fi
 if [ "$KEEP_MINTED_BACKEND" = "1" ] && [ "$PART" != "A" ]; then
   printf '[uipt-app] WOS_APP_KEEP_MINTED_BACKEND=1 requires WOS_APP_PART=A; refusing to mix kept native backend with part B.\n' >&2
   exit 2
@@ -553,7 +570,9 @@ PY
   # 8766+. The launcher viewer is THIS repo's viewer/server.py process; its port is the last
   # numeric token of its argv. Wait for it to appear AND answer /openworlds/ 200.
   local launcher_port="" ready=0
-  for _ in $(seq 1 80); do
+  local launcher_polls=$(( LAUNCHER_WAIT_S * 2 )); [ "$launcher_polls" -lt 1 ] && launcher_polls=1
+  a_log "[A] waiting up to ${LAUNCHER_WAIT_S}s for the launcher viewer to answer /openworlds/ 200…"
+  for _ in $(seq 1 "$launcher_polls"); do
     launcher_port="$(launcher_port_of "$ROOT")"
     if [ -n "$launcher_port" ] && \
        [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$launcher_port/openworlds/" 2>/dev/null)" = "200" ]; then
