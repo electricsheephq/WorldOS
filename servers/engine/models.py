@@ -770,6 +770,15 @@ class Character(_StrictModel):
     # of silently lost; settled by update_character / a later level_up. ADDITIVE: [] == today's
     # behavior; old snapshots round-trip (audit F02-3 / F02-15).
     pending_choices: list[str] = Field(default_factory=list)
+    # The chosen Fighting Style of a martial that gets one (Fighter at L1, Paladin/Ranger at L2
+    # per SRD 5.2) — its NAME ("Defense", "Archery", "Great Weapon Fighting", …). The Fighting
+    # Style used to render as a blank RULES STUB on a canon-loaded martial PC (the 3582dc2 sweep
+    # veteran/optimizer "Fighting Style not selected/displayed" finding); recording the NAME here
+    # lets the viewer show a named style. SET only on the canon-load seat (the autoset_single_subclass
+    # opt-in — a canon figure has no planner step to pick at); the create/level-up planner leaves it
+    # "" so the player chooses. ADDITIVE: "" == today's behavior; old snapshots round-trip byte-
+    # identical, non-martial classes are untouched, and the viewer ignores an absent key.
+    fighting_style: str = ""
     extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
     sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
     # A defensive REACTION that adds this many points to AC against ONE melee attack that

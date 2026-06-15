@@ -303,6 +303,23 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertFalse(self._party(surface2)["elara"]["pendingSubclass"])
         self.assertFalse(self._party(surface2)["thornwick"]["pendingSubclass"])
 
+    def test_surface_exposes_fighting_style_name(self):
+        """Fighting Style display (3582dc2 sweep, veteran/optimizer): the engine now records a
+        canon martial's chosen Fighting Style in `fighting_style`; the read-model must surface it
+        as `fightingStyle` so the FeatsTab can render a NAMED style instead of a blank stub."""
+        ch = copy.deepcopy(_SNAPSHOT["characters"]["thornwick"])  # L4 Fighter
+        ch["fighting_style"] = "Defense"
+        sheet = server._character_sheet("thornwick", ch)
+        self.assertEqual(sheet["fightingStyle"], "Defense")
+
+    def test_surface_fighting_style_empty_for_non_martial(self):
+        """A non-martial (Wizard) carries no Fighting Style -> the key is present (stable shape)
+        but empty, so the FeatsTab omits the section honestly rather than showing a blank style."""
+        ch = copy.deepcopy(_SNAPSHOT["characters"]["elara"])  # Wizard, no fighting_style field
+        sheet = server._character_sheet("elara", ch)
+        self.assertIn("fightingStyle", sheet)
+        self.assertEqual(sheet["fightingStyle"], "")
+
     def test_capitalized_skill_proficiencies_still_project(self):
         """QA 2026-06-03 (optimizer crit, sat=4): a canon-seated character can carry CAPITALIZED
         skill names on a stale snapshot (['Arcana','History',...]). The Skills tab must still mark
