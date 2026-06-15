@@ -118,6 +118,12 @@ PROVIDER="$(worldos_env PROVIDER claude)"
 # so saves, the chat log, and the move sink stay together and out of the QA sandbox.
 STATE_DIR="$ROOT/play-state/$RUN"
 mkdir -p "$STATE_DIR"
+# #892 follow-up: keep the .app-spawned cold-open `claude -p` (the DM) off the macOS keychain +
+# off any /Volumes TCC prompt so it runs headless. GATED no-op without an env/file credential (so
+# the Terminal/keychain path is byte-unchanged); when a credential is resolvable it isolates the
+# config dir + puts the token in the env. Called ONCE here, after STATE_DIR, before the pre-seed +
+# DM cold-open below. Defined in qa/lib_beat_driver.sh (sourced above). Never fails a launch.
+clawdnd_isolate_claude_auth
 DM_CFG="$STATE_DIR/dm.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"
 CHAT="$STATE_DIR/chat.jsonl"; : > "$CHAT"

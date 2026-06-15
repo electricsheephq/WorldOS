@@ -1284,3 +1284,78 @@ PY
 )"
   [ -n "$out" ] && printf '%s' "$out"
 }
+
+# COLD-OPEN AUTH ISOLATION (#892 follow-up) — keep the GUI .app's cold-open `claude -p` (the DM)
+# off the macOS keychain and off any /Volumes (removable-disk) TCC prompt, so it runs headless
+# without popping a system dialog every build.
+#
+# ROOT CAUSE (already diagnosed — see #892): the .app-spawned `claude -p` (a) reads its OAuth
+# credential from the macOS KEYCHAIN, and because the .app is ad-hoc signed its cdhash changes on
+# EVERY build → the keychain item's ACL never includes the new cdhash → macOS re-prompts for
+# keychain access on every launch; and (b) touches stale `/Volumes/LEXAR/...` entries in the
+# user's ~/.claude.json `projects` map → a removable-disk TCC prompt. Both block headless
+# auto-testing.
+#
+# THE FIX (authoritative per Claude Code's `-p` auth model): run the cold-open claude with
+#   (1) a credential in the ENV — in `-p` mode CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY take
+#       precedence and the keychain is NEVER consulted; and
+#   (2) an ISOLATED CLAUDE_CONFIG_DIR — a scratch config holding exactly `{}` (NO projects map),
+#       so claude never reads the user's stale /Volumes project entries → no removable-disk prompt.
+#
+# GATED + ADDITIVE: this is a NO-OP unless a non-keychain credential is resolvable. With no env
+# token and no secret file, it changes NOTHING — the existing Terminal path (where the keychain
+# works fine interactively) is preserved byte-for-byte. Idempotent; ALWAYS returns 0 so it can
+# never break a caller (it is auth plumbing, never allowed to fail a launch).
+#
+# Credential resolution (priority order):
+#   (a) $CLAUDE_CODE_OAUTH_TOKEN or $ANTHROPIC_API_KEY already set+non-empty in the env → use as-is.
+#   (b) else a secret file at ${CLAWDND_CLAUDE_TOKEN_FILE:-$HOME/.worldos/claude-token} → read+trim;
+#       classify by prefix: 'sk-ant-' → ANTHROPIC_API_KEY, otherwise → CLAUDE_CODE_OAUTH_TOKEN.
+# Config dir: ${CLAWDND_CLAUDE_CONFIG_DIR:-${STATE_DIR:-$PWD}/.claude-cfg} (created; minimal `{}`
+# .claude.json written iff absent; exported as CLAUDE_CONFIG_DIR).
+# Reads ambient $STATE_DIR (the run's state dir, when the caller has set it) for the default
+# scratch config location. No args.
+clawdnd_isolate_claude_auth() {
+  local cred="" tok_file cfg_dir
+
+  # (a) env credential already present → respect it as-is (no reclassification, no file read).
+  if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    cred="env"
+  else
+    # (b) fall back to the on-disk secret file (gated: only if it exists + has content).
+    tok_file="${CLAWDND_CLAUDE_TOKEN_FILE:-$HOME/.worldos/claude-token}"
+    if [ -f "$tok_file" ]; then
+      local raw
+      raw="$(cat "$tok_file" 2>/dev/null)"
+      # Trim surrounding whitespace/newlines (a `claude setup-token` dump often has a trailing \n).
+      raw="${raw#"${raw%%[![:space:]]*}"}"
+      raw="${raw%"${raw##*[![:space:]]}"}"
+      if [ -n "$raw" ]; then
+        case "$raw" in
+          sk-ant-*) export ANTHROPIC_API_KEY="$raw" ;;
+          *)        export CLAUDE_CODE_OAUTH_TOKEN="$raw" ;;
+        esac
+        cred="file"
+      fi
+    fi
+  fi
+
+  # NO credential resolved → true NO-OP. Do NOT set CLAUDE_CONFIG_DIR, do NOT export anything.
+  # This preserves today's working Terminal path (the keychain works fine interactively).
+  if [ -z "$cred" ]; then
+    echo "[auth] no env/file credential — using default (keychain) auth" >&2
+    return 0
+  fi
+
+  # A credential is in the env → also isolate the config dir so claude never reads the user's
+  # stale /Volumes project entries (no removable-disk TCC prompt). Idempotent: re-running just
+  # re-points at the same dir; the `{}` is only written when absent.
+  cfg_dir="${CLAWDND_CLAUDE_CONFIG_DIR:-${STATE_DIR:-$PWD}/.claude-cfg}"
+  mkdir -p "$cfg_dir" 2>/dev/null || true
+  if [ ! -f "$cfg_dir/.claude.json" ]; then
+    printf '%s\n' '{}' > "$cfg_dir/.claude.json" 2>/dev/null || true
+  fi
+  export CLAUDE_CONFIG_DIR="$cfg_dir"
+  echo "[auth] isolated CLAUDE_CONFIG_DIR + env credential (no keychain / no /Volumes)" >&2
+  return 0
+}
