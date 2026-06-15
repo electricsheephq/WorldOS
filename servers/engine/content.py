@@ -1975,6 +1975,12 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
             name=name,
             description=str(area.get("description", "")),
             region=str(area.get("region", "")),
+            # Optional authored axial-hex (q, r) — PRESENTATION ONLY (the viewer positions
+            # the atlas pin from it; engine travel/adjacency uses `connections`, never
+            # coords). Mirrors the region-seeding path above (hex=reg.get("hex")). Additive:
+            # an area without a `hex` key yields hex=None, byte-identical to prior behavior,
+            # and an old snapshot lacking the field round-trips to a non-positioned Location.
+            hex=area.get("hex"),
             notes=" ".join(str(t) for t in (area.get("tags") or []) if str(t).strip()),
             connections=[str(x) for x in (area.get("connections") or []) if str(x).strip()],
             # Ingested areas are equally part of the world's KNOWN day-1 nav graph, so they

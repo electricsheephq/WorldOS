@@ -3,6 +3,7 @@
   "name": "the Gray Harbor",
   "description": "The Gate's oldest working harbor, where the Chionthar broadens toward the Sea of Swords and the smell of salt overtakes the smell of the city. In ordinary commerce the Gray Harbor is a perpetual controlled chaos of merchant vessels, wherries, net-menders, and the gulls that own the air above the breakwater. In this first post-Absolute winter it is half that, and the half that remains is strange. The nearest quay to where the Netherbrain breached the harbor floor still heaves underfoot when the tide runs wrong — stone that should be cold runs warm, and the rivermen who know the water say the bottom changed. Two deep-water berths at the far end have been claimed, without permission anyone can cite, by a consortium of Calishite traders who are not from Little Calimshan and who arrived the week after the battle, which is fast, and whose cargo manifests are sealed, which is suspicious. The harbormaster's office still charges its fees; it no longer asks its questions.",
   "region": "Baldur's Gate",
+  "hex": [-3, 1],
   "connections": [
     "Baldur's Gate — Lower City",
     "the Siltwharf Steps",

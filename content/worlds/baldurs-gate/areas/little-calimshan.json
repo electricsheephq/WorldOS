@@ -3,6 +3,7 @@
   "name": "Little Calimshan",
   "description": "A tight neighborhood pressed against the Outer City's southern wall, its flat-roofed tenements and tiled arches as out of place on the Chionthar as a desert wind. The community that built it came north generations ago from the Calim Empire and stayed; their tea-stalls, silk-vendors, and an old Calishite wayshrine to Tymora line a quarter-mile of alley that smells of cardamom and tallow. Since the crisis an influx of Outer City refugees has doubled the quarter's population, and the original residents navigate the crowding with a wary, proprietary hospitality. The Guild collects quietly here, and the guild-runners are always from the neighborhood.",
   "region": "Baldur's Gate",
+  "hex": [-2, 3],
   "connections": [
     "The Outer City & Rivington",
     "the Siltwharf Steps"

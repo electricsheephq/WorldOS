@@ -3,6 +3,7 @@
   "name": "Bloomridge Market",
   "description": "A terraced bazaar climbing the slope just inside the old walls, where awnings of patched sailcloth shade stalls of river-fish, cut flowers, and salvaged charms. Since the crisis the market has swollen with refugees hawking whatever they carried out of the ruin, and the city watch keeps a wary post by the cistern at its center. At dusk the lamplighters work their way up the steps and the haggling gives way to quieter trade.",
   "region": "Baldur's Gate",
+  "hex": [-1, 0],
   "connections": [
     "Baldur's Gate — Lower City",
     "the Siltwharf Steps",

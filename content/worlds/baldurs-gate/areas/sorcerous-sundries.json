@@ -3,6 +3,7 @@
   "name": "Sorcerous Sundries",
   "description": "The Gate's foremost emporium of the arcane, a tall merchant-house whose shelves run floor to ceiling with bottled lights, catalogued spell-scrolls, and curiosities with price-tags that do not explain what they do. Since the crisis the management has added a locked rear counter for tadpole-related 'consultations' — a polite term for frightened people asking whether they are going to change. The answer is usually hedged, costs three gold, and does not comfort. A driftglobe above the door still flickers when certain names are spoken nearby; no one on staff has managed to make it stop.",
   "region": "Baldur's Gate",
+  "hex": [-1, 1],
   "connections": [
     "Baldur's Gate — Lower City",
     "the Elfsong Tavern"
