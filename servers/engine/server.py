@@ -2809,6 +2809,23 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
                 "dead_in_canon": True,
                 "name": canonical,
             }
+        # HARD GATE (#305 sibling): a BANNED BG3-ORIGIN hero (Astarion/Gale/Karlach/Lae'zel/
+        # Shadowheart/Wyll/Halsin — each ships `playable: false`) may be a temporary COMPANION or
+        # lore NPC, but must NEVER be seated as the PLAYER CHARACTER. `is_playable(rec)` is the ONE
+        # canonical origin-ban predicate (the same one list_canon_characters(playable_only=True) and
+        # start_character's `pickup:` refusal already use) — the picker FILTERED them out, but this
+        # SEAT didn't re-check, so a DM/seed that NAMED an origin as the player seated them anyway.
+        # Mirrors the dead gate above: kind=="player" only (companion/npc still allowed through
+        # below); returns the standard {"error", "origin_banned"} dict so play.sh falls back.
+        if kind == "player" and not content_mod.is_playable(rec):
+            return {
+                "error": (f"{canonical} is a banned Baldur's Gate 3 origin hero — they can only "
+                          f"join as a temporary companion, never the player character. Pick a "
+                          f"living minor figure (list_canon_characters(playable_only=True) lists "
+                          f"the playable, non-origin figures)."),
+                "origin_banned": True,
+                "name": canonical,
+            }
         dup = next((ch for ch in c.characters.values()
                     if ch.name.strip().lower() == canonical.strip().lower()), None)
         if dup is not None:
