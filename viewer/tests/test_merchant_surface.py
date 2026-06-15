@@ -18,6 +18,8 @@ import http.client
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -224,6 +226,148 @@ class MerchantScreenWiringTests(unittest.TestCase):
         src = self._get_text("/openworlds/screen-merchant.jsx")
         self.assertNotIn("state?.merchantStash", src)
         self.assertNotIn("GATE_MARKET_STOCK", src)
+
+
+# ── #604 behavioral guard: the Sell tab populates sellStash FROM /inventory-surface d.stash ──
+#
+# MerchantScreenWiringTests.test_sell_tab_reads_the_inventory_surface (above) only asserts the
+# "/inventory-surface" substring is present in the served source — but the equipped-compare block
+# (#756) already fetched that URL BEFORE #604, so that guard stays GREEN even when #604 is reverted.
+# It does not isolate the change it is named for.
+#
+# The real #604 wiring is: inside the /inventory-surface effect, the Sell tab populates `sellStash`
+# from the response's `d.stash` (setSellStash on a `d.stash`-derived list with a defaulted item
+# `type`), replacing the always-empty `state.merchantStash` stub. This class drives that real effect
+# under the Node+Babel pure harness (mirroring test_merchant_haggle.py's _HARNESS) and asserts the
+# behaviour — so it goes RED if screen-merchant.jsx is reverted to the pre-#925 base.
+
+_OPENWORLDS = Path(__file__).resolve().parents[1] / "openworlds"
+_MERCHANT = _OPENWORLDS / "screen-merchant.jsx"
+_BABEL = _OPENWORLDS / "vendor" / "babel-standalone-7.29.0.min.js"
+
+
+# The screen returns JSX that references child components (Panel/Img/…) this harness does not load,
+# so the component's RETURN throws — but every React.useEffect has already registered by then, which
+# is all we need. We render ScreenMerchant ONCE (tolerating that throw), capture the effects, drive
+# them against a URL-aware fetch where only /inventory-surface carries a stash payload, then assert a
+# setter received the stash-derived list. Setters are pure recorders, so there is no re-render loop.
+_SELL_STASH_HARNESS = r"""
+const fs = require('fs');
+const vm = require('vm');
+const Babel = require(%(babel)s);
+
+const setterCalls = [];
+const effects = [];
+const React = {
+  useState: (i) => {
+    const init = (typeof i === 'function') ? i() : i;
+    return [init, (next) => { setterCalls.push((typeof next === 'function') ? next(init) : next); }];
+  },
+  useEffect: (fn) => { effects.push(fn); },
+  useRef: (i) => ({ current: i }),
+  useCallback: (fn) => fn,
+  createElement: () => null,
+  Fragment: 'F',
+};
+
+const sandbox = {
+  React,
+  document: { addEventListener(){}, removeEventListener(){}, visibilityState: 'visible',
+              getElementById: () => ({}), head: { appendChild() {} }, createElement: () => ({}) },
+  // URL-aware fetch: ONLY /inventory-surface returns a stash payload; the other surfaces
+  // (/character-surface, /merchant-surface, /item-catalog) resolve to a benign null so their effects
+  // no-op. The stash item carries NO `type`, so #604's `type || "common"` default is observable.
+  fetch: (url) => {
+    if (String(url).indexOf('/inventory-surface') === 0) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        party: [],
+        stash: [{ id: 'sell-test-blade', name: 'Test Blade', price: 5 }],
+      }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+  },
+  setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+  encodeURIComponent, URLSearchParams, Promise, JSON, Set, Array, Object, String, Boolean, Number, Math,
+  console,
+};
+sandbox.window = sandbox;
+// The only helpers the component body calls unguarded before the inventory effect registers.
+sandbox.currencyTotalGp = () => 0;
+sandbox.partyPurse = () => ({});
+vm.createContext(sandbox);
+
+function load(p) {
+  const src = fs.readFileSync(p, 'utf8');
+  const code = Babel.transform(src, { presets: ['react'], filename: p }).code;
+  vm.runInContext(code, sandbox);
+}
+load(%(merchant)s);
+
+const win = sandbox.window;
+(async () => {
+  try {
+    win.ScreenMerchant({ onNavigate: () => {}, state: {}, setState: () => {} });
+  } catch (e) { /* undefined JSX child refs — effects already captured */ }
+  for (const fn of effects) { try { fn(); } catch (e) { /* keep draining the rest */ } }
+  // Flush the fetch().then().then() microtask chain.
+  await new Promise((res) => setImmediate(res));
+  await new Promise((res) => setImmediate(res));
+  const sell = setterCalls.find(
+    (v) => Array.isArray(v) && v.some((it) => it && it.id === 'sell-test-blade'));
+  process.stdout.write(JSON.stringify({ captured_effects: effects.length, sell_stash: sell || null }));
+})();
+"""
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is required to transpile + drive the Market effect")
+class SellStashPopulationTests(unittest.TestCase):
+    """#604 behavioral guard: the Sell tab's sellStash is populated FROM the /inventory-surface
+    response's `d.stash` — the wiring #604 added. Drives the real effect under the Node+Babel
+    harness so the test goes RED if #604 is reverted (unlike the substring guard above, which the
+    pre-#604 equipped-compare fetch of the SAME URL already satisfied)."""
+
+    NODE_BIN = shutil.which("node")
+
+    @classmethod
+    def setUpClass(cls):
+        for p in (_MERCHANT, _BABEL):
+            assert p.exists(), f"missing {p}"
+
+    def _drive(self) -> dict:
+        program = _SELL_STASH_HARNESS % {
+            "babel": json.dumps(str(_BABEL)),
+            "merchant": json.dumps(str(_MERCHANT)),
+        }
+        proc = subprocess.run(
+            [self.NODE_BIN, "--input-type=commonjs"],
+            input=program, text=True, capture_output=True,
+        )
+        if proc.returncode != 0:
+            self.fail(f"node harness failed:\nSTDOUT:{proc.stdout}\nSTDERR:{proc.stderr}")
+        return json.loads(proc.stdout)
+
+    def test_sell_stash_is_populated_from_the_inventory_surface_stash(self):
+        result = self._drive()
+        # Harness sanity only: the render reached + registered effects (a totally broken harness
+        # registers none — that would make the behavioural assertion below misleading). This is NOT
+        # the #604 guard and is deliberately not coupled to the exact effect count.
+        self.assertGreater(
+            result["captured_effects"], 0,
+            "no effects registered — the harness failed to render ScreenMerchant, not a wiring revert",
+        )
+        sell = result["sell_stash"]
+        self.assertIsNotNone(
+            sell,
+            "#604: the Sell tab must populate sellStash from the /inventory-surface response's "
+            "`d.stash` (setSellStash). It is None — the d.stash wiring is missing/reverted.",
+        )
+        names = {it.get("name") for it in sell}
+        self.assertIn("Test Blade", names, "the mocked /inventory-surface stash item must reach sellStash")
+        blade = next(it for it in sell if it.get("id") == "sell-test-blade")
+        self.assertEqual(
+            blade.get("type"), "common",
+            "#604 defaults a typeless backpack item to 'common' so the kind filter/pill render",
+        )
 
 
 if __name__ == "__main__":
