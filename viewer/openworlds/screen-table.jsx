@@ -1671,14 +1671,27 @@ function LogEntry({ entry }) {
     const text = sanitizeNarration(entry.text);
     if (!text) return null;
     const speaker = cleanRowLabel(entry.who || entry.label);
+    // #943: render the speaker's PORTRAIT inline to the left of the dialogue, so the chronicle (the
+    // primary story view) shows WHO is speaking — same felt as the combat-backdrop fix (#937). The
+    // shared <Img> resolves `portrait-<name>` for canon NPCs/companions and degrades a missing scope
+    // (generic NPCs) to the app's neutral silhouette — the same degraded state used in party/camp/
+    // dialogue. A row WITHOUT a speaker stays byte-identical to before (no portrait, no layout change).
+    if (speaker) {
+      return (
+        <div style={{ margin: "10px 0", display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <Img scope={"portrait-" + speaker} label={speaker} w={34} h={42} framed />
+          <div>
+            <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--royal)" }}>
+              {speaker}
+            </span>
+            <span className="body" style={{ marginLeft: 8, fontStyle: "italic" }}>{text}</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div style={{ margin: "10px 0" }}>
-        {speaker ? (
-          <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--royal)" }}>
-            {speaker}
-          </span>
-        ) : null}
-        <span className="body" style={{ marginLeft: speaker ? 8 : 0, fontStyle: "italic" }}>{text}</span>
+        <span className="body" style={{ marginLeft: 0, fontStyle: "italic" }}>{text}</span>
       </div>
     );
   }
@@ -1718,13 +1731,20 @@ function LogEntry({ entry }) {
         <div className="body" style={{ margin: "10px 0", color: "var(--ink-800)" }}>{entry.text}</div>
       );
     }
+    // #943: a NON-self actor is a named NPC — render their portrait inline to the left of the
+    // "Name — action" line (same <Img> + canon-resolves/generic-silhouette behavior as the dialogue
+    // branch). The self path (handled above) and the no-actorLabel path stay byte-identical — the
+    // player already knows they are the actor.
     return (
-      <div style={{ margin: "10px 0" }}>
-        <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)" }}>
-          {actorLabel}
-        </span>
-        <span className="hand" style={{ marginLeft: 8, color: "var(--ink-700)" }}>—</span>
-        <span className="body" style={{ marginLeft: 8, color: "var(--ink-800)" }}>{entry.text}</span>
+      <div style={{ margin: "10px 0", display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <Img scope={"portrait-" + actorLabel} label={actorLabel} w={34} h={42} framed />
+        <div>
+          <span style={{ fontFamily: "var(--f-display)", fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-900)" }}>
+            {actorLabel}
+          </span>
+          <span className="hand" style={{ marginLeft: 8, color: "var(--ink-700)" }}>—</span>
+          <span className="body" style={{ marginLeft: 8, color: "var(--ink-800)" }}>{entry.text}</span>
+        </div>
       </div>
     );
   }
