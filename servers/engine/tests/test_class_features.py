@@ -156,6 +156,39 @@ def test_build_options_subclass_options_carry_full_feature_detail(cid):
     assert all(f.get("desc") and f.get("level") for f in feats), feats
 
 
+def test_build_options_subclass_options_carry_named_higher_level_features(cid):
+    # #607 regression guard (the precise gap): the sibling test above only checks
+    # len(features) >= 2 — a count the TERSE list (the lone choice-level pair) already
+    # satisfies — so it never proves the HIGHER-level archetype features reach the
+    # build_options picker. The viewer subclass picker reads build_options (GET
+    # /build-options); the optimizer asked to COMPARE archetypes by their full feature
+    # set, so build_options must carry the SAME higher-level Champion features the
+    # preview_level_up path does (Additional Fighting Style L7, Superior Critical L15,
+    # Survivor L18), each WITH rules text + an int level. Fails fast if the call site ever
+    # drops full_features=True back to the terse two-feature list.
+    fid = server.create_character(
+        cid, "Sera", kind="player", class_name="Fighter", level=2,
+        abilities={"strength": 16, "constitution": 14}, apply_srd_defaults=True,
+    )["id"]
+    planner = server.build_options(cid, fid)
+    fopt = next(o for o in planner["options"] if o["class_name"] == "fighter")
+    sub = fopt.get("subclass")
+    assert sub and sub["required"] is True
+    champion = next(o for o in sub["options"] if o["name"] == "Champion")
+    feat_names = {f["name"] for f in champion["features"]}
+    # the choice-level pair is always present…
+    assert {"Improved Critical", "Remarkable Athlete"} <= feat_names, feat_names
+    # …AND the higher-level archetype features the terse list omits (the real gap).
+    assert {"Additional Fighting Style", "Superior Critical", "Survivor"} <= feat_names, feat_names
+    # Each carries SRD rules text AND an int level (terse features are level=None, so this
+    # also red-flags a revert to the terse list even if the count check above passed).
+    by_name = {f["name"]: f for f in champion["features"]}
+    for fname in ("Improved Critical", "Superior Critical", "Survivor"):
+        feat = by_name[fname]
+        assert feat.get("desc"), f"{fname} must carry SRD rules text"
+        assert isinstance(feat.get("level"), int), f"{fname} must carry an int level, got {feat.get('level')!r}"
+
+
 # ── #624 backfill (rc2 audit): a MISSED subclass choice is offered at the NEXT
 # level-up — an L5 wizard with no Arcane Tradition (the pendingSubclass case) must
 # still get the options block, not the free-text fallback. ──────────────────────
