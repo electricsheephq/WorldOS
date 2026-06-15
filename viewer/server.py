@@ -2592,6 +2592,14 @@ def build_combat_surface(
     """Project a browser-safe OpenWorlds combat board from engine-owned state."""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     location = _session_location(snapshot)
+    # FIX A (combat scene backdrop): expose a servable scene image scope on the
+    # location block so the CombatMap can render the place art behind the zone bands.
+    # ADDITIVE — mirrors the proven session-surface (line ~2069) + catalog (~5597)
+    # `location:<id>` pattern the _safe_scope bridge resolves to ingested art.
+    # Degrades to "" when there is no current location, so the client renders no
+    # backdrop (transparent) rather than a broken scope. _session_location returns a
+    # fresh dict each call, so mutating it here cannot leak into the session surface.
+    location["imageScope"] = f"location:{location['id']}" if location["id"] else ""
     combat_view = build_combat_view(snapshot)
     action_model = build_action_model(snapshot, live=live, is_live_view=is_live_view)
     combat_active = bool(combat_view.get("active"))
