@@ -190,6 +190,38 @@ def _armor_dex_rule(fields: dict, ac_base: int, name: str) -> dict:
     return {"armor_category": "medium", "ac_dex_mod": "capped", "ac_dex_cap": cap}
 
 
+# Name prefixes for magic armors whose own 5e rules REMOVE the base armor's
+# Stealth/STR penalties but whose SRD desc carries no machine-detectable clause
+# saying so (unlike Mithral). Matched case-insensitively. Kept tiny + explicit:
+# "Elven Chain" covers "Elven Chain Mail" + "Elven Chain Shirt".
+_BASE_PENALTY_NEGATING_PREFIXES = ("elven chain",)
+
+
+def _armor_negates_base_restrictions(name: str, desc: str) -> bool:
+    """A few SRD magic armors explicitly REMOVE the base armor's Stealth
+    disadvantage + Strength requirement that the ``armor`` FK would otherwise
+    fold onto the record. Detect them so the FK fold below never stamps a false
+    penalty pill that contradicts the item's own rules text.
+
+    - **Mithral Armor (any base)** — the SRD desc states outright that if the
+      base "normally imposes Disadvantage on Dexterity (Stealth) checks or has a
+      Strength requirement, the mithral version ... doesn't." Detected from the
+      description (stable, machine-readable) so it covers every Mithral Armor
+      (Chain Mail)/(Plate)/(Splint)/... variant without a per-item list.
+    - **Elven Chain (Mail/Shirt)** — 5e elven chain has no Stealth disadvantage
+      and no STR requirement, but the SRD dump's desc carries no such clause, so
+      it is matched by name prefix.
+
+    Only governs the stealth/STR pills; AC + the DEX-mod rule still inherit via
+    the FK. Additive + narrow: any armor not in these two cases is unaffected.
+    """
+    d = (desc or "").lower()
+    if "mithral" in d and "doesn't" in d:
+        return True
+    low = (name or "").lower()
+    return any(low.startswith(p) for p in _BASE_PENALTY_NEGATING_PREFIXES)
+
+
 @functools.lru_cache(maxsize=None)
 def _weapon_armor_join() -> tuple[dict, dict]:
     """({weapon_pk: weapon_fields}, {armor_pk: armor_fields}) merged across all
@@ -392,11 +424,14 @@ def _flatten(model: str, fields: dict, pk: str = "") -> dict:
         # An Item/MagicItem armor inherits its base armor's SRD stealth-disadvantage
         # + STR-requirement via the same FK (mirrors the model=="armor" path above;
         # SRD Armor: e.g. Chain Mail grants_stealth_disadvantage=true str=13). De-duped
-        # onto any prior props, like the weapon-FK block just above.
-        if af.get("grants_stealth_disadvantage") and "stealth-disadvantage" not in record["properties"]:
-            record["properties"].append("stealth-disadvantage")
-        if af.get("strength_score_required") and f"str-{af['strength_score_required']}" not in record["properties"]:
-            record["properties"].append(f"str-{af['strength_score_required']}")
+        # onto any prior props, like the weapon-FK block just above. EXCEPTION: a few
+        # SRD magic armors (Mithral / Elven Chain) whose own rules text removes those
+        # base penalties — fold nothing for them so the inspector shows no false pill.
+        if not _armor_negates_base_restrictions(record["name"], record["description"]):
+            if af.get("grants_stealth_disadvantage") and "stealth-disadvantage" not in record["properties"]:
+                record["properties"].append("stealth-disadvantage")
+            if af.get("strength_score_required") and f"str-{af['strength_score_required']}" not in record["properties"]:
+                record["properties"].append(f"str-{af['strength_score_required']}")
     elif fields.get("armor_class"):
         # Homebrew/inline armor_class with no DEX-rule data: keep the bare AC. Without
         # ac_add_dexmod we can't infer the category — leave the rule keys absent so the

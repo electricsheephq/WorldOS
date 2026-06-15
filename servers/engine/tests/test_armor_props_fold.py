@@ -46,3 +46,62 @@ def test_stealth_str_pills_are_not_duplicated():
     rec = itemcatalog.resolve("Chain Mail")
     assert rec["properties"].count("stealth-disadvantage") == 1
     assert rec["properties"].count("str-13") == 1
+
+
+# --- Negation: a few SRD magic armors REMOVE the base armor's stealth/STR -----
+# penalties their `armor` FK would otherwise fold in (Mithral / Elven Chain).
+# Suppressing these mirrors the item's own rules text — without it the inspector
+# rendered a false penalty pill (the gap #899's FK fold made newly visible).
+
+def _no_stealth_or_str(rec):
+    return not any(p == "stealth-disadvantage" or p.startswith("str-")
+                   for p in rec["properties"])
+
+
+def test_mithral_chain_mail_suppresses_base_stealth_and_str():
+    # SRD desc: "If the armor normally imposes Disadvantage on Dexterity
+    # (Stealth) checks or has a Strength requirement, the mithral version ...
+    # doesn't." Its `armor` FK is srd-2024_chain-mail (stealth + str-13), but
+    # the mithral version negates both.
+    rec = itemcatalog.resolve("Mithral Armor (Chain Mail)")
+    assert rec is not None
+    assert rec["kind"] == "armor"
+    assert rec["ac"]  # AC still inherited via the FK; only the penalties drop
+    assert _no_stealth_or_str(rec), rec["properties"]
+
+
+def test_mithral_plate_and_splint_suppress_base_stealth_and_str():
+    # Plate (str-15) and Splint (str-15) bases both impose stealth + STR; the
+    # mithral versions negate both via the same desc clause.
+    for name in ("Mithral Armor (Plate)", "Mithral Armor (Splint)",
+                 "Mithral Armor (Half Plate)", "Mithral Armor (Scale Mail)",
+                 "Mithral Armor (Ring Mail)"):
+        rec = itemcatalog.resolve(name)
+        assert rec is not None, name
+        assert _no_stealth_or_str(rec), (name, rec["properties"])
+
+
+def test_elven_chain_mail_suppresses_base_stealth_and_str():
+    # 5e Elven Chain has no Stealth disadvantage and no STR requirement, but the
+    # SRD dump carries no negation clause in its desc, so it is matched by name
+    # prefix. Its `armor` FK is srd-2024_chain-mail (stealth + str-13).
+    rec = itemcatalog.resolve("Elven Chain Mail")
+    assert rec is not None
+    assert rec["kind"] == "armor"
+    assert rec["ac"]  # +1 base armor AC still inherited
+    assert _no_stealth_or_str(rec), rec["properties"]
+
+
+def test_elven_chain_shirt_has_no_stealth_or_str_pill():
+    # Chain Shirt base carries no penalty, so this was already clean — guard it
+    # so the negation set never regresses it into carrying a pill.
+    rec = itemcatalog.resolve("Elven Chain Shirt")
+    assert rec is not None
+    assert _no_stealth_or_str(rec), rec["properties"]
+
+
+def test_negation_does_not_regress_plain_chain_mail():
+    # Non-negating heavy armor MUST keep its pills — the negation set is narrow.
+    rec = itemcatalog.resolve("Chain Mail")
+    assert "stealth-disadvantage" in rec["properties"]
+    assert "str-13" in rec["properties"]
