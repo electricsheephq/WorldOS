@@ -1,7 +1,7 @@
 {
   "barbarian": {
     "1": [
-      {"name": "Rage", "desc": "Bonus action; advantage on Str checks/saves, bonus melee damage, resist bludgeoning/piercing/slashing. Lasts 1 min.", "rage_damage": 2, "rage_uses": 2},
+      {"name": "Rage", "desc": "Bonus action; advantage on Str checks/saves, bonus melee damage, resist bludgeoning/piercing/slashing. Lasts 1 min."},
       {"name": "Unarmored Defense", "desc": "While not wearing armor, AC equals 10 + Dex mod + Con mod. Can use a shield."},
       {"name": "Weapon Mastery", "desc": "Use the mastery property of two weapons you have proficiency with; can change choices on a long rest."}
     ],
@@ -27,12 +27,12 @@
     "12": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
     "13": [{"name": "Improved Brutal Strike", "desc": "Brutal Strike gains additional effect options and stronger benefits."}],
     "14": [{"name": "Subclass Feature", "desc": "Gain a feature granted by your Primal Path subclass."}],
-    "15": [{"name": "Persistent Rage", "desc": "Your rage is so fierce it ends early only if you choose to end it or fall unconscious.", "rage_uses": 5}],
+    "15": [{"name": "Persistent Rage", "desc": "Your rage is so fierce it ends early only if you choose to end it or fall unconscious."}],
     "16": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
-    "17": [{"name": "Improved Brutal Strike", "desc": "Brutal Strike can apply two effects and deals an extra 2d10 damage.", "rage_uses": 6}],
+    "17": [{"name": "Improved Brutal Strike", "desc": "Brutal Strike can apply two effects and deals an extra 2d10 damage."}],
     "18": [{"name": "Indomitable Might", "desc": "If a Strength check total is less than your Strength score, you can use your Strength score instead."}],
     "19": [{"name": "Ability Score Improvement", "desc": "Increase one ability score by 2 or two by 1 (max 20), or take a feat."}],
-    "20": [{"name": "Primal Champion", "desc": "Your Strength and Constitution scores increase by 4, to a maximum of 25.", "rage_damage": 4, "rage_uses": 6}]
+    "20": [{"name": "Primal Champion", "desc": "Your Strength and Constitution scores increase by 4, to a maximum of 25."}]
   },
   "bard": {
     "1": [
