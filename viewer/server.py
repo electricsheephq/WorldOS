@@ -969,6 +969,156 @@ def build_roster_response(
         }
 
 
+# ── Merchant surface (#602/#604): the Market screen's LIVE supply chain ────────
+# Replaces the old hardcoded MERCHANTS / GATE_MARKET_STOCK demo data with the engine's REAL
+# `is_merchant` canon NPCs + the bundled SRD item catalog. The Sell tab (#604) is wired on the
+# screen side to the existing /inventory-surface (the party's real pack); this route supplies the
+# BUY side (the merchant roster + the wares the player can buy). Pure READER — it consumes the
+# canonical is_merchant predicate (content.find_canon_characters, the SAME slice find_npcs uses)
+# and the SRD catalog (itemcatalog), and never writes engine state.
+
+
+def _merchant_slug(name: str) -> str:
+    """The file-slug id for a canon character NAME (content/worlds/<id>/characters/<slug>.json) —
+    the key `portrait-<slug>` resolves the ingested face by, and the id the Market screen selects a
+    merchant by. Mirrors the ingest slug exactly (lowercased, apostrophes dropped, every other
+    non-alphanumeric run collapsed to a single hyphen, edges trimmed) — verified to match all 61
+    shipped baldurs-gate merchant file slugs. Purely presentational (a portrait/selection key); it
+    derives nothing about engine STATE."""
+    s = _text(name).lower().strip()
+    out: list[str] = []
+    prev_dash = False
+    for ch in s:
+        if ch in "'‘’ʼ":  # straight + curly apostrophes are dropped, never hyphenated
+            continue
+        if ch.isascii() and (ch.isalnum()):
+            out.append(ch)
+            prev_dash = False
+        else:
+            if not prev_dash:
+                out.append("-")
+                prev_dash = True
+    return "".join(out).strip("-")
+
+
+def _merchant_ware(rec: dict) -> dict:
+    """Project ONE SRD catalog record (itemcatalog._flatten shape) into the ware shape the Market
+    screen renders {id, name, type, weight, price, rarity, kind, damage, damageType, versatile,
+    properties, attunement, desc}. F09-3 honesty: a priceless item (cost None — every SRD magic
+    item) carries price=None, NEVER a fabricated 0 gp (which would let the screen sell a Bag of
+    Holding for free). Weight 0 -> None (no fabricated heft). The screen's enrichWare() still folds
+    the richer /item-catalog stat block onto the selected ware; this is the table-row supply."""
+    name = _text(rec.get("name"))
+    cost = rec.get("cost")
+    price = int(round(cost)) if isinstance(cost, (int, float)) and cost > 0 else None
+    weight = rec.get("weight")
+    weight_n = float(weight) if isinstance(weight, (int, float)) and weight > 0 else None
+    kind = _text(rec.get("kind"))
+    damage = _text(rec.get("damage"))
+    props = [str(p) for p in (rec.get("properties") or []) if str(p).strip()]
+    return {
+        "id": "ware-" + _merchant_slug(name) if name else "",
+        "name": name,
+        # `type` is the screen's item-type key (drives the kind pill + icon); the SRD `kind`
+        # ("weapon"/"armor"/"potion"/…) is the honest source, never a guessed category.
+        "type": kind or "common",
+        "kind": kind,
+        "weight": f"{weight_n:g} lb" if weight_n is not None else "—",
+        "price": price,
+        "rarity": _text(rec.get("rarity")) or "common",
+        "damage": damage,
+        "damageType": _text(rec.get("damage_type")) if damage else "",
+        "versatile": _text(rec.get("versatile")) if damage else "",
+        "properties": props,
+        "attunement": bool(rec.get("requires_attunement")),
+        "desc": _text(rec.get("description")),
+    }
+
+
+def build_merchant_surface(
+    campaign_id: str = "",
+    query: str = "",
+    limit: int = 60,
+    world_id: Optional[str] = "",
+) -> dict:
+    """GET /merchant-surface read model — the Market screen's BUY supply chain (#602).
+
+    Bridges to the engine-owned canonical `is_merchant` predicate (``content.find_canon_characters``
+    — the SAME slice the ``find_npcs`` MCP tool narrows on) for the merchant roster, and to the
+    bundled SRD item catalog (``itemcatalog.find``) for the wares. The world is resolved from the
+    campaign's snapshot (or the shipped default for a brand-new game), exactly like /roster-surface.
+
+    Returns ``{world_id, merchants:[{id, name, race, class, faction_id, canon_location_id, tags,
+    portrait_scope}], catalog:[ware…], state_authority:"engine"}``. ``query`` filters the catalog by
+    name (case-insensitive substring); ``limit`` bounds BOTH the merchant roster and the ware list.
+
+    READ-ONLY: this surface exposes NO write/buy/sell lane (the live BUY relays through the screen's
+    existing POST /move → engine ``buy_item``; the engine is the sole writer). A graceful empty
+    payload (with an ``error``) when the engine can't be imported — never a fabricated catalog."""
+    engine = _load_engine_server()
+    if world_id is None:
+        world_id = ""
+    else:
+        world_id = world_id.strip() if isinstance(world_id, str) else ""
+        if not world_id:
+            world_id = _roster_world_for_campaign(campaign_id)
+    try:
+        lim = int(limit)
+    except (TypeError, ValueError):
+        lim = 60
+    lim = max(1, min(500, lim))
+    if engine is None or not hasattr(engine, "content_mod") or not hasattr(engine.content_mod, "find_canon_characters"):
+        detail = _ENGINE_IMPORT_ERROR or "engine merchant projection is unavailable"
+        return {
+            "world_id": world_id,
+            "merchants": [],
+            "catalog": [],
+            "state_authority": "engine",
+            "error": f"engine import failed: {detail}",
+        }
+    merchants: list[dict] = []
+    try:
+        for rec in engine.content_mod.find_canon_characters(world_id, is_merchant=True, limit=lim):
+            name = _text(rec.get("name"))
+            if not name:
+                continue
+            slug = _merchant_slug(name)
+            merchants.append({
+                "id": slug,
+                "name": name,
+                "race": _text(rec.get("race")),
+                "class": _text(rec.get("class")),
+                "faction_id": _text(rec.get("faction_id")),
+                "canon_location_id": _text(rec.get("canon_location_id")),
+                "tags": [str(t) for t in (rec.get("tags") or []) if str(t).strip()],
+                "portrait_scope": "portrait-" + slug,
+            })
+    except Exception as exc:
+        return {
+            "world_id": world_id,
+            "merchants": [],
+            "catalog": [],
+            "state_authority": "engine",
+            "error": str(exc),
+        }
+    catalog: list[dict] = []
+    cat_mod = _engine_module("itemcatalog")
+    if cat_mod is not None:
+        try:
+            for rec in cat_mod.find(_text(query), limit=lim):
+                ware = _merchant_ware(rec)
+                if ware.get("name"):
+                    catalog.append(ware)
+        except Exception:
+            catalog = []  # the merchant roster still rides along; the screen shows wares only when present
+    return {
+        "world_id": world_id,
+        "merchants": merchants,
+        "catalog": catalog,
+        "state_authority": "engine",
+    }
+
+
 def _clean_slot(slot: Optional[str]) -> str:
     """Normalize a caller-supplied save-slot name to a flat, safe-ish slug (the engine's
     store.safe_path_segment is the authoritative guard; this just trims/defaults). Empty ⇒
@@ -7822,6 +7972,34 @@ class _Handler(BaseHTTPRequestHandler):
                 cid, race, char_class, level, limit,
                 require_stats=require_stats, recommended_only=recommended_only,
             ))
+        elif route == "/merchant-surface":
+            # #602/#604 — the Market screen's LIVE supply chain: the world's REAL is_merchant canon
+            # NPCs (the canonical content.find_canon_characters slice find_npcs uses) + the bundled
+            # SRD item catalog, replacing the old hardcoded MERCHANTS/GATE_MARKET_STOCK demo data.
+            # World scope is resolved exactly like /roster-surface (catalog ?source/?run ref wins,
+            # else ?campaign view, else attached campaign, else the shipped default world). ?q filters
+            # the catalog by name; ?limit bounds both lists. Pure READER — exposes no buy/sell write
+            # lane (the live BUY relays via the screen's existing /move → engine buy_item).
+            qs = parse_qs(parsed.query)
+            cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
+            catalog_ref = _session_surface_catalog_ref(qs)
+            query = (qs.get("q") or qs.get("query") or [""])[0]
+            try:
+                limit = int((qs.get("limit") or ["60"])[0])
+            except (TypeError, ValueError):
+                limit = 60
+            limit = max(1, min(500, limit))
+            if catalog_ref is not None:
+                cid, raw_snap, _campaign_dir, _root_is_current = catalog_ref
+                raw_world_id = raw_snap.get("world_id") if isinstance(raw_snap, dict) else None
+                world_id = (
+                    raw_world_id.strip()
+                    if isinstance(raw_world_id, str) and raw_world_id.strip()
+                    else None
+                )
+                self._json(build_merchant_surface(cid, query, limit, world_id=world_id))
+                return
+            self._json(build_merchant_surface(cid, query, limit))
         elif route in ("/monitor", "/monitor.html"):
             # The MULTI-CAMPAIGN monitor: one live page showing EVERY campaign across the play
             # store + all parallel QA runs (watch the stress tests + any live game in one place).
