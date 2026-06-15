@@ -82,6 +82,34 @@ class BuildOptionsBridgeTests(unittest.TestCase):
         self.assertTrue(all(o.get("desc") for o in sub["options"]))
         self.assertTrue(all(o.get("features") for o in sub["options"]))
 
+    def test_build_options_surfaces_higher_level_subclass_features(self):
+        # #607 regression guard at the BRIDGE seam: the rich subclass features the engine
+        # planner carries (full_features=True) must survive build_options_response
+        # serialization to the viewer picker — not just the level-3 pair. A Fighter L2->L3
+        # Champion must arrive with its higher-level archetype features (Superior Critical
+        # L15, Survivor L18), each with rules text. Fails if the bridge strips feature
+        # detail OR the engine call site reverts to the terse two-feature list.
+        engine = server._engine_server()
+        campaign_id = engine.create_campaign("Higher")["id"]
+        character_id = engine.create_character(
+            campaign_id, "Sera", kind="player", class_name="Fighter", level=2,
+            apply_srd_defaults=True,
+            abilities={"strength": 16, "constitution": 14, "dexterity": 12},
+        )["id"]
+        response = server.build_options_response(campaign_id, character_id)
+        self.assertTrue(response["ok"])
+        fighter = next(o for o in response["planner"]["options"] if o["class_name"] == "fighter")
+        sub = fighter.get("subclass")
+        self.assertIsNotNone(sub, "fighter at L2->L3 must carry a subclass-choice block")
+        champion = next(o for o in sub["options"] if o["name"] == "Champion")
+        feat_names = {f["name"] for f in champion["features"]}
+        self.assertLessEqual(
+            {"Additional Fighting Style", "Superior Critical", "Survivor"},
+            feat_names,
+            f"higher-level archetype features must survive the bridge, got {sorted(feat_names)}",
+        )
+        self.assertTrue(all(f.get("desc") for f in champion["features"]))
+
 
 if __name__ == "__main__":
     unittest.main()
