@@ -766,6 +766,22 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
   // rows' visible text lengths (most-recent last) and returns how many trailing rows stay exposed;
   // the rest are aria-hidden (still visible for sighted scroll-back / preserved in the Quest Journal).
   const chronicleA11yExposed = chronicleA11yExposedCount(renderedLog.map(chronicleRowVisibleTextLength));
+  // dogfood #1: the NEWEST player-facing prose line in the chronicle — passed to the narrating
+  // affordance so that, while a turn is `streaming`, the spinner can surface the latest streamed
+  // scene text INLINE (the player sees real prose wired to the wait, not just a paragraph that
+  // landed above the fold). Read-only: this is a second view of the live narration the engine
+  // already wrote; we never mutate it. Scans the rendered tail back-to-front for the last
+  // narration/dialogue row with visible (sanitized) text.
+  const latestStreamedLine = (() => {
+    for (let i = renderedLog.length - 1; i >= 0; i--) {
+      const row = renderedLog[i];
+      const kind = (row && (row.kind || row.type)) || "narration";
+      if (kind !== "narration" && kind !== "dialogue") continue;
+      const clean = sanitizeNarration(row && (row.text || row.detail));
+      if (clean) return clean;
+    }
+    return "";
+  })();
   const actionById = (id) => actions.find((a) => a.id === id);
   const enabledActionById = (id) => enabledActions.find((a) => a.id === id);
   const composerMode = COMPOSER_MODES[composerModeId] || COMPOSER_MODES.do;
@@ -1313,7 +1329,7 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
                     the spinner is wired to the live narration tail the player is watching fill in,
                     not a dead static line. `onNavigate` is passed so the wait can point the player at
                     read-only screens (sheet/map/journal) that stay open during compose. */}
-                <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} streaming={Boolean(pending.streaming)} onNavigate={onNavigate} />
+                <DmNarratingBeat since={pending.since} firstBeat={pending.firstBeat} streaming={Boolean(pending.streaming)} latestStreamed={latestStreamedLine} onNavigate={onNavigate} />
               </div>
             )}
             {pendingStuck && (
@@ -1750,7 +1766,27 @@ const DM_COLD_OPEN_FLAVOR = [
   "The ink is still drying on your opening…",
 ];
 
-function DmNarratingBeat({ since, firstBeat, streaming, onNavigate }) {
+// dogfood #1: the LATER-beat "still working" rotation. Root cause of "NO spinner, NO motion":
+// the later-beat affordance's ONLY motion was CSS-keyframe animation (the opacity-pulsing dots +
+// the label shimmer) plus an aria-hidden ticking elapsed — all INVISIBLE to a static screenshot,
+// a frame-grabbed snapshot, AND an ariaSnapshot (the §8.2 newbie harness reads accessible text +
+// stills). So to those surfaces the wait collapsed to two unchanging strings = frozen app, which
+// is exactly the "unsure whether it froze" the newbie hit. #385 already fixed this for the
+// cold-open with a rotating headline; this gives the LATER beat the same obviously-alive cue —
+// a sub-status phrase that ROTATES on a COARSE ~5s cadence (so the accessible text visibly
+// CHANGES render-to-render, proving life in a still frame) while staying STABLE second-to-second
+// (no per-tick screen-reader spam — the existing later-beat a11y contract, #336/#385, is kept).
+// The phrases are honest "the DM is at work" flavor (the turn is generation-bound; no fake %).
+const DM_LATER_BEAT_FLAVOR = [
+  "Weaving the threads of the next beat…",
+  "The Dungeon Master is at the table, writing…",
+  "Turning your choice into the next scene…",
+  "Letting the consequences settle into place…",
+  "Inking the next stretch of your story…",
+];
+const DM_LATER_BEAT_FLAVOR_PERIOD_S = 5;  // rotate the phrase every ~5s (coarse: stable within a 1s step)
+
+function DmNarratingBeat({ since, firstBeat, streaming, onNavigate, latestStreamed }) {
   const start = typeof since === "number" ? since : Date.now();
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -1783,6 +1819,30 @@ function DmNarratingBeat({ since, firstBeat, streaming, onNavigate }) {
       // #399: a content-rich beat can run up to ~two minutes (the window is 180s); say "a minute or
       // two" so a 90–120s wait reads as expected, not as the app having stalled.
       : "Weaving the next beat — this can take a minute or two.";
+  // dogfood #1: the LATER-beat "alive in a still frame" signal. The later-beat label + wait-hint are
+  // STATIC strings (intentionally — the honest expectation copy must not churn), so on a static
+  // screenshot / a frame-grabbed snapshot / an ariaSnapshot the only proof-of-life was CSS animation
+  // (invisible to a still) + an aria-hidden clock — the wait read as frozen. This sub-status phrase
+  // ROTATES on a coarse ~5s cadence so the affordance's ACCESSIBLE text visibly CHANGES between
+  // renders (proving life to a snapshot / screen reader) while staying STABLE second-to-second (no
+  // per-tick announce spam — the #336/#385 later-beat a11y contract is preserved). It is only used on
+  // the steady later-beat wait; the cold-open keeps its own rotating headline, and once `streaming`
+  // the present-tense "scene is unfolding above" + the inline streamed line are the live proof.
+  const laterFlavor = DM_LATER_BEAT_FLAVOR[
+    Math.floor(secs / DM_LATER_BEAT_FLAVOR_PERIOD_S) % DM_LATER_BEAT_FLAVOR.length
+  ];
+  // dogfood #1: when the turn is `streaming`, the DM's prose is landing live in the chronicle above —
+  // surface its LATEST line INLINE at the spinner so the player sees real scene text wired directly to
+  // the wait (a newbie staring at the spinner may not connect it to a paragraph that appeared higher
+  // up, or may have scrolled). Trim + cap so a long paragraph doesn't blow out the affordance; falsy /
+  // blank → no preview (streaming can flip on a wrapper heartbeat that renders no prose). The caller
+  // derives this from the newest live narration beat; the engine stays the sole writer (read-only).
+  const streamedPreviewFull = (streaming && typeof latestStreamed === "string")
+    ? latestStreamed.replace(/\s+/g, " ").trim()
+    : "";
+  const streamedPreview = streamedPreviewFull.length > 280
+    ? `${streamedPreviewFull.slice(0, 280).trimEnd()}…`
+    : streamedPreviewFull;
   // #G3-UX FIX 2: read-only navigation (the character sheet, the map/Travel, the Quest Journal, the
   // Quick Stash) is already UN-gated during compose — only move/write controls gate on pendingActive.
   // But a player staring at the wait doesn't KNOW that, so the long beat reads as "frozen, can't do
@@ -1862,7 +1922,38 @@ function DmNarratingBeat({ since, firstBeat, streaming, onNavigate }) {
           <div className="hand muted" style={{ fontSize: 12, marginTop: 4 }}>
             {waitHint}
           </div>
+          {/* dogfood #1: the "alive in a still frame" cue for the steady (non-streaming) wait. This
+              rotating phrase lives INSIDE the status region so it IS in the accessible tree — it
+              changes the affordance's accessible text on a coarse ~5s cadence (proof of life a static
+              snapshot / an ariaSnapshot / a screen reader can perceive), but stable second-to-second
+              (it changes every ~5s, not every tick — no per-tick announce spam). Hidden once
+              `streaming`: at that point the present-tense "scene is unfolding above" label + the
+              inline streamed line below ARE the live proof, so the rotation would be redundant churn. */}
+          {!streaming && (
+            <div className="hand muted" data-worldos-testid="narrating-alive-phrase" style={{ fontSize: 12, marginTop: 4, fontStyle: "italic", opacity: 0.85 }}>
+              {laterFlavor}
+            </div>
+          )}
         </div>
+        {/* dogfood #1: when the turn is `streaming`, surface the LATEST streamed line right here at the
+            spinner so the player sees the real scene text wired to the wait (not just a paragraph that
+            landed higher up, possibly above the fold). Read-only — the engine already wrote this prose;
+            this is a second view of the newest live narration beat. Lives OUTSIDE the polite status
+            region so a new paragraph doesn't re-announce the whole affordance. Absent when nothing has
+            streamed yet (e.g. `streaming` flipped on a wrapper heartbeat that renders no prose). */}
+        {streamedPreview && (
+          <div
+            data-worldos-testid="narrating-latest-line"
+            className="body"
+            style={{
+              fontSize: 13, marginTop: 8, padding: "8px 10px",
+              borderLeft: "2px solid var(--crimson)", background: "rgba(140,100,60,0.08)",
+              color: "var(--ink-700)", fontStyle: "italic",
+            }}
+          >
+            {streamedPreview}
+          </div>
+        )}
         {/* #G3-UX FIX 2: tell the player the wait is NOT a freeze — read-only surfaces stay open while
             the DM composes. The verbs are live onNavigate calls (a working invitation, not just copy)
             to surfaces that don't gate on pendingActive: the character sheet, the map, the journal.

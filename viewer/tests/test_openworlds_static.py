@@ -1028,8 +1028,11 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         # The pending beat passes the live-stream + nav wiring into DmNarratingBeat.
         self.assertIn("streaming={Boolean(pending.streaming)}", source)
         self.assertIn("onNavigate={onNavigate}", source)
-        # DmNarratingBeat accepts the new props.
-        self.assertIn("function DmNarratingBeat({ since, firstBeat, streaming, onNavigate })", source)
+        # dogfood #1: the pending beat also feeds the latest streamed line so the spinner can surface
+        # the live scene text inline while the turn is streaming.
+        self.assertIn("latestStreamed={latestStreamedLine}", source)
+        # DmNarratingBeat accepts the new props (dogfood #1 added `latestStreamed`).
+        self.assertIn("function DmNarratingBeat({ since, firstBeat, streaming, onNavigate, latestStreamed })", source)
 
         # FIX 1: the later-beat copy is streaming-aware — when prose is arriving it confirms the
         # scene is being written above, instead of the generic anticipatory "weaving" wait. Both
