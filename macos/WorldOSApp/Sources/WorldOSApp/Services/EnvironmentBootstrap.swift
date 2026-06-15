@@ -75,8 +75,17 @@ enum EnvironmentBootstrap {
         } catch {
             return nil
         }
+        // Drain stdout CONCURRENTLY with the process, then wait — never read after waiting.
+        // readDataToEndOfFile blocks until the child closes stdout (at exit) while continuously
+        // emptying the pipe, so a chatty login profile that prints >64KB of banner/MOTD to stdout
+        // can't fill the OS pipe buffer and deadlock the wait (which would silently fall back to
+        // the bare PATH and re-introduce the very wedge this fixes). The captured bytes are read
+        // back only after the semaphore barrier, which publishes the background writes here.
+        let reader = out.fileHandleForReading
+        let captured = NSMutableData()
         let done = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
+            captured.append(reader.readDataToEndOfFile())
             process.waitUntilExit()
             done.signal()
         }
@@ -85,7 +94,6 @@ enum EnvironmentBootstrap {
             return nil
         }
         guard process.terminationStatus == 0 else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        return String(data: captured as Data, encoding: .utf8)
     }
 }
