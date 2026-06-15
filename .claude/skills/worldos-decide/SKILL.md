@@ -60,6 +60,8 @@ already settle. Just do those.
 | **Scope-proportionality** | Effort proportional to felt value? The smallest change that moves the pillar? | medium |
 | **Adversarial robustness** | Survives the red-team's strongest counter? | high |
 
+**Tie each criterion to VISION.md's concrete bars:** *Evidence* → the QA tier you'd verify at (Tier 0 `fast_gate` / Tier 1 `fast_probe` / Tier 2 the full sweep); *Vision alignment* → the pillar + which of the 11 RRI gates it advances; *Invariant safety* → the load-bearing invariants list. A decision that can't name its verification tier isn't at 95%.
+
 ## The 95% rule
 
 95% confidence = **vision-aligned + every HARD GATE passes + strong evidence + (reversible OR the
