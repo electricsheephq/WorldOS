@@ -204,14 +204,36 @@ def test_coldopen_play_party_guards_player_pc_seating():
 
 
 def test_coldopen_part_a_poll_window_outlasts_max_effort_coldopen():
-    """Cold-open reliability: the Part-A (#356) mint poll must outlast the max-effort cold open
-    (~280–400s). The old 210s window (70 × 3s) was a spurious FAIL; the deadline is now a
-    420s-default, env-overridable knob."""
+    """Cold-open reliability: the Part-A (#356) mint poll must OUTLAST the max-effort cold open.
+
+    FIX 3 (#623) made this provable rather than coincidental. The old flat ``420`` default was
+    SHORTER than the DM cold-open's OWN model-aware timeout (``clawdnd_dm_timeout 1`` = 500 opus /
+    550 non-opus), so a healthy-but-slow mint in the 420–500s band was abandoned ~80s before the
+    DM itself would give up — a coin-flip flaky leg. The deadline is now DERIVED from that same
+    tier plus a positive mint/IO margin, so it is *structurally* longer than the cold open it waits
+    on; the explicit ``WOS_APP_PART_A_DEADLINE`` override still wins; and the poll is liveness-aware
+    (a hard deadline + a bounded grace while the cold open is demonstrably alive), not a fixed count
+    of iterations. This test asserts that contract, not a particular number — so a regression to a
+    flat / too-short / non-positive-margin deadline fails here."""
+    import re
+
     text = (_ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
-    assert 'PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-420}"' in text
-    # the poll loop derives its iteration count from the deadline (no more hardcoded `seq 1 70`).
-    assert "part_a_polls=$(( PART_A_DEADLINE / 3 ))" in text
-    assert 'for i in $(seq 1 "$part_a_polls"); do' in text
+    # (1) The deadline derives from the cold-open's own timeout tier (not a magic constant)...
+    assert "clawdnd_dm_timeout 1" in text
+    assert "_part_a_coldopen_tier=" in text
+    # ...as `${WOS_APP_PART_A_DEADLINE:-$(( _part_a_coldopen_tier + <margin> ))}` — the override still
+    # wins, and the margin is what makes the poll OUTLAST the cold open it waits on.
+    m = re.search(
+        r'PART_A_DEADLINE="\$\{WOS_APP_PART_A_DEADLINE:-\$\(\(\s*'
+        r'_part_a_coldopen_tier\s*\+\s*(\d+)\s*\)\)\}"',
+        text,
+    )
+    assert m is not None, "PART_A_DEADLINE must derive from the cold-open tier + a margin (FIX 3 #623)"
+    assert int(m.group(1)) > 0, "the margin must be positive so the poll strictly OUTLASTS the cold open"
+    # (2) Liveness-aware poll: a hard deadline + a bounded grace gated on `coldopen_is_live`,
+    # NOT the old hardcoded fixed-iteration loop that spuriously FAILed a slow-but-healthy mint.
+    assert "part_a_hard_deadline=$(( part_a_start + PART_A_DEADLINE ))" in text
+    assert "coldopen_is_live" in text
     assert "for i in $(seq 1 70); do" not in text
 
 
