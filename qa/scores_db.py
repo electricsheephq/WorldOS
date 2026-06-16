@@ -86,6 +86,8 @@ COLUMNS: tuple[str, ...] = (
     "actor_model",        # model driving the AI player/persona (often == dm_model)
     "scorer_model",       # model that produced the lens scores (claude / gpt-5.4 / derived)
     "methodology",        # free text, e.g. "3-lens duo 8-beat", "5-persona part-B", "handoff smoke"
+    "persona",            # persona file/name the run used (e.g. qa/play_player_duo.txt). NULL =
+                          # unstamped (additive; old rows / non-persona runs read back NULL).
     # --- comparability provenance (the missing stamps that broke cross-time comparison) ---
     "scoring_config_version",  # content hash of the FULL scoring RULER (rubrics+schemas+gates incl.
                                # RRI); see qa/scoring_config_version.py. Fences the RRI trend.
@@ -114,6 +116,11 @@ COLUMNS: tuple[str, ...] = (
     "pass",               # 1 (pass) / 0 (fail) / NULL (no pass/fail verdict)
     "source_path",        # where the evidence lives (file/dir, LEXAR or repo-relative)
     "notes",              # free-text context: what was under test, caveats, confidence flags
+    # --- canonical GREEN baseline marker (P1) ---
+    "is_canonical_baseline",  # 1 = this run is THE canonical GREEN baseline for its comparability
+                              # key (surface + dm_model + methodology + lens_config_version); 0/NULL
+                              # otherwise. At most ONE per key (set_canonical_baseline clears prior).
+                              # add_run defaults this to 0 — today's behavior is "not canonical".
 )
 
 # Numeric columns get REAL; pass is an INTEGER bool; the rest TEXT.
@@ -123,7 +130,7 @@ _REAL_COLS = {
     # F13-4 latency ledger (all wall-clock seconds / turn counts → REAL)
     "s_per_beat", "coldopen_s", "turns_per_beat",
 }
-_INT_COLS = {"critical_bugs", "pass"}
+_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline"}
 
 
 def _coltype(col: str) -> str:
@@ -189,6 +196,13 @@ def add_run(
     if fields.get("ts") is None:
         fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # Canonical-baseline marker defaults to 0 for NEW rows (today's behavior: "not canonical").
+    # The single-baseline-per-key invariant is enforced via set_canonical_baseline(), so stamping
+    # a 1 here is allowed (e.g. a backfill) but does NOT auto-clear siblings — use the helper for
+    # that. persona has no special default: omitting it simply leaves the column NULL (additive).
+    if fields.get("is_canonical_baseline") is None:
+        fields["is_canonical_baseline"] = 0
+
     # Auto-stamp the scoring RULERS unless the caller pinned them, so no scored run is ever recorded
     # without the ruler that produced it (the comparability fix). When BACKFILLING an old re-scored
     # transcript, pass scoring_config_version/rubric_label explicitly to record the ruler used THEN —
@@ -221,9 +235,11 @@ def add_run(
     if ppj is not None and not isinstance(ppj, str):
         fields["per_persona_json"] = json.dumps(ppj, ensure_ascii=False, sort_keys=True)
 
-    # Coerce bool pass -> int.
+    # Coerce bool pass / is_canonical_baseline -> int.
     if isinstance(fields.get("pass"), bool):
         fields["pass"] = int(fields["pass"])
+    if isinstance(fields.get("is_canonical_baseline"), bool):
+        fields["is_canonical_baseline"] = int(fields["is_canonical_baseline"])
 
     cols = ["run_id"] + [c for c in COLUMNS if c in fields]
     vals = [run_id] + [fields[c] for c in COLUMNS if c in fields]
@@ -249,6 +265,83 @@ def fetch_rows(db_path: Path | str = DB_PATH) -> list[dict]:
             "SELECT * FROM runs ORDER BY ts DESC, build_date DESC, run_id DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Canonical GREEN baseline (P1): mark / query the ONE reference run per comparability key
+# ---------------------------------------------------------------------------
+# The comparability key is (surface, dm_model, methodology, lens_config_version) — the same axes
+# that fence a quality trend. At most ONE run per key may be the canonical baseline; setting a new
+# one clears the prior (a re-baseline, not a duplicate). This is read-only over fiction and purely
+# additive: a db with zero canonical rows behaves exactly as today.
+_BASELINE_KEY: tuple[str, ...] = ("surface", "dm_model", "methodology", "lens_config_version")
+
+
+def set_canonical_baseline(run_id: str, *, db_path: Path | str = DB_PATH) -> None:
+    """Mark ``run_id`` as THE canonical GREEN baseline for its comparability key.
+
+    Reads the row's (surface, dm_model, methodology, lens_config_version), clears
+    ``is_canonical_baseline`` on every OTHER row sharing that exact key (so the invariant
+    "at most one canonical per key" holds), then sets it to 1 on ``run_id``. Raises if
+    ``run_id`` does not exist. Idempotent: re-marking the same run is a no-op.
+    """
+    own = isinstance(db_path, (str, os.PathLike))
+    conn = connect(db_path) if own else db_path  # type: ignore[arg-type]
+    try:
+        row = conn.execute(
+            "SELECT " + ", ".join(f'"{c}"' for c in _BASELINE_KEY) + " FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"run_id {run_id!r} not found; cannot set canonical baseline")
+        key_vals = [row[c] for c in _BASELINE_KEY]
+        # Build a NULL-safe equality predicate (IS handles NULL == NULL, which `=` does not).
+        where = " AND ".join(f'"{c}" IS ?' for c in _BASELINE_KEY)
+        # Clear the prior canonical baseline(s) sharing this exact key, except this run.
+        conn.execute(
+            f'UPDATE runs SET "is_canonical_baseline" = 0 '
+            f'WHERE {where} AND run_id != ? AND "is_canonical_baseline" = 1',
+            (*key_vals, run_id),
+        )
+        conn.execute(
+            'UPDATE runs SET "is_canonical_baseline" = 1 WHERE run_id = ?', (run_id,)
+        )
+        conn.commit()
+    finally:
+        if own:
+            conn.close()
+
+
+def get_canonical_baseline(
+    *,
+    surface: Optional[str] = None,
+    dm_model: Optional[str] = None,
+    methodology: Optional[str] = None,
+    lens_config_version: Optional[str] = None,
+    db_path: Path | str = DB_PATH,
+) -> Optional[dict]:
+    """Return the single canonical-baseline row for a comparability key, or ``None``.
+
+    The key is (surface, dm_model, methodology, lens_config_version); each is matched NULL-safely
+    (``IS``) so a key component left None matches rows whose column is NULL. Returns the row dict
+    with ``is_canonical_baseline == 1``, or ``None`` if no canonical baseline is set for that key.
+    """
+    key = {
+        "surface": surface,
+        "dm_model": dm_model,
+        "methodology": methodology,
+        "lens_config_version": lens_config_version,
+    }
+    where = " AND ".join(f'"{c}" IS ?' for c in _BASELINE_KEY)
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            f'SELECT * FROM runs WHERE {where} AND "is_canonical_baseline" = 1 LIMIT 1',
+            tuple(key[c] for c in _BASELINE_KEY),
+        ).fetchone()
+        return dict(row) if row is not None else None
     finally:
         conn.close()
 

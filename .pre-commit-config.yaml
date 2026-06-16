@@ -1,0 +1,66 @@
+# WorldOS / ClawDnD — minimal, OPT-IN pre-commit config (inner-loop friction-cutter).
+#
+# This is intentionally TINY and ADDITIVE: it does NOT run the test suite on every commit
+# (the 16GB host OOMs on parallel test workers — full/heavy runs always go to GitHub CI). It
+# runs only the two cheap, deterministic things worth catching BEFORE a commit lands:
+#
+#   1. license_check — the same fast committed-content gate CI runs (FORBIDDEN private-content
+#      prefixes + required licensing/attribution files). Catching a forbidden-path commit here
+#      saves a CI round-trip and a force-push to scrub history.
+#   2. pytest-focus-hint — a NON-blocking HINT that prints the focused, single-process pytest
+#      command for the engine tests touched by your staged change. It never runs pytest itself
+#      (so it can never OOM the host); it just hands you the exact command to run by hand.
+#
+# Enable locally (never required, never wired into CI):
+#   pip install pre-commit && pre-commit install
+# Run on demand without installing the git hook:
+#   pre-commit run --all-files
+#
+# The heavy verification path is unchanged: focused `uv run --directory servers/engine python -m
+# pytest -p no:xdist <file>` for the inner loop, and GitHub CI for the full suite.
+minimum_pre_commit_version: "2.20.0"
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      # 1. Fast committed-content / license gate (mirrors CI: `python3 scripts/license_check.py`).
+      - id: license-check
+        name: license_check (forbidden private content + required attribution)
+        entry: python3 scripts/license_check.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # 2. Focused changed-files pytest HINT — prints (does NOT run) the single-process pytest
+      #    command for the engine test files matching your staged change. Never blocks a commit
+      #    (verbose=true, always exits 0). Single-process by design (-p no:xdist); never xdist.
+      - id: pytest-focus-hint
+        name: pytest focus hint (changed engine tests — single-process; manual run)
+        # Literal block scalar so the embedded bash (with its case-colons) parses cleanly.
+        entry: |
+          bash -c '
+          changed=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^servers/engine/.*[.]py$" || true)
+          [ -z "$changed" ] && exit 0
+          tests=""
+          for f in $changed; do
+            rel=${f#servers/engine/}
+            if [ "${rel#tests/}" != "$rel" ]; then
+              tests="$tests $rel"
+            else
+              base=$(basename "$rel" .py)
+              [ -f "servers/engine/tests/test_${base}.py" ] && tests="$tests tests/test_${base}.py"
+            fi
+          done
+          tests=$(printf "%s" "$tests" | tr " " "\n" | sort -u | tr "\n" " ")
+          if [ -n "$(printf "%s" "$tests" | tr -d " ")" ]; then
+            echo "  hint: focused single-process run for your staged engine change:"
+            echo "    uv run --directory servers/engine python -m pytest -q -p no:xdist $tests"
+          else
+            echo "  hint: staged engine code has no obviously-matching test file — consider adding one."
+          fi
+          exit 0'
+        language: system
+        pass_filenames: false
+        verbose: true
+        always_run: true
