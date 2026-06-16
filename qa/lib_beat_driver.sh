@@ -20,6 +20,21 @@
 # Sourced by BOTH loops so the two harnesses can't drift. Pure bash + a tiny `uv run` python
 # shim into servers/engine (the engine's venv has the deps; bare python3 does not).
 
+# --- Removable-volume env hygiene (the LEXAR-popup P0) -----------------------------
+# Strip inherited env vars whose value points at a removable volume (/Volumes/...) — e.g.
+# GBRAIN_SKILLS_DIR=/Volumes/LEXAR/... exported unconditionally by a user's ~/.zshenv. The DM is
+# a `claude -p` child of this shell; claude's skills loader reads such a var and enumerates the
+# volume → a modal "WorldOS would like to access files on a removable volume" TCC prompt that
+# can't be answered headlessly and silently stalls/blocks the QA + dogfood run. The harness needs
+# none of them; our OWN roots (WORLDOS_*/CLAWDND_*, which may intentionally live on a /Volumes
+# worktree) are preserved. Shell mirror of the native app's
+# EnvironmentBootstrap.withoutRemovableVolumeLeaks filter.
+for _wos_rmvol_k in $(env | awk -F= '$2 ~ /^\/Volumes\// {print $1}'); do
+  case "$_wos_rmvol_k" in WORLDOS_*|CLAWDND_*) continue ;; esac
+  unset "$_wos_rmvol_k"
+done
+unset _wos_rmvol_k
+
 # --- WorldOS rename env-compat (issue #295, W0-E) ---------------------------------
 # Resolve an env var by suffix, preferring WORLDOS_<suffix> and falling back to the
 # legacy CLAWDND_<suffix> (one-time stderr deprecation warning), else a default.
