@@ -139,7 +139,12 @@ def analyze(path: str):
                 render.append(f"    ⚙ {name}({s})")
         elif kind == "tool_result":
             low = (payload or "").lower()
-            if "betray" in low or "attitude_below" in low or "agenda" in low and "fire" in low:
+            # Flag a betrayal/loyalty fork only on an engine SIGNAL (a JSON field / gauge), never a
+            # prose mention: start_adventure's premise text names "betrayal" as a THEME, not a fired
+            # gate, so a bare-word match false-positives. Require a field-shaped signal.
+            if (re.search(r'"\w*betray\w*"\s*:\s*(true|\[|"[^"])', low)
+                    or '"attitude_below"' in low
+                    or re.search(r'"agenda[_a-z]*"\s*:\s*("?fir|true|\{)', low)):
                 betrayal_flag = True
             o = _outcome(payload)
             if o and any(s in o for s in ("roll=", "success=", "hit=", "damage=", "defeated=",
