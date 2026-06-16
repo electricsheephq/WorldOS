@@ -30,7 +30,11 @@
 # worktree) are preserved. Shell mirror of the native app's
 # EnvironmentBootstrap.withoutRemovableVolumeLeaks filter.
 for _wos_rmvol_k in $(env | awk -F= '$2 ~ /^\/Volumes\// {print $1}'); do
-  case "$_wos_rmvol_k" in WORLDOS_*|CLAWDND_*) continue ;; esac
+  # Skip our own roots, and any non-identifier token: a value with an embedded newline can make
+  # awk emit a bogus "key", and `unset` on a non-identifier errors — which would abort a future
+  # sourcer that runs `set -e`. (Today's sourcers use `set -uo pipefail` only, so this is belt-and-
+  # suspenders to keep the shared lib safe regardless of the caller's shell options.)
+  case "$_wos_rmvol_k" in WORLDOS_*|CLAWDND_*|""|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
   unset "$_wos_rmvol_k"
 done
 unset _wos_rmvol_k
