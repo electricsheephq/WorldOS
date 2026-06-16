@@ -312,7 +312,13 @@ final class AppProcessService: ObservableObject {
         stream: LogStream,
         providerMetadata: ProviderLaunchMetadata? = nil
     ) throws -> ManagedProcess {
-        var mergedEnvironment = ProcessInfo.processInfo.environment
+        // Drop foreign env vars that point at a removable volume (e.g. GBRAIN_SKILLS_DIR=/Volumes/…
+        // inherited from a shell launch's ~/.zshenv) BEFORE merging the caller's overlay. A child
+        // reading one enumerates the volume → a modal removable-volume TCC prompt that can't be
+        // answered headlessly: it blocks every shell-launched GUI run and stalls viewer startup.
+        // The caller's `environment` (the app's own WORLDOS_* roots, which may intentionally be on
+        // /Volumes for a removable-volume worktree) is applied AFTER, so it survives.
+        var mergedEnvironment = EnvironmentBootstrap.withoutRemovableVolumeLeaks(ProcessInfo.processInfo.environment)
         environment.forEach { key, value in mergedEnvironment[key] = value }
 
         let process = Process()
