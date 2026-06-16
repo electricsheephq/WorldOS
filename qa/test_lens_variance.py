@@ -47,26 +47,13 @@ sys.path.insert(0, str(QA_DIR))
 
 import scores_db  # noqa: E402  (canonical ledger reader; reuse, do not duplicate)
 
-# ---------------------------------------------------------------------------------------
-# DOCUMENTED NOISE FLOOR (must mirror qa/SCORING.md § "Variance & noise floor").
-#
-# These are the MAXIMUM within-cluster spread we tolerate for re-scores of the same
-# comparable run. They were DERIVED empirically from the comparable GREEN clusters in the
-# committed qa/scores.db (2026-06-16 snapshot, 75 rows): the observed max within-cluster
-# population stdev was story 0.15 / mech 0.25 / angry-dm 0.35 (ranges 0.30 / 0.50 / 0.70).
-# We round UP to a defensible bound (a little headroom for the next re-score) and record
-# it as the contract. Angry-DM is the noisiest lens (adversarial, exhaustive 5e checklist),
-# which is exactly why release gating leans on median-of-N hardest there.
-#
-# Each entry: lens-column -> (max_stdev, max_range). If a future re-score blows past these,
-# this test goes RED and forces a conscious re-derivation of the floor (and the doc).
-# ---------------------------------------------------------------------------------------
-NOISE_FLOOR = {
-    "story_overall": {"max_stdev": 0.20, "max_range": 0.40, "label": "story-craft (Tolkien)"},
-    "mech_overall": {"max_stdev": 0.30, "max_range": 0.60, "label": "mechanical"},
-    "angrydm_overall": {"max_stdev": 0.40, "max_range": 0.80, "label": "angry-dm (5e fidelity)"},
-}
-LENS_COLUMNS = tuple(NOISE_FLOOR.keys())
+# DOCUMENTED NOISE FLOOR — now the single source of truth in qa/lens_noise_floor.py (shared with
+# qa/detect_regression.py and mirrored in qa/SCORING.md § "Variance & noise floor"). It was DERIVED
+# empirically from the comparable GREEN clusters in the committed qa/scores.db (2026-06-16 snapshot):
+# observed max within-cluster population stdev story 0.15 / mech 0.25 / angry-dm 0.35 (ranges
+# 0.30 / 0.50 / 0.70), rounded UP for headroom. If a future re-score blows past these, this test goes
+# RED — raise the floor in qa/lens_noise_floor.py (one edit) and update SCORING.md.
+from lens_noise_floor import LENS_COLUMNS, NOISE_FLOOR  # noqa: E402
 
 # Per-lens scorecard filename suffix -> ledger lens column (for qa/transcripts/*.json).
 CARD_SUFFIX_TO_LENS = {
