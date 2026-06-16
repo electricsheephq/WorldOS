@@ -18,6 +18,40 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.4-rc4] — 2026-06-17
+
+**Felt quality + measurement fidelity.** rc4 lands the min-maxer planning layer, story-craft
+directives, and a major QA-harness reliability pass that gives the measurement gates fidelity —
+so future quality changes can be validated honestly.
+
+- **The planning/theorycraft layer (#951)** — closing the build-optimizer persona's gaps, all
+  wire-up of existing engine machinery (the features were ~90% built, just not reachable):
+  - **Half-caster slot trust** — the Spells tab now shows the caster tier + a derived
+    progression note ("Half-caster — 4th-level slots unlock at L13", computed from the engine's
+    own SRD table). An SRD-correct L10 Paladin's 4/3/2 slots are no longer misread as "missing".
+  - **Market priced-first** — the merchant catalogue surfaces priced, buyable gear ahead of the
+    priceless magic-item long tail (it was alphabetical → looked empty).
+  - **Camp spell-prep** — resting at camp now surfaces the existing prepare-spells modal per
+    prepared caster (it was only reachable from the character sheet).
+  - **Feat browser** — a new read-only `feats()` engine tool + a browsable feat picker replaces
+    the blind free-text feat box in the level-up flow.
+- **Story-craft directives (#960)** — three craft moves the scorer kept naming on otherwise-
+  excellent sessions: a running clock must be *felt* (not just named); never re-narrate the
+  player's own action back; planted texture must recur and pay off.
+- **QA-harness reliability (#966) — gate fidelity + #623 recovery.** Adversarially verified (a
+  gate-weakening was caught and closed before merge):
+  - A persona whose **player process crashes** is retried, then classified harness-inconclusive
+    (re-measure) — no longer laundered into a product-quality failure.
+  - **`party_traveled`** no longer RED-caps a *complete single-scene drama* (clock advanced AND a
+    quest resolved AND ≥8 beats) like a frozen stall — while a genuine stall stays RED.
+  - The **Mac-handoff** native-mint deadline now derives from (and outlasts) the DM cold-open's
+    own timeout, with a liveness-bounded grace — fixing flaky handoff legs.
+  - **#623**: an empty pre-beat mark on a continuing beat no longer fails-open and stamps
+    recycled prose "genuine"; a deadline-killed routine beat no longer escalates the retry into a
+    ~15-minute hang.
+
+---
+
 ## [1.0.4-rc3] — 2026-06-16
 
 **The autonomy unblock — popup P0 fixes + an honest Beta baseline.** rc3 removes the macOS
