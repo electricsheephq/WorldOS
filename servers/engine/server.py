@@ -11481,6 +11481,18 @@ _SCENE_EVENTS_FULL_PER_BEAT = 1
 # full ~1KB prose).
 _EVENT_STUB_HEAD_CHARS = 60
 
+# F07-7 (the "world remembers" adoption lever): scene_context AUTO-folds a compact
+# "last time with this returning NPC" recall for present, previously-met NPCs — so
+# continuity is automatic on the read the DM already makes every beat, instead of riding
+# the rarely-passed `recall_query` opt-in. These caps keep the every-beat work cheap
+# (this runs on EVERY scene_context call): at most N returning NPCs surfaced, a small
+# recall over-read each, and a COMPACT digest of M prior moments (a short phrase each,
+# NOT the raw recall dump).
+_SCENE_RETURNING_NPCS_PER_BEAT = 3      # at most this many returning NPCs per beat
+_SCENE_RETURNING_RECALL_LIMIT = 3       # recall_npc rows over-read per NPC (then distilled)
+_SCENE_RETURNING_MOMENTS = 2            # compact prior moments surfaced per NPC
+_SCENE_RETURNING_MOMENT_CHARS = 140     # per-moment clip (a short phrase, not the full row)
+
 
 def _event_full_projection(ev: Event) -> dict:
     """The FULL event projection (same shape present_events surfaces)."""
@@ -11543,6 +11555,69 @@ def _scene_events_throttled(campaign_id: str) -> dict:
         }
 
 
+def _scene_returning_npcs(c: Campaign, campaign_id: str) -> list[dict]:
+    """F07-7: the AUTOMATIC "the world remembers" digest — for the PRESENT, previously-met
+    NPCs at the party's CURRENT location, fold in a COMPACT recall of what the party has
+    already SHARED with each, so continuity rides the every-beat scene_context read instead
+    of waiting on the rarely-passed `recall_query` opt-in.
+
+    READ-ONLY: the only writes are recall_npc's lazy FTS re-index (a derived index, never
+    campaign state) — scene_context's sole-writer invariant holds. NEVER fabricates: every
+    surfaced moment is a real ``recall_npc`` row; an NPC with no recallable history is OMITTED
+    (so the field is [] when nobody present has a past, and the bundle is byte-identical to
+    today's when the feature doesn't apply).
+
+    BOUNDED (this runs on EVERY beat): at most ``_SCENE_RETURNING_NPCS_PER_BEAT`` returning
+    NPCs, a small ``_SCENE_RETURNING_RECALL_LIMIT`` over-read each, distilled to at most
+    ``_SCENE_RETURNING_MOMENTS`` short phrases per NPC.
+
+    Returns ``[{npc_id, name, last}]`` where ``last`` is a compact 1-2-line digest of the most
+    recent shared moments. Reuses the EXISTING recall plumbing (recall_npc) — no new retrieval.
+    """
+    loc = getattr(c, "current_location_id", None)
+    if not loc:
+        return []
+    # PRESENT, previously-met NPCs at the party's current location. `kind == "npc"` excludes the
+    # player + companions + monsters (the same gate durable.npc_relationships uses); `met` gates
+    # out seeded strangers. Deterministic id order so the cap is stable across re-grounds.
+    present = [
+        ch for ch in c.characters.values()
+        if getattr(ch, "kind", None) == "npc"
+        and getattr(ch, "met", False)
+        and getattr(ch, "location_id", None) == loc
+    ]
+    present.sort(key=lambda ch: getattr(ch, "id", "") or "")
+
+    out: list[dict] = []
+    for ch in present:
+        if len(out) >= _SCENE_RETURNING_NPCS_PER_BEAT:
+            break  # cap the per-beat work — at most N returning NPCs surfaced
+        npc_id = getattr(ch, "id", None)
+        if not npc_id:
+            continue
+        # Reuse the existing retrieval — do NOT reimplement it. recall_npc returns the most
+        # recent rows first (ORDER BY t DESC), so the head IS the most relevant shared history.
+        hits = ledger_mod.recall_npc(campaign_id, npc_id, limit=_SCENE_RETURNING_RECALL_LIMIT)
+        moments: list[str] = []
+        for h in hits:
+            text = (h.get("text") or "").strip()
+            if not text:
+                continue
+            if len(text) > _SCENE_RETURNING_MOMENT_CHARS:
+                text = text[:_SCENE_RETURNING_MOMENT_CHARS].rstrip() + "…"
+            moments.append(text)
+            if len(moments) >= _SCENE_RETURNING_MOMENTS:
+                break
+        if not moments:
+            continue  # no recallable history — OMIT (never fabricate)
+        out.append({
+            "npc_id": npc_id,
+            "name": getattr(ch, "name", None),
+            "last": " · ".join(moments),  # compact 1-2 prior moments, a short phrase each
+        })
+    return out
+
+
 @mcp.tool()
 def scene_context(
     campaign_id: str,
@@ -11579,6 +11654,13 @@ def scene_context(
         )
     if recall_query and recall_query.strip():
         out["recall"] = recall(campaign_id, recall_query.strip(), limit=recall_limit)
+    # F07-7: AUTO-fold a compact "the world remembers" digest for the present, previously-met
+    # NPCs at the party's current location (the automatic complement to the recall_query opt-in
+    # above). ADDITIVE + ABSENT when nobody present has recallable history, so the bundle is
+    # byte-identical to today's when the feature doesn't apply (the set(sc) == {...} contract).
+    returning = _scene_returning_npcs(_require(campaign_id), campaign_id)
+    if returning:
+        out["returning_npcs"] = returning
     out["state"] = get_state(campaign_id)
     return out
 

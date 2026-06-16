@@ -87,6 +87,108 @@ def test_scene_context_recall_is_opt_in(cid):
     assert sc["recall"] == server.recall(cid, "rats", limit=4)
 
 
+# ── scene_context: returning_npcs (F07-7 — the world AUTO-remembers) ──────────
+# scene_context AUTO-folds a compact "last time with this returning NPC" recall for the
+# present, previously-met NPCs at the party's current location, so continuity is automatic
+# on the every-beat read. ADDITIVE: absent when nobody present has recallable history.
+
+
+def _current_loc(cid: str) -> str:
+    """The party's current location id in the fixture campaign (a returning NPC must be
+    co-located there to surface)."""
+    return store.load_campaign(cid).current_location_id
+
+
+def _met_npc_here(cid: str, name: str, facts: list[str] | None = None) -> str:
+    """Create a MET npc co-located with the party, optionally with remembered facts (which
+    become recallable `npc_fact` rows). Returns the npc id."""
+    loc = _current_loc(cid)
+    npc = server.create_character(cid, name, kind="npc", location_id=loc, met=True)["id"]
+    for f in facts or []:
+        server.remember(cid, npc, fact=f)
+    return npc
+
+
+def test_scene_context_returning_npcs_absent_when_none(cid):
+    """No present met-NPC with recallable history → no `returning_npcs` key AND the rest of
+    scene_context is byte-identical to today's 6-key bundle (the additive contract)."""
+    sc = server.scene_context(cid)
+    assert "returning_npcs" not in sc
+    # The exact today's-shape contract (mirrors test_scene_context_bundles_the_beat_reads).
+    assert set(sc) == {
+        "durable", "director", "events", "companion_arcs", "consequences_due", "state"
+    }
+
+
+def test_scene_context_surfaces_returning_npc_with_compact_memory(cid):
+    """A returning NPC (met=True, at the current location, with prior logged interactions)
+    surfaces in `returning_npcs` with a COMPACT memory of what the party shared."""
+    npc = _met_npc_here(
+        cid, "Rolph the Warehouseman",
+        facts=["Rolph let the party stash the contraband crates in his loft"],
+    )
+    sc = server.scene_context(cid)
+    assert "returning_npcs" in sc
+    row = next(r for r in sc["returning_npcs"] if r["npc_id"] == npc)
+    assert row["name"] == "Rolph the Warehouseman"
+    # `last` is a real, non-empty digest drawn from recall_npc — never fabricated.
+    assert row["last"]
+    assert "contraband crates" in row["last"]
+    # It must be a COMPACT digest (a short phrase or two), not the raw recall dump.
+    assert len(row["last"]) <= 320
+
+
+def test_scene_context_returning_npc_omitted_without_history(cid):
+    """A present met-NPC with NO recallable history is OMITTED (never fabricated) — so the
+    field is absent when the only present NPC has no past."""
+    _met_npc_here(cid, "Silent Stranger", facts=[])  # met + co-located, but no memory
+    sc = server.scene_context(cid)
+    assert "returning_npcs" not in sc
+
+
+def test_scene_context_returning_npc_excludes_unmet_and_elsewhere(cid):
+    """An UNMET npc, and a met npc at a DIFFERENT location, are both excluded even with
+    recallable history — the digest is scoped to who's actually present."""
+    loc = _current_loc(cid)
+    # Unmet (a seeded stranger) here, with facts.
+    unmet = server.create_character(cid, "Lurker", kind="npc", location_id=loc, met=False)["id"]
+    server.remember(cid, unmet, fact="Lurker watched from the shadows once")
+    # Met, but standing somewhere else.
+    away = server.create_character(cid, "Away Ally", kind="npc", location_id="elsewhere", met=True)["id"]
+    server.remember(cid, away, fact="Away Ally fought beside us at the bridge")
+
+    sc = server.scene_context(cid)
+    assert "returning_npcs" not in sc
+
+
+def test_scene_context_returning_npcs_cap_holds(cid):
+    """>3 returning NPCs present → at most the cap (3) is surfaced (bounded per-beat work)."""
+    for i in range(5):
+        _met_npc_here(cid, f"Regular {i}", facts=[f"Regular {i} shared a drink with the party"])
+    sc = server.scene_context(cid)
+    assert "returning_npcs" in sc
+    assert len(sc["returning_npcs"]) == server._SCENE_RETURNING_NPCS_PER_BEAT == 3
+
+
+def test_scene_context_returning_npcs_is_read_only(cid):
+    """Building the returning-NPC digest only READS — it must not mutate campaign state
+    (scene_context's sole-writer invariant; recall's FTS re-index is a derived index, not
+    campaign state)."""
+    _met_npc_here(cid, "Memory Keeper", facts=["Memory Keeper owed the party a favor"])
+
+    def _substantive(campaign_id):
+        d = store.load_campaign(campaign_id).model_dump()
+        d.pop("updated_at", None)  # the only field check_companion_arc's save touches
+        return d
+
+    # Warm any lazy index first, then assert a second build leaves state byte-identical.
+    server.scene_context(cid)
+    before = _substantive(cid)
+    sc = server.scene_context(cid)
+    assert "returning_npcs" in sc  # the feature is actually exercised
+    assert _substantive(cid) == before
+
+
 # ── scene_context: recent_narration (the lean-beat prose tail) ───────────────
 
 
