@@ -563,3 +563,150 @@ def class_resources_through(class_name: str, level: int, cha_mod: int = 0) -> di
             recharge = "short"
         out[res_id] = {"max": mx, "recharge": recharge}
     return out
+
+
+# ── Level-up roadmap — read-only multi-level projection (#882 build-optimizer) ───
+#
+# The LevelUpModal/build_options surface shows only the SINGLE next level. The
+# build-optimizer persona's last planning gap was "no upcoming-features view /
+# nothing to theorycraft against". `level_roadmap` is a PURE projection of the SRD
+# progression tables (features_through / subclass_features_through / is_asi_level /
+# proficiency_bonus / class_resources_through) from CURRENT class level + 1 through
+# `through_level`. It NEVER writes campaign state and NEVER fabricates: every entry
+# comes straight from a curated SRD table; a class/subclass the tables don't know
+# simply contributes nothing at that level.
+#
+# Honest scope: the projection continues a SINGLE class track (the one passed in —
+# the tool feeds the PC's PRIMARY class), because the engine cannot know a player's
+# FUTURE multiclass choices. The class-level the projection advances is `class_name`'s
+# own level, so a Fighter 5 (total 5) sees its Fighter-6/7/… features; the prof bonus
+# tracks TOTAL character level so a multiclassed PC's prof column stays correct.
+
+
+def _resources_changed_note(class_name: str, from_level: int, to_level: int, cha_mod: int) -> str:
+    """A terse human note for the class-resource pools whose MAX changes when this class
+    goes from `from_level` to `to_level` (e.g. 'Rage 3→4'). Empty when nothing changes —
+    so the roadmap row simply omits the note. Pure: derived from class_resources_through."""
+    before = class_resources_through(class_name, from_level, cha_mod)
+    after = class_resources_through(class_name, to_level, cha_mod)
+    parts: list[str] = []
+    for rid in sorted(set(before) | set(after)):
+        old = before.get(rid, {}).get("max", 0)
+        new = after.get(rid, {}).get("max", 0)
+        if old != new:
+            label = rid.replace("_", " ").title()
+            parts.append(f"{label} {old}→{new}" if old else f"{label} {new}")
+    return ", ".join(parts)
+
+
+def level_roadmap(
+    class_name: str,
+    current_class_level: int,
+    subclass: str | None = None,
+    current_total_level: int | None = None,
+    through_level: int = 20,
+    cha_mod: int = 0,
+) -> list[dict]:
+    """Project a SINGLE class's per-level progression from ``current_class_level + 1``
+    through ``through_level`` (capped at 20), as a list of
+    ``{level, class_level, features:[{name, desc?}], is_asi_or_feat, prof_bonus,
+    resources_note?, spell_slots_note?, subclass_features:[…]}``.
+
+    ``level`` is the projected TOTAL character level (so the prof column matches a
+    multiclassed PC); ``class_level`` is this class's own level at that step. Each
+    upcoming level lists the class features GAINED at that class level
+    (``features_at``), the subclass features newly owed (``subclass_features_through``
+    delta), whether it's an ASI/feat level (``is_asi_level``), the proficiency bonus
+    (``proficiency_bonus`` of the total level), a class-resource change note
+    (``class_resources_through`` delta), and — for casters — a spell-slot change note.
+
+    GUARDED + HONEST: returns ``[]`` if the class is unknown, the PC is already at
+    ``through_level`` (nothing upcoming), or ``through_level <= current``. Never writes,
+    never fabricates — a level whose tables carry nothing yields an empty ``features``
+    list but still reports the prof bonus / ASI flag (those ARE known from the tables)."""
+    cls = class_name.lower()
+    try:
+        class_data(cls)
+    except ValueError:
+        return []
+    cap = min(20, int(through_level))
+    cur_class = max(0, int(current_class_level))
+    # The projection advances this class's own level; the TOTAL level rises in lockstep
+    # with each class level gained (other classes are held fixed — we don't invent
+    # future multiclass picks). Offset = total - this-class-level at the start.
+    total_now = int(current_total_level) if current_total_level is not None else cur_class
+    offset = total_now - cur_class
+    roadmap: list[dict] = []
+    for clvl in range(cur_class + 1, cap + 1):
+        total_level = clvl + offset
+        if total_level > 20:
+            break
+        features = [
+            {"name": f["name"], **({"desc": f["desc"]} if f.get("desc") else {})}
+            for f in features_at(cls, clvl)
+        ]
+        # Subclass features NEWLY owed at this class level (the through-delta), so a
+        # roadmap row shows the archetype feature that lands here — not the whole list.
+        prev_sub = {
+            str(f.get("name", "")).lower()
+            for f in subclass_features_through(cls, subclass, clvl - 1)
+        }
+        sub_features = [
+            {"name": f["name"], **({"desc": f["desc"]} if f.get("desc") else {})}
+            for f in subclass_features_through(cls, subclass, clvl)
+            if str(f.get("name", "")).lower() not in prev_sub
+        ]
+        entry: dict = {
+            "level": total_level,
+            "class_level": clvl,
+            "class_name": cls,
+            "features": features,
+            "is_asi_or_feat": is_asi_level(cls, clvl),
+            "prof_bonus": proficiency_bonus(total_level),
+        }
+        if sub_features:
+            entry["subclass_features"] = sub_features
+        note = _resources_changed_note(cls, clvl - 1, clvl, cha_mod)
+        if note:
+            entry["resources_note"] = note
+        slot_note = _slot_change_note(cls, clvl - 1, clvl, offset)
+        if slot_note:
+            entry["spell_slots_note"] = slot_note
+        roadmap.append(entry)
+    return roadmap
+
+
+def _slot_change_note(class_name: str, from_clvl: int, to_clvl: int, offset: int) -> str:
+    """A terse spell-slot change note for a single caster class going from `from_clvl`
+    to `to_clvl` (e.g. '+1 L3 slot' / 'L1×2→×3'). Empty for non-casters or no change.
+    Cheap projection: full/half/third casters read the multiclass slot table at the
+    projected total level; a Warlock reads its pact-slot table by warlock level. Pure."""
+    cls = class_name.lower()
+    try:
+        ct = caster_type(cls)
+    except ValueError:
+        return ""
+    if ct == "pact":
+        before = warlock_pact_slots(from_clvl) or {}
+        after = warlock_pact_slots(to_clvl) or {}
+        b_n, b_l = before.get("slots", 0), before.get("level", 0)
+        a_n, a_l = after.get("slots", 0), after.get("level", 0)
+        if (b_n, b_l) == (a_n, a_l):
+            return ""
+        if b_l != a_l and a_l:
+            return f"Pact slots now L{a_l}×{a_n}"
+        return f"Pact slots ×{b_n}→×{a_n}"
+    if ct not in ("full", "half", "third"):
+        return ""
+    before = multiclass_slots([(cls, from_clvl)]) if from_clvl >= 1 else {}
+    after = multiclass_slots([(cls, to_clvl)])
+    parts: list[str] = []
+    for lvl in sorted(set(before) | set(after)):
+        old = before.get(lvl, 0)
+        new = after.get(lvl, 0)
+        if old != new:
+            if old == 0:
+                parts.append(f"new L{lvl} slots (×{new})")
+            else:
+                parts.append(f"L{lvl} ×{old}→×{new}")
+    return ", ".join(parts)
