@@ -2634,6 +2634,77 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertIsNone(payload["signals"]["latency_s_per_beat"])
             self.assertIsNone(payload["signals"]["latency_coldopen_s"])
 
+    def _write_duo_beats(self, transcript_dir: Path, run: str, coldopen_ms: int, routine_ms: int) -> None:
+        # Minimal stream-json duo beat transcripts (one result event per beat) in the
+        # <run>.dm.<nanos>.jsonl shape the runners write and latency_rollup reads: a cold
+        # open (nanos=1000) + two routine beats. duration_api_ms is the only timing field read.
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        for nanos, ms, turns in ((1000, coldopen_ms, 18), (2000, routine_ms, 4), (3000, routine_ms, 5)):
+            res = {
+                "type": "result", "subtype": "success", "is_error": False,
+                "api_error_status": None, "duration_api_ms": ms, "num_turns": turns, "result": "prose",
+            }
+            (transcript_dir / f"{run}.dm.{nanos}.jsonl").write_text(
+                json.dumps(res) + "\n", encoding="utf-8")
+
+    def test_latency_rollup_stamp_sidecars_activates_the_gate_end_to_end(self):
+        # END-TO-END SEAM (the wiring PR #954 left dormant): the runners derive the latency
+        # ledger into the TRANSCRIPT dir, but release_readiness reads each PERSONA run dir's
+        # latency.json. This drives the REAL production path qa/release_gate.sh now uses —
+        # latency_rollup.rollup_run() over real duo beat transcripts, then
+        # latency_rollup.stamp_sidecars() into the persona run dirs — and proves the gate then
+        # FAILS over budget and PASSES under budget (no hand-written sidecar dict).
+        sys.path.insert(0, str(ROOT / "qa"))
+        import latency_rollup
+
+        def build_and_run(coldopen_ms: int, routine_ms: int):
+            with tempfile.TemporaryDirectory() as td:
+                tmp = Path(td)
+                run = "gate-duo"
+                self._write_duo_beats(tmp / "transcripts", run, coldopen_ms, routine_ms)
+                rollup = latency_rollup.rollup_run(tmp / "transcripts", run)
+                runs = self._five_clean_runs_with_latency(tmp, None)  # NO hand-written latency
+                # THE WIRING: stamp the build-level duo rollup into every persona run dir.
+                written = latency_rollup.stamp_sidecars(rollup, runs)
+                self.assertEqual(len(written), 5)
+                # the sidecar landed in the exact shape release_readiness.read_latency() reads
+                sidecar = json.loads((runs[0] / "latency.json").read_text())
+                self.assertIn("s_per_beat", sidecar)
+                self.assertIn("coldopen_s", sidecar)
+                story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+                return self.run_rri(
+                    tmp,
+                    "--runs", ",".join(str(r) for r in runs),
+                    "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                    "--story", str(story), "--mech", str(mech),
+                    "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+                    "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+                    "--palette-live", "true", "--palette-source", str(palette),
+                    "--build-sha", "deadbee",
+                )
+
+        # OVER budget: cold open 500s (> 240), routine 300s/beat (> 120) -> FAIL, gate evaluated.
+        rc, _text, payload = build_and_run(coldopen_ms=500_000, routine_ms=300_000)
+        self.assertEqual(rc, 1)
+        self.assertFalse(payload["release_ready"])
+        self.assertIn("latency_s_per_beat", payload["failed_gates"])
+        self.assertIn("latency_coldopen", payload["failed_gates"])
+        self.assertEqual(payload["signals"]["latency_s_per_beat"], 300.0)
+        self.assertEqual(payload["signals"]["latency_coldopen_s"], 500.0)
+        # the gate is now ACTIVE, not a dormant evidence-gap skip
+        self.assertEqual(payload["skipped_gates"], [])
+        self.assertEqual(payload["gates_total"], 13)
+
+        # UNDER budget: cold open 150s (< 240), routine 80s/beat (< 120) -> PASS.
+        rc, _text, payload = build_and_run(coldopen_ms=150_000, routine_ms=80_000)
+        self.assertEqual(rc, 0)
+        self.assertTrue(payload["release_ready"])
+        self.assertEqual(payload["evidence_gaps"], [])
+        self.assertNotIn("latency_s_per_beat", payload["failed_gates"])
+        self.assertNotIn("latency_coldopen", payload["failed_gates"])
+        self.assertEqual(payload["signals"]["latency_s_per_beat"], 80.0)
+        self.assertEqual(payload["signals"]["latency_coldopen_s"], 150.0)
+
     def test_deterministic_only_marks_llm_gates_skipped_not_failed(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

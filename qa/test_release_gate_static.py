@@ -57,6 +57,20 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn('DUO_PROMPT="$ROOT/qa/play_player_duo.txt"', source)
         self.assertNotIn('qa/run_duo.sh "${RUNID}-duo" baldurs-gate veteran', source)
 
+    def test_release_gate_stamps_latency_sidecar_into_persona_run_dirs(self):
+        # The RRI latency gate was DORMANT: run_duo.sh derives the per-beat ledger into the
+        # TRANSCRIPT dir, but release_readiness.read_latency() reads each PERSONA run dir's
+        # latency.json sidecar. Lock in the wiring that activates the gate — release_gate.sh must
+        # stamp the duo rollup into the run dirs via latency_rollup.py --stamp-into, BEFORE the
+        # RRI rollup reads them — so the gate can never silently fall back to a skip again.
+        source = (ROOT / "qa" / "release_gate.sh").read_text(encoding="utf-8")
+
+        self.assertIn("qa/latency_rollup.py", source)
+        self.assertIn('--run "${RUNID}-duo"', source)
+        self.assertIn('--stamp-into "$RUN_DIRS"', source)
+        # the stamp must run BEFORE release_readiness reads the per-run sidecars
+        self.assertLess(source.index("--stamp-into"), source.index("python3 qa/release_readiness.py"))
+
     def test_ui_playtest_persists_final_session_surface_before_teardown(self):
         source = (ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
 
