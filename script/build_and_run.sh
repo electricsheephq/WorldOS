@@ -146,17 +146,25 @@ build_bundle() {
 </plist>
 PLIST
 
-  # Sign with a Developer ID identity if available so the signature is STABLE
-  # across rebuilds. Ad-hoc signatures (`--sign -`) produce a NEW cdhash on each
-  # build, which causes security software (e.g. NordVPN Threat Protection's file
-  # scanner) to re-evaluate the binary every time — that re-evaluation can hang
-  # the freshly-launched app's first directory enumerations in the kernel
-  # (open$NOCANCEL) for tens of seconds. A Developer ID signature is stable AND
-  # generally pre-trusted, so the scan is cached/skipped after the first launch.
+  # Sign the local app bundle AD-HOC by default. A dev/QA/CI build must NEVER
+  # auto-search the keychain for a "Developer ID Application" identity: a bare
+  # `security find-identity` scans EVERY keychain in the search list, which on this
+  # box includes an UNRELATED product's signing keychain on a removable volume
+  # (evaos-release-signing on /Volumes/LEXAR). That auto-search fired a removable-
+  # volume TCC prompt AND, when it matched, a keychain-password prompt on EVERY build
+  # — a hard P0: it blocked unattended/CI builds, EVERY live GUI run, and any future
+  # user's first launch (the popups can't be answered headlessly, so autonomy breaks).
+  # Ad-hoc signing touches NO keychain.
+  #
+  # The stable-cdhash optimization (a Developer ID signature keeps the same cdhash
+  # across rebuilds, so security software like NordVPN Threat Protection doesn't
+  # re-scan the binary each launch) is now OPT-IN and EXPLICIT: export
+  # WORLDOS_SIGN_IDENTITY="<your specific intended identity>" to sign with it. The
+  # default (unset) ad-hoc signs with zero keychain access. We NEVER auto-pick an
+  # identity from the keychain search list.
   if command -v codesign >/dev/null 2>&1; then
-    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
-    if [ -n "$SIGN_IDENTITY" ]; then
-      codesign --force --sign "$SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null 2>&1 \
+    if [ -n "${WORLDOS_SIGN_IDENTITY:-}" ]; then
+      codesign --force --sign "$WORLDOS_SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null 2>&1 \
         || codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
     else
       codesign --force --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
