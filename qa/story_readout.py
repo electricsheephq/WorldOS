@@ -43,6 +43,15 @@ COVERAGE = {
     "combat":         ["start_combat"],
     "decision":       ["record_decision"],
 }
+
+
+def coverage_from_tool_counts(counts) -> dict:
+    """Roll a {short_tool_name: count} mapping up into the COVERAGE buckets — the SAME
+    bucket logic `analyze()` applies to the live transcript, factored out so a second
+    consumer (the behavioral gate's structural_completeness assertion) can't drift from
+    the readout's coverage stamp. `counts` is any mapping (a Counter, a dict) of short
+    tool names to call counts. Returns {bucket: total_calls_in_bucket}."""
+    return {k: sum(int(counts.get(t, 0) or 0) for t in tools) for k, tools in COVERAGE.items()}
 _OUT_KEYS = re.compile(
     r'"(roll|total|dc|success|failed|degree|crit|hit|damage|hp|remaining|defeated|dead|'
     r'attitude|approval|standing|status|evolves_to|xp|day)"\s*:\s*([^,}\]\n]+)')
@@ -150,7 +159,7 @@ def analyze(path: str):
             if o and any(s in o for s in ("roll=", "success=", "hit=", "damage=", "defeated=",
                                           "attitude=", "approval=", "evolves_to=")):
                 render.append(f"      → {o}")
-    cov = {k: sum(calls.get(t, 0) for t in tools) for k, tools in COVERAGE.items()}
+    cov = coverage_from_tool_counts(calls)
     cov["beats"] = beat
     cov["quest_evolved"] = len(evolves)
     cov["approval_delta"] = approval_deltas

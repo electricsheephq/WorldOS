@@ -536,3 +536,128 @@ def test_signature_feature_silent_when_party_lacks_feature(tmp_path):
     rc, out = _run_gate(tmp_path, [], state)
     assert rc == 0, out
     assert "signature_feature_exercised" not in out  # no party member has the feature → check skipped
+
+
+# ── structural_completeness (FATAL, relationship-cues) — the owner's "full circle" ──
+# The scorers reward prose+dice but were blind to a system-skipping run (an 18-beat run that
+# narrated the companion+quest story but never engaged the engine: companion frozen at 0, a
+# multi-location quest left `active`, no camp). This FATAL gate makes such a run score RED.
+# CONTEXTUAL: only a SUBSTANTIAL session (>= 10 beats) with a companion present trips it; a
+# short combat-sprint or a companion-less session must NOT.
+
+def _dm_text_turns(n: int):
+    """n DM assistant TEXT turns — session_beats(no chat/facade) == dm_text, so this drives
+    the structural floor's >= 10-beat gate."""
+    return [{"type": "assistant",
+             "message": {"content": [{"type": "text", "text": f"The scene unfolds, beat {i}."}]}}
+            for i in range(n)]
+
+
+def _toolcall(name: str):
+    return [_assistant_tool_use(f"t_{name}", f"mcp__engine__{name}", {}),
+            _user_tool_result(f"t_{name}", json.dumps({"ok": True}))]
+
+
+def _frozen_run_state(*, approval_moved=False, active_quest=True, visited2=True):
+    """A substantial-session final state: a player + a companion, an active (unresolved)
+    quest, two visited locations (a real arc). approval_moved toggles whether the companion's
+    regard left 0."""
+    locs = {"loc_a": {"visited": True}, "loc_b": {"visited": True if visited2 else False}}
+    state = {
+        "leveling_mode": "milestone",
+        "day": 5,
+        "locations": locs,
+        "party": ["pc1", "comp1"],
+        "characters": {
+            "pc1": {"name": "Dal", "kind": "player", "location_id": "loc_b"},
+            "comp1": {"name": "Brother Toll", "kind": "companion",
+                      "attitude_value": 20 if approval_moved else 0,
+                      "location_id": "loc_b"},
+        },
+    }
+    if active_quest:
+        state["quests"] = {"q1": {"title": "The Embergloom Pact", "status": "active",
+                                  "objectives": ["free the prisoners"], "completed_objectives": []}}
+    return state
+
+
+def test_structural_completeness_trips_on_frozen_companion_and_unresolved_quest(tmp_path):
+    # 12 DM beats, a companion stuck at attitude 0, no camp/long_rest tool, an active quest
+    # across a 2-location arc with no resolution → RED.
+    events = _dm_text_turns(12)
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 1, out
+    assert "structural_completeness" in out
+    assert "[FAIL] structural_completeness" in out
+
+
+def test_structural_completeness_passes_when_approval_moved_and_quest_resolved(tmp_path):
+    # The companion's regard moved (attitude 20) AND a camp happened AND the quest resolved.
+    events = (_dm_text_turns(12) + _toolcall("long_rest") + _toolcall("complete_quest"))
+    state = _frozen_run_state(approval_moved=True, active_quest=False)
+    # quest resolved (no active quest)
+    state["quests"] = {"q1": {"title": "The Embergloom Pact", "status": "completed",
+                              "objectives": ["free the prisoners"],
+                              "completed_objectives": ["free the prisoners"],
+                              "evolves_to": "the cult regroups"}}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] structural_completeness" in out
+
+
+def test_structural_completeness_passes_when_camp_engaged_even_if_attitude_zero(tmp_path):
+    # The (a) frozen+no-camp clause requires BOTH approval-frozen AND no camp. A run that DID
+    # camp (engaged the relationship system) must not trip clause (a). Keep the quest resolved
+    # so clause (b) is also satisfied.
+    events = _dm_text_turns(12) + _toolcall("camp_scene") + _toolcall("complete_quest")
+    state = _frozen_run_state(approval_moved=False, active_quest=False)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] structural_completeness" in out
+
+
+def test_structural_completeness_passes_when_quest_resolution_engaged(tmp_path):
+    # Clause (b) is gated on never having engaged a quest-resolution tool. A run that called
+    # complete_quest (and simply has another quest still open) is NOT a dropped arc. Approval
+    # moved + camp happened so clause (a) is clean too.
+    events = (_dm_text_turns(12) + _toolcall("long_rest") + _toolcall("complete_quest"))
+    state = _frozen_run_state(approval_moved=True, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] structural_completeness" in out
+
+
+def test_structural_completeness_silent_on_companionless_session(tmp_path):
+    # No companion in the final state → the gate is contextual and skips entirely (no line).
+    events = _dm_text_turns(12)
+    state = {"leveling_mode": "milestone", "day": 5,
+             "locations": {"loc_a": {"visited": True}, "loc_b": {"visited": True}},
+             "party": ["pc1"],
+             "characters": {"pc1": {"name": "Dal", "kind": "player", "location_id": "loc_b"}},
+             "quests": {"q1": {"title": "Solo errand", "status": "active",
+                               "objectives": ["x"], "completed_objectives": []}}}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "structural_completeness" not in out  # contextual: no companion → check skipped
+
+
+def test_structural_completeness_silent_on_short_session(tmp_path):
+    # A 5-beat run (< 10) with a frozen companion must NOT trip — too short to be substantial.
+    events = _dm_text_turns(5)
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "structural_completeness" not in out  # contextual: < 10 beats → check skipped
+
+
+def test_structural_completeness_silent_in_combat_sprint(tmp_path):
+    import os
+    # The combat-sprint lane sets CLAWDND_GATE_COMBAT_SPRINT — a 1-location pre-seeded fight
+    # legitimately never moves approval/quests, so the structural floor must skip.
+    events = _dm_text_turns(12)
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    env = dict(os.environ, CLAWDND_GATE_COMBAT_SPRINT="1")
+    rc, out = _run_gate(tmp_path, events, state, env=env)
+    assert rc == 0, out
+    assert "structural_completeness" not in out

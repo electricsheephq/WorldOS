@@ -169,6 +169,15 @@
         "moves.jsonl"
       ],
       "real_red_provenance": ""
+    },
+    {
+      "case_dir": "structural_completeness",
+      "expected_red_check": "structural_completeness",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": ""
     }
   ]
 }

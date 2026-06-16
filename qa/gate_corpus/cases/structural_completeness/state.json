@@ -1,0 +1,46 @@
+{
+  "party": [
+    "pc1",
+    "cmp1"
+  ],
+  "leveling_mode": "xp",
+  "day": 2,
+  "time_of_day": "evening",
+  "current_location_id": "loc_camp",
+  "characters": {
+    "pc1": {
+      "name": "Dal",
+      "kind": "player",
+      "xp": 300,
+      "location_id": "loc_camp"
+    },
+    "cmp1": {
+      "name": "Brother Toll",
+      "kind": "companion",
+      "attitude_value": 0,
+      "location_id": "loc_camp",
+      "xp": 300
+    }
+  },
+  "locations": {
+    "loc_start": {
+      "name": "Tavern",
+      "visited": true
+    },
+    "loc_camp": {
+      "name": "Camp",
+      "visited": true
+    }
+  },
+  "quests": {
+    "q1": {
+      "id": "q1",
+      "title": "The Embergloom Pact",
+      "status": "active",
+      "objectives": [
+        "free the prisoners"
+      ],
+      "completed_objectives": []
+    }
+  }
+}
