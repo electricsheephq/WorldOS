@@ -25,6 +25,11 @@ RUN="${1:-duo-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
 PLAYER_PROMPT_FILE="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-6}"
+# Golden-spine mode: when CLAWDND_ADVENTURE_ID is set, the DM cold-opens an AUTHORED adventure
+# (start_adventure — pre-seeded world/arc/companion/quests) instead of generating a world live.
+# This is the path that actually runs the 3-act spine end-to-end (see continue-lets-update plan).
+ADVENTURE_ID="${CLAWDND_ADVENTURE_ID:-}"
+[ -n "$ADVENTURE_ID" ] && echo "[duo] AUTHORED-ADVENTURE mode: start_adventure(\"$ADVENTURE_ID\") at BEATS=$BEATS"
 BUDGET="${5:-0.80}"
 
 # ── Root + IS_SANDBOX preflight (the real beat-0 blocker, 2026-06-03) ─────────────────
@@ -279,14 +284,21 @@ echo "[duo] player intro: ${PMSG:0:120}…"
 [ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
 chatlog player "$PMSG"
 
-# D1: DM spins up the world and opens the scene around the player's concept.
+# D1: DM spins up the world and opens the scene around the player's concept. Golden-spine mode
+# (ADVENTURE_ID set) swaps the world-gen setup for an AUTHORED adventure run; the else-branch is
+# byte-identical to the long-standing world-gen directive (default path unchanged).
+if [ -n "$ADVENTURE_ID" ]; then
+  SETUP_DIRECTIVE="Load the AUTHORED ADVENTURE now: call start_adventure(\"$ADVENTURE_ID\") — it seeds the pre-authored world, locations, voiced NPCs, the authored companion, and the opening quest, and returns its premise + a 3-ACT structure (also read its adventure.md scenes). Then seat THEIR character as the PLAYER CHARACTER (the PC) from their intro — for an authored adventure you MAY create_character to fit ITS setting (its world is its own, not the canon BG roster); NEVER seat the player as a companion or NPC. OPEN ACT 1 — human-scale and personal — and then RUN THE AUTHORED ARC across the WHOLE session as a living 3-act story: when the authored companion's meeting lands, recruit_companion them on-screen (voiced, a real wound); DRIVE deliberately toward each act's climax (never linger in one scene); at a rest, play a REAL camp_scene where the companion speaks and the player's choices MOVE their approval (record_decision with approval_tags / adjust_attitude, then check_companion_arc to fire gates); and resolve quests with complete_quest(evolves_to=…, callback_in_days=…) so threads ECHO into later acts. End by handing the moment to the player."
+else
+  SETUP_DIRECTIVE="Do the setup now: start_world(\"$WORLD\"), start_session, then seat THEIR character as the PLAYER CHARACTER (the PC). The player ALWAYS plays a REAL, LIVING CANON NPC — their persona names one (e.g. Aubree, a Flaming Fist ranger). Seat that exact figure via load_canon_character(their canon name, kind=\"player\", add_to_party=true) so they get a real backstory + ingested portrait — NEVER create_character / invent a custom PC, NEVER seat the player's own character as a companion or NPC, and NEVER a canon-DEAD figure (a corpse like Dal Lightspark is rejected as a PC; if the seat returns an error, pick a living canon NPC instead). A companion is a DIFFERENT character the player MEETS. Then OPEN the scene — human-scale and personal — grounded in the world's canon, responding to their stated intent. A companion should ENTER as part of that opening scene: someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together) — recruit_companion / load_canon_character(kind=\"companion\") as that meeting lands, NOT a silent name dropped into the party before the player has met anyone. End by handing the moment to the player."
+fi
 DMSG="$(turn_retry dm "$DSID" 1 "$DM_BRIEF
 
 Begin the session. The player agent introduces their character and opening intent:
 
 $PMSG
 
-Do the setup now: start_world(\"$WORLD\"), start_session, then seat THEIR character as the PLAYER CHARACTER (the PC). The player ALWAYS plays a REAL, LIVING CANON NPC — their persona names one (e.g. Aubree, a Flaming Fist ranger). Seat that exact figure via load_canon_character(their canon name, kind=\"player\", add_to_party=true) so they get a real backstory + ingested portrait — NEVER create_character / invent a custom PC, NEVER seat the player's own character as a companion or NPC, and NEVER a canon-DEAD figure (a corpse like Dal Lightspark is rejected as a PC; if the seat returns an error, pick a living canon NPC instead). A companion is a DIFFERENT character the player MEETS. Then OPEN the scene — human-scale and personal — grounded in the world's canon, responding to their stated intent. A companion should ENTER as part of that opening scene: someone the player MEETS on-screen (voiced, with a real wound and a reason they fall in together) — recruit_companion / load_canon_character(kind=\"companion\") as that meeting lands, NOT a silent name dropped into the party before the player has met anyone. End by handing the moment to the player. OUTPUT DISCIPLINE — your final reply IS the opening scene: write it as 2nd-person in-fiction PROSE + quoted dialogue ONLY. NEVER narrate your own setup/process — no \"State is grounded\", no \"the cold open is on the dashboard\", no \"Closing my turn on the scene\", no 3rd-person status line. The very first words the player reads must be INSIDE the fiction.")"
+$SETUP_DIRECTIVE OUTPUT DISCIPLINE — your final reply IS the opening scene: write it as 2nd-person in-fiction PROSE + quoted dialogue ONLY. NEVER narrate your own setup/process — no \"State is grounded\", no \"the cold open is on the dashboard\", no \"Closing my turn on the scene\", no 3rd-person status line. The very first words the player reads must be INSIDE the fiction.")"
 # #357: recover the engine's logged narration if the DM turn ended on a tool call / status
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
 clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
